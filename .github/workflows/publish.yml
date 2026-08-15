@@ -120,4 +120,11 @@ jobs:
             # prerelease for now, so holding the tag back would only mean
             # `npm i` fetched an older alpha than the one just released.
             ( cd "packages/$package" && npm publish --tag latest )
+            # And `alpha` beside it, so `npm i $name@alpha` is a thing someone
+            # can write on purpose rather than having to look up which version
+            # happens to be current. Best effort: the release already succeeded
+            # by this point, and a missing convenience tag must not undo it.
+            if ! npm dist-tag add "$name@$version" alpha; then
+              echo "::warning::published $name@$version but could not add the alpha dist-tag"
+            fi
           done

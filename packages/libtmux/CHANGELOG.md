@@ -2,9 +2,34 @@
 
 Notable changes to `libtmux`.
 
+Every release so far is an **alpha**: a prerelease, published under both the
+`latest` and `alpha` dist-tags, whose API can change between versions without a
+deprecation cycle. Semantic versioning starts applying at `0.1.0`.
+
 <!-- KEEP THIS PLACEHOLDER: new work lands under "Unreleased" until a release is cut. -->
 
 ## Unreleased
+
+## 0.0.1-alpha.6
+
+### Fixed
+
+Three unit files each rebuilt `dist` while the suite was running four files at
+a time, and `build` begins by deleting it — so tests that read the emitted
+package could observe it missing, which is what turned CI red twice. The build
+now happens once, before any test runs.
+
+A fixture marker was read as soon as it existed rather than once it held
+anything, so a PID that was mid-write was rejected as invalid.
+
+### Documentation
+
+Install instructions name the published package rather than telling readers to
+clone the repository, and every link, shell command and recipe in the
+documentation is now checked on each run — a recipe marked as runnable has to
+be a literal excerpt of an example the integration suite executes.
+
+## 0.0.1-alpha.5
 
 ### What's new
 
@@ -48,8 +73,8 @@ means building a subprocess.
 ### Compatibility
 
 Requires tmux 3.2a or newer, and Node 22+ or Bun 1.3.14+. The format registry
-withholds newer fields from an older server, and the suite runs against 3.2a,
-3.3a, 3.5a, 3.6b, and 3.7b.
+withholds newer fields from an older server. CI runs the suite against 3.2a,
+3.7 and 3.7b on every commit; `test:compat` sweeps a wider local matrix.
 
 One behaviour differs across the range rather than being gated: tmux 3.3a
 suppressed `run-shell` output for an invocation with no attached client, which
