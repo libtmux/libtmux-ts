@@ -22,7 +22,7 @@
     "directory": "packages/mcp"
   },
   "bin": {
-    "libtmux-mcp": "./dist/server.js"
+    "libtmux-mcp": "dist/server.js"
   },
   "files": [
     "dist"
