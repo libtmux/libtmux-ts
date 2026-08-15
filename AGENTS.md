@@ -10,6 +10,28 @@ characters, followed by a blank line, a `why:` paragraph explaining the
 necessity, and a `what:` list of the changes. Types: `feat`, `fix`,
 `refactor`, `docs`, `chore`, `test`, `style`, `ci`.
 
+## Layout
+
+A workspace. `packages/libtmux` is the library and the only thing meant for
+npm; `packages/mcp` and `packages/workspace` are consumers built on it, and
+`examples/` holds runnable examples. All three are `private`, and each declares
+its own dependencies — a dependency the root happens to install is not one a
+package may use.
+
+An in-repo consumer resolves `libtmux` to source through `paths` in its own
+tsconfig, so a branded class has one type identity rather than one per build
+output. The published `exports` deliberately name only `dist`: source is not in
+the tarball, so no condition may point at it.
+
+Consumer tests use the library's real-tmux fixture harness directly, across the
+package boundary. That harness reaches into the library's internals and cannot
+be published, so it stays where it is and in-repo consumers reach for it by
+path. Nothing outside this repository needs it.
+
+`attic/` is where reference material goes to rest. `packages/libtmux/parity` is
+not that: it is a gate input, read by `check-parity.ts`, `generate-formats.ts`
+and five unit tests, and it lives beside its readers.
+
 ## Toolchain
 
 Bun, `oxlint`, `oxfmt`, `tsgolint`. `package.json` is the list of gates; run
