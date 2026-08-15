@@ -1,6 +1,7 @@
 import { readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
@@ -14,6 +15,7 @@ import {
   knownClis,
   parseJsonc,
   parseServerTables,
+  PUBLISHED_PACKAGE,
   readServer,
   removeServerTable,
   renderServerTable,
@@ -26,6 +28,8 @@ import {
 } from "../../scripts/mcp_swap.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+
+const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 
 /**
  * The config surgery behind `mcp_swap`.
@@ -75,6 +79,36 @@ describe("source specs", () => {
 
   test("defaults a published source to the latest release", () => {
     expect(buildSpec({ kind: "published" }).args).toEqual(["-y", "@libtmux/mcp@latest"]);
+  });
+
+  test("names a package this workspace publishes, not the bin inside one", async () => {
+    // `mcp_swap` writes an install command into somebody's agent config, and
+    // nothing else here reads it back. It named `libtmux-mcp` — the executable
+    // inside the package rather than the package — for as long as that shipped,
+    // and npx answered E404 every time. The Markdown gates never saw it: they
+    // check ```console blocks, and this command is built in TypeScript.
+    //
+    // Answered from the manifests rather than the registry, so the gate holds
+    // offline and cannot go red because npm is having a bad day.
+    const paths = await Array.fromAsync(
+      new Bun.Glob("packages/*/package.json").scan({ cwd: repositoryRoot }),
+    );
+    const manifests = (await Promise.all(
+      paths.map(async (path) => Bun.file(join(repositoryRoot, path)).json()),
+    )) as { bin?: Record<string, string>; name?: string; private?: boolean }[];
+
+    const published = manifests
+      .filter((manifest) => manifest.private !== true)
+      .map((manifest) => manifest.name);
+    expect(published.length).toBeGreaterThan(0);
+    expect(published).toContain(PUBLISHED_PACKAGE);
+
+    // The specific way it was wrong: a bin name is not installable.
+    const binNames = manifests.flatMap((manifest) => Object.keys(manifest.bin ?? {}));
+    expect(binNames).not.toContain(PUBLISHED_PACKAGE);
+
+    // And the command a caller actually receives carries that same name.
+    expect(buildSpec({ kind: "published" }).args[1]).toBe(`${PUBLISHED_PACKAGE}@latest`);
   });
 
   test("refuses a checkout source with no checkout", () => {
