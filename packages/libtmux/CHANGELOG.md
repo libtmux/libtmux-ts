@@ -11,6 +11,31 @@ there is no second tag to remember.
 
 ## Unreleased
 
+## 0.0.1-alpha.7
+
+### Fixed
+
+`mcp_swap` wrote `npx -y libtmux-mcp@<version>` into an agent's MCP config for
+its `published` source. That is the executable inside the package rather than
+the package, so npx resolved nothing and the server never started; it now names
+`@libtmux/mcp`.
+
+### Documentation
+
+Install instructions name the package on its own — `bun add libtmux`. An
+`alpha` dist-tag was documented and then could not be created: trusted
+publishing authenticates `npm publish` and nothing else, so writing a second
+tag would need a token in the repository. `latest` already points at the newest
+prerelease, and every page says the release is an alpha, so there is one tag
+and the docs match it.
+
+### Release
+
+A registry error that was not a 404 used to be read as "this package has never
+been published", so a network blip during a release could skip a package while
+reporting success. Anything other than a 404 now stops the release. The MCP
+manifest no longer needs correcting by npm at publish time.
+
 ## 0.0.1-alpha.6
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "libtmux",
-  "version": "0.0.1-alpha.6",
+  "version": "0.0.1-alpha.7",
   "description": "Typed, Bun-first TypeScript control of tmux: immutable snapshots, declarative queries, and a fully typed session, window, and pane API.",
   "keywords": [
     "automation",
