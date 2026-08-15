@@ -18,9 +18,7 @@ function scopeArguments(
  * as `-NAME`. The value is unquoted and may itself contain `=` and spaces, so
  * only the first `=` separates the two.
  */
-export function parseEnvironmentLine(
-  line: string,
-): readonly [string, EnvironmentValue] | undefined {
+function parseEnvironmentLine(line: string): readonly [string, EnvironmentValue] | undefined {
   if (line === "") return undefined;
   if (line.startsWith("-")) return [line.slice(1), null];
   const separator = line.indexOf("=");
