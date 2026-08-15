@@ -1,0 +1,108 @@
+name: publish
+
+# Tag the workspace, not a package: every package carries the same version and
+# is released together, whether or not each one changed.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Pack and check without publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # Trusted publishing: npm mints its credential from this token, so no
+  # NODE_AUTH_TOKEN exists to leak or rotate.
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      # Publishing is npm's, not Bun's: trusted publishing needs npm CLI
+      # 11.5.1 or later, which detects the OIDC environment on its own.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Check the npm CLI is new enough for trusted publishing
+        run: |
+          npm --version
+          node --version
+
+      - run: bun install --frozen-lockfile
+
+      - name: Refuse a tag that disagrees with the manifests
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "not a tag run; skipping the version check"
+            exit 0
+          fi
+          for package in libtmux mcp workspace; do
+            version="$(jq -r .version "packages/$package/package.json")"
+            if [ "$version" != "$tag" ]; then
+              echo "::error::packages/$package is $version but the tag says $tag"
+              exit 1
+            fi
+          done
+          echo "every package is $tag"
+
+      - name: Build every package
+        run: |
+          bun --cwd packages/libtmux run build
+          bun --cwd packages/mcp run build
+          bun --cwd packages/workspace run build
+
+      - name: Check what would ship
+        run: |
+          bun --cwd packages/libtmux run test:package
+          bun --cwd packages/mcp run test:package
+          bun --cwd packages/workspace run test:package
+
+      # Each package is skipped when its version is already on the registry, so
+      # releasing a version that only changed one of them is not an error, and
+      # a re-run of a partly-finished release completes it rather than failing.
+      - name: Publish
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          dry_run="$DRY_RUN"
+          for package in libtmux mcp workspace; do
+            name="$(jq -r .name "packages/$package/package.json")"
+            version="$(jq -r .version "packages/$package/package.json")"
+            # A trusted publisher is configured on an existing package, so one
+            # that has never been published cannot authenticate here. Say so
+            # rather than failing the release of everything beside it.
+            if ! npm view "$name" version >/dev/null 2>&1; then
+              echo "::notice::$name has never been published. Publish it once locally, configure its trusted publisher, and the next tag will carry it."
+              continue
+            fi
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already published; skipping"
+              continue
+            fi
+            if [ "$dry_run" = 'true' ]; then
+              echo "would publish $name@$version"
+              ( cd "packages/$package" && npm publish --dry-run --tag alpha )
+              continue
+            fi
+            echo "publishing $name@$version"
+            # --tag alpha keeps `latest` free while the version is a prerelease.
+            ( cd "packages/$package" && npm publish --tag alpha )
+          done

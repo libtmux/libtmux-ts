@@ -38,9 +38,28 @@ export type Workspace = z.infer<typeof workspaceSchema>;
 export type WorkspaceWindow = z.infer<typeof windowSchema>;
 export type WorkspacePane = z.infer<typeof paneSchema>;
 
-/** Parse a YAML or JSON workspace, rejecting anything the schema does not allow. */
-export function parseWorkspace(source: string): Workspace {
-  return workspaceSchema.parse(Bun.YAML.parse(source));
+/** Validate a parsed workspace, rejecting anything the schema does not allow. */
+export function parseWorkspace(value: unknown): Workspace {
+  return workspaceSchema.parse(value);
+}
+
+/**
+ * Parse a YAML or JSON workspace, then validate it.
+ *
+ * YAML parsing is Bun's, and this package otherwise runs anywhere — so this is
+ * the one function that does not. Reached from Node it says so, rather than
+ * failing on an undefined global; parse the document yourself and hand the
+ * result to {@link parseWorkspace}.
+ */
+export function parseWorkspaceYaml(source: string): Workspace {
+  const yaml = (globalThis as { Bun?: { YAML?: { parse: (source: string) => unknown } } }).Bun
+    ?.YAML;
+  if (yaml === undefined) {
+    throw new Error(
+      "parseWorkspaceYaml needs Bun's YAML parser; parse the document yourself and use parseWorkspace",
+    );
+  }
+  return parseWorkspace(yaml.parse(source));
 }
 
 function asCommands(value: string | readonly string[] | undefined): readonly string[] {

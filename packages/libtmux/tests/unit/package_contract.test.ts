@@ -73,14 +73,12 @@ const expectedScripts = {
 const expectedDependencies = {};
 
 const expectedDevDependencies = {
-  "@arethetypeswrong/cli": "0.18.5",
   "@types/bun": "1.3.14",
   "@types/node": "22.20.1",
   knip: "6.32.0",
   oxfmt: "0.62.0",
   oxlint: "1.77.0",
   "oxlint-tsgolint": "7.0.2001",
-  publint: "0.3.23",
   typescript: "7.0.2",
   zod: "4.4.3",
 };
@@ -141,10 +139,24 @@ describe("package contract", () => {
       "parseLegacyWhere",
     ]);
     expect(packageManifest.name).toBe("libtmux");
-    expect(packageManifest.version).toBe("0.1.0");
-    // Publication metadata is required for the package to be evaluated at all;
-    // flipping `private` is the maintainer's release decision, not this gate's.
-    expect(packageManifest.private).toBe(true);
+    // A prerelease while the API is still moving. The exact number is not
+    // pinned: it changes every release, and a gate that has to be edited to
+    // release is a gate people learn to edit.
+    expect(packageManifest.version).toMatch(/^\d+\.\d+\.\d+-alpha\.\d+$/u);
+    // Every package in the workspace ships together under one version, so a
+    // tag names a state of the whole repository rather than of one package.
+    const siblings = await Promise.all(
+      ["mcp", "workspace"].map(async (sibling) =>
+        JSON.parse(
+          await readFile(new URL(`../../../${sibling}/package.json`, import.meta.url), "utf8"),
+        ),
+      ),
+    );
+    for (const sibling of siblings as Array<{ version: string }>) {
+      expect(sibling.version).toBe(packageManifest.version);
+    }
+    // Published: `files` and `exports` below are what a consumer receives.
+    expect(packageManifest.private).toBeUndefined();
     expect(packageManifest.license).toBe("MIT");
     expect(packageManifest.description).toContain("tmux");
     expect(packageManifest.repository).toEqual({

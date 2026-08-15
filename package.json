@@ -13,11 +13,13 @@
     "typecheck:readme": "bun scripts/check-readme.ts"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
     "@types/bun": "1.3.14",
     "@types/node": "22.20.1",
     "oxfmt": "0.62.0",
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
+    "publint": "0.3.23",
     "typescript": "7.0.2"
   },
   "overrides": {
