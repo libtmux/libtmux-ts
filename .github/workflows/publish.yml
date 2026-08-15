@@ -117,14 +117,16 @@ jobs:
             fi
             echo "publishing $name@$version"
             # Always `latest`, stated rather than inherited: every version is a
-            # prerelease for now, so holding the tag back would only mean
-            # `npm i` fetched an older alpha than the one just released.
+            # prerelease for now, so the newest alpha is the one `npm i` should
+            # fetch, and holding the tag back would only serve an older one.
+            #
+            # One tag, and deliberately so. An `alpha` tag beside it was tried
+            # and could not be written: trusted publishing mints its credential
+            # for `npm publish` alone, so `npm dist-tag add` falls back to the
+            # placeholder `NODE_AUTH_TOKEN` that setup-node writes and fails
+            # E401. Making it work needs a real token in the repository, which
+            # is the one thing publishing this way exists to avoid — and the
+            # tag bought nothing, because `latest` already points at the newest
+            # prerelease and every page here says the release is alpha.
             ( cd "packages/$package" && npm publish --tag latest )
-            # And `alpha` beside it, so `npm i $name@alpha` is a thing someone
-            # can write on purpose rather than having to look up which version
-            # happens to be current. Best effort: the release already succeeded
-            # by this point, and a missing convenience tag must not undo it.
-            if ! npm dist-tag add "$name@$version" alpha; then
-              echo "::warning::published $name@$version but could not add the alpha dist-tag"
-            fi
           done

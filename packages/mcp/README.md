@@ -32,7 +32,7 @@ Nothing to install ahead of time: the server speaks MCP over stdio, so an MCP
 client launches it as a subprocess. To pin it in a project instead:
 
 ```console
-$ bun add @libtmux/mcp@alpha
+$ bun add @libtmux/mcp
 ```
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.

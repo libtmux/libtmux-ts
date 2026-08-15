@@ -46,22 +46,22 @@ then query it like data.
 ## Quickstart
 
 ```console
-$ bun add libtmux@alpha
+$ bun add libtmux
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i libtmux@alpha
+$ npm i libtmux
 ```
 
 ```console
-$ pnpm add libtmux@alpha
+$ pnpm add libtmux
 ```
 
 ```console
-$ yarn add libtmux@alpha
+$ yarn add libtmux
 ```
 
 </details>
@@ -152,7 +152,7 @@ Three packages, released together, each usable on its own.
 ### [libtmux](packages/libtmux) — the library
 
 ```console
-$ bun add libtmux@alpha
+$ bun add libtmux
 ```
 
 ```ts
@@ -225,7 +225,7 @@ Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
 ```console
-$ bun add @libtmux/workspace@alpha
+$ bun add @libtmux/workspace
 ```
 
 ```ts

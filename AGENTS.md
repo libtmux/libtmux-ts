@@ -20,9 +20,12 @@ dependencies — a dependency the root happens to install is not one a package
 may use.
 
 A release is a tag, and the tag is refused unless every manifest agrees with
-it. Everything ships as a prerelease under both `latest` and `alpha` until the
-API stops moving; `latest` is stated rather than inherited, because holding it
-back would only make `npm i` fetch an older alpha.
+it. Everything ships as a prerelease under `latest` and no other dist-tag:
+while every version is an alpha, the newest one is what `npm i` should fetch,
+and `latest` is stated rather than inherited so it cannot lag. A second
+`alpha` tag was tried and removed — trusted publishing authenticates
+`npm publish` and nothing else, so writing one needs a token in the repository,
+which is what publishing this way exists to avoid.
 
 An in-repo consumer resolves `libtmux` to source through `paths` in its own
 tsconfig, so a branded class has one type identity rather than one per build

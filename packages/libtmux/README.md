@@ -15,7 +15,7 @@ criteria, and drive sessions, windows, and panes with a fully typed API.
 Requires tmux 3.2a or newer, and Node 22+ or Bun 1.3.14+.
 
 ```console
-$ bun add libtmux@alpha
+$ bun add libtmux
 ```
 
 > [!WARNING]
