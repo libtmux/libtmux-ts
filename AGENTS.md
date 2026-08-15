@@ -12,11 +12,17 @@ necessity, and a `what:` list of the changes. Types: `feat`, `fix`,
 
 ## Layout
 
-A workspace. `packages/libtmux` is the library and the only thing meant for
-npm; `packages/mcp` and `packages/workspace` are consumers built on it, and
-`examples/` holds runnable examples. All three are `private`, and each declares
-its own dependencies — a dependency the root happens to install is not one a
-package may use.
+A workspace. `packages/libtmux` is the library; `packages/mcp` and
+`packages/workspace` are consumers built on it, and all three are published to
+npm together under one version, from one tag. `examples/` holds runnable
+examples and is the only `private` package here. Each declares its own
+dependencies — a dependency the root happens to install is not one a package
+may use.
+
+A release is a tag, and the tag is refused unless every manifest agrees with
+it. Everything ships as a prerelease under both `latest` and `alpha` until the
+API stops moving; `latest` is stated rather than inherited, because holding it
+back would only make `npm i` fetch an older alpha.
 
 An in-repo consumer resolves `libtmux` to source through `paths` in its own
 tsconfig, so a branded class has one type identity rather than one per build
@@ -50,6 +56,20 @@ every example is compiled against the tree — a signature with no example fails
 `docs/api.md` is generated from the doc comments that implement it. Never edit
 it by hand; run `bun run docs:api` and commit the result.
 
+The prose around the snippets is gated too, from the root: `docs:links`
+resolves every relative link and `#anchor` in every tracked Markdown file,
+`docs:claims` holds the ` ```console ` blocks to paths and packages that exist
+and pins any tmux badge to the CI matrix, and `docs:runnable` requires a block
+marked
+
+```
+<!-- runs: examples/agent.ts -->
+```
+
+to be drawn line for line from that example — which the integration suite runs
+against a real server. Compiling a snippet proves it typechecks; only that
+marker proves it works.
+
 Do not write counts into prose — how many symbols are ported, how many fields a
 version is asked for. They go stale silently and no reader needs them. Counts
 that pin a fixture or guard an invariant are different, and belong in code.
@@ -75,7 +95,7 @@ own. Regenerate only to admit a new evidence path or to move to a different
 release, and commit the result:
 
 ```console
-$ bun scripts/check-parity.ts \
+$ bun packages/libtmux/scripts/check-parity.ts \
     --regenerate-baseline \
     --python-repo ../libtmux
 ```

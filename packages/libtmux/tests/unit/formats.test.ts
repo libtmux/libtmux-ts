@@ -541,7 +541,7 @@ describe("format registry", () => {
     expect(table).not.toContain("export type FormatFieldName =");
   });
 
-  test("renders the activated Task 5 parity rows without normalizing unrelated bytes", async () => {
+  test("renders the activated parity rows without normalizing unrelated bytes", async () => {
     const canonical = await readFile(parityManifestUrl, "utf8");
     const drifted = canonical.replace(
       '"./formats#value:FORMAT_SEPARATOR"',
