@@ -90,9 +90,11 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # Formatting and linting are the workspace's, not any one package's.
+      # Formatting, linting and the cross-package READMEs are the workspace's,
+      # not any one package's.
       - run: bun run format:check
       - run: bun run lint
+      - run: bun run typecheck:readme
 
       - name: Gate the library
         working-directory: packages/libtmux

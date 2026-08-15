@@ -12,6 +12,9 @@ dist-mcp/
 .parity-symbols-*.ts
 .parity-symbols-*.json
 
+# Scratch directory the README gate writes and removes again
+.readme-check-*/
+
 # Coverage
 coverage/
 *.lcov

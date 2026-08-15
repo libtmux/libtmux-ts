@@ -9,7 +9,8 @@
   "scripts": {
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "lint": "oxlint . --ignore-pattern packages/libtmux/tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun packages/libtmux/scripts/check-type-aware-lint.ts"
+    "lint": "oxlint . --ignore-pattern packages/libtmux/tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun packages/libtmux/scripts/check-type-aware-lint.ts",
+    "typecheck:readme": "bun scripts/check-readme.ts"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",
