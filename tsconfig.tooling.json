@@ -18,6 +18,7 @@
   "exclude": [
     "tests/types/**",
     "tests/fixtures/negative-declarations/**",
-    "tests/fixtures/type-aware-lint/no_floating_promise.ts"
+    "tests/fixtures/type-aware-lint/no_floating_promise.ts",
+    "tests/fixtures/ambient-free/**"
   ]
 }
