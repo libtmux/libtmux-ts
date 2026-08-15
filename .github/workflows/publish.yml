@@ -102,9 +102,20 @@ jobs:
             # A trusted publisher is configured on an existing package, so one
             # that has never been published cannot authenticate here. Say so
             # rather than failing the release of everything beside it.
-            if ! npm view "$name" version >/dev/null 2>&1; then
-              echo "::notice::$name has never been published. Publish it once locally, configure its trusted publisher, and the next tag will carry it."
-              continue
+            #
+            # Only a 404 means that. `npm view` also exits nonzero when the
+            # registry is unreachable, rate-limited, or having an outage, and
+            # treating those the same way would skip a package and report the
+            # release a success having shipped nothing — the same shape as the
+            # `bun --cwd` bug above, where every step passed while doing
+            # nothing. Anything that is not a 404 stops the release.
+            if ! view_error="$(npm view "$name" version 2>&1)"; then
+              if printf '%s' "$view_error" | grep -q 'E404'; then
+                echo "::notice::$name has never been published. Publish it once locally, configure its trusted publisher, and the next tag will carry it."
+                continue
+              fi
+              echo "::error::could not ask the registry about $name: $view_error"
+              exit 1
             fi
             if npm view "$name@$version" version >/dev/null 2>&1; then
               echo "$name@$version is already published; skipping"
