@@ -187,15 +187,18 @@ export function fromEntry(entry: unknown, dialect: Dialect): ServerSpec | undefi
 /**
  * Where the server this repository builds actually lives.
  *
- * The MCP server is not part of the published package: it imports the MCP SDK
+ * The MCP server is not part of the `libtmux` package: it imports the MCP SDK
  * and a schema library, and making those runtime dependencies of `libtmux`
  * would cost the property the package leads with — that installing it installs
  * nothing else. So `dev` and `build` run it from a checkout, and `published`
- * names a package that ships it separately.
+ * names the package that ships it beside `libtmux`.
+ *
+ * That name is the one on the registry, not the executable inside it:
+ * `libtmux-mcp` is the `bin`, and asking npx for it resolves nothing.
  */
 export const DEV_ENTRY = "consumers/mcp/server.ts";
 export const BUILD_ENTRY = "dist-mcp/server.js";
-export const PUBLISHED_PACKAGE = "libtmux-mcp";
+export const PUBLISHED_PACKAGE = "@libtmux/mcp";
 
 export interface SourceOptions {
   readonly env?: Readonly<Record<string, string>>;

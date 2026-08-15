@@ -70,11 +70,11 @@ describe("source specs", () => {
     // stop to ask, which under an agent looks like a hang.
     expect([dev.command, ...dev.args]).toEqual(["bun", "run", "/repo/consumers/mcp/server.ts"]);
     expect([build.command, ...build.args]).toEqual(["node", "/repo/dist-mcp/server.js"]);
-    expect([published.command, ...published.args]).toEqual(["npx", "-y", "libtmux-mcp@1.2.3"]);
+    expect([published.command, ...published.args]).toEqual(["npx", "-y", "@libtmux/mcp@1.2.3"]);
   });
 
   test("defaults a published source to the latest release", () => {
-    expect(buildSpec({ kind: "published" }).args).toEqual(["-y", "libtmux-mcp@latest"]);
+    expect(buildSpec({ kind: "published" }).args).toEqual(["-y", "@libtmux/mcp@latest"]);
   });
 
   test("refuses a checkout source with no checkout", () => {
