@@ -63,17 +63,30 @@ jobs:
           done
           echo "every package is $tag"
 
-      - name: Build every package
+      # `cd`, not `bun --cwd`: that flag does not exist, and bun answers an
+      # unknown flag with its usage text and exit code 0 — so every step passed
+      # while doing nothing, and the first release shipped a package with no
+      # dist in it.
+      - name: Build and check every package
         run: |
-          bun --cwd packages/libtmux run build
-          bun --cwd packages/mcp run build
-          bun --cwd packages/workspace run build
+          for package in libtmux mcp workspace; do
+            ( cd "packages/$package" && bun run test:package )
+          done
 
-      - name: Check what would ship
+      - name: Refuse a tarball with no build output
         run: |
-          bun --cwd packages/libtmux run test:package
-          bun --cwd packages/mcp run test:package
-          bun --cwd packages/workspace run test:package
+          for package in libtmux mcp workspace; do
+            ( cd "packages/$package"
+              npm pack --dry-run --json > /tmp/pack.json
+              count="$(jq -r '.[0].files | map(select(.path | startswith("dist/"))) | length' /tmp/pack.json)"
+              name="$(jq -r .name package.json)"
+              if [ "$count" -lt 1 ]; then
+                echo "::error::$name would ship $count files from dist"
+                exit 1
+              fi
+              echo "$name ships $count files from dist"
+            )
+          done
 
       # Each package is skipped when its version is already on the registry, so
       # releasing a version that only changed one of them is not an error, and

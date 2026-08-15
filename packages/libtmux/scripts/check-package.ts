@@ -5,7 +5,9 @@
  * three questions about it: does it resolve for the runtimes we claim, is the
  * manifest well formed, and does it carry anything a consumer has no use for.
  */
-import { rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -21,6 +23,23 @@ const forbiddenEntries: readonly (readonly [prefix: string, reason: string])[] =
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
   process.exit(1);
+}
+
+/**
+ * Find an installed command, wherever the workspace put it.
+ *
+ * A workspace hoists shared tooling to its root, so a package's own
+ * `node_modules/.bin` is not where the binary reliably is.
+ */
+function resolveBinary(name: string): string {
+  let directory = tsRoot;
+  for (;;) {
+    const candidate = join(directory, "node_modules", ".bin", name);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(directory);
+    if (parent === directory) fail(`${name} is not installed anywhere above ${tsRoot}`);
+    directory = parent;
+  }
 }
 
 async function run(command: readonly string[]): Promise<string> {
@@ -57,9 +76,16 @@ for (const [prefix, reason] of forbiddenEntries) {
 if (!entries.includes("dist/index.js")) fail("the packed tarball has no root entrypoint");
 if (!entries.includes("dist/index.d.ts")) fail("the packed tarball has no root declaration");
 
-await run(["./node_modules/.bin/publint"]);
-await run(["./node_modules/.bin/attw", "--pack", ".", "--profile", "esm-only"]);
-await rm(new URL("../libtmux-0.1.0.tgz", import.meta.url), { force: true });
+await run([resolveBinary("publint")]);
+await run([resolveBinary("attw"), "--pack", ".", "--profile", "esm-only"]);
+
+// Named from the manifest: a hardcoded version leaves the packed tarball
+// behind the moment it is bumped.
+const shipped = JSON.parse(await readFile(join(tsRoot, "package.json"), "utf8")) as {
+  name: string;
+  version: string;
+};
+await rm(join(tsRoot, `${shipped.name}-${shipped.version}.tgz`), { force: true });
 
 process.stdout.write(
   `${JSON.stringify({
