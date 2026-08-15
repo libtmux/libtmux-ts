@@ -55,6 +55,12 @@ jobs:
             https://github.com/tmux-python/libtmux.git "$RUNNER_TEMP/libtmux-python"
           echo "LIBTMUX_PYTHON_REPO=$RUNNER_TEMP/libtmux-python" >> "$GITHUB_ENV"
 
+      # Resolve and install the oracle's environment once, here. Left to the
+      # suite, the first oracle call pays for it inside a test's deadline and
+      # fails on a cold cache while later calls pass on a warm one.
+      - name: Warm the oracle environment
+        run: uv sync --project "$RUNNER_TEMP/libtmux-python"
+
       - name: Point the emitted-Node lane at the provisioned Node 22
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 

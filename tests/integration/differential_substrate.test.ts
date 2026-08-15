@@ -35,7 +35,15 @@ withOracle("differential substrate", () => {
         socketPath: rawServer.socketPath,
       });
       const oracle = await queryPythonOracle(oracleRoot, pythonServer.socketPath, "python-1");
-      expect(oracle.response).toBeDefined();
+      // Undefined means the oracle process produced nothing decodable, and the
+      // reason is on its stderr. Asserting on the bare value reports "Received:
+      // undefined" and throws away the only thing that says why.
+      if (oracle.response === undefined) {
+        const closed = await oracle.result;
+        throw new Error(
+          `oracle produced no response (exit ${String(closed.code)}): ${closed.stderr.trim()}`,
+        );
+      }
       expect(raw).toMatchObject({
         implementation: "raw-tmux",
         protocol: DIFFERENTIAL_PROTOCOL,
