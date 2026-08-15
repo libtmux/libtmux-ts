@@ -15,7 +15,12 @@ import { fileURLToPath } from "node:url";
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const readmes = ["README.md", "packages/mcp/README.md", "packages/workspace/README.md"];
+const readmes = [
+  "README.md",
+  "examples/README.md",
+  "packages/mcp/README.md",
+  "packages/workspace/README.md",
+];
 
 interface Block {
   readonly code: string;
@@ -66,9 +71,16 @@ for (const [index, block] of blocks.entries()) {
 
 const source = [
   'import type { Selection, ServerSnapshot, Session } from "libtmux";',
+  // Aliased: a block is free to `import { Server }` as a value, and the two
+  // names would otherwise collide in the one file every block is spliced into.
+  'import type { Server as ServerHandle } from "libtmux";',
   ...[...imports].sort(),
   "declare const snapshot: ServerSnapshot;",
   "declare const selection: Selection<Session>;",
+  // So a recipe can be a literal excerpt of the example that runs it. The
+  // example receives its server as a parameter, and a README block that had to
+  // construct one could not be drawn from that file line for line.
+  "declare const server: ServerHandle;",
   "export {};",
   "",
   ...bodies,

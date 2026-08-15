@@ -95,6 +95,11 @@ jobs:
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck:readme
+      # The prose around the compiled snippets: that every link resolves, and
+      # that the shell blocks name paths and packages this workspace has.
+      - run: bun run docs:links
+      - run: bun run docs:claims
+      - run: bun run docs:runnable
 
       - name: Gate the library
         working-directory: packages/libtmux
