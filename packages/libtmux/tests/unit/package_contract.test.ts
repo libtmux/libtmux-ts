@@ -167,7 +167,7 @@ describe("package contract", () => {
     expect(packageManifest.bugs).toEqual({
       url: "https://github.com/libtmux/libtmux-ts/issues",
     });
-    expect(packageManifest.author).toBe("libtmux contributors");
+    expect(packageManifest.author).toBe("Tony Narlock <tony@git-pull.com>");
     expect(packageManifest.keywords).toContain("tmux");
     expect(packageManifest.type).toBe("module");
     expect(packageManifest.main).toBe("./dist/index.js");

@@ -15,6 +15,7 @@
     "url": "https://github.com/libtmux/libtmux-ts/issues"
   },
   "license": "MIT",
+  "author": "Tony Narlock <tony@git-pull.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/libtmux/libtmux-ts.git",
