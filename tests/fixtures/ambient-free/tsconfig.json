@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
+    "lib": ["ESNext"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": { "libtmux": ["../../../dist/index.d.ts"] },
+    "skipLibCheck": false,
+    "strict": true,
+    "target": "esnext",
+    "types": []
+  },
+  "files": ["consumer.ts"]
+}

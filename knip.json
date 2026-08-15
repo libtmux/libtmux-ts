@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/index.ts",
+    "src/client.ts",
+    "src/common.ts",
+    "src/constants.ts",
+    "src/exc.ts",
+    "src/formats.ts",
+    "src/pane.ts",
+    "src/selection.ts",
+    "src/server.ts",
+    "src/session.ts",
+    "src/window.ts",
+    "scripts/*.ts",
+    "consumers/**/*.ts",
+    "tests/**/*.test.ts",
+    "tests/support/bun_hooks.ts",
+    "tests/fixtures/ambient-free/consumer.ts",
+    "tests/fixtures/type-aware-lint/no_floating_promise.ts"
+  ],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "consumers/**/*.ts", "tests/**/*.ts"],
+  "ignoreBinaries": ["uv"],
+  "ignoreDependencies": ["@arethetypeswrong/cli", "publint"]
+}

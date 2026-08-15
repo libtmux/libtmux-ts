@@ -1,0 +1,81 @@
+export { Client } from "./client.js";
+export { Pane, type PanePlans } from "./pane.js";
+export { Server, type ServerOptions } from "./server.js";
+export { Session, type SessionPlans } from "./session.js";
+export { Window, type WindowPlans } from "./window.js";
+
+export {
+  parseLegacyWhere,
+  type PaneWhere,
+  type RegexCriteriaData,
+  type Selection,
+  type SessionWhere,
+  type WhereDocumentV1,
+  type WhereOf,
+  type WindowWhere,
+} from "./selection.js";
+
+export type {
+  AbortLike,
+  CaptureOptions,
+  CmdOptions,
+  ConnectedServer,
+  ChooseTreeOptions,
+  EnvironmentScope,
+  EnvironmentValue,
+  HookScope,
+  IfShellOptions,
+  MenuEntry,
+  MenuItem,
+  ManagedServer,
+  MoveWindowOptions,
+  PlannedOperation,
+  NewSessionOptions,
+  NewWindowOptions,
+  OptionScope,
+  PopupOptions,
+  RespawnOptions,
+  ResizeOptions,
+  ResizeWindowOptions,
+  RunShellOptions,
+  SendKeysOptions,
+  ServerSnapshot,
+  SetEnvironmentOptions,
+  SplitOptions,
+  TmuxClientDetachedEvent,
+  TmuxClientSessionChangedEvent,
+  TmuxEvent,
+  TmuxEventStream,
+  TmuxExitEvent,
+  TmuxExtendedOutputEvent,
+  TmuxLayoutChangeEvent,
+  TmuxMessageEvent,
+  TmuxOutputEvent,
+  TmuxPaneFlowEvent,
+  TmuxPaneModeChangedEvent,
+  TmuxPasteBufferEvent,
+  TmuxReconnectedEvent,
+  TmuxSessionEvent,
+  TmuxSessionWindowChangedEvent,
+  TmuxSessionsChangedEvent,
+  TmuxUnknownEvent,
+  TmuxVersion,
+  TransportMode,
+  TmuxWindowLifecycleEvent,
+  TmuxWindowPaneChangedEvent,
+  TmuxWindowRenamedEvent,
+  WatchOptions,
+  WindowTarget,
+} from "./types.js";
+
+export {
+  DeprecatedError,
+  LibTmuxException,
+  MultipleMatchesError,
+  MultipleObjectsReturned,
+  NoMatchError,
+  ObjectDoesNotExist,
+  QueryValidationError,
+  TmuxCommandError,
+} from "./exc.js";
+export { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";

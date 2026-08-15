@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "compiler": {
+    "package": "typescript",
+    "version": "7.0.2",
+    "packageJsonSha256": "3722b30210616a13a3213ded11575ba6b2dbab10c32a5ef67afca8513e27017e"
+  },
+  "inputs": [
+    {
+      "path": "tests/types/stress.test.ts",
+      "sha256": "526592c66dbb9fe2a87b525a2b850cb5cde6c1600f63283d1c9314367e2e99f2"
+    },
+    {
+      "path": "tests/types/tsconfig.performance.json",
+      "sha256": "1257050ea471b388aed599150540248fef166342dc6e0a90fdc8ae3dd054a202"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "73981da887a60b5de97c2f2d22e45b8b13985d31630f9dedf5283c1edd31acae"
+    }
+  ],
+  "maxInstantiations": 288456
+}
