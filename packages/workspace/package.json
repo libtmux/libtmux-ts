@@ -1,6 +1,6 @@
 {
   "name": "@libtmux/workspace",
-  "version": "0.0.1-alpha.3",
+  "version": "0.0.1-alpha.4",
   "description": "Declarative tmux workspace builder, built on libtmux.",
   "keywords": [
     "libtmux",
@@ -47,7 +47,7 @@
     "test:package": "bun run build && ../../node_modules/.bin/publint && ../../node_modules/.bin/attw --pack . --profile esm-only"
   },
   "dependencies": {
-    "libtmux": "0.0.1-alpha.3",
+    "libtmux": "0.0.1-alpha.4",
     "zod": "4.4.3"
   },
   "devDependencies": {},
