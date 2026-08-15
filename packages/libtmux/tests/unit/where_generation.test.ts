@@ -485,7 +485,12 @@ describe("generated Where contract", () => {
     } finally {
       await rm(temporary, { force: true, recursive: true });
     }
-  });
+    // Sized for what it does rather than left on the 5000ms default: this test
+    // reads the generated region through TypeScript's Go API, which is
+    // retried up to three times when a contended run reports a cancellation.
+    // Three spawns of a compiler do not fit in five seconds on a busy machine,
+    // and the default turned that into a failure about relation metadata.
+  }, 60_000);
 
   test.each([
     {

@@ -14,19 +14,37 @@ const ignoreSigtermFixture = fileURLToPath(
 );
 const echoFixture = fileURLToPath(new URL("../fixtures/echo_argv.mjs", import.meta.url));
 
-async function waitForFile(path: string, attempts = 100): Promise<void> {
-  try {
-    await readFile(path);
-  } catch {
-    if (attempts === 1) throw new Error("exit marker was not created");
+const holderPid = /^[1-9]\d*$/u;
+
+/**
+ * Wait for a marker to carry usable content, not merely to exist.
+ *
+ * Both fixtures write their markers with `writeFileSync`, which creates the
+ * file before the bytes land. Waiting only for existence therefore reads zero
+ * bytes often enough to matter on a loaded runner, and a PID that was about to
+ * be valid gets rejected as "holder PID is invalid" — which is how this file
+ * failed in CI rather than through any of the timing bounds it asserts.
+ */
+async function waitForMarker(
+  path: string,
+  isComplete: (content: string) => boolean = (content) => content.length > 0,
+  // Two seconds of 5ms polls. A marker that is coming arrives in a few of
+  // them; the cap is here to fail a marker that is never coming, and half a
+  // second was close enough to a loaded node startup to fail the first kind.
+  attempts = 400,
+): Promise<string> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop -- one poll at a time, by design.
+    const content = await readFile(path, "utf8").catch(() => undefined);
+    if (content !== undefined && isComplete(content)) return content;
+    // eslint-disable-next-line no-await-in-loop -- the interval between polls is the point.
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await waitForFile(path, attempts - 1);
   }
+  throw new Error(`marker at ${path} never carried usable content`);
 }
 
 async function readHolderIdentity(path: string): Promise<ProcessIdentity> {
-  const rawPid = (await readFile(path, "utf8")).trim();
-  if (!/^[1-9]\d*$/u.test(rawPid)) throw new Error("holder PID is invalid");
+  const rawPid = (await waitForMarker(path, (content) => holderPid.test(content.trim()))).trim();
   const identity = await readProcessIdentity(Number(rawPid));
   if (identity === undefined) throw new Error("holder exited before identity capture");
   return identity;
@@ -94,7 +112,7 @@ describe("transport cancellation", () => {
     });
 
     try {
-      await waitForFile(markerPath);
+      await waitForMarker(markerPath);
       controller.abort();
       try {
         await execution;
@@ -116,11 +134,16 @@ describe("transport cancellation", () => {
   test("bounds execution time and reports an indeterminate timeout", async () => {
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
 
+    // SIGKILL is the assertion, and it only happens if the fixture got as far
+    // as installing its SIGTERM handler. A deadline shorter than a loaded node
+    // startup preempts that, SIGTERM alone ends it, and the test reports the
+    // wrong signal for the right behaviour. The deadline sits well above
+    // startup and well below the fixture's own exit.
     await expect(
       transport.execute({
-        args: [ignoreSigtermFixture, "--exit-after=2000"],
+        args: [ignoreSigtermFixture, "--exit-after=10000"],
         executable: process.execPath,
-        timeoutMs: 500,
+        timeoutMs: 1_500,
       }),
     ).rejects.toMatchObject({
       delivery: "indeterminate",
@@ -142,7 +165,6 @@ describe("transport cancellation", () => {
     let failure: unknown;
     let holder: ProcessIdentity | undefined;
     try {
-      await waitForFile(markerPath);
       holder = await readHolderIdentity(markerPath);
       const interruptedAt = performance.now();
       controller.abort();
@@ -182,14 +204,17 @@ describe("transport cancellation", () => {
     const markerPath = join(temporaryRoot, "holder.pid");
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const startedAt = performance.now();
+    // Long enough that the fixture reaches the point of publishing its holder
+    // PID before the transport gives up on it. A deadline shorter than a node
+    // startup kills the fixture first, and then the marker this test waits for
+    // is never written at all.
     const execution = transport.execute({
       args: [ignoreSigtermFixture, `--inherit-pipes=${markerPath}`],
       executable: process.execPath,
-      timeoutMs: 500,
+      timeoutMs: 2_000,
     });
     let holder: ProcessIdentity | undefined;
     try {
-      await waitForFile(markerPath);
       holder = await readHolderIdentity(markerPath);
       const outcome = await Promise.race([
         execution.then(
@@ -197,11 +222,11 @@ describe("transport cancellation", () => {
           (error: unknown) => ({ error, kind: "error" as const }),
         ),
         new Promise<{ readonly kind: "deadline" }>((resolve) =>
-          setTimeout(() => resolve({ kind: "deadline" }), 1_400),
+          setTimeout(() => resolve({ kind: "deadline" }), 6_000),
         ),
       ]);
       expect(outcome.kind).not.toBe("deadline");
-      expect(performance.now() - startedAt).toBeLessThan(4_000);
+      expect(performance.now() - startedAt).toBeLessThan(10_000);
       if (outcome.kind !== "error") throw new Error("expected transport timeout");
       expect(outcome.error).toBeInstanceOf(TransportError);
       expect(outcome.error).toMatchObject({ delivery: "indeterminate", kind: "timeout" });
@@ -252,15 +277,19 @@ describe("transport cancellation", () => {
     const controller = new AbortController();
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const execution = transport.execute({
-      args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "1200"],
+      args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"],
       executable: process.execPath,
       signal: controller.signal,
     });
     let holder: ProcessIdentity | undefined;
     try {
-      await waitForFile(markerPath);
       holder = await readHolderIdentity(markerPath);
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      // The marker is written from an `exit` handler, so seeing it means the
+      // child is exiting, not that the transport has observed it yet. The
+      // abort has to land after that observation to be testing precedence
+      // rather than racing it — and 25ms did not survive a loaded machine.
+      // Still far inside the 6s the descendant holds the pipes for.
+      await new Promise((resolve) => setTimeout(resolve, 250));
       const interruptedAt = performance.now();
       controller.abort();
 
@@ -281,20 +310,26 @@ describe("transport cancellation", () => {
     const markerPath = join(temporaryRoot, "exited");
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const startedAt = performance.now();
+    // The deadline has to sit between two events: the fixture starting and
+    // exiting, which costs a node startup, and the descendant releasing the
+    // pipes 6s later. At 300ms it sat on top of the first one — under four-way
+    // parallelism the child had not exited yet, so the transport reported an
+    // honest timeout and the test read it as a broken exit result. Bounded
+    // drainage is what is being measured, not how fast this machine forks.
     const execution = transport.execute({
-      args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "1200"],
+      args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"],
       executable: process.execPath,
-      timeoutMs: 300,
+      timeoutMs: 1_500,
     });
     let holder: ProcessIdentity | undefined;
     try {
-      await waitForFile(markerPath);
       holder = await readHolderIdentity(markerPath);
       const result = await execution;
 
       expect(result.returncode).toBe(0);
       expect(result.signal).toBeNull();
-      expect(performance.now() - startedAt).toBeLessThan(800);
+      // Well under the 6s hold: the point is that it did not wait for it.
+      expect(performance.now() - startedAt).toBeLessThan(4_000);
     } finally {
       await execution.catch(() => undefined);
       if (holder !== undefined) await stopHolder(holder);

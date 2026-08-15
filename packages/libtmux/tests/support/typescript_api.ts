@@ -3,8 +3,13 @@
  *
  * The API is a Go program, and this machine occasionally cancels one that
  * starts while other tsc processes are running — the build and the declaration
- * fixtures spawn their own — which surfaces as a nonzero exit with "context
- * canceled" on stderr. One retry clears it more often than not.
+ * fixtures spawn their own — which surfaces as "context canceled" on stderr.
+ * One retry clears it more often than not.
+ *
+ * The cancellation does not always take the exit code with it. A run that
+ * printed the notice and still exited 0 was returned unretried, and the caller
+ * asserting stderr is empty failed roughly one run in six — so the notice
+ * itself is the signal, not the status beside it.
  *
  * Serializing the two call sites with a lock was tried and rejected: the
  * contention is with every tsc process the suite starts, not just between
@@ -45,7 +50,7 @@ export async function runTypeScriptApi(
       new Response(child.stderr).text(),
     ]);
     last = { exitCode, stderr, stdout };
-    if (exitCode === 0 || !stderr.includes(CANCELLED)) return last;
+    if (!stderr.includes(CANCELLED)) return last;
   }
   return last;
 }
