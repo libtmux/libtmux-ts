@@ -112,11 +112,12 @@ jobs:
             fi
             if [ "$dry_run" = 'true' ]; then
               echo "would publish $name@$version"
-              ( cd "packages/$package" && npm publish --dry-run )
+              ( cd "packages/$package" && npm publish --dry-run --tag latest )
               continue
             fi
             echo "publishing $name@$version"
-            # Published to `latest`: every version is a prerelease for now, so
-            # holding `latest` back only means `npm i` fetches an older alpha.
-            ( cd "packages/$package" && npm publish )
+            # Always `latest`, stated rather than inherited: every version is a
+            # prerelease for now, so holding the tag back would only mean
+            # `npm i` fetched an older alpha than the one just released.
+            ( cd "packages/$package" && npm publish --tag latest )
           done
