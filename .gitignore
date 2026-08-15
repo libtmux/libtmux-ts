@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-mcp/
+*.tsbuildinfo
+*.tgz
+
+# Scratch files the parity gate writes next to the manifest and removes again;
+# an interrupted run can leave one behind.
+.parity-symbols-*.ts
+.parity-symbols-*.json
+
+# Coverage
+coverage/
+*.lcov
+
+# Editors
+*.swp
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Per-machine agent configuration, which does not belong to the project.
+# CLAUDE.md itself is tracked; only the local overrides are ignored.
+CLAUDE.local.md
+.claude/settings.local.json
