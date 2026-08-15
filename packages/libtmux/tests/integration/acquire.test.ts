@@ -1,5 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -17,6 +16,8 @@ import { TestServer } from "../../src/_internal/test/test_server.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandRequest, CommandTransport } from "../../src/_internal/transport/types.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function runtimeFor(
   server: TestServer,
@@ -42,7 +43,7 @@ function runtimeFor(
 }
 
 async function withServer(body: (server: TestServer) => Promise<void>): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx-acquire-"));
+  const parent = await makeTestDirectory("ltx-acquire-");
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run, root");
   if (published === undefined) await prepareRunRoot(runRoot);

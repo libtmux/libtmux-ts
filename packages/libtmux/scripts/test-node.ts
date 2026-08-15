@@ -1,12 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolveNode22 } from "../src/_internal/test/node22.js";
 import { reapStaleRunRoot } from "../src/_internal/test/run_root.js";
+import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
 
 interface Arguments {
   readonly expectMajor: number;
@@ -799,7 +799,7 @@ const args = parseArguments(process.argv.slice(2));
 const executable = await resolveNode(args.nodeArgument);
 const version = queryMajor(executable, args.expectMajor);
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
-const temporaryRoot = await mkdtemp(join(tmpdir(), "libtmux-node-scenarios-"));
+const temporaryRoot = await makeTestDirectory("ltx-node-scenarios-");
 const scenarioRunRoot =
   process.env.LIBTMUX_TEST_RUN_ROOT ?? join(temporaryRoot, "node, task4 root");
 // A liveness bound on the whole run, not a performance target: the scenarios

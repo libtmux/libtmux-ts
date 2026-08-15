@@ -13,7 +13,6 @@ import {
   copyFile,
   link,
   lstat,
-  mkdtemp,
   readFile,
   readdir,
   realpath,
@@ -23,7 +22,6 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -46,6 +44,8 @@ import {
   type TestServerRequestSnapshot,
 } from "../../src/_internal/test/test_server.js";
 import { createRegisteredTestServer } from "../support/fixture_registry.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -292,7 +292,7 @@ async function makeReplaceableControllerHarness(
 ): Promise<ReplaceableControllerHarness> {
   const tmux = Bun.which("tmux");
   if (tmux === null) throw new Error("tmux is required");
-  const parent = await mkdtemp(join(tmpdir(), `ltx4-controller-${name}-`));
+  const parent = await makeTestDirectory(`ltx4-controller-${name}-`);
   const root = join(parent, "root");
   const controllerExecutable = join(parent, "tmux");
   const cleanupExecutable = join(parent, "tmux-controller-recovery");
@@ -547,7 +547,7 @@ async function withTemporaryRunRoot<T>(
 ): Promise<T> {
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   if (published !== undefined) return body(published);
-  const parent = await mkdtemp(join(tmpdir(), "ltx4-it-"));
+  const parent = await makeTestDirectory("ltx4-it-");
   const runRoot = join(parent, name);
   await prepareRunRoot(runRoot);
   try {
@@ -731,7 +731,7 @@ await writeFile(${JSON.stringify(marker)}, "done");
 
 describe("supervised TestServer", () => {
   test("publishes owner v2 and a closed running fixture v3 record", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-generation-schema-"));
+    const parent = await makeTestDirectory("ltx4-generation-schema-");
     const runRoot = join(parent, "root");
     await prepareRunRoot(runRoot);
     let server: TestServer | undefined;
@@ -773,7 +773,7 @@ describe("supervised TestServer", () => {
   });
 
   test("snapshots entry inputs and authenticates the complete generated bootstrap", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-generation-bootstrap-"));
+    const parent = await makeTestDirectory("ltx4-generation-bootstrap-");
     const runRoot = join(parent, "root");
     const entered = join(parent, "entered");
     const argumentLog = join(parent, "bootstrap.argv");
@@ -1043,7 +1043,7 @@ describe("supervised TestServer", () => {
   });
 
   test("rejects a foreign daemon that wins the socket before bootstrap mutation", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-generation-winner-"));
+    const parent = await makeTestDirectory("ltx4-generation-winner-");
     const runRoot = join(parent, "root");
     const entered = join(parent, "entered");
     const argumentLog = join(parent, "bootstrap.argv");
@@ -1202,7 +1202,7 @@ describe("supervised TestServer", () => {
   }, 10_000);
 
   test("reaps an indeterminate delegated launch that times out after publishing its frame", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-launch-timeout-"));
+    const parent = await makeTestDirectory("ltx4-launch-timeout-");
     const runRoot = join(parent, "run");
     const marker = join(parent, "launch.frame");
     await prepareRunRoot(runRoot);
@@ -1231,7 +1231,7 @@ describe("supervised TestServer", () => {
   }, 10_000);
 
   test("preserves pre-authority evidence when the launch socket disappears", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-launch-socket-loss-"));
+    const parent = await makeTestDirectory("ltx4-launch-socket-loss-");
     const runRoot = join(parent, "run");
     const marker = join(parent, "launch.frame");
     const recoverySocket = join(parent, "recovery.sock");
@@ -1282,7 +1282,7 @@ describe("supervised TestServer", () => {
   }, 10_000);
 
   test("preserves an indeterminate launch whose socket moved before authority", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-launch-partial-timeout-"));
+    const parent = await makeTestDirectory("ltx4-launch-partial-timeout-");
     const runRoot = join(parent, "run");
     const marker = join(parent, "launch.frame");
     const recoverySocket = join(parent, "recovery.sock");
@@ -1312,7 +1312,7 @@ describe("supervised TestServer", () => {
   }, 10_000);
 
   test("authenticates a valid launch frame from a nonzero result before cleanup", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-nonzero-launch-frame-"));
+    const parent = await makeTestDirectory("ltx4-nonzero-launch-frame-");
     const runRoot = join(parent, "run");
     const marker = join(parent, "launch.frame");
     await prepareRunRoot(runRoot);
@@ -1367,7 +1367,7 @@ describe("supervised TestServer", () => {
   });
 
   test("preserves a launching reservation when a parsed daemon PID is already gone", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-gone-launch-pid-"));
+    const parent = await makeTestDirectory("ltx4-gone-launch-pid-");
     const runRoot = join(parent, "run");
     await prepareRunRoot(runRoot);
     const exited = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
@@ -1388,7 +1388,7 @@ describe("supervised TestServer", () => {
   });
 
   test("rejects a noncanonical launch PID before attempting recovery", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-bad-launch-pid-"));
+    const parent = await makeTestDirectory("ltx4-bad-launch-pid-");
     const runRoot = join(parent, "run");
     await prepareRunRoot(runRoot);
     const wrapper = await writeNoncanonicalPidLaunchWrapper(parent);
@@ -1531,7 +1531,7 @@ describe("supervised TestServer", () => {
   }
 
   test("preserves a body failure when fixture cleanup also reports a leak", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-create-cleanup-primary-"));
+    const parent = await makeTestDirectory("ltx4-create-cleanup-primary-");
     const runRoot = join(parent, "root");
     await prepareRunRoot(runRoot);
     const primary = new Error("body failed before cleanup");
@@ -1576,7 +1576,7 @@ describe("supervised TestServer", () => {
   }, 30_000);
 
   test("uses the authenticated daemon executable for the cleanup PID guard", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-cleanup-executable-"));
+    const parent = await makeTestDirectory("ltx4-cleanup-executable-");
     const runRoot = join(parent, "root");
     const callLog = join(parent, "tmux-calls.log");
     await prepareRunRoot(runRoot);
@@ -1600,7 +1600,7 @@ describe("supervised TestServer", () => {
 
   for (const mutation of ["add-unexpected", "replace-socket"] as const) {
     test(`preserves cleanup evidence after ${mutation}`, async () => {
-      const parent = await mkdtemp(join(tmpdir(), "ltx4-cleanup-mutation-"));
+      const parent = await makeTestDirectory("ltx4-cleanup-mutation-");
       const runRoot = join(parent, "root");
       const recoverySocket = join(parent, "recovery.sock");
       await prepareRunRoot(runRoot);
@@ -1635,7 +1635,7 @@ describe("supervised TestServer", () => {
   }
 
   test("accepts authenticated socket disappearance after the daemon exits", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-cleanup-socket-move-"));
+    const parent = await makeTestDirectory("ltx4-cleanup-socket-move-");
     const runRoot = join(parent, "root");
     const movedSocket = join(parent, "moved-socket");
     await prepareRunRoot(runRoot);
@@ -1670,7 +1670,7 @@ describe("supervised TestServer", () => {
 
   for (const status of [1, 7]) {
     test(`preserves a pre-authority launch failure with status ${String(status)}`, async () => {
-      const parent = await mkdtemp(join(tmpdir(), "ltx4-launch-status-"));
+      const parent = await makeTestDirectory("ltx4-launch-status-");
       const runRoot = join(parent, "run");
       await prepareRunRoot(runRoot);
       const wrapper = await writeExitStatusWrapper(parent, status);
@@ -1708,7 +1708,7 @@ describe("supervised TestServer", () => {
   });
 
   test("rejects an overlong Unix socket path before attempting tmux spawn", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-long-"));
+    const parent = await makeTestDirectory("ltx4-long-");
     const runRoot = join(parent, "x".repeat(120));
     await prepareRunRoot(runRoot);
     try {
@@ -1727,7 +1727,7 @@ describe("supervised TestServer", () => {
   });
 
   test("measures the conservative socket limit in UTF-8 bytes before spawn", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-byte-limit-"));
+    const parent = await makeTestDirectory("ltx4-byte-limit-");
     const runRoot = join(parent, "雪".repeat(40));
     await prepareRunRoot(runRoot);
     try {
@@ -1984,7 +1984,7 @@ describe("supervised TestServer", () => {
 
   for (const mode of ["partial-open", "dispose"] as const) {
     test(`does not retain a Bun process through a losing ControlMode ${mode} timer`, async () => {
-      const parent = await mkdtemp(join(tmpdir(), `ltx4-control-timer-${mode}-`));
+      const parent = await makeTestDirectory(`ltx4-control-timer-${mode}-`);
       const marker = join(parent, "done");
       const script = await writeControlTimerProbe(parent, mode, marker);
       const child = spawn("bun", [script], {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import {
   access,
   chmod,
@@ -8,7 +9,6 @@ import {
   lstat,
   link,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   realpath,
@@ -20,7 +20,6 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,6 +51,8 @@ import {
   waitForPathAbsent,
   waitForProcessExit,
 } from "../support/converge.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 interface ClosableServer {
   close(callback: () => void): unknown;
@@ -289,7 +290,7 @@ async function observeReservationWhileRunning(
 }
 
 async function makeRoot(name: string): Promise<{ parent: string; root: string }> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx4-supervisor-"));
+  const parent = await makeTestDirectory("ltx4-supervisor-");
   const root = join(parent, name);
   await prepareRunRoot(root);
   return { parent, root };
@@ -892,7 +893,7 @@ describe("worker and exact-root reaping", () => {
   });
 
   test("does not adopt an exact-path daemon with the wrong generation", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "x4-"));
+    const parent = await makeTestDirectory("ltx4-");
     const root = join(parent, "r");
     await prepareRunRoot(root);
     const reserved = await reserveFixture(root);
@@ -915,7 +916,7 @@ describe("worker and exact-root reaping", () => {
 
   for (const intendedState of ["live", "exited"] as const) {
     test(`preserves a foreign replacement socket when the recorded daemon is ${intendedState}`, async () => {
-      const parent = await mkdtemp(join(tmpdir(), `ltx4-foreign-socket-${intendedState}-`));
+      const parent = await makeTestDirectory(`ltx4-foreign-socket-${intendedState}-`);
       const root = join(parent, "root");
       const intendedRecoverySocket = join(parent, "intended.sock");
       const replacementRecoverySocket = join(parent, "replacement.sock");
@@ -1108,7 +1109,7 @@ describe("worker and exact-root reaping", () => {
   });
 
   test("refuses broad, relative, missing-magic, and symlink run roots", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-root-guard-"));
+    const parent = await makeTestDirectory("ltx4-root-guard-");
     const ordinary = join(parent, "ordinary");
     const linked = join(parent, "linked");
     await mkdir(ordinary, { mode: 0o700 });
@@ -1127,7 +1128,7 @@ describe("worker and exact-root reaping", () => {
   });
 
   test("rejects a canonical-looking root reached through a symlinked parent", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-parent-link-"));
+    const parent = await makeTestDirectory("ltx4-parent-link-");
     const realParent = join(parent, "real");
     const linkedParent = join(parent, "linked");
     await mkdir(realParent, { mode: 0o700 });
@@ -1672,7 +1673,7 @@ describe("stale-root preflight", () => {
 
   for (const location of ["uncommitted", "committed"] as const) {
     test(`preserves a ${location} journal whose fixture controller differs from its owner`, async () => {
-      const parent = await mkdtemp(join(tmpdir(), "x4-"));
+      const parent = await makeTestDirectory("ltx4-");
       const root = join(parent, "r");
       const recoverySocket = join(parent, "recovery.sock");
       await prepareRunRoot(root);
@@ -1744,7 +1745,7 @@ describe("stale-root preflight", () => {
   }
 
   test("preserves an impossible committed socket-only fixture escrow", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "x4-"));
+    const parent = await makeTestDirectory("ltx4-");
     const root = join(parent, "r");
     await prepareRunRoot(root);
     const server = await TestServer.create({ runRoot: root });
@@ -1788,7 +1789,7 @@ describe("stale-root preflight", () => {
   });
 
   test("verifies a committed record before unlinking its journaled socket", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "x4-"));
+    const parent = await makeTestDirectory("ltx4-");
     const root = join(parent, "r");
     await prepareRunRoot(root);
     const server = await TestServer.create({ runRoot: root });
@@ -2130,7 +2131,7 @@ describe("supervisor status and signal semantics", () => {
     workerArgs: readonly string[],
     signal?: "SIGINT" | "SIGTERM",
   ): Promise<{ closed: ClosedChild; parent: string; root: string }> {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-supervised-"));
+    const parent = await makeTestDirectory("ltx4-supervised-");
     const root = join(parent, name);
     const marker = join(parent, "ready.json");
     const child = spawn(
@@ -2164,7 +2165,7 @@ describe("supervisor status and signal semantics", () => {
     };
     for (let attempt = 0; attempt < 2; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop -- each completed failure is the baseline for the next listener count.
-      const parent = await mkdtemp(join(tmpdir(), "ltx4-supervisor-spawn-error-"));
+      const parent = await makeTestDirectory("ltx4-supervisor-spawn-error-");
       const root = join(parent, "root");
       try {
         // eslint-disable-next-line no-await-in-loop -- repeated failure proves listener cleanup is idempotent.
@@ -2242,7 +2243,7 @@ describe("supervisor status and signal semantics", () => {
   }
 
   test("standalone reaper cleans only after a SIGKILLed supervisor owner is dead", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-dead-supervisor-"));
+    const parent = await makeTestDirectory("ltx4-dead-supervisor-");
     const root = join(parent, "root");
     const marker = join(parent, "ready.json");
     const supervisor = spawn(
@@ -2290,7 +2291,7 @@ describe("supervisor status and signal semantics", () => {
   }, 30_000);
 
   test("progresses after SIGKILL when a descendant keeps the child pipes open", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-hard-close-"));
+    const parent = await makeTestDirectory("ltx4-hard-close-");
     const root = join(parent, "root");
     const marker = join(parent, "ready.json");
     const supervisor = spawn(
@@ -2363,7 +2364,7 @@ describe("outer test controllers", () => {
   test.skipIf(process.env.LIBTMUX_PYTHON_REPO === undefined)(
     "differential runner uses the exact root published by its caller",
     async () => {
-      const parent = await mkdtemp(join(tmpdir(), "ltx4-ci-root-"));
+      const parent = await makeTestDirectory("ltx4-ci-root-");
       const root = join(parent, "published, root");
       const child = spawn("bun", [differentialRunnerPath], {
         cwd: tsRoot,
@@ -2394,7 +2395,7 @@ describe("outer test controllers", () => {
 
   for (const mode of ["after-create", "timeout-after-create"] as const) {
     test(`emitted Node ${mode} failure performs exact cleanup before parent removal`, async () => {
-      const parent = await mkdtemp(join(tmpdir(), "ltx4-node-failure-"));
+      const parent = await makeTestDirectory("ltx4-node-failure-");
       const root = join(parent, "published-node-root");
       const marker = join(parent, "failure.json");
       const node22 = await resolveNode22();

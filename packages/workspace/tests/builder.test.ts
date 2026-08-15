@@ -1,8 +1,7 @@
 // SPIKE: reaches across packages for the library's test harness, which is
 // not on its published surface. Needs a decision: export a ./testing
 // subpath, or move the harness to a package of its own.
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -17,6 +16,11 @@ import { Server } from "libtmux/server";
 import { applyWorkspace } from "../src/builder.js";
 import { parseWorkspaceYaml } from "../src/config.js";
 
+import {
+  assertOwnedSocketPath,
+  makeTestDirectory,
+} from "../../libtmux/src/_internal/test/temp_root.js";
+
 function serverFor(fixture: TestServer): Server {
   return new Server({
     environment: fixture.controllerEnvironment,
@@ -26,7 +30,7 @@ function serverFor(fixture: TestServer): Server {
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx-workspace-"));
+  const parent = await makeTestDirectory("ltx-workspace-");
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run, root");
   if (published === undefined) await prepareRunRoot(runRoot);
@@ -35,6 +39,7 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
     await runWithCleanup(
       async () => {
         const fixture = await TestServer.create({ runRoot, sessionName: "ws" });
+        assertOwnedSocketPath(fixture.socketPath);
         await runWithCleanup(
           () => body(fixture),
           () => fixture.dispose(),

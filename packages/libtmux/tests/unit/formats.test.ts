@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +23,8 @@ import {
   renderGeneratedFormatSources,
   validateWhereSchemaHistory,
 } from "../../src/_internal/codec/format_registry.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 interface PythonFormatFixture {
   baseline: {
@@ -559,7 +560,7 @@ describe("format registry", () => {
   });
 
   test("check mode detects exact-byte drift without rewriting it", async () => {
-    const outputDirectory = await mkdtemp(join(tmpdir(), "ltx5-generated-"));
+    const outputDirectory = await makeTestDirectory("ltx5-generated-");
     const parityManifestPath = join(outputDirectory, "python-0.62.0.json");
     const driftAnchor = '"./formats#value:FORMAT_SEPARATOR"';
     const driftReplacement = '"./formats#value:FORMAT_SEPARATOR_DRIFT"';

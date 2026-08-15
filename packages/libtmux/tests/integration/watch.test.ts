@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -25,6 +24,8 @@ import type {
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -67,7 +68,7 @@ function countingServerFor(fixture: TestServer): {
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx-watch-"));
+  const parent = await makeTestDirectory("ltx-watch-");
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run, root");
   if (published === undefined) await prepareRunRoot(runRoot);
@@ -809,7 +810,7 @@ describe("Server.watch", () => {
   }, 60_000);
 
   test("never brings a server into being just by watching", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx-absent-"));
+    const parent = await makeTestDirectory("ltx-absent-");
     const socketPath = join(parent, "absent.sock");
     try {
       // `tmux -C attach-session` on a socket with no server creates the socket

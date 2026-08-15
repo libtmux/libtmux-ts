@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +7,8 @@ import { describe, expect, test } from "bun:test";
 import { readProcessIdentity, type ProcessIdentity } from "../../src/_internal/test/run_root.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import { TransportError } from "../../src/_internal/transport/types.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 const ignoreSigtermFixture = fileURLToPath(
   new URL("../fixtures/ignore_sigterm.mjs", import.meta.url),
@@ -100,7 +101,7 @@ describe("transport cancellation", () => {
   });
 
   test("closes blocked stdin and escalates an ignored SIGTERM to SIGKILL", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "libtmux-sigterm-"));
+    const temporaryRoot = await makeTestDirectory("ltx-sigterm-");
     const markerPath = join(temporaryRoot, "ready");
     const controller = new AbortController();
     const transport = new NodeSpawnTransport({ terminationGraceMs: 30 });
@@ -153,7 +154,7 @@ describe("transport cancellation", () => {
   });
 
   test("retains immutable synchronized partial output after cancellation", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "libtmux-partial-output-"));
+    const temporaryRoot = await makeTestDirectory("ltx-partial-output-");
     const markerPath = join(temporaryRoot, "holder.pid");
     const controller = new AbortController();
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
@@ -200,7 +201,7 @@ describe("transport cancellation", () => {
   }, 20_000);
 
   test("bounds timeout cleanup when a killed parent has a descendant holding both pipes", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "libtmux-held-pipes-"));
+    const temporaryRoot = await makeTestDirectory("ltx-held-pipes-");
     const markerPath = join(temporaryRoot, "holder.pid");
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const startedAt = performance.now();
@@ -272,7 +273,7 @@ describe("transport cancellation", () => {
   }, 10_000);
 
   test("keeps a terminal exit authoritative while inherited pipes finish closing", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "libtmux-exit-race-"));
+    const temporaryRoot = await makeTestDirectory("ltx-exit-race-");
     const markerPath = join(temporaryRoot, "exited");
     const controller = new AbortController();
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
@@ -306,7 +307,7 @@ describe("transport cancellation", () => {
   }, 20_000);
 
   test("bounds post-exit drainage at the timeout while retaining the exit result", async () => {
-    const temporaryRoot = await mkdtemp(join(tmpdir(), "libtmux-exit-timeout-"));
+    const temporaryRoot = await makeTestDirectory("ltx-exit-timeout-");
     const markerPath = join(temporaryRoot, "exited");
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const startedAt = performance.now();

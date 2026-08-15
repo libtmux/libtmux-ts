@@ -1,7 +1,6 @@
 // The library's real-tmux fixture harness, which is internal and unpublished.
 // In-repo consumers use it directly; external ones have no need for it.
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -18,8 +17,13 @@ import {
 import { TestServer } from "../../packages/libtmux/src/_internal/test/test_server.js";
 import { Server } from "../../packages/libtmux/src/server.js";
 
+import {
+  assertOwnedSocketPath,
+  makeTestDirectory,
+} from "../../packages/libtmux/src/_internal/test/temp_root.js";
+
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx-examples-"));
+  const parent = await makeTestDirectory("ltx-examples-");
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run, root");
   if (published === undefined) await prepareRunRoot(runRoot);
@@ -28,6 +32,7 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
     await runWithCleanup(
       async () => {
         const fixture = await TestServer.create({ runRoot, sessionName: "examples" });
+        assertOwnedSocketPath(fixture.socketPath);
         await runWithCleanup(
           () => body(fixture),
           () => fixture.dispose(),

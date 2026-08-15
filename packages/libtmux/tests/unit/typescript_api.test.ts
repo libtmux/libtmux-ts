@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { runTypeScriptApi } from "../support/typescript_api.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 /**
  * The retry that keeps a cancelled Go process from failing an unrelated gate.
@@ -22,7 +23,7 @@ import { runTypeScriptApi } from "../support/typescript_api.js";
 let directory: string;
 
 beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), "ltx-tsapi-"));
+  directory = await makeTestDirectory("ltx-tsapi-");
 });
 
 afterEach(async () => {

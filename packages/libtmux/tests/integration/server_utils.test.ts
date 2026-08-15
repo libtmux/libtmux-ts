@@ -1,5 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -12,6 +11,8 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { Server } from "../../src/server.js";
 
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+
 function serverFor(fixture: TestServer): Server {
   return new Server({
     environment: fixture.controllerEnvironment,
@@ -23,7 +24,7 @@ function serverFor(fixture: TestServer): Server {
 async function withServer(
   body: (fixture: TestServer, parent: string) => Promise<void>,
 ): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx-srvutil-"));
+  const parent = await makeTestDirectory("ltx-srvutil-");
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run, root");
   if (published === undefined) await prepareRunRoot(runRoot);

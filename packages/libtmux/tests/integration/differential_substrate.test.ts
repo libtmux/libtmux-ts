@@ -1,5 +1,4 @@
-import { appendFile, mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { appendFile, mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -13,6 +12,8 @@ import {
 } from "../differential/python_client.js";
 import { DIFFERENTIAL_PROTOCOL, queryRawTmux } from "../differential/raw_tmux.js";
 
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+
 // The oracle runs the real Python library, which this repository does not
 // carry. Without a checkout to authenticate against there is nothing to
 // compare, so the suite says so rather than failing as though the port broke.
@@ -20,7 +21,7 @@ const withOracle = pythonBaselineRepository() === undefined ? describe.skip : de
 
 withOracle("differential substrate", () => {
   test("smokes reusable raw-tmux and pinned Python 0.62.0 protocols", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-diff-"));
+    const parent = await makeTestDirectory("ltx4-diff-");
     const publishedRoot = process.env.LIBTMUX_TEST_RUN_ROOT;
     const runRoot = publishedRoot ?? join(parent, "run, root");
     if (publishedRoot === undefined) await prepareRunRoot(runRoot);
@@ -74,7 +75,7 @@ withOracle("differential substrate", () => {
   }, 30_000);
 
   test("reuses one authenticated materialized tree across two isolated oracle calls", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-oracle-reuse-"));
+    const parent = await makeTestDirectory("ltx4-oracle-reuse-");
     const publishedRoot = process.env.LIBTMUX_TEST_RUN_ROOT;
     const runRoot = publishedRoot ?? join(parent, "run");
     if (publishedRoot === undefined) await prepareRunRoot(runRoot);
@@ -96,7 +97,7 @@ withOracle("differential substrate", () => {
   }, 30_000);
 
   test("correlates raw tmux execution and response to one submitted request snapshot", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-raw-correlation-"));
+    const parent = await makeTestDirectory("ltx4-raw-correlation-");
     const publishedRoot = process.env.LIBTMUX_TEST_RUN_ROOT;
     const runRoot = publishedRoot ?? join(parent, "run");
     if (publishedRoot === undefined) await prepareRunRoot(runRoot);
@@ -129,7 +130,7 @@ withOracle("differential substrate", () => {
 
   for (const mutation of ["extra", "changed", "missing"] as const) {
     test(`rejects a ${mutation} file in a forged pinned source tree`, async () => {
-      const parent = await mkdtemp(join(tmpdir(), `ltx4-forged-${mutation}-`));
+      const parent = await makeTestDirectory(`ltx4-forged-${mutation}-`);
       try {
         const root = await materializePythonBaseline(parent);
         if (mutation === "extra") {
@@ -150,7 +151,7 @@ withOracle("differential substrate", () => {
   }
 
   test("strictly validates every Python response frame and correlation field", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-bad-frame-"));
+    const parent = await makeTestDirectory("ltx4-bad-frame-");
     const fakeBin = join(parent, "bin");
     await mkdir(fakeBin);
     const fakeUv = join(fakeBin, "uv");

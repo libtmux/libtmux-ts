@@ -1,8 +1,7 @@
 // SPIKE: reaches across packages for the library's test harness, which is
 // not on its published surface. Needs a decision: export a ./testing
 // subpath, or move the harness to a package of its own.
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +18,11 @@ import {
 import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
 import { Server } from "libtmux/server";
 
+import {
+  assertOwnedSocketPath,
+  makeTestDirectory,
+} from "../../libtmux/src/_internal/test/temp_root.js";
+
 function serverFor(fixture: TestServer): Server {
   return new Server({
     environment: fixture.controllerEnvironment,
@@ -28,7 +32,7 @@ function serverFor(fixture: TestServer): Server {
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx-mcp-"));
+  const parent = await makeTestDirectory("ltx-mcp-");
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run, root");
   if (published === undefined) await prepareRunRoot(runRoot);
@@ -37,6 +41,7 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
     await runWithCleanup(
       async () => {
         const fixture = await TestServer.create({ runRoot, sessionName: "mcp" });
+        assertOwnedSocketPath(fixture.socketPath);
         await runWithCleanup(
           () => body(fixture),
           () => fixture.dispose(),

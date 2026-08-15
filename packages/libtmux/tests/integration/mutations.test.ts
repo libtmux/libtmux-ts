@@ -1,5 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -14,6 +13,8 @@ import type { Pane } from "../../src/pane.js";
 import { TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+
 function serverFor(fixture: TestServer): Server {
   return new Server({
     environment: fixture.controllerEnvironment,
@@ -23,7 +24,7 @@ function serverFor(fixture: TestServer): Server {
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), "ltx-mutate-"));
+  const parent = await makeTestDirectory("ltx-mutate-");
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run, root");
   if (published === undefined) await prepareRunRoot(runRoot);

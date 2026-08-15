@@ -4,7 +4,6 @@ import {
   cp,
   lstat,
   mkdir,
-  mkdtemp,
   open,
   readFile,
   readlink,
@@ -14,11 +13,12 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 interface Baseline {
   readonly compiler: {
@@ -334,7 +334,7 @@ describe("TypeScript instantiation performance gate", () => {
   });
 
   test("rejects a missing baseline without creating one", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-missing-baseline-"));
+    const temporary = await makeTestDirectory("ltx-type-missing-baseline-");
     try {
       await createCheckerFixture(temporary);
       const baselinePath = join(temporary, baselineRelativePath);
@@ -350,7 +350,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("updates atomically and checks compiler, complete input chain, and maximum", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-performance-"));
+    const temporary = await makeTestDirectory("ltx-type-performance-");
     try {
       await createCheckerFixture(temporary);
       const localCompiler = join(temporary, "node_modules/.bin/tsc");
@@ -548,7 +548,7 @@ describe("TypeScript instantiation performance gate", () => {
   ])(
     "rejects $name without writing",
     async ({ mutate }) => {
-      const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-invalid-baseline-"));
+      const temporary = await makeTestDirectory("ltx-type-invalid-baseline-");
       try {
         await createCheckerFixture(temporary);
         const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -569,7 +569,7 @@ describe("TypeScript instantiation performance gate", () => {
   );
 
   test("atomically replaces an existing baseline without exposing partial bytes", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-atomic-update-"));
+    const temporary = await makeTestDirectory("ltx-type-atomic-update-");
     try {
       await createCheckerFixture(temporary);
       const initialUpdate = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -646,7 +646,7 @@ describe("TypeScript instantiation performance gate", () => {
   ])(
     "rejects valid-baseline digest drift in $inputPath without writing",
     async ({ inputPath, needle, replacement }) => {
-      const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-input-drift-"));
+      const temporary = await makeTestDirectory("ltx-type-input-drift-");
       try {
         await createCheckerFixture(temporary);
         const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -670,7 +670,7 @@ describe("TypeScript instantiation performance gate", () => {
   );
 
   test("rejects a root devDependency that does not pin the running compiler", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-dependency-"));
+    const temporary = await makeTestDirectory("ltx-type-dependency-");
     try {
       await createCheckerFixture(temporary);
       const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -691,7 +691,7 @@ describe("TypeScript instantiation performance gate", () => {
   test.each(["^7.0.2", "~7.0.2", ">=7.0.2", "7.0.x", "latest"])(
     "rejects non-exact dependency range %s during update",
     async (range) => {
-      const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-update-range-"));
+      const temporary = await makeTestDirectory("ltx-type-update-range-");
       try {
         await createCheckerFixture(temporary);
         await writeFile(
@@ -710,7 +710,7 @@ describe("TypeScript instantiation performance gate", () => {
   );
 
   test("rejects installed-package version disagreement during update", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-update-version-"));
+    const temporary = await makeTestDirectory("ltx-type-update-version-");
     try {
       await createCheckerFixture(temporary);
       const compilerPackagePath = join(temporary, "node_modules/typescript/package.json");
@@ -733,7 +733,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("rejects compiler executables outside the package-declared bin symlink", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-compiler-provenance-"));
+    const temporary = await makeTestDirectory("ltx-type-compiler-provenance-");
     try {
       await createCheckerFixture(temporary);
       const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -781,7 +781,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("rejects a compiler package digest mismatch even when its version is unchanged", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-compiler-digest-"));
+    const temporary = await makeTestDirectory("ltx-type-compiler-digest-");
     try {
       await createCheckerFixture(temporary);
       const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -806,7 +806,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("rejects missing and duplicate anchored Instantiations metrics", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "libtmux-type-metric-"));
+    const temporary = await makeTestDirectory("ltx-type-metric-");
     try {
       await createCheckerFixture(temporary);
       const firstUpdate = await runBounded(["bun", scriptRelativePath, "--update"], temporary);

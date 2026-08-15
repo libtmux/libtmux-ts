@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
 import { requireBuiltPackage } from "../support/built_package.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 type Status = "planned" | "implemented" | "adapted" | "unsupported";
 type EvidenceApplicability = "required" | `not-applicable: ${string}`;
@@ -308,7 +309,7 @@ async function withTemporaryDirectory<T>(
   prefix: string,
   use: (path: string) => Promise<T>,
 ): Promise<T> {
-  const directory = await mkdtemp(join(tmpdir(), prefix));
+  const directory = await makeTestDirectory(prefix);
   try {
     return await use(directory);
   } finally {
@@ -317,16 +318,11 @@ async function withTemporaryDirectory<T>(
 }
 
 function withTemporaryManifest<T>(use: (path: string) => Promise<T>): Promise<T> {
-  return withTemporaryFile("libtmux-parity-", "manifest.json", manifestUrl, use);
+  return withTemporaryFile("ltx-parity-", "manifest.json", manifestUrl, use);
 }
 
 function withTemporaryPackageManifest<T>(use: (path: string) => Promise<T>): Promise<T> {
-  return withTemporaryFile(
-    "libtmux-package-",
-    "package.json",
-    new URL("package.json", tsRoot),
-    use,
-  );
+  return withTemporaryFile("ltx-package-", "package.json", new URL("package.json", tsRoot), use);
 }
 
 describe("Python 0.62.0 parity manifest", () => {
@@ -1018,7 +1014,7 @@ describe("Python 0.62.0 parity manifest", () => {
     });
 
     test("rejects the fixture when QueryList is declared", async () => {
-      await withTemporaryDirectory("libtmux-query-list-negative-", async (directory) => {
+      await withTemporaryDirectory("ltx-query-list-negative-", async (directory) => {
         await Promise.all([
           writeFile(join(directory, "index.d.ts"), "export interface QueryList<T> { at: T }\n"),
           writeFile(

@@ -1,5 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -30,6 +29,8 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "../../src/_internal/transport/types.js";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 interface QueryHarness {
   readonly capabilities: LazyCapabilityBinding;
@@ -63,7 +64,7 @@ async function withTestServer(
   prefix: string,
   body: (server: TestServer) => Promise<void>,
 ): Promise<void> {
-  const parent = await mkdtemp(join(tmpdir(), prefix));
+  const parent = await makeTestDirectory(prefix);
   const publishedRoot = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = publishedRoot ?? join(parent, "run, root");
   if (publishedRoot === undefined) await prepareRunRoot(runRoot);

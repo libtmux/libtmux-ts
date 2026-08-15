@@ -30,8 +30,23 @@ const snapshot = await server.snapshot();
 console.log(snapshot.sessions.count());
 ```
 
-Requires tmux 3.2a or newer. The suite creates its own server on its own
-socket; it never touches the one you are attached to.
+Requires tmux 3.2a or newer.
+
+### They cannot touch your tmux
+
+Each example runs against a server the suite starts for it, on a socket of its
+own — something like:
+
+```
+/tmp/ltx-examples-PE2i8W/run, root/t-6028-17d6a81a-1fc/s
+```
+
+A fresh directory per run, a generated socket name per fixture, and the whole
+thing removed afterwards. That is checked rather than assumed: every example
+asserts, before it sends a single key, that the socket it was handed carries
+this package's own prefix and is not the server this process is attached to.
+Point the suite anywhere else and all six fail instead of quietly driving your
+session.
 
 ## What each one shows
 

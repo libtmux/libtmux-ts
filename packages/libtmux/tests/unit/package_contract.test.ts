@@ -1,11 +1,12 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { BunConnectionOptions } from "node:tls";
 
 import { describe, expect, test } from "bun:test";
+
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 interface PackageManifest {
   author: string;
@@ -346,7 +347,7 @@ describe("package contract", () => {
   });
 
   test("emits self-contained public declarations", async () => {
-    const temporary = await mkdtemp(join(tmpdir(), "ltx5-declarations-"));
+    const temporary = await makeTestDirectory("ltx5-declarations-");
     const outputDirectory = join(temporary, "types");
     const configPath = join(temporary, "tsconfig.json");
     await writeFile(

@@ -11,8 +11,8 @@
  * tmux that produced them, both of which are reported.
  */
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
-import { cpus, tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
+import { cpus } from "node:os";
 import { join } from "node:path";
 
 import { TmuxConnection } from "../src/_internal/runtime/connection.js";
@@ -25,6 +25,8 @@ import type {
   RawCommandResult,
 } from "../src/_internal/transport/types.js";
 import type { Server } from "../src/server.js";
+
+import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
 
 /** Counts what crosses the transport, which is what each mode is trying to change. */
 class CountingTransport implements CommandTransport {
@@ -171,7 +173,7 @@ async function measureCell(
 
 async function main(): Promise<void> {
   const tmuxBin = process.env.LIBTMUX_TMUX_BIN ?? "tmux";
-  const root = await mkdtemp(join(tmpdir(), "ltx-bench-"));
+  const root = await makeTestDirectory("ltx-bench-");
   const rows: Row[] = [];
   let tmuxVersion = "unknown";
 

@@ -100,6 +100,9 @@ jobs:
       - run: bun run docs:links
       - run: bun run docs:claims
       - run: bun run docs:runnable
+      # Every temporary directory the suites create is named for this
+      # package, so a sweep can never reap another libtmux port's servers.
+      - run: bun run test:namespace
 
       - name: Gate the library
         working-directory: packages/libtmux

@@ -1,9 +1,13 @@
+import { assertOwnedSocketPath } from "../../src/_internal/test/temp_root.js";
 import { TestServer, type TestServerOptions } from "../../src/_internal/test/test_server.js";
 
 const fixtures = new Set<TestServer>();
 
 export async function createRegisteredTestServer(options: TestServerOptions): Promise<TestServer> {
   const server = await TestServer.create(options);
+  // Before anything is registered for disposal: a fixture this suite does not
+  // own is one whose cleanup would reap somebody else's tmux server.
+  assertOwnedSocketPath(server.socketPath);
   fixtures.add(server);
   return server;
 }

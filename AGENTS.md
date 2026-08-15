@@ -119,15 +119,21 @@ Probe before you commit. `~/.local/share/libtmux-tmux-matrix` holds the
 supported range as `<version>/bin/tmux` prefixes; point `LIBTMUX_TMUX_BUILDS` at
 it for `bun run test:compat`.
 
-Other libtmux ports run their own suites on this machine, so take a socket root
-belonging to this package — `/tmp/libtmux-ts-test/…` — and never a shared or
-default one. Two workspaces on one root see each other's servers, and a cleanup
-sweep in either reaps the other's.
+Other libtmux ports run their own suites on this machine, so everything this
+one leaves in the temporary directory is named `ltx…` and nothing else is.
+`/tmp/libtmux-*` is not ours to take — `/tmp/libtmux-java-test` and
+`/tmp/libtmux-swift-dev` are someone else's, and a sweep that cannot tell them
+apart reaps their servers. `test:namespace` is the gate; `makeTestDirectory`
+applies the prefix, and a suite that starts a live server calls
+`assertOwnedSocketPath` before it touches one.
 
-Keep that root short. A socket path has a hard length limit, and a long one
-fails as "File name too long", which does not read like a path problem. Unset
-`TMUX` and `TMUX_PANE` too, so a probe cannot reach the terminal you are
-working in.
+Ownership is a prefix rather than a parent directory, deliberately. Nesting
+everything under `/tmp/libtmux-ts-test/` was tried and cost fifteen bytes of
+the socket budget below, which put the longest fixture path at 104 and failed
+the suite with "File name too long".
+
+Keep the names short for the same reason. Unset `TMUX` and `TMUX_PANE` too, so
+a probe cannot reach the terminal you are working in.
 
 Do not edit the tree while `test:compat` runs. It spawns the suite once per
 build and reads the working tree each time, so a mid-run edit produces failures

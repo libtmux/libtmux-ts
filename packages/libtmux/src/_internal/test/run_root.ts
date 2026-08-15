@@ -3,8 +3,8 @@ import { spawn } from "node:child_process";
 import {
   access,
   chmod,
-  lstat,
   link,
+  lstat,
   mkdir,
   mkdtemp,
   open,
@@ -16,8 +16,7 @@ import {
   unlink,
 } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { tmpdir } from "node:os";
-import { constants as osConstants } from "node:os";
+import { constants as osConstants, tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { channel } from "node:diagnostics_channel";
@@ -27,7 +26,11 @@ import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 export const RUN_ROOT_ENV = "LIBTMUX_TEST_RUN_ROOT";
 export const OWNER_RECORD_NAME = ".owner.json";
 export const FIXTURE_RECORD_NAME = "fixture.json";
-export const SOCKET_PATH_UTF8_LIMIT = 103;
+// Declared beside the temp root that must fit inside it; re-exported here
+// because this module's callers have always imported it from run_root.
+import { SOCKET_PATH_UTF8_LIMIT } from "./temp_root.js";
+
+export { SOCKET_PATH_UTF8_LIMIT };
 
 const fixtureProtocol = "libtmux-test-fixture-v3" as const;
 const ownerProtocolV2 = "libtmux-test-run-v2" as const;

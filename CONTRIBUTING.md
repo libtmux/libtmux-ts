@@ -48,9 +48,13 @@ And from `packages/libtmux`, the library's own gates — `typecheck`,
 `test:unit`, `test:integration`, `test:node`. The consumers in `packages/mcp`,
 `packages/workspace` and `examples` each run `typecheck` and `test`.
 
-Requires [Bun](https://bun.sh) 1.3.14+, Node 22+, and tmux 3.2a or newer. The
-suite creates its own tmux servers on its own sockets and never touches the one
-you are attached to.
+Requires [Bun](https://bun.sh) 1.3.14+, Node 22+, and tmux 3.2a or newer.
+
+The suite creates its own tmux servers on its own sockets and never touches the
+one you are attached to. Everything it leaves in the temporary directory is
+named `ltx…`, so a sweep can tell this package's servers from another libtmux
+port's — `bun run test:namespace` is what keeps that true, and a suite starting
+a live server asserts it before sending a key.
 
 ## Things that are gates, not preferences
 

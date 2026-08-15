@@ -1,5 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -25,6 +25,8 @@ import {
   type CliInfo,
 } from "../../scripts/mcp_swap.js";
 
+import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+
 /**
  * The config surgery behind `mcp_swap`.
  *
@@ -37,7 +39,7 @@ import {
 let home: string;
 
 beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), "ltx-swap-"));
+  home = await makeTestDirectory("ltx-swap-");
 });
 
 afterEach(async () => {
