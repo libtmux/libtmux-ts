@@ -3,10 +3,45 @@
 **Describe a tmux session as data; apply it. Applying twice converges rather
 than duplicating.**
 
+[![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
+[![downloads](https://img.shields.io/npm/dm/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
+[![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Part of [libtmux for Bun and TypeScript](../../README.md). Built on
 [`libtmux`](../libtmux).
 
-> **Status: unreleased.** Not on npm yet; use it from this repository.
+> [!WARNING]
+> **Alpha.** Prerelease software: the config shape and the exported functions
+> can change between alpha releases without a deprecation cycle. Pin an exact
+> version.
+
+## Install
+
+```console
+$ bun add @libtmux/workspace@alpha
+```
+
+<details>
+<summary>npm, pnpm, yarn</summary>
+
+```console
+$ npm i @libtmux/workspace@alpha
+```
+
+```console
+$ pnpm add @libtmux/workspace@alpha
+```
+
+```console
+$ yarn add @libtmux/workspace@alpha
+```
+
+</details>
+
+`libtmux` is a peer of this package in practice: you pass it the `Server`.
+Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
 
 ## Use it
 
@@ -48,6 +83,9 @@ the ones people already know — `session_name`, `windows`, `panes`,
 | `shell_command`   | pane                    | One command or a list, sent in order          |
 | `focus`           | window, pane            | Selected last, so the final one wins          |
 
+Because the config is data, it can come from a YAML file, an HTTP request, or a
+literal — nothing here parses a format.
+
 ## Converging, not just creating
 
 Two details that are easy to get wrong and are handled here:
@@ -64,6 +102,13 @@ Applying a workspace against a session that already exists reconciles what is
 running with what the file asks for: surplus windows and panes are removed in
 one round trip, missing ones created in another.
 
+## A worked example
+
+[`examples/workspace.ts`](../../examples/workspace.ts) builds a session from a
+declared layout — a window per concern, panes already running what they are
+for, an environment every process inherits, and a teardown that treats "already
+gone" as an answer. The integration suite runs it against a real tmux server.
+
 ## License
 
-MIT
+[MIT](LICENSE)

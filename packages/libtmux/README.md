@@ -2,14 +2,27 @@
 
 Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 
+[![npm](https://img.shields.io/npm/v/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
+[![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
+[![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
 Requires tmux 3.2a or newer, and Node 22+ or Bun 1.3.14+.
 
 ```console
-$ bun add libtmux
+$ bun add libtmux@alpha
 ```
+
+> [!WARNING]
+> **Alpha.** Prerelease software: the API can change between alpha releases
+> without a deprecation cycle, and it is not covered by semantic versioning
+> until `0.1.0`. Pin an exact version, and read the
+> [changelog](CHANGELOG.md) before you upgrade.
 
 ## Quickstart
 
@@ -48,6 +61,51 @@ each one uses the last:
 
 A snapshot answers _what is true now_; a watch answers _what changed_. Most
 programs need the first, and reach for the second when they have to react.
+
+<details>
+<summary><b>Everything on this page</b></summary>
+
+**Reading the server** ·
+[Snapshots](#snapshots) ·
+[Querying](#querying) ·
+[Relations](#relations) ·
+[Field names](#field-names)
+
+**Changing it** ·
+[Operations](#operations) ·
+[Running several commands at once](#running-several-commands-at-once) ·
+[Commands this package does not model](#commands-this-package-does-not-model) ·
+[Options and hooks](#options-and-hooks) ·
+[Environments](#environments)
+
+**Reacting to it** ·
+[Watching](#watching) ·
+[Waiting for something to happen](#waiting-for-something-to-happen) ·
+[Commands on the same connection](#commands-on-the-same-connection)
+
+**Getting the cost right** ·
+[Choosing how commands travel](#choosing-how-commands-travel) ·
+[Choosing the transport from outside](#choosing-the-transport-from-outside) ·
+[Deadlines and cancellation](#deadlines-and-cancellation)
+
+**Recipes** ·
+[Wait for a pane to print something](#wait-for-a-pane-to-print-something) ·
+[Build a workspace](#build-a-workspace) ·
+[Drive a pane and read what it said](#drive-a-pane-and-read-what-it-said) ·
+[Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
+
+**The rest** ·
+[Errors](#errors) ·
+[Running inside tmux](#running-inside-tmux) ·
+[Dependencies](#dependencies) ·
+[Entrypoints](#entrypoints) ·
+[tmux versions](#tmux-versions) ·
+[Consumers](#consumers) ·
+[Examples](#examples) ·
+[Parity with the Python library](#parity-with-the-python-library) ·
+[API reference](docs/api.md)
+
+</details>
 
 ## Snapshots
 

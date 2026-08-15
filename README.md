@@ -4,19 +4,32 @@
 
 **Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, zero runtime dependencies.**
 
-[Library](packages/libtmux) •
-[MCP server](packages/mcp) •
-[Workspace builder](packages/workspace) •
+[Quickstart](#quickstart) •
+[Querying](#what-querying-looks-like) •
+[Packages](#packages) •
 [API reference](packages/libtmux/docs/api.md) •
-[Examples](examples)
+[Examples](examples) •
+[Changelog](packages/libtmux/CHANGELOG.md)
+
+[![npm](https://img.shields.io/npm/v/libtmux?label=libtmux&color=cb3837)](https://www.npmjs.com/package/libtmux)
+[![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
+[![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.7%20%7C%203.7b-1bb91f)](.github/workflows/typescript.yml)
+[![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](packages/libtmux/tests/unit/package_contract.test.ts)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
 
 ---
 
-> **Status: unreleased.** Nothing here is on npm yet. Install from source — see
-> [Install](#install). The API is exercised against real tmux 3.2a through 3.7b
-> on every commit.
+> [!WARNING]
+> **Alpha.** Published as a prerelease: the API can change between alpha
+> releases without a deprecation cycle, and it is not covered by semantic
+> versioning until `0.1.0`. Pin an exact version, and read the
+> [changelog](packages/libtmux/CHANGELOG.md) before you upgrade.
+>
+> What is already true: the suite runs against real tmux on every commit, and
+> every example on this page is compiled — several are executed.
 
 ## Is this for you?
 
@@ -30,6 +43,31 @@ library for controlling a running server, not for configuring one.
 **The idea in one line:** read the whole server once into an immutable snapshot,
 then query it like data.
 
+## Quickstart
+
+```console
+$ bun add libtmux@alpha
+```
+
+<details>
+<summary>npm, pnpm, yarn</summary>
+
+```console
+$ npm i libtmux@alpha
+```
+
+```console
+$ pnpm add libtmux@alpha
+```
+
+```console
+$ yarn add libtmux@alpha
+```
+
+</details>
+
+Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.2a or newer.
+
 ```ts
 import { Server } from "libtmux";
 
@@ -41,17 +79,23 @@ const editors = snapshot.panes.where({ currentCommand: "vim" });
 console.log(editors.count(), editors.at(0)?.sessionName);
 ```
 
-## Install
+Building something rather than reading it looks like this — and this block is a
+literal excerpt of [`examples/quickstart.ts`](examples/quickstart.ts), which the
+integration suite runs against a real tmux server:
 
-```console
-$ git clone https://github.com/libtmux/libtmux-ts.git
+<!-- runs: examples/quickstart.ts -->
+
+```ts
+const session = await server.newSession({ name: "quickstart" });
+const editor = await session.newWindow({ name: "editor" });
+await editor.split();
+
+const snapshot = await server.snapshot();
+
+const found = snapshot.windows.where({ name: "editor" }).one();
+
+const paneCount = found.panes.length;
 ```
-
-```console
-$ bun install
-```
-
-Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.2a or newer.
 
 ## What querying looks like
 
@@ -94,16 +138,22 @@ file, an MCP call, or a CLI flag.
 
 ## Packages
 
-| Package                                      | What it is                                                                     | Status     |
-| -------------------------------------------- | ------------------------------------------------------------------------------ | ---------- |
-| **[libtmux](packages/libtmux)**              | The library. Server, session, window, pane and client handles over a snapshot. | Unreleased |
-| **[@libtmux/mcp](packages/mcp)**             | A Model Context Protocol server exposing tmux to an AI agent.                  | Unreleased |
-| **[@libtmux/workspace](packages/workspace)** | Declarative workspace builder, tmuxp-shaped config.                            | Unreleased |
-| [examples](examples)                         | Runnable examples, used as tests.                                              | Private    |
+Three packages, released together, each usable on its own.
+
+| Package                                      | What it is                                                                     | npm                                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **[libtmux](packages/libtmux)**              | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837&label=)](https://www.npmjs.com/package/libtmux)                       |
+| **[@libtmux/mcp](packages/mcp)**             | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/mcp)             |
+| **[@libtmux/workspace](packages/workspace)** | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace) |
+| [examples](examples)                         | Runnable examples, executed as tests.                                          | —                                                                                                                               |
 
 ---
 
 ### [libtmux](packages/libtmux) — the library
+
+```console
+$ bun add libtmux@alpha
+```
 
 ```ts
 import { Server } from "libtmux";
@@ -118,8 +168,10 @@ const lines = await editor.panes.at(0)?.capture();
 ```
 
 Read next: [Snapshots](packages/libtmux/README.md#snapshots) ·
+[Querying](packages/libtmux/README.md#querying) ·
 [Operations](packages/libtmux/README.md#operations) ·
 [Watching](packages/libtmux/README.md#watching) ·
+[Recipes](packages/libtmux/README.md#recipes) ·
 [Errors](packages/libtmux/README.md#errors) ·
 [API reference](packages/libtmux/docs/api.md)
 
@@ -129,8 +181,31 @@ A stdio MCP server. Point it at a socket and an agent can list sessions, read a
 pane, send keys, and **wait for output** rather than polling for it.
 
 ```console
-$ bun packages/mcp/src/server.ts
+$ npx -y @libtmux/mcp
 ```
+
+Add it to any MCP client — this is the whole configuration:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "npx",
+      "args": ["-y", "@libtmux/mcp"],
+      "env": { "LIBTMUX_SOCKET_NAME": "agent" }
+    }
+  }
+}
+```
+
+<details>
+<summary>Claude Code, in one command</summary>
+
+```console
+$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- npx -y @libtmux/mcp
+```
+
+</details>
 
 | Tool              | What it does                                                            |
 | ----------------- | ----------------------------------------------------------------------- |
@@ -141,12 +216,17 @@ $ bun packages/mcp/src/server.ts
 | `new_session`     | Create a detached session                                               |
 | `wait_for_output` | Block until a pane prints something, streaming tmux's own notifications |
 
-Configured entirely by environment, because that is all an MCP client gives it:
-`LIBTMUX_SOCKET_PATH`, `LIBTMUX_SOCKET_NAME`, `LIBTMUX_TMUX_BIN`.
+Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
+[Configuration](packages/mcp/README.md#point-it-at-a-server) ·
+[The echo caveat](packages/mcp/README.md#one-caveat-worth-knowing)
 
 ### [@libtmux/workspace](packages/workspace) — declarative sessions
 
 Describe a session; apply it. Applying twice converges rather than duplicating.
+
+```console
+$ bun add @libtmux/workspace@alpha
+```
 
 ```ts
 import { Server } from "libtmux";
@@ -161,6 +241,19 @@ await applyWorkspace(server, {
     { window_name: "server", panes: [{ shell_command: "bun dev", focus: true }] },
   ],
 });
+```
+
+Read next: [The config shape](packages/workspace/README.md#the-shape) ·
+[Converging](packages/workspace/README.md#converging-not-just-creating)
+
+### [examples](examples) — runnable, and run
+
+Four programs covering acquisition, control-mode watching, the act-then-wait
+loop an agent needs, and building a workspace. Each is executed by the
+integration suite, so the code there is the code that runs.
+
+```console
+$ bun test examples/tests
 ```
 
 ## How commands travel
@@ -185,7 +278,7 @@ second; batched costs 5 and about 40 ms. Same answer, different cost —
 
 - **Zero runtime dependencies.** A property [under test](packages/libtmux/tests/unit/package_contract.test.ts), not an aspiration.
 - **Real tmux, every commit.** CI runs the suite against tmux 3.2a, 3.7 and 3.7b — no mocks stand in for a server.
-- **Documentation is a gate.** Every public symbol carries a compiled example, and [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it.
+- **Documentation is a gate.** Every public symbol carries a compiled example, [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it, and every link, install command and recipe on this page is checked on each run.
 - **Parity is recorded, not claimed.** Every public symbol of Python [libtmux](https://github.com/tmux-python/libtmux) 0.62.0 carries a decision in [a ledger](packages/libtmux/parity), checked on every run.
 
 ## Repository
@@ -204,5 +297,5 @@ never been red is an assumption.
 
 ## License
 
-[MIT](packages/libtmux/README.md#license) — a port of
+[MIT](LICENSE) — a port of
 [tmux-python/libtmux](https://github.com/tmux-python/libtmux).
