@@ -4,10 +4,26 @@ import { open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const tsRoot = join(import.meta.dir, "..");
-const repositoryRoot = join(tsRoot, "..");
 const defaultManifestPath = join(tsRoot, "parity/python-0.62.0.json");
+const defaultBaselinePath = join(tsRoot, "parity/python-0.62.0.baseline.json");
 const defaultPackageManifestPath = join(tsRoot, "package.json");
 const sourceUrl = "https://github.com/tmux-python/libtmux/blob/v0.62.0";
+
+/**
+ * A checkout of the Python library, needed only to regenerate the baseline.
+ *
+ * The gate itself reads the committed baseline instead, so checking parity
+ * needs neither the Python sources nor a network. `--regenerate-baseline` sets
+ * this to the checkout it was pointed at.
+ */
+let pythonRepository: string | undefined;
+
+function requirePythonRepository(): string {
+  if (pythonRepository === undefined) {
+    fail("regenerating the baseline requires --python-repo <path to a libtmux checkout>");
+  }
+  return pythonRepository;
+}
 
 const modules = [
   "client",
@@ -423,12 +439,12 @@ function parseManifest(value: unknown): ParityManifest {
 }
 
 function sourcePath(module: string, testHelper = false): string {
-  return join(repositoryRoot, "src/libtmux", testHelper ? "test" : "", `${module}.py`);
+  return join(requirePythonRepository(), "src/libtmux", testHelper ? "test" : "", `${module}.py`);
 }
 
 function runGit(arguments_: string[]): string {
   const result = Bun.spawnSync(["git", ...arguments_], {
-    cwd: repositoryRoot,
+    cwd: requirePythonRepository(),
     stderr: "pipe",
     stdout: "pipe",
   });
@@ -436,20 +452,63 @@ function runGit(arguments_: string[]): string {
   return result.stdout.toString().trim();
 }
 
-function verifyBaseline(manifest: ParityManifest): void {
+/**
+ * What the Python release contributes to the gate, captured once.
+ *
+ * The baseline it names is a released tag, so nothing it records can change
+ * without someone deliberately moving to a different release. Reading it from
+ * a committed file rather than from a checkout is what lets this package check
+ * its own parity without carrying the Python library around.
+ */
+interface ParityBaseline {
+  generatedFrom: { commit: string; repository: string; tag: string };
+  /** Git object kind, by repository path, for every path the ledger cites. */
+  objects: Record<string, "blob" | "tree">;
+  schemaVersion: number;
+  symbols: Array<Pick<PublicSymbol, "kind" | "owner" | "python" | "source">>;
+}
+
+function parseBaseline(value: unknown): ParityBaseline {
+  const baseline = objectAt(value, "baseline");
+  exactKeys(baseline, ["schemaVersion", "generatedFrom", "objects", "symbols"], "baseline");
+  if (baseline.schemaVersion !== 1) fail("baseline.schemaVersion must be 1");
+  const from = objectAt(baseline.generatedFrom, "baseline.generatedFrom");
+  exactKeys(from, ["repository", "tag", "commit"], "baseline.generatedFrom");
+  for (const key of ["repository", "tag", "commit"]) stringAt(from, key, "baseline.generatedFrom");
+  const objects = objectAt(baseline.objects, "baseline.objects");
+  for (const [path, kind] of Object.entries(objects)) {
+    if (kind !== "blob" && kind !== "tree") fail(`baseline.objects[${path}] must be blob or tree`);
+  }
+  if (!Array.isArray(baseline.symbols) || baseline.symbols.length === 0) {
+    fail("baseline.symbols must be a nonempty array");
+  }
+  for (const [index, entry] of baseline.symbols.entries()) {
+    const path = `baseline.symbols[${index}]`;
+    const record = objectAt(entry, path);
+    exactKeys(record, ["kind", "owner", "python", "source"], path);
+    for (const key of ["kind", "owner", "python", "source"]) stringAt(record, key, path);
+  }
+  return baseline as unknown as ParityBaseline;
+}
+
+function verifyBaseline(manifest: ParityManifest, baseline: ParityBaseline): void {
   const { commit, pythonVersion, tag } = manifest.baseline;
   if (pythonVersion !== "0.62.0") fail("baseline.pythonVersion must be 0.62.0");
   if (tag !== "v0.62.0") fail("baseline.tag must be v0.62.0");
-  let resolved: string;
-  try {
-    resolved = runGit(["rev-parse", `${tag}^{commit}`]);
-  } catch {
-    fail(`Unable to resolve ${tag}; fetch tags and unshallow the checkout before checking parity`);
+  if (baseline.generatedFrom.tag !== tag) {
+    fail(`baseline records ${baseline.generatedFrom.tag}, the manifest records ${tag}`);
   }
-  if (resolved !== commit) fail(`${tag} resolves to ${resolved}, not ${commit}`);
+  if (baseline.generatedFrom.commit !== commit) {
+    fail(`baseline records ${baseline.generatedFrom.commit}, the manifest records ${commit}`);
+  }
 }
 
-function verifyPythonEvidence(key: string, values: string[], baselineCommit: string): void {
+function verifyPythonEvidence(
+  key: string,
+  values: string[],
+  baselineCommit: string,
+  objects: ParityBaseline["objects"],
+): void {
   const canonicalPattern = new RegExp(
     `^https://github\\.com/tmux-python/libtmux/(blob|tree)/${baselineCommit}/([A-Za-z0-9_./-]+)$`,
   );
@@ -462,11 +521,12 @@ function verifyPythonEvidence(key: string, values: string[], baselineCommit: str
     if (objectPath.split("/").some((part) => part === "" || part === "." || part === "..")) {
       fail(`${key} Python evidence must be canonical and pinned to baseline commit: ${value}`);
     }
-    let objectKind: string;
-    try {
-      objectKind = runGit(["cat-file", "-t", `${baselineCommit}:${objectPath}`]);
-    } catch {
-      fail(`${key} Python evidence does not exist at baseline commit: ${value}`);
+    const objectKind = objects[objectPath];
+    if (objectKind === undefined) {
+      fail(
+        `${key} Python evidence is not recorded in the baseline: ${value}\n` +
+          "Regenerate the baseline against a libtmux checkout to admit a new path.",
+      );
     }
     const expectedKind = linkKind === "blob" ? "blob" : "tree";
     if (objectKind !== expectedKind) {
@@ -475,7 +535,10 @@ function verifyPythonEvidence(key: string, values: string[], baselineCommit: str
   }
 }
 
-function verifyManualProvenance(manifest: ParityManifest): void {
+function verifyManualProvenance(
+  manifest: ParityManifest,
+  objects: ParityBaseline["objects"],
+): void {
   const publicSymbolKeys = new Set(manifest.publicSymbols.map(({ python }) => python));
   for (const behavior of manifest.observableBehaviors) {
     for (const owner of behavior.owners) {
@@ -494,10 +557,10 @@ function verifyManualProvenance(manifest: ParityManifest): void {
     if (behavior.evidenceApplicability.realTmuxScenario !== expectedApplicability) {
       fail(`${behavior.id} has invalid realTmuxScenario applicability`);
     }
-    verifyPythonEvidence(behavior.id, behavior.pythonEvidence, manifest.baseline.commit);
+    verifyPythonEvidence(behavior.id, behavior.pythonEvidence, manifest.baseline.commit, objects);
   }
   for (const exclusion of manifest.internalExclusions) {
-    verifyPythonEvidence(exclusion.id, exclusion.pythonEvidence, manifest.baseline.commit);
+    verifyPythonEvidence(exclusion.id, exclusion.pythonEvidence, manifest.baseline.commit, objects);
   }
 }
 
@@ -711,7 +774,7 @@ async function verifyTypeScriptSymbols(
 }
 
 function readPythonSource(path: string): string {
-  const revisionPath = relative(repositoryRoot, path);
+  const revisionPath = relative(requirePythonRepository(), path);
   try {
     return runGit(["show", `v0.62.0:${revisionPath}`]);
   } catch (error) {
@@ -821,10 +884,29 @@ function createSymbol(kind: ParityKind, python: string, path: string): PublicSym
     python,
     realTmuxScenario: null,
     reason: null,
-    source: `${sourceUrl}/${relative(repositoryRoot, path)}`,
+    source: `${sourceUrl}/${relative(requirePythonRepository(), path)}`,
     status: "planned",
     typescript: knownTarget(kind, python),
     typescriptSymbols: knownTypeScriptSymbols(kind, python),
+    unitTest: null,
+  };
+}
+
+/** A planned record for a symbol the baseline already resolved. */
+function baselineSymbol(entry: ParityBaseline["symbols"][number]): PublicSymbol {
+  return {
+    adaptation: null,
+    declarationTest: null,
+    evidenceApplicability: publicSymbolEvidenceApplicability(entry.kind, entry.python, "planned"),
+    kind: entry.kind,
+    owner: entry.owner,
+    python: entry.python,
+    realTmuxScenario: null,
+    reason: null,
+    source: entry.source,
+    status: "planned",
+    typescript: knownTarget(entry.kind, entry.python),
+    typescriptSymbols: knownTypeScriptSymbols(entry.kind, entry.python),
     unitTest: null,
   };
 }
@@ -990,7 +1072,7 @@ function collectConstants(): PublicSymbol[] {
       if (constant) entries.push(createSymbol("constant", `libtmux.${module}.${constant}`, path));
     }
   }
-  const packagePath = join(repositoryRoot, "src/libtmux/__init__.py");
+  const packagePath = join(requirePythonRepository(), "src/libtmux/__init__.py");
   for (const name of [
     "__author__",
     "__copyright__",
@@ -1007,7 +1089,7 @@ function collectConstants(): PublicSymbol[] {
 }
 
 function collectRootExports(): PublicSymbol[] {
-  const path = join(repositoryRoot, "src/libtmux/__init__.py");
+  const path = join(requirePythonRepository(), "src/libtmux/__init__.py");
   const source = readPythonSource(path);
   return rootExports.map((name) => {
     if (!source.includes(`from .${name.toLowerCase()} import ${name}`)) {
@@ -1032,7 +1114,7 @@ function collectEnumMembers(): PublicSymbol[] {
   return entries;
 }
 
-function inventory(): PublicSymbol[] {
+function deriveInventory(): PublicSymbol[] {
   const entries = [
     ...modules.flatMap(collectModule).filter((entry) => entry.kind !== "constant"),
     ...collectConstants(),
@@ -1163,21 +1245,83 @@ function validateSymbolPolicies(manifest: ParityManifest, expected: PublicSymbol
   return problems;
 }
 
+/**
+ * Re-derive the baseline from a checkout of the Python library.
+ *
+ * A maintainer task, not a gate: the tag it reads is immutable, so the only
+ * reason to run this is admitting a new evidence path or moving to a different
+ * Python release.
+ */
+async function regenerateBaseline(manifest: ParityManifest, baselinePath: string): Promise<number> {
+  const { commit, tag } = manifest.baseline;
+  let resolved: string;
+  try {
+    resolved = runGit(["rev-parse", `${tag}^{commit}`]);
+  } catch {
+    fail(`Unable to resolve ${tag}; fetch tags and unshallow the checkout before regenerating`);
+  }
+  if (resolved !== commit) fail(`${tag} resolves to ${resolved}, not the manifest's ${commit}`);
+
+  const cited = new Set<string>();
+  for (const record of [...manifest.observableBehaviors, ...manifest.internalExclusions]) {
+    for (const value of record.pythonEvidence) {
+      const path =
+        /^https:\/\/github\.com\/tmux-python\/libtmux\/(?:blob|tree)\/[0-9a-f]{40}\/(.+)$/.exec(
+          value,
+        )?.[1];
+      if (path !== undefined) cited.add(path);
+    }
+  }
+  const objects: Record<string, string> = {};
+  for (const path of [...cited].sort()) {
+    objects[path] = runGit(["cat-file", "-t", `${commit}:${path}`]);
+  }
+
+  const baseline = {
+    schemaVersion: 1,
+    generatedFrom: { repository: "https://github.com/tmux-python/libtmux", tag, commit },
+    objects,
+    symbols: deriveInventory().map(({ kind, owner, python, source }) => ({
+      kind,
+      owner,
+      python,
+      source,
+    })),
+  };
+  await atomicWrite(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+  return baseline.symbols.length;
+}
+
 function parseArguments(arguments_: string[]): {
   allowBoundaryChange: boolean;
+  baselinePath: string;
   manifestPath: string;
   packageManifestPath: string;
+  regenerate: boolean;
   write: boolean;
 } {
   let allowBoundaryChange = false;
+  let baselinePath = defaultBaselinePath;
   let manifestPath = defaultManifestPath;
   let packageManifestPath = defaultPackageManifestPath;
+  let regenerate = false;
   let write = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--write") write = true;
     else if (argument === "--allow-boundary-change") allowBoundaryChange = true;
-    else if (argument === "--manifest") {
+    else if (argument === "--regenerate-baseline") regenerate = true;
+    else if (argument === "--python-repo") {
+      const value = arguments_[index + 1];
+      if (!value) fail("--python-repo requires a path");
+      pythonRepository = isAbsolute(value) ? value : resolve(process.cwd(), value);
+      index += 1;
+    } else if (argument === "--baseline") {
+      const value = arguments_[index + 1];
+      if (!value) fail("--baseline requires a path");
+      baselinePath = isAbsolute(value) ? value : resolve(process.cwd(), value);
+      index += 1;
+    } else if (argument === "--manifest") {
       const value = arguments_[index + 1];
       if (!value) fail("--manifest requires a path");
       manifestPath = isAbsolute(value) ? value : resolve(process.cwd(), value);
@@ -1190,21 +1334,43 @@ function parseArguments(arguments_: string[]): {
     } else fail(`unknown argument: ${argument}`);
   }
   if (allowBoundaryChange && !write) fail("--allow-boundary-change requires --write");
-  return { allowBoundaryChange, manifestPath, packageManifestPath, write };
+  if (regenerate && write) fail("--regenerate-baseline and --write are separate steps");
+  return {
+    allowBoundaryChange,
+    baselinePath,
+    manifestPath,
+    packageManifestPath,
+    regenerate,
+    write,
+  };
 }
 
 try {
-  const { allowBoundaryChange, manifestPath, packageManifestPath, write } = parseArguments(
-    process.argv.slice(2),
-  );
+  const {
+    allowBoundaryChange,
+    baselinePath,
+    manifestPath,
+    packageManifestPath,
+    regenerate,
+    write,
+  } = parseArguments(process.argv.slice(2));
   if (!existsSync(manifestPath)) fail(`missing parity manifest: ${manifestPath}`);
   const raw = await readFile(manifestPath, "utf8");
   const manifest = parseManifest(JSON.parse(raw) as unknown);
-  verifyBaseline(manifest);
-  verifyManualProvenance(manifest);
+
+  if (regenerate) {
+    const count = await regenerateBaseline(manifest, baselinePath);
+    console.log(`Parity baseline regenerated: ${count} public symbols`);
+    process.exit(0);
+  }
+
+  if (!existsSync(baselinePath)) fail(`missing parity baseline: ${baselinePath}`);
+  const baseline = parseBaseline(JSON.parse(await readFile(baselinePath, "utf8")) as unknown);
+  verifyBaseline(manifest, baseline);
+  verifyManualProvenance(manifest, baseline.objects);
   verifyEvidencePaths(manifest);
   await verifyTypeScriptSymbols(manifest, packageManifestPath);
-  const expected = inventory();
+  const expected = baseline.symbols.map(baselineSymbol);
   const policyProblems = validateSymbolPolicies(manifest, expected);
   if (policyProblems.length > 0) fail(policyProblems.join("\n"));
 
@@ -1220,7 +1386,7 @@ try {
     }
     const updated = renderUpdatedManifest(raw, mergeSymbols(expected, manifest.publicSymbols));
     const updatedManifest = parseManifest(JSON.parse(updated) as unknown);
-    verifyManualProvenance(updatedManifest);
+    verifyManualProvenance(updatedManifest, baseline.objects);
     await atomicWrite(manifestPath, updated);
     console.log(`Parity manifest updated: ${expected.length} public symbols`);
   } else {

@@ -1,0 +1,3104 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": {
+    "repository": "https://github.com/tmux-python/libtmux",
+    "tag": "v0.62.0",
+    "commit": "38e368c11117fb4aeb2f082d552cd4f210eae06a"
+  },
+  "objects": {
+    "docs/topics/traversal.md": "blob",
+    "src/libtmux/_internal": "tree",
+    "src/libtmux/_internal/query_list.py": "blob",
+    "src/libtmux/client.py": "blob",
+    "src/libtmux/common.py": "blob",
+    "src/libtmux/exc.py": "blob",
+    "src/libtmux/pane.py": "blob",
+    "src/libtmux/pytest_plugin.py": "blob",
+    "src/libtmux/server.py": "blob",
+    "src/libtmux/session.py": "blob",
+    "src/libtmux/test/environment.py": "blob",
+    "src/libtmux/test/random.py": "blob",
+    "src/libtmux/window.py": "blob",
+    "tests/test_resolution.py": "blob"
+  },
+  "symbols": [
+    {
+      "kind": "class",
+      "owner": "libtmux.client",
+      "python": "libtmux.client.Client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/client.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.CmdMixin",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.CmdProtocol",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.EnvironmentMixin",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.tmux_cmd",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.OptionScope",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.PaneDirection",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.ResizeAdjustmentDirection",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.WindowDirection",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.hooks",
+      "python": "libtmux.hooks.HooksMixin",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/hooks.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.neo",
+      "python": "libtmux.neo.Obj",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.options",
+      "python": "libtmux.options.OptionsMixin",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.pane",
+      "python": "libtmux.pane.Pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.server",
+      "python": "libtmux.server.Server",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.session",
+      "python": "libtmux.session.Session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "class",
+      "owner": "libtmux.window",
+      "python": "libtmux.window.Window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.get",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.index",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.resize_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.select_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.split_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.title",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.children",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.find_where",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.get_by_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.kill_server",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.list_sessions",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.where",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.attach_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.attached_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.attached_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.children",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.find_where",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.get",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.get_by_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.kill_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.list_windows",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.where",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.attached_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.children",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.find_where",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.get",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.get_by_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.index",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.kill_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.list_panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.select_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.set_window_option",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.show_window_option",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.show_window_options",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.split_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.where",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "compatibility-alias",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__author__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__copyright__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__description__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__email__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__license__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__package_name__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__title__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux",
+      "python": "libtmux.__version__",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.TMUX_MAX_VERSION",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.TMUX_MIN_VERSION",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.DEFAULT_OPTION_SCOPE",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.HOOK_SCOPE_FLAG_MAP",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.OPTION_SCOPE_FLAG_MAP",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.PANE_DIRECTION_FLAG_MAP",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.constants",
+      "python": "libtmux.constants.WINDOW_DIRECTION_FLAG_MAP",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.formats",
+      "python": "libtmux.formats.CLIENT_FORMATS",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.formats",
+      "python": "libtmux.formats.FORMAT_SEPARATOR",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.formats",
+      "python": "libtmux.formats.PANE_FORMATS",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.formats",
+      "python": "libtmux.formats.SESSION_FORMATS",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.formats",
+      "python": "libtmux.formats.WINDOW_FORMATS",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.neo",
+      "python": "libtmux.neo.FIELD_VERSION",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "constant",
+      "owner": "libtmux.neo",
+      "python": "libtmux.neo.SCOPES_BY_LIST_CMD",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.OptionScope",
+      "python": "libtmux.constants.OptionScope.Pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.OptionScope",
+      "python": "libtmux.constants.OptionScope.Server",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.OptionScope",
+      "python": "libtmux.constants.OptionScope.Session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.OptionScope",
+      "python": "libtmux.constants.OptionScope.Window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.PaneDirection",
+      "python": "libtmux.constants.PaneDirection.Above",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.PaneDirection",
+      "python": "libtmux.constants.PaneDirection.Below",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.PaneDirection",
+      "python": "libtmux.constants.PaneDirection.Left",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.PaneDirection",
+      "python": "libtmux.constants.PaneDirection.Right",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.ResizeAdjustmentDirection",
+      "python": "libtmux.constants.ResizeAdjustmentDirection.Down",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.ResizeAdjustmentDirection",
+      "python": "libtmux.constants.ResizeAdjustmentDirection.Left",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.ResizeAdjustmentDirection",
+      "python": "libtmux.constants.ResizeAdjustmentDirection.Right",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.ResizeAdjustmentDirection",
+      "python": "libtmux.constants.ResizeAdjustmentDirection.Up",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.WindowDirection",
+      "python": "libtmux.constants.WindowDirection.After",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "enum-member",
+      "owner": "libtmux.constants.WindowDirection",
+      "python": "libtmux.constants.WindowDirection.Before",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.AdjustmentDirectionRequiresAdjustment",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.AmbiguousOption",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.BadSessionName",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.DeprecatedError",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.InvalidOption",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.LibTmuxException",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.MultipleActiveWindows",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.MultipleObjectsReturned",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.NoActiveWindow",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.NotInsideTmux",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.NoWindowsExist",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.ObjectDoesNotExist",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.OptionError",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.PaneAdjustmentDirectionRequiresAdjustment",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.PaneError",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.PaneNotFound",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.RequiresDigitOrPercentage",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.TmuxCommandNotFound",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.TmuxObjectDoesNotExist",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.TmuxSessionExists",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.UnknownColorOption",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.UnknownOption",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.VariableUnpackingError",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.VersionTooLow",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.WaitTimeout",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.WindowAdjustmentDirectionRequiresAdjustment",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "exception",
+      "owner": "libtmux.exc",
+      "python": "libtmux.exc.WindowError",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.active_window_index",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.alternate_saved_x",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.alternate_saved_y",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.bracket_paste_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.buffer_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.buffer_sample",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.buffer_size",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_activity",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_cell_height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_cell_width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_control_mode",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_created",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_discarded",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_flags",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_key_table",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_last_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_mode_format",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_pid",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_prefix",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_readonly",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_termfeatures",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_termname",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_termtype",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_tty",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_uid",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_user",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_utf8",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.client_written",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.command_list_alias",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.command_list_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.command_list_usage",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.config_files",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.copy_cursor_line",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.copy_cursor_word",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.copy_cursor_x",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.copy_cursor_y",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.current_file",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.cursor_character",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.cursor_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.cursor_x",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.cursor_y",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.history_bytes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.history_limit",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.history_size",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.insert_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.keypad_cursor_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.keypad_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.last_window_index",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.line",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.mouse_all_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.mouse_any_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.mouse_button_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.mouse_sgr_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.mouse_standard_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.next_session_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.origin_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_active",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_at_bottom",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_at_left",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_at_right",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_at_top",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_bg",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_bottom",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_current_command",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_current_path",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_dead",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_dead_signal",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_dead_status",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_dead_time",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_fg",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_flags",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_floating_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_format",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_in_mode",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_index",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_input_off",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_last",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_left",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_marked",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_marked_set",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_mode",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_path",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_pb_progress",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_pb_state",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_pid",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_pipe",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_pipe_pid",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_right",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_search_string",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_start_command",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_start_path",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_synchronized",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_tabs",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_title",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_top",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_tty",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_x",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_y",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_z",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pane_zoomed_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.pid",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.scroll_position",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.scroll_region_lower",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.scroll_region_upper",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.search_match",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.selection_end_x",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.selection_end_y",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.selection_start_x",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.selection_start_y",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_activity",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_alerts",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_attached",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_attached_list",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_created",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_format",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_group",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_group_attached",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_group_attached_list",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_group_list",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_group_many_attached",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_group_size",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_grouped",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_last_attached",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_many_attached",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_marked",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_path",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_stack",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.session_windows",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.socket_path",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.start_time",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.synchronized_output_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.uid",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.user",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_active",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_active_clients",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_active_clients_list",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_active_sessions",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_active_sessions_list",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_activity",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_activity_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_bell_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_bigger",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_cell_height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_cell_width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_end_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_flags",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_format",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_index",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_last_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_layout",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_linked",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_linked_sessions",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_linked_sessions_list",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_marked_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_offset_x",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_offset_y",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_raw_flags",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_silence_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_stack_index",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_start_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_visible_layout",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.window_zoomed_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "format-field",
+      "owner": "libtmux.neo.Obj",
+      "python": "libtmux.neo.Obj.wrap_flag",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.get_libtmux_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.get_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.get_version_str",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.has_gt_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.has_gte_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.has_lt_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.has_lte_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.has_minimum_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.has_version",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.raise_if_stderr",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.common",
+      "python": "libtmux.common.session_check_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.neo",
+      "python": "libtmux.neo.fetch_obj",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.neo",
+      "python": "libtmux.neo.fetch_objs",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.neo",
+      "python": "libtmux.neo.get_output_format",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.neo",
+      "python": "libtmux.neo.parse_output",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.options",
+      "python": "libtmux.options.convert_value",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.options",
+      "python": "libtmux.options.convert_values",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.options",
+      "python": "libtmux.options.explode_arrays",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.options",
+      "python": "libtmux.options.explode_complex",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.options",
+      "python": "libtmux.options.handle_option_error",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "function",
+      "owner": "libtmux.options",
+      "python": "libtmux.options.parse_options_to_dict",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.client.Client",
+      "python": "libtmux.client.Client.from_client_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/client.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.client.Client",
+      "python": "libtmux.client.Client.refresh",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/client.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.common.EnvironmentMixin",
+      "python": "libtmux.common.EnvironmentMixin.getenv",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.common.EnvironmentMixin",
+      "python": "libtmux.common.EnvironmentMixin.remove_environment",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.common.EnvironmentMixin",
+      "python": "libtmux.common.EnvironmentMixin.set_environment",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.common.EnvironmentMixin",
+      "python": "libtmux.common.EnvironmentMixin.show_environment",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.common.EnvironmentMixin",
+      "python": "libtmux.common.EnvironmentMixin.unset_environment",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.hooks.HooksMixin",
+      "python": "libtmux.hooks.HooksMixin.run_hook",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/hooks.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.hooks.HooksMixin",
+      "python": "libtmux.hooks.HooksMixin.set_hook",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/hooks.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.hooks.HooksMixin",
+      "python": "libtmux.hooks.HooksMixin.set_hooks",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/hooks.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.hooks.HooksMixin",
+      "python": "libtmux.hooks.HooksMixin.show_hook",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/hooks.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.hooks.HooksMixin",
+      "python": "libtmux.hooks.HooksMixin.show_hooks",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/hooks.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.hooks.HooksMixin",
+      "python": "libtmux.hooks.HooksMixin.unset_hook",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/hooks.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.options.OptionsMixin",
+      "python": "libtmux.options.OptionsMixin.set_option",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.options.OptionsMixin",
+      "python": "libtmux.options.OptionsMixin.show_option",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.options.OptionsMixin",
+      "python": "libtmux.options.OptionsMixin.show_options",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.options.OptionsMixin",
+      "python": "libtmux.options.OptionsMixin.unset_option",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/options.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.break_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.capture_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.choose_buffer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.choose_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.choose_tree",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.clear",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.clear_history",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.clock_mode",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.cmd",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.copy_mode",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.customize_mode",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.display_message",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.display_panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.display_popup",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.enter",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.find_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.from_env",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.from_pane_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.join",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.kill",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.move",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.new_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.paste_buffer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.pipe",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.refresh",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.reset",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.resize",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.respawn",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.select",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.send_keys",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.send_prefix",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.set_height",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.set_title",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.set_width",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.split",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.swap",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.attach_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.bind_key",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.clear_prompt_history",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.cmd",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.command_prompt",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.confirm_before",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.delete_buffer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.detach_all_clients",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.detach_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.display_menu",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.display_message",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.from_env",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.has_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.if_shell",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.is_alive",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.kill",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.kill_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.list_buffers",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.list_clients",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.list_commands",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.list_keys",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.load_buffer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.lock_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.lock_server",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.new_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.raise_if_dead",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.refresh_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.run_shell",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.save_buffer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.search_panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.search_sessions",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.search_windows",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.server_access",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.set_buffer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.show_buffer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.show_messages",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.show_prompt_history",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.source_file",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.start_server",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.suspend_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.switch_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.unbind_key",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.wait_for",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.attach",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.cmd",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.detach_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.from_env",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.from_session_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.kill",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.kill_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.last_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.lock_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.new_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.next_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.previous_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.refresh",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.rename_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.search_panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.search_windows",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.select_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.switch_client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.cmd",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.display_message",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.from_env",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.from_window_id",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.kill",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.last_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.link",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.move_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.new_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.new_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.next_layout",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.previous_layout",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.refresh",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.rename_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.resize",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.respawn",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.rotate",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.search_panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.select",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.select_layout",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.select_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.split",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.swap",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "method",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.unlink",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.client.Client",
+      "python": "libtmux.client.Client.attached_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/client.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.client.Client",
+      "python": "libtmux.client.Client.attached_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/client.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.client.Client",
+      "python": "libtmux.client.Client.attached_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/client.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.at_bottom",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.at_left",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.at_right",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.at_top",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.pane.Pane",
+      "python": "libtmux.pane.Pane.window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.attached_sessions",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.clients",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.sessions",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.server.Server",
+      "python": "libtmux.server.Server.windows",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.active_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.active_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.session.Session",
+      "python": "libtmux.session.Session.windows",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.active_pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.linked_sessions",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.panes",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "property",
+      "owner": "libtmux.window.Window",
+      "python": "libtmux.window.Window.session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py"
+    },
+    {
+      "kind": "root-export",
+      "owner": "libtmux",
+      "python": "libtmux.Client",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "root-export",
+      "owner": "libtmux",
+      "python": "libtmux.Pane",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "root-export",
+      "owner": "libtmux",
+      "python": "libtmux.Server",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "root-export",
+      "owner": "libtmux",
+      "python": "libtmux.Session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "root-export",
+      "owner": "libtmux",
+      "python": "libtmux.Window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/__init__.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.clear_env",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.config_file",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.control_mode",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.home_path",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.home_user_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.server",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.session_params",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.TestServer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.user_path",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.pytest_plugin",
+      "python": "libtmux.pytest_plugin.zshrc",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pytest_plugin.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.constants",
+      "python": "libtmux.test.constants.RETRY_INTERVAL_SECONDS",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/constants.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.constants",
+      "python": "libtmux.test.constants.RETRY_TIMEOUT_SECONDS",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/constants.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.constants",
+      "python": "libtmux.test.constants.TEST_SESSION_PREFIX",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/constants.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.environment",
+      "python": "libtmux.test.environment.EnvironmentVarGuard",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/environment.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.environment.EnvironmentVarGuard",
+      "python": "libtmux.test.environment.EnvironmentVarGuard.set",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/environment.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.environment.EnvironmentVarGuard",
+      "python": "libtmux.test.environment.EnvironmentVarGuard.unset",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/environment.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.random",
+      "python": "libtmux.test.random.get_test_session_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/random.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.random",
+      "python": "libtmux.test.random.get_test_window_name",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/random.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.random",
+      "python": "libtmux.test.random.namer",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/random.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.random",
+      "python": "libtmux.test.random.RandomStrSequence",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/random.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.retry",
+      "python": "libtmux.test.retry.retry_until",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/retry.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.temporary",
+      "python": "libtmux.test.temporary.temp_session",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/temporary.py"
+    },
+    {
+      "kind": "test-helper",
+      "owner": "libtmux.test.temporary",
+      "python": "libtmux.test.temporary.temp_window",
+      "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/test/temporary.py"
+    }
+  ]
+}

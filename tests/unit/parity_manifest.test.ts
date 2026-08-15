@@ -769,7 +769,7 @@ describe("Python 0.62.0 parity manifest", () => {
           `https://github.com/tmux-python/libtmux/blob/${baselineCommit}/src/libtmux/does_not_exist.py`,
         ];
       },
-      "Python evidence does not exist at baseline commit",
+      "Python evidence is not recorded in the baseline",
     ],
     [
       "real-tmux behavior downgraded to deterministic",
@@ -960,22 +960,19 @@ describe("Python 0.62.0 parity manifest", () => {
     },
   );
 
-  parityCheckerTest(
-    "rejects a baseline commit that does not resolve from the pinned tag",
-    async () => {
-      await withTemporaryManifest(async (path) => {
-        const manifest = await readManifest(path);
-        manifest.baseline.commit = "0000000000000000000000000000000000000000";
-        await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`);
+  parityCheckerTest("rejects a baseline commit the generated baseline disagrees with", async () => {
+    await withTemporaryManifest(async (path) => {
+      const manifest = await readManifest(path);
+      manifest.baseline.commit = "0000000000000000000000000000000000000000";
+      await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`);
 
-        const result = await runChecker("--manifest", path);
-        expect(result.exitCode).not.toBe(0);
-        expect(result.stderr).toContain(
-          `v0.62.0 resolves to ${baselineCommit}, not 0000000000000000000000000000000000000000`,
-        );
-      });
-    },
-  );
+      const result = await runChecker("--manifest", path);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain(
+        `baseline records ${baselineCommit}, the manifest records 0000000000000000000000000000000000000000`,
+      );
+    });
+  });
 
   parityCheckerTest("passes the parity checker against all four sections", async () => {
     const result = await runChecker();

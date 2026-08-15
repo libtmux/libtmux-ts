@@ -43,6 +43,21 @@ A ported row names the TypeScript that covers it. Prefer
 `./module#instance:Class.member`, which pins the member, over
 `./module#value:Class`, which only pins its class.
 
+`parity/python-0.62.0.baseline.json` is what the Python release contributes:
+the symbols it exposes, and the git object kind of every path the ledger cites.
+It is generated, not written, and the gate reads it instead of a checkout — so
+checking parity needs no Python sources and no network.
+
+The baseline it names is a released tag, so nothing in it can change on its
+own. Regenerate only to admit a new evidence path or to move to a different
+release, and commit the result:
+
+```console
+$ bun scripts/check-parity.ts \
+    --regenerate-baseline \
+    --python-repo ../libtmux
+```
+
 ## Real tmux
 
 Probe before you commit. `~/.local/share/libtmux-tmux-matrix` holds the
