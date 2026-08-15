@@ -11,9 +11,32 @@ import {
 } from "./raw_tmux.js";
 
 const baselineCommit = "38e368c11117fb4aeb2f082d552cd4f210eae06a";
-const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
-const repositoryRoot = resolve(tsRoot, "..");
 const oraclePath = fileURLToPath(new URL("./python_oracle.py", import.meta.url));
+
+/**
+ * A checkout of the Python library, which the oracle needs and this package
+ * does not contain.
+ *
+ * The oracle runs the real libtmux 0.62.0 to compare this port against, so
+ * unlike the parity baseline it needs the code rather than a description of
+ * it. The tree is materialized from the pinned commit and authenticated
+ * against it, so any checkout carrying that commit will do.
+ */
+export function pythonBaselineRepository(): string | undefined {
+  const configured = process.env.LIBTMUX_PYTHON_REPO;
+  return configured === undefined || configured === "" ? undefined : resolve(configured);
+}
+
+function requireRepository(): string {
+  const repository = pythonBaselineRepository();
+  if (repository === undefined) {
+    throw new Error(
+      "the differential oracle needs libtmux 0.62.0: point LIBTMUX_PYTHON_REPO at a checkout " +
+        `carrying commit ${baselineCommit}`,
+    );
+  }
+  return repository;
+}
 
 export interface ClosedOracleProcess {
   readonly code: number | null;
@@ -65,21 +88,21 @@ export async function materializePythonBaseline(parent: string): Promise<string>
   const archive = join(parent, "python-0.62.0.tar");
   const archived = await close(
     spawn("git", ["archive", `--output=${archive}`, baselineCommit, "src/libtmux"], {
-      cwd: repositoryRoot,
+      cwd: requireRepository(),
       stdio: ["ignore", "pipe", "pipe"],
     }),
   );
   if (archived.code !== 0) throw new Error(archived.stderr);
   const extracted = await close(
     spawn("tar", ["-xf", archive, "-C", parent], {
-      cwd: repositoryRoot,
+      cwd: requireRepository(),
       stdio: ["ignore", "pipe", "pipe"],
     }),
   );
   if (extracted.code !== 0) throw new Error(extracted.stderr);
   const listing = await close(
     spawn("git", ["ls-tree", "-r", baselineCommit, "src/libtmux"], {
-      cwd: repositoryRoot,
+      cwd: requireRepository(),
       stdio: ["ignore", "pipe", "pipe"],
     }),
   );
@@ -104,9 +127,9 @@ export async function queryPythonOracle(
 ): Promise<{ result: Promise<ClosedOracleProcess>; response?: DifferentialResponse }> {
   const child = spawn(
     "uv",
-    ["run", "--project", repositoryRoot, "python", "-I", "-B", oraclePath],
+    ["run", "--project", requireRepository(), "python", "-I", "-B", oraclePath],
     {
-      cwd: repositoryRoot,
+      cwd: requireRepository(),
       env: {
         ...environment,
         ...(sourceRoot === undefined ? {} : { LIBTMUX_ORACLE_ROOT: sourceRoot }),

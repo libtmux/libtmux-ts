@@ -58,6 +58,19 @@ $ bun scripts/check-parity.ts \
     --python-repo ../libtmux
 ```
 
+The differential suite is the other half, and it does need the code: it runs
+the real Python library as an oracle and compares this port against it. Point
+`LIBTMUX_PYTHON_REPO` at a checkout carrying the pinned commit — a shallow
+clone of the tag is enough:
+
+```console
+$ git clone --branch v0.62.0 --depth 1 \
+    https://github.com/tmux-python/libtmux.git
+```
+
+Without it those tests skip rather than fail, because a missing oracle is not
+evidence that the port is wrong. CI clones it, so they always run there.
+
 ## Real tmux
 
 Probe before you commit. `~/.local/share/libtmux-tmux-matrix` holds the

@@ -2360,33 +2360,37 @@ describe("supervisor status and signal semantics", () => {
 });
 
 describe("outer test controllers", () => {
-  test("differential runner uses the exact root published by its caller", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "ltx4-ci-root-"));
-    const root = join(parent, "published, root");
-    const child = spawn("bun", [differentialRunnerPath], {
-      cwd: tsRoot,
-      env: { ...process.env, LIBTMUX_TEST_RUN_ROOT: root },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    try {
-      const [rootObserved, reservationObserved] = await Promise.all([
-        observePathWhileRunning(root, child),
-        observeReservationWhileRunning(root, child),
-      ]);
-      expect(rootObserved).toBe(true);
-      expect(reservationObserved).toEqual({
-        distinctOwners: true,
-        observed: true,
+  test.skipIf(process.env.LIBTMUX_PYTHON_REPO === undefined)(
+    "differential runner uses the exact root published by its caller",
+    async () => {
+      const parent = await mkdtemp(join(tmpdir(), "ltx4-ci-root-"));
+      const root = join(parent, "published, root");
+      const child = spawn("bun", [differentialRunnerPath], {
+        cwd: tsRoot,
+        env: { ...process.env, LIBTMUX_TEST_RUN_ROOT: root },
+        stdio: ["ignore", "pipe", "pipe"],
       });
-      const closed = await closeChild(child);
-      expect(closed.code, `${closed.stdout}${closed.stderr}`).toBe(0);
-      await waitForPathAbsent(root);
-    } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      await reapStaleRunRoot(root).catch(() => undefined);
-      await rm(parent, { force: true, recursive: true });
-    }
-  }, 60_000);
+      try {
+        const [rootObserved, reservationObserved] = await Promise.all([
+          observePathWhileRunning(root, child),
+          observeReservationWhileRunning(root, child),
+        ]);
+        expect(rootObserved).toBe(true);
+        expect(reservationObserved).toEqual({
+          distinctOwners: true,
+          observed: true,
+        });
+        const closed = await closeChild(child);
+        expect(closed.code, `${closed.stdout}${closed.stderr}`).toBe(0);
+        await waitForPathAbsent(root);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        await reapStaleRunRoot(root).catch(() => undefined);
+        await rm(parent, { force: true, recursive: true });
+      }
+    },
+    60_000,
+  );
 
   for (const mode of ["after-create", "timeout-after-create"] as const) {
     test(`emitted Node ${mode} failure performs exact cleanup before parent removal`, async () => {

@@ -45,6 +45,16 @@ jobs:
       - name: Set up Python
         run: uv python install 3.13
 
+      # The oracle runs the real library rather than a description of it, so
+      # unlike the parity baseline this needs the code. The tag is what the
+      # materialized tree is authenticated against, so a shallow clone of it
+      # carries everything the comparison needs.
+      - name: Check out libtmux 0.62.0 for the differential oracle
+        run: |
+          git clone --branch v0.62.0 --depth 1 \
+            https://github.com/tmux-python/libtmux.git "$RUNNER_TEMP/libtmux-python"
+          echo "LIBTMUX_PYTHON_REPO=$RUNNER_TEMP/libtmux-python" >> "$GITHUB_ENV"
+
       - name: Point the emitted-Node lane at the provisioned Node 22
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 

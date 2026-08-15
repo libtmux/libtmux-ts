@@ -6,10 +6,19 @@ import { describe, expect, test } from "bun:test";
 
 import { prepareRunRoot, reapOwnedRunRoot } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
-import { materializePythonBaseline, queryPythonOracle } from "../differential/python_client.js";
+import {
+  materializePythonBaseline,
+  pythonBaselineRepository,
+  queryPythonOracle,
+} from "../differential/python_client.js";
 import { DIFFERENTIAL_PROTOCOL, queryRawTmux } from "../differential/raw_tmux.js";
 
-describe("differential substrate", () => {
+// The oracle runs the real Python library, which this repository does not
+// carry. Without a checkout to authenticate against there is nothing to
+// compare, so the suite says so rather than failing as though the port broke.
+const withOracle = pythonBaselineRepository() === undefined ? describe.skip : describe;
+
+withOracle("differential substrate", () => {
   test("smokes reusable raw-tmux and pinned Python 0.62.0 protocols", async () => {
     const parent = await mkdtemp(join(tmpdir(), "ltx4-diff-"));
     const publishedRoot = process.env.LIBTMUX_TEST_RUN_ROOT;
