@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 
 import { resolveNode22 } from "../../src/_internal/test/node22.js";
+import { requireBuiltPackage } from "../support/built_package.js";
 
 interface RuntimeReport {
   readonly cases: readonly { readonly id: string; readonly matched: boolean }[];
@@ -67,8 +68,7 @@ describe("three-runtime regex corpus", () => {
     expect(python.stderr).toBe("");
     expect(decodeReport(python.stdout).implementation).toBe("python-native-re");
 
-    const build = await runBounded(["bun", "run", "build"]);
-    expect(build.exitCode, build.stderr).toBe(0);
+    await requireBuiltPackage();
 
     const bun = await runBounded(["bun", "tests/fixtures/where_regex_runtime.mjs", "bun"]);
     expect(bun.exitCode, bun.stderr).toBe(0);

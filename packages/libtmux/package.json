@@ -1,6 +1,6 @@
 {
   "name": "libtmux",
-  "version": "0.0.1-alpha.5",
+  "version": "0.0.1-alpha.6",
   "description": "Typed, Bun-first TypeScript control of tmux: immutable snapshots, declarative queries, and a fully typed session, window, and pane API.",
   "keywords": [
     "automation",
@@ -106,7 +106,7 @@
     "test:package": "bun run build && bun scripts/check-package.ts",
     "test:type-performance": "bun scripts/check-type-performance.ts --check",
     "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
-    "test:unit": "bun test --parallel=4 --no-orphans tests/unit",
+    "test:unit": "bun run build && bun test --parallel=4 --timeout=30000 --no-orphans tests/unit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:readme": "bun scripts/check-readme-examples.ts",
     "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",

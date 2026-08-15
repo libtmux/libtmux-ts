@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
+import { requireBuiltPackage } from "../support/built_package.js";
+
 interface SourceMap {
   sourceRoot?: string;
   sources: string[];
@@ -53,12 +55,7 @@ async function expectValidationFailure(promise: Promise<void>, message?: string)
 }
 
 async function builtSourceMap(): Promise<SourceMap> {
-  const build = Bun.spawnSync(["bun", "run", "build"], {
-    cwd: tsRoot,
-    stderr: "pipe",
-    stdout: "pipe",
-  });
-  expect(build.exitCode, build.stderr.toString()).toBe(0);
+  await requireBuiltPackage();
   return JSON.parse(await Bun.file(mapUrl).text()) as SourceMap;
 }
 

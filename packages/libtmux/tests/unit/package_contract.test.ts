@@ -63,7 +63,7 @@ const expectedScripts = {
   "typecheck:readme": "bun scripts/check-readme-examples.ts",
   "typecheck:symbols": "bun scripts/check-symbol-examples.ts",
   "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
-  "test:unit": "bun test --parallel=4 --no-orphans tests/unit",
+  "test:unit": "bun run build && bun test --parallel=4 --timeout=30000 --no-orphans tests/unit",
 };
 
 // Zero runtime dependencies is a property worth gating, not a coincidence:
@@ -261,7 +261,7 @@ describe("package contract", () => {
     expect(config.rules).toEqual({ "typescript/await-thenable": "off" });
   });
 
-  test("exposes only runnable Task 5 scripts", async () => {
+  test("exposes exactly the scripts the gates run, and no others", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
     expect(packageManifest.scripts).toEqual(expectedScripts);

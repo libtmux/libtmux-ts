@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
+import { requireBuiltPackage } from "../support/built_package.js";
+
 type Status = "planned" | "implemented" | "adapted" | "unsupported";
 type EvidenceApplicability = "required" | `not-applicable: ${string}`;
 
@@ -987,14 +989,9 @@ describe("Python 0.62.0 parity manifest", () => {
   describe.serial("negative no-QueryList declaration fixture", () => {
     let freshDeclarationsAvailable = false;
 
-    test("builds fresh declarations for the fixture", () => {
+    test("finds the declarations the suite was built with", async () => {
       freshDeclarationsAvailable = false;
-      const build = Bun.spawnSync(["bun", "run", "build"], {
-        cwd: tsRootPath,
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-      expect(build.exitCode, `${build.stdout.toString()}${build.stderr.toString()}`).toBe(0);
+      await requireBuiltPackage();
       freshDeclarationsAvailable = true;
     });
 
