@@ -50,7 +50,6 @@ const expectedScripts = {
   "generate:check": "bun scripts/generate-formats.ts --check",
   lint: "oxlint . --ignore-pattern tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun scripts/check-type-aware-lint.ts",
   "lint:unused": "knip",
-  "mcp:build": "bun build consumers/mcp/server.ts --target=node --outfile=dist-mcp/server.js",
   parity: "bun scripts/check-parity.ts",
   "test:differential": "bun scripts/run-differential-tests.ts",
   "test:integration": "bun scripts/run-integration-tests.ts",
@@ -61,7 +60,6 @@ const expectedScripts = {
   "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
   typecheck: "tsc -p tsconfig.json --noEmit",
   "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",
-  "typecheck:consumers": "tsc -p tsconfig.consumers.json --noEmit",
   "typecheck:readme": "bun scripts/check-readme-examples.ts",
   "typecheck:symbols": "bun scripts/check-symbol-examples.ts",
   "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
@@ -76,9 +74,6 @@ const expectedDependencies = {};
 
 const expectedDevDependencies = {
   "@arethetypeswrong/cli": "0.18.5",
-  // The MCP consumer lives under consumers/ and never enters the published
-  // package, so its own dependencies stay clear of the published boundary.
-  "@modelcontextprotocol/sdk": "1.30.0",
   "@types/bun": "1.3.14",
   "@types/node": "22.20.1",
   knip: "6.32.0",
@@ -154,11 +149,11 @@ describe("package contract", () => {
     expect(packageManifest.description).toContain("tmux");
     expect(packageManifest.repository).toEqual({
       type: "git",
-      url: "git+https://github.com/tmux-python/libtmux.git",
-      directory: "ts",
+      url: "git+https://github.com/libtmux/libtmux-ts.git",
+      directory: "packages/libtmux",
     });
     expect(packageManifest.bugs).toEqual({
-      url: "https://github.com/tmux-python/libtmux/issues",
+      url: "https://github.com/libtmux/libtmux-ts/issues",
     });
     expect(packageManifest.author).toBe("libtmux contributors");
     expect(packageManifest.keywords).toContain("tmux");
@@ -228,20 +223,18 @@ describe("package contract", () => {
   test("pins the complete dependency boundary to the accepted runtime floors", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
-    expect(packageManifest.packageManager).toBe("bun@1.3.14");
     expect(packageManifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
     // Absent, not empty: an empty `dependencies` object is noise in a manifest.
     expect(packageManifest.dependencies ?? {}).toEqual(expectedDependencies);
     expect(packageManifest.devDependencies).toEqual(expectedDevDependencies);
-    expect(packageManifest.overrides).toEqual({ "@types/node": "22.20.1" });
 
-    const lockfile = await readFile(new URL("bun.lock", tsRoot), "utf8");
+    const lockfile = await readFile(new URL("../../bun.lock", tsRoot), "utf8");
     expect(lockfile).not.toContain('"bun-types/@types/node"');
   });
 
   test("turns off only the lint rule that is broken for this package's idiom", async () => {
     const config = JSON.parse(
-      await readFile(new URL("../../.oxlintrc.json", import.meta.url), "utf8"),
+      await readFile(new URL("../../../../.oxlintrc.json", import.meta.url), "utf8"),
     ) as { rules?: Record<string, string> };
 
     // typescript/await-thenable reports every `await using`, whatever the type

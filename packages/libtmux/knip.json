@@ -13,13 +13,12 @@
     "src/session.ts",
     "src/window.ts",
     "scripts/*.ts",
-    "consumers/**/*.ts",
     "tests/**/*.test.ts",
     "tests/support/bun_hooks.ts",
     "tests/fixtures/ambient-free/consumer.ts",
     "tests/fixtures/type-aware-lint/no_floating_promise.ts"
   ],
-  "project": ["src/**/*.ts", "scripts/**/*.ts", "consumers/**/*.ts", "tests/**/*.ts"],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
   "ignoreBinaries": ["uv"],
   "ignoreDependencies": ["@arethetypeswrong/cli", "publint"]
 }

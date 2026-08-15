@@ -1,4 +1,4 @@
-import { Server, TmuxCommandError, type ServerSnapshot } from "../src/index.js";
+import { Server, TmuxCommandError, type ServerSnapshot } from "libtmux";
 
 /**
  * A runnable tour of the API, driven by the tests so it cannot rot.

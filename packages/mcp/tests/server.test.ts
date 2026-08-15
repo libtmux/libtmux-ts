@@ -1,3 +1,6 @@
+// SPIKE: reaches across packages for the library's test harness, which is
+// not on its published surface. Needs a decision: export a ./testing
+// subpath, or move the harness to a package of its own.
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,14 +10,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { describe, expect, test } from "bun:test";
 
-import { createTmuxMcpServer } from "./server.js";
+import { createTmuxMcpServer } from "../src/server.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { Server } from "../../src/server.js";
+} from "../../libtmux/src/_internal/test/run_root.js";
+import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
+import { Server } from "libtmux/server";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -69,7 +72,7 @@ async function withClient(
 ): Promise<void> {
   const client = new Client({ name: "libtmux-test", version: "0.0.0" });
   const transport = new StdioClientTransport({
-    args: [fileURLToPath(new URL("./server.ts", import.meta.url))],
+    args: [fileURLToPath(new URL("../src/server.ts", import.meta.url))],
     command: process.execPath,
     env: {
       ...(process.env as Record<string, string>),

@@ -1,0 +1,27 @@
+{
+  "name": "@libtmux/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Model Context Protocol server for tmux, built on libtmux.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/libtmux/libtmux-ts.git",
+    "directory": "packages/mcp"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/server.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test --no-orphans tests"
+  },
+  "dependencies": {
+    "libtmux": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.4.3"
+  }
+}

@@ -1,3 +1,6 @@
+// SPIKE: reaches across packages for the library's test harness, which is
+// not on its published surface. Needs a decision: export a ./testing
+// subpath, or move the harness to a package of its own.
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,11 +11,11 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { Server } from "../../src/server.js";
-import { applyWorkspace } from "./builder.js";
-import { parseWorkspace } from "./config.js";
+} from "../../libtmux/src/_internal/test/run_root.js";
+import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
+import { Server } from "libtmux/server";
+import { applyWorkspace } from "../src/builder.js";
+import { parseWorkspace } from "../src/config.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

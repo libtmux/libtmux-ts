@@ -1,5 +1,5 @@
-import type { Server } from "../src/server.js";
-import type { TmuxEvent } from "../src/types.js";
+import type { Server } from "libtmux/server";
+import type { TmuxEvent } from "libtmux";
 
 /**
  * React to tmux as it changes, rather than polling for what changed.

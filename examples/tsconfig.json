@@ -1,0 +1,13 @@
+{
+  "extends": "../packages/libtmux/tsconfig.tooling.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "skipLibCheck": true,
+    "paths": {
+      "libtmux": ["../packages/libtmux/src/index.ts"],
+      "libtmux/*": ["../packages/libtmux/src/*.ts"]
+    }
+  },
+  "include": ["*.ts", "tests/**/*.ts"]
+}

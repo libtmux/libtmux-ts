@@ -43,7 +43,16 @@ interface CheckerReport {
 const scriptRelativePath = "scripts/check-type-performance.ts";
 const baselineRelativePath = "tests/types/performance-baseline.json";
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
-const repositoryCompiler = join(repositoryRoot, "node_modules/.bin/tsc");
+/**
+ * Where the installed TypeScript actually is.
+ *
+ * A workspace hoists shared tooling to the repository root, so the compiler is
+ * not reliably a sibling of the package that uses it. Resolving it is what
+ * keeps this gate working whether the package is installed on its own or as
+ * one of several.
+ */
+const typescriptRoot = dirname(fileURLToPath(import.meta.resolve("typescript/package.json")));
+const repositoryCompiler = join(typescriptRoot, "bin/tsc");
 const inputPaths = [
   "tests/tsconfig.performance.shared.json",
   "tests/types/stress.test.ts",
@@ -209,13 +218,9 @@ async function writeFixture(path: string, contents: string): Promise<void> {
 
 async function createCheckerFixture(root: string): Promise<void> {
   await mkdir(join(root, "scripts"), { recursive: true });
-  await cp(
-    new URL("../../node_modules/typescript", import.meta.url),
-    join(root, "node_modules/typescript"),
-    {
-      recursive: true,
-    },
-  );
+  await cp(typescriptRoot, join(root, "node_modules/typescript"), {
+    recursive: true,
+  });
   await mkdir(join(root, "node_modules/.bin"), { recursive: true });
   const localCompiler = join(root, "node_modules/.bin/tsc");
   const directCompiler = join(root, "node_modules/typescript/bin/tsc");

@@ -1,4 +1,4 @@
-import type { Server } from "../src/server.js";
+import type { Server } from "libtmux/server";
 
 /**
  * Drive tmux the way an agent does: act, then wait for the result.

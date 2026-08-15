@@ -1,8 +1,8 @@
 // `libtmux/constants` for a consumer: writing commands by hand means
 // translating a direction to the flags tmux wants.
-import { PANE_DIRECTION_FLAG_MAP, type PaneDirection } from "../src/constants.js";
-import type { Server } from "../src/server.js";
-import type { Session } from "../src/session.js";
+import { PANE_DIRECTION_FLAG_MAP, type PaneDirection } from "libtmux/constants";
+import type { Server } from "libtmux/server";
+import type { Session } from "libtmux/session";
 
 /**
  * Build a development workspace and leave it running.

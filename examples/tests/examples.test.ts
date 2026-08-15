@@ -1,20 +1,22 @@
+// The library's real-tmux fixture harness, which is internal and unpublished.
+// In-repo consumers use it directly; external ones have no need for it.
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { quickstart } from "../../examples/quickstart.js";
-import { buildWorkspace, removeWorkspace } from "../../examples/workspace.js";
-import { buildAndSettle, runAndWait } from "../../examples/agent.js";
-import { collectPaneOutput, watchUntilWindowOpens } from "../../examples/watch.js";
+import { quickstart } from "../quickstart.js";
+import { buildWorkspace, removeWorkspace } from "../workspace.js";
+import { buildAndSettle, runAndWait } from "../agent.js";
+import { collectPaneOutput, watchUntilWindowOpens } from "../watch.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { Server } from "../../src/server.js";
+} from "../../packages/libtmux/src/_internal/test/run_root.js";
+import { TestServer } from "../../packages/libtmux/src/_internal/test/test_server.js";
+import { Server } from "../../packages/libtmux/src/server.js";
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
   const parent = await mkdtemp(join(tmpdir(), "ltx-examples-"));

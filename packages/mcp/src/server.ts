@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 
-import { Server } from "../../src/server.js";
+import { Server } from "libtmux/server";
 
 /**
  * An MCP server exposing a tmux server through libtmux.

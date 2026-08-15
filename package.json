@@ -1,135 +1,23 @@
 {
-  "name": "libtmux",
-  "version": "0.1.0",
+  "name": "@libtmux/repo",
   "private": true,
-  "description": "Typed, Bun-first TypeScript control of tmux: immutable snapshots, declarative queries, and a fully typed session, window, and pane API.",
-  "keywords": [
-    "automation",
-    "bun",
-    "multiplexer",
-    "pty",
-    "session",
-    "terminal",
-    "tmux",
-    "typescript"
-  ],
-  "homepage": "https://github.com/tmux-python/libtmux/tree/master/ts#readme",
-  "bugs": {
-    "url": "https://github.com/tmux-python/libtmux/issues"
-  },
-  "license": "MIT",
-  "author": "libtmux contributors",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/tmux-python/libtmux.git",
-    "directory": "ts"
-  },
-  "files": [
-    "CHANGELOG.md",
-    "dist",
-    "!dist/_internal/test"
+  "workspaces": [
+    "packages/*",
+    "examples"
   ],
   "type": "module",
-  "sideEffects": false,
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
-    "./package.json": "./package.json",
-    "./common": {
-      "types": "./dist/common.d.ts",
-      "import": "./dist/common.js",
-      "default": "./dist/common.js"
-    },
-    "./exc": {
-      "types": "./dist/exc.d.ts",
-      "import": "./dist/exc.js",
-      "default": "./dist/exc.js"
-    },
-    "./constants": {
-      "types": "./dist/constants.d.ts",
-      "import": "./dist/constants.js",
-      "default": "./dist/constants.js"
-    },
-    "./formats": {
-      "types": "./dist/formats.d.ts",
-      "import": "./dist/formats.js",
-      "default": "./dist/formats.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js",
-      "default": "./dist/server.js"
-    },
-    "./session": {
-      "types": "./dist/session.d.ts",
-      "import": "./dist/session.js",
-      "default": "./dist/session.js"
-    },
-    "./window": {
-      "types": "./dist/window.d.ts",
-      "import": "./dist/window.js",
-      "default": "./dist/window.js"
-    },
-    "./pane": {
-      "types": "./dist/pane.d.ts",
-      "import": "./dist/pane.js",
-      "default": "./dist/pane.js"
-    },
-    "./client": {
-      "types": "./dist/client.d.ts",
-      "import": "./dist/client.js",
-      "default": "./dist/client.js"
-    },
-    "./selection": {
-      "types": "./dist/selection.d.ts",
-      "import": "./dist/selection.js",
-      "default": "./dist/selection.js"
-    }
-  },
   "scripts": {
-    "build": "bun run generate:check && rm -rf dist && tsc -p tsconfig.build.json && bun scripts/normalize-source-map.ts dist/index.js.map",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "generate": "bun scripts/generate-formats.ts --write",
-    "generate:check": "bun scripts/generate-formats.ts --check",
-    "lint": "oxlint . --ignore-pattern tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun scripts/check-type-aware-lint.ts",
-    "lint:unused": "knip",
-    "mcp:build": "bun build consumers/mcp/server.ts --target=node --outfile=dist-mcp/server.js",
-    "parity": "bun scripts/check-parity.ts",
-    "test:differential": "bun scripts/run-differential-tests.ts",
-    "test:integration": "bun scripts/run-integration-tests.ts",
-    "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
-    "test:compat": "bun scripts/check-tmux-compat.ts",
-    "test:package": "bun run build && bun scripts/check-package.ts",
-    "test:type-performance": "bun scripts/check-type-performance.ts --check",
-    "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
-    "test:unit": "bun test --parallel=4 --no-orphans tests/unit",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "typecheck:readme": "bun scripts/check-readme-examples.ts",
-    "typecheck:consumers": "tsc -p tsconfig.consumers.json --noEmit",
-    "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",
-    "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
-    "typecheck:symbols": "bun scripts/check-symbol-examples.ts",
-    "docs:api": "bun scripts/generate-api-docs.ts",
-    "docs:api:check": "bun scripts/generate-api-docs.ts --check"
+    "lint": "oxlint . --ignore-pattern packages/libtmux/tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun packages/libtmux/scripts/check-type-aware-lint.ts"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "0.18.5",
-    "@modelcontextprotocol/sdk": "1.30.0",
     "@types/bun": "1.3.14",
     "@types/node": "22.20.1",
-    "knip": "6.32.0",
     "oxfmt": "0.62.0",
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
-    "publint": "0.3.23",
-    "typescript": "7.0.2",
-    "zod": "4.4.3"
+    "typescript": "7.0.2"
   },
   "overrides": {
     "@types/node": "22.20.1"
@@ -138,6 +26,5 @@
     "bun": ">=1.3.14",
     "node": ">=22"
   },
-  "packageManager": "bun@1.3.14",
-  "trustedDependencies": []
+  "packageManager": "bun@1.3.14"
 }

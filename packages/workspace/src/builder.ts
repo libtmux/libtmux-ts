@@ -1,6 +1,6 @@
-import type { Server } from "../../src/server.js";
-import type { Session } from "../../src/session.js";
-import type { Window } from "../../src/window.js";
+import type { Server } from "libtmux/server";
+import type { Session } from "libtmux/session";
+import type { Window } from "libtmux/window";
 import {
   paneCommands,
   paneStartDirectory,

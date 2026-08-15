@@ -4,12 +4,27 @@
   "workspaces": {
     "": {
       "name": "libtmux",
-      "dependencies": {
-        "zod": "4.4.3",
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "@types/node": "22.20.1",
+        "oxfmt": "0.62.0",
+        "oxlint": "1.77.0",
+        "oxlint-tsgolint": "7.0.2001",
+        "typescript": "7.0.2",
       },
+    },
+    "examples": {
+      "name": "@example/libtmux",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
+    "packages/libtmux": {
+      "name": "libtmux",
+      "version": "0.1.0",
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
-        "@modelcontextprotocol/sdk": "1.30.0",
         "@types/bun": "1.3.14",
         "@types/node": "22.20.1",
         "knip": "6.32.0",
@@ -18,6 +33,26 @@
         "oxlint-tsgolint": "7.0.2001",
         "publint": "0.3.23",
         "typescript": "7.0.2",
+        "zod": "4.4.3",
+      },
+    },
+    "packages/mcp": {
+      "name": "@libtmux/mcp",
+      "version": "0.1.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+      "devDependencies": {
+        "@modelcontextprotocol/sdk": "1.30.0",
+        "zod": "4.4.3",
+      },
+    },
+    "packages/workspace": {
+      "name": "@libtmux/workspace",
+      "version": "0.1.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+        "zod": "4.4.3",
       },
     },
   },
@@ -41,7 +76,13 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
+    "@example/libtmux": ["@example/libtmux@workspace:examples"],
+
     "@hono/node-server": ["@hono/node-server@2.1.0", "", { "peerDependencies": { "hono": "^4" } }, "sha512-XovyyCCnBzW+zKu+z/zq8hwNs4KOR5rEMAOxo2f40Q5xoOI37IMm6MIg2COOUtUApo0i6850MTBKH2u4QLGIqg=="],
+
+    "@libtmux/mcp": ["@libtmux/mcp@workspace:packages/mcp"],
+
+    "@libtmux/workspace": ["@libtmux/workspace@workspace:packages/workspace"],
 
     "@loaderkit/resolve": ["@loaderkit/resolve@1.0.6", "", { "dependencies": { "@braidai/lang": "^1.0.0" } }, "sha512-G8FdIoF5CypfwmD9rl8BXod5HDn8JqB0CCNBXDTaRZ+yRYhARrrSToX1zg1zy9jX3zLqigsELwhT4gNtkdQAUg=="],
 
@@ -422,6 +463,8 @@
     "json-schema-typed": ["json-schema-typed@8.0.2", "", {}, "sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA=="],
 
     "knip": ["knip@6.32.0", "", { "dependencies": { "fdir": "^6.5.0", "formatly": "^0.3.0", "get-tsconfig": "4.14.1", "jiti": "^2.7.0", "oxc-parser": "^0.142.0", "oxc-resolver": "11.24.2", "picomatch": "^4.0.5", "smol-toml": "^1.7.1", "strip-json-comments": "5.0.3", "tinyglobby": "^0.2.17", "unbash": "^4.0.4", "yaml": "^2.9.0", "zod": "^4.4.3" }, "bin": { "knip": "bin/knip.js", "knip-bun": "bin/knip-bun.js" } }, "sha512-KDX9OmmOFmlvmxTkrx6Z0GHISMut+pXMSKR8eg84bovaxJKx2NdQD4JYCXveSbvieRe107W6vCD2xCpmz0qBYA=="],
+
+    "libtmux": ["libtmux@workspace:packages/libtmux"],
 
     "lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
 
