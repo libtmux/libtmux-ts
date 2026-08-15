@@ -90,6 +90,7 @@ programs need the first, and reach for the second when they have to react.
 
 **Recipes** ·
 [Wait for a pane to print something](#wait-for-a-pane-to-print-something) ·
+[Act, then wait, on one connection](#act-then-wait-on-one-connection) ·
 [Build a workspace](#build-a-workspace) ·
 [Drive a pane and read what it said](#drive-a-pane-and-read-what-it-said) ·
 [Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
@@ -704,6 +705,36 @@ for await (const event of events) {
 A pane echoes what is typed into it, so waiting for text that also appears in
 the keys you just sent matches the echo rather than the output. Wait for
 something the command prints.
+
+### Act, then wait, on one connection
+
+The loop an agent runs. `connect()` carries the commands and the notifications
+that say what they did, so reacting costs nothing per iteration — and
+subscribing before sending means a marker printed in between is still seen.
+
+This recipe is a literal excerpt of [`examples/agent.ts`](../../examples/agent.ts),
+which the integration suite runs against a real tmux server:
+
+<!-- runs: examples/agent.ts -->
+
+```ts
+const session = await server.newSession({ name: "agent" });
+
+await using live = await server.connect({ target: session.id });
+
+const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+
+const printed = live
+  .subscribe()
+  .find(
+    (event) => event.kind === "output" && event.paneId === pane.id && event.data.includes(marker),
+    { timeoutMs: 30_000 },
+  );
+
+await pane.sendKeys(command);
+
+const event = await printed;
+```
 
 ### Build a workspace
 

@@ -40,6 +40,11 @@ declare const selection: SelectionOf<SessionHandle>;
 declare const live: ConnectedServerHandle;
 declare const other: WindowHandle;
 declare const otherPane: PaneHandle;
+// The parameters the runnable examples take. A recipe marked
+// \`<!-- runs: examples/x.ts -->\` has to match that file line for line, so it
+// cannot invent literals where the example named an argument.
+declare const command: string;
+declare const marker: string;
 `;
 
 export interface Example {
