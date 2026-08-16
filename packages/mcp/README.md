@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.4%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7b-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Part of [libtmux for Bun and TypeScript](../../README.md). Built on

@@ -107,7 +107,7 @@
     "test:install": "bun run build && bun scripts/check-install.ts",
     "test:type-performance": "bun scripts/check-type-performance.ts --check",
     "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
-    "test:unit": "bun run build && bun test --parallel=4 --timeout=30000 --no-orphans tests/unit",
+    "test:unit": "bun run build && bun scripts/run-unit-tests.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:readme": "bun scripts/check-readme-examples.ts",
     "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",

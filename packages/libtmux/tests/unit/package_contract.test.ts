@@ -65,7 +65,7 @@ const expectedScripts = {
   "typecheck:readme": "bun scripts/check-readme-examples.ts",
   "typecheck:symbols": "bun scripts/check-symbol-examples.ts",
   "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
-  "test:unit": "bun run build && bun test --parallel=4 --timeout=30000 --no-orphans tests/unit",
+  "test:unit": "bun run build && bun scripts/run-unit-tests.ts",
 };
 
 // Zero runtime dependencies is a property worth gating, not a coincidence:

@@ -5,7 +5,7 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.4%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7b-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 

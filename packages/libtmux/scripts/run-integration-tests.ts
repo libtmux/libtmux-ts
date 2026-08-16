@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { runSupervisor } from "../src/_internal/test/run_root.js";
+import { NODE22, preflight } from "./preflight.js";
 
 /**
  * The suites this runner is responsible for, checked before it starts.
@@ -59,6 +60,8 @@ if (unlisted.length > 0) {
   process.stderr.write(`integration suites are not listed here: ${unlisted.join(", ")}\n`);
   process.exit(1);
 }
+
+await preflight([NODE22]);
 
 process.exitCode = await runSupervisor({
   command: [

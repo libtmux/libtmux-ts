@@ -147,19 +147,20 @@ const matrix = /tmux-version:\s*\[([^\]]+)\]/u.exec(workflow)?.[1];
 if (matrix === undefined) throw new Error("could not read the tmux matrix from typescript.yml");
 const tested = matrix.split(",").map((entry) => entry.trim().replaceAll('"', ""));
 
+// The badge names the range's ends rather than every release in it: eight
+// entries is a badge nobody reads, and the ends are the claim — everything
+// between them is in the matrix above, which is what this compares against.
+const range = `${tested[0] ?? ""}\u2013${tested.at(-1) ?? ""}`;
+
 let badges = 0;
 for (const file of files) {
   // eslint-disable-next-line no-await-in-loop -- one document at a time, as above.
   const markdown = await Bun.file(join(repositoryRoot, file)).text();
   for (const match of markdown.matchAll(/img\.shields\.io\/badge\/tmux-([^-]+)-/gu)) {
     badges += 1;
-    const claimed = decodeURIComponent(match[1] ?? "")
-      .split("|")
-      .map((entry) => entry.trim());
-    if (claimed.join(" ") !== tested.join(" ")) {
-      failures.push(
-        `${file}: the tmux badge claims ${claimed.join(", ")} but CI runs ${tested.join(", ")}`,
-      );
+    const claimed = decodeURIComponent(match[1] ?? "").trim();
+    if (claimed !== range) {
+      failures.push(`${file}: the tmux badge claims ${claimed} but CI runs ${range}`);
     }
   }
 }
