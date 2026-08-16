@@ -242,6 +242,26 @@ Do not edit the tree while `test:compat` runs. It spawns the suite once per
 build and reads the working tree each time, so a mid-run edit produces failures
 attributed to whichever tmux happened to be current.
 
+Two benchmarks answer questions the gates do not, and are run by hand rather
+than wired to a script — `package.json` lists gates, and a number that varies
+with the machine is not one:
+
+```console
+$ bun packages/libtmux/scripts/bench-modes.ts
+```
+
+```console
+$ bun packages/libtmux/scripts/bench-snapshot.ts
+```
+
+The first grids transport against batching and concurrency. The second is what
+a snapshot costs as the server grows, which is the measurement any argument for
+a reduced model or a field projection has to start from. On one machine at tmux
+3.7b it read 4 commands at every size — 1 pane through 192 — while the bytes
+went from 23 KiB to 2 MiB and the wall clock from 28 ms to 858 ms. The fixed
+command count is the design holding; the bytes are what a projection would
+address, and what it would cost to give up.
+
 tmux argument grammar is worth checking rather than assuming: an adjustment like
 `resize-pane -U 2` is a _positional_ argument, so it has to follow every flag.
 Written next to its direction it turns any later flag into surplus arguments and
