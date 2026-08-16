@@ -332,7 +332,12 @@ export class Server {
    */
   async connect(options?: WatchOptions): Promise<ConnectedServer> {
     const runtime = runtimeForServer(this);
-    const connection = new ControlConnection(runtime.connection, options, false);
+    const connection = new ControlConnection(
+      runtime.connection,
+      options,
+      false,
+      new NodeSpawnTransport(),
+    );
     try {
       await connection.ready();
     } catch (error) {

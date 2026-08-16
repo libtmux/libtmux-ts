@@ -99,6 +99,22 @@ describe("control-mode resource bounds", () => {
     });
   }, 40_000);
 
+  test("carries a command's stdin, which the protocol itself cannot", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+
+      // tmux's control protocol has no channel for stdin, so this is the one
+      // command shape the connection has to hand elsewhere. Choosing a
+      // transport must not decide which commands exist.
+      await live.loadBuffer("payload", new TextEncoder().encode("from-stdin"));
+
+      // Read it back through the connection to prove it reached this server,
+      // not merely that the call resolved.
+      expect((await live.showBuffer("payload")).join("")).toContain("from-stdin");
+    });
+  }, 40_000);
+
   test("rejects a bound that is not a positive integer, before spawning", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

@@ -175,7 +175,24 @@ export class ControlConnection implements CommandTransport {
    *   connected server shares the process with that server's commands, and
    *   ending iteration there must not close the command channel underneath it.
    */
-  constructor(connection: TmuxConnection, options: WatchOptions = {}, streamEndsConnection = true) {
+  /**
+   * A transport for the commands this connection cannot carry.
+   *
+   * tmux's control protocol has no channel for a command's stdin, so
+   * `load-buffer` and friends have nowhere to put their payload. Handing them
+   * to a spawning transport keeps the promise the two modes are built on —
+   * that choosing one never edits the caller — instead of making a connected
+   * server a server with a hole in it.
+   */
+  readonly #stdinFallback: CommandTransport | undefined;
+
+  constructor(
+    connection: TmuxConnection,
+    options: WatchOptions = {},
+    streamEndsConnection = true,
+    stdinFallback?: CommandTransport,
+  ) {
+    this.#stdinFallback = stdinFallback;
     const bufferSize = options.bufferSize ?? DEFAULT_BUFFER_SIZE;
     // Validated before the spawn, so a rejected size cannot leak a process.
     if (!Number.isInteger(bufferSize) || bufferSize < 1) {
@@ -588,8 +605,10 @@ export class ControlConnection implements CommandTransport {
       );
     }
     if (request.stdin !== undefined) {
-      // Control mode has no channel for a command's stdin; the caller must use
-      // a spawning transport for load-buffer and friends.
+      // The request still carries this connection's socket flags, so the
+      // spawned command reaches the same server this one is attached to.
+      const fallback = this.#stdinFallback;
+      if (fallback !== undefined) return fallback.execute(request);
       return Promise.reject(
         new TmuxTransportError("control mode cannot carry command stdin", {
           delivery: "not_started",

@@ -617,10 +617,12 @@ site, and none of them changes what you get back:
 | **planned**    | `.plan` instead of the direct call | Describes the mutation for `server.batch([…])` to run as one group. | Creating or changing several things at once.                     |
 | **concurrent** | `Promise.all`                      | Independent commands overlap.                                       | Slow work on independent targets — not ordering-sensitive setup. |
 
-The API and the types are the same throughout: `connect()` hands back the same
-handles the spawning server does, and `.plan` takes what the direct call takes
-and resolves to what the direct call resolves to. One exception — `loadBuffer`
-needs the spawning server, since control mode has no channel for stdin.
+The API and the types are the same throughout, with no exceptions: `connect()`
+hands back the same handles the spawning server does, and `.plan` takes what the
+direct call takes and resolves to what the direct call resolves to. tmux's
+control protocol has no channel for a command's stdin, so a connected server
+hands `loadBuffer` to a spawned process against the same socket rather than
+refusing it — choosing a transport does not decide which commands exist.
 
 ### Choosing the transport from outside
 
