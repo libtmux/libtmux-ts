@@ -28,7 +28,7 @@ jobs:
 
       # The emitted-Node lane refuses to substitute the runner's default Node,
       # so the floor is provisioned rather than assumed.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -163,7 +163,7 @@ jobs:
         with:
           bun-version: 1.3.14
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -173,7 +173,7 @@ jobs:
       # The differential corpus compares this port against the pinned Python
       # release, which it runs through uv.
       - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.0
         with:
           enable-cache: true
 

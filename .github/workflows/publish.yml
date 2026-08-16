@@ -34,7 +34,7 @@ jobs:
 
       # Publishing is npm's, not Bun's: trusted publishing needs npm CLI
       # 11.5.1 or later, which detects the OIDC environment on its own.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
