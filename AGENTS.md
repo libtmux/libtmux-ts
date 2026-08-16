@@ -22,6 +22,18 @@ and `latest` is stated rather than inherited so it cannot lag. A second
 `npm publish` and nothing else, so writing one needs a token in the repository,
 which is what publishing this way exists to avoid.
 
+That reasoning holds only while every version is a prerelease, so the publish
+workflow now refuses a version that is not one rather than tagging it `latest`
+by habit. The first stable release wants `latest`; a prerelease cut after it
+does not, and moving `latest` backwards onto an alpha is the failure the check
+exists to prevent. Whoever cuts that release decides the tag.
+
+`test:package` reads the tarball and `test:install` uses it — a clean
+directory, `npm install` of the packed file, and a Node 22 process that imports
+the package by name and runs something. Nothing there can resolve through the
+workspace, which is the point: the two releases this repository shipped broken
+both packed and linted clean.
+
 An in-repo consumer resolves `libtmux` to source through `paths` in its own
 tsconfig, so a branded class has one type identity rather than one per build
 output. The published `exports` deliberately name only `dist`: source is not in

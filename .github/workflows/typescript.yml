@@ -128,6 +128,10 @@ jobs:
           bun run typecheck:ambient-free
           bun run typecheck:tooling
           bun run test:package
+          # Packing and linting the tarball is not installing it. The two
+          # releases this repository shipped broken — one with no dist, one
+          # whose install command 404'd — both packed clean.
+          bun run test:install
 
       - name: Test the library
         working-directory: packages/libtmux
@@ -153,3 +157,55 @@ jobs:
       - name: Gate the examples
         working-directory: examples
         run: bun run typecheck && bun run test
+
+  # A second platform, not a second matrix. The Linux job above is what decides
+  # whether a change is correct across tmux versions; this one answers the
+  # narrower question those lanes cannot — whether anything here depends on
+  # being Linux. That is mostly the parts that touch the filesystem and the
+  # process table: socket paths under a very different `TMPDIR`, BSD rather
+  # than GNU userland behind `tmux`, and the pidfd interpreter, which has no
+  # macOS equivalent.
+  #
+  # Homebrew's tmux, whichever version it currently is, rather than a build
+  # matrix. Pinning one here would be a second place to update on every tmux
+  # release, and the version questions are already answered on Linux.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install tmux
+        run: brew install tmux
+
+      - run: tmux -V
+
+      - name: Point the emitted-Node lane at the provisioned Node 22
+        run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
+
+      - run: bun install --frozen-lockfile
+
+      # The suites that spawn a real server, and the packaging checks. The
+      # static gates are platform-independent, so running them again here would
+      # only make the job slower and its failures ambiguous.
+      - name: Test the library
+        working-directory: packages/libtmux
+        run: |
+          bun run build
+          bun run test:unit
+          bun run test:integration
+          bun run test:node
+          bun run test:package
+          bun run test:install
+
+      - name: Gate the consumers
+        run: |
+          bun run --cwd packages/mcp test
+          bun run --cwd packages/workspace test

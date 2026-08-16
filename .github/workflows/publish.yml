@@ -96,6 +96,22 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
           dry_run="$DRY_RUN"
+          # `latest` below is stated rather than inherited, and it is only
+          # correct while every version is a prerelease. The first stable
+          # release would publish under `latest` too — which is right — but a
+          # prerelease cut *after* it would then move `latest` backwards onto
+          # an alpha, which is the one thing this must not do. Refuse rather
+          # than guess: whoever cuts that release picks the tag deliberately.
+          for package in libtmux mcp workspace; do
+            version="$(jq -r .version "packages/$package/package.json")"
+            case "$version" in
+              *-*) ;;
+              *)
+                echo "::error::$package is $version, which is not a prerelease. The publish step tags everything latest; decide what a stable release and the prereleases after it should be tagged before releasing one."
+                exit 1
+                ;;
+            esac
+          done
           for package in libtmux mcp workspace; do
             name="$(jq -r .name "packages/$package/package.json")"
             version="$(jq -r .version "packages/$package/package.json")"
