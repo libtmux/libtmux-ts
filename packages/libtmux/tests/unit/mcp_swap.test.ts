@@ -72,8 +72,8 @@ describe("source specs", () => {
     // Bun runs the TypeScript; Node runs what a release would ship; npx fetches
     // a release. `-y` so a machine that has never seen the package does not
     // stop to ask, which under an agent looks like a hang.
-    expect([dev.command, ...dev.args]).toEqual(["bun", "run", "/repo/consumers/mcp/server.ts"]);
-    expect([build.command, ...build.args]).toEqual(["node", "/repo/dist-mcp/server.js"]);
+    expect([dev.command, ...dev.args]).toEqual(["bun", "run", "/repo/packages/mcp/src/server.ts"]);
+    expect([build.command, ...build.args]).toEqual(["node", "/repo/packages/mcp/dist/server.js"]);
     expect([published.command, ...published.args]).toEqual(["npx", "-y", "@libtmux/mcp@1.2.3"]);
   });
 

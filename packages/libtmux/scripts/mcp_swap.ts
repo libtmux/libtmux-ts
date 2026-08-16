@@ -196,8 +196,8 @@ export function fromEntry(entry: unknown, dialect: Dialect): ServerSpec | undefi
  * That name is the one on the registry, not the executable inside it:
  * `libtmux-mcp` is the `bin`, and asking npx for it resolves nothing.
  */
-export const DEV_ENTRY = "consumers/mcp/server.ts";
-export const BUILD_ENTRY = "dist-mcp/server.js";
+export const DEV_ENTRY = "packages/mcp/src/server.ts";
+export const BUILD_ENTRY = "packages/mcp/dist/server.js";
 export const PUBLISHED_PACKAGE = "@libtmux/mcp";
 
 export interface SourceOptions {
@@ -707,7 +707,10 @@ function parseOptions(argv: readonly string[]): Options {
   if (!["build", "dev", "published"].includes(kind)) {
     throw new Error(`unknown source ${kind}; expected dev, build, or published`);
   }
-  const repo = value("--repo") ?? join(import.meta.dir, "..");
+  // The workspace root, not this package: the entries below are workspace
+  // paths because the server is a sibling package, and this script only lives
+  // here because it is where the repository keeps its tooling.
+  const repo = value("--repo") ?? join(import.meta.dir, "..", "..", "..");
   const version = value("--version");
   return {
     dryRun: argv.includes("--dry-run"),

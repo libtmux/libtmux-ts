@@ -54,13 +54,31 @@ const blocks = sources.flatMap(({ file, markdown }) => fencedBlocks(markdown, fi
 if (blocks.length === 0) throw new Error("no ```ts blocks found");
 
 // Imports hoist: a block is wrapped in a function, and an import cannot be.
-const imports = new Set<string>();
+// Merged by module rather than deduplicated by line, because two blocks may
+// legitimately name the same symbol alongside different neighbours, and hoisting
+// both lines declares it twice.
+const named = new Map<string, Set<string>>();
+const otherImports = new Set<string>();
 const bodies: string[] = [];
 for (const [index, block] of blocks.entries()) {
   const kept: string[] = [];
   for (const line of block.code.split("\n")) {
-    if (line.startsWith("import ")) imports.add(line);
-    else kept.push(line);
+    if (!line.startsWith("import ")) {
+      kept.push(line);
+      continue;
+    }
+    const match = /^import\s+\{([^}]*)\}\s+from\s+"([^"]+)";$/u.exec(line.trim());
+    if (match?.[1] === undefined || match[2] === undefined) {
+      otherImports.add(line);
+      continue;
+    }
+    const module = match[2];
+    const symbols = named.get(module) ?? new Set<string>();
+    for (const symbol of match[1].split(",")) {
+      const trimmed = symbol.trim();
+      if (trimmed !== "") symbols.add(trimmed);
+    }
+    named.set(module, symbols);
   }
   bodies.push(
     `// ${block.origin}\nasync function block${index}(): Promise<void> {\n` +
@@ -68,6 +86,12 @@ for (const [index, block] of blocks.entries()) {
       `\n}\nvoid block${index};\n`,
   );
 }
+const imports = new Set([
+  ...otherImports,
+  ...[...named]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([module, symbols]) => `import { ${[...symbols].sort().join(", ")} } from "${module}";`),
+]);
 
 const source = [
   'import type { Selection, ServerSnapshot, Session } from "libtmux";',
