@@ -178,9 +178,9 @@ A ported row names the TypeScript that covers it, and a row that claims a
 member has to cite one: `./module#instance:Class.member` for the prototype,
 `./module#value:Class.member` for the static side. `./module#value:Class`
 compiles to `typeof Class` and says only that the class is exported, which is
-the whole claim for a class row and none of it for a method — renaming
-`refresh` to `refreshed` once left five rows citing a method that had stopped
-existing, with the gate green throughout. A row claims a member when its kind
+the whole claim for a class row and none of it for a method: a rename leaves
+such a row citing a method that no longer exists, and the gate stays green.
+A row claims a member when its kind
 is `method` or `property`, or when its `typescript` field names `Class.member`;
 the gate reads that rather than a list, so it needs no maintaining.
 
@@ -256,11 +256,10 @@ $ bun packages/libtmux/scripts/bench-snapshot.ts
 
 The first grids transport against batching and concurrency. The second is what
 a snapshot costs as the server grows, which is the measurement any argument for
-a reduced model or a field projection has to start from. On one machine at tmux
-3.7b it read 4 commands at every size — 1 pane through 192 — while the bytes
-went from 23 KiB to 2 MiB and the wall clock from 28 ms to 858 ms. The fixed
-command count is the design holding; the bytes are what a projection would
-address, and what it would cost to give up.
+a reduced model or a field projection has to start from: it reports the command
+count, which the design holds flat, against the bytes and wall clock, which grow
+with the server. Those are what a projection would address, and what it would
+cost to give up.
 
 tmux argument grammar is worth checking rather than assuming: an adjustment like
 `resize-pane -U 2` is a _positional_ argument, so it has to follow every flag.

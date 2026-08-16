@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { quickstart } from "../quickstart.js";
+import { reportPanes } from "../fields.js";
 import { buildWorkspace, removeWorkspace } from "../workspace.js";
 import { buildAndSettle, runAndWait } from "../agent.js";
 import { collectPaneOutput, watchUntilWindowOpens } from "../watch.js";
@@ -62,6 +63,26 @@ describe("documented examples", () => {
       expect(snapshot.sessions.count({ name: "quickstart" })).toBe(1);
       expect(snapshot.windows.count({ name: "editor" })).toBe(1);
       expect(snapshot.panes.count({ window: { is: { name: "editor" } } })).toBe(2);
+    });
+  }, 60_000);
+
+  test("the fields example reads decoded values against real tmux", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      const report = await reportPanes(server);
+
+      // Values tmux sent as text, used as the types they stand for.
+      expect(report.activeCount).toBe(2);
+      expect(report.area).toBeGreaterThan(0);
+      expect(report.pids.every((pid) => Number.isSafeInteger(pid) && pid > 0)).toBe(true);
+      expect(report.pids.length).toBeGreaterThan(0);
+      expect(report.sessionAgeMs).toBeGreaterThanOrEqual(0);
+      expect(report.sessionAgeMs).toBeLessThan(60_000);
     });
   }, 60_000);
 
