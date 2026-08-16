@@ -12,6 +12,91 @@ remember.
 
 ## Unreleased
 
+## 0.1.0-alpha.2
+
+### Changed
+
+**A snapshot is now one instant, rather than four readings taken near each
+other.** It was four concurrent `list-*` processes, which are four tmux clients
+with four command queues, so a change landing between them left the capture
+holding rows from two topologies. Under window churn, 669 of 3211 captures
+disagreed about the window set and 25 of 982 failed outright with "conflicting
+winlink ownership for one session index" — an error that read as though the
+caller had asked something invalid. The four listings now go as one tmux command
+list, which tmux drains without letting another client in, and the same churn
+tore none of 3340. It also costs one process instead of four.
+
+**`equals()` compares the daemon, which its documentation already claimed.** Two
+handles could agree on socket and id and name different panes, because a
+restarted daemon reissues `%0`. If you relied on the old behaviour — the raw id
+on one socket, whichever daemon answered — that question is `sameTmuxIdAs`.
+
+**Criteria text is narrowed to what this library can encode for the field.** A
+flag takes `"0" | "1"`, a number and a time take digits, and text outside that
+is refused:
+
+```ts
+snapshot.panes.where({ active: "1" }); // still fine
+snapshot.panes.where({ pid: "banana" }); // no longer compiles
+```
+
+The rule is not a preference: it is exactly what `encodeFormatValue` emits for
+that kind of field, which is what lets a serialized query decode back into the
+type it was authored in. A `string` known only at runtime is not in that domain,
+so say what it means — `where({ index: Number(value) })`, or
+`where({ index: { contains: value } })` to ask about the characters instead.
+
+**`@libtmux/workspace` prunes only what it created.** `applyWorkspace` found a
+session by name and then killed every window and pane the file did not describe;
+a name is a lookup, not a claim, so converging a session somebody made by hand
+destroyed their work. A session this package creates is now marked, and pruning
+asks the mark. `prune: "always"` is how you say a session you did not create is
+this file's, and `prune: "never"` turns it off entirely.
+
+### Added
+
+`libtmux/engine` exports the seam every command travels through, so a tmux
+reached over ssh, inside a container, or behind a daemon carries the whole
+library — snapshots, queries, handles and all:
+
+```ts
+import { Server } from "libtmux";
+import { asSingleInvocation, type TmuxEngine } from "libtmux/engine";
+```
+
+`asSingleInvocation` is part of it rather than an implementation detail: an
+engine has to run a group as one tmux command list or its snapshots stop being
+one instant, and the built-in engine calls the same helper.
+
+`TmuxServerRestarted` is thrown when a handle outlives the daemon that issued its
+id, with `delivery: "not_started"` — a refused command never ran, so retrying
+against a fresh handle is safe.
+
+`@libtmux/workspace` exports `planWorkspace`, which reads the server once and
+answers what an apply would create, rename, kill, and deliberately leave alone.
+
+`@libtmux/mcp` takes `LIBTMUX_MCP_TOOLS`, a comma-separated allowlist for when a
+safety tier is the wrong shape: read and type but never kill is not a degree of
+typing. A tool left off is never registered, so an agent cannot spend a turn
+discovering it. It also says what to do about a tmux server it cannot reach,
+naming the variable that configured the socket — an agent given only "cannot
+reach tmux" reports "unavailable" and stops.
+
+### Fixed
+
+A handle held across a daemon restart could still command its successor. The
+epoch that guards against it only moved when an acquisition happened to notice,
+so capture a pane, restart the daemon, and `kill()` went through — reproduced,
+and it killed the successor's pane. A command carrying a raw id now goes as
+`if-shell -F` conditioned on the daemon's pid and start time, which tmux
+evaluates inside the same queue entry that would run it. Over a control
+connection there is nothing to condition: losing the connection is the signal.
+
+`Session.cmd` and `Window.cmd` documented examples that did not work.
+`cmd("rename-session -- new")` was answered by tmux with `unknown command`, and
+`window.cmd("display-panes")` sent a window where tmux wants a client. Both are
+now run against a real server on every build rather than only compiled.
+
 ## 0.1.0-alpha.1
 
 ### Changed
