@@ -14,6 +14,26 @@ import type { TmuxConnection } from "./connection.js";
 
 interface RuntimeEpochState {
   daemonEpoch: DaemonEpoch;
+  /** The daemon the last acquisition reached, so the next one can tell it apart. */
+  daemon: DaemonIdentity | undefined;
+}
+
+/**
+ * Which tmux daemon answered, as tmux itself reports it.
+ *
+ * A socket path names a place, not a process: `kill-server` and a restart give
+ * a new daemon the same path, and that daemon numbers its panes from `%0`
+ * again. The pid alone is not enough — pids are reused — so the start time goes
+ * with it.
+ */
+export interface DaemonIdentity {
+  readonly pid: string;
+  readonly startTime: string;
+}
+
+/** Whether two readings describe the same running daemon. */
+function sameDaemon(left: DaemonIdentity, right: DaemonIdentity): boolean {
+  return left.pid === right.pid && left.startTime === right.startTime;
 }
 
 const runtimeEpochStates = new WeakMap<RuntimeContext, RuntimeEpochState>();
@@ -68,7 +88,7 @@ function assertLogicalRefRuntime(runtime: RuntimeContext, ref: LogicalRef): void
 }
 
 export function createRuntimeContext(options: RuntimeContextOptions): RuntimeContext {
-  const state: RuntimeEpochState = { daemonEpoch: options.daemonEpoch };
+  const state: RuntimeEpochState = { daemon: undefined, daemonEpoch: options.daemonEpoch };
   const capabilities = new LazyCapabilityBinding({
     connection: options.connection,
     connectionAlias: options.connectionAlias,
@@ -122,6 +142,31 @@ export function invalidateRuntimeEpoch(runtime: RuntimeContext): DaemonEpoch {
   }
   state.daemonEpoch = daemonEpoch as DaemonEpoch;
   return state.daemonEpoch;
+}
+
+/**
+ * Record which daemon just answered, and say whether it is a different one.
+ *
+ * Returns true the first time — there is nothing to have changed from. When it
+ * *has* changed, the epoch is invalidated, which is what makes every handle
+ * from the previous daemon refuse to resolve instead of quietly addressing
+ * whatever now holds its id.
+ */
+export function observeDaemonIdentity(
+  runtime: RuntimeContext,
+  daemon: DaemonIdentity,
+): { readonly restarted: boolean } {
+  const state = epochStateFor(runtime);
+  const previous = state.daemon;
+  state.daemon = daemon;
+  if (previous === undefined || sameDaemon(previous, daemon)) return { restarted: false };
+  invalidateRuntimeEpoch(runtime);
+  return { restarted: true };
+}
+
+/** The daemon the last acquisition reached, if there has been one. */
+export function lastObservedDaemon(runtime: RuntimeContext): DaemonIdentity | undefined {
+  return epochStateFor(runtime).daemon;
 }
 
 export function runtimeForServer(server: Server): RuntimeContext {

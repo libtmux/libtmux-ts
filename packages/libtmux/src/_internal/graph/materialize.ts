@@ -5,12 +5,7 @@ import type { Server } from "../../server.js";
 import { Session } from "../../session.js";
 import { Window } from "../../window.js";
 import { runtimeForServer, type RuntimeContext } from "../runtime/context.js";
-import {
-  compareAndSwapLiveHandleState,
-  initializeLiveHandle,
-  liveHandleStateForReplacement,
-  type LiveHandleInitialization,
-} from "../runtime/live_handle.js";
+import { initializeLiveHandle } from "../runtime/live_handle.js";
 import {
   graphRecordRefsEqual,
   isNormalizedGraph,
@@ -26,7 +21,7 @@ import {
 } from "./selection_projection.js";
 
 type Child = Client | Pane | Session | Window;
-type ProjectedChild = Pane | Session | Window;
+type ProjectedChild = Client | Pane | Session | Window;
 
 function invalidMaterialization(message: string): never {
   throw new QueryValidationError({ code: "invalid-query", message });
@@ -137,7 +132,7 @@ function createProjectedHandle(
     case "window":
       return initialize<Window>(Window.prototype, server, graph, record);
     case "client":
-      return invalidMaterialization("Client records cannot be materialized from a projection");
+      return initialize<Client>(Client.prototype, server, graph, record);
   }
 }
 
@@ -146,33 +141,6 @@ function createClientHandle(server: Server, graph: NormalizedGraph, record: Grap
     return invalidMaterialization("Client materialization requires a Client graph record");
   }
   return initialize<Client>(Client.prototype, server, graph, record);
-}
-
-function replacementEntitiesMatch(
-  current: LiveHandleInitialization["entity"],
-  replacement: GraphRecord["entity"],
-): boolean {
-  return (
-    current.connection === replacement.connection &&
-    current.epoch === replacement.epoch &&
-    current.kind === replacement.kind &&
-    current.id === replacement.id
-  );
-}
-
-function validateReplacementRecord(state: LiveHandleInitialization, record: GraphRecord): void {
-  if (record.model !== state.model) {
-    return invalidMaterialization("replacement record model does not match the handle");
-  }
-  if (!replacementEntitiesMatch(state.entity, record.entity)) {
-    return invalidMaterialization("replacement record belongs to another durable entity");
-  }
-  if ((record.model === "client" || record.model === "session") && record.winlink !== null) {
-    return invalidMaterialization("Client and Session replacement records cannot have winlinks");
-  }
-  if ((record.model === "pane" || record.model === "window") && record.winlink === null) {
-    return invalidMaterialization("Pane and Window replacement records require winlinks");
-  }
 }
 
 function projectionRecordForMember(
@@ -230,24 +198,4 @@ export async function materializeClientRecord(
   }
   await validateRuntimeCapture(server, authenticGraph);
   return createClientHandle(server, authenticGraph, graphRecord);
-}
-
-export async function replaceHandleSnapshotFromGraph(
-  handle: Child,
-  graph: NormalizedGraph,
-  record: GraphRecordRef,
-): Promise<void> {
-  const state = liveHandleStateForReplacement(handle);
-  const authenticGraph = requireAuthenticGraph(graph);
-  const graphRecord = resolveGraphRecord(authenticGraph, record);
-  validateReplacementRecord(state, graphRecord);
-  await validateRuntimeCapture(state.server, authenticGraph);
-  compareAndSwapLiveHandleState(
-    handle,
-    state,
-    authenticGraph,
-    graphRecord.ref,
-    graphRecord.scalars,
-    graphRecord.winlink,
-  );
 }

@@ -265,8 +265,7 @@ describe("window and pane topology", () => {
 
       const reported = await pane.cmd("display-message", ["-p", "#{pane_title}"]);
       expect(reported[0]).toBe("build output");
-      await pane.refresh();
-      expect(pane.title).toBe("build output");
+      expect((await pane.refreshed()).title).toBe("build output");
     });
   }, 30_000);
 

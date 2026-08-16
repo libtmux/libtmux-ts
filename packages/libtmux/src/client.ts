@@ -1,14 +1,17 @@
 import { CLIENT_ALIASES, type ClientAliasMap } from "./_generated/field_aliases.js";
 import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
 import { paneById, sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
-import { refreshHandle } from "./_internal/operations/refresh.js";
+import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { detachClient, switchClient } from "./_internal/operations/shell.js";
-import { runtimeForServer } from "./_internal/runtime/context.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
-import { installLiveHandlePrototype, liveHandlesEqual } from "./_internal/runtime/live_handle.js";
+import {
+  installLiveHandlePrototype,
+  liveHandlesEqual,
+  runtimeForHandle,
+} from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
@@ -61,14 +64,15 @@ export class Client {
   }
 
   /**
-   * Re-read this client at the current instant, in place.
+   * This client, read again at a new instant.
    *
    * ```ts
-   * await client.refresh();
+   * const later = await client.refreshed();
+   * later.session?.name;
    * ```
    */
-  refresh(): Promise<void> {
-    return refreshHandle(this, runtimeForServer(this.server));
+  refreshed(): Promise<Client> {
+    return refreshedHandle(this, runtimeForHandle(this));
   }
 
   /**
@@ -79,7 +83,7 @@ export class Client {
    * ```
    */
   detach(): Promise<void> {
-    return detachClient(runtimeForServer(this.server), this.name);
+    return detachClient(runtimeForHandle(this), this.name);
   }
 
   /**
@@ -90,7 +94,7 @@ export class Client {
    * ```
    */
   switchTo(session: Session): Promise<void> {
-    return switchClient(runtimeForServer(this.server), this.name, session.id);
+    return switchClient(runtimeForHandle(this), this.name, session.id);
   }
 
   equals(other: unknown): boolean {

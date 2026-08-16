@@ -17,6 +17,7 @@ import {
   type NormalizedGraph,
 } from "../graph/model.js";
 import type { WinlinkRef } from "../graph/refs.js";
+import { runtimeForServer, type RuntimeContext } from "./context.js";
 
 type Child = Client | Pane | Session | Window;
 type LogicalHandle = Pane | Session | Window;
@@ -160,51 +161,79 @@ export function initializeLiveHandle<Handle extends Child>(
   return handle;
 }
 
-export function liveHandleStateForReplacement(handle: Child): LiveHandleInitialization {
-  return requireState(handle);
-}
-
-export function compareAndSwapLiveHandleState(
-  handle: Child,
-  expected: LiveHandleInitialization,
-  graph: NormalizedGraph,
-  record: GraphRecordRef,
-  snapshot: CompleteFormatRow,
-  winlink: WinlinkRef | null,
-): void {
-  const current = requireState(handle);
-  if (current !== expected) {
-    throw new LibTmuxException("handle state changed while replacement was pending");
-  }
-  requireAuthenticProvenance(graph, record);
-  liveHandleStates.set(
-    handle,
-    freezeState({
-      entity: current.entity,
-      graph,
-      model: current.model,
-      record,
-      server: current.server,
-      snapshot,
-      winlink,
-    }),
-  );
-}
-
+/**
+ * Whether two handles describe the same thing on the same tmux server.
+ *
+ * A tmux id is unique only within one daemon, so `%1` alone answers a question
+ * nobody asked: every server has one. The server the handle was resolved
+ * against is what makes the answer mean "the same pane" — and it is the server
+ * rather than the runtime, because two `new Server({ socketPath })` for one
+ * socket are two objects addressing one daemon, whose handles genuinely do name
+ * the same panes. The connection alias is per-object and would say otherwise.
+ *
+ * This deliberately cannot see a daemon restart: tmux reissues ids from the
+ * start, and nothing in a handle's own row distinguishes the new `%1` from the
+ * old one. That is what `Server.daemonIdentity` is for, and why a mutation
+ * checks it rather than trusting equality to have caught it.
+ *
+ * {@link liveHandlesShareTmuxId} is the raw-id comparison, for callers who
+ * genuinely want it.
+ */
 export function liveHandlesEqual(left: Child, other: unknown): boolean {
   const leftState = stateForValue(left);
   const rightState = stateForValue(other);
   if (leftState === undefined || rightState === undefined || leftState.model !== rightState.model) {
     return false;
   }
-  if (leftState.model !== "client") {
-    return leftState.entity.id === rightState.entity.id;
-  }
   if (!leftState.server.equals(rightState.server)) return false;
+  if (leftState.model !== "client") {
+    return (
+      leftState.entity.kind === rightState.entity.kind &&
+      leftState.entity.id === rightState.entity.id
+    );
+  }
+  // tmux gives a client no id of its own, so the row is the identity. Two
+  // readings of one client at different instants are different clients here,
+  // which is why Client has no `sameTmuxIdAs`.
   for (const token of FORMAT_FIELD_TOKENS) {
     if (leftState.snapshot[token] !== rightState.snapshot[token]) return false;
   }
   return true;
+}
+
+/**
+ * Whether two handles carry the same tmux id, wherever they came from.
+ *
+ * This is the comparison {@link liveHandlesEqual} deliberately is not: it says
+ * two ids match, not that they name the same object.
+ */
+export function liveHandlesShareTmuxId(left: Child, other: unknown): boolean {
+  const leftState = stateForValue(left);
+  const rightState = stateForValue(other);
+  if (leftState === undefined || rightState === undefined) return false;
+  return leftState.model === rightState.model && leftState.entity.id === rightState.entity.id;
+}
+
+/**
+ * The runtime a handle may command, refusing one the daemon has outlived.
+ *
+ * Reading a handle's fields and relations is always fine: they describe the
+ * instant it was captured at, and answering from a frozen graph reaches no
+ * server. Sending a command is different — it carries a raw `%n`, and tmux
+ * numbers a restarted daemon's panes from the start, so an id from the previous
+ * daemon now names somebody else's pane. Acquisition notices the restart and
+ * moves the epoch on; this is where that turns into a refusal instead of a
+ * `kill-pane` against the wrong pane.
+ */
+export function runtimeForHandle(handle: Child): RuntimeContext {
+  const state = requireState(handle);
+  const runtime = runtimeForServer(state.server);
+  if (state.graph.capture.epoch !== runtime.daemonEpoch) {
+    throw new LibTmuxException(
+      `${describeHandle(state.model, state.snapshot)} came from a tmux server that has since restarted`,
+    );
+  }
+  return runtime;
 }
 
 export function entityRefForHandle(handle: Child): GraphEntityRef {

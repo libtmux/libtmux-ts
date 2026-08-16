@@ -30,13 +30,17 @@ import {
   unlinkWindow,
 } from "./_internal/operations/topology.js";
 import { respawnWindow } from "./_internal/operations/shell.js";
-import { runtimeForServer } from "./_internal/runtime/context.js";
-import { refreshHandle } from "./_internal/operations/refresh.js";
+import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
-import { installLiveHandlePrototype, liveHandlesEqual } from "./_internal/runtime/live_handle.js";
+import {
+  installLiveHandlePrototype,
+  liveHandlesEqual,
+  liveHandlesShareTmuxId,
+  runtimeForHandle,
+} from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
 /** What {@link Window.plan} offers, one entry per mutation it can describe. */
@@ -119,7 +123,7 @@ export class Window {
    * ```
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForServer(this.server), "window", this.id);
+    return showOptions(runtimeForHandle(this), "window", this.id);
   }
 
   /**
@@ -130,7 +134,7 @@ export class Window {
    * ```
    */
   setOption(name: string, value: string, options?: SetOptionOptions): Promise<void> {
-    return setOption(runtimeForServer(this.server), "window", this.id, name, value, options);
+    return setOption(runtimeForHandle(this), "window", this.id, name, value, options);
   }
 
   /**
@@ -141,7 +145,7 @@ export class Window {
    * ```
    */
   unsetOption(name: string): Promise<void> {
-    return unsetOption(runtimeForServer(this.server), "window", this.id, name);
+    return unsetOption(runtimeForHandle(this), "window", this.id, name);
   }
 
   /**
@@ -153,7 +157,7 @@ export class Window {
    * ```
    */
   split(options?: SplitOptions): Promise<Pane> {
-    return splitWindow(this.server, runtimeForServer(this.server), this.id, options);
+    return splitWindow(this.server, runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -185,7 +189,7 @@ export class Window {
    * ```
    */
   nextLayout(): Promise<void> {
-    return cycleLayout(runtimeForServer(this.server), this.id, "next");
+    return cycleLayout(runtimeForHandle(this), this.id, "next");
   }
 
   /**
@@ -196,7 +200,7 @@ export class Window {
    * ```
    */
   previousLayout(): Promise<void> {
-    return cycleLayout(runtimeForServer(this.server), this.id, "previous");
+    return cycleLayout(runtimeForHandle(this), this.id, "previous");
   }
 
   /**
@@ -210,7 +214,7 @@ export class Window {
    * ```
    */
   rotate(direction: "forward" | "backward" = "forward"): Promise<void> {
-    return rotateWindow(runtimeForServer(this.server), this.id, direction);
+    return rotateWindow(runtimeForHandle(this), this.id, direction);
   }
 
   /**
@@ -225,7 +229,7 @@ export class Window {
    * ```
    */
   resize(options: ResizeWindowOptions): Promise<void> {
-    return resizeWindow(runtimeForServer(this.server), this.id, options);
+    return resizeWindow(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -239,7 +243,7 @@ export class Window {
    * ```
    */
   respawn(command?: string, options?: RespawnOptions): Promise<void> {
-    return respawnWindow(runtimeForServer(this.server), this.id, command, options);
+    return respawnWindow(runtimeForHandle(this), this.id, command, options);
   }
 
   /**
@@ -250,7 +254,7 @@ export class Window {
    * ```
    */
   kill(): Promise<void> {
-    return killTarget(runtimeForServer(this.server), "kill-window", this.id);
+    return killTarget(runtimeForHandle(this), "kill-window", this.id);
   }
 
   /**
@@ -261,7 +265,7 @@ export class Window {
    * ```
    */
   rename(name: string): Promise<void> {
-    return renameWindow(runtimeForServer(this.server), this.id, name);
+    return renameWindow(runtimeForHandle(this), this.id, name);
   }
 
   /**
@@ -272,7 +276,7 @@ export class Window {
    * ```
    */
   move(options?: MoveWindowOptions): Promise<void> {
-    return moveWindow(runtimeForServer(this.server), this.id, options);
+    return moveWindow(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -283,7 +287,7 @@ export class Window {
    * ```
    */
   link(options: MoveWindowOptions): Promise<void> {
-    return linkWindow(runtimeForServer(this.server), this.id, options);
+    return linkWindow(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -294,7 +298,7 @@ export class Window {
    * ```
    */
   unlink(): Promise<void> {
-    return unlinkWindow(runtimeForServer(this.server), this.id);
+    return unlinkWindow(runtimeForHandle(this), this.id);
   }
 
   /**
@@ -305,7 +309,7 @@ export class Window {
    * ```
    */
   swapWith(other: Window): Promise<void> {
-    return swapWindows(runtimeForServer(this.server), this.id, other.id);
+    return swapWindows(runtimeForHandle(this), this.id, other.id);
   }
 
   /**
@@ -316,7 +320,7 @@ export class Window {
    * ```
    */
   selectLayout(layout: string): Promise<void> {
-    return selectLayout(runtimeForServer(this.server), this.id, layout);
+    return selectLayout(runtimeForHandle(this), this.id, layout);
   }
 
   /**
@@ -327,19 +331,24 @@ export class Window {
    * ```
    */
   select(): Promise<void> {
-    return selectTarget(runtimeForServer(this.server), "select-window", this.id);
+    return selectTarget(runtimeForHandle(this), "select-window", this.id);
   }
 
   /**
-   * Re-read this window placement at the current instant, in place.
+   * This window placement, read again at a new instant.
+   *
+   * The placement is kept, not just the window: a window linked into a session
+   * at two indexes has two placements, and this one stays the one it was.
+   * Refusing rather than silently retargeting is why the index is part of what
+   * is matched.
    *
    * ```ts
-   * await window.refresh();
-   * window.panes.count(); // re-read
+   * const later = await window.refreshed();
+   * later.panes.count();
    * ```
    */
-  refresh(): Promise<void> {
-    return refreshHandle(this, runtimeForServer(this.server));
+  refreshed(): Promise<Window> {
+    return refreshedHandle(this, runtimeForHandle(this));
   }
 
   /**
@@ -357,11 +366,33 @@ export class Window {
     args: readonly string[] = [],
     options?: CmdOptions,
   ): Promise<readonly string[]> {
-    return runRawCommand(runtimeForServer(this.server), this.id, command, args, options);
+    return runRawCommand(runtimeForHandle(this), this.id, command, args, options);
   }
 
+  /**
+   * Whether `other` is this same window on this same server.
+   *
+   * Compares the connection and daemon generation as well as `@n`, because a
+   * tmux id is unique only within one running daemon. Two placements of one
+   * linked window are the same window, so this is true for both.
+   *
+   * ```ts
+   * window.equals(await window.refreshed()); // true
+   * ```
+   */
   equals(other: unknown): boolean {
     return liveHandlesEqual(this, other);
+  }
+
+  /**
+   * Whether `other` carries the same `@n`, wherever it came from.
+   *
+   * ```ts
+   * window.sameTmuxIdAs(other);
+   * ```
+   */
+  sameTmuxIdAs(other: Window): boolean {
+    return liveHandlesShareTmuxId(this, other);
   }
 }
 

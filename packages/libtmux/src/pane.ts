@@ -43,12 +43,16 @@ import {
   swapPanes,
 } from "./_internal/operations/topology.js";
 import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
-import { runtimeForServer } from "./_internal/runtime/context.js";
-import { refreshHandle } from "./_internal/operations/refresh.js";
+import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
-import { installLiveHandlePrototype, liveHandlesEqual } from "./_internal/runtime/live_handle.js";
+import {
+  installLiveHandlePrototype,
+  liveHandlesEqual,
+  liveHandlesShareTmuxId,
+  runtimeForHandle,
+} from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
 /** What {@link Pane.plan} offers, one entry per mutation it can describe. */
@@ -104,7 +108,7 @@ export class Pane {
    * ```
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForServer(this.server), "pane", this.id);
+    return showOptions(runtimeForHandle(this), "pane", this.id);
   }
 
   /**
@@ -115,7 +119,7 @@ export class Pane {
    * ```
    */
   setOption(name: string, value: string, options?: SetOptionOptions): Promise<void> {
-    return setOption(runtimeForServer(this.server), "pane", this.id, name, value, options);
+    return setOption(runtimeForHandle(this), "pane", this.id, name, value, options);
   }
 
   /**
@@ -126,7 +130,7 @@ export class Pane {
    * ```
    */
   unsetOption(name: string): Promise<void> {
-    return unsetOption(runtimeForServer(this.server), "pane", this.id, name);
+    return unsetOption(runtimeForHandle(this), "pane", this.id, name);
   }
 
   /**
@@ -138,7 +142,7 @@ export class Pane {
    * ```
    */
   split(options?: SplitOptions): Promise<Pane> {
-    return splitWindow(this.server, runtimeForServer(this.server), this.id, options);
+    return splitWindow(this.server, runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -149,7 +153,7 @@ export class Pane {
    * ```
    */
   kill(): Promise<void> {
-    return killTarget(runtimeForServer(this.server), "kill-pane", this.id);
+    return killTarget(runtimeForHandle(this), "kill-pane", this.id);
   }
 
   /**
@@ -179,7 +183,7 @@ export class Pane {
    * ```
    */
   sendKeys(keys: string, options?: SendKeysOptions): Promise<void> {
-    return sendKeys(runtimeForServer(this.server), this.id, keys, options);
+    return sendKeys(runtimeForHandle(this), this.id, keys, options);
   }
 
   /**
@@ -191,7 +195,7 @@ export class Pane {
    * ```
    */
   capture(options?: CaptureOptions): Promise<readonly string[]> {
-    return capturePane(runtimeForServer(this.server), this.id, options);
+    return capturePane(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -202,7 +206,7 @@ export class Pane {
    * ```
    */
   clearHistory(): Promise<void> {
-    return clearHistory(runtimeForServer(this.server), this.id);
+    return clearHistory(runtimeForHandle(this), this.id);
   }
 
   /**
@@ -213,7 +217,7 @@ export class Pane {
    * ```
    */
   resize(options: ResizeOptions): Promise<void> {
-    return resizePane(runtimeForServer(this.server), this.id, options);
+    return resizePane(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -224,7 +228,7 @@ export class Pane {
    * ```
    */
   swapWith(other: Pane): Promise<void> {
-    return swapPanes(runtimeForServer(this.server), this.id, other.id);
+    return swapPanes(runtimeForHandle(this), this.id, other.id);
   }
 
   /**
@@ -235,7 +239,7 @@ export class Pane {
    * ```
    */
   select(): Promise<void> {
-    return selectTarget(runtimeForServer(this.server), "select-pane", this.id);
+    return selectTarget(runtimeForHandle(this), "select-pane", this.id);
   }
 
   /**
@@ -250,7 +254,7 @@ export class Pane {
    * ```
    */
   setTitle(title: string): Promise<void> {
-    return setPaneTitle(runtimeForServer(this.server), this.id, title);
+    return setPaneTitle(runtimeForHandle(this), this.id, title);
   }
 
   /**
@@ -264,19 +268,19 @@ export class Pane {
    * ```
    */
   pasteBuffer(name: string): Promise<void> {
-    return pasteBuffer(runtimeForServer(this.server), this.id, name);
+    return pasteBuffer(runtimeForHandle(this), this.id, name);
   }
 
   /**
-   * Re-read this pane at the current instant, in place.
+   * This pane, read again at a new instant.
    *
    * ```ts
-   * await pane.refresh();
-   * pane.currentCommand; // re-read
+   * const later = await pane.refreshed();
+   * later.currentCommand;
    * ```
    */
-  refresh(): Promise<void> {
-    return refreshHandle(this, runtimeForServer(this.server));
+  refreshed(): Promise<Pane> {
+    return refreshedHandle(this, runtimeForHandle(this));
   }
 
   /**
@@ -288,7 +292,7 @@ export class Pane {
    * ```
    */
   displayMessage(message: string): Promise<readonly string[]> {
-    return displayMessage(runtimeForServer(this.server), message, this.id);
+    return displayMessage(runtimeForHandle(this), message, this.id);
   }
 
   /**
@@ -299,7 +303,7 @@ export class Pane {
    * ```
    */
   respawn(command?: string, options?: RespawnOptions): Promise<void> {
-    return respawnPane(runtimeForServer(this.server), this.id, command, options);
+    return respawnPane(runtimeForHandle(this), this.id, command, options);
   }
 
   /**
@@ -310,7 +314,7 @@ export class Pane {
    * ```
    */
   breakOut(windowName?: string): Promise<void> {
-    return breakPane(runtimeForServer(this.server), this.id, windowName);
+    return breakPane(runtimeForHandle(this), this.id, windowName);
   }
 
   /**
@@ -321,7 +325,7 @@ export class Pane {
    * ```
    */
   joinTo(target: string, options?: JoinOptions): Promise<void> {
-    return joinPane(runtimeForServer(this.server), this.id, target, options);
+    return joinPane(runtimeForHandle(this), this.id, target, options);
   }
 
   /**
@@ -332,7 +336,7 @@ export class Pane {
    * ```
    */
   enterCopyMode(): Promise<void> {
-    return setCopyMode(runtimeForServer(this.server), this.id, true);
+    return setCopyMode(runtimeForHandle(this), this.id, true);
   }
 
   /**
@@ -343,7 +347,7 @@ export class Pane {
    * ```
    */
   exitCopyMode(): Promise<void> {
-    return setCopyMode(runtimeForServer(this.server), this.id, false);
+    return setCopyMode(runtimeForHandle(this), this.id, false);
   }
 
   /**
@@ -354,7 +358,7 @@ export class Pane {
    * ```
    */
   displayPopup(command?: string, options?: PopupOptions): Promise<void> {
-    return displayPopup(runtimeForServer(this.server), this.id, command, options);
+    return displayPopup(runtimeForHandle(this), this.id, command, options);
   }
 
   /**
@@ -365,7 +369,7 @@ export class Pane {
    * ```
    */
   displayMenu(title: string, items: readonly MenuItem[]): Promise<void> {
-    return displayMenu(runtimeForServer(this.server), this.id, title, items);
+    return displayMenu(runtimeForHandle(this), this.id, title, items);
   }
 
   /**
@@ -376,7 +380,7 @@ export class Pane {
    * ```
    */
   chooseTree(options?: ChooseTreeOptions): Promise<void> {
-    return chooseTree(runtimeForServer(this.server), this.id, options);
+    return chooseTree(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -387,7 +391,7 @@ export class Pane {
    * ```
    */
   chooseBuffer(): Promise<void> {
-    return chooseBuffer(runtimeForServer(this.server), this.id);
+    return chooseBuffer(runtimeForHandle(this), this.id);
   }
 
   /**
@@ -398,7 +402,7 @@ export class Pane {
    * ```
    */
   findWindow(pattern: string): Promise<void> {
-    return findWindow(runtimeForServer(this.server), this.id, pattern);
+    return findWindow(runtimeForHandle(this), this.id, pattern);
   }
 
   /**
@@ -409,7 +413,7 @@ export class Pane {
    * ```
    */
   sendPrefix(): Promise<void> {
-    return sendPrefix(runtimeForServer(this.server), this.id);
+    return sendPrefix(runtimeForHandle(this), this.id);
   }
 
   /**
@@ -420,7 +424,7 @@ export class Pane {
    * ```
    */
   customizeMode(): Promise<void> {
-    return customizeMode(runtimeForServer(this.server), this.id);
+    return customizeMode(runtimeForHandle(this), this.id);
   }
 
   /**
@@ -438,11 +442,33 @@ export class Pane {
     args: readonly string[] = [],
     options?: CmdOptions,
   ): Promise<readonly string[]> {
-    return runRawCommand(runtimeForServer(this.server), this.id, command, args, options);
+    return runRawCommand(runtimeForHandle(this), this.id, command, args, options);
   }
 
+  /**
+   * Whether `other` is this same pane on this same server.
+   *
+   * Compares the connection and daemon generation as well as `%n`, because a
+   * tmux id is unique only within one running daemon — a restarted server
+   * issues `%0` again to an entirely different pane.
+   *
+   * ```ts
+   * pane.equals(await pane.refreshed()); // true
+   * ```
+   */
   equals(other: unknown): boolean {
     return liveHandlesEqual(this, other);
+  }
+
+  /**
+   * Whether `other` carries the same `%n`, wherever it came from.
+   *
+   * ```ts
+   * pane.sameTmuxIdAs(await pane.refreshed()); // true
+   * ```
+   */
+  sameTmuxIdAs(other: Pane): boolean {
+    return liveHandlesShareTmuxId(this, other);
   }
 }
 

@@ -141,15 +141,16 @@ describe("lifecycle mutations", () => {
       expect(snapshot.windows.length).toBe(1);
       expect(window.panes.length).toBe(1);
 
-      await window.refresh();
+      const later = await window.refreshed();
 
-      // Only the refreshed handle advances.
-      expect(window.panes.length).toBe(2);
+      // The later reading advances; the original stays where it was.
+      expect(later.panes.length).toBe(2);
+      expect(window.panes.length).toBe(1);
       expect(snapshot.panes.length).toBe(1);
     });
   }, 40_000);
 
-  test("refresh keeps a linked window on its own placement", async () => {
+  test("refreshed keeps a linked window on its own placement", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await server.newSession({ name: "other" });
@@ -159,11 +160,11 @@ describe("lifecycle mutations", () => {
       await window.link({ index: 9, session: "other" });
 
       const originalIndex = window.index;
-      await window.refresh();
+      const later = await window.refreshed();
 
       // Refreshing resolves the placement it was created at, not the new one.
-      expect(window.index).toBe(originalIndex);
-      expect(window.sessionName).toBe(fixture.sessionName);
+      expect(later.index).toBe(originalIndex);
+      expect(later.sessionName).toBe(fixture.sessionName);
     });
   }, 40_000);
 
@@ -174,7 +175,7 @@ describe("lifecycle mutations", () => {
 
       await session.kill();
 
-      await expect(session.refresh()).rejects.toThrow(/no longer exists/);
+      await expect(session.refreshed()).rejects.toThrow(/no longer exists/);
     });
   }, 40_000);
 

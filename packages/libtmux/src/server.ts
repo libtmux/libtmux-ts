@@ -55,9 +55,11 @@ import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
 import {
   createRuntimeContext,
   createServerWithRuntime,
+  lastObservedDaemon,
   registerServerRuntime,
   runtimeForServer,
   runtimeForServerValue,
+  type DaemonIdentity,
 } from "./_internal/runtime/context.js";
 import { TmuxConnection } from "./_internal/runtime/connection.js";
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
@@ -104,6 +106,20 @@ function transportFrom(
     );
   }
   return named;
+}
+
+/**
+ * How a connection addresses its daemon, as one comparable string.
+ *
+ * An absolute socket path names the daemon outright. A name does not: it is
+ * resolved against `TMUX_TMPDIR` (then the default tmpdir) and a per-user
+ * directory, so the tmpdir in force is part of the address. tmux's own default
+ * name is `default`, which is why an unnamed connection is not a third case.
+ */
+function socketAddress(connection: TmuxConnection): string {
+  if (connection.socketPath !== undefined) return `path ${connection.socketPath}`;
+  const tmpdir = connection.environment.TMUX_TMPDIR ?? "";
+  return `name ${tmpdir} ${connection.socketName ?? "default"}`;
 }
 
 export class Server {
@@ -440,6 +456,31 @@ export class Server {
    */
   async panes(): Promise<Selection<Pane>> {
     return (await this.snapshot()).panes;
+  }
+
+  /**
+   * Which daemon is answering on this socket right now.
+   *
+   * A socket path names a place, not a process. `kill-server` followed by a
+   * restart puts a different daemon at the same path, and that daemon numbers
+   * its panes from `%0` again — so a handle held across the restart names an
+   * object that no longer exists, at an id something else now has. Comparing
+   * this before and after is how a long-running caller can tell.
+   *
+   * `undefined` when the server has nothing to list, which is also the only
+   * case where it has handed out no handles to invalidate.
+   *
+   * ```ts
+   * const before = await server.daemonIdentity();
+   * const after = await server.daemonIdentity();
+   * before?.pid === after?.pid;
+   * ```
+   */
+  async daemonIdentity(): Promise<DaemonIdentity | undefined> {
+    // Acquisition reads `pid` and `start_time` on every row already, so this
+    // costs the snapshot it would have taken anyway and no command of its own.
+    await this.snapshot();
+    return lastObservedDaemon(runtimeForServer(this));
   }
 
   /**
@@ -880,19 +921,22 @@ export class Server {
   /**
    * Whether `other` is a handle addressing the same tmux server.
    *
-   * Compared by the connection it drives rather than by object identity, so a
-   * server constructed twice against one socket is equal to itself. Accepts
-   * `unknown` because the interesting comparisons are against values a caller
-   * has not narrowed yet.
+   * Compared by the socket the connection resolves to rather than by object
+   * identity, so a server constructed twice against one socket is equal to
+   * itself. A socket *name* is not that socket: tmux resolves `-L work` under
+   * `TMUX_TMPDIR`, so the same name with two different tmpdirs addresses two
+   * different daemons, and this reports them as different. Accepts `unknown`
+   * because the interesting comparisons are against values a caller has not
+   * narrowed yet.
+   *
+   * ```ts
+   * server.equals(new Server({ socketPath: server.socketPath ?? "" }));
+   * ```
    */
   equals(other: unknown): boolean {
     const runtime = runtimeForServerValue(this);
     const otherRuntime = runtimeForServerValue(other);
-    return (
-      runtime !== undefined &&
-      otherRuntime !== undefined &&
-      runtime.connection.socketName === otherRuntime.connection.socketName &&
-      runtime.connection.socketPath === otherRuntime.connection.socketPath
-    );
+    if (runtime === undefined || otherRuntime === undefined) return false;
+    return socketAddress(runtime.connection) === socketAddress(otherRuntime.connection);
   }
 }

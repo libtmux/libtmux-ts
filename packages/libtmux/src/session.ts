@@ -21,13 +21,17 @@ import { killTarget, newWindow } from "./_internal/operations/mutations.js";
 import { planKill, planNewWindow } from "./_internal/operations/plans.js";
 import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
 import { renameSession, selectWindowIn } from "./_internal/operations/session_nav.js";
-import { runtimeForServer } from "./_internal/runtime/context.js";
-import { refreshHandle } from "./_internal/operations/refresh.js";
+import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Window } from "./window.js";
-import { installLiveHandlePrototype, liveHandlesEqual } from "./_internal/runtime/live_handle.js";
+import {
+  installLiveHandlePrototype,
+  liveHandlesEqual,
+  liveHandlesShareTmuxId,
+  runtimeForHandle,
+} from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
 /** What {@link Session.plan} offers, one entry per mutation it can describe. */
@@ -87,7 +91,7 @@ export class Session {
    * ```
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForServer(this.server), "session", this.id);
+    return showOptions(runtimeForHandle(this), "session", this.id);
   }
 
   /**
@@ -98,7 +102,7 @@ export class Session {
    * ```
    */
   setOption(name: string, value: string, options?: SetOptionOptions): Promise<void> {
-    return setOption(runtimeForServer(this.server), "session", this.id, name, value, options);
+    return setOption(runtimeForHandle(this), "session", this.id, name, value, options);
   }
 
   /**
@@ -109,7 +113,7 @@ export class Session {
    * ```
    */
   unsetOption(name: string): Promise<void> {
-    return unsetOption(runtimeForServer(this.server), "session", this.id, name);
+    return unsetOption(runtimeForHandle(this), "session", this.id, name);
   }
 
   /**
@@ -121,7 +125,7 @@ export class Session {
    * ```
    */
   showHooks(): Promise<ReadonlyMap<string, string>> {
-    return showHooks(runtimeForServer(this.server), "session", this.id);
+    return showHooks(runtimeForHandle(this), "session", this.id);
   }
 
   /**
@@ -132,7 +136,7 @@ export class Session {
    * ```
    */
   setHook(name: string, command: string): Promise<void> {
-    return setHook(runtimeForServer(this.server), "session", this.id, name, command);
+    return setHook(runtimeForHandle(this), "session", this.id, name, command);
   }
 
   /**
@@ -143,7 +147,7 @@ export class Session {
    * ```
    */
   unsetHook(name: string): Promise<void> {
-    return unsetHook(runtimeForServer(this.server), "session", this.id, name);
+    return unsetHook(runtimeForHandle(this), "session", this.id, name);
   }
 
   /**
@@ -158,7 +162,7 @@ export class Session {
    * ```
    */
   showEnvironment(): Promise<ReadonlyMap<string, EnvironmentValue>> {
-    return showEnvironment(runtimeForServer(this.server), "session", this.id);
+    return showEnvironment(runtimeForHandle(this), "session", this.id);
   }
 
   /**
@@ -169,7 +173,7 @@ export class Session {
    * ```
    */
   getEnvironment(name: string): Promise<EnvironmentValue | undefined> {
-    return getEnvironment(runtimeForServer(this.server), "session", this.id, name);
+    return getEnvironment(runtimeForHandle(this), "session", this.id, name);
   }
 
   /**
@@ -180,7 +184,7 @@ export class Session {
    * ```
    */
   setEnvironment(name: string, value: string, options?: SetEnvironmentOptions): Promise<void> {
-    return setEnvironment(runtimeForServer(this.server), "session", this.id, name, value, options);
+    return setEnvironment(runtimeForHandle(this), "session", this.id, name, value, options);
   }
 
   /**
@@ -191,7 +195,7 @@ export class Session {
    * ```
    */
   unsetEnvironment(name: string): Promise<void> {
-    return unsetEnvironment(runtimeForServer(this.server), "session", this.id, name);
+    return unsetEnvironment(runtimeForHandle(this), "session", this.id, name);
   }
 
   /**
@@ -203,7 +207,7 @@ export class Session {
    * ```
    */
   removeEnvironment(name: string): Promise<void> {
-    return removeEnvironment(runtimeForServer(this.server), "session", this.id, name);
+    return removeEnvironment(runtimeForHandle(this), "session", this.id, name);
   }
 
   /**
@@ -240,7 +244,7 @@ export class Session {
    * ```
    */
   newWindow(options?: NewWindowOptions): Promise<Window> {
-    return newWindow(this.server, runtimeForServer(this.server), this.id, options);
+    return newWindow(this.server, runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -274,19 +278,22 @@ export class Session {
    * ```
    */
   kill(): Promise<void> {
-    return killTarget(runtimeForServer(this.server), "kill-session", this.id);
+    return killTarget(runtimeForHandle(this), "kill-session", this.id);
   }
 
   /**
-   * Re-read this session at the current instant, in place.
+   * This session, read again at a new instant.
+   *
+   * The receiver keeps the instant it was read at; the answer is a new handle
+   * on a new snapshot, so neither reading contradicts itself.
    *
    * ```ts
-   * await session.refresh();
-   * session.windows.count(); // re-read
+   * const later = await session.refreshed();
+   * later.windows.count();
    * ```
    */
-  refresh(): Promise<void> {
-    return refreshHandle(this, runtimeForServer(this.server));
+  refreshed(): Promise<Session> {
+    return refreshedHandle(this, runtimeForHandle(this));
   }
 
   /**
@@ -297,7 +304,7 @@ export class Session {
    * ```
    */
   rename(name: string): Promise<void> {
-    return renameSession(runtimeForServer(this.server), this.id, name);
+    return renameSession(runtimeForHandle(this), this.id, name);
   }
 
   /**
@@ -308,7 +315,7 @@ export class Session {
    * ```
    */
   selectWindow(target: WindowTarget): Promise<void> {
-    return selectWindowIn(runtimeForServer(this.server), this.id, target);
+    return selectWindowIn(runtimeForHandle(this), this.id, target);
   }
 
   /**
@@ -348,7 +355,7 @@ export class Session {
    * ```
    */
   detach(): Promise<void> {
-    return detachClient(runtimeForServer(this.server), this.id);
+    return detachClient(runtimeForHandle(this), this.id);
   }
 
   /**
@@ -366,11 +373,36 @@ export class Session {
     args: readonly string[] = [],
     options?: CmdOptions,
   ): Promise<readonly string[]> {
-    return runRawCommand(runtimeForServer(this.server), this.id, command, args, options);
+    return runRawCommand(runtimeForHandle(this), this.id, command, args, options);
   }
 
+  /**
+   * Whether `other` is this same session on this same server.
+   *
+   * Compares the connection and daemon generation the handle was resolved
+   * against as well as `$n`, because a tmux id is unique only within one
+   * running daemon.
+   *
+   * ```ts
+   * session.equals(await session.refreshed()); // true
+   * ```
+   */
   equals(other: unknown): boolean {
     return liveHandlesEqual(this, other);
+  }
+
+  /**
+   * Whether `other` carries the same `$n`, wherever it came from.
+   *
+   * Sessions on unrelated servers routinely share an id; this says so, and
+   * {@link equals} says they are still different sessions.
+   *
+   * ```ts
+   * session.sameTmuxIdAs(await session.refreshed()); // true
+   * ```
+   */
+  sameTmuxIdAs(other: Session): boolean {
+    return liveHandlesShareTmuxId(this, other);
   }
 }
 

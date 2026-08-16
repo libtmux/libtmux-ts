@@ -139,12 +139,10 @@ describe("shell execution and pane movement", () => {
       const pane = (await server.snapshot()).panes.one();
 
       await pane.enterCopyMode();
-      await pane.refresh();
-      expect(pane.inMode).toBe("1");
+      expect((await pane.refreshed()).inMode).toBe("1");
 
       await pane.exitCopyMode();
-      await pane.refresh();
-      expect(pane.inMode).toBe("0");
+      expect((await pane.refreshed()).inMode).toBe("0");
     });
   }, 40_000);
 

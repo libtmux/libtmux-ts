@@ -8,6 +8,7 @@ import type {
 } from "../../common.js";
 import { QueryValidationError } from "../../exc.js";
 import type { ListCommand } from "../codec/format_types.js";
+import type { DaemonIdentity } from "../runtime/context.js";
 import type { CompleteFormatRow } from "../codec/schemas.js";
 import type { WinlinkRef } from "./refs.js";
 
@@ -29,6 +30,8 @@ export interface GraphRecordRef extends GraphRecordRefNominal {
 export interface GraphCapture {
   readonly capabilityFingerprint: string;
   readonly connection: ConnectionAlias;
+  /** Which daemon answered, when it had anything to list. */
+  readonly daemon?: DaemonIdentity;
   readonly epoch: DaemonEpoch;
 }
 

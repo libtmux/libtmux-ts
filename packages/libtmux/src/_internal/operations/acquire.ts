@@ -1,7 +1,30 @@
+import type { CompleteFormatRow } from "../codec/schemas.js";
 import { executeGuardedList } from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
-import type { RuntimeContext } from "../runtime/context.js";
+import {
+  observeDaemonIdentity,
+  type DaemonIdentity,
+  type RuntimeContext,
+} from "../runtime/context.js";
+
+/**
+ * Which daemon answered this listing.
+ *
+ * `pid` and `start_time` are universal-scope fields, so every row of every
+ * listing already carries them and reading the daemon's identity costs no
+ * command of its own. A server with nothing on it lists no rows at all, and
+ * then there is nothing to compare — which is correct: an empty server has
+ * handed out no handles to invalidate.
+ */
+function daemonOf(rows: readonly (readonly CompleteFormatRow[])[]): DaemonIdentity | undefined {
+  for (const set of rows) {
+    const row = set[0];
+    if (row?.pid == null || row.start_time == null) continue;
+    return Object.freeze({ pid: row.pid, startTime: row.start_time });
+  }
+  return undefined;
+}
 
 /**
  * Acquire the server's complete object graph.
@@ -17,7 +40,15 @@ import type { RuntimeContext } from "../runtime/context.js";
  * placements of a window linked into two sessions survive as two window
  * records sharing one window entity.
  */
-export async function acquireServerGraph(runtime: RuntimeContext): Promise<NormalizedGraph> {
+export async function acquireServerGraph(
+  runtime: RuntimeContext,
+  // Set only by the retry below. A restart invalidates the epoch that this
+  // acquisition already read, so the rows in hand describe the new daemon under
+  // the old epoch and cannot be normalized. Reading again under the new one is
+  // the whole recovery, and a second restart in that window is a different
+  // outage rather than a reason to keep going round.
+  afterRestart = false,
+): Promise<NormalizedGraph> {
   const query = {
     capabilities: runtime.capabilities,
     connection: runtime.connection,
@@ -32,10 +63,20 @@ export async function acquireServerGraph(runtime: RuntimeContext): Promise<Norma
     executeGuardedList({ ...query, listCommand: "list-clients" }),
   ]);
 
+  // A restart hands the next daemon the same socket and the same ids, so
+  // noticing it here is what keeps a handle from the previous one from
+  // resolving against its successor. Invalidating the epoch is what enforces
+  // that: every graph captured under the old epoch stops validating.
+  const daemon = daemonOf([sessions, windows, panes, clients]);
+  if (daemon !== undefined && observeDaemonIdentity(runtime, daemon).restarted && !afterRestart) {
+    return acquireServerGraph(runtime, true);
+  }
+
   return normalizeGraph({
     capture: {
       capabilityFingerprint: capabilities.fingerprint,
       connection: capabilities.connectionAlias,
+      ...(daemon === undefined ? {} : { daemon }),
       epoch: capabilities.daemonEpoch,
     },
     sources: [
