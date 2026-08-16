@@ -11,6 +11,51 @@ there is no second tag to remember.
 
 ## Unreleased
 
+### Changed
+
+Fields now read as the values they stand for. tmux answers everything as text,
+and this decoded none of it, so a pid was `"2334787"`, an active pane was `"1"`,
+and a creation time was `"1786878571"`.
+
+```ts
+pane.panePid; // number | null, was string | null
+pane.active; // boolean | null, was string | null
+session.created; // Date | null, was string | null
+window.index; // number, was string
+```
+
+**This is a breaking change to every typed accessor.** A comparison against a
+string no longer holds — `pane.active === "1"` is now always false, and
+`Number(pane.width)` is a number of a number. The text tmux sent is unchanged
+and still on the row, so `pane.format.pane_active` is the escape hatch and the
+mechanical fix for anything this gets in the way of.
+
+Criteria accept the decoded shape as well as the text, and mean the same thing
+either way, so `where({ active: true })` and `where({ active: "1" })` compile to
+the same query and serialize identically. Stored queries are unaffected: the
+wire format is unchanged, and no schema version was added.
+
+Which fields are numbers, booleans and times is derived from tmux's own
+`format.c` and held to a live server on every tmux version CI runs, so a field
+this port has the shape of is a field tmux agrees about.
+
+### Added
+
+`connect()` and `watch()` take `pauseAfterSeconds`, which asks tmux to pause a
+pane that falls behind rather than drop the whole connection. Without it tmux's
+own remedy applies: a control client that lets a pane's output back up for five
+minutes is killed with "too far behind", taking every other pane and every
+pending command with it. With it, tmux stops that one pane and reports `pause`;
+the connection asks it back and reports `continue`.
+
+### Fixed
+
+A pane that tmux paused while a command was in flight was never asked back, and
+stopped for the rest of the connection's life. tmux appends what it writes to
+whatever command block is open, so the `%pause` arrived as that command's output
+and was read as such — and a command in flight is the normal condition when a
+pane is falling behind.
+
 ## 0.0.1-alpha.7
 
 ### Fixed
