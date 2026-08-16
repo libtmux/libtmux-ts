@@ -1,5 +1,6 @@
 import * as clientModule from "../../src/client.js";
 import type { CompleteFormatRow, RowWithIdentities } from "../../src/_internal/codec/schemas.js";
+import type { TmuxEngine } from "../../src/engine.js";
 import type {
   GraphEntityRef,
   GraphRecordRef,
@@ -61,6 +62,9 @@ import type { Equal, Expect } from "./assert.js";
 type ExpectedServerOptions = {
   readonly colors?: 88 | 256;
   readonly configFile?: string;
+  // The public seam: an engine supplied here runs every command, so its type is
+  // part of the API rather than an internal one that happens to be reachable.
+  readonly engine?: TmuxEngine;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly socketName?: string;
   readonly socketPath?: string;
