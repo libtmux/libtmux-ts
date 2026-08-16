@@ -2,6 +2,7 @@
 import { InMemoryTaskStore } from "@modelcontextprotocol/sdk/experimental/tasks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { Server } from "libtmux/server";
@@ -118,8 +119,23 @@ export async function main(): Promise<void> {
  *
  * Compared by URL rather than by `import.meta.main`, which Node does not have,
  * so the same file serves under both runtimes.
+ *
+ * Through the real path on both sides, because npm installs a `bin` as a
+ * symlink: invoked that way `process.argv[1]` is the link and `import.meta.url`
+ * is what it points at, so comparing them raw is always false and the server
+ * exits without serving. Silently, and with status 0 — a client sees a server
+ * that starts and offers nothing.
  */
-const entry = process.argv[1];
-if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+function isProgram(entry: string | undefined): boolean {
+  if (entry === undefined) return false;
+  if (import.meta.url === pathToFileURL(entry).href) return true;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(entry)).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isProgram(process.argv[1])) {
   await main();
 }
