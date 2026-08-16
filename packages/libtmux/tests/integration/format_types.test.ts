@@ -6,6 +6,8 @@ import { describe, expect, test } from "bun:test";
 import valueTypeFixture from "../fixtures/tmux-format-value-types.json" with { type: "json" };
 
 import { formatFieldsForListCommand } from "../../src/_internal/codec/format_registry.js";
+import { GENERATED_FORMAT_FIELDS } from "../../src/_generated/format_fields.js";
+import { compareTmuxVersions, parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import { ControlMode } from "../../src/_internal/test/control_mode.js";
 import {
   prepareRunRoot,
@@ -230,11 +232,20 @@ describe("declared format value types", () => {
           stagedFields.filter((token) => requested.has(token) && !observed.has(token)),
         ).toEqual([]);
 
-        // Every declared field is either checked above or named as one this
-        // snapshot cannot reach. Nothing is quietly unverified.
+        // Every declared field is either checked above, named as one this
+        // snapshot cannot reach, or withheld by the registry because this tmux
+        // is older than the field. Nothing is quietly unverified — and the
+        // third case is why this has to run on the floor and not only on the
+        // newest release: on 3.2a ten fields fall into it.
+        const withheld = new Set(
+          GENERATED_FORMAT_FIELDS.filter(
+            (field) =>
+              compareTmuxVersions(parseTmuxVersion(version), parseTmuxVersion(field.since)) < 0,
+          ).map(({ token }) => token),
+        );
         expect(
           Object.keys(declared)
-            .filter((token) => !requested.has(token))
+            .filter((token) => !requested.has(token) && !withheld.has(token))
             .sort(),
         ).toEqual([...unobservable].sort());
       });
