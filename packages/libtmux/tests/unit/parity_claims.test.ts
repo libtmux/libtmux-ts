@@ -4,15 +4,14 @@ import { describe, expect, test } from "bun:test";
 
 /**
  * The parity manifest is an evidence ledger against libtmux 0.62.0. Every one
- * of the release's public symbols now carries a decision: `implemented` and
+ * of the release's public symbols carries a decision: `implemented` and
  * `adapted` name the TypeScript that covers it and the test that proves it,
- * and `unsupported` gives the reason it was not ported. No row is left saying
- * only that nobody looked.
+ * and `unsupported` gives the reason it was not ported.
  *
- * What nothing checked was whether a recorded mapping is true. `bun run parity`
- * validates the file's own shape — schema, evidence lanes — and never compares
- * a claim to the code, so a mapping could name a symbol the package does not
- * export and stay green.
+ * These tests check that a recorded mapping is true. `bun run parity` validates
+ * the file's own shape — schema, evidence lanes — and never compares a claim to
+ * the code, so a mapping could name a symbol the package does not export and
+ * stay green.
  */
 
 interface ParitySymbol {
@@ -136,9 +135,8 @@ describe("parity claims", () => {
   test("a row claiming a port names what it ported to", async () => {
     const rows = await manifest();
 
-    // "implemented" and "adapted" assert the symbol exists here. Saying so
-    // without naming it is the shape the manifest was in: a claim nothing
-    // could check.
+    // "implemented" and "adapted" assert the symbol exists here, and a row that
+    // asserts it without naming it is a claim nothing can check.
     const unnamed = rows
       .filter((row) => row.status === "implemented" || row.status === "adapted")
       .filter((row) => row.typescript === null || row.typescriptSymbols.length === 0)
@@ -151,10 +149,9 @@ describe("parity claims", () => {
     const rows = await manifest();
     const tracked = rows.filter((row) => row.typescriptSymbols.length > 0);
 
-    // Rows that name TypeScript, which is every row except the ones recorded
-    // as deliberately not ported. Lowering this silently is the regression, so
-    // this is a floor rather than a fixture: porting more is the point, and
-    // failing a run for doing it would only teach people to edit the number.
+    // Rows that name TypeScript, which is every row except the ones recorded as
+    // deliberately not ported. A floor rather than a fixture: porting more is
+    // the point, and losing coverage silently is the regression.
     expect(tracked.length).toBeGreaterThanOrEqual(259);
     // The Python surface is pinned by the baseline tag, so this one is exact.
     expect(rows.length).toBe(513);

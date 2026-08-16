@@ -29,9 +29,8 @@ const holderPid = /^[1-9]\d*$/u;
 async function waitForMarker(
   path: string,
   isComplete: (content: string) => boolean = (content) => content.length > 0,
-  // Two seconds of 5ms polls. A marker that is coming arrives in a few of
-  // them; the cap is here to fail a marker that is never coming, and half a
-  // second was close enough to a loaded node startup to fail the first kind.
+  // A marker that is coming arrives in a few polls; the cap is here to fail one
+  // that is never coming, so it has to outlast a loaded machine's node startup.
   attempts = 400,
 ): Promise<string> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -61,7 +60,7 @@ async function waitForHolderExit(identity: ProcessIdentity): Promise<boolean> {
     // eslint-disable-next-line no-await-in-loop -- each read must follow the preceding signal.
     const current = await readProcessIdentity(identity.pid);
     if (current === undefined || !sameIdentity(current, identity)) return true;
-    // eslint-disable-next-line no-await-in-loop -- the total cleanup deadline is 200 ms.
+    // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   return false;
@@ -286,10 +285,9 @@ describe("transport cancellation", () => {
     try {
       holder = await readHolderIdentity(markerPath);
       // The marker is written from an `exit` handler, so seeing it means the
-      // child is exiting, not that the transport has observed it yet. The
-      // abort has to land after that observation to be testing precedence
-      // rather than racing it — and 25ms did not survive a loaded machine.
-      // Still far inside the 6s the descendant holds the pipes for.
+      // child is exiting, not that the transport has observed it yet. The abort
+      // has to land after that observation to be testing precedence rather than
+      // racing it, and well inside the window the descendant holds the pipes.
       await new Promise((resolve) => setTimeout(resolve, 250));
       const interruptedAt = performance.now();
       controller.abort();
@@ -311,12 +309,10 @@ describe("transport cancellation", () => {
     const markerPath = join(temporaryRoot, "exited");
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const startedAt = performance.now();
-    // The deadline has to sit between two events: the fixture starting and
-    // exiting, which costs a node startup, and the descendant releasing the
-    // pipes 6s later. At 300ms it sat on top of the first one — under four-way
-    // parallelism the child had not exited yet, so the transport reported an
-    // honest timeout and the test read it as a broken exit result. Bounded
-    // drainage is what is being measured, not how fast this machine forks.
+    // The deadline has to sit between the fixture exiting, which costs a node
+    // startup under four-way parallelism, and the descendant releasing the
+    // pipes. Crowding the first turns an honest timeout into what reads as a
+    // broken exit result: bounded drainage is what is measured, not fork speed.
     const execution = transport.execute({
       args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"],
       executable: process.execPath,
@@ -329,7 +325,7 @@ describe("transport cancellation", () => {
 
       expect(result.returncode).toBe(0);
       expect(result.signal).toBeNull();
-      // Well under the 6s hold: the point is that it did not wait for it.
+      // Well under the descendant's hold: the point is that it did not wait.
       expect(performance.now() - startedAt).toBeLessThan(4_000);
     } finally {
       await execution.catch(() => undefined);

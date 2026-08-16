@@ -22,7 +22,8 @@ describe("README coverage", () => {
   test("shows every operation in a code block, not just a list", async () => {
     const readme = await readFile(new URL("../../README.md", import.meta.url), "utf8");
     // Naming an operation proves it exists; showing a call proves what it takes
-    // and what it gives back. A list of 52 names is an index, not documentation.
+    // and what it gives back. A bare list of names is an index, not
+    // documentation.
     const blocks = [...readme.matchAll(/```ts\n([\s\S]*?)```/gu)]
       .map((match) => match[1])
       .join("\n");

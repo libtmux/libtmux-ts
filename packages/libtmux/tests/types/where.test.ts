@@ -72,11 +72,8 @@ type ExpectedScalarCriteria<Value = never> =
 /**
  * Every scalar criteria still accepts the text tmux sends.
  *
- * The check that used to live here demanded each field be exactly the
- * string-only criteria, which stopped being true when the typed fields learned
- * their own shapes. What has to stay true is weaker and more useful: whatever a
- * field gained, a caller who writes the string keeps working. A field that
- * accepted only its typed value would fail this.
+ * Whatever shapes a field gains, a caller who writes the string keeps working.
+ * A field that accepted only its typed value would fail this.
  */
 type AllScalarCriteriaAcceptStrings<Where, Keys extends keyof Where> = {
   [Key in Keys]-?: [ExpectedScalarCriteria, Where[Key]] extends [Where[Key], unknown]
@@ -285,7 +282,7 @@ type _PaneScalarShapes = Expect<
   Equal<AllScalarCriteriaAcceptStrings<PaneWhere, PaneScalarKeys>, true>
 >;
 
-// A field tmux answers with text is exactly what it always was.
+// A field tmux answers with text stays text.
 type _StringDomain = Expect<MutuallyAssignable<SessionWhere["name"], ExpectedScalarCriteria>>;
 // A field this port knows the shape of takes that shape too, and only that one.
 type _BooleanDomain = Expect<

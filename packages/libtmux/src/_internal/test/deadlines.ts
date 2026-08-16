@@ -35,16 +35,10 @@ function scale(): number {
 /**
  * How long to leave between readiness polls.
  *
- * What made this bound expensive was the rate, not the duration. The poll
- * used to run again as soon as the previous invocation returned, so the cost
- * of waiting was measured in processes rather than in time: a longer bound
- * bought proportionally more invocations, and each is another check-then-exec
- * a fixture watching for controller replacement can lose. Raising the bound to
- * ten seconds unpaced tripled the rate at which that fixture caught its own
- * decoy being run, 3/8 against 1/8 over paired parallel runs.
- *
- * Pacing separates the two. The wait can then be sized for how long a loaded
- * machine takes to start a shell, because its cost no longer scales with it.
+ * Pacing decouples the wait's duration from its cost. An unpaced poll runs
+ * again as soon as the last invocation returns, so a longer bound buys
+ * proportionally more invocations — and each is another check-then-exec a
+ * fixture watching for controller replacement can lose.
  */
 export const READINESS_POLL_INTERVAL_MS = 20;
 
@@ -52,7 +46,7 @@ export const READINESS_POLL_INTERVAL_MS = 20;
  * Wait for tmux to bring a new server's first pane to its readiness hold.
  *
  * Sized for liveness, like the rest: a pane that never reaches its hold still
- * fails, and one that was slow to get there no longer does.
+ * fails, and one that is merely slow to get there does not.
  */
 export const READINESS_DEADLINE_MS = 20_000;
 

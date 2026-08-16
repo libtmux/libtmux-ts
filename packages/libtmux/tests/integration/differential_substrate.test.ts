@@ -92,8 +92,8 @@ withOracle("differential substrate", () => {
       if (publishedRoot === undefined) await reapOwnedRunRoot(runRoot);
       await rm(parent, { force: true, recursive: true });
     }
-    // Creates a fixture and makes two oracle calls, each spawning processes,
-    // so the default five seconds is a bound on the machine rather than on this.
+    // Creates a fixture and makes two oracle calls, each spawning processes, so
+    // Bun's default would be a bound on the machine rather than on this.
   }, 30_000);
 
   test("correlates raw tmux execution and response to one submitted request snapshot", async () => {

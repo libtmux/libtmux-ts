@@ -365,8 +365,7 @@ export class Server {
         ): Promise<ServerSnapshot> => {
           // Subscribe before reading, or a change that lands between the read
           // and the subscription is never seen and the wait hangs on a
-          // condition that is already true. Every hand-rolled version of this
-          // gets that order wrong.
+          // condition that is already true.
           const events = connection.subscribe();
           const deadline = setTimeout(() => void events.close(), options.timeoutMs ?? 30_000);
           try {
@@ -915,8 +914,8 @@ export class Server {
       options,
     );
     // One snapshot for the whole group, taken after every command has run, so
-    // each plan reads the same instant. Resolving them one at a time is what
-    // made the unbatched form cost a snapshot per mutation.
+    // each plan reads the same instant and the group costs one snapshot rather
+    // than one per mutation.
     const snapshot = await this.snapshot();
     return operations.map((operation, index) =>
       operation.resolve(snapshot, printed[index] ?? []),

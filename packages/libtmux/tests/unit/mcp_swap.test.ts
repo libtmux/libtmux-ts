@@ -82,14 +82,13 @@ describe("source specs", () => {
   });
 
   test("names a package this workspace publishes, not the bin inside one", async () => {
-    // `mcp_swap` writes an install command into somebody's agent config, and
-    // nothing else here reads it back. It named `libtmux-mcp` — the executable
-    // inside the package rather than the package — for as long as that shipped,
-    // and npx answered E404 every time. The Markdown gates never saw it: they
-    // check ```console blocks, and this command is built in TypeScript.
+    // `mcp_swap` writes an install command into somebody's agent config and
+    // nothing else here reads it back — the Markdown gates check ```console
+    // blocks, and this command is built in TypeScript. Naming the bin instead
+    // of the package is an npx E404 nothing else catches.
     //
     // Answered from the manifests rather than the registry, so the gate holds
-    // offline and cannot go red because npm is having a bad day.
+    // offline.
     const paths = await Array.fromAsync(
       new Bun.Glob("packages/*/package.json").scan({ cwd: repositoryRoot }),
     );
@@ -103,7 +102,7 @@ describe("source specs", () => {
     expect(published.length).toBeGreaterThan(0);
     expect(published).toContain(PUBLISHED_PACKAGE);
 
-    // The specific way it was wrong: a bin name is not installable.
+    // A bin name is not installable.
     const binNames = manifests.flatMap((manifest) => Object.keys(manifest.bin ?? {}));
     expect(binNames).not.toContain(PUBLISHED_PACKAGE);
 

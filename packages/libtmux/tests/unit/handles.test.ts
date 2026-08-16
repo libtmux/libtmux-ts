@@ -267,7 +267,7 @@ function assertScalarSnapshot(
 }
 
 function assertChildPrototypeAccessors(prototype: object, aliases: readonly string[]): void {
-  // Every raw token now lives behind `format`, so the prototype carries the
+  // Every raw token lives behind `format`, so the prototype carries the
   // idiomatic names and nothing else.
   for (const token of FORMAT_FIELD_TOKENS) {
     if (aliases.includes(token)) continue;

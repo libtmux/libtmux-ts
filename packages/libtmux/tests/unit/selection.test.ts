@@ -475,7 +475,7 @@ describe("internal Selection construction", () => {
     assertDeepFrozenData(optionalAmbiguous.query);
 
     // A client is queryable like anything else: it has fields of its own, and
-    // `.filter` was the only way to reach them before.
+    // criteria reach them without falling back to `.filter`.
     expect(selection.count({ name: "/dev/pts/2" })).toBe(1);
     expect(selection.one({ name: { endsWith: "2" } })).toBe(harness.values[1]!);
     expect(selection.where({ name: { startsWith: "/dev/pts/" } }).count()).toBe(2);

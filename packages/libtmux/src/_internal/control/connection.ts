@@ -307,9 +307,9 @@ export class ControlConnection implements CommandTransport {
   #spawn(): ChildProcessWithoutNullStreams {
     return spawn(this.#executable, [...this.#argv], {
       // Exactly the environment the connection was given, as the spawning
-      // transport does. Overlaying it on `process.env` made the same
-      // `ServerOptions.environment` mean one thing per transport, and quietly
-      // handed the whole ambient environment to the tmux server.
+      // transport does. Overlaying it on `process.env` would make
+      // `ServerOptions.environment` mean one thing per transport, and hand the
+      // whole ambient environment to the tmux server.
       env: this.#environment,
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
@@ -745,11 +745,9 @@ export class ControlConnection implements CommandTransport {
     if (this.#closed) return;
     this.#closed = true;
     this.#fail(undefined);
-    // Ask, then insist. Waiting on `close` alone made closing depend on the
-    // child's goodwill: a tmux that never leaves, or one whose descendants hold
-    // the inherited pipes open, hangs the caller with no bound at all. The
-    // spawning transport has escalated for exactly this reason since it was
-    // written; a long-lived connection needs it more, not less.
+    // Ask, then insist. Waiting on `close` alone leaves closing unbounded: a
+    // tmux that never leaves, or one whose descendants hold the inherited pipes
+    // open, hangs the caller.
     const child = this.#child;
     if (child.exitCode !== null || child.signalCode !== null) return;
     await new Promise<void>((resolve) => {

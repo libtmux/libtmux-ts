@@ -242,10 +242,9 @@ function commandFailure(
 /**
  * Re-describe a transport failure as one, rather than as a generic exception.
  *
- * Acquiring a snapshot is the one path that used to flatten this into a bare
- * {@link LibTmuxException}, which meant the same timeout had a different
- * observable type depending on which command hit it — and cost the caller the
- * `delivery` that says whether a retry is safe.
+ * Flattening it into a bare {@link LibTmuxException} would give one timeout a
+ * different observable type depending on which command hit it, and cost the
+ * caller the `delivery` that says whether a retry is safe.
  */
 function transportFailure(listCommand: ListCommand, error: TmuxTransportError): TmuxTransportError {
   const stderr = decodedStderr(error.stderr);

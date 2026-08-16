@@ -253,14 +253,12 @@ describe("package contract", () => {
     ) as { rules?: Record<string, string> };
 
     // typescript/await-thenable reports every `await using`, whatever the type
-    // implements: a plain class with a real Symbol.asyncDispose is flagged the
-    // same as an interface, which two minimal reproductions confirmed. Closing
-    // a connection or a stream with `await using` is this package's central
-    // idiom, so the rule is noise on it rather than signal. TypeScript rejects
-    // a genuinely non-disposable `await using` on its own, and
-    // promise/no-floating-promises still catches an unawaited promise.
+    // implements — a plain class with a real Symbol.asyncDispose no less than
+    // an interface — so it is noise against this package's central idiom.
+    // TypeScript rejects a genuinely non-disposable `await using` on its own,
+    // and promise/no-floating-promises still catches an unawaited promise.
     //
-    // Nothing else is switched off. A second entry here needs its own reason.
+    // A second entry here needs its own reason.
     expect(config.rules).toEqual({ "typescript/await-thenable": "off" });
   });
 
@@ -380,8 +378,8 @@ describe("package contract", () => {
         readFile(join(outputDirectory, "index.d.ts"), "utf8"),
         readFile(join(outputDirectory, "formats.d.ts"), "utf8"),
       ]);
-      // The root entrypoint now carries the public surface, so assert it names
-      // the classes rather than that it is empty.
+      // The root entrypoint carries the public surface, so it has to name the
+      // classes rather than be empty.
       for (const symbol of ["Server", "Session", "Window", "Pane", "Client", "Selection"]) {
         expect(declarations[0]).toContain(symbol);
       }

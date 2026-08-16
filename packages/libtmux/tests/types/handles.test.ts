@@ -308,20 +308,20 @@ void (window satisfies Client);
 // @ts-expect-error criteria scalars are not authenticated graph-record evidence.
 void materializeClientRecord(server, graph, projectionRecord.scalars);
 
-// The escape hatch now exists, and takes a command with optional arguments.
+// The escape hatch takes a command with optional arguments.
 void (server.cmd as (command: string, args?: readonly string[]) => Promise<readonly string[]>);
-// @ts-expect-error Task 9 read APIs do not land in Task 7.
+// @ts-expect-error reads go through a snapshot, not the server handle.
 void server.read;
-// @ts-expect-error Task 9 factories do not land in Task 7.
+// @ts-expect-error a server is constructed, not made by a static factory.
 void Server.create;
-// @ts-expect-error Task 9 environment factories do not land in Task 7.
+// @ts-expect-error the environment factory is Session.fromEnv.
 void Server.from_env;
-// @ts-expect-error Task 8 Selection APIs do not land in Task 7.
+// @ts-expect-error selection is reached from a snapshot, not the server handle.
 void server.select;
-// @ts-expect-error Task 8 criteria APIs do not land in Task 7.
+// @ts-expect-error criteria belong to a Selection, not to a handle.
 void session.where;
 void pane;
-// @ts-expect-error on_init is not a Task 7 constructor option.
+// @ts-expect-error on_init is not a constructor option.
 void new Server({ on_init: () => undefined });
 // @ts-expect-error internal logger injection is not a public Server option.
 void new Server({ logger: {} as TmuxLogger });

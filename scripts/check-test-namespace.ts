@@ -23,11 +23,10 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 /** Everything this package creates under the temporary directory starts here. */
 const TEST_PREFIX = "ltx";
 
-// Both forms take the prefix as a quoted first argument. The examples are
-// spelled without quotes on purpose: written the way the code writes them,
-// this comment matches the patterns below and the gate fails on itself — which
-// it did, the moment the file went from untracked to tracked and `git ls-files`
-// started handing it to itself.
+// Both forms take the prefix as a quoted first argument. This file is itself
+// one of the tracked files scanned, so the examples drop the quotes: spelled
+// the way the code spells them, they match the patterns below and the gate
+// fails on itself.
 //
 //   mkdtemp(join(tmpdir(), PREFIX))
 //   makeTestDirectory(PREFIX)

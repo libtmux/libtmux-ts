@@ -26,8 +26,7 @@ import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 export const RUN_ROOT_ENV = "LIBTMUX_TEST_RUN_ROOT";
 export const OWNER_RECORD_NAME = ".owner.json";
 export const FIXTURE_RECORD_NAME = "fixture.json";
-// Declared beside the temp root that must fit inside it; re-exported here
-// because this module's callers have always imported it from run_root.
+// Declared beside the temp root that must fit inside it, and re-exported here.
 import { SOCKET_PATH_UTF8_LIMIT } from "./temp_root.js";
 
 export { SOCKET_PATH_UTF8_LIMIT };
@@ -1699,9 +1698,8 @@ function foreignSocketLeak(
   if (state === "unauthenticated") {
     return "fixture socket is present without authenticated unlink authority";
   }
-  // Which socket is there matters: a different inode is something new bound to
-  // the path, while the same inode on a different device is the path itself
-  // having moved. Saying only "foreign" leaves the next reader to guess.
+  // A different inode is something new bound to the path; the same inode on a
+  // different device is the path itself having moved.
   const show = (identity: EntryIdentity | SocketIdentity | undefined): string =>
     identity === undefined
       ? "none"

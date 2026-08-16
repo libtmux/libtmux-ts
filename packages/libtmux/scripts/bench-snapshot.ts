@@ -2,8 +2,8 @@
  * What a snapshot costs as the server it reads gets bigger.
  *
  * A snapshot is four list commands whatever the topology, and every row is
- * completed to all 178 fields. This is the measurement an argument for a
- * reduced model or a field projection has to start from.
+ * completed to every field its scope defines. This is the measurement an
+ * argument for a reduced model or a field projection has to start from.
  *
  * Run with `bun scripts/bench-snapshot.ts`. Numbers belong to the machine and
  * the tmux that produced them, both of which are reported.

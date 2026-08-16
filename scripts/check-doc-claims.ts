@@ -120,15 +120,12 @@ for (const file of files) {
     }
 
     // A repository-relative path in an instruction is the thing most likely to
-    // rot: files move and the prose does not follow them. `bun
-    // scripts/check-parity.ts` outlived the move that put it under
-    // packages/libtmux, and read as a working command for as long.
+    // rot: files move and the prose does not follow them.
     //
     // Only paths that reach into the tree are judged. One that escapes it
     // (`../libtmux`, the Python checkout) or names nothing at the root
-    // (`./script.ts`, standing in for the reader's own file) is prose, not a
-    // reference, and demanding it exist would make the gate wrong rather than
-    // strict.
+    // (`./script.ts`, standing in for the reader's own file) is prose rather
+    // than a reference.
     for (const argument of argv.slice(1)) {
       if (argument.startsWith("-") || argument.startsWith("/") || argument.startsWith("~"))
         continue;

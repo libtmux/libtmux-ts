@@ -56,10 +56,9 @@ function queryMajor(executable: string, expected: number): string {
   if (match === null) throw new Error(`unrecognized Node version: ${version}`);
   const actual = Number.parseInt(match[1]!, 10);
   if (actual !== expected) {
-    // Naming the executable matters: the floor is deliberately not substituted,
-    // so a developer whose PATH carries a newer Node sees this rather than a
-    // silent pass, and has to be told which Node was probed and how to change
-    // it. Without that this reads as a broken gate rather than a missing one.
+    // The floor is never substituted, so a newer Node on PATH lands here rather
+    // than passing silently. Naming the executable probed is what separates a
+    // missing Node from a broken gate.
     throw new Error(
       `expected Node major ${expected}, received ${actual} (${version}) from ${executable}; ` +
         `point LIBTMUX_NODE22 at a Node ${expected} executable, or pass --node`,
@@ -373,10 +372,9 @@ const timeoutPipeMarker = fileURLToPath(new URL("./timeout-pipe-holder", import.
 const heldPipeTimeout = transport.execute({
   executable,
   args: [ignoreFixture, "--inherit-pipes=" + timeoutPipeMarker],
-  // The deadline has to land after the child has written its launch frames and
-  // its marker: a deadline that beats the spawn times out a process that never
-  // held a pipe, which is a different scenario. Half a second did not outlast a
-  // loaded machine's node startup.
+  // The deadline has to outlast a loaded machine's node startup: one that beats
+  // the spawn times out a process that never held a pipe, which is a different
+  // scenario.
   timeoutMs: 4_000,
 });
 // Given an outcome the moment it exists. Nothing below may be the first thing
@@ -447,8 +445,8 @@ const exitTimeoutAt = performance.now();
 const exitTimed = transport.execute({
   executable,
   // The deadline has to land after the child exits and before the holder lets
-  // the pipe go. Both were tight enough that a loaded machine turned the first
-  // half into a real timeout, which is a different scenario.
+  // the pipe go, with room on both sides: on a loaded machine a tight first half
+  // becomes a real timeout, which is a different scenario.
   args: [echoFixture, "--exit-with-inherited-pipe", exitTimeoutMarker, "8000"],
   timeoutMs: 2_000,
 });

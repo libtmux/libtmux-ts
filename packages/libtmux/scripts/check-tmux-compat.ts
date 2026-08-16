@@ -81,7 +81,7 @@ for (const build of builds) {
   for (const gate of GATES) {
     // Gates run one at a time: two tmux suites at once contend for the same
     // machine and turn a real failure into a timing question.
-    // eslint-disable-next-line no-await-in-loop -- deliberate serialisation.
+    // eslint-disable-next-line no-await-in-loop -- gates contend for the machine.
     const ok = await runGate(gate, build.executable);
     process.stdout.write(`${reported.padEnd(12)} ${gate.padEnd(18)} ${ok ? "ok" : "FAILED"}\n`);
     if (!ok) failed = true;

@@ -203,10 +203,9 @@ async function main(): Promise<void> {
         samples.push(measured.row);
         tmuxVersion = measured.tmuxVersion;
       }
-      // Reported as a median because a single sample of this is not worth
-      // printing: the same cell has come back twice as slow as itself on a busy
-      // machine. Ordering is reported as a rate for the same reason — one run
-      // that happened to come out in order does not make a mode ordered.
+      // A single sample of this is dominated by machine load, so timing is
+      // reported as a median and ordering as a rate: one run that came out in
+      // order does not make a mode ordered.
       const timings = samples.map((sample) => sample.ms).sort((left, right) => left - right);
       rows.push({
         ...samples[0]!,

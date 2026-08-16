@@ -184,10 +184,9 @@ export function createTmuxMcpServer(tmux: Server): McpServer {
       const deadline = setTimeout(() => void events.close(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
       let seen = "";
       try {
-        // Subscribe, attach, *then* send. The previous shape left this to a
-        // separate tool call, so a command that printed before the watcher
-        // attached was never seen and the wait ran to its deadline against
-        // output that had already happened.
+        // Subscribe, attach, *then* send. A control client is told nothing that
+        // happened before it attached, so output printed ahead of the attach is
+        // never seen and the wait runs to its deadline.
         await events.ready();
         await pane.sendKeys(keys, literal === undefined ? {} : { literal });
 

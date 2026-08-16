@@ -899,9 +899,8 @@ function publicSymbolEvidenceApplicability(
   status: Status,
 ): EvidenceApplicabilityFields {
   // A symbol recorded as deliberately not ported has no evidence to give, in
-  // any lane, whatever its kind. Deriving applicability from kind alone is what
-  // made "method" and "not ported" contradict each other, and left every such
-  // row stuck at `planned` — recorded as unexamined rather than as decided.
+  // any lane, whatever its kind. Status is read before kind so the two cannot
+  // contradict each other.
   if (status === "unsupported") {
     return { declarationTest: NOT_PORTED, realTmuxScenario: NOT_PORTED, unitTest: NOT_PORTED };
   }
@@ -921,10 +920,9 @@ function publicSymbolEvidenceApplicability(
     };
   }
   // A member whose behaviour is a tmux command can only be unit tested against
-  // a mock, and this repository's guidance is to use real fixtures instead. Its
-  // declaration is pinned with its class rather than one test per member. So
-  // the real-tmux run is the evidence that exists, and demanding three lanes
-  // for it is what left these rows unfilled rather than what kept them honest.
+  // a mock, and this repository uses real fixtures instead; its declaration is
+  // pinned with its class rather than one test per member. The real-tmux run is
+  // the only lane that can carry evidence for it.
   if (realTmuxRequired) {
     return {
       declarationTest:

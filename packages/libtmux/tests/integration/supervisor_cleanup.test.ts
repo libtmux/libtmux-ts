@@ -2103,8 +2103,7 @@ describe("identity-safe inaccessible-socket fallback", () => {
         ),
         // Bounded for liveness: what is asserted is that disposal returns at
         // all when a helper ignores TERM and holds the pipes, and a disposal
-        // that never returns fails this at any size. A second and a half was
-        // shorter than a loaded machine takes to get there.
+        // that never returns fails this at any size.
         new Promise<{ kind: "deadline" }>((resolve) =>
           setTimeout(() => resolve({ kind: "deadline" }), 30_000),
         ),
@@ -2406,10 +2405,9 @@ describe("outer test controllers", () => {
           LIBTMUX_NODE_FAILURE_MARKER: marker,
           LIBTMUX_NODE_INJECT_FAILURE: mode,
           // The hang this mode injects is ended by the child's own budget, so
-          // the budget has to outlast reaching the hang rather than race it:
-          // under load the scenarios before it take far longer than the 7s
-          // that sufficed when they were quick, and the child then died before
-          // creating the fixture whose cleanup is the thing under test.
+          // the budget has to outlast every scenario ahead of it under load.
+          // Racing them instead kills the child before it creates the fixture
+          // whose cleanup is the thing under test.
           ...(mode === "timeout-after-create" ? { LIBTMUX_NODE_SCENARIO_TIMEOUT_MS: "45000" } : {}),
           LIBTMUX_TEST_RUN_ROOT: root,
         },

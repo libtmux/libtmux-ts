@@ -6,11 +6,10 @@ process.exitCode = await runSupervisor({
     "test",
     "--parallel=4",
     "--no-orphans",
-    // Bun allows a test five seconds unless it says otherwise, which is a
-    // reasonable default for a unit test and not for one that starts a tmux
-    // server, waits for a shell, and reaps it again. Under load the ones that
-    // named no bound of their own were failing on the default rather than on
-    // anything they assert — a test that genuinely hangs still fails, later.
+    // Bun's default bound is sized for a unit test, not for one that starts a
+    // tmux server, waits for a shell, and reaps it again. A liveness bound for
+    // the tests that name none of their own: one that genuinely hangs still
+    // fails, later.
     "--timeout",
     "60000",
     "--preload",

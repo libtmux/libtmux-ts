@@ -1,7 +1,5 @@
-// Reaches across packages for the library's real-tmux fixture harness. That is
-// deliberate and settled: the harness reaches into the library's internals, so
-// it cannot be published, and nothing outside this repository needs it. An
-// in-repo consumer therefore reaches for it by path.
+// The library's real-tmux fixture harness reaches into its internals, so it is
+// unpublished and an in-repo consumer reaches across packages for it by path.
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,7 +127,7 @@ describe("MCP consumer", () => {
           name: "send_keys",
         });
         // Bounded for liveness: a shell that never echoes still fails, just
-        // later, while one that was merely slow to start no longer does.
+        // later, while one that is merely slow to start does not.
         const deadline = Date.now() + 30_000;
         let captured = "";
         while (!captured.includes("over-the-wire") && Date.now() < deadline) {
