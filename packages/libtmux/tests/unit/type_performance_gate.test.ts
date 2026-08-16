@@ -20,6 +20,17 @@ import { describe, expect, test } from "bun:test";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
+/**
+ * A temporary directory under its resolved path.
+ *
+ * The fake compiler below compares the cwd it was spawned in against this, and
+ * a spawned process reports the path with symlinks resolved. macOS puts
+ * `$TMPDIR` under `/private`, so the unresolved form never matches.
+ */
+async function makeResolvedTestDirectory(prefix: string): Promise<string> {
+  return realpath(await makeTestDirectory(prefix));
+}
+
 interface Baseline {
   readonly compiler: {
     readonly package: "typescript";
@@ -334,7 +345,7 @@ describe("TypeScript instantiation performance gate", () => {
   });
 
   test("rejects a missing baseline without creating one", async () => {
-    const temporary = await makeTestDirectory("ltx-type-missing-baseline-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-missing-baseline-");
     try {
       await createCheckerFixture(temporary);
       const baselinePath = join(temporary, baselineRelativePath);
@@ -350,7 +361,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("updates atomically and checks compiler, complete input chain, and maximum", async () => {
-    const temporary = await makeTestDirectory("ltx-type-performance-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-performance-");
     try {
       await createCheckerFixture(temporary);
       const localCompiler = join(temporary, "node_modules/.bin/tsc");
@@ -548,7 +559,7 @@ describe("TypeScript instantiation performance gate", () => {
   ])(
     "rejects $name without writing",
     async ({ mutate }) => {
-      const temporary = await makeTestDirectory("ltx-type-invalid-baseline-");
+      const temporary = await makeResolvedTestDirectory("ltx-type-invalid-baseline-");
       try {
         await createCheckerFixture(temporary);
         const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -569,7 +580,7 @@ describe("TypeScript instantiation performance gate", () => {
   );
 
   test("atomically replaces an existing baseline without exposing partial bytes", async () => {
-    const temporary = await makeTestDirectory("ltx-type-atomic-update-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-atomic-update-");
     try {
       await createCheckerFixture(temporary);
       const initialUpdate = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -646,7 +657,7 @@ describe("TypeScript instantiation performance gate", () => {
   ])(
     "rejects valid-baseline digest drift in $inputPath without writing",
     async ({ inputPath, needle, replacement }) => {
-      const temporary = await makeTestDirectory("ltx-type-input-drift-");
+      const temporary = await makeResolvedTestDirectory("ltx-type-input-drift-");
       try {
         await createCheckerFixture(temporary);
         const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -670,7 +681,7 @@ describe("TypeScript instantiation performance gate", () => {
   );
 
   test("rejects a root devDependency that does not pin the running compiler", async () => {
-    const temporary = await makeTestDirectory("ltx-type-dependency-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-dependency-");
     try {
       await createCheckerFixture(temporary);
       const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -691,7 +702,7 @@ describe("TypeScript instantiation performance gate", () => {
   test.each(["^7.0.2", "~7.0.2", ">=7.0.2", "7.0.x", "latest"])(
     "rejects non-exact dependency range %s during update",
     async (range) => {
-      const temporary = await makeTestDirectory("ltx-type-update-range-");
+      const temporary = await makeResolvedTestDirectory("ltx-type-update-range-");
       try {
         await createCheckerFixture(temporary);
         await writeFile(
@@ -710,7 +721,7 @@ describe("TypeScript instantiation performance gate", () => {
   );
 
   test("rejects installed-package version disagreement during update", async () => {
-    const temporary = await makeTestDirectory("ltx-type-update-version-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-update-version-");
     try {
       await createCheckerFixture(temporary);
       const compilerPackagePath = join(temporary, "node_modules/typescript/package.json");
@@ -733,7 +744,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("rejects compiler executables outside the package-declared bin symlink", async () => {
-    const temporary = await makeTestDirectory("ltx-type-compiler-provenance-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-compiler-provenance-");
     try {
       await createCheckerFixture(temporary);
       const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -781,7 +792,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("rejects a compiler package digest mismatch even when its version is unchanged", async () => {
-    const temporary = await makeTestDirectory("ltx-type-compiler-digest-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-compiler-digest-");
     try {
       await createCheckerFixture(temporary);
       const update = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
@@ -806,7 +817,7 @@ describe("TypeScript instantiation performance gate", () => {
   }, 90_000);
 
   test("rejects missing and duplicate anchored Instantiations metrics", async () => {
-    const temporary = await makeTestDirectory("ltx-type-metric-");
+    const temporary = await makeResolvedTestDirectory("ltx-type-metric-");
     try {
       await createCheckerFixture(temporary);
       const firstUpdate = await runBounded(["bun", scriptRelativePath, "--update"], temporary);
