@@ -54,6 +54,7 @@ import {
 import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
 import {
   createRuntimeContext,
+  invalidateRuntimeEpoch,
   createServerWithRuntime,
   lastObservedDaemon,
   registerServerRuntime,
@@ -355,6 +356,12 @@ export class Server {
       daemonEpoch: 0 as DaemonEpoch,
       ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
       transport: connection,
+    });
+    // A control client proves which daemon it is talking to for as long as it
+    // stays up. When it does not, every handle read through it is from a daemon
+    // this connection can no longer vouch for.
+    connection.onDaemonLost(() => {
+      invalidateRuntimeEpoch(boundRuntime);
     });
     const bound = createServerWithRuntime(boundRuntime) as ConnectedServer;
     Object.defineProperties(bound, {
@@ -821,8 +828,10 @@ export class Server {
   /**
    * Assert the server is reachable, raising with tmux's reason if not.
    *
-   * Collection accessors return empty when tmux cannot be reached, so this is
-   * how a caller distinguishes "no sessions" from "no server".
+   * Every read already raises on an unreachable server, so this is not what
+   * tells an empty result from a missing one — it is the assertion form of
+   * {@link isAlive}, for a caller that wants the check and the reason without a
+   * read to hang it on.
    *
    * ```ts
    * await server.raiseIfDead(); // throws when no tmux server is listening

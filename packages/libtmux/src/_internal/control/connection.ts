@@ -197,6 +197,17 @@ export class ControlConnection implements CommandTransport {
    */
   readonly #stdinFallback: CommandTransport | undefined;
 
+  /**
+   * Told when this connection stops being proof of one daemon.
+   *
+   * A control client is attached to a daemon for its lifetime, so it never needs
+   * the inline guard a spawned command carries — but a reconnect attaches to
+   * whatever is on the socket now, which may be a successor that reissued every
+   * id. Announcing the drop is what lets the runtime retire the handles the old
+   * daemon handed out.
+   */
+  #onDaemonLost: (() => void) | undefined;
+
   constructor(
     connection: TmuxConnection,
     options: WatchOptions = {},
@@ -582,6 +593,10 @@ export class ControlConnection implements CommandTransport {
   }
 
   #fail(failure: Error | undefined): void {
+    // Before deciding whether to reconnect: either way this connection is no
+    // longer evidence that the daemon its ids came from is the one answering.
+    // A deliberate close is not that — the runtime is going away with it.
+    if (!this.#closed) this.#onDaemonLost?.();
     if (this.#tryReconnect()) {
       this.#reopening = true;
       this.#failPending(failure);
@@ -641,6 +656,10 @@ export class ControlConnection implements CommandTransport {
       args: ["refresh-client", "-A", `${paneId}:continue`],
       executable: this.#executable,
     }).catch(() => undefined);
+  }
+
+  onDaemonLost(notify: () => void): void {
+    this.#onDaemonLost = notify;
   }
 
   execute(request: CommandRequest): Promise<RawCommandResult> {

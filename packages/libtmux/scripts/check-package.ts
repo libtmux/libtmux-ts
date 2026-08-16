@@ -17,7 +17,6 @@ const forbiddenEntries: readonly (readonly [prefix: string, reason: string])[] =
   ["dist/_internal/test/", "the tmux test harness is for this repository's own suites"],
   ["dist/tests/", "tests are not part of the published surface"],
   ["dist/scripts/", "build tooling is not part of the published surface"],
-  ["dist/consumers/", "the example consumers are not part of the published surface"],
 ];
 
 function fail(message: string): never {

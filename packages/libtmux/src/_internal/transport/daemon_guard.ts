@@ -1,0 +1,96 @@
+import { quoteCommand } from "./lexer.js";
+
+/**
+ * Making a command refuse to run on a daemon that is not the one it was read
+ * from.
+ *
+ * A tmux id is unique within one daemon and reissued by the next: `kill-server`
+ * and a restart give a new daemon the same socket, and it numbers its panes from
+ * `%0` again. A handle captured before the restart therefore names something
+ * that exists, belongs to somebody else, and answers to the same command.
+ *
+ * Checking first and sending second does not close that: the daemon can change
+ * between the two. `if-shell -F` does, because it is not a shell — tmux expands
+ * the format inside its command queue and `cmdq_insert_after`s the guarded
+ * command into the same queue, so nothing runs in between. The condition is
+ * `pid` and `start_time` together, since pids are reused.
+ *
+ * The refusal has to be visible. tmux answers a false condition with no output
+ * and status 0, which is indistinguishable from a command that printed nothing,
+ * so the else branch is a read-only command with a target that cannot exist: it
+ * fails, the invocation exits nonzero, and the message names the reason. The
+ * guarded command keeps its own stdout and stderr either way, so nothing that
+ * reads a result has to know this happened.
+ */
+
+export interface DaemonGuard {
+  readonly pid: string;
+  readonly startTime: string;
+}
+
+/**
+ * The branch taken when the daemon changed.
+ *
+ * Read-only and impossible: no session may be named this, so it always fails and
+ * never touches anything. The name is the diagnostic — tmux prints
+ * `can't find session: libtmux-daemon-restarted`, which reads correctly even
+ * where nothing translated it.
+ */
+const RESTART_MARKER = "libtmux-daemon-restarted";
+const ELSE_BRANCH: readonly string[] = Object.freeze(["list-windows", "-t", RESTART_MARKER]);
+
+/** A raw tmux id: the thing a restart reissues to something else. */
+const TMUX_ID = /^[%@$]\d+$/u;
+
+/** Whether an argv addresses an object by an id only its own daemon can resolve. */
+export function carriesTmuxId(args: readonly string[]): boolean {
+  return args.some((argument) => TMUX_ID.test(argument));
+}
+
+/** The condition that is true only on the daemon a handle was read from. */
+export function daemonCondition(daemon: DaemonGuard): string {
+  return `#{==:#{pid}/#{start_time},${daemon.pid}/${daemon.startTime}}`;
+}
+
+/**
+ * Wrap a subcommand so tmux runs it only on `daemon`.
+ *
+ * `connectionArgs` stay outside the wrapper: they select the server, and
+ * `if-shell` is the first thing that server is asked to do.
+ */
+export function guardedArgv(
+  connectionArgs: readonly string[],
+  subcommand: readonly string[],
+  daemon: DaemonGuard,
+): readonly string[] {
+  return Object.freeze([...connectionArgs, ...guardedChain(quoteCommand(subcommand), daemon)]);
+}
+
+/**
+ * Wrap an already-serialized command list so tmux runs all of it or none.
+ *
+ * The list stays one list inside the branch, so a failure part-way through
+ * still removes what follows it — the semantics a sequence documents. Guarding
+ * each command separately would lose that: an error inside an `if-shell` branch
+ * does not reach commands outside it.
+ */
+export function guardedChain(chain: string, daemon: DaemonGuard): readonly string[] {
+  return Object.freeze([
+    "if-shell",
+    "-F",
+    daemonCondition(daemon),
+    chain,
+    quoteCommand(ELSE_BRANCH),
+  ]);
+}
+
+/** Whether a failed result is the guard refusing rather than the command failing. */
+export function refusedByGuard(returncode: number, stderr: Uint8Array): boolean {
+  if (returncode === 0) return false;
+  return new TextDecoder("utf-8", { fatal: false }).decode(stderr).includes(RESTART_MARKER);
+}
+
+/** The same question against one already-decoded stderr line. */
+export function refusedByGuardLine(line: string): boolean {
+  return line.includes(RESTART_MARKER);
+}

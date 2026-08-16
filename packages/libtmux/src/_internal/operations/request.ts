@@ -1,6 +1,7 @@
 import type { CommandOptions, CommandResult, OperationStatus } from "../../common.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
 import type { TmuxConnection } from "../runtime/connection.js";
+import type { DaemonGuard } from "../transport/daemon_guard.js";
 import type {
   BatchOutcome,
   CommandRequest,
@@ -22,13 +23,14 @@ export function connectionArguments(connection: TmuxConnection): string[] {
 export function prepareCommandRequest(
   connection: TmuxConnection,
   args: readonly string[],
-  options: CommandOptions = {},
+  options: CommandOptions & { readonly daemonGuard?: DaemonGuard } = {},
 ): CommandRequest {
   if (options.stdin !== undefined && !(args[0] === "load-buffer" && args.at(-1) === "-")) {
     throw new TypeError(`${args[0] ?? "command"} does not accept stdin`);
   }
   return snapshotCommandRequest({
     args: Object.freeze([...connectionArguments(connection), ...args]),
+    ...(options.daemonGuard === undefined ? {} : { daemonGuard: options.daemonGuard }),
     environment: connection.environment,
     executable: connection.executable,
     ...(options.signal === undefined ? {} : { signal: options.signal }),

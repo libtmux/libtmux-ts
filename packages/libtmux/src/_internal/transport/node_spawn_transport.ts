@@ -10,8 +10,27 @@ import {
   createGroupSeparator,
   MAX_PACKED_ARGV_BYTES,
   packedArgvBytes,
+  subcommandOf,
 } from "./group.js";
 import { snapshotCommandRequest, TmuxTransportError } from "./types.js";
+import { guardedArgv, refusedByGuard } from "./daemon_guard.js";
+import { TmuxServerRestarted } from "../../exc.js";
+
+/**
+ * Rebuild a request so tmux itself refuses it on the wrong daemon.
+ *
+ * A command carrying stdin is left alone: `load-buffer -` reads the client's
+ * stdin, an `if-shell` branch is a command tmux runs for itself, and no command
+ * that takes stdin addresses an object by id anyway.
+ */
+function guarded(request: CommandRequest): CommandRequest {
+  const daemon = request.daemonGuard;
+  if (daemon === undefined || request.stdin !== undefined) return request;
+  const subcommand = subcommandOf(request.args);
+  if (subcommand.length === 0) return request;
+  const connectionArgs = request.args.slice(0, request.args.length - subcommand.length);
+  return { ...request, args: guardedArgv(connectionArgs, subcommand, daemon) };
+}
 
 export interface NodeSpawnTransportOptions {
   readonly postKillGraceMs?: number;
@@ -74,7 +93,7 @@ export class NodeSpawnTransport {
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
-    const submitted = snapshotCommandRequest(request);
+    const submitted = snapshotCommandRequest(guarded(request));
     if (isAborted(submitted.signal)) {
       throw new TmuxTransportError("command cancelled before spawn", {
         delivery: "not_started",
@@ -297,11 +316,19 @@ export class NodeSpawnTransport {
       });
     }
 
+    const stderr = stderrState.status === "fulfilled" ? stderrState.value : new Uint8Array();
+    if (request.daemonGuard !== undefined && refusedByGuard(terminal.code, stderr)) {
+      throw new TmuxServerRestarted(
+        "tmux refused the command: the daemon on this socket is not the one these ids came from",
+        { subcommand: subcommandOf(request.args)[0] ?? "tmux" },
+      );
+    }
+
     return {
       cmd: Object.freeze([submitted.executable, ...submitted.args]),
       returncode: terminal.code,
       signal: terminal.signal,
-      stderr: stderrState.status === "fulfilled" ? stderrState.value : new Uint8Array(),
+      stderr,
       stdout: stdoutState.status === "fulfilled" ? stdoutState.value : new Uint8Array(),
     };
   }

@@ -994,6 +994,30 @@ because tmux may well have created that window before the pipe went quiet. Every
 path reports the same type, so a timeout during `snapshot()` is not a different
 shape from a timeout during `kill()`.
 
+A handle that outlived its daemon raises `TmuxServerRestarted`. tmux numbers a
+restarted daemon's objects from the start, so a `%1` read before the restart
+names a pane that exists and belongs to somebody else — and a socket path is a
+place, not a process:
+
+```ts
+import { TmuxServerRestarted } from "libtmux";
+
+try {
+  await pane.kill();
+} catch (error) {
+  if (error instanceof TmuxServerRestarted) {
+    error.delivery; // always "not_started" — a refused command never ran
+  }
+}
+```
+
+The refusal is tmux's, not a check this library made first and hoped would still
+hold: a command carrying a raw id goes as `if-shell -F` conditioned on the
+daemon's pid and start time, and tmux evaluates that inside the same command
+queue entry that would run it. Over a control connection there is nothing to
+condition — the connection is bound to one daemon, and losing it is the signal.
+Reading a stale handle's captured fields still works; only commands are refused.
+
 An unreachable server raises rather than reading as empty, so an empty result
 means exactly one thing. Ask without raising when you need to:
 

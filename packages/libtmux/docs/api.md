@@ -634,8 +634,10 @@ raiseIfDead(): Promise<void>
 
 Assert the server is reachable, raising with tmux's reason if not.
 
-Collection accessors return empty when tmux cannot be reached, so this is
-how a caller distinguishes "no sessions" from "no server".
+Every read already raises on an unreachable server, so this is not what
+tells an empty result from a missing one — it is the assertion form of
+{@link isAlive}, for a caller that wants the check and the reason without a
+read to hang it on.
 
 ```ts
 await server.raiseIfDead(); // throws when no tmux server is listening
@@ -1051,11 +1053,14 @@ cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Pro
 
 Run a tmux command this package does not model, addressed at this session.
 
+The first argument is the tmux command name and nothing else — this does
+not parse a command line, so arguments go in the array:
+
 The session's id is sent as the target; pass `target` to address something
 else, or `null` for a command that takes none.
 
 ```ts
-await session.cmd("rename-session -- new");
+await session.cmd("rename-session", ["--", "renamed"]);
 ```
 
 #### `Session.sameTmuxIdAs`
@@ -1408,10 +1413,11 @@ cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Pro
 Run a tmux command this package does not model, addressed at this window.
 
 The window's id is sent as the target; pass `target` to address something
-else, or `null` for a command that takes none.
+else, or `null` for a command that takes none — `display-panes` takes a
+client, so it wants `{ target: null }` and not this window's `@n`.
 
 ```ts
-await window.cmd("display-panes");
+await window.cmd("rotate-window");
 ```
 
 #### `Window.sameTmuxIdAs`

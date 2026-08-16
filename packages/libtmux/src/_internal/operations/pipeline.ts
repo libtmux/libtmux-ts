@@ -1,6 +1,15 @@
 import type { CommandOptions } from "../../common.js";
+import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { TmuxCommandError } from "../../exc.js";
+import { TmuxCommandError, TmuxServerRestarted } from "../../exc.js";
+import {
+  carriesTmuxId,
+  guardedChain,
+  refusedByGuardLine,
+  type DaemonGuard,
+} from "../transport/daemon_guard.js";
+import { MAX_PACKED_ARGV_BYTES } from "../transport/group.js";
+import { quoteCommand } from "../transport/lexer.js";
 import { runCommand } from "./command.js";
 
 /**
@@ -41,16 +50,39 @@ const ARGUMENT_BUDGET = 900;
  * A command over the budget on its own still goes out alone: tmux will refuse
  * it, and refusing it here would only replace tmux's reason with a worse one.
  */
+interface Budget {
+  readonly costOf: (command: readonly string[]) => number;
+  readonly limit: number;
+}
+
+/** `; display-message -p <marker>` per command, plus the `;` joining it on. */
+const elementCost: Budget = {
+  costOf: (command) => command.length + 5,
+  limit: ARGUMENT_BUDGET,
+};
+
+/**
+ * The same sequence measured the way a guarded one is refused.
+ *
+ * Inside `if-shell` the chain is one argument, so what runs out is the 16KB
+ * tmux packs an argv into rather than the element count. The reserve covers the
+ * connection flags, the condition, and the else branch.
+ */
+const byteCost: Budget = {
+  costOf: (command) => quoteCommand(command).length + 64,
+  limit: MAX_PACKED_ARGV_BYTES - 2048,
+};
+
 function chunkToBudget(
   commands: readonly (readonly string[])[],
-  perCommandOverhead: number,
+  budget: Budget,
 ): readonly (readonly (readonly string[])[])[] {
   const chunks: (readonly string[])[][] = [];
   let current: (readonly string[])[] = [];
   let used = 0;
   for (const command of commands) {
-    const cost = command.length + perCommandOverhead;
-    if (current.length > 0 && used + cost > ARGUMENT_BUDGET) {
+    const cost = budget.costOf(command);
+    if (current.length > 0 && used + cost > budget.limit) {
       chunks.push(current);
       current = [];
       used = 0;
@@ -76,16 +108,43 @@ function makeMarker(): string {
   return `ltx-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function chainedArguments(
+function chainedCommands(
   commands: readonly (readonly string[])[],
   marker: string,
-): readonly string[] {
+): readonly (readonly string[])[] {
+  return commands.flatMap((command) => [command, ["display-message", "-p", marker]]);
+}
+
+function chainedArguments(commands: readonly (readonly string[])[], marker: string): string[] {
   const args: string[] = [];
-  for (const command of commands) {
+  for (const command of chainedCommands(commands, marker)) {
     if (args.length > 0) args.push(";");
-    args.push(...command, ";", "display-message", "-p", marker);
+    args.push(...command);
   }
   return args;
+}
+
+/**
+ * The whole sequence inside one daemon guard.
+ *
+ * Guarded once rather than per command, because a sequence stops at its first
+ * failure and per-command wrappers would not: an error inside an `if-shell`
+ * branch does not remove commands outside it, so a failure part-way would let
+ * the rest run. One wrapper keeps the sequence one command list, which is what
+ * `cmdq_remove_group` acts on.
+ *
+ * Safe to serialize because {@link validatePipeline} has already refused a bare
+ * `;` inside any command, so every separator here is one this code put in.
+ */
+function guardedChainArguments(
+  commands: readonly (readonly string[])[],
+  marker: string,
+  daemon: DaemonGuard,
+): readonly string[] {
+  const chain = chainedCommands(commands, marker)
+    .map((command) => quoteCommand(command))
+    .join(" ; ");
+  return guardedChain(chain, daemon);
 }
 
 /**
@@ -141,18 +200,38 @@ export async function runPipeline(
   if (commands.length === 0) return [];
 
   const marker = makeMarker();
-  // `; display-message -p <marker>` rides along with every command, plus the
-  // `;` that joins it to the next one.
-  const overhead = 5;
+  // Guarded only when something addresses an object by an id a restarted daemon
+  // would reissue. A sequence of named targets needs no daemon to be the one it
+  // was read from, because it never read one.
+  const daemon = commands.some((command) => carriesTmuxId(command))
+    ? lastObservedDaemon(runtime)
+    : undefined;
+  // Unguarded, a sequence is one argv and the element count is what tmux
+  // refuses; guarded, it is one quoted string and the byte count is. Two
+  // budgets because they are two different limits, not two guesses at one.
   const results: (readonly string[])[] = [];
 
-  for (const chunk of chunkToBudget(commands, overhead)) {
+  for (const chunk of chunkToBudget(commands, daemon === undefined ? elementCost : byteCost)) {
     try {
+      const args =
+        daemon === undefined
+          ? chainedArguments(chunk, marker)
+          : guardedChainArguments(chunk, marker, daemon);
       // eslint-disable-next-line no-await-in-loop -- a later run must not start if an earlier one failed.
-      const lines = await runCommand(runtime, chainedArguments(chunk, marker), options);
+      const lines = await runCommand(runtime, args, options);
       results.push(...splitOnMarker(lines, marker));
     } catch (error) {
       if (!(error instanceof TmuxCommandError)) throw error;
+      if (error.stderr.some((line) => refusedByGuardLine(line))) {
+        // Every command in the chunk tested the same condition, so this is the
+        // whole sequence refusing rather than one command failing. Nothing in
+        // it applied.
+        invalidateRuntimeEpoch(runtime);
+        throw new TmuxServerRestarted(
+          "tmux refused the sequence: the daemon on this socket is not the one these ids came from",
+          { cause: error, subcommand: error.args[0] ?? "tmux" },
+        );
+      }
       // Every command that ran echoed the marker, so what survived says how
       // many finished — which is the one thing tmux's own message leaves out.
       const failed = chunk[splitOnMarker(error.stdout, marker).length];

@@ -448,9 +448,10 @@ export class Pane {
   /**
    * Whether `other` is this same pane on this same server.
    *
-   * Compares the connection and daemon generation as well as `%n`, because a
-   * tmux id is unique only within one running daemon — a restarted server
-   * issues `%0` again to an entirely different pane.
+   * The socket, the daemon that answered, and `%n` all have to match — a
+   * restarted server issues `%0` again to an entirely different pane, so two
+   * handles can agree on socket and id and still name different panes.
+   * {@link sameTmuxIdAs} asks the weaker question.
    *
    * ```ts
    * pane.equals(await pane.refreshed()); // true

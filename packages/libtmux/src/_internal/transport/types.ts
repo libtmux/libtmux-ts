@@ -5,9 +5,22 @@ import type { CommandResult, DeliveryStatus, OperationStatus } from "../../commo
 export { TmuxTransportError } from "../../exc.js";
 import type { TmuxTransportError as TmuxTransportErrorType } from "../../exc.js";
 import type { AbortLike } from "../../types.js";
+import type { DaemonGuard } from "./daemon_guard.js";
 
 export interface CommandRequest {
   readonly args: readonly string[];
+  /**
+   * Refuse this command unless tmux is still the daemon named here.
+   *
+   * Set when the argv carries a raw tmux id, which a restarted daemon reissues
+   * to something else. A spawning transport honours it by wrapping the command
+   * in `if-shell -F`; a control connection ignores it, because it is bound to
+   * one daemon for its lifetime and a restart drops it — and because
+   * `if-shell` emits one `%begin`/`%end` block when its condition is false and
+   * two when it is true, which a response queue correlating by order cannot
+   * survive.
+   */
+  readonly daemonGuard?: DaemonGuard;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly executable: string;
   readonly signal?: AbortLike;
@@ -19,6 +32,14 @@ export function snapshotCommandRequest(request: CommandRequest): CommandRequest 
   const stdin = request.stdin === undefined ? undefined : new Uint8Array(request.stdin);
   const snapshot: CommandRequest = {
     args: Object.freeze([...request.args]),
+    ...(request.daemonGuard === undefined
+      ? {}
+      : {
+          daemonGuard: Object.freeze({
+            pid: request.daemonGuard.pid,
+            startTime: request.daemonGuard.startTime,
+          }),
+        }),
     ...(request.environment === undefined
       ? {}
       : { environment: Object.freeze({ ...request.environment }) }),

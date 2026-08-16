@@ -10,6 +10,7 @@ import {
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { Server } from "../../src/server.js";
+import { TmuxServerRestarted } from "../../src/exc.js";
 
 import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
@@ -151,29 +152,117 @@ describe("handle identity", () => {
     const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
     try {
       await server.newSession({ name: "before" });
-      const before = await server.daemonIdentity();
-      expect(before?.pid).toBeDefined();
-
       const stale = (await server.snapshot()).panes.one();
-      // tmux reissues ids from the start, so this pane's `%n` will belong to a
+      // tmux reissues ids from the start, so this pane's `%n` belongs to a
       // different pane in a moment.
       await server.cmd("kill-server").catch(() => undefined);
-      await server.newSession({ name: "successor" });
+      // Raw, so nothing materializes a handle: `newSession` would acquire, and
+      // an acquisition is exactly what this test must not have.
+      await server.cmd("new-session", ["-d", "-s", "successor"], { target: null });
 
-      const after = await server.daemonIdentity();
-      expect(after?.pid).not.toBe(before?.pid);
+      // Nothing has read the server since the restart, so nothing local knows
+      // it happened. This is the case that matters: an acquisition in between
+      // would move the epoch on and the refusal would come from this process
+      // without tmux being asked anything.
+      await expect(stale.kill()).rejects.toThrow(TmuxServerRestarted);
 
-      // The old handle must refuse rather than address its successor's `%0`.
-      // Refused before anything is sent, so this is a throw and not a rejection
-      // — the command never became one.
-      expect(() => stale.refreshed()).toThrow(/restarted/u);
-      expect(() => stale.kill()).toThrow(/restarted/u);
-      expect(() => stale.sendKeys("echo no")).toThrow(/restarted/u);
+      // A batch is a sequence, and a sequence is guarded as one: all of it or
+      // none, so a restart cannot leave half a batch applied to a stranger.
+      await expect(server.batch([stale.plan.kill(), stale.plan.split()])).rejects.toThrow(
+        TmuxServerRestarted,
+      );
+
+      // Refused, not applied: the successor's `%0` is still there.
+      const successor = await server.snapshot();
+      expect(successor.panes.count()).toBe(1);
+      expect(successor.sessions.one().name).toBe("successor");
+
+      // That refusal moved the epoch on, so every other handle from the old
+      // daemon now fails here rather than each learning it from tmux in turn —
+      // synchronously, because the command never became one.
+      expect(() => stale.refreshed()).toThrow(TmuxServerRestarted);
+      expect(() => stale.kill()).toThrow(TmuxServerRestarted);
+      expect(() => stale.sendKeys("echo no")).toThrow(TmuxServerRestarted);
 
       // Reading what it captured is still fine: that instant did happen, and
       // answering from a frozen graph reaches no server at all.
       expect(stale.id).toBe("%0");
       expect(stale.window?.name).toBeDefined();
+    } finally {
+      await server.cmd("kill-server").catch(() => undefined);
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test("equality separates two daemons that shared a socket and an id", async () => {
+    const directory = await makeTestDirectory("ltx-generation-");
+    const socketPath = join(directory, "s");
+    assertOwnedSocketPath(socketPath);
+    const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
+    try {
+      await server.newSession({ name: "first" });
+      const before = (await server.snapshot()).panes.one();
+      await server.cmd("kill-server").catch(() => undefined);
+      await server.cmd("new-session", ["-d", "-s", "second"], { target: null });
+
+      // A second Server object, so nothing but the daemon distinguishes them:
+      // same socket, same `%0`, and two handles that must not be equal.
+      const successor = new Server({
+        socketPath,
+        tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux",
+      });
+      const after = (await successor.snapshot()).panes.one();
+
+      expect(before.id).toBe(after.id);
+      expect(before.server.equals(after.server)).toBe(true);
+      expect(before.sameTmuxIdAs(after)).toBe(true);
+      expect(before.equals(after)).toBe(false);
+
+      // Two readings of one daemon through two Server objects still agree, or
+      // the daemon check would have replaced one false negative with another.
+      const third = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
+      expect(after.equals((await third.snapshot()).panes.one())).toBe(true);
+    } finally {
+      await server.cmd("kill-server").catch(() => undefined);
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test("a control connection retires its handles when it stops proving a daemon", async () => {
+    const directory = await makeTestDirectory("ltx-control-gen-");
+    const socketPath = join(directory, "s");
+    assertOwnedSocketPath(socketPath);
+    const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
+    try {
+      await server.newSession({ name: "attached" });
+      const live = await server.connect({ reconnect: { attempts: 3, delayMs: 25 } });
+      const stale = (await live.snapshot()).panes.one();
+      expect(stale.id).toBe("%0");
+
+      // A control client is bound to one daemon, so it never carries the inline
+      // guard a spawned command does — losing the connection is the signal, and
+      // a reconnect attaches to whatever is on the socket now.
+      await server.cmd("kill-server").catch(() => undefined);
+      await server.cmd("new-session", ["-d", "-s", "successor"], { target: null });
+
+      // Bounded for liveness: the drop reaches this process on tmux's schedule,
+      // not on the caller's. A leak never converges, so a generous bound only
+      // delays the report.
+      const deadline = Date.now() + 5_000;
+      let refused = false;
+      while (!refused && Date.now() < deadline) {
+        try {
+          // eslint-disable-next-line no-await-in-loop -- polling for a drop that has no event here.
+          await stale.kill();
+        } catch (error) {
+          refused = error instanceof TmuxServerRestarted;
+          // eslint-disable-next-line no-await-in-loop -- polling for a drop that has no event here.
+          if (!refused) await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+      expect(refused).toBe(true);
+
+      await live.close();
     } finally {
       await server.cmd("kill-server").catch(() => undefined);
       await rm(directory, { force: true, recursive: true });

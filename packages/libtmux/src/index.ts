@@ -79,6 +79,7 @@ export {
   ObjectDoesNotExist,
   QueryValidationError,
   TmuxCommandError,
+  TmuxServerRestarted,
   TmuxTransportError,
   type TmuxTransportErrorKind,
 } from "./exc.js";

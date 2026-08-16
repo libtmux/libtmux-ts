@@ -355,11 +355,12 @@ export class Window {
    * Run a tmux command this package does not model, addressed at this window.
    *
    * ```ts
-   * await window.cmd("display-panes");
+   * await window.cmd("rotate-window");
    * ```
    *
    * The window's id is sent as the target; pass `target` to address something
-   * else, or `null` for a command that takes none.
+   * else, or `null` for a command that takes none — `display-panes` takes a
+   * client, so it wants `{ target: null }` and not this window's `@n`.
    */
   cmd(
     command: string,
@@ -372,9 +373,10 @@ export class Window {
   /**
    * Whether `other` is this same window on this same server.
    *
-   * Compares the connection and daemon generation as well as `@n`, because a
-   * tmux id is unique only within one running daemon. Two placements of one
-   * linked window are the same window, so this is true for both.
+   * The socket, the daemon that answered, and `@n` all have to match: tmux ids
+   * are unique only within one running daemon, and a restart reissues them. Two
+   * placements of one linked window are the same window, so this is true for
+   * both. {@link sameTmuxIdAs} asks the weaker question.
    *
    * ```ts
    * window.equals(await window.refreshed()); // true

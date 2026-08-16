@@ -1,6 +1,7 @@
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import type { ConnectionAlias, DaemonEpoch, PaneRef, SessionRef, WindowRef } from "../../common.js";
 import { QueryValidationError } from "../../exc.js";
+import type { DaemonIdentity } from "../runtime/context.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand } from "../codec/format_types.js";
 import type { CompleteFormatRow } from "../codec/schemas.js";
@@ -72,6 +73,27 @@ function parseEpoch(value: unknown): DaemonEpoch {
   return value as DaemonEpoch;
 }
 
+/**
+ * Which daemon answered, carried into the graph rather than left behind.
+ *
+ * Every handle materialized from this capture compares by it: the epoch says
+ * what one `Server` object has noticed, and two of them reading one daemon have
+ * to agree that their handles name the same panes. A server with nothing to
+ * list reports none, and has handed out no handles to compare.
+ */
+function parseDaemon(value: unknown): DaemonIdentity | undefined {
+  if (value === undefined) return undefined;
+  const pid = readProperty(value, "pid", "graph capture daemon");
+  const startTime = readProperty(value, "startTime", "graph capture daemon");
+  if (typeof pid !== "string" || pid.length === 0) {
+    return invalidNormalization("graph capture daemon pid must be a nonempty string");
+  }
+  if (typeof startTime !== "string" || startTime.length === 0) {
+    return invalidNormalization("graph capture daemon start time must be a nonempty string");
+  }
+  return Object.freeze({ pid, startTime });
+}
+
 function parseCapture(value: unknown): GraphCapture {
   const connection = parseConnection(readProperty(value, "connection", "graph capture"));
   const epoch = parseEpoch(readProperty(value, "epoch", "graph capture"));
@@ -79,7 +101,13 @@ function parseCapture(value: unknown): GraphCapture {
   if (typeof capabilityFingerprint !== "string" || capabilityFingerprint.length === 0) {
     return invalidNormalization("graph capture capability fingerprint must be a nonempty string");
   }
-  return Object.freeze({ connection, epoch, capabilityFingerprint });
+  const daemon = parseDaemon(readProperty(value, "daemon", "graph capture"));
+  return Object.freeze({
+    connection,
+    ...(daemon === undefined ? {} : { daemon }),
+    epoch,
+    capabilityFingerprint,
+  });
 }
 
 function parseListCommand(value: unknown): ListCommand {

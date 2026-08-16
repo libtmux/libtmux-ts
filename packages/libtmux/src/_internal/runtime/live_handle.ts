@@ -1,7 +1,7 @@
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import type { Client } from "../../client.js";
 import type { LogicalRef } from "../../common.js";
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxException, TmuxServerRestarted } from "../../exc.js";
 import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
@@ -165,17 +165,16 @@ export function initializeLiveHandle<Handle extends Child>(
 /**
  * Whether two handles describe the same thing on the same tmux server.
  *
- * A tmux id is unique only within one daemon, so `%1` alone answers a question
- * nobody asked: every server has one. The server the handle was resolved
- * against is what makes the answer mean "the same pane" — and it is the server
- * rather than the runtime, because two `new Server({ socketPath })` for one
- * socket are two objects addressing one daemon, whose handles genuinely do name
- * the same panes. The connection alias is per-object and would say otherwise.
+ * Three things have to agree, and each rules out a different impostor. The
+ * socket, because a tmux id is unique only within one server — and the socket
+ * rather than the runtime, since two `new Server({ socketPath })` for one path
+ * are two objects addressing one daemon whose handles genuinely do name the
+ * same panes. The daemon that answered, because a restart puts a different one
+ * at that socket and it reissues `%0` to something else. Then the id.
  *
- * This deliberately cannot see a daemon restart: tmux reissues ids from the
- * start, and nothing in a handle's own row distinguishes the new `%1` from the
- * old one. That is what `Server.daemonIdentity` is for, and why a mutation
- * checks it rather than trusting equality to have caught it.
+ * The daemon is compared by what tmux reported rather than by this runtime's
+ * epoch, for the same reason as the socket: an epoch counts what one `Server`
+ * object has noticed, and two of them reading one daemon must still agree.
  *
  * {@link liveHandlesShareTmuxId} is the raw-id comparison, for callers who
  * genuinely want it.
@@ -184,6 +183,20 @@ export function initializeLiveHandle<Handle extends Child>(
  * differs for clients on purpose: this one compares the whole row, that one
  * compares `client_name`. Neither can do the other's job.
  */
+/**
+ * Whether two captures came from the same running daemon.
+ *
+ * A capture with no daemon listed no rows at all, so it handed out no handles
+ * and cannot reach this. Comparing pid and start time together is what survives
+ * pid reuse.
+ */
+function sameCapturedDaemon(left: NormalizedGraph, right: NormalizedGraph): boolean {
+  const leftDaemon = left.capture.daemon;
+  const rightDaemon = right.capture.daemon;
+  if (leftDaemon === undefined || rightDaemon === undefined) return leftDaemon === rightDaemon;
+  return leftDaemon.pid === rightDaemon.pid && leftDaemon.startTime === rightDaemon.startTime;
+}
+
 export function liveHandlesEqual(left: Child, other: unknown): boolean {
   const leftState = stateForValue(left);
   const rightState = stateForValue(other);
@@ -191,6 +204,7 @@ export function liveHandlesEqual(left: Child, other: unknown): boolean {
     return false;
   }
   if (!leftState.server.equals(rightState.server)) return false;
+  if (!sameCapturedDaemon(leftState.graph, rightState.graph)) return false;
   if (leftState.model !== "client") {
     return (
       leftState.entity.kind === rightState.entity.kind &&
@@ -234,7 +248,7 @@ export function runtimeForHandle(handle: Child): RuntimeContext {
   const state = requireState(handle);
   const runtime = runtimeForServer(state.server);
   if (state.graph.capture.epoch !== runtime.daemonEpoch) {
-    throw new LibTmuxException(
+    throw new TmuxServerRestarted(
       `${describeHandle(state.model, state.snapshot)} came from a tmux server that has since restarted`,
     );
   }

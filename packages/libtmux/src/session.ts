@@ -361,8 +361,11 @@ export class Session {
   /**
    * Run a tmux command this package does not model, addressed at this session.
    *
+   * The first argument is the tmux command name and nothing else — this does
+   * not parse a command line, so arguments go in the array:
+   *
    * ```ts
-   * await session.cmd("rename-session -- new");
+   * await session.cmd("rename-session", ["--", "renamed"]);
    * ```
    *
    * The session's id is sent as the target; pass `target` to address something
@@ -379,9 +382,10 @@ export class Session {
   /**
    * Whether `other` is this same session on this same server.
    *
-   * Compares the connection and daemon generation the handle was resolved
-   * against as well as `$n`, because a tmux id is unique only within one
-   * running daemon.
+   * The socket, the daemon that answered, and `$n` all have to match. tmux ids
+   * are unique only within one running daemon and a restart reissues `$0` to
+   * something else, so the daemon is part of the identity rather than a detail
+   * of how it was read. {@link sameTmuxIdAs} asks the weaker question.
    *
    * ```ts
    * session.equals(await session.refreshed()); // true

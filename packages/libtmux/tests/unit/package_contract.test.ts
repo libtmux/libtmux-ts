@@ -136,6 +136,7 @@ describe("package contract", () => {
       "Server",
       "Session",
       "TmuxCommandError",
+      "TmuxServerRestarted",
       "TmuxTransportError",
       "Window",
       "WindowDirection",

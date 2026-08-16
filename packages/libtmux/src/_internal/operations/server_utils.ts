@@ -91,9 +91,10 @@ export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
 /**
  * Assert the tmux server is reachable, raising with tmux's own reason if not.
  *
- * The list-shaped accessors are lenient: they return an empty selection when
- * tmux cannot be reached, so an empty result is indistinguishable from a server
- * that is gone. This is the explicit way to tell those apart.
+ * Acquisition raises on an unreachable server rather than reading as empty, so
+ * this adds no distinction a read does not already make. What it adds is a
+ * check with nothing to check: `isAlive` answers yes or no, this one answers
+ * with tmux's reason.
  */
 export async function raiseIfDead(runtime: RuntimeContext): Promise<void> {
   await runCommand(runtime, ["list-sessions"]);

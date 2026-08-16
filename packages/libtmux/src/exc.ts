@@ -390,6 +390,39 @@ export class QueryValidationError extends LibTmuxException {
 }
 
 /**
+ * A handle outlived the daemon that issued its id.
+ *
+ * tmux numbers a restarted daemon's objects from the start, so `%1` from before
+ * the restart names a pane that exists and belongs to somebody else. Raised
+ * from two places for one reason: the local check, when an acquisition has
+ * already seen the new daemon, and tmux itself, when it has not — the command
+ * carries a condition on the daemon's pid and start time and takes a branch
+ * that refuses instead of running.
+ *
+ * `delivery` is always `not_started`: the whole point of the condition is that
+ * a refused command never ran, so retrying against a fresh handle is safe.
+ *
+ * ```ts
+ * try {
+ *   await pane.kill();
+ * } catch (error) {
+ *   if (error instanceof TmuxServerRestarted) {
+ *     // Read the server again; this pane's id belongs to another daemon now.
+ *   }
+ * }
+ * ```
+ */
+export class TmuxServerRestarted extends LibTmuxException {
+  /** How far the refused command got, which is nowhere. */
+  readonly delivery: DeliveryStatus = "not_started";
+
+  constructor(message: string, options: ExceptionOptions = {}) {
+    super(message, options);
+    this.name = "TmuxServerRestarted";
+  }
+}
+
+/**
  * A tmux command that exited non-zero.
  *
  * The parts are fields rather than a formatted sentence so callers can branch
