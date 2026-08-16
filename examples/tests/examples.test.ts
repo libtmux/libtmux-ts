@@ -9,7 +9,7 @@ import { quickstart } from "../quickstart.js";
 import { reportPanes } from "../fields.js";
 import { buildWorkspace, removeWorkspace } from "../workspace.js";
 import { buildAndSettle, runAndWait } from "../agent.js";
-import { collectPaneOutput, watchUntilWindowOpens } from "../watch.js";
+import { collectPaneOutput, watchUntilWindowOpens, watchWithBackpressure } from "../watch.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -119,6 +119,23 @@ describe("documented examples", () => {
       ]);
 
       expect(await collected).toContain("example-marker");
+    });
+  }, 60_000);
+
+  test("the pause-after example reports a pause and its resume", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      const flow = await watchWithBackpressure(server);
+
+      // A pause and the resume this connection asked for, in that order.
+      expect(flow.length).toBe(2);
+      expect(flow[0]?.startsWith("pause %")).toBe(true);
+      expect(flow[1]).toBe(flow[0]?.replace("pause", "continue"));
     });
   }, 60_000);
 

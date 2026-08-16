@@ -53,14 +53,28 @@ const stagedFields = [
   "session_group_size",
 ] as const;
 
-/**
- * The four listings a snapshot is made of.
- *
- * A `buffer`- or `event`-scope field belongs to none of them, so a snapshot
- * never carries one and its declared shape rests on the format.c derivation
- * alone.
- */
+/** The four listings a snapshot is made of. */
 const listCommands = ["list-clients", "list-panes", "list-sessions", "list-windows"] as const;
+
+/**
+ * Declared fields no listing carries, so no snapshot ever populates them and
+ * this cannot check their shape against a live server.
+ *
+ * Pinned rather than skipped. Their accessors exist and answer null forever, so
+ * the set is a property of the snapshot's four commands; if one starts arriving
+ * — a fifth listing, or tmux moving a field's scope — this fails and the shape
+ * gets checked like every other.
+ */
+const unobservable = [
+  "buffer_size",
+  "copy_cursor_x",
+  "copy_cursor_y",
+  "scroll_position",
+  "selection_end_x",
+  "selection_end_y",
+  "selection_start_x",
+  "selection_start_y",
+] as const;
 
 async function withServer(
   name: string,
@@ -211,10 +225,18 @@ describe("declared format value types", () => {
         expect(mismatches).toEqual([]);
         // A field the registry holds back for this version — `pane_pipe_pid`
         // arrived in 3.7 — is absent because nothing asked for it.
-        const requested = new Set(asked.flatMap(({ tokens }) => tokens));
+        const requested = new Set<string>(asked.flatMap(({ tokens }) => tokens));
         expect(
           stagedFields.filter((token) => requested.has(token) && !observed.has(token)),
         ).toEqual([]);
+
+        // Every declared field is either checked above or named as one this
+        // snapshot cannot reach. Nothing is quietly unverified.
+        expect(
+          Object.keys(declared)
+            .filter((token) => !requested.has(token))
+            .sort(),
+        ).toEqual([...unobservable].sort());
       });
     });
   }, 120_000);

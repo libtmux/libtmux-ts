@@ -47,3 +47,33 @@ export async function collectPaneOutput(server: Server, until: string): Promise<
 
   return collected;
 }
+
+/**
+ * Watch a pane without risking the connection when it floods.
+ *
+ * tmux's remedy for a control client that lets a pane's output back up is to
+ * drop the whole connection. `pauseAfterSeconds` asks it to stop that one pane
+ * instead: tmux reports `pause`, this connection asks the pane back, and
+ * `continue` follows. The pair is a record of what was missed.
+ */
+export async function watchWithBackpressure(server: Server): Promise<readonly string[]> {
+  const session = await server.newSession({ name: "paced" });
+
+  await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
+  const events = live.subscribe();
+  await events.ready();
+
+  const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+
+  // tmux pauses a pane on its own once it falls behind. Asking for it directly
+  // reaches the same state without waiting on a real flood.
+  await live.cmd("refresh-client", ["-A", `${pane.id}:pause`]);
+
+  const seen: string[] = [];
+  for await (const event of events) {
+    if (event.kind !== "pause" && event.kind !== "continue") continue;
+    seen.push(`${event.kind} ${event.paneId}`);
+    if (event.kind === "continue") break;
+  }
+  return seen;
+}
