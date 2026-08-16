@@ -5981,7 +5981,7 @@
       "typescriptSymbols": []
     },
     {
-      "adaptation": "Re-reading one object is `refresh()` on the handle itself, which keeps the placement it was resolved at — the winlink ambiguity Python resolves by picking a best row does not arise, because the handle already knows which placement it is.",
+      "adaptation": "Re-reading one object is `refreshed()` on the handle itself, which answers with a new handle and keeps the placement it was resolved at — the winlink ambiguity Python resolves by picking a best row does not arise, because the handle already knows which placement it is.",
       "declarationTest": null,
       "kind": "function",
       "owner": "libtmux.neo",
@@ -5990,7 +5990,7 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py",
       "status": "adapted",
-      "typescript": "Session.refresh",
+      "typescript": "Session.refreshed",
       "unitTest": null,
       "evidenceApplicability": {
         "declarationTest": "not-applicable: the member's declaration is pinned with its class, not one test per member",
@@ -6199,7 +6199,7 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/client.py",
       "status": "implemented",
-      "typescript": "Client.refresh",
+      "typescript": "Client.refreshed",
       "unitTest": null,
       "evidenceApplicability": {
         "declarationTest": "not-applicable: the member's declaration is pinned with its class, not one test per member",
@@ -6959,7 +6959,7 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py",
       "status": "implemented",
-      "typescript": "Pane.refresh",
+      "typescript": "Pane.refreshed",
       "unitTest": null,
       "evidenceApplicability": {
         "declarationTest": "not-applicable: the member's declaration is pinned with its class, not one test per member",
@@ -8232,7 +8232,7 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/session.py",
       "status": "implemented",
-      "typescript": "Session.refresh",
+      "typescript": "Session.refreshed",
       "unitTest": null,
       "evidenceApplicability": {
         "declarationTest": "not-applicable: the member's declaration is pinned with its class, not one test per member",
@@ -8574,7 +8574,7 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/window.py",
       "status": "implemented",
-      "typescript": "Window.refresh",
+      "typescript": "Window.refreshed",
       "unitTest": null,
       "evidenceApplicability": {
         "declarationTest": "not-applicable: the member's declaration is pinned with its class, not one test per member",
