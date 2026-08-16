@@ -122,6 +122,70 @@ describe("control-mode resource bounds", () => {
         /maxPendingCommands/u,
       );
       await expect(server.connect({ maxCommandBytes: -1 })).rejects.toThrow(/maxCommandBytes/u);
+      await expect(server.connect({ pauseAfterSeconds: 0 })).rejects.toThrow(/pauseAfterSeconds/u);
+      await expect(server.connect({ pauseAfterSeconds: 1.5 })).rejects.toThrow(
+        /pauseAfterSeconds/u,
+      );
     });
   }, 40_000);
+
+  test("asks tmux to pause a pane rather than drop the client behind it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect({ pauseAfterSeconds: 1 });
+
+      // tmux reports the flags it is holding for this client. Without the
+      // request the list has no `pause-after` in it, and tmux's own remedy for
+      // a client that falls behind is to kill it with "too far behind".
+      const flags = await live.cmd("display-message", ["-p", "#{client_flags}"]);
+      expect(flags.join("")).toContain("pause-after=1");
+    });
+  }, 40_000);
+
+  test("resumes a paused pane instead of leaving it stopped", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect({ pauseAfterSeconds: 1 });
+      const events = live.subscribe();
+      await events.ready();
+
+      // A real backlog rather than a synthetic one. `refresh-client -A
+      // %id:pause` does put the pane in the same state, but tmux writes the
+      // resulting `%pause` inside that command's own block, which is not where
+      // one arrives when tmux pauses a pane on its own — so it would prove the
+      // handling of a line this code will never see that way.
+      //
+      // `yes` fills the pane faster than tmux can hand it over, and blocking
+      // this thread is what stops the handover: a consumer that does not
+      // return to its event loop is the case `pause-after` exists for, and the
+      // only way to build a real backlog against a connection that otherwise
+      // drains as fast as tmux fills.
+      await live.cmd("new-window", ["-d", "yes"]);
+      await live.cmd("new-window", ["-d", "yes"]);
+      const busyUntil = Date.now() + 4_000;
+      while (Date.now() < busyUntil) {
+        // Deliberately synchronous.
+      }
+
+      // Both halves in one pass: a stream is consumed, not replayed, so two
+      // `find` calls would have the second reject rather than wait.
+      //
+      // The pane coming back without the caller asking is what makes
+      // pause-after usable at all: tmux discards what it was holding and sends
+      // nothing further for that pane until asked, so a connection that only
+      // listens loses it for the rest of its life.
+      const paused = new Set<string>();
+      const resumed = new Set<string>();
+      const deadline = Date.now() + 30_000;
+      for await (const event of events) {
+        if (event.kind === "pause") paused.add(event.paneId);
+        if (event.kind === "continue") resumed.add(event.paneId);
+        if (paused.size > 0 && [...paused].every((pane) => resumed.has(pane))) break;
+        if (Date.now() > deadline) break;
+      }
+
+      expect(paused.size).toBeGreaterThan(0);
+      expect([...paused].filter((pane) => !resumed.has(pane))).toEqual([]);
+    });
+  }, 90_000);
 });

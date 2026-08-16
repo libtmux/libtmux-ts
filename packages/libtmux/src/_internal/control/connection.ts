@@ -155,6 +155,17 @@ export class ControlConnection implements CommandTransport {
   readonly #stderr: Buffer[] = [];
   #stderrBytes = 0;
   readonly #maxPendingCommands: number;
+  /**
+   * How long tmux may hold a pane's output for this client before pausing it.
+   *
+   * Undefined leaves tmux's own remedy in place, which is not a remedy: at
+   * `CONTROL_MAXIMUM_AGE` — five minutes — it sets `exit_message` to "too far
+   * behind" and kills the client outright. Asking for `pause-after` trades the
+   * whole connection for one pane's output, which is the trade worth making.
+   */
+  readonly #pauseAfterSeconds: number | undefined;
+  /** Panes tmux has paused and this connection has not yet asked back. */
+  readonly #paused = new Set<string>();
   readonly #maxCommandBytes: number;
   /**
    * Writes that tmux's stdin was not ready to take.
@@ -200,9 +211,13 @@ export class ControlConnection implements CommandTransport {
     }
     const maxPendingCommands = options.maxPendingCommands ?? DEFAULT_MAX_PENDING_COMMANDS;
     const maxCommandBytes = options.maxCommandBytes ?? DEFAULT_MAX_COMMAND_BYTES;
+    const pauseAfterSeconds = options.pauseAfterSeconds;
     for (const [name, value] of [
       ["maxPendingCommands", maxPendingCommands],
       ["maxCommandBytes", maxCommandBytes],
+      ...(pauseAfterSeconds === undefined
+        ? []
+        : ([["pauseAfterSeconds", pauseAfterSeconds]] as const)),
     ] as const) {
       if (!Number.isInteger(value) || value < 1) {
         throw new TypeError(`${name} must be a positive integer`);
@@ -210,6 +225,7 @@ export class ControlConnection implements CommandTransport {
     }
     this.#maxPendingCommands = maxPendingCommands;
     this.#maxCommandBytes = maxCommandBytes;
+    this.#pauseAfterSeconds = pauseAfterSeconds;
     const globals = connectionArguments(connection);
     this.#signal = options.signal;
 
@@ -459,7 +475,13 @@ export class ControlConnection implements CommandTransport {
         return;
       }
       if (parsed === undefined) return;
+      if (parsed.kind === "pause") this.#paused.add(parsed.paneId);
+      if (parsed.kind === "continue") this.#paused.delete(parsed.paneId);
       for (const sink of this.#sinks) sink.push(parsed);
+      // Asked back as soon as it is reported. tmux discards what it was
+      // holding for a paused pane and sends nothing more for it until told
+      // otherwise, so a connection that only listens loses that pane for good.
+      if (parsed.kind === "pause") this.#resumePane(parsed.paneId);
       return;
     }
     {
@@ -472,6 +494,9 @@ export class ControlConnection implements CommandTransport {
           this.#attachOutcome ??= { kind: "attached" };
           this.#attached?.resolve();
           this.#reopening = false;
+          // Re-asked on every attach, not once: the flag lives on the tmux
+          // client, and a reconnect is a new client that has never heard of it.
+          this.#requestPauseAfter();
           // The outage ends here, not when the replacement process started:
           // until tmux accepts the attach, the new client is carrying nothing.
           const recovered = this.#reconnectingAttempt;
@@ -583,6 +608,55 @@ export class ControlConnection implements CommandTransport {
     for (const command of outstanding) {
       if (settle(command)) command.reject(reason);
     }
+  }
+
+  /**
+   * Ask tmux to pause a pane rather than kill this client when it falls behind.
+   *
+   * Without the flag tmux's only remedy is `CONTROL_MAXIMUM_AGE`: five minutes
+   * after a pane's output starts backing up it drops the whole connection with
+   * "too far behind". With it, that pane alone stops until it is asked back.
+   *
+   * Sent rather than awaited. It is an optimisation of tmux's behaviour, not a
+   * precondition of anything the caller asked for, so a tmux that refuses it
+   * leaves the connection working exactly as it did before.
+   */
+  #requestPauseAfter(): void {
+    const seconds = this.#pauseAfterSeconds;
+    if (seconds === undefined) return;
+    void this.execute({
+      args: ["refresh-client", "-f", `pause-after=${String(seconds)}`],
+      executable: this.#executable,
+    }).catch(() => undefined);
+  }
+
+  /**
+   * Ask tmux to resume a pane it paused, and report that it did.
+   *
+   * tmux answers with `%continue %N` — but inside this command's own
+   * `%begin`/`%end` block, because that is where everything it writes while
+   * running a command goes. So the confirmation for a resume this connection
+   * asked for can never arrive as a notification, and a subscriber watching for
+   * one would wait forever. The event is published from the response instead,
+   * and only when tmux actually confirmed: a pause with no matching continue
+   * then means the resume failed, which is worth being able to see.
+   */
+  #resumePane(paneId: string): void {
+    void this.execute({
+      args: ["refresh-client", "-A", `${paneId}:continue`],
+      executable: this.#executable,
+    }).then(
+      (result) => {
+        const confirmed = new TextDecoder()
+          .decode(result.stdout)
+          .split("\n")
+          .some((line) => line.trim() === `%continue ${paneId}`);
+        if (!confirmed) return;
+        this.#paused.delete(paneId);
+        for (const sink of this.#sinks) sink.push({ kind: "continue", paneId });
+      },
+      () => undefined,
+    );
   }
 
   execute(request: CommandRequest): Promise<RawCommandResult> {

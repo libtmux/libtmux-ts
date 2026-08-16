@@ -211,6 +211,19 @@ the scope exits, including on a thrown error. A consumer that falls behind gets
 its oldest events dropped rather than an unbounded buffer; `events.dropped`
 counts them and `bufferSize` sets the bound.
 
+That bound is this side's. tmux keeps its own, and its remedy for a client that
+lets a pane's output back up is to kill it — five minutes behind and the whole
+connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause
+the one pane instead:
+
+```ts
+await using paced = await server.connect({ pauseAfterSeconds: 5 });
+```
+
+tmux then reports `pause` for the pane it stopped, the connection asks it back
+at once, and `continue` follows. The pair is a record of what was missed, not
+something to act on.
+
 A connection attaches, so it needs a session to attach to. Connecting to a
 server with none fails at `connect()` with tmux's own words rather than through
 whichever command runs first:
