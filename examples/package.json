@@ -9,6 +9,8 @@
     "test": "bun test --no-orphans tests"
   },
   "dependencies": {
+    "@libtmux/mcp": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "libtmux": "workspace:*"
   }
 }

@@ -5,6 +5,7 @@
     "rootDir": "..",
     "skipLibCheck": true,
     "paths": {
+      "@libtmux/mcp": ["../packages/mcp/src/server.ts"],
       "libtmux": ["../packages/libtmux/src/index.ts"],
       "libtmux/*": ["../packages/libtmux/src/*.ts"]
     }

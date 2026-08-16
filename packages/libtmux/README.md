@@ -1026,10 +1026,12 @@ pane moves, so the session is resolved through `$TMUX_PANE`.
 
 Two working consumers live in this repository:
 
-- `consumers/mcp` — an MCP server exposing tmux through this library,
-  including a `run_and_wait` tool that streams rather than polls.
-- `consumers/workspace` — a tmuxp-shaped workspace builder. Applying a
-  workspace twice converges the running session rather than duplicating it.
+- [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
+  Its waits stream tmux's notifications rather than polling, and its
+  `run_command` frames what it sends so a pane's echo cannot be read as output.
+- [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
+  Applying a workspace twice converges the running session rather than
+  duplicating it.
 
 ## Examples
 

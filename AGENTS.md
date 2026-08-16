@@ -267,6 +267,56 @@ tmux argument grammar is worth checking rather than assuming: an adjustment like
 Written next to its direction it turns any later flag into surplus arguments and
 tmux rejects the command.
 
+## The MCP server
+
+Five facts hold its design up. Each was read out of tmux's source or found by
+running the thing, and each is expensive to rediscover.
+
+**Output notifications are session-scoped.** `control_write_output` in
+`control.c` returns early unless the pane's window is linked into the control
+client's own session, so one connection cannot tail a server. Structural
+notifications — `%pane-mode-changed`, `%sessions-changed` — are global; `%output`
+is not. That is why `LiveHub` keys connections by session and opens one only for
+a session something is watching.
+
+**Attaching a control client does not resize anything.** `ignore_client_size` in
+`resize.c` skips a control client that has not set `CLIENT_SIZECHANGED` or
+`CLIENT_WINDOWSIZECHANGED`, which only `refresh-client -C` does. Nothing here
+sends it. Send it and every persistent connection starts shrinking the panes of
+whoever is attached.
+
+**An error result must carry no `structuredContent`.** A client validates that
+field against the tool's `outputSchema` whether or not `isError` is set, so a
+failure carrying its own diagnostic shape is rejected as a protocol violation
+and the model never reads the reason. `fail()` returns text alone for this.
+
+**`run_command`'s framing is POSIX shell and nothing else.** It sends
+`m=id; printf …; ( … ); s=$?`; fish rejects the assignment, csh spells the status
+`$status`. The tool refuses a shell it cannot address rather than letting the
+wait run out against a syntax error — and `force` does not override that one,
+because forcing it cannot work.
+
+The echo trap is what the framing exists for. The command carries `${m}_S` and
+the shell prints `<id>_S`; the two are equal only after expansion, so the literal
+never appears in what was typed and a match on it is always the printed one.
+
+**Two wait ceilings, not one.** A blocking wait spends the agent's turn and
+cannot be called off mid-flight, so it is held low. The same wait as an MCP task
+hands back a handle at once and can be cancelled, so it may run as long as the
+work does. `taskSupport` is `optional`, which means a client that does not speak
+tasks has the SDK poll on its behalf and sees the blocking tool it expects —
+that is what makes shipping tasks safe rather than a compatibility break. Keep
+the task's `pollInterval` low, because it is the added latency of that path.
+
+Every wait takes the request's `AbortSignal` and stops on it. Without that a
+cancelled call keeps its loop and its connection for the rest of a deadline
+nobody is waiting on, and nothing observable from the client says so — which is
+why the gate for it is a unit test on `PaneTail.changed` rather than a tool call.
+
+`observe` reports the byte stream in write order and cannot resolve cursor
+addressing; `capture_pane` reads tmux's rendered grid. They are not two ways to
+read one thing, and the tool descriptions say so.
+
 ## Node
 
 The emitted-package lanes run on Node 22 and the floor is never substituted: a

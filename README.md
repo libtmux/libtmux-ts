@@ -207,18 +207,25 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- npx -y @libtmux/mcp
 
 </details>
 
-| Tool            | What it does                                                              |
-| --------------- | ------------------------------------------------------------------------- |
-| `list_sessions` | Every session with its id, name and window count                          |
-| `list_panes`    | Panes, optionally restricted to one session                               |
-| `capture_pane`  | A pane's visible contents, or its scrollback                              |
-| `send_keys`     | Send keys, optionally literally and without Enter                         |
-| `new_session`   | Create a detached session                                                 |
-| `run_and_wait`  | Send keys and block until the pane prints, streaming tmux's notifications |
+The tools an agent reaches for first:
+
+| Tool                 | What it does                                                        |
+| -------------------- | ------------------------------------------------------------------- |
+| `run_command`        | Runs a shell command, waits for it, reports its real exit status    |
+| `wait_for_text`      | Blocks until a pane prints something, streaming tmux notifications  |
+| `wait_for_text_task` | The same wait as an MCP task: a handle now, the result later        |
+| `observe`            | Only what a pane printed since your cursor                          |
+| `whoami`             | Which pane the server runs in, and which panes a person is watching |
+| `build_workspace`    | A session and all its windows in one tmux invocation                |
+
+Panes, windows, sessions, layouts, options, buffers and environment are covered
+too, and the server is browsable: `tmux://` resources, subscribable pane
+contents, prompts, and completions.
 
 Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 [Configuration](packages/mcp/README.md#point-it-at-a-server) ·
-[The echo caveat](packages/mcp/README.md#one-caveat-worth-knowing)
+[Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool) ·
+[Long waits](packages/mcp/README.md#long-waits-without-blocking)
 
 ### [@libtmux/workspace](packages/workspace) — declarative sessions
 

@@ -19,6 +19,8 @@
       "name": "@example/libtmux",
       "version": "0.0.0",
       "dependencies": {
+        "@libtmux/mcp": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.30.0",
         "libtmux": "workspace:*",
       },
     },
@@ -40,7 +42,7 @@
       "name": "@libtmux/mcp",
       "version": "0.1.0-alpha.1",
       "bin": {
-        "libtmux-mcp": "./dist/server.js",
+        "libtmux-mcp": "dist/server.js",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
