@@ -77,6 +77,25 @@ Do not write counts into prose — how many symbols are ported, how many fields 
 version is asked for. They go stale silently and no reader needs them. Counts
 that pin a fixture or guard an invariant are different, and belong in code.
 
+## Comments earn their maintenance cost
+
+Keep an implementation comment only when losing it would force a future
+maintainer to rediscover a consequential, non-obvious fact that the code,
+types, assertions, and tests do not already communicate. It states a durable
+truth about the shipped system rather than the author's reasoning, and it does
+not restate a value or a fact that can change without it — a comment that
+duplicates either goes stale silently. Write it as tersely as a mature,
+long-lived library would.
+
+Delete comments that narrate, restate, speculate, excuse, or preserve
+development history, and prefer deletion in the borderline case. What survives
+is what a reader could not recover from the code.
+
+Doc comments on the public surface — summaries, parameter descriptions, and the
+` ```ts ` examples `typecheck:symbols` compiles — are judged on the other axis:
+what they are worth to a caller, not whether they are non-obvious. They stay
+precise, succinct, and maintainable.
+
 ## The parity ledger
 
 `parity/python-0.62.0.json` records a decision for every public symbol of the
