@@ -317,6 +317,20 @@ why the gate for it is a unit test on `PaneTail.changed` rather than a tool call
 addressing; `capture_pane` reads tmux's rendered grid. They are not two ways to
 read one thing, and the tool descriptions say so.
 
+## Platforms
+
+Linux is what CI proves. The library itself has no platform-specific code —
+`node_spawn_transport.ts` escalates SIGTERM to SIGKILL and force-settles a
+process whose descendants hold the pipe, with no `/proc` and no pidfd. The
+supervisor in `src/_internal/test/run_root.ts` is the Linux part: process
+identity is `linux:<boot id>:<start time>`, read from `/proc`.
+
+So macOS is untested, not unsupported, and the honest order of work is to port
+the supervisor and then add the lane. A lane added before that failed forty
+tests on its first run and was removed again; `preflight.ts` now says which
+requirement is missing instead of letting a checkout discover it as ENOENT from
+a file nobody mentioned.
+
 ## Node
 
 The emitted-package lanes run on Node 22 and the floor is never substituted: a

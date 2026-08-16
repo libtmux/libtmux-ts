@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { runSupervisor } from "../src/_internal/test/run_root.js";
-import { NODE22, preflight } from "./preflight.js";
+import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
 
 /**
  * The suites this runner is responsible for, checked before it starts.
@@ -61,7 +61,7 @@ if (unlisted.length > 0) {
   process.exit(1);
 }
 
-await preflight([NODE22]);
+await preflight([LINUX_HARNESS, NODE22]);
 
 process.exitCode = await runSupervisor({
   command: [

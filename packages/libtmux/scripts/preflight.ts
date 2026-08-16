@@ -13,6 +13,27 @@ export interface PreflightRequirement {
   readonly name: string;
 }
 
+/**
+ * The fixture supervisor reads `/proc`, and says so before it fails.
+ *
+ * Process identity there is `linux:<boot id>:<start time>`, read from
+ * `/proc/<pid>/stat` and `/proc/sys/kernel/random/boot_id`, and the cancellation
+ * tests assume descendants that hold an inherited pipe behave as they do on
+ * Linux. None of that has a Darwin equivalent yet. Without this check a macOS
+ * checkout gets a wall of ENOENT from a file nobody mentioned; with it, one
+ * sentence naming what is missing.
+ */
+export const LINUX_HARNESS: PreflightRequirement = {
+  check: async () => {
+    if (process.platform === "linux") return;
+    throw new Error(
+      `the fixture supervisor identifies processes through /proc, which ${process.platform} does not have.` +
+        " The unit suite runs anywhere; the real-tmux suites need Linux until the supervisor is ported",
+    );
+  },
+  name: "a Linux host for the real-tmux fixture supervisor",
+};
+
 export const NODE22: PreflightRequirement = {
   check: async () => {
     await resolveNode22();
