@@ -3,39 +3,28 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Hold the dependabot configuration to the manifests this workspace actually
- * has.
+ * Hold the dependabot configuration to the manifests this workspace has.
  *
- * The file arrived as GitHub's unedited template, whose `package-ecosystem` is
- * the empty string and whose one directory is a placeholder. Merged as written
- * it would have configured nothing while reading as configured — the failure
- * this repository keeps meeting, where every step passes and none of them did
- * the work.
- *
- * Nothing else here could notice. `docs:claims` reads Markdown, `lint` reads
- * TypeScript, and a workflow that never runs dependabot cannot report that
- * dependabot is asleep. So the claims are checked here, all of them answerable
- * from the tree:
+ * Nothing else can: a placeholder ecosystem configures nothing while reading as
+ * configured, and no gate runs dependabot. Three claims, all answerable from
+ * the tree:
  *
  * - an ecosystem is one dependabot defines, not a placeholder;
  * - a directory it is pointed at holds the manifest that ecosystem reads;
  * - every manifest the root `workspaces` globs resolve to is covered.
  *
- * The last is the one that earns the file. `packages/*` in the configuration
- * picks up a new package on its own; a workspace added beside it does not, and
- * this fails naming the manifest nothing updates.
+ * The last earns the file. `packages/*` picks up a new package on its own; a
+ * workspace added beside it does not.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const configPath = ".github/dependabot.yml";
 
 /**
- * What each ecosystem reads, so pointing it somewhere else is an error rather
- * than a silent no-op.
+ * What each ecosystem reads, so pointing it elsewhere is an error not a no-op.
  *
- * Only the ecosystems this repository has any use for. Naming the other fifty
- * would be a list to maintain against a document nobody here reads, and a
- * typo'd `githubactions` fails as loudly against a short list as a long one.
+ * Only the ecosystems this repository uses; a typo fails as loudly against a
+ * short list as a long one.
  */
 const ecosystems = new Map<string, (directory: string) => boolean>([
   ["bun", (directory) => existsSync(join(directory, "package.json"))],
@@ -140,12 +129,7 @@ for (const [index, entry] of updates.entries()) {
   }
 }
 
-/**
- * Every manifest in the workspace, from the root manifest's own globs.
- *
- * Read rather than listed: a package added under `packages/` is one this has to
- * cover, and a list written here would be a second place to remember.
- */
+/** Every manifest in the workspace, from the root manifest's own globs. */
 async function workspaceManifests(): Promise<readonly string[]> {
   const root = (await Bun.file(join(repositoryRoot, "package.json")).json()) as {
     workspaces?: readonly string[];
@@ -168,8 +152,6 @@ for (const directory of manifests) {
   }
 }
 
-// Workflow pins rot the same way a dependency does, and this repository pins
-// every action by tag. Nothing else asks whether those tags moved.
 if (!(covered.get("github-actions") ?? new Set<string>()).has("")) {
   failures.push(`${configPath}: no github-actions entry covers the workflows at the root`);
 }
@@ -183,8 +165,7 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-// `dot: true`, or the scan walks past `.github` and reports the count as zero
-// — a summary line that reads like a pass while having counted nothing.
+// `dot: true`, or the scan walks past `.github` and counts zero.
 const workflows = await Array.fromAsync(
   new Bun.Glob("workflows/*.yml").scan({ cwd: join(repositoryRoot, ".github"), dot: true }),
 );

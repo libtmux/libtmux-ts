@@ -1,18 +1,11 @@
 # Keep the toolchain and the workflow pins current.
 #
-# Two ecosystems, because this repository has two kinds of pin and they rot
-# independently: the packages `bun install` resolves, and the actions
-# `typescript.yml` and `publish.yml` name by tag.
-#
-# `scripts/check-ci-config.ts` holds this file to the tree — an ecosystem
-# dependabot defines, a directory that has the manifest that ecosystem reads,
-# and a bun entry over every manifest the root `workspaces` globs resolve to.
-# `packages/*` below covers a new package on its own; what the gate catches is
-# a workspace added beside it that this list never learned about.
+# `scripts/check-ci-config.ts` holds this file to the tree: a defined
+# ecosystem, a directory holding the manifest it reads, and a bun entry over
+# every manifest the root `workspaces` globs resolve to.
 version: 2
 updates:
-  # Every manifest, not just the root one: a package here declares its own
-  # dependencies, so a bump to the root leaves the others where they were.
+  # Every manifest: a package here declares its own dependencies.
   - package-ecosystem: "bun"
     directories:
       - "/"
@@ -20,10 +13,8 @@ updates:
       - "/examples"
     schedule:
       interval: "weekly"
-    # The library ships zero runtime dependencies, so every bump is to the
-    # toolchain and they are reviewed together or not at all. One pull request
-    # runs the gates once; five run them five times and disagree about which
-    # TypeScript compiled the tree.
+    # Every bump is to the toolchain, and one pull request runs the gates once
+    # rather than five times against five different TypeScripts.
     groups:
       toolchain:
         patterns:
