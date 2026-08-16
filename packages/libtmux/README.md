@@ -416,11 +416,17 @@ pane.format.pane_active; // "1"
 ```
 
 Criteria take the decoded shape as well as the text, and mean the same thing
-either way:
+either way — but the text is narrowed to what the field can hold, so a typed
+field stays typed:
 
 ```ts
 snapshot.panes.where({ active: true });
-snapshot.panes.where({ active: "1" });
+snapshot.panes.where({ active: "1" }); // the text tmux sends for a flag
+snapshot.panes.where({ panePid: "2334787" }); // and for a number
+// @ts-expect-error a flag is "0" or "1"; text that is neither is a mistake
+snapshot.panes.where({ active: "yes" });
+// @ts-expect-error and a numeric field will never read "banana"
+snapshot.panes.where({ panePid: "banana" });
 ```
 
 Together, on a server with two windows. This is a literal excerpt of

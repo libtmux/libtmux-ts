@@ -35,24 +35,27 @@ type MutuallyAssignable<Left, Right> = [Left] extends [Right]
     : false
   : false;
 
-type ExpectedStringFilterFields<Value = never> = {
+type ExpectedStringFilterFields<Value = never, Raw extends string = string> = {
   readonly contains?: string;
   readonly endsWith?: string;
-  readonly equals?: Value | string | null;
-  readonly in?: readonly (Value | string)[];
+  readonly equals?: Value | Raw | null;
+  readonly in?: readonly (Value | Raw)[];
   readonly mode?: "insensitive";
-  readonly notIn?: readonly (Value | string)[];
+  readonly notIn?: readonly (Value | Raw)[];
   readonly regex?: { readonly flags: "" | "m" | "ms" | "s"; readonly pattern: string };
   readonly startsWith?: string;
 };
 
-type ExpectedStringFilter<Value = never> = ExpectedStringFilterFields<Value> &
+type ExpectedStringFilter<Value = never, Raw extends string = string> = ExpectedStringFilterFields<
+  Value,
+  Raw
+> &
   (
     | { readonly contains: string }
     | { readonly endsWith: string }
-    | { readonly equals: Value | string | null }
-    | { readonly in: readonly (Value | string)[] }
-    | { readonly notIn: readonly (Value | string)[] }
+    | { readonly equals: Value | Raw | null }
+    | { readonly in: readonly (Value | Raw)[] }
+    | { readonly notIn: readonly (Value | Raw)[] }
     | {
         readonly regex: {
           readonly flags: "" | "m" | "ms" | "s";
@@ -62,21 +65,22 @@ type ExpectedStringFilter<Value = never> = ExpectedStringFilterFields<Value> &
     | { readonly startsWith: string }
   );
 
-type ExpectedScalarCriteria<Value = never> =
+type ExpectedScalarCriteria<Value = never, Raw extends string = string> =
   | Value
-  | string
+  | Raw
   | null
-  | ExpectedStringFilter<Value>
+  | ExpectedStringFilter<Value, Raw>
   | undefined;
 
 /**
- * Every scalar criteria still accepts the text tmux sends.
+ * Every scalar criteria still accepts the text tmux sends for that field.
  *
- * Whatever shapes a field gains, a caller who writes the string keeps working.
- * A field that accepted only its typed value would fail this.
+ * Not any text: a numeric field takes `"3"` and refuses `"banana"`. What must
+ * not change is that the text form works at all, since it is what a stored
+ * query and a raw tmux value both arrive as.
  */
-type AllScalarCriteriaAcceptStrings<Where, Keys extends keyof Where> = {
-  [Key in Keys]-?: [ExpectedScalarCriteria, Where[Key]] extends [Where[Key], unknown]
+type AllScalarCriteriaAcceptTheirText<Where, Keys extends keyof Where> = {
+  [Key in Keys]-?: [ExpectedScalarCriteria<never, "0">, Where[Key]] extends [Where[Key], unknown]
     ? true
     : false;
 }[Keys];
@@ -273,25 +277,37 @@ type _SessionScalarKeys = Expect<Equal<SessionScalarKeys, ExpectedSessionScalarK
 type _WindowScalarKeys = Expect<Equal<WindowScalarKeys, ExpectedWindowScalarKeys>>;
 type _PaneScalarKeys = Expect<Equal<PaneScalarKeys, ExpectedPaneScalarKeys>>;
 type _SessionScalarShapes = Expect<
-  Equal<AllScalarCriteriaAcceptStrings<SessionWhere, SessionScalarKeys>, true>
+  Equal<AllScalarCriteriaAcceptTheirText<SessionWhere, SessionScalarKeys>, true>
 >;
 type _WindowScalarShapes = Expect<
-  Equal<AllScalarCriteriaAcceptStrings<WindowWhere, WindowScalarKeys>, true>
+  Equal<AllScalarCriteriaAcceptTheirText<WindowWhere, WindowScalarKeys>, true>
 >;
 type _PaneScalarShapes = Expect<
-  Equal<AllScalarCriteriaAcceptStrings<PaneWhere, PaneScalarKeys>, true>
+  Equal<AllScalarCriteriaAcceptTheirText<PaneWhere, PaneScalarKeys>, true>
 >;
 
 // A field tmux answers with text stays text.
 type _StringDomain = Expect<MutuallyAssignable<SessionWhere["name"], ExpectedScalarCriteria>>;
 // A field this port knows the shape of takes that shape too, and only that one.
 type _BooleanDomain = Expect<
-  MutuallyAssignable<PaneWhere["active"], ExpectedScalarCriteria<boolean>>
+  MutuallyAssignable<PaneWhere["active"], ExpectedScalarCriteria<boolean, "0" | "1">>
 >;
-type _NumberDomain = Expect<MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number>>>;
+type _NumberDomain = Expect<
+  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number, `${number}`>>
+>;
 type _TimeDomain = Expect<
-  MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date>>
+  MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date, `${number}`>>
 >;
+
+// The narrowing is the point: text that could never be this field's value is
+// refused, where before every field took every string.
+type _NumberRefusesProse = Expect<Equal<"banana" extends PaneWhere["pid"] ? true : false, false>>;
+type _FlagRefusesProse = Expect<Equal<"yes" extends PaneWhere["active"] ? true : false, false>>;
+type _NumberTakesItsText = Expect<Equal<"4321" extends PaneWhere["pid"] ? true : false, true>>;
+type _FlagTakesItsText = Expect<Equal<"1" extends PaneWhere["active"] ? true : false, true>>;
+// A field tmux answers with text takes any of it, including text that looks
+// numeric — `%1` is an id, not a number.
+type _TextTakesAnything = Expect<Equal<"banana" extends PaneWhere["id"] ? true : false, true>>;
 // An identity keeps its sigil, so it stays text however numeric it looks.
 type _IdentityDomain = Expect<MutuallyAssignable<PaneWhere["id"], ExpectedScalarCriteria>>;
 
