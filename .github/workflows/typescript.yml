@@ -18,10 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The floor, the ceiling, and 3.7 — which sits between them and is the
-        # one release that accepts `break-pane -n` and silently ignores it. A
-        # matrix of only the ends cannot see a quirk that lives in the middle.
-        tmux-version: ["3.2a", "3.7", "3.7b"]
+        # The floor, the ceiling, and two in between. 3.7 is the one release
+        # that accepts `break-pane -n` and silently ignores it; a matrix of only
+        # the ends cannot see a quirk that lives in the middle. 3.4 is there for
+        # a different reason: it is what Ubuntu 24.04 ships, so it is the tmux
+        # most contributors already have, and a suite that cannot run on it is a
+        # suite most contributors cannot run.
+        tmux-version: ["3.2a", "3.4", "3.7", "3.7b"]
     steps:
       - uses: actions/checkout@v7
 
@@ -136,13 +139,16 @@ jobs:
           bun run test:node
 
       # In-repo consumers prove the published surface is enough to build on.
+      # `test:package` runs here and not only at publish: the packaging
+      # mistakes this repository actually shipped were in the consumers, and a
+      # gate that only runs while releasing finds them after the release.
       - name: Gate the MCP server
         working-directory: packages/mcp
-        run: bun run typecheck && bun run test
+        run: bun run typecheck && bun run test && bun run test:package
 
       - name: Gate the workspace builder
         working-directory: packages/workspace
-        run: bun run typecheck && bun run test
+        run: bun run typecheck && bun run test && bun run test:package
 
       - name: Gate the examples
         working-directory: examples

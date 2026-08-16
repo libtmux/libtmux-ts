@@ -5,7 +5,7 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.4%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -141,9 +141,20 @@ a row costs several round trips and describes several different instants. In a
 loop that is an N+1. Take one `snapshot()` and read the collections off it:
 they are cheaper together and they agree with each other.
 
-To advance one handle in place rather than re-acquiring everything, call
-`refresh()`. It re-reads only that handle and keeps its placement, so a window
-linked into two sessions stays on the one you resolved.
+To read one handle at a later instant rather than re-acquiring everything, call
+`refreshed()`. It answers with a _new_ handle and leaves the receiver alone, so
+the snapshot you already hold keeps agreeing with itself — a handle that
+advanced in place would leave `where({ name: "old" })` matching an object whose
+`name` had become `"new"`. A window keeps its placement, so one linked into two
+sessions stays on the one you resolved.
+
+```ts
+const window = snapshot.windows.one({ name: "editor" });
+await window.rename("build");
+
+window.name; // "editor" — the instant this was read at
+(await window.refreshed()).name; // "build"
+```
 
 ## Dependencies
 
@@ -291,6 +302,17 @@ snapshot.sessions.where({
 });
 
 snapshot.windows.where({ session: { is: { name: "work" } } });
+```
+
+Clients are queryable on the same terms — `ClientWhere` alongside
+`SessionWhere`, `WindowWhere`, and `PaneWhere`. tmux gives a client no id of
+its own, so it is identified by the terminal it occupies, and a control client
+occupies none:
+
+```ts
+snapshot.clients.where({ controlMode: "1" });
+snapshot.clients.where({ session: { is: { name: "work" } } });
+snapshot.clients.one({ tty: "/dev/pts/3" });
 ```
 
 Matching is case-sensitive unless you say otherwise:
@@ -487,8 +509,9 @@ await client.switchTo(session);
 await client.detach();
 await session.detach();
 
-await pane.refresh(); // re-reads in place and returns nothing
-pane.equals(other);
+const later = await pane.refreshed(); // a new handle, at a new instant
+pane.equals(later); // true — the same pane, read twice
+pane.sameTmuxIdAs(later); // same `%n`, wherever it came from
 ```
 
 Every handle describes itself when logged or interpolated, rather than rendering
@@ -502,9 +525,13 @@ server.toString(); // Server(/tmp/tmux-1000/default)
 console.log(`${pane} stopped responding`);
 ```
 
-`refresh` re-reads a handle in place and returns nothing, so read the handle
-again after awaiting it. Every handle also has `showOptions` / `setOption` /
-`unsetOption`, and `format` for tmux's own field names.
+`refreshed` answers with a new handle rather than advancing this one, so use
+what it returns. `equals` compares the connection and daemon generation as well
+as the tmux id, because `%1` is unique only within one running daemon — two
+servers both have one, and so does the pane that replaced it after a restart.
+`sameTmuxIdAs` is the raw-id comparison when that is genuinely what you want.
+Every handle also has `showOptions` / `setOption` / `unsetOption`, and `format`
+for tmux's own field names.
 
 ## Commands this package does not model
 
@@ -860,6 +887,30 @@ try {
 }
 ```
 
+A command that never got an answer raises `TmuxTransportError` instead. It says
+what failed between this process and tmux, and — the part that matters for a
+mutation — how far the command got:
+
+```ts
+import { TmuxTransportError } from "libtmux";
+
+try {
+  await session.newWindow({ name: "build" });
+} catch (error) {
+  if (error instanceof TmuxTransportError) {
+    error.kind; // "cancelled" | "pipe" | "protocol" | "spawn" | "timeout"
+    error.delivery; // "not_started" | "written" | "replied" | "indeterminate"
+    error.stdout; // whatever arrived before the failure
+  }
+}
+```
+
+`delivery` is the question a retry depends on. `not_started` is the only value
+that is safe to retry blindly; after a timeout the answer is `indeterminate`,
+because tmux may well have created that window before the pipe went quiet. Every
+path reports the same type, so a timeout during `snapshot()` is not a different
+shape from a timeout during `kill()`.
+
 An unreachable server raises rather than reading as empty, so an empty result
 means exactly one thing. Ask without raising when you need to:
 
@@ -893,7 +944,7 @@ pane moves, so the session is resolved through `$TMUX_PANE`.
 Two working consumers live in this repository:
 
 - `consumers/mcp` — an MCP server exposing tmux through this library,
-  including a `wait_for_output` tool that streams rather than polls.
+  including a `run_and_wait` tool that streams rather than polls.
 - `consumers/workspace` — a tmuxp-shaped workspace builder. Applying a
   workspace twice converges the running session rather than duplicating it.
 

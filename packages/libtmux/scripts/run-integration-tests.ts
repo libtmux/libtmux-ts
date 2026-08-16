@@ -18,6 +18,8 @@ process.exitCode = await runSupervisor({
     "tests/integration/test_server.test.ts",
     "tests/integration/supervisor_cleanup.test.ts",
     "tests/integration/graph.test.ts",
+    "tests/integration/contract.test.ts",
+    "tests/integration/control_bounds.test.ts",
     "tests/integration/acquire.test.ts",
     "tests/integration/snapshot.test.ts",
     "tests/integration/options.test.ts",

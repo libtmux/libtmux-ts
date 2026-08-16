@@ -202,7 +202,9 @@ function hydrateEmptySession(builder: SelectionProjectionBuilder, session: Graph
   builder.materializeOne(session, "activePane", null);
 }
 
-function requireSessions(values: readonly (Client | Session | Window | Pane)[]): readonly Session[] {
+function requireSessions(
+  values: readonly (Client | Session | Window | Pane)[],
+): readonly Session[] {
   if (!values.every((value) => value instanceof Session)) {
     throw new Error("fixture materialized a non-Session member");
   }

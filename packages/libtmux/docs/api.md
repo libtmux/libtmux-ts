@@ -9,7 +9,7 @@ page is for looking one thing up.
 
 ## Server
 
-[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -246,6 +246,29 @@ Every pane on the server.
 ```ts
 const panes = await server.panes();
 panes.where({ currentCommand: "vim" }).count();
+```
+
+#### `Server.daemonIdentity`
+
+```ts
+async daemonIdentity(): Promise<DaemonIdentity | undefined>
+```
+
+Which daemon is answering on this socket right now.
+
+A socket path names a place, not a process. `kill-server` followed by a
+restart puts a different daemon at the same path, and that daemon numbers
+its panes from `%0` again — so a handle held across the restart names an
+object that no longer exists, at an id something else now has. Comparing
+this before and after is how a long-running caller can tell.
+
+`undefined` when the server has nothing to list, which is also the only
+case where it has handed out no handles to invalidate.
+
+```ts
+const before = await server.daemonIdentity();
+const after = await server.daemonIdentity();
+before?.pid === after?.pid;
 ```
 
 #### `Server.clients`
@@ -694,7 +717,7 @@ const [editor, logs] = await server.batch([
 
 ## Session
 
-[`server`](#sessionserver) · [`windows`](#sessionwindows) · [`panes`](#sessionpanes) · [`showOptions`](#sessionshowoptions) · [`setOption`](#sessionsetoption) · [`unsetOption`](#sessionunsetoption) · [`showHooks`](#sessionshowhooks) · [`setHook`](#sessionsethook) · [`unsetHook`](#sessionunsethook) · [`showEnvironment`](#sessionshowenvironment) · [`getEnvironment`](#sessiongetenvironment) · [`setEnvironment`](#sessionsetenvironment) · [`unsetEnvironment`](#sessionunsetenvironment) · [`removeEnvironment`](#sessionremoveenvironment) · [`activeWindow`](#sessionactivewindow) · [`activePane`](#sessionactivepane) · [`newWindow`](#sessionnewwindow) · [`plan`](#sessionplan) · [`kill`](#sessionkill) · [`refresh`](#sessionrefresh) · [`rename`](#sessionrename) · [`selectWindow`](#sessionselectwindow) · [`fromEnv`](#sessionfromenv) · [`detach`](#sessiondetach) · [`cmd`](#sessioncmd)
+[`server`](#sessionserver) · [`windows`](#sessionwindows) · [`panes`](#sessionpanes) · [`showOptions`](#sessionshowoptions) · [`setOption`](#sessionsetoption) · [`unsetOption`](#sessionunsetoption) · [`showHooks`](#sessionshowhooks) · [`setHook`](#sessionsethook) · [`unsetHook`](#sessionunsethook) · [`showEnvironment`](#sessionshowenvironment) · [`getEnvironment`](#sessiongetenvironment) · [`setEnvironment`](#sessionsetenvironment) · [`unsetEnvironment`](#sessionunsetenvironment) · [`removeEnvironment`](#sessionremoveenvironment) · [`activeWindow`](#sessionactivewindow) · [`activePane`](#sessionactivepane) · [`newWindow`](#sessionnewwindow) · [`plan`](#sessionplan) · [`kill`](#sessionkill) · [`refreshed`](#sessionrefreshed) · [`rename`](#sessionrename) · [`selectWindow`](#sessionselectwindow) · [`fromEnv`](#sessionfromenv) · [`detach`](#sessiondetach) · [`cmd`](#sessioncmd) · [`sameTmuxIdAs`](#sessionsametmuxidas)
 
 ### Properties
 
@@ -952,17 +975,20 @@ Destroy this session.
 await session.kill();
 ```
 
-#### `Session.refresh`
+#### `Session.refreshed`
 
 ```ts
-refresh(): Promise<void>
+refreshed(): Promise<Session>
 ```
 
-Re-read this session at the current instant, in place.
+This session, read again at a new instant.
+
+The receiver keeps the instant it was read at; the answer is a new handle
+on a new snapshot, so neither reading contradicts itself.
 
 ```ts
-await session.refresh();
-session.windows.count(); // re-read
+const later = await session.refreshed();
+later.windows.count();
 ```
 
 #### `Session.rename`
@@ -1032,9 +1058,24 @@ else, or `null` for a command that takes none.
 await session.cmd("rename-session -- new");
 ```
 
+#### `Session.sameTmuxIdAs`
+
+```ts
+sameTmuxIdAs(other: Session): boolean
+```
+
+Whether `other` carries the same `$n`, wherever it came from.
+
+Sessions on unrelated servers routinely share an id; this says so, and
+{@link equals} says they are still different sessions.
+
+```ts
+session.sameTmuxIdAs(await session.refreshed()); // true
+```
+
 ## Window
 
-[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showOptions`](#windowshowoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refresh`](#windowrefresh) · [`cmd`](#windowcmd)
+[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showOptions`](#windowshowoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
 
 ### Properties
 
@@ -1340,17 +1381,22 @@ Make this window active in its session.
 await window.select();
 ```
 
-#### `Window.refresh`
+#### `Window.refreshed`
 
 ```ts
-refresh(): Promise<void>
+refreshed(): Promise<Window>
 ```
 
-Re-read this window placement at the current instant, in place.
+This window placement, read again at a new instant.
+
+The placement is kept, not just the window: a window linked into a session
+at two indexes has two placements, and this one stays the one it was.
+Refusing rather than silently retargeting is why the index is part of what
+is matched.
 
 ```ts
-await window.refresh();
-window.panes.count(); // re-read
+const later = await window.refreshed();
+later.panes.count();
 ```
 
 #### `Window.cmd`
@@ -1368,9 +1414,21 @@ else, or `null` for a command that takes none.
 await window.cmd("display-panes");
 ```
 
+#### `Window.sameTmuxIdAs`
+
+```ts
+sameTmuxIdAs(other: Window): boolean
+```
+
+Whether `other` carries the same `@n`, wherever it came from.
+
+```ts
+window.sameTmuxIdAs(other);
+```
+
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refresh`](#panerefresh) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -1595,17 +1653,17 @@ arrives. {@link Server.loadBuffer} fills the buffer beforehand.
 await pane.pasteBuffer("greeting");
 ```
 
-#### `Pane.refresh`
+#### `Pane.refreshed`
 
 ```ts
-refresh(): Promise<void>
+refreshed(): Promise<Pane>
 ```
 
-Re-read this pane at the current instant, in place.
+This pane, read again at a new instant.
 
 ```ts
-await pane.refresh();
-pane.currentCommand; // re-read
+const later = await pane.refreshed();
+later.currentCommand;
 ```
 
 #### `Pane.displayMessage`
@@ -1780,9 +1838,21 @@ else, or `null` for a command that takes none.
 await pane.cmd("clock-mode");
 ```
 
+#### `Pane.sameTmuxIdAs`
+
+```ts
+sameTmuxIdAs(other: Pane): boolean
+```
+
+Whether `other` carries the same `%n`, wherever it came from.
+
+```ts
+pane.sameTmuxIdAs(await pane.refreshed()); // true
+```
+
 ## Client
 
-[`server`](#clientserver) · [`session`](#clientsession) · [`window`](#clientwindow) · [`pane`](#clientpane) · [`refresh`](#clientrefresh) · [`detach`](#clientdetach) · [`switchTo`](#clientswitchto)
+[`server`](#clientserver) · [`session`](#clientsession) · [`window`](#clientwindow) · [`pane`](#clientpane) · [`refreshed`](#clientrefreshed) · [`detach`](#clientdetach) · [`switchTo`](#clientswitchto)
 
 ### Properties
 
@@ -1836,16 +1906,17 @@ client.pane?.id;
 
 ### Methods
 
-#### `Client.refresh`
+#### `Client.refreshed`
 
 ```ts
-refresh(): Promise<void>
+refreshed(): Promise<Client>
 ```
 
-Re-read this client at the current instant, in place.
+This client, read again at a new instant.
 
 ```ts
-await client.refresh();
+const later = await client.refreshed();
+later.session?.name;
 ```
 
 #### `Client.detach`

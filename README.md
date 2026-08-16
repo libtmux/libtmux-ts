@@ -14,7 +14,7 @@
 [![npm](https://img.shields.io/npm/v/libtmux?label=libtmux&color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.7%20%7C%203.7b-1bb91f)](.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.4%20%7C%203.7%20%7C%203.7b-1bb91f)](.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](packages/libtmux/tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -207,14 +207,14 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- npx -y @libtmux/mcp
 
 </details>
 
-| Tool              | What it does                                                            |
-| ----------------- | ----------------------------------------------------------------------- |
-| `list_sessions`   | Every session with its id, name and window count                        |
-| `list_panes`      | Panes, optionally restricted to one session                             |
-| `capture_pane`    | A pane's visible contents, or its scrollback                            |
-| `send_keys`       | Send keys, optionally literally and without Enter                       |
-| `new_session`     | Create a detached session                                               |
-| `wait_for_output` | Block until a pane prints something, streaming tmux's own notifications |
+| Tool            | What it does                                                              |
+| --------------- | ------------------------------------------------------------------------- |
+| `list_sessions` | Every session with its id, name and window count                          |
+| `list_panes`    | Panes, optionally restricted to one session                               |
+| `capture_pane`  | A pane's visible contents, or its scrollback                              |
+| `send_keys`     | Send keys, optionally literally and without Enter                         |
+| `new_session`   | Create a detached session                                                 |
+| `run_and_wait`  | Send keys and block until the pane prints, streaming tmux's notifications |
 
 Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 [Configuration](packages/mcp/README.md#point-it-at-a-server) ·
