@@ -12,10 +12,15 @@ import { LibTmuxException } from "../../src/exc.js";
 
 const encoder = new TextEncoder();
 const guards: FormatGuards = Object.freeze({
-  field: "__LIBTMUX_FIELD_7fef__",
-  recordEnd: "__LIBTMUX_END_6c22__",
-  recordStart: "__LIBTMUX_START_a913__",
+  field: ";",
+  recordEnd: "ltxE6c22",
+  recordStart: "ltxSa913",
 });
+
+/** What `format_quote_shell` does, so a fixture frames the way tmux does. */
+function quoteAsTmuxDoes(value: string): string {
+  return value.replaceAll(/[|&;<>()$`\\"'*?[# =%]/gu, (character) => `\\${character}`);
+}
 
 function valueFor(token: string, overrides: Readonly<Record<string, string>>): string {
   if (Object.hasOwn(overrides, token)) return overrides[token]!;
@@ -30,7 +35,7 @@ function frame(
   request: GuardedFormatRequest,
   overrides: Readonly<Record<string, string>> = {},
 ): string {
-  const values = request.fields.map(({ token }) => valueFor(token, overrides));
+  const values = request.fields.map(({ token }) => quoteAsTmuxDoes(valueFor(token, overrides)));
   return `${request.guards.recordStart}${values.join(request.guards.field)}${request.guards.recordEnd}`;
 }
 
@@ -70,7 +75,7 @@ describe("guarded format codec", () => {
     const request = codecFor("list-sessions").prepare();
 
     expect(request.format).toBe(
-      `${guards.recordStart}${request.fields.map(({ token }) => `#{${token}}`).join(guards.field)}${guards.recordEnd}`,
+      `${guards.recordStart}${request.fields.map(({ token }) => `#{q:${token}}`).join(guards.field)}${guards.recordEnd}`,
     );
     expect(request.format).not.toContain("␞");
     expect(request.format).not.toContain("\n");
@@ -273,7 +278,7 @@ describe("guarded format codec", () => {
     }
   });
 
-  test("never regenerates guards or retries an ambiguous response invisibly", () => {
+  test("reads an escaped separator as data and an unescaped one as a framing failure", () => {
     let guardCalls = 0;
     const codec = codecFor("list-sessions", "3.7b", () => {
       guardCalls += 1;
@@ -281,8 +286,24 @@ describe("guarded format codec", () => {
     });
     const request = codec.prepare();
 
+    // tmux escapes the separator inside a value, so a name holding one is a
+    // name and not an ambiguity — this is what quoting buys over a guard.
+    const carried = `a${guards.field}b\\c`;
+    const [row] = codec.decode(
+      request,
+      encoder.encode(`${frame(request, { session_name: carried })}\n`),
+    );
+    expect(row?.session_name).toBe(carried);
+
+    // One that arrives unescaped can only be tmux having stopped quoting, and
+    // that has to fail the frame rather than silently cut a value in two.
     expect(() =>
-      codec.decode(request, encoder.encode(`${frame(request, { session_name: guards.field })}\n`)),
+      codec.decode(
+        request,
+        encoder.encode(
+          `${guards.recordStart}${request.fields.map(() => "x").join(guards.field)}${guards.field}x${guards.recordEnd}\n`,
+        ),
+      ),
     ).toThrow(FormatProtocolError);
     expect(guardCalls).toBe(1);
   });

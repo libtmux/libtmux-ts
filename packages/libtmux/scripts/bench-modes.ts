@@ -41,6 +41,11 @@ class CountingTransport implements CommandTransport {
     this.calls += 1;
     return this.#inner.execute(request);
   }
+
+  executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
+    this.calls += 1;
+    return this.#inner.executeGroup(requests);
+  }
 }
 
 interface Row {

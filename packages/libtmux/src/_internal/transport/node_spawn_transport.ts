@@ -5,6 +5,12 @@ import type { Readable } from "node:stream";
 
 import type { DeliveryStatus } from "../../common.js";
 import type { CommandRequest, RawCommandResult } from "./types.js";
+import {
+  assembleGroupArgv,
+  createGroupSeparator,
+  MAX_PACKED_ARGV_BYTES,
+  packedArgvBytes,
+} from "./group.js";
 import { snapshotCommandRequest, TmuxTransportError } from "./types.js";
 
 export interface NodeSpawnTransportOptions {
@@ -299,4 +305,97 @@ export class NodeSpawnTransport {
       stdout: stdoutState.status === "fulfilled" ? stdoutState.value : new Uint8Array(),
     };
   }
+
+  /**
+   * One process, one command list, one stdout — split back apart by marker.
+   *
+   * A spawned tmux writes every command's output to the same pipe, so the
+   * sections need a boundary tmux itself prints. `display-message -p` between
+   * the commands is that boundary: it costs one queue item, cannot fail on a
+   * server that is answering, and its marker is random per group so no listing
+   * can forge one.
+   */
+  async executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
+    const [first, ...rest] = requests;
+    if (first === undefined) return Object.freeze([]);
+    if (rest.length === 0) return Object.freeze([await this.execute(first)]);
+    if (requests.some((request) => request.stdin !== undefined)) {
+      throw new TmuxTransportError("a command list cannot carry stdin", {
+        delivery: "not_started",
+        kind: "protocol",
+      });
+    }
+
+    const separator = createGroupSeparator();
+    const args = assembleGroupArgv(requests, separator);
+    const packed = packedArgvBytes([first.executable, ...args]);
+    if (packed > MAX_PACKED_ARGV_BYTES) {
+      // tmux would answer "command too long" from the client, with nothing to
+      // say which command or by how much.
+      throw new TmuxTransportError(
+        `a command list of ${String(packed)} bytes exceeds the ${String(MAX_PACKED_ARGV_BYTES)} tmux packs an argv into`,
+        { delivery: "not_started", kind: "protocol" },
+      );
+    }
+
+    const result = await this.execute(
+      snapshotCommandRequest({
+        args: [...args],
+        ...(first.environment === undefined ? {} : { environment: first.environment }),
+        executable: first.executable,
+        ...(first.signal === undefined ? {} : { signal: first.signal }),
+        ...(first.timeoutMs === undefined ? {} : { timeoutMs: first.timeoutMs }),
+      }),
+    );
+
+    const sections = splitOnMarker(result.stdout, `${separator}\n`);
+    // A short list means tmux stopped at a failure: everything before it ran
+    // and printed, and the section that stopped carries the exit status.
+    return Object.freeze(
+      sections.map((stdout, index) => ({
+        cmd: Object.freeze([requests[index]?.executable ?? first.executable, ...args]),
+        returncode: index === sections.length - 1 ? result.returncode : 0,
+        signal: index === sections.length - 1 ? result.signal : null,
+        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
+        stdout,
+      })),
+    );
+  }
+}
+
+/**
+ * Split a byte stream on a marker line, keeping at most `sections` pieces.
+ *
+ * Byte-wise rather than by decoding: a pane title can carry any byte sequence,
+ * and decoding to split would corrupt what the guarded frames then have to
+ * parse.
+ */
+function splitOnMarker(bytes: Uint8Array, marker: string): readonly Uint8Array[] {
+  const needle = new TextEncoder().encode(marker);
+  const sections: Uint8Array[] = [];
+  let start = 0;
+  for (;;) {
+    const at = indexOfBytes(bytes, needle, start);
+    if (at < 0) {
+      sections.push(bytes.subarray(start));
+      return sections;
+    }
+    sections.push(bytes.subarray(start, at));
+    start = at + needle.length;
+  }
+}
+
+function indexOfBytes(source: Uint8Array, needle: Uint8Array, fromIndex: number): number {
+  const lastStart = source.length - needle.length;
+  for (let index = fromIndex; index <= lastStart; index += 1) {
+    let matches = true;
+    for (let offset = 0; offset < needle.length; offset += 1) {
+      if (source[index + offset] !== needle[offset]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return index;
+  }
+  return -1;
 }

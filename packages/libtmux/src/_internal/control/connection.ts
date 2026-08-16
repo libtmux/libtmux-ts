@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { AbortLike, TmuxEventStream, WatchOptions } from "../../types.js";
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
+import { subcommandOf } from "../transport/group.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
@@ -42,20 +43,20 @@ function quoteArgument(argument: string): string {
 }
 
 /**
- * Drop the global flags that select a server.
+ * A command list submitted together, so a failure can retire its remainder.
  *
- * The connection is already established, so resending them makes tmux read the
- * first one as a command. Every tmux global flag is a leading `-` argument and
- * no subcommand starts with one, which is a more durable rule than counting
- * how many flags some particular caller happened to build.
+ * tmux removes the rest of a list when one of its commands fails, and says so
+ * only by not sending those blocks. Without the group the queue would hand each
+ * missing block's place to the next command in line, and every command after it
+ * would answer with a predecessor's output.
  */
-function subcommandOf(args: readonly string[]): readonly string[] {
-  const start = args.findIndex((argument) => !argument.startsWith("-"));
-  return start === -1 ? [] : args.slice(start);
+interface PendingGroup {
+  aborted: boolean;
 }
 
 interface PendingCommand {
   readonly argv: readonly string[];
+  readonly group?: PendingGroup;
   /** Bytes accumulated in {@link lines}, so the bound does not cost a re-measure per line. */
   bytes: number;
   readonly lines: string[];
@@ -519,6 +520,9 @@ export class ControlConnection implements CommandTransport {
       const block = this.#block;
       this.#block = undefined;
       if (block === undefined) return;
+      // tmux removes the rest of a command list at the first failure, so the
+      // blocks those commands would have sent never arrive.
+      if (parsed.failed && block.group !== undefined) this.#abandonGroup(block.group);
       // Its caller was answered when it was cancelled; the block still had to
       // be consumed to keep the queue aligned, and its output is discarded.
       if (!settle(block)) return;
@@ -698,6 +702,66 @@ export class ControlConnection implements CommandTransport {
         ),
       );
     }
+    const enqueued = this.#enqueue(request, argv);
+    this.#write(`${argv.map(quoteArgument).join(" ")}\n`);
+    return enqueued;
+  }
+
+  /**
+   * Run these commands as one tmux command list, in one write.
+   *
+   * One line, `;`-separated: tmux parses it into one command list and queues it
+   * whole, which is what makes the results describe one instant. Each command
+   * still answers in its own `%begin`/`%end`, so the block count is fixed and
+   * the queue keeps correlating by order — unlike `if-shell`, whose block count
+   * depends on the condition.
+   */
+  executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
+    const [first] = requests;
+    if (first === undefined) return Promise.resolve(Object.freeze([]));
+    if (requests.length === 1) return this.execute(first).then((result) => Object.freeze([result]));
+    if (this.#closed || this.#reopening) {
+      return this.execute(first).then((result) => Object.freeze([result]));
+    }
+    if (requests.some((request) => request.stdin !== undefined)) {
+      return Promise.reject(
+        new TmuxTransportError("a command list cannot carry stdin", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
+    const argvs = requests.map((request) => subcommandOf(request.args));
+    if (argvs.some((argv) => argv.length === 0)) {
+      return Promise.reject(
+        new TmuxTransportError("control mode request carries no subcommand", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
+    if (this.#pending.length + requests.length > this.#maxPendingCommands) {
+      return Promise.reject(
+        new TmuxTransportError(
+          `tmux control connection cannot hold a further ${String(requests.length)} commands`,
+          { delivery: "not_started", kind: "protocol" },
+        ),
+      );
+    }
+
+    // Enqueued and written without an await between, so nothing can slip a
+    // command into the middle of the list or the middle of the queue.
+    const group: PendingGroup = { aborted: false };
+    const answers = requests.map((request, index) => this.#enqueue(request, argvs[index]!, group));
+    this.#write(`${argvs.map((argv) => argv.map(quoteArgument).join(" ")).join(" ; ")}\n`);
+    return Promise.all(answers).then((results) => Object.freeze(results));
+  }
+
+  #enqueue(
+    request: CommandRequest,
+    argv: readonly string[],
+    group?: PendingGroup,
+  ): Promise<RawCommandResult> {
     return new Promise<RawCommandResult>((resolve, reject) => {
       const abandon = (): void => {
         if (!settle(command)) return;
@@ -713,6 +777,7 @@ export class ControlConnection implements CommandTransport {
       const command: PendingCommand = {
         argv: Object.freeze([request.executable, ...argv]),
         bytes: 0,
+        ...(group === undefined ? {} : { group }),
         lines: [],
         overflowed: false,
         reject,
@@ -733,8 +798,31 @@ export class ControlConnection implements CommandTransport {
               }, request.timeoutMs),
       };
       this.#pending.push(command);
-      this.#write(`${argv.map(quoteArgument).join(" ")}\n`);
     });
+  }
+
+  /**
+   * Retire the rest of a list tmux stopped running.
+   *
+   * Their blocks are never coming, so leaving them queued would misalign every
+   * later command. They are failed rather than resolved: the group asked for one
+   * instant, and a partial one is not it.
+   */
+  #abandonGroup(group: PendingGroup): void {
+    if (group.aborted) return;
+    group.aborted = true;
+    for (let index = this.#pending.length - 1; index >= 0; index -= 1) {
+      const queued = this.#pending[index]!;
+      if (queued.group !== group) continue;
+      this.#pending.splice(index, 1);
+      if (!settle(queued)) continue;
+      queued.reject(
+        new TmuxTransportError("tmux stopped the command list at an earlier failure", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
   }
 
   async close(): Promise<void> {

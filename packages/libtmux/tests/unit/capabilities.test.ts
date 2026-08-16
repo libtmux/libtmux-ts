@@ -12,6 +12,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { singleCommandTransport } from "../support/transport_double.js";
 
 const encoder = new TextEncoder();
 
@@ -101,12 +102,10 @@ describe("tmux capabilities", () => {
 
   test("binds lazily against the connected daemon and caches one epoch", async () => {
     const requests: CommandRequest[] = [];
-    const transport: CommandTransport = {
-      async execute(request) {
-        requests.push(request);
-        return resultFor(request, "3.6a");
-      },
-    };
+    const transport: CommandTransport = singleCommandTransport(async (request) => {
+      requests.push(request);
+      return resultFor(request, "3.6a");
+    });
     const connection = new TmuxConnection({
       executable: "/usr/bin/tmux",
       socketPath: "/tmp/capability.sock",
@@ -145,14 +144,12 @@ describe("tmux capabilities", () => {
     let entered = deferred();
     let release = deferred();
     let requests = 0;
-    const transport: CommandTransport = {
-      async execute(request) {
-        requests += 1;
-        entered.resolve();
-        await release.promise;
-        return resultFor(request, "3.7b");
-      },
-    };
+    const transport: CommandTransport = singleCommandTransport(async (request) => {
+      requests += 1;
+      entered.resolve();
+      await release.promise;
+      return resultFor(request, "3.7b");
+    });
     let currentEpoch = epoch(20);
     const binding = new LazyCapabilityBinding({
       connection: new TmuxConnection({ executable: "/usr/bin/tmux", socketName: "single-flight" }),
@@ -189,13 +186,11 @@ describe("tmux capabilities", () => {
   test("rejects an epoch change during the daemon probe without caching it", async () => {
     let currentEpoch = epoch(4);
     let calls = 0;
-    const transport: CommandTransport = {
-      async execute(request) {
-        calls += 1;
-        currentEpoch = epoch(5);
-        return resultFor(request, "3.7b");
-      },
-    };
+    const transport: CommandTransport = singleCommandTransport(async (request) => {
+      calls += 1;
+      currentEpoch = epoch(5);
+      return resultFor(request, "3.7b");
+    });
     const binding = new LazyCapabilityBinding({
       connection: new TmuxConnection({ executable: "/usr/bin/tmux", socketName: "named" }),
       connectionAlias: alias("connected-daemon"),
@@ -239,18 +234,16 @@ describe("tmux capabilities", () => {
 
     for (const reply of replies) {
       const requests: CommandRequest[] = [];
-      const transport: CommandTransport = {
-        async execute(request) {
-          requests.push(request);
-          return {
-            cmd: Object.freeze([request.executable, ...request.args]),
-            returncode: reply.returncode,
-            signal: null,
-            stderr: encoder.encode(reply.stderr),
-            stdout: encoder.encode(reply.stdout),
-          };
-        },
-      };
+      const transport: CommandTransport = singleCommandTransport(async (request) => {
+        requests.push(request);
+        return {
+          cmd: Object.freeze([request.executable, ...request.args]),
+          returncode: reply.returncode,
+          signal: null,
+          stderr: encoder.encode(reply.stderr),
+          stdout: encoder.encode(reply.stdout),
+        };
+      });
       const binding = new LazyCapabilityBinding({
         connection: new TmuxConnection({ executable: "/usr/bin/tmux" }),
         connectionAlias: alias("connected-daemon"),

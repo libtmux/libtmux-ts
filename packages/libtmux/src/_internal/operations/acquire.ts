@@ -1,5 +1,5 @@
 import type { CompleteFormatRow } from "../codec/schemas.js";
-import { executeGuardedList } from "../codec/guard_codec.js";
+import { executeGuardedListGroup, type GuardedListing } from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
 import {
@@ -7,6 +7,20 @@ import {
   type DaemonIdentity,
   type RuntimeContext,
 } from "../runtime/context.js";
+
+/**
+ * The four listings one acquisition runs, in the order their sections arrive.
+ *
+ * Named rather than inlined because the argv budget test measures this exact
+ * list: tmux packs a command's argv into 16KB, and four guarded formats are
+ * most of it.
+ */
+export const ACQUISITION_LISTINGS: readonly GuardedListing[] = Object.freeze([
+  Object.freeze({ listCommand: "list-sessions" as const }),
+  Object.freeze({ listCommand: "list-windows" as const, listExtraArgs: Object.freeze(["-a"]) }),
+  Object.freeze({ listCommand: "list-panes" as const, listExtraArgs: Object.freeze(["-a"]) }),
+  Object.freeze({ listCommand: "list-clients" as const }),
+]);
 
 /**
  * Which daemon answered this listing.
@@ -34,7 +48,9 @@ function daemonOf(rows: readonly (readonly CompleteFormatRow[])[]): DaemonIdenti
  * session or window record. Each model therefore needs its own listing to
  * supply the contextual rows a selection draws its members from.
  *
- * The four listings run concurrently and their count does not vary with the
+ * The four listings go as one tmux command list, which is what makes them one
+ * instant rather than four adjacent ones — tmux drains a client's queue whole,
+ * so no other client runs in between. Their count does not vary with the
  * topology, which is what lets relation traversal stay free of I/O. Listing
  * windows and panes with `-a` keeps that true across every session, and both
  * placements of a window linked into two sessions survive as two window
@@ -49,19 +65,18 @@ export async function acquireServerGraph(
   // outage rather than a reason to keep going round.
   afterRestart = false,
 ): Promise<NormalizedGraph> {
-  const query = {
-    capabilities: runtime.capabilities,
-    connection: runtime.connection,
-    ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
-    transport: runtime.transport,
-  };
-  const [capabilities, sessions, windows, panes, clients] = await Promise.all([
-    runtime.capabilities.bind(),
-    executeGuardedList({ ...query, listCommand: "list-sessions" }),
-    executeGuardedList({ ...query, listCommand: "list-windows", listExtraArgs: ["-a"] }),
-    executeGuardedList({ ...query, listCommand: "list-panes", listExtraArgs: ["-a"] }),
-    executeGuardedList({ ...query, listCommand: "list-clients" }),
-  ]);
+  const [capabilities, [sessions = [], windows = [], panes = [], clients = []]] = await Promise.all(
+    [
+      runtime.capabilities.bind(),
+      executeGuardedListGroup({
+        capabilities: runtime.capabilities,
+        connection: runtime.connection,
+        listings: ACQUISITION_LISTINGS,
+        ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
+        transport: runtime.transport,
+      }),
+    ],
+  );
 
   // A restart hands the next daemon the same socket and the same ids, so
   // noticing it here is what keeps a handle from the previous one from

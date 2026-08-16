@@ -18,6 +18,7 @@ import type { CommandRequest, CommandTransport } from "../../src/_internal/trans
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { Server } from "../../src/server.js";
 
 function runtimeFor(
   server: TestServer,
@@ -28,6 +29,10 @@ function runtimeFor(
     execute(request) {
       observe(request);
       return raw.execute(request);
+    },
+    executeGroup(requests) {
+      for (const request of requests) observe(request);
+      return raw.executeGroup(requests);
     },
   };
   return createRuntimeContext({
@@ -116,6 +121,94 @@ describe("server graph acquisition", () => {
         "list-windows",
       ]);
       expect(graph.windows.length).toBe(4);
+    });
+  }, 30_000);
+
+  test("reads every listing in one tmux invocation", async () => {
+    await withServer(async (server) => {
+      let singles = 0;
+      let groups = 0;
+      const raw = new NodeSpawnTransport({ terminationGraceMs: 100 });
+      const runtime = createRuntimeContext({
+        connection: new TmuxConnection({
+          environment: server.controllerEnvironment,
+          executable: server.tmuxExecutable,
+          socketPath: server.socketPath,
+        }),
+        connectionAlias: server.logicalSocketName as ConnectionAlias,
+        daemonEpoch: 0 as DaemonEpoch,
+        transport: {
+          execute(request) {
+            singles += 1;
+            return raw.execute(request);
+          },
+          executeGroup(requests) {
+            groups += 1;
+            expect(requests).toHaveLength(4);
+            return raw.executeGroup(requests);
+          },
+        },
+      });
+
+      await acquireServerGraph(runtime);
+
+      // One group, and the only single command is the version probe. Four
+      // separate listings would be four clients with four command queues, which
+      // is what let a capture hold rows from two different topologies.
+      expect({ groups, singles }).toEqual({ groups: 1, singles: 1 });
+    });
+  }, 30_000);
+
+  test("holds one topology while the server changes under it", async () => {
+    await withServer(async (server) => {
+      const runtime = runtimeFor(server);
+      const churnServer = new Server({
+        environment: server.controllerEnvironment,
+        socketPath: server.socketPath,
+        tmuxBin: server.tmuxExecutable,
+      });
+      // Churned over one control connection rather than a process per command:
+      // a spawned churner is too slow to reliably catch four concurrent
+      // listings mid-change, and a gate that only sometimes fires is not one.
+      await using churnConnection = await churnServer.connect();
+      let churning = true;
+      const churn = (async () => {
+        while (churning) {
+          // eslint-disable-next-line no-await-in-loop -- the churn is the point: each change must land before the next.
+          await churnConnection
+            .cmd("new-window", ["-d", "-t", `${server.sessionName}:`])
+            .catch(() => undefined);
+          // eslint-disable-next-line no-await-in-loop -- as above.
+          await churnConnection
+            .cmd("kill-window", ["-t", `${server.sessionName}:$`])
+            .catch(() => undefined);
+        }
+      })();
+
+      let torn = 0;
+      let captures = 0;
+      const until = Date.now() + 2_000;
+      while (Date.now() < until) {
+        captures += 1;
+        // eslint-disable-next-line no-await-in-loop -- each capture races the churn on its own.
+        const graph = await acquireServerGraph(runtime);
+        const windows = new Set(graph.windows.map(({ ref }) => ref.id));
+        const paned = new Set(
+          graph.records
+            .filter((record) => record.model === "pane")
+            .map((record) => record.scalars.window_id),
+        );
+        const agrees = windows.size === paned.size && [...paned].every((id) => windows.has(id));
+        if (!agrees) torn += 1;
+      }
+
+      churning = false;
+      await churn;
+
+      // Structural, not lucky: the listings share one command queue drain, so
+      // no change can land between them. Issued separately they tore about a
+      // fifth of every capture under this churn.
+      expect({ enough: captures > 20, torn }).toEqual({ enough: true, torn: 0 });
     });
   }, 30_000);
 

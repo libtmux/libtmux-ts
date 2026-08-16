@@ -61,11 +61,41 @@ function framingEvidence(bytes: Uint8Array, guards: FormatGuards, offset: number
   );
 }
 
+/**
+ * How a row's fields are told apart, and why it costs one byte.
+ *
+ * Every value is requested through `#{q:…}`, which is tmux's own shell quoting:
+ * `format_quote_shell` backslash-escapes ``|&;<>()$`\\"'*?[# =%`` — including the
+ * backslash — so a semicolon inside a pane title arrives as `\;` and a bare one
+ * can only be the separator. Guaranteed, where a random guard is merely
+ * improbable, and one byte where a guard is dozens: four listings have to fit in
+ * the 16KB tmux packs an argv into, and 569 separators is what decides whether
+ * they do.
+ */
+const FIELD_SEPARATOR = ";";
+
+/** The set `format_quote_shell` escapes, which is what a separator has to come from. */
+const QUOTED_BY_TMUX = "|&;<>()$`\\\"'*?[# =%";
+
+/**
+ * Record guards stay random, at 96 bits.
+ *
+ * Quoting does not help here: a value carrying the guard's own hex would emit it
+ * unescaped, because hex needs no escaping. Randomness is what makes that
+ * impossible in practice, and a collision splits or merges rows rather than
+ * mis-cutting one, so it is the delimiter worth paying for.
+ */
+const RECORD_GUARD_HEX = 24;
+
+function randomHex(length: number): string {
+  return randomUUID().replaceAll("-", "").slice(0, length);
+}
+
 function defaultGuardFactory(): FormatGuards {
   return Object.freeze({
-    field: `__LIBTMUX_FIELD_${randomUUID()}__`,
-    recordEnd: `__LIBTMUX_END_${randomUUID()}__`,
-    recordStart: `__LIBTMUX_START_${randomUUID()}__`,
+    field: FIELD_SEPARATOR,
+    recordEnd: `ltxE${randomHex(RECORD_GUARD_HEX)}`,
+    recordStart: `ltxS${randomHex(RECORD_GUARD_HEX)}`,
   });
 }
 
@@ -76,6 +106,12 @@ function snapshotGuards(guards: FormatGuards): FormatGuards {
     recordStart: guards.recordStart,
   });
   const values = [snapshot.field, snapshot.recordEnd, snapshot.recordStart];
+  // One byte, and one tmux escapes: the split reads bytes and decides a
+  // boundary by the backslashes before it, which only works for a separator
+  // `#{q:…}` is guaranteed to escape inside a value.
+  if (snapshot.field.length !== 1 || !QUOTED_BY_TMUX.includes(snapshot.field)) {
+    throw new FormatProtocolError("field separator must be one character tmux escapes");
+  }
   if (
     values.some((value) => typeof value !== "string" || !/^[\x20-\x7e]+$/u.test(value)) ||
     new Set(values).size !== values.length ||
@@ -120,18 +156,46 @@ function bytesAt(source: Uint8Array, needle: Uint8Array, index: number): boolean
   return indexOfBytes(source, needle, index) === index;
 }
 
-function splitBytes(source: Uint8Array, separator: Uint8Array): readonly Uint8Array[] {
+const BACKSLASH = 0x5c;
+
+/**
+ * Split a record's payload on separators tmux did not escape, and unescape.
+ *
+ * `#{q:…}` escapes the separator and the backslash alike, so a backslash run is
+ * always even before an escaped byte and a separator preceded by an odd run is
+ * part of a value. One pass does both jobs: deciding what is a boundary already
+ * requires tracking the escapes that would be stripped a second time otherwise.
+ *
+ * Byte-wise rather than on text: a value can hold bytes that are not UTF-8 at
+ * all, and decoding before splitting would replace them and move the offsets
+ * the split depends on.
+ */
+function splitEscapedBytes(source: Uint8Array, separator: number): readonly Uint8Array[] {
   const fields: Uint8Array[] = [];
-  let start = 0;
-  while (start <= source.length) {
-    const separatorIndex = indexOfBytes(source, separator, start);
-    if (separatorIndex < 0) {
-      fields.push(source.slice(start));
-      break;
+  let field: number[] = [];
+  let escaped = false;
+  for (const byte of source) {
+    if (escaped) {
+      field.push(byte);
+      escaped = false;
+      continue;
     }
-    fields.push(source.slice(start, separatorIndex));
-    start = separatorIndex + separator.length;
+    if (byte === BACKSLASH) {
+      escaped = true;
+      continue;
+    }
+    if (byte === separator) {
+      fields.push(Uint8Array.from(field));
+      field = [];
+      continue;
+    }
+    field.push(byte);
   }
+  // A trailing backslash cannot come from tmux — it escapes its own — so it is
+  // kept rather than dropped, and the row that carries it fails its field count
+  // or its schema rather than decoding to something plausible.
+  if (escaped) field.push(BACKSLASH);
+  fields.push(Uint8Array.from(field));
   return fields;
 }
 
@@ -139,7 +203,7 @@ function frameBytes(
   request: GuardedFormatRequest,
   bytes: Uint8Array,
 ): readonly (readonly Uint8Array[])[] {
-  const fieldGuard = bytesFor(request.guards.field);
+  const fieldGuard = bytesFor(request.guards.field)[0]!;
   const recordEndGuard = bytesFor(request.guards.recordEnd);
   const recordStartGuard = bytesFor(request.guards.recordStart);
   const frames: Array<readonly Uint8Array[]> = [];
@@ -164,7 +228,7 @@ function frameBytes(
       );
     }
 
-    const fields = splitBytes(bytes.slice(payloadStart, recordEnd), fieldGuard);
+    const fields = splitEscapedBytes(bytes.slice(payloadStart, recordEnd), fieldGuard);
     if (fields.length !== request.fields.length) {
       throw new FormatProtocolError("guarded frame has the wrong field count");
     }
@@ -284,7 +348,7 @@ export class GuardCodec {
     const request: GuardedFormatRequest = Object.freeze({
       capabilityFingerprint: this.#capabilities.fingerprint,
       fields,
-      format: `${guards.recordStart}${fields.map(({ token }) => `#{${token}}`).join(guards.field)}${guards.recordEnd}`,
+      format: `${guards.recordStart}${fields.map(({ token }) => `#{q:${token}}`).join(guards.field)}${guards.recordEnd}`,
       guards,
       listCommand: this.#listCommand,
       tmuxVersion: snapshotVersion(this.#capabilities.tmuxVersion),
@@ -334,6 +398,11 @@ interface GuardedExecutionOptions {
 export type GuardedListOptions = GuardedExecutionOptions & {
   readonly listCommand: ListCommand;
 };
+
+export interface GuardedListing {
+  readonly listCommand: ListCommand;
+  readonly listExtraArgs?: readonly string[];
+}
 
 export type GuardedFetchOptions = GuardedExecutionOptions &
   (
@@ -386,6 +455,68 @@ export async function executeGuardedList(
   const failure = commandFailure(options.listCommand, result);
   if (failure !== undefined) throw failure;
   return codec.decode(guardedRequest, result.stdout);
+}
+
+/**
+ * Run several listings as one tmux command list and decode each in turn.
+ *
+ * This is what makes a snapshot a snapshot. Issued separately, four listings are
+ * four tmux clients with four command queues, and a window created between two
+ * of them appears in one and not the other; issued as a list they are one queue,
+ * drained without the event loop running in between. Measured under window
+ * churn, separate listings tore about a fifth of their captures and this tore
+ * none of 3340.
+ *
+ * Every listing is prepared against one capability binding, so a version change
+ * mid-group is refused rather than decoded against the wrong field set.
+ */
+export async function executeGuardedListGroup(
+  options: GuardedExecutionOptions & { readonly listings: readonly GuardedListing[] },
+): Promise<readonly (readonly ParsedFormatRow[])[]> {
+  const capabilities = await options.capabilities.bind();
+  const prepared = options.listings.map((listing) => {
+    const codec = new GuardCodec({ capabilities, listCommand: listing.listCommand });
+    const request = codec.prepare();
+    return {
+      codec,
+      command: prepareCommandRequest(
+        options.connection,
+        [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`],
+        options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+      ),
+      listCommand: listing.listCommand,
+      request,
+    };
+  });
+
+  const current = await options.capabilities.bind();
+  if (prepared.some(({ request }) => current.fingerprint !== request.capabilityFingerprint)) {
+    throw new FormatProtocolError("capability fingerprint changed before execution");
+  }
+
+  let results: readonly RawCommandResult[];
+  try {
+    results = await options.transport.executeGroup(prepared.map(({ command }) => command));
+  } catch (error) {
+    if (!(error instanceof TmuxTransportError)) throw error;
+    throw transportFailure(prepared[0]?.listCommand ?? "list-sessions", error);
+  }
+
+  // A short result list means tmux stopped the group at a failure, and the last
+  // entry is that failure — so reporting it needs no separate signal.
+  for (const [index, result] of results.entries()) {
+    const failure = commandFailure(prepared[index]!.listCommand, result);
+    if (failure !== undefined) throw failure;
+  }
+  if (results.length !== prepared.length) {
+    throw new FormatProtocolError(
+      `tmux answered ${String(results.length)} of ${String(prepared.length)} listings`,
+    );
+  }
+
+  return Object.freeze(
+    prepared.map(({ codec, request }, index) => codec.decode(request, results[index]!.stdout)),
+  );
 }
 
 export async function executeGuardedFetch(options: GuardedFetchOptions): Promise<ParsedFormatRow> {

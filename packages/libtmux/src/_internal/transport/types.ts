@@ -51,6 +51,21 @@ export interface RawCommandResult {
 
 export interface CommandTransport {
   execute(request: CommandRequest): Promise<RawCommandResult>;
+  /**
+   * Run these commands as one tmux command list.
+   *
+   * tmux drains one client's command queue without returning to its event loop,
+   * so a list submitted together is serialized against every other client and
+   * the results describe one instant. That is what makes a multi-listing
+   * acquisition a snapshot rather than four readings taken near each other.
+   *
+   * A failing command removes the rest of the list, so this resolves with the
+   * results of the commands tmux actually ran: a shorter array than `requests`
+   * means an earlier one failed, and the last entry is that failure. Only the
+   * first request's server-selecting flags are used; the rest contribute their
+   * subcommands.
+   */
+  executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]>;
 }
 
 export interface BatchOutcome {

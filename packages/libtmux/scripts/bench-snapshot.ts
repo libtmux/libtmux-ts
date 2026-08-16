@@ -42,6 +42,13 @@ class MeasuringTransport implements CommandTransport {
     this.bytes += result.stdout.byteLength;
     return result;
   }
+
+  async executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
+    this.calls += 1;
+    const results = await this.#inner.executeGroup(requests);
+    for (const result of results) this.bytes += result.stdout.byteLength;
+    return results;
+  }
 }
 
 interface Shape {
