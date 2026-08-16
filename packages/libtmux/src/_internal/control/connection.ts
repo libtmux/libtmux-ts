@@ -6,9 +6,9 @@ import type { TmuxConnection } from "../runtime/connection.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
+import { LineFramer } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
 
-const NEWLINE = 0x0a;
 const encoder = new TextEncoder();
 
 /**
@@ -21,8 +21,6 @@ const encoder = new TextEncoder();
  */
 const DEFAULT_MAX_PENDING_COMMANDS = 1024;
 const DEFAULT_MAX_COMMAND_BYTES = 64 * 1024 * 1024;
-/** A control line tmux has not terminated. Its longest legitimate form is one command's output line. */
-const MAX_CARRY_BYTES = 16 * 1024 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
 /** How long a closing process is given to leave before it is killed outright. */
@@ -124,7 +122,7 @@ export class ControlConnection implements CommandTransport {
   readonly #pending: PendingCommand[] = [];
   readonly #sinks = new Set<EventSink>();
   readonly #bufferSize: number;
-  #carry = new Uint8Array(0);
+  readonly #framer = new LineFramer();
   /**
    * The tail of a character split across two `%output` notifications, per pane.
    *
@@ -360,29 +358,19 @@ export class ControlConnection implements CommandTransport {
   }
 
   #consume(chunk: Buffer): void {
-    const merged = new Uint8Array(this.#carry.length + chunk.length);
-    merged.set(this.#carry);
-    merged.set(chunk, this.#carry.length);
-    let start = 0;
-    for (;;) {
-      const newline = merged.indexOf(NEWLINE, start);
-      if (newline === -1) break;
-      this.#route(merged.subarray(start, newline));
-      start = newline + 1;
-    }
-    this.#carry = merged.subarray(start);
-    if (this.#carry.length > MAX_CARRY_BYTES) {
-      // tmux's protocol is line-oriented, so a line this long is not one: the
-      // stream is no longer something this can parse, and holding more of it
-      // only postpones the same conclusion.
-      this.#carry = new Uint8Array(0);
+    const lines = this.#framer.push(chunk);
+    if (lines === undefined) {
+      // tmux's protocol is line-oriented, so a line past the framer's bound is
+      // not one: the stream is no longer something this can parse.
       this.#fail(
         new TmuxTransportError("tmux control mode sent an unterminated line", {
           delivery: "indeterminate",
           kind: "protocol",
         }),
       );
+      return;
     }
+    for (const line of lines) this.#route(line);
   }
 
   /**
@@ -564,7 +552,7 @@ export class ControlConnection implements CommandTransport {
     setTimeout(
       () => {
         if (this.#closed) return;
-        this.#carry = new Uint8Array(0);
+        this.#framer.reset();
         this.#partial.clear();
         this.#block = undefined;
         this.#inBlock = false;
