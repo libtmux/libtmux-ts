@@ -244,22 +244,23 @@ attributed to whichever tmux happened to be current.
 
 Two benchmarks answer questions the gates do not, and are run by hand rather
 than wired to a script — `package.json` lists gates, and a number that varies
-with the machine is not one:
+with the machine is not one.
+
+Grid the transports against batching and concurrency:
 
 ```console
 $ bun packages/libtmux/scripts/bench-modes.ts
 ```
 
+Measure what a snapshot costs as the server grows, which is where any argument
+for a reduced model or a field projection has to start. It reports the command
+count, which the design holds flat, against the bytes and wall clock, which grow
+with the server — what a projection would address, and what it would cost to
+give up:
+
 ```console
 $ bun packages/libtmux/scripts/bench-snapshot.ts
 ```
-
-The first grids transport against batching and concurrency. The second is what
-a snapshot costs as the server grows, which is the measurement any argument for
-a reduced model or a field projection has to start from: it reports the command
-count, which the design holds flat, against the bytes and wall clock, which grow
-with the server. Those are what a projection would address, and what it would
-cost to give up.
 
 tmux argument grammar is worth checking rather than assuming: an adjustment like
 `resize-pane -U 2` is a _positional_ argument, so it has to follow every flag.
@@ -284,6 +285,7 @@ been red is an assumption.
 ## Git Commit Standards
 
 Format commit messages as:
+
 ```
 Scope(type[detail]): concise description
 
@@ -299,6 +301,7 @@ body lines at ≤72 chars. Separate the `why:` and `what:` blocks with a
 blank line.
 
 Common commit types:
+
 - **feat**: New features or enhancements
 - **fix**: Bug fixes
 - **refactor**: Code restructuring without functional change
@@ -312,6 +315,7 @@ Common commit types:
 - **ai(rules[AGENTS])**: AI rule updates
 
 Example:
+
 ```
 Pane(feat[sendKeys]): Add support for a literal flag
 
@@ -332,6 +336,7 @@ the detailed why/what in the commit body. Don't use the
 `Scope(type[detail]):` format for releases — don't bury the lede.
 
 For multi-line commits, use heredoc to preserve formatting:
+
 ```bash
 git commit -m "$(cat <<'EOF'
 Scope(feat[detail]): Concise description
