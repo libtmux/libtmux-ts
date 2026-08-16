@@ -1,0 +1,106 @@
+/**
+ * Turning a pane's byte stream into text worth reading.
+ *
+ * A pane writes for a terminal, not for a reader: the bytes carry cursor
+ * movement, colour, and repaint alongside the characters. A shell that colours
+ * its input puts an escape between every pair of letters, so a pattern matched
+ * against the raw stream matches only when nothing coloured it.
+ *
+ * This is not a terminal. It removes the sequences that sit between characters
+ * and turns carriage returns into line breaks, so a line rewritten in place
+ * reads as a later line rather than running into the one it replaced. What it
+ * cannot do is resolve cursor addressing: a program that draws by moving the
+ * cursor comes out here in the order it was written, not the order it appears.
+ * `capture_pane` reads tmux's rendered grid and is the answer when that matters.
+ *
+ * Ported from the same filter in libtmux-rs, which this shares a wire format
+ * with. Stateful on purpose — tmux splits its notifications wherever it likes,
+ * so an escape sequence can straddle two of them.
+ */
+
+const ESCAPE = 0x1b;
+const BELL = 0x07;
+const BACKSPACE = 0x08;
+
+type State = "control-sequence" | "escape" | "string" | "string-escape" | "text";
+
+/** Strips escape sequences from a pane's output, across chunk boundaries. */
+export class TextFilter {
+  #state: State = "text";
+  /** Whether the last byte was a carriage return, which decides the next break. */
+  #pendingReturn = false;
+
+  /** The readable text of one chunk. */
+  push(chunk: string): string {
+    let out = "";
+    for (const character of chunk) {
+      out = this.#pushCharacter(character, out);
+    }
+    return out;
+  }
+
+  #pushCharacter(character: string, out: string): string {
+    const code = character.codePointAt(0) ?? 0;
+    switch (this.#state) {
+      case "text": {
+        return this.#pushTextCharacter(character, code, out);
+      }
+      case "escape": {
+        this.#state =
+          character === "["
+            ? "control-sequence"
+            : // OSC, APC, PM and DCS all run to a string terminator; everything
+              // else is a two-byte sequence that is already whole.
+              character === "]" || character === "_" || character === "^" || character === "P"
+              ? "string"
+              : "text";
+        return out;
+      }
+      case "control-sequence": {
+        if (code >= 0x40 && code <= 0x7e) this.#state = "text";
+        return out;
+      }
+      case "string": {
+        if (code === BELL) this.#state = "text";
+        else if (code === ESCAPE) this.#state = "string-escape";
+        return out;
+      }
+      case "string-escape": {
+        // `ESC \` ends the string; any other ESC-something goes back to waiting
+        // for a terminator rather than ending it.
+        this.#state = character === "\\" ? "text" : "string";
+        return out;
+      }
+    }
+  }
+
+  #pushTextCharacter(character: string, code: number, out: string): string {
+    if (code === ESCAPE) {
+      this.#state = "escape";
+      return out;
+    }
+    if (character === "\r") {
+      // Held: `\r\n` is one line break, and a lone `\r` is a line rewritten in
+      // place, which reads better as another line than as text over the old.
+      this.#pendingReturn = true;
+      return out;
+    }
+    if (character === "\n") {
+      this.#pendingReturn = false;
+      return `${out}\n`;
+    }
+    if (code === BACKSPACE) {
+      // A backspace is how a shell erases; dropping the erased character keeps
+      // a re-edited command line from reading as both versions at once.
+      const flushed = this.#flushReturn(out);
+      return flushed.endsWith("\n") || flushed === "" ? flushed : flushed.slice(0, -1);
+    }
+    return this.#flushReturn(out) + character;
+  }
+
+  #flushReturn(out: string): string {
+    if (!this.#pendingReturn) return out;
+    this.#pendingReturn = false;
+    return `${out}\n`;
+  }
+}

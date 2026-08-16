@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, test } from "bun:test";
 
 import { createTmuxMcpServer } from "../src/server.js";
@@ -56,10 +58,15 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
-/** Text content from a tool result, which is what every tool here returns. */
+/** Text content from a tool result. */
 function toolText(result: unknown): string {
   const { content } = result as { content: readonly { text?: string }[] };
   return content.map((entry) => entry.text ?? "").join("\n");
+}
+
+/** The typed half of a tool result, which is what a program reads. */
+function structured<T>(result: unknown): T {
+  return (result as { structuredContent: T }).structuredContent;
 }
 
 /**
@@ -73,6 +80,7 @@ function toolText(result: unknown): string {
 async function withClient(
   fixture: TestServer,
   body: (client: Client) => Promise<void>,
+  extraEnvironment: Readonly<Record<string, string>> = {},
 ): Promise<void> {
   const client = new Client({ name: "libtmux-test", version: "0.0.0" });
   const transport = new StdioClientTransport({
@@ -83,6 +91,10 @@ async function withClient(
       ...fixture.controllerEnvironment,
       LIBTMUX_SOCKET_PATH: fixture.socketPath,
       LIBTMUX_TMUX_BIN: fixture.tmuxExecutable,
+      // A probe must not reach the terminal the suite is being run from.
+      TMUX: "",
+      TMUX_PANE: "",
+      ...extraEnvironment,
     },
   });
   await runWithCleanup(
@@ -94,154 +106,589 @@ async function withClient(
   );
 }
 
-describe("MCP consumer", () => {
-  test("serves its tools over stdio to a real client", async () => {
+async function firstPaneId(client: Client): Promise<string> {
+  const listed = await client.callTool({ arguments: {}, name: "list_panes" });
+  const { panes } = structured<{ panes: { id: string }[] }>(listed);
+  return panes[0]?.id ?? "";
+}
+
+/**
+ * A pane sitting at a shell prompt.
+ *
+ * The fixture's own pane runs `exec cat` so it stays quiet and deterministic,
+ * which is the opposite of what these tests need: a shell that echoes, runs
+ * what it is sent, and has an exit status. `sh` rather than the ambient login
+ * shell, so the suite does not depend on whoever is running it.
+ */
+let shellSessions = 0;
+async function shellPaneId(client: Client): Promise<string> {
+  shellSessions += 1;
+  const built = structured<{ panes: { id: string }[] }>(
+    await client.callTool({
+      arguments: {
+        session: `shell-${String(shellSessions)}`,
+        windows: [{ name: "shell", shellCommand: "sh" }],
+      },
+      name: "build_workspace",
+    }),
+  );
+  return built.panes[0]?.id ?? "";
+}
+
+describe("handshake", () => {
+  test("tells a client how to use it before it calls anything", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
-        const listed = await client.listTools();
-        expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
-          "capture_pane",
-          "list_panes",
-          "list_sessions",
-          "new_session",
-          "run_and_wait",
-          "send_keys",
-        ]);
-
-        const sessions = JSON.parse(
-          toolText(await client.callTool({ arguments: {}, name: "list_sessions" })),
-        ) as { name: string; windows: number }[];
-        expect(sessions.map((session) => session.name)).toContain("mcp");
-
-        // An optional argument has to survive the crossing as an argument, not
-        // as the string "undefined" or a dropped key.
-        const panes = JSON.parse(
-          toolText(await client.callTool({ arguments: { session: "mcp" }, name: "list_panes" })),
-        ) as { id: string }[];
-        expect(panes.length).toBeGreaterThan(0);
-        const paneId = panes[0]?.id ?? "";
-        expect(paneId).toStartWith("%");
-
-        await client.callTool({
-          arguments: { keys: "printf 'over-the-wire\\n'", paneId },
-          name: "send_keys",
-        });
-        // Bounded for liveness: a shell that never echoes still fails, just
-        // later, while one that is merely slow to start does not.
-        const deadline = Date.now() + 30_000;
-        let captured = "";
-        while (!captured.includes("over-the-wire") && Date.now() < deadline) {
-          // eslint-disable-next-line no-await-in-loop -- each capture follows the last.
-          const result = await client.callTool({ arguments: { paneId }, name: "capture_pane" });
-          captured = toolText(result);
-          // eslint-disable-next-line no-await-in-loop -- the wait follows its capture.
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-        expect(captured).toContain("over-the-wire");
-
-        const created = await client.callTool({
-          arguments: { name: "born-over-the-wire" },
-          name: "new_session",
-        });
-        expect(toolText(created)).toContain("born-over-the-wire");
-
-        // A tool that fails reports it in the result rather than as a protocol
-        // error, which is the difference between the model seeing the reason and
-        // the client seeing a transport fault.
-        const missing = await client.callTool({
-          arguments: { paneId: "%99999" },
-          name: "capture_pane",
-        });
-        expect((missing as { isError?: boolean }).isError).toBe(true);
-        expect(toolText(missing)).toContain("%99999");
+        const instructions = client.getInstructions() ?? "";
+        // The three things a wrong first choice costs a turn on.
+        expect(instructions).toContain("WAIT, DON'T POLL");
+        expect(instructions).toContain("ANTI-TRIGGERS");
+        expect(instructions).toContain("METADATA vs CONTENT");
       });
     });
   }, 60_000);
 
-  test("registers the tmux tool surface", async () => {
+  test("annotates every tool so a host can decide what to auto-approve", async () => {
     await withServer(async (fixture) => {
-      const mcp = createTmuxMcpServer(serverFor(fixture));
-
-      expect(mcp).toBeDefined();
-      expect(typeof mcp.connect).toBe("function");
+      await withClient(fixture, async (client) => {
+        const { tools } = await client.listTools();
+        expect(tools.length).toBeGreaterThan(30);
+        for (const tool of tools) {
+          expect(tool.annotations, `${tool.name} has no annotations`).toBeDefined();
+          expect(tool.outputSchema, `${tool.name} has no output schema`).toBeDefined();
+          expect(tool.description ?? "", `${tool.name} has no description`).not.toBe("");
+        }
+        const readers = tools.filter((tool) => tool.annotations?.readOnlyHint === true);
+        expect(readers.map((tool) => tool.name)).toContain("list_panes");
+        // send_keys runs whatever the shell does, which is outside tmux.
+        expect(tools.find((tool) => tool.name === "send_keys")?.annotations?.openWorldHint).toBe(
+          true,
+        );
+      });
     });
-  }, 40_000);
+  }, 60_000);
+});
 
-  test("drives real tmux through the library it consumes", async () => {
+describe("running commands", () => {
+  test("reports what a command printed, not the pane's echo of it", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        // The trap: the text waited for is also in the command being sent.
+        const answer = await client.callTool({
+          arguments: { command: "echo hello", paneId },
+          name: "run_command",
+        });
+        const result = structured<{ exitStatus: number; outcome: string; output: string }>(answer);
+        expect(result.outcome).toBe("completed");
+        expect(result.exitStatus).toBe(0);
+        expect(result.output).toBe("hello");
+      });
+    });
+  }, 60_000);
+
+  test("reports a failing command's status rather than guessing from text", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        const answer = await client.callTool({
+          arguments: { command: "exit 7", paneId },
+          name: "run_command",
+        });
+        expect(structured<{ exitStatus: number }>(answer).exitStatus).toBe(7);
+      });
+    });
+  }, 60_000);
+
+  test("says a command is still running instead of calling it failed", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        const answer = await client.callTool({
+          arguments: { command: "sleep 30", paneId, timeoutMs: 1_500 },
+          name: "run_command",
+        });
+        const result = structured<{ outcome: string; stillRunning: boolean }>(answer);
+        expect(result.outcome).toBe("timed_out");
+        expect(result.stillRunning).toBe(true);
+      });
+    });
+  }, 60_000);
+
+  test("refuses a shell whose syntax the framing is not written in", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const built = structured<{ panes: { id: string }[] }>(
+          await client.callTool({
+            arguments: { session: "fishy", windows: [{ name: "f", shellCommand: "fish" }] },
+            name: "build_workspace",
+          }),
+        );
+        const paneId = built.panes[0]?.id ?? "";
+        const refused = await client.callTool({
+          arguments: { command: "echo hi", paneId },
+          name: "run_command",
+        });
+        // fish rejects `m=x` outright, so framing a command for it produces a
+        // syntax error and a wait that runs to its deadline against one.
+        expect((refused as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(refused)).toContain("fish");
+        expect(toolText(refused)).toContain("send_keys");
+      });
+    });
+  }, 60_000);
+
+  test("refuses a pane that is not at a shell, and says which command holds it", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { command: "sleep 30", paneId, timeoutMs: 1_000 },
+          name: "run_command",
+        });
+        const refused = await client.callTool({
+          arguments: { command: "echo late", paneId },
+          name: "run_command",
+        });
+        expect((refused as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(refused)).toContain("sleep");
+        expect(toolText(refused)).toContain("force");
+      });
+    });
+  }, 60_000);
+});
+
+describe("waiting", () => {
+  test("keeps what arrived during a wait that did not match", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        // Start the stream, so what follows is inside the wait's own window.
+        await client.callTool({ arguments: { paneId }, name: "observe" });
+        await client.callTool({
+          arguments: { keys: "(sleep 1; printf 'something-else\\n') &", paneId },
+          name: "send_keys",
+        });
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["never-printed-by-this"], timeoutMs: 4_000 },
+          name: "wait_for_text",
+        });
+        const result = structured<{ cursor: number; outcome: string; output: string }>(answer);
+        // The whole point: a timeout is evidence, not an empty hand.
+        expect(result.outcome).toBe("timed_out");
+        expect(result.output).toContain("something-else");
+        expect(result.cursor).toBeGreaterThan(0);
+        expect((answer as { isError?: boolean }).isError ?? false).toBe(false);
+      });
+    });
+  }, 60_000);
+
+  test("shows the pane's screen when it printed before the wait began", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { command: "echo printed-earlier", paneId },
+          name: "run_command",
+        });
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["never-printed-by-this"], timeoutMs: 1_500 },
+          name: "wait_for_text",
+        });
+        const result = structured<{ outcome: string; screen: string }>(answer);
+        // A control client is told nothing from before it attached, so the
+        // stream cannot hold this. Without the screen the agent is blind.
+        expect(result.outcome).toBe("timed_out");
+        expect(result.screen).toContain("printed-earlier");
+      });
+    });
+  }, 60_000);
+
+  test("clamps an over-large timeout and reports the one it used", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await firstPaneId(client);
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["nope"], timeoutMs: 999_999_999 },
+          name: "wait_for_text",
+        });
+        expect(structured<{ effectiveTimeoutMs: number }>(answer).effectiveTimeoutMs).toBe(30_000);
+      });
+    });
+  }, 90_000);
+
+  test("matches output another process wrote", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { keys: "(sleep 1; printf 'from-elsewhere\\n') &", paneId },
+          name: "send_keys",
+        });
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["from-elsewhere"], timeoutMs: 20_000 },
+          name: "wait_for_text",
+        });
+        const result = structured<{ matched: string; outcome: string }>(answer);
+        expect(result.outcome).toBe("matched");
+        expect(result.matched).toBe("from-elsewhere");
+      });
+    });
+  }, 60_000);
+
+  test("serves the task form to a client that does not speak tasks", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { keys: "(sleep 1; printf 'task-marker\\n') &", paneId },
+          name: "send_keys",
+        });
+        // taskSupport is optional, so the SDK polls on this client's behalf and
+        // it sees exactly the blocking tool. That is what makes shipping tasks
+        // safe rather than a compatibility break.
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["task-marker"], timeoutMs: 20_000 },
+          name: "wait_for_text_task",
+        });
+        expect(structured<{ outcome: string }>(answer).outcome).toBe("matched");
+      });
+    });
+  }, 60_000);
+});
+
+test("leaves a pane usable straight after a caller cancels a wait on it", async () => {
+  await withServer(async (fixture) => {
+    await withClient(fixture, async (client) => {
+      const paneId = await shellPaneId(client);
+      const controller = new AbortController();
+
+      const pending = client.callTool(
+        {
+          arguments: { paneId, patterns: ["never-arrives"], timeoutMs: 30_000 },
+          name: "wait_for_text",
+        },
+        undefined,
+        { signal: controller.signal },
+      );
+      setTimeout(() => {
+        controller.abort();
+      }, 500);
+
+      // The rejection says nothing about the server, which is why what is
+      // asserted is that the pane is immediately usable afterwards rather
+      // than how quickly the caller was let go.
+      await pending.catch(() => undefined);
+
+      const after = await client.callTool({
+        arguments: { command: "echo still-usable", paneId },
+        name: "run_command",
+      });
+      expect(structured<{ output: string }>(after).output).toBe("still-usable");
+    });
+  });
+}, 60_000);
+
+describe("observing", () => {
+  test("charges for the screen once, then only for what is new", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+
+        const first = structured<{ cursor: number; seeded: boolean; streaming: boolean }>(
+          await client.callTool({ arguments: { paneId }, name: "observe" }),
+        );
+        expect(first.seeded).toBe(true);
+        expect(first.streaming).toBe(true);
+
+        await client.callTool({
+          arguments: { keys: "printf 'delta-one\\n'", paneId },
+          name: "send_keys",
+        });
+        const second = structured<{ cursor: number; seeded: boolean; text: string }>(
+          await client.callTool({
+            arguments: { cursor: first.cursor, paneId, waitMs: 10_000 },
+            name: "observe",
+          }),
+        );
+        expect(second.seeded).toBe(false);
+        expect(second.cursor).toBeGreaterThan(first.cursor);
+
+        // Nothing happened since, so the delta is empty rather than the screen.
+        const third = structured<{ text: string }>(
+          await client.callTool({
+            arguments: { cursor: second.cursor + 1_000_000, paneId, waitMs: 200 },
+            name: "observe",
+          }),
+        );
+        expect(third.text).toBe("");
+      });
+    });
+  }, 60_000);
+
+  test("finds which pane is showing something", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { command: "echo needle-in-pane", paneId },
+          name: "run_command",
+        });
+        const found = structured<{ matches: { paneId: string; text: string }[] }>(
+          await client.callTool({ arguments: { pattern: "needle-in-pane" }, name: "search_panes" }),
+        );
+        expect(found.matches.map((match) => match.paneId)).toContain(paneId);
+      });
+    });
+  }, 60_000);
+});
+
+describe("staying out of the way", () => {
+  test("names the panes that exist when asked for one that does not", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const missing = await client.callTool({
+          arguments: { paneId: "%99999" },
+          name: "get_pane",
+        });
+        expect((missing as { isError?: boolean }).isError).toBe(true);
+        // A bare refusal costs a turn to find out what to ask for instead.
+        expect(toolText(missing)).toContain("%99999");
+        expect(toolText(missing)).toContain("Panes on this server");
+      });
+    });
+  }, 60_000);
+
+  test("refuses to type into the pane it runs in", async () => {
     await withServer(async (fixture) => {
       const tmux = serverFor(fixture);
-      createTmuxMcpServer(tmux);
+      const paneId = (await tmux.snapshot()).panes.one().id;
+      await withClient(
+        fixture,
+        async (client) => {
+          const refused = await client.callTool({
+            arguments: { keys: "rm -rf /", paneId },
+            name: "send_keys",
+          });
+          expect((refused as { isError?: boolean }).isError).toBe(true);
+          expect(toolText(refused)).toContain("own terminal");
 
-      // The same calls the tools make, exercised directly against real tmux.
-      const snapshot = await tmux.snapshot();
-      const pane = snapshot.panes.one();
-      await pane.sendKeys("mcp-marker", { literal: true });
+          // whoami is how an agent learns this without a failed call.
+          const me = structured<{ callerPaneId: string; callerPaneIsOnThisServer: boolean }>(
+            await client.callTool({ arguments: {}, name: "whoami" }),
+          );
+          expect(me.callerPaneId).toBe(paneId);
+          expect(me.callerPaneIsOnThisServer).toBe(true);
 
-      let captured: readonly string[] = [];
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        // eslint-disable-next-line no-await-in-loop -- Polling is sequential.
-        captured = await pane.capture();
-        if (captured.some((line) => line.includes("mcp-marker"))) break;
-        // eslint-disable-next-line no-await-in-loop -- Each wait follows its capture.
-        await new Promise((resolve) => setTimeout(resolve, 20));
+          // And force is how it says it meant that pane after all.
+          const forced = await client.callTool({
+            arguments: { enter: false, force: true, keys: "harmless", paneId },
+            name: "send_keys",
+          });
+          expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
+        },
+        {
+          TMUX: `${fixture.socketPath},${String((await tmux.daemonIdentity())?.pid ?? "")},0`,
+          TMUX_PANE: paneId,
+        },
+      );
+    });
+  }, 60_000);
+
+  test("offers only reading tools under the readonly tier", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const names = (await client.listTools()).tools.map((tool) => tool.name);
+          expect(names).toContain("list_panes");
+          // Hidden rather than refused: a tool an agent cannot see is one it
+          // cannot spend a turn being denied.
+          expect(names).not.toContain("send_keys");
+          expect(names).not.toContain("kill_pane");
+          expect(client.getInstructions() ?? "").toContain("Safety: readonly");
+        },
+        { LIBTMUX_SAFETY: "readonly" },
+      );
+    });
+  }, 60_000);
+
+  test("offers killing only under the destructive tier", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("kill_pane");
+        },
+        { LIBTMUX_SAFETY: "destructive" },
+      );
+    });
+  }, 60_000);
+});
+
+describe("browsing", () => {
+  test("lists resources and templates a client can show a person", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const templates = (await client.listResourceTemplates()).resourceTemplates.map(
+          (entry) => entry.uriTemplate,
+        );
+        expect(templates).toContain("tmux://panes/{paneId}");
+        expect(templates).toContain("tmux://panes/{paneId}/content");
+
+        const listed = (await client.listResources()).resources.map((entry) => entry.uri);
+        expect(listed).toContain("tmux://sessions");
+
+        const read = await client.readResource({ uri: "tmux://sessions" });
+        const first = read.contents[0];
+        expect(first?.mimeType).toBe("application/json");
+        expect(JSON.parse(String((first as { text: string }).text))).toBeArray();
+      });
+    });
+  }, 60_000);
+
+  test("completes a pane id, which is the only place MCP allows it", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await firstPaneId(client);
+        const completion = await client.complete({
+          argument: { name: "paneId", value: "%" },
+          ref: { type: "ref/resource", uri: "tmux://panes/{paneId}" },
+        });
+        expect(completion.completion.values).toContain(paneId);
+      });
+    });
+  }, 60_000);
+
+  test("pushes an update when a subscribed pane prints", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await firstPaneId(client);
+        const uri = `tmux://panes/${encodeURIComponent(paneId)}/content`;
+
+        const updates: string[] = [];
+        client.setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
+          updates.push(notification.params.uri);
+        });
+        await client.subscribeResource({ uri });
+        await client.callTool({
+          arguments: { keys: "printf 'subscribed\\n'", paneId },
+          name: "send_keys",
+        });
+
+        const deadline = Date.now() + 20_000;
+        while (updates.length === 0 && Date.now() < deadline) {
+          // eslint-disable-next-line no-await-in-loop -- each check follows the last.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(updates).toContain(uri);
+
+        await client.unsubscribeResource({ uri });
+      });
+    });
+  }, 60_000);
+
+  test("offers prompts that name the cheap tool for each job", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const names = (await client.listPrompts()).prompts.map((prompt) => prompt.name);
+        expect(names).toContain("run-and-check");
+        expect(names).toContain("watch-until");
+
+        const rendered = await client.getPrompt({
+          arguments: { expect: "DONE", paneId: "%0" },
+          name: "watch-until",
+        });
+        const text = rendered.messages
+          .map((message) => (message.content.type === "text" ? message.content.text : ""))
+          .join("\n");
+        expect(text).toContain("wait_for_text");
+        expect(text).toContain("Never loop capture_pane");
+      });
+    });
+  }, 60_000);
+});
+
+describe("building", () => {
+  test("creates a session and all its windows in one call", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const built = structured<{
+          panes: { id: string; windowName: string }[];
+          sessionId: string;
+        }>(
+          await client.callTool({
+            arguments: {
+              session: "built",
+              windows: [{ name: "edit" }, { name: "test" }, { name: "logs" }],
+            },
+            name: "build_workspace",
+          }),
+        );
+        // Every pane id comes back, so nothing needs a list_panes afterwards.
+        expect(built.panes.map((pane) => pane.windowName)).toEqual(["edit", "test", "logs"]);
+        for (const pane of built.panes) expect(pane.id).toStartWith("%");
+      });
+    });
+  }, 60_000);
+
+  test("refuses a session name already in use rather than making a second one", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const refused = await client.callTool({
+          arguments: { session: fixture.sessionName, windows: [{ name: "one" }] },
+          name: "build_workspace",
+        });
+        expect((refused as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(refused)).toContain("already exists");
+      });
+    });
+  }, 60_000);
+});
+
+describe("cleaning up after itself", () => {
+  test("drops its control connections when an embedded client goes away", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      const controlClients = async (): Promise<number> =>
+        (await tmux.clients()).toArray().filter((entry) => entry.controlMode === true).length;
+
+      // In-process, not over stdio: a stdio server dies with its transport and
+      // takes its `tmux -C attach` child along, so that case cannot show a leak
+      // whether or not one exists. An embedded host outlives its client.
+      const before = await controlClients();
+      const mcp = createTmuxMcpServer(tmux, { environment: {} });
+      const client = new Client({ name: "embedded", version: "0.0.0" });
+      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+      await Promise.all([mcp.connect(serverSide), client.connect(clientSide)]);
+
+      const paneId = (await tmux.snapshot()).panes.one().id;
+      // Starts a watch, which is what opens the connection.
+      await client.callTool({ arguments: { paneId }, name: "observe" });
+      expect(await controlClients()).toBeGreaterThan(before);
+
+      await client.close();
+
+      // Bounded for liveness: closing is asynchronous, so a connection that is
+      // going away has not necessarily gone yet.
+      const deadline = Date.now() + 10_000;
+      let remaining = await controlClients();
+      while (remaining > before && Date.now() < deadline) {
+        // eslint-disable-next-line no-await-in-loop -- each check follows the last.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        // eslint-disable-next-line no-await-in-loop -- and each read follows its wait.
+        remaining = await controlClients();
       }
-
-      expect(captured.some((line) => line.includes("mcp-marker"))).toBe(true);
-
-      const created = await tmux.newSession({ name: "from-mcp" });
-      expect(created.name).toBe("from-mcp");
-      expect((await tmux.snapshot()).sessions.count({ name: "from-mcp" })).toBe(1);
+      expect(remaining).toBe(before);
     });
-  }, 40_000);
+  }, 60_000);
+});
 
-  test("runs and waits on a pane outside the session tmux would have attached", async () => {
+describe("the library underneath", () => {
+  test("registers against a real server without a transport", async () => {
     await withServer(async (fixture) => {
-      const tmux = serverFor(fixture);
-      // A second session, created last, is the one an untargeted control client
-      // attaches to — and tmux tells a control client about its own session's
-      // panes only. The pane asked about here is deliberately in the *other*
-      // session, which is the case an untargeted watch can never answer.
-      await tmux.newSession({ name: "most-recent" });
-      const pane = (await tmux.snapshot()).panes.one({
-        session: { is: { name: fixture.sessionName } },
-      });
-
-      await withClient(fixture, async (client) => {
-        const answer = await client.callTool({
-          arguments: {
-            contains: "cross-session-marker",
-            keys: "printf 'cross-session-marker\\n'",
-            paneId: pane.id,
-            timeoutMs: 15_000,
-          },
-          name: "run_and_wait",
-        });
-
-        expect(answer.isError ?? false).toBe(false);
-        expect(toolText(answer)).toContain("cross-session-marker");
-      });
-    });
-  }, 40_000);
-
-  test("reports a pane that never prints what was asked for", async () => {
-    await withServer(async (fixture) => {
-      const tmux = serverFor(fixture);
-      const pane = (await tmux.snapshot()).panes.one();
-
-      await withClient(fixture, async (client) => {
-        const answer = await client.callTool({
-          arguments: {
-            contains: "never-printed-by-this",
-            keys: "printf 'something-else\\n'",
-            paneId: pane.id,
-            timeoutMs: 2_000,
-          },
-          name: "run_and_wait",
-        });
-
-        expect(answer.isError).toBe(true);
-        expect(toolText(answer)).toContain("did not print");
-      });
+      const mcp = createTmuxMcpServer(serverFor(fixture), { environment: {} });
+      expect(typeof mcp.connect).toBe("function");
     });
   }, 40_000);
 });

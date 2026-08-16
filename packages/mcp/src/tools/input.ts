@@ -1,0 +1,236 @@
+/**
+ * Writing to panes.
+ *
+ * Two shapes, and choosing the wrong one is the most common way an agent wastes
+ * a turn here. `run_command` is for a shell command you wrote and want the
+ * result of; `send_keys` is for keystrokes — a TUI, a signal, a partial line.
+ */
+
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+
+import { isCallerPane } from "../caller.js";
+import { isFailure, requirePane, type ToolContext } from "../context.js";
+import { MUTATING, offers, OPEN_WORLD } from "../register.js";
+import { fail, ok, renderOutput, tailLines } from "../results.js";
+import { runFramedCommand } from "../command.js";
+
+/**
+ * Shells whose syntax the command framing is written in.
+ *
+ * `run_command` sends `m=id; printf …; ( … ); s=$?`, which is POSIX shell and
+ * nothing else. fish rejects the assignment outright, csh spells the status
+ * `$status`, and PowerShell shares neither — so a command framed for them fails
+ * to parse and the wait runs to its deadline against a syntax error.
+ */
+const POSIX_SHELLS = new Set(["ash", "bash", "dash", "ksh", "mksh", "sh", "zsh"]);
+
+/**
+ * Shells the framing cannot address, named so the refusal can say which.
+ *
+ * Separate from "not a shell at all": one wants `send_keys`, the other wants a
+ * different pane, and telling them apart is the difference between one more
+ * call and several.
+ */
+const OTHER_SHELLS = new Set(["csh", "elvish", "fish", "ion", "nu", "pwsh", "tcsh", "xonsh"]);
+
+/** tmux reports a login shell as `-zsh`; the leading dash is not part of it. */
+function shellName(command: string): string {
+  return command.replace(/^-/, "");
+}
+
+export function registerInput(mcp: McpServer, context: ToolContext): void {
+  if (!offers(context.policy, "mutating")) return;
+
+  mcp.registerTool(
+    "send_keys",
+    {
+      annotations: OPEN_WORLD,
+      description:
+        "Send keystrokes to a pane. Use for TUIs, control keys (C-c), and partial " +
+        "lines. For a shell command whose result you want, use run_command — it " +
+        "waits for completion and reports exit status, which this does not.",
+      inputSchema: {
+        enter: z.boolean().optional().describe("Press Enter afterwards. Default true."),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Write even to the pane this server runs in. Default false."),
+        keys: z
+          .string()
+          .describe("Keys to send. tmux key names like C-c work unless literal is true."),
+        literal: z
+          .boolean()
+          .optional()
+          .describe("Send the text as-is, without resolving key names."),
+        paneId: z.string(),
+      },
+      outputSchema: {
+        attended: z.boolean().describe("A person is watching the pane this was sent to."),
+        paneId: z.string(),
+        sent: z.boolean(),
+      },
+      title: "Send keys",
+    },
+    async ({ enter, force, keys, literal, paneId }) => {
+      const snapshot = await context.snapshot();
+      const pane = requirePane(snapshot, paneId);
+      if (isFailure(pane)) return pane;
+      const identity = await context.identity(snapshot);
+
+      if (force !== true && isCallerPane(identity, paneId)) {
+        return fail({
+          hint: "That is this server's own terminal. Pick another pane, or pass force to mean it.",
+          reason: `Refusing to type into ${paneId}: it is the pane this MCP server runs in.`,
+        });
+      }
+
+      await pane.sendKeys(keys, {
+        ...(enter === undefined ? {} : { enter }),
+        ...(literal === undefined ? {} : { literal }),
+      });
+      const attended = identity.attendedPaneIds.includes(paneId);
+      return ok(
+        { attended, paneId, sent: true },
+        attended ? `Sent to ${paneId}. Somebody is watching that pane.` : `Sent to ${paneId}.`,
+      );
+    },
+  );
+
+  mcp.registerTool(
+    "paste_text",
+    {
+      annotations: MUTATING,
+      description:
+        "Put text into a pane without tmux interpreting any of it as key names. " +
+        "Use for content — a password, a code block, anything with characters a " +
+        "key parser would claim.",
+      inputSchema: {
+        enter: z.boolean().optional().describe("Press Enter afterwards. Default false."),
+        paneId: z.string(),
+        text: z.string(),
+      },
+      outputSchema: { bytes: z.number().int(), paneId: z.string() },
+      title: "Paste text",
+    },
+    async ({ enter, paneId, text }) => {
+      const snapshot = await context.snapshot();
+      const pane = requirePane(snapshot, paneId);
+      if (isFailure(pane)) return pane;
+      await pane.sendKeys(text, { enter: enter ?? false, literal: true });
+      return ok(
+        { bytes: Buffer.byteLength(text, "utf8"), paneId },
+        `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId}.`,
+      );
+    },
+  );
+
+  mcp.registerTool(
+    "run_command",
+    {
+      annotations: OPEN_WORLD,
+      description:
+        "Run a shell command in a pane, wait for it to finish, and report its exit " +
+        "status and output. Prefer this over send_keys plus capture_pane: it frames " +
+        "the command so a pane's echo of what you typed can never be mistaken for " +
+        "what the command printed, and it knows when the command actually ended " +
+        "rather than guessing from the screen. The command runs in a subshell, so " +
+        "cd and export do not persist to a later call.",
+      inputSchema: {
+        command: z.string().describe("The shell command to run."),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Run even if the pane does not look like it is at a shell prompt."),
+        maxLines: z.number().int().positive().optional(),
+        paneId: z.string(),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "How long to wait. Clamped by the server ceiling; the result says what was used.",
+          ),
+      },
+      outputSchema: {
+        effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        exitStatus: z
+          .number()
+          .int()
+          .nullable()
+          .describe("The command's exit status; null if it did not finish."),
+        outcome: z
+          .enum(["completed", "timed_out", "pane_died"])
+          .describe("Why this returned. Read it rather than inferring from the text."),
+        output: z.string(),
+        paneId: z.string(),
+        stillRunning: z
+          .boolean()
+          .describe("True when it timed out; the command keeps running in the pane."),
+      },
+      title: "Run a command and wait",
+    },
+    async ({ command, force, maxLines, paneId, timeoutMs }, extra) => {
+      if (command.trim() === "") {
+        return fail({ reason: "command must not be empty." });
+      }
+      const snapshot = await context.snapshot();
+      const pane = requirePane(snapshot, paneId);
+      if (isFailure(pane)) return pane;
+      const identity = await context.identity(snapshot);
+
+      if (force !== true && isCallerPane(identity, paneId)) {
+        return fail({
+          hint: "Pick another pane, or pass force to mean it.",
+          reason: `Refusing to run in ${paneId}: it is the pane this MCP server runs in.`,
+        });
+      }
+      const running = shellName(pane.currentCommand ?? "");
+      if (force !== true && OTHER_SHELLS.has(running)) {
+        // Not a `force` case: forcing it would send POSIX syntax to a shell
+        // that cannot parse it, and the wait would run to its deadline against
+        // an error message.
+        return fail({
+          hint:
+            "This tool frames commands in POSIX shell syntax, which that shell does not " +
+            "share. Use send_keys, or run the command in a pane running sh, bash, or zsh.",
+          reason: `Pane ${paneId} is running ${running}, which run_command cannot address.`,
+        });
+      }
+      if (force !== true && !POSIX_SHELLS.has(running)) {
+        return fail({
+          hint:
+            "A shell command typed into a program that is not a shell goes to that program. " +
+            "Use send_keys if that is what you meant, or pass force.",
+          reason: `Pane ${paneId} is running ${running === "" ? "an unknown command" : running}, not a shell.`,
+        });
+      }
+
+      const result = await runFramedCommand(context, pane, command, timeoutMs, false, extra.signal);
+      const trimmed = tailLines(
+        result.output === "" ? [] : result.output.split("\n"),
+        maxLines ?? context.policy.maxResultLines,
+      );
+
+      const headline =
+        result.outcome === "completed"
+          ? `exit ${String(result.exitStatus ?? -1)}`
+          : result.outcome === "pane_died"
+            ? "the pane exited while the command ran"
+            : `still running after ${String(result.effectiveTimeoutMs)}ms — call again to keep waiting, or send_keys C-c to stop it`;
+
+      return ok(
+        {
+          effectiveTimeoutMs: result.effectiveTimeoutMs,
+          exitStatus: result.exitStatus,
+          outcome: result.outcome,
+          output: trimmed.lines.join("\n"),
+          paneId,
+          stillRunning: result.outcome === "timed_out",
+        },
+        `${renderOutput(trimmed)}\n\n[${headline}]`,
+      );
+    },
+  );
+}
