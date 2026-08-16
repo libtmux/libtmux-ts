@@ -3,13 +3,16 @@
 Notable changes to `libtmux`.
 
 Every release so far is an **alpha**: a prerelease whose API can change between
-versions without a deprecation cycle. Semantic versioning starts applying at
-`0.1.0`. The newest one is always `latest`, so `npm i libtmux` fetches it —
-there is no second tag to remember.
+versions without a deprecation cycle. Semantic versioning starts applying at the
+`0.1.0` release itself, which the alphas leading to it precede. The newest one is
+always `latest`, so `npm i libtmux` fetches it — there is no second tag to
+remember.
 
 <!-- KEEP THIS PLACEHOLDER: new work lands under "Unreleased" until a release is cut. -->
 
 ## Unreleased
+
+## 0.1.0-alpha.1
 
 ### Changed
 

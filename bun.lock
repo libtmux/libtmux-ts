@@ -24,7 +24,7 @@
     },
     "packages/libtmux": {
       "name": "libtmux",
-      "version": "0.0.1-alpha.7",
+      "version": "0.1.0-alpha.1",
       "devDependencies": {
         "@types/bun": "1.3.14",
         "@types/node": "22.20.1",
@@ -38,7 +38,7 @@
     },
     "packages/mcp": {
       "name": "@libtmux/mcp",
-      "version": "0.0.1-alpha.7",
+      "version": "0.1.0-alpha.1",
       "bin": {
         "libtmux-mcp": "./dist/server.js",
       },
@@ -50,15 +50,15 @@
     },
     "packages/workspace": {
       "name": "@libtmux/workspace",
-      "version": "0.0.1-alpha.7",
+      "version": "0.1.0-alpha.1",
       "dependencies": {
         "zod": "4.4.3",
       },
       "devDependencies": {
-        "libtmux": "0.0.1-alpha.7",
+        "libtmux": "0.1.0-alpha.1",
       },
       "peerDependencies": {
-        "libtmux": "0.0.1-alpha.7",
+        "libtmux": "0.1.0-alpha.1",
       },
     },
   },

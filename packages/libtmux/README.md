@@ -21,8 +21,8 @@ $ bun add libtmux
 > [!WARNING]
 > **Alpha.** Prerelease software: the API can change between alpha releases
 > without a deprecation cycle, and it is not covered by semantic versioning
-> until `0.1.0`. Pin an exact version, and read the
-> [changelog](CHANGELOG.md) before you upgrade.
+> until the `0.1.0` release itself — `0.1.0-alpha.N` comes before it. Pin an
+> exact version, and read the [changelog](CHANGELOG.md) before you upgrade.
 
 ## Quickstart
 
