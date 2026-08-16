@@ -398,6 +398,19 @@ export interface TmuxReconnectedEvent {
   readonly kind: "reconnected";
 }
 
+/**
+ * The connection dropped and a replacement is being opened.
+ *
+ * Emitted when the outage starts, where `reconnected` is emitted when tmux has
+ * accepted the new attach. A consumer that treats spawning the replacement as
+ * the end of the outage starts trusting a connection that is not carrying
+ * anything yet — the two events exist so the gap has both of its edges.
+ */
+export interface TmuxReconnectingEvent {
+  readonly attempts: number;
+  readonly kind: "reconnecting";
+}
+
 export type TmuxEvent =
   | TmuxClientDetachedEvent
   | TmuxClientSessionChangedEvent
@@ -410,6 +423,7 @@ export type TmuxEvent =
   | TmuxPaneModeChangedEvent
   | TmuxPasteBufferEvent
   | TmuxReconnectedEvent
+  | TmuxReconnectingEvent
   | TmuxSessionEvent
   | TmuxSessionWindowChangedEvent
   | TmuxSessionsChangedEvent
@@ -441,6 +455,24 @@ export interface WatchOptions {
    * heap until the process dies, which is worse than losing an event.
    */
   readonly bufferSize?: number;
+  /**
+   * How many bytes one command's response may occupy before it is refused.
+   *
+   * A control connection reads a command's output into memory before it can
+   * answer, so `list-panes` on a server with a pathological pane title, or a
+   * `capture-pane` of a very long scrollback, is the caller's heap. Exceeding
+   * this fails that one command rather than the process.
+   */
+  readonly maxCommandBytes?: number;
+  /**
+   * How many commands may be awaiting a response at once.
+   *
+   * tmux answers one at a time and in order, so a producer that outruns it
+   * queues without bound. Exceeding this rejects the newest command with
+   * `delivery: "not_started"`, which is the one status that is always safe to
+   * retry.
+   */
+  readonly maxPendingCommands?: number;
   /** Abort the connection when this signal fires. */
   readonly signal?: AbortLike;
   /**
