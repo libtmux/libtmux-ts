@@ -62,6 +62,8 @@ import {
   type DaemonIdentity,
 } from "./_internal/runtime/context.js";
 import { TmuxConnection } from "./_internal/runtime/connection.js";
+
+export type { DaemonIdentity } from "./_internal/runtime/context.js";
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 

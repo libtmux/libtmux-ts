@@ -1,6 +1,6 @@
 export { Client } from "./client.js";
 export { Pane, type PanePlans } from "./pane.js";
-export { Server, type ServerOptions } from "./server.js";
+export { Server, type DaemonIdentity, type ServerOptions } from "./server.js";
 export { Session, type SessionPlans } from "./session.js";
 export { Window, type WindowPlans } from "./window.js";
 
