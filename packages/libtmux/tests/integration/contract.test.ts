@@ -243,6 +243,20 @@ describe("handle identity", () => {
       // guard a spawned command does — losing the connection is the signal, and
       // a reconnect attaches to whatever is on the socket now.
       await server.cmd("kill-server").catch(() => undefined);
+
+      // `kill-server` answers before the daemon has finished leaving, and the
+      // attached control client is meanwhile trying to reconnect to the same
+      // socket. Starting the successor into that window reaches a server on its
+      // way out — "server exited unexpectedly" — so wait for the socket to go
+      // quiet first. Bounded: a daemon that never leaves is a different failure.
+      const gone = Date.now() + 5_000;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- polling a process that is leaving.
+        if (!(await server.isAlive()) || Date.now() >= gone) break;
+        // eslint-disable-next-line no-await-in-loop -- as above.
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(await server.isAlive()).toBe(false);
       await server.cmd("new-session", ["-d", "-s", "successor"], { target: null });
 
       // Bounded for liveness: the drop reaches this process on tmux's schedule,
