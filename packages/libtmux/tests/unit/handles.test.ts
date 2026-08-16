@@ -106,6 +106,12 @@ function recordingTransport(onExecute?: () => void): RecordingTransport {
       onExecute?.();
       return resultFor(request);
     },
+    // One command at a time here. Running a group as several singles would be
+    // the very non-atomicity the group exists to remove, so a fixture that
+    // needs one asks for it rather than getting a quiet stand-in.
+    executeGroup(): Promise<readonly RawCommandResult[]> {
+      return Promise.reject(new Error("this fixture runs one command at a time"));
+    },
   };
 }
 

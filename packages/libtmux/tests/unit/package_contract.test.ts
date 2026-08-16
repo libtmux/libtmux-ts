@@ -56,6 +56,7 @@ const expectedScripts = {
   "test:integration": "bun scripts/run-integration-tests.ts",
   "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
   "test:compat": "bun scripts/check-tmux-compat.ts",
+  "test:coverage": "bun run build && bun scripts/check-coverage.ts",
   "test:package": "bun run build && bun scripts/check-package.ts",
   "test:install": "bun run build && bun scripts/check-install.ts",
   "test:type-performance": "bun scripts/check-type-performance.ts --check",

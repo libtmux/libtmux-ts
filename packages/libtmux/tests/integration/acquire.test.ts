@@ -192,11 +192,12 @@ describe("server graph acquisition", () => {
         captures += 1;
         // eslint-disable-next-line no-await-in-loop -- each capture races the churn on its own.
         const graph = await acquireServerGraph(runtime);
-        const windows = new Set(graph.windows.map(({ ref }) => ref.id));
+        const windows = new Set(graph.windows.map(({ ref }) => String(ref.id)));
         const paned = new Set(
           graph.records
             .filter((record) => record.model === "pane")
-            .map((record) => record.scalars.window_id),
+            .map((record) => record.scalars.window_id)
+            .filter((id): id is string => id !== null),
         );
         const agrees = windows.size === paned.size && [...paned].every((id) => windows.has(id));
         if (!agrees) torn += 1;

@@ -113,8 +113,12 @@ jobs:
         working-directory: packages/libtmux
         run: |
           bun run test:types
-          bun run test:unit
           bun run test:node
+          # Both suites in one run, because they cover different things: a
+          # pane's methods are proven against a real server, so a floor
+          # measured on the unit suite alone would push work towards mocking
+          # one. This runs them, so `test:unit` is not run separately here.
+          bun run test:coverage
 
       # In-repo consumers prove the published surface is enough to build on.
       # `test:package` runs here and not only at publish: the packaging

@@ -114,7 +114,8 @@
     "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
     "typecheck:symbols": "bun scripts/check-symbol-examples.ts",
     "docs:api": "bun scripts/generate-api-docs.ts",
-    "docs:api:check": "bun scripts/generate-api-docs.ts --check"
+    "docs:api:check": "bun scripts/generate-api-docs.ts --check",
+    "test:coverage": "bun run build && bun scripts/check-coverage.ts"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",

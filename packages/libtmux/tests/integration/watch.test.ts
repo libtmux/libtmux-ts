@@ -44,6 +44,11 @@ class CountingSpawnTransport implements CommandTransport {
     this.spawned += 1;
     return this.#inner.execute(request);
   }
+
+  executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
+    this.spawned += 1;
+    return this.#inner.executeGroup(requests);
+  }
 }
 
 /** A server whose spawning is observable, which `new Server()` does not expose. */

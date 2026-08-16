@@ -237,11 +237,11 @@ describe("declared format value types", () => {
         // is older than the field. Nothing is quietly unverified — and the
         // third case is why this has to run on the floor and not only on the
         // newest release: on 3.2a ten fields fall into it.
-        const withheld = new Set(
+        const withheld = new Set<string>(
           GENERATED_FORMAT_FIELDS.filter(
             (field) =>
               compareTmuxVersions(parseTmuxVersion(version), parseTmuxVersion(field.since)) < 0,
-          ).map(({ token }) => token),
+          ).map(({ token }) => String(token)),
         );
         expect(
           Object.keys(declared)

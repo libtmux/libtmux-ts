@@ -40,6 +40,11 @@ function recorder(): Recorder {
         stdout: new Uint8Array(),
       });
     },
+    // One command at a time: this fixture records arguments and never
+    // resolves what a group would return.
+    executeGroup(): Promise<readonly RawCommandResult[]> {
+      return Promise.reject(new Error("this fixture runs one command at a time"));
+    },
   };
 }
 
