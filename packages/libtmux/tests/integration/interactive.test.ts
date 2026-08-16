@@ -72,11 +72,11 @@ describe("interactive commands", () => {
   test("enters the chooser modes and leaves the pane in a mode", async () => {
     await withAttachedPane(async (pane) => {
       await pane.chooseTree({ sessionsOnly: true });
-      expect((await pane.refreshed()).inMode).toBe("1");
+      expect((await pane.refreshed()).inMode).toBe(1);
 
       await pane.exitCopyMode();
       await pane.chooseBuffer();
-      expect((await pane.refreshed()).inMode).toBe("1");
+      expect((await pane.refreshed()).inMode).toBe(1);
     });
   }, 40_000);
 

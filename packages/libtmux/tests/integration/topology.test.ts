@@ -112,7 +112,7 @@ describe("window and pane topology", () => {
       const moved = (await server.snapshot()).windows
         .filter((candidate) => candidate.id === window.id)
         .one();
-      expect(moved.index).toBe("7");
+      expect(moved.index).toBe(7);
     });
   }, 40_000);
 
@@ -226,22 +226,20 @@ describe("window and pane topology", () => {
       // A vertical split puts one pane at the top and the other at the bottom,
       // and both span the full width. Asserting the flags against each other
       // catches a mis-mapped field that a single-pane check would not.
-      expect(upper.atTop).toBe("1");
-      expect(upper.atBottom).toBe("0");
-      expect(lower.atTop).toBe("0");
-      expect(lower.atBottom).toBe("1");
+      expect(upper.atTop).toBe(true);
+      expect(upper.atBottom).toBe(false);
+      expect(lower.atTop).toBe(false);
+      expect(lower.atBottom).toBe(true);
       for (const pane of panes) {
-        expect(pane.atLeft).toBe("1");
-        expect(pane.atRight).toBe("1");
-        expect(Number(pane.width)).toBe(Number(settled.width));
-        expect(Number(pane.height)).toBeGreaterThan(0);
+        expect(pane.atLeft).toBe(true);
+        expect(pane.atRight).toBe(true);
+        expect(pane.width).toBe(settled.width);
+        expect(pane.height).toBeGreaterThan(0);
       }
-      expect(Number(upper.height) + Number(lower.height)).toBeLessThanOrEqual(
-        Number(settled.height),
-      );
-      expect(panes.map((pane) => pane.index)).toEqual(["0", "1"]);
+      expect((upper.height ?? 0) + (lower.height ?? 0)).toBeLessThanOrEqual(settled.height ?? 0);
+      expect(panes.map((pane) => pane.index)).toEqual([0, 1]);
       expect(upper.title).not.toBeNull();
-      expect(upper.pipe).toBe("0");
+      expect(upper.pipe).toBe(false);
 
       // Relations resolve back to the handles they came from. They are typed
       // as possibly-undefined because a projection need not contain the far

@@ -8,6 +8,7 @@ import {
 } from "../../_generated/where_fields.js";
 import { QueryValidationError } from "../../exc.js";
 import type { WhereDocumentV1 } from "../../selection.js";
+import { encodeFormatValue } from "../codec/format_values.js";
 import type { GraphRecordRef } from "../graph/model.js";
 import type { ProjectionRecord } from "../graph/selection_projection.js";
 
@@ -183,6 +184,75 @@ function criteriaFromWire(model: WhereModel, value: unknown, depth = 0): unknown
       continue;
     }
     translated[byWire.get(key) ?? key] = entry;
+  }
+  return translated;
+}
+
+/** Operators whose operand is a value tmux will compare, rather than a modifier. */
+const encodableOperators = new Set(["contains", "endsWith", "equals", "startsWith"]);
+const encodableListOperators = new Set(["in", "notIn"]);
+
+/**
+ * Spell a typed criteria value the way the row it will be compared against does.
+ *
+ * A caller writes `where({ active: true })` or `where({ pid: 2334787 })`, and a
+ * row holds `"1"` and `"2334787"`. The comparison happens on text — that is
+ * what tmux sent and what a serialized query has to survive as — so the typed
+ * value is spelled out here, once, before anything else looks at it.
+ *
+ * This is why the wire format did not need a second version. A stored
+ * `WhereDocumentV1` still holds strings, and `criteriaFromWire` still reads
+ * one; only the shapes a caller may write in TypeScript grew.
+ */
+function criteriaToWireValues(model: WhereModel, value: unknown, depth = 0): unknown {
+  // As in `criteriaFromWire`: hand an over-deep or cyclic document on unchanged
+  // and let the validator reject it, rather than rejecting it here.
+  if (depth > maximumWhereDepth || !isObject(value)) return value;
+  const tokens = new Map(
+    WHERE_FIELDS_V1[model].map(({ criteriaName, token }) => [criteriaName as string, token]),
+  );
+  const relations = new Map(
+    WHERE_RELATIONS_V1[model].map((relation) => [relation.name as string, relation] as const),
+  );
+  const translated: Record<string, unknown> = {};
+  for (const [key, entry] of snapshotObject(value)) {
+    const relation = relations.get(key);
+    if (relation !== undefined && isObject(entry)) {
+      const inner: Record<string, unknown> = {};
+      for (const [operator, nested] of snapshotObject(entry)) {
+        inner[operator] = criteriaToWireValues(relation.targetModel, nested, depth + 1);
+      }
+      translated[key] = inner;
+      continue;
+    }
+    if (key === "AND" || key === "OR" || key === "NOT") {
+      translated[key] = snapshotArray(entry).map((child) =>
+        criteriaToWireValues(model, child, depth + 1),
+      );
+      continue;
+    }
+    const token = tokens.get(key);
+    if (token === undefined) {
+      translated[key] = entry;
+      continue;
+    }
+    if (!isObject(entry)) {
+      translated[key] = encodeFormatValue(token, entry);
+      continue;
+    }
+    const operators: Record<string, unknown> = {};
+    for (const [operator, operand] of snapshotObject(entry)) {
+      if (encodableOperators.has(operator)) {
+        operators[operator] = encodeFormatValue(token, operand);
+      } else if (encodableListOperators.has(operator) && Array.isArray(operand)) {
+        operators[operator] = operand.map((item) => encodeFormatValue(token, item));
+      } else {
+        // `mode` selects case folding and `regex` carries a pattern; neither is
+        // a value tmux holds, so neither is spelled out.
+        operators[operator] = operand;
+      }
+    }
+    translated[key] = operators;
   }
   return translated;
 }
@@ -571,12 +641,16 @@ function canonicalizeWhere(
   model: WhereModel,
   criteria: unknown,
 ): Readonly<Record<string, unknown>> {
-  return parseCriteria(parseModel(model), criteria, { active: new WeakSet() }).query;
+  const parsedModel = parseModel(model);
+  return parseCriteria(parsedModel, criteriaToWireValues(parsedModel, criteria), {
+    active: new WeakSet(),
+  }).query;
 }
 
 export function compileWhere(model: WhereModel, criteria: unknown): CompiledWhere {
   const parsedModel = parseModel(model);
-  const parsed = parseCriteria(parsedModel, criteria, { active: new WeakSet() });
+  const spelled = criteriaToWireValues(parsedModel, criteria);
+  const parsed = parseCriteria(parsedModel, spelled, { active: new WeakSet() });
   return Object.freeze({
     model: parsedModel,
     query: parsed.query,

@@ -7,6 +7,7 @@ import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
+import { decodeFormatValue } from "../codec/format_values.js";
 import type { CompleteFormatRow } from "../codec/schemas.js";
 import {
   graphRecordRefsEqual,
@@ -124,8 +125,8 @@ export function installLiveHandlePrototype(
     Object.defineProperty(prototype, alias, {
       configurable: false,
       enumerable: false,
-      get(this: object): string | null {
-        return requireState(this).snapshot[token];
+      get(this: object): boolean | number | string | Date | null {
+        return decodeFormatValue(token, requireState(this).snapshot[token]);
       },
     });
   }

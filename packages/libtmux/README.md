@@ -377,6 +377,38 @@ session.name; // session_name
 pane.format.pane_current_command;
 ```
 
+## Field values
+
+tmux has one wire type, and everything on it is text. A field whose shape this
+port knows is decoded on the way out, so a pid is a number, a flag is a boolean,
+and a timestamp is a `Date`:
+
+```ts
+pane.panePid; // number | null
+pane.active; // boolean | null
+session.created; // Date | null
+window.index; // number — an identity tmux always populates, so never null
+```
+
+Which fields those are comes from tmux's own `format.c`, and an integration test
+holds every one of them to a live server on each version CI runs. Anything else
+is left exactly as tmux sent it, empty string included.
+
+The text is never lost. `format` is the row as it arrived:
+
+```ts
+pane.format.pane_pid; // "2334787"
+pane.format.pane_active; // "1"
+```
+
+Criteria take the decoded shape as well as the text, and mean the same thing
+either way:
+
+```ts
+snapshot.panes.where({ active: true });
+snapshot.panes.where({ active: "1" });
+```
+
 Criteria are camelCase too, and serialize to tmux's stable spellings so a stored
 query stays readable by other tools:
 

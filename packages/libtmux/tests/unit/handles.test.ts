@@ -918,7 +918,10 @@ describe("authenticated handle materialization", () => {
       originalGraph,
       reconstructedOriginal,
     );
-    expect(handle.width).toBe("80");
+    // Decoded, because `client_width` is a number field; the text tmux sent is
+    // still on the row beside it.
+    expect(handle.width).toBe(80);
+    expect(handle.format.client_width).toBe("80");
 
     const replacementRow = completeFormatRow({
       client_name: "client-ref",

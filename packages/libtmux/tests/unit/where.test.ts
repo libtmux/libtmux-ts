@@ -1573,5 +1573,102 @@ describe("WhereDocumentV1 serialization", () => {
   });
 });
 
+describe("typed criteria values", () => {
+  test("matches a boolean field written as a boolean", async () => {
+    const harness = await createRichProjectedHarness();
+    const panes = createProjectedSelection("pane", harness.panes.values, harness.panes.projection);
+
+    // `pane_active` is `"1"` on the row. Both spellings describe the same panes.
+    expect(
+      panes
+        .where({ active: true })
+        .toArray()
+        .map((pane) => pane.id),
+    ).toEqual(["%1", "%3"]);
+    expect(
+      panes
+        .where({ active: "1" })
+        .toArray()
+        .map((pane) => pane.id),
+    ).toEqual(["%1", "%3"]);
+    expect(
+      panes
+        .where({ active: false })
+        .toArray()
+        .map((pane) => pane.id),
+    ).toEqual(["%2"]);
+  });
+
+  test("matches a number field written as a number", async () => {
+    const harness = await createRichProjectedHarness();
+    const windows = createProjectedSelection(
+      "window",
+      harness.windows.values,
+      harness.windows.projection,
+    );
+
+    expect(windows.where({ index: 0 }).count()).toBe(windows.where({ index: "0" }).count());
+    expect(windows.where({ index: 0 }).count()).toBeGreaterThan(0);
+    expect(windows.where({ index: 99 }).count()).toBe(0);
+  });
+
+  test("spells a typed operand inside an operator", async () => {
+    const harness = await createRichProjectedHarness();
+    const panes = createProjectedSelection("pane", harness.panes.values, harness.panes.projection);
+
+    expect(
+      panes
+        .where({ active: { equals: true } })
+        .toArray()
+        .map((pane) => pane.id),
+    ).toEqual(["%1", "%3"]);
+    expect(
+      panes
+        .where({ active: { in: [true] } })
+        .toArray()
+        .map((pane) => pane.id),
+    ).toEqual(["%1", "%3"]);
+    expect(
+      panes
+        .where({ active: { notIn: [true] } })
+        .toArray()
+        .map((pane) => pane.id),
+    ).toEqual(["%2"]);
+  });
+
+  test("spells a typed operand through a relation", async () => {
+    const harness = await createRichProjectedHarness();
+    const sessions = createProjectedSelection(
+      "session",
+      harness.sessions.values,
+      harness.sessions.projection,
+    );
+
+    // The relation's criteria are the target model's, so the encoding has to
+    // recurse with that model or `true` reaches the comparison as a boolean.
+    expect(sessions.where({ panes: { some: { active: true } } }).count()).toBe(
+      sessions.where({ panes: { some: { active: "1" } } }).count(),
+    );
+    expect(sessions.where({ panes: { some: { active: true } } }).count()).toBeGreaterThan(0);
+  });
+
+  test("serializes a typed query as the text it always was", () => {
+    // The wire format did not need a second version: a typed value is spelled
+    // out before it reaches the document, so a query written either way stores
+    // and reads back identically.
+    const typed = encodeWhereDocument({
+      model: "pane",
+      version: 1,
+      where: { active: true },
+    } as WhereDocumentV1);
+    const written = encodeWhereDocument({
+      model: "pane",
+      version: 1,
+      where: { active: "1" },
+    } as WhereDocumentV1);
+    expect(typed).toEqual(written);
+  });
+});
+
 void ({} as PaneWhere);
 void ({} as WindowWhere);
