@@ -12,7 +12,8 @@ import {
 } from "../../libtmux/src/_internal/test/run_root.js";
 import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
 import { Server } from "libtmux/server";
-import { applyWorkspace } from "../src/builder.js";
+import { applyWorkspace, planWorkspace } from "../src/builder.js";
+import { OWNERSHIP_OPTION } from "../src/ownership.js";
 import { parseWorkspaceYaml } from "../src/config.js";
 
 import {
@@ -336,6 +337,80 @@ describe("workspace builder", () => {
       expect(ranCount(await readMarker(marker))).toBe(2);
     });
   }, 90_000);
+
+  test("leaves a session it did not create alone, and says what it left", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // Made by hand, with the name a workspace happens to use. This is the
+      // collision that turns "converge" into "kill somebody's panes".
+      const mine = await server.newSession({ name: "handmade" });
+      for (const name of ["notes", "logs", "scratch"]) {
+        // eslint-disable-next-line no-await-in-loop -- window order is observable.
+        await mine.newWindow({ name });
+      }
+
+      const workspace = {
+        session_name: "handmade",
+        windows: [{ panes: ["true"], window_name: "only" }],
+      };
+
+      const plan = await planWorkspace(server, workspace);
+      expect(plan.owned).toBe(false);
+      expect(plan.killsWindows).toEqual([]);
+      expect(plan.retains).not.toBeEmpty();
+
+      await applyWorkspace(server, workspace);
+
+      // Converged additively: the first window took the described shape and
+      // nothing else was removed.
+      const after = (await server.snapshot()).sessions.one({ name: "handmade" });
+      expect(after.windows.count()).toBe(4);
+      expect((await after.showOptions()).get(OWNERSHIP_OPTION)).toBeUndefined();
+    });
+  }, 60_000);
+
+  test("prunes a session it created, and marks it so a later apply knows", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const workspace = {
+        session_name: "owned",
+        windows: [
+          { panes: ["true", "true"], window_name: "one" },
+          { panes: ["true"], window_name: "two" },
+        ],
+      };
+
+      const built = await applyWorkspace(server, workspace);
+      expect((await built.showOptions()).get(OWNERSHIP_OPTION)).toBe("owned");
+
+      const smaller = { ...workspace, windows: [workspace.windows[0]!] };
+      const plan = await planWorkspace(server, smaller);
+      expect(plan.owned).toBe(true);
+      expect(plan.killsWindows).toEqual(["two"]);
+      expect(plan.retains).toEqual([]);
+
+      await applyWorkspace(server, smaller);
+      const after = (await server.snapshot()).sessions.one({ name: "owned" });
+      expect(after.windows.count()).toBe(1);
+    });
+  }, 60_000);
+
+  test("prunes a session it did not create only when told to in so many words", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const mine = await server.newSession({ name: "adopted" });
+      await mine.newWindow({ name: "surplus" });
+
+      const workspace = {
+        session_name: "adopted",
+        windows: [{ panes: ["true"], window_name: "only" }],
+      };
+
+      await applyWorkspace(server, workspace, { prune: "always" });
+      const after = (await server.snapshot()).sessions.one({ name: "adopted" });
+      expect(after.windows.count()).toBe(1);
+    });
+  }, 60_000);
 
   test("applies window options from the workspace", async () => {
     await withServer(async (fixture) => {

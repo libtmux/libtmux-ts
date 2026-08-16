@@ -39,7 +39,12 @@
       "import": "./dist/config.js",
       "default": "./dist/config.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./ownership": {
+      "types": "./dist/ownership.d.ts",
+      "import": "./dist/ownership.js",
+      "default": "./dist/ownership.js"
+    }
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",

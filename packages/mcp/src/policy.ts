@@ -32,9 +32,6 @@ export const DEFAULT_BLOCKING_WAIT_MS = 30_000;
  */
 export const DEFAULT_TASK_WAIT_MS = 600_000;
 
-/** How much of a pane's output one wait may accumulate before the oldest goes. */
-export const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
-
 /** How long a single tmux command may run before it is killed. */
 export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
@@ -63,7 +60,6 @@ export interface Policy {
   readonly commandTimeoutMs: number;
   /** Whether tools may hold one control-mode connection for streaming. */
   readonly liveEnabled: boolean;
-  readonly maxOutputBytes: number;
   readonly maxResultLines: number;
   readonly safety: SafetyTier;
   /** Ceiling on a wait running as a task. */
@@ -105,7 +101,6 @@ export function resolvePolicy(
       DEFAULT_COMMAND_TIMEOUT_MS,
     ),
     liveEnabled: environment.LIBTMUX_MCP_LIVE !== "0",
-    maxOutputBytes: readInteger(environment.LIBTMUX_MCP_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_BYTES),
     maxResultLines: readInteger(environment.LIBTMUX_MCP_MAX_RESULT_LINES, DEFAULT_MAX_RESULT_LINES),
     safety: readSafety(environment.LIBTMUX_SAFETY),
     taskWaitMaxMs: clamp(

@@ -8,6 +8,7 @@ import {
   type Workspace,
   type WorkspaceWindow,
 } from "./config.js";
+import { claimSession, mayPrune, ownedByWorkspace, type PrunePolicy } from "./ownership.js";
 
 /**
  * When a pane's `shell_command` entries are sent to it.
@@ -26,6 +27,42 @@ export type CommandPolicy = "always" | "create-only";
 /** How {@link applyWorkspace} should treat a workspace that is already running. */
 export interface ApplyWorkspaceOptions {
   readonly commands?: CommandPolicy;
+  /**
+   * What to do with windows and panes the workspace does not describe.
+   *
+   * `owned` — the default — removes them from a session this workspace created
+   * and never from one it merely found by name. `never` never removes anything.
+   * `always` removes them wherever the session came from, which is the answer
+   * for a session somebody else made and you have decided this file owns.
+   */
+  readonly prune?: PrunePolicy;
+}
+
+/** What an apply would do, without doing it. */
+export interface WorkspacePlan {
+  /** Windows the apply would create, by the position they would take. */
+  readonly createsWindows: readonly number[];
+  /** Whether the session itself would be created. */
+  readonly createsSession: boolean;
+  /** Panes the apply would kill, as `window index` to how many. */
+  readonly killsPanes: ReadonlyMap<number, number>;
+  /** Windows the apply would kill, by their current name. */
+  readonly killsWindows: readonly string[];
+  /** Whether this workspace created the session it found. */
+  readonly owned: boolean;
+  /** Panes the apply would create, as `window index` to how many. */
+  readonly createsPanes: ReadonlyMap<number, number>;
+  /** Windows the apply would rename, as current name to desired. */
+  readonly renamesWindows: ReadonlyMap<string, string>;
+  /**
+   * Surplus this apply will leave alone, and why.
+   *
+   * Empty when nothing is surplus or the policy removes it. A non-empty list on
+   * a session the workspace did not create is the case `prune: "owned"` exists
+   * for: the file and the server disagree, and the file does not get to win by
+   * default.
+   */
+  readonly retains: readonly string[];
 }
 
 /**
@@ -49,9 +86,17 @@ export async function applyWorkspace(
   options: ApplyWorkspaceOptions = {},
 ): Promise<Session> {
   const commands = options.commands ?? "create-only";
+  const prune = options.prune ?? "owned";
   const snapshot = await server.snapshot();
   const existing = snapshot.sessions.oneOrUndefined({ name: workspace.session_name });
   const created = existing ?? (await createSession(server, workspace));
+  // Stamped on the session this apply created, and read back on every later
+  // one. A name is a lookup, not a claim: without the mark, converging a
+  // hand-made session of the same name would kill windows nobody described.
+  const owned =
+    existing === undefined || (await ownedByWorkspace(existing, workspace.session_name));
+  if (existing === undefined) await claimSession(created, workspace.session_name);
+  const pruning = mayPrune(prune, owned);
 
   // Reconciling re-reads the session after every change, so it runs over one
   // control connection rather than a process per read. The session has to
@@ -76,15 +121,98 @@ export async function applyWorkspace(
     // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
     await applyWindow(placed.window, desired, workspace, {
       commands,
+      pruning,
       windowIsNew: placed.created || born,
     });
   }
 
-  session = await pruneWindows(session, workspace.windows.length);
+  if (pruning) session = await pruneWindows(session, workspace.windows.length);
   await focusRequested(session, workspace);
   // The returned handle outlives the connection, so hand back one bound to the
   // caller's server rather than one that stops working when this scope exits.
   return (await server.snapshot()).sessions.one({ id: created.id });
+}
+
+/**
+ * What {@link applyWorkspace} would do, without doing any of it.
+ *
+ * Reads the server once and answers from that capture, so it costs one snapshot
+ * and changes nothing. What it is for is the question a converging tool cannot
+ * answer after the fact: how much of what is running does this file not
+ * describe, and is it about to go.
+ *
+ * ```ts
+ * const plan = await planWorkspace(server, workspace);
+ * if (plan.killsWindows.length > 0) console.log("would kill", plan.killsWindows);
+ * ```
+ */
+export async function planWorkspace(
+  server: Server,
+  workspace: Workspace,
+  options: ApplyWorkspaceOptions = {},
+): Promise<WorkspacePlan> {
+  const snapshot = await server.snapshot();
+  const existing = snapshot.sessions.oneOrUndefined({ name: workspace.session_name });
+  if (existing === undefined) {
+    return Object.freeze({
+      createsPanes: new Map(
+        workspace.windows.map((window, index) => [index, Math.max(window.panes.length, 1)]),
+      ),
+      createsSession: true,
+      createsWindows: workspace.windows.map((_, index) => index),
+      killsPanes: new Map<number, number>(),
+      killsWindows: [],
+      owned: true,
+      renamesWindows: new Map<string, string>(),
+      retains: [],
+    });
+  }
+
+  const owned = await ownedByWorkspace(existing, workspace.session_name);
+  const pruning = mayPrune(options.prune ?? "owned", owned);
+  const current = existing.windows.toArray();
+  const createsWindows: number[] = [];
+  const createsPanes = new Map<number, number>();
+  const killsPanes = new Map<number, number>();
+  const renamesWindows = new Map<string, string>();
+
+  for (const [index, desired] of workspace.windows.entries()) {
+    const window = current[index];
+    const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;
+    if (window === undefined) {
+      createsWindows.push(index);
+      createsPanes.set(index, wanted);
+      continue;
+    }
+    if (desired.window_name !== undefined && window.name !== desired.window_name) {
+      renamesWindows.set(window.name ?? "", desired.window_name);
+    }
+    const present = window.panes.length;
+    if (present < wanted) createsPanes.set(index, wanted - present);
+    if (present > wanted && pruning) killsPanes.set(index, present - wanted);
+  }
+
+  const surplusWindows = current.slice(workspace.windows.length);
+  const retainedPanes = workspace.windows.flatMap((desired, index) => {
+    const window = current[index];
+    if (window === undefined || pruning) return [];
+    const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;
+    const surplus = window.panes.length - wanted;
+    return surplus > 0 ? [`${String(surplus)} pane(s) in ${window.name ?? String(index)}`] : [];
+  });
+
+  return Object.freeze({
+    createsPanes,
+    createsSession: false,
+    createsWindows,
+    killsPanes,
+    killsWindows: pruning ? surplusWindows.map((window) => window.name ?? "") : [],
+    owned,
+    renamesWindows,
+    retains: pruning
+      ? []
+      : [...surplusWindows.map((window) => `window ${window.name ?? ""}`), ...retainedPanes],
+  });
 }
 
 async function createSession(server: Server, workspace: Workspace): Promise<Session> {
@@ -131,6 +259,7 @@ async function windowAt(
 
 interface ApplyWindowContext {
   readonly commands: CommandPolicy;
+  readonly pruning: boolean;
   readonly windowIsNew: boolean;
 }
 
@@ -150,7 +279,7 @@ async function applyWindow(
   // Every surplus pane in one invocation. Killing them one at a time costs a
   // command and a whole snapshot each, and the set is known before any of them
   // goes: the panes past the wanted count, in the order tmux reports them.
-  const surplus = current.panes.toArray().slice(wanted);
+  const surplus = context.pruning ? current.panes.toArray().slice(wanted) : [];
   if (surplus.length > 0) {
     await current.server.batch(surplus.map((pane) => pane.plan.kill()));
     current = await current.refreshed();

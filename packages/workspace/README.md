@@ -84,7 +84,8 @@ the ones people already know — `session_name`, `windows`, `panes`,
 | `focus`           | window, pane            | Selected last, so the final one wins          |
 
 Because the config is data, it can come from a YAML file, an HTTP request, or a
-literal — nothing here parses a format.
+literal. `parseWorkspace` validates one you already parsed; `parseWorkspaceYaml`
+is a convenience that needs Bun's YAML parser and says so when it is missing.
 
 ## Converging, not just creating
 
@@ -98,9 +99,36 @@ them anyway is the classic workspace-builder bug.
 shifts them and a killed window leaves a gap — so a window is matched by
 ordinal.
 
-Applying a workspace against a session that already exists reconciles what is
-running with what the file asks for: surplus windows and panes are removed in
-one round trip, missing ones created in another.
+**It prunes what it built, not what it found.** A session name is a lookup, not
+a claim: `dev` in this file and `dev` you started by hand are the same name. So
+a session this package creates is stamped with a tmux user option, and surplus
+windows and panes are removed only from a session carrying that stamp. Against
+one it merely found, applying converges additively and leaves the rest alone.
+
+Ask before applying, which is the question a converging tool cannot answer
+afterwards:
+
+```ts
+import { planWorkspace } from "@libtmux/workspace";
+
+const desired = { session_name: "api", windows: [{ panes: ["vim"] }] };
+const plan = await planWorkspace(server, desired);
+plan.owned; // false for a session this workspace did not create
+plan.killsWindows; // what applying would remove — empty unless it owns them
+plan.retains; // surplus it will leave alone, and why the file did not win
+```
+
+`prune` decides the rest. `"owned"` is the default above; `"never"` never
+removes anything; `"always"` is how you say a session somebody else made is now
+this file's, at the call site rather than in a comment:
+
+```ts
+await applyWorkspace(
+  server,
+  { session_name: "api", windows: [{ panes: ["vim"] }] },
+  { prune: "always" },
+);
+```
 
 ## A worked example
 
