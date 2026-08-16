@@ -193,6 +193,7 @@ describe("package contract", () => {
       "./pane",
       "./client",
       "./selection",
+      "./engine",
     ]);
     expect(packageManifest.exports["."]).toEqual({
       types: "./dist/index.d.ts",

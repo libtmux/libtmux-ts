@@ -6,8 +6,7 @@ import type { Readable } from "node:stream";
 import type { DeliveryStatus } from "../../common.js";
 import type { CommandRequest, RawCommandResult } from "./types.js";
 import {
-  assembleGroupArgv,
-  createGroupSeparator,
+  asSingleInvocation,
   MAX_PACKED_ARGV_BYTES,
   packedArgvBytes,
   subcommandOf,
@@ -353,8 +352,8 @@ export class NodeSpawnTransport {
       });
     }
 
-    const separator = createGroupSeparator();
-    const args = assembleGroupArgv(requests, separator);
+    const invocation = asSingleInvocation(requests);
+    const args = invocation.args;
     const packed = packedArgvBytes([first.executable, ...args]);
     if (packed > MAX_PACKED_ARGV_BYTES) {
       // tmux would answer "command too long" from the client, with nothing to
@@ -375,7 +374,7 @@ export class NodeSpawnTransport {
       }),
     );
 
-    const sections = splitOnMarker(result.stdout, `${separator}\n`);
+    const sections = invocation.sections(result.stdout);
     // A short list means tmux stopped at a failure: everything before it ran
     // and printed, and the section that stopped carries the exit status.
     return Object.freeze(
@@ -388,41 +387,4 @@ export class NodeSpawnTransport {
       })),
     );
   }
-}
-
-/**
- * Split a byte stream on a marker line, keeping at most `sections` pieces.
- *
- * Byte-wise rather than by decoding: a pane title can carry any byte sequence,
- * and decoding to split would corrupt what the guarded frames then have to
- * parse.
- */
-function splitOnMarker(bytes: Uint8Array, marker: string): readonly Uint8Array[] {
-  const needle = new TextEncoder().encode(marker);
-  const sections: Uint8Array[] = [];
-  let start = 0;
-  for (;;) {
-    const at = indexOfBytes(bytes, needle, start);
-    if (at < 0) {
-      sections.push(bytes.subarray(start));
-      return sections;
-    }
-    sections.push(bytes.subarray(start, at));
-    start = at + needle.length;
-  }
-}
-
-function indexOfBytes(source: Uint8Array, needle: Uint8Array, fromIndex: number): number {
-  const lastStart = source.length - needle.length;
-  for (let index = fromIndex; index <= lastStart; index += 1) {
-    let matches = true;
-    for (let offset = 0; offset < needle.length; offset += 1) {
-      if (source[index + offset] !== needle[offset]) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) return index;
-  }
-  return -1;
 }

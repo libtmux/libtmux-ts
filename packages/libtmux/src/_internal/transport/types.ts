@@ -70,6 +70,23 @@ export interface RawCommandResult {
   readonly stdout: Uint8Array;
 }
 
+/**
+ * What runs a tmux command for a server.
+ *
+ * Two obligations beyond returning bytes, and both are what the layers above
+ * assume rather than check:
+ *
+ * `executeGroup` must run its requests as **one** tmux command list. Running
+ * them separately returns the same data and quietly stops a snapshot being one:
+ * tmux serializes a client's command queue and nothing else, so separate
+ * invocations can observe different topologies. {@link asSingleInvocation}
+ * assembles and splits that list, and the built-in engine uses it.
+ *
+ * `daemonGuard`, when a request carries one, must reach tmux — or the engine
+ * must be bound to one daemon for its lifetime, the way a control connection
+ * is. Ignoring it on a reconnecting engine means a handle read before a restart
+ * addressing whatever now holds its id.
+ */
 export interface CommandTransport {
   execute(request: CommandRequest): Promise<RawCommandResult>;
   /**

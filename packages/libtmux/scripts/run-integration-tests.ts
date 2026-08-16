@@ -30,6 +30,7 @@ const SUITES: readonly string[] = [
   "tests/integration/interactive.test.ts",
   "tests/integration/watch.test.ts",
   "tests/integration/documented_commands.test.ts",
+  "tests/integration/engine.test.ts",
   // Cited as evidence elsewhere and, until this check existed, never run: the
   // parity ledger names `environment` for five symbols, and the generated field
   // types name `format_types` as what proves them on every version CI runs.

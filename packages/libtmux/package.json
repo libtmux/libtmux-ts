@@ -88,6 +88,11 @@
       "types": "./dist/selection.d.ts",
       "import": "./dist/selection.js",
       "default": "./dist/selection.js"
+    },
+    "./engine": {
+      "types": "./dist/engine.d.ts",
+      "import": "./dist/engine.js",
+      "default": "./dist/engine.js"
     }
   },
   "scripts": {

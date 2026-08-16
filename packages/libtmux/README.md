@@ -428,11 +428,11 @@ field stays typed:
 ```ts
 snapshot.panes.where({ active: true });
 snapshot.panes.where({ active: "1" }); // the text tmux sends for a flag
-snapshot.panes.where({ panePid: "2334787" }); // and for a number
+snapshot.panes.where({ pid: "2334787" }); // and for a number
 // @ts-expect-error a flag is "0" or "1"; text that is neither is a mistake
 snapshot.panes.where({ active: "yes" });
 // @ts-expect-error and a numeric field will never read "banana"
-snapshot.panes.where({ panePid: "banana" });
+snapshot.panes.where({ pid: "banana" });
 ```
 
 Together, on a server with two windows. This is a literal excerpt of
@@ -716,6 +716,64 @@ direct call takes and resolves to what the direct call resolves to. tmux's
 control protocol has no channel for a command's stdin, so a connected server
 hands `loadBuffer` to a spawned process against the same socket rather than
 refusing it — choosing a transport does not decide which commands exist.
+
+### Running tmux somewhere else
+
+Both built-in transports run the `tmux` on this machine. Everything above them —
+capabilities, snapshots, the graph, queries, mutations — is built on one
+operation, so replacing that operation moves the whole library to a tmux reached
+over ssh, inside a container, or behind a daemon:
+
+```ts
+import { Server } from "libtmux";
+import { asSingleInvocation, type TmuxCommandResult, type TmuxEngine } from "libtmux/engine";
+
+/** `run` is yours: give it an argument vector, get back what tmux wrote. */
+function engineOver(
+  run: (argv: readonly string[], stdin: Uint8Array | undefined) => Promise<TmuxCommandResult>,
+): TmuxEngine {
+  return {
+    execute: (request) => run([request.executable, ...request.args], request.stdin),
+    async executeGroup(requests) {
+      const first = requests[0];
+      if (first === undefined) return [];
+      // One tmux invocation, or a snapshot stops being one instant. This
+      // assembles the command list and splits its output back apart; the
+      // built-in engine calls the same helper.
+      const invocation = asSingleInvocation(requests);
+      const result = await run([first.executable, ...invocation.args], undefined);
+      return invocation.sections(result.stdout).map((stdout) => ({ ...result, stdout }));
+    },
+  };
+}
+
+// Standing in for ssh or `docker exec`: the point is that nothing above the
+// seam knows where tmux is.
+const remote = new Server({
+  engine: engineOver(async (argv) => {
+    const child = Bun.spawn(["ssh", "build-host", ...argv], { stderr: "pipe", stdout: "pipe" });
+    const [returncode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).arrayBuffer(),
+      new Response(child.stderr).arrayBuffer(),
+    ]);
+    return {
+      cmd: argv,
+      returncode,
+      signal: null,
+      stderr: new Uint8Array(stderr),
+      stdout: new Uint8Array(stdout),
+    };
+  }),
+});
+```
+
+The seam is bytes in, bytes out, and stops there on purpose. One at the graph
+would make every implementer responsible for framing, capability gating and
+normalization; this one leaves them responsible only for the part that differs.
+Two obligations come with it, both documented on `TmuxEngine`: run a group as
+one command list, and either honour a request's `daemonGuard` or be bound to one
+daemon the way a control connection is.
 
 ### Choosing the transport from outside
 

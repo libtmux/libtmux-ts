@@ -75,3 +75,58 @@ export function assembleGroupArgv(
   }
   return Object.freeze(argv);
 }
+
+/**
+ * Split a byte stream on a marker line, keeping the pieces between markers.
+ *
+ * Byte-wise rather than by decoding: a pane title can carry any byte sequence,
+ * and decoding to split would corrupt what the caller then has to parse.
+ */
+function splitOnMarker(bytes: Uint8Array, marker: string): readonly Uint8Array[] {
+  const needle = new TextEncoder().encode(marker);
+  const sections: Uint8Array[] = [];
+  let start = 0;
+  for (;;) {
+    const at = indexOfBytes(bytes, needle, start);
+    if (at < 0) {
+      sections.push(bytes.subarray(start));
+      return sections;
+    }
+    sections.push(bytes.subarray(start, at));
+    start = at + needle.length;
+  }
+}
+
+function indexOfBytes(source: Uint8Array, needle: Uint8Array, fromIndex: number): number {
+  const lastStart = source.length - needle.length;
+  for (let index = fromIndex; index <= lastStart; index += 1) {
+    let matches = true;
+    for (let offset = 0; offset < needle.length; offset += 1) {
+      if (source[index + offset] !== needle[offset]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return index;
+  }
+  return -1;
+}
+
+/**
+ * One tmux invocation that runs a whole group, and the way back out of it.
+ *
+ * Exported because an engine that runs tmux somewhere else — over ssh, in a
+ * container, through a daemon — has to get this exactly right or its snapshots
+ * tear, and the way to get it right is not to write it again. The built-in
+ * spawning engine calls this, so what ships is what is under test.
+ */
+export function asSingleInvocation(requests: readonly { readonly args: readonly string[] }[]): {
+  readonly args: readonly string[];
+  sections(stdout: Uint8Array): readonly Uint8Array[];
+} {
+  const separator = createGroupSeparator();
+  return {
+    args: assembleGroupArgv(requests, separator),
+    sections: (stdout) => splitOnMarker(stdout, `${separator}\n`),
+  };
+}

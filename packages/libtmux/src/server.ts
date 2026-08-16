@@ -67,6 +67,7 @@ import { TmuxConnection } from "./_internal/runtime/connection.js";
 export type { DaemonIdentity } from "./_internal/runtime/context.js";
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
+import type { CommandTransport } from "./_internal/transport/types.js";
 
 export interface ServerOptions {
   readonly colors?: 88 | 256;
@@ -93,6 +94,16 @@ export interface ServerOptions {
    * whichever command happened to run first.
    */
   readonly transport?: TransportMode;
+  /**
+   * Run this server's commands somewhere other than a local `tmux`.
+   *
+   * The built-in engine spawns a process per command; supplying one moves every
+   * layer above it — snapshots, queries, handles — to a tmux reached however
+   * you reach it. See `libtmux/engine` for what an engine owes its caller;
+   * `transport` selects between the built-in ones and is ignored when this is
+   * given.
+   */
+  readonly engine?: CommandTransport;
 }
 
 /** What `LIBTMUX_TRANSPORT` may say, and what it selects. */
@@ -149,7 +160,7 @@ export class Server {
       connectionAlias: randomUUID() as ConnectionAlias,
       daemonEpoch: 0 as DaemonEpoch,
       ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-      transport: new NodeSpawnTransport(),
+      transport: options?.engine ?? new NodeSpawnTransport(),
     });
     registerServerRuntime(this, runtime);
   }
