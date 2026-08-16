@@ -97,6 +97,10 @@ jobs:
       # not any one package's.
       - run: bun run format:check
       - run: bun run lint
+      # The gates below are themselves TypeScript, and until this ran nothing
+      # compiled them: a gate that crashes on its own type error reports no
+      # failures, which reads exactly like a clean tree.
+      - run: bun run typecheck:tooling
       - run: bun run typecheck:readme
       # The prose around the compiled snippets: that every link resolves, and
       # that the shell blocks name paths and packages this workspace has.
@@ -106,6 +110,10 @@ jobs:
       # Every temporary directory the suites create is named for this
       # package, so a sweep can never reap another libtmux port's servers.
       - run: bun run test:namespace
+      # dependabot is the one configuration nothing else here executes, so a
+      # placeholder in it reads exactly like a working one until a dependency
+      # has been stale for a year.
+      - run: bun run ci:config
 
       - name: Gate the library
         working-directory: packages/libtmux

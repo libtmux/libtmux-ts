@@ -14,7 +14,9 @@
     "docs:links": "bun scripts/check-doc-links.ts",
     "docs:claims": "bun scripts/check-doc-claims.ts",
     "docs:runnable": "bun scripts/check-doc-runnable.ts",
-    "test:namespace": "bun scripts/check-test-namespace.ts"
+    "test:namespace": "bun scripts/check-test-namespace.ts",
+    "ci:config": "bun scripts/check-ci-config.ts",
+    "typecheck:tooling": "tsc -p tsconfig.tooling.json"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",

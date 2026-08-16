@@ -1,0 +1,35 @@
+# Keep the toolchain and the workflow pins current.
+#
+# `scripts/check-ci-config.ts` holds this file to the tree: a defined
+# ecosystem, a directory holding the manifest it reads, and a bun entry over
+# every manifest the root `workspaces` globs resolve to.
+version: 2
+updates:
+  # Every manifest: a package here declares its own dependencies.
+  - package-ecosystem: "bun"
+    directories:
+      - "/"
+      - "/packages/*"
+      - "/examples"
+    schedule:
+      interval: "weekly"
+    # Every bump is to the toolchain, and one pull request runs the gates once
+    # rather than five times against five different TypeScripts.
+    groups:
+      toolchain:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "repo(chore[deps])"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci(chore[actions])"
