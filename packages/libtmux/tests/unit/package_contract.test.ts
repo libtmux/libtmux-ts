@@ -77,10 +77,14 @@ const expectedDependencies = {};
 
 const expectedDevDependencies = {
   "@types/bun": "1.3.14",
+  // Held at the floor deliberately: `engines.node` is ">=22", and types
+  // describing a newer Node would compile calls the floor cannot run. The root
+  // `overrides` pins it for the whole workspace, so a manifest naming anything
+  // else would name a version that does not install.
   "@types/node": "22.20.1",
-  knip: "6.32.0",
-  oxfmt: "0.62.0",
-  oxlint: "1.77.0",
+  knip: "6.32.2",
+  oxfmt: "0.63.0",
+  oxlint: "1.78.0",
   "oxlint-tsgolint": "7.0.2001",
   typescript: "7.0.2",
   zod: "4.4.3",

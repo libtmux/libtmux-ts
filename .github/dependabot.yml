@@ -19,6 +19,14 @@ updates:
       toolchain:
         patterns:
           - "*"
+    # The types describe the floor, not the newest Node. `engines.node` is
+    # ">=22", so `@types/node` past 22 would let a call compile that the oldest
+    # supported runtime cannot make — and the root `overrides` pins it anyway,
+    # so a bump here only makes a manifest name a version that does not install.
+    # It comes off this list when the floor moves.
+    ignore:
+      - dependency-name: "@types/node"
+        versions: [">=23"]
     open-pull-requests-limit: 3
     # The trailing space stops Dependabot appending a colon.
     commit-message:
