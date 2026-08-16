@@ -8,16 +8,24 @@ import { z } from "zod";
  * disk. Renaming their keys to suit our API would break the very compatibility
  * the format is here to provide.
  */
+/**
+ * Every object here is strict, and that is the point.
+ *
+ * A workspace is applied to a running server, so a key this schema does not
+ * know is a key that will not happen — and `z.object` would drop it silently,
+ * turning `window_nam: "editor"` into an unnamed window and a puzzled user.
+ * Refusing the document is the only failure a caller can act on.
+ */
 const paneSchema = z.union([
   z.string(),
-  z.object({
+  z.strictObject({
     focus: z.boolean().optional(),
     shell_command: z.union([z.string(), z.array(z.string())]).optional(),
     start_directory: z.string().optional(),
   }),
 ]);
 
-const windowSchema = z.object({
+const windowSchema = z.strictObject({
   focus: z.boolean().optional(),
   layout: z.string().optional(),
   options: z.record(z.string(), z.string()).optional(),
@@ -27,11 +35,14 @@ const windowSchema = z.object({
   window_name: z.string().optional(),
 });
 
-export const workspaceSchema = z.object({
+export const workspaceSchema = z.strictObject({
   options: z.record(z.string(), z.string()).optional(),
-  session_name: z.string(),
+  session_name: z.string().min(1),
   start_directory: z.string().optional(),
-  windows: z.array(windowSchema).default([]),
+  // A session always has at least one window, so a workspace with none does not
+  // describe a reachable state: applying it would create a session and then try
+  // to prune its windows to zero.
+  windows: z.array(windowSchema).min(1),
 });
 
 export type Workspace = z.infer<typeof workspaceSchema>;

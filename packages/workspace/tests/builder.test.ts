@@ -1,6 +1,7 @@
-// SPIKE: reaches across packages for the library's test harness, which is
-// not on its published surface. Needs a decision: export a ./testing
-// subpath, or move the harness to a package of its own.
+// Reaches across packages for the library's real-tmux fixture harness. That is
+// deliberate and settled: the harness reaches into the library's internals, so
+// it cannot be published, and nothing outside this repository needs it. An
+// in-repo consumer therefore reaches for it by path.
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -55,6 +56,43 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
+async function readMarker(path: string): Promise<readonly string[]> {
+  const file = Bun.file(path);
+  if (!(await file.exists())) return [];
+  return (await file.text()).split("\n").filter((line) => line.length > 0);
+}
+
+/**
+ * Wait until every keystroke already sent to `session`'s first pane has run.
+ *
+ * `sendKeys` returns once tmux has delivered the keystrokes, not once the shell
+ * has run them, so counting lines straight after an apply races the shell. A
+ * pane runs what it is given in order, so sending a sentinel and waiting for
+ * *that* proves everything queued ahead of it has already happened — which is
+ * the only way to assert that something did **not** get sent.
+ */
+async function drain(server: Server, sessionName: string, marker: string): Promise<void> {
+  const pane = (await server.snapshot()).panes.one({
+    session: { is: { name: sessionName } },
+    window: { is: { name: "main" } },
+    index: "0",
+  });
+  const sentinel = `sentinel-${String(await readMarker(marker).then((lines) => lines.length))}`;
+  await pane.sendKeys(`echo ${sentinel} >> ${marker}`);
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop -- Polling for an external process's effect; the whole point is one read after another.
+    if ((await readMarker(marker)).includes(sentinel)) return;
+    // eslint-disable-next-line no-await-in-loop -- Same: the wait is the loop.
+    await Bun.sleep(50);
+  }
+  throw new Error(`pane never ran the ${sentinel} sentinel`);
+}
+
+function ranCount(lines: readonly string[]): number {
+  return lines.filter((line) => line === "ran").length;
+}
+
 const WORKSPACE = `
 session_name: project
 windows:
@@ -81,6 +119,23 @@ describe("workspace builder", () => {
 
   test("rejects a workspace missing its session name", () => {
     expect(() => parseWorkspaceYaml("windows: []")).toThrow();
+  });
+
+  test("rejects a key it does not know, at every level", () => {
+    // A dropped key is a window that quietly loses its name, so a typo has to
+    // stop the apply rather than change what gets built.
+    expect(() => parseWorkspaceYaml("session_name: x\nwindwos: []\n")).toThrow();
+    expect(() =>
+      parseWorkspaceYaml("session_name: x\nwindows:\n  - window_nam: editor\n"),
+    ).toThrow();
+    expect(() =>
+      parseWorkspaceYaml("session_name: x\nwindows:\n  - panes:\n      - shell_commnd: 'true'\n"),
+    ).toThrow();
+  });
+
+  test("rejects a workspace that describes no windows", () => {
+    // A session always has a window, so this asks for a state tmux cannot hold.
+    expect(() => parseWorkspaceYaml("session_name: x\nwindows: []\n")).toThrow();
   });
 
   test("rejects a YAML-coerced boolean where a shell command belongs", () => {
@@ -234,6 +289,53 @@ describe("workspace builder", () => {
       await applyWorkspace(server, workspace);
       const snapshot = await server.snapshot();
       expect(snapshot.panes.count({ window: { is: { name: "main" } } })).toBe(2);
+    });
+  }, 90_000);
+
+  test("does not retype a pane's commands into a pane it did not create", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "ran");
+      const workspace = parseWorkspaceYaml(
+        [
+          "session_name: once",
+          "windows:",
+          "  - window_name: main",
+          "    panes:",
+          `      - "echo ran >> ${marker}"`,
+        ].join("\n"),
+      );
+
+      await applyWorkspace(server, workspace);
+      await drain(server, "once", marker);
+      await applyWorkspace(server, workspace);
+      await drain(server, "once", marker);
+
+      // The pane survived the second apply, so its command was not sent again.
+      expect(ranCount(await readMarker(marker))).toBe(1);
+    });
+  }, 90_000);
+
+  test("resends a pane's commands when asked to", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "ran");
+      const workspace = parseWorkspaceYaml(
+        [
+          "session_name: twice",
+          "windows:",
+          "  - window_name: main",
+          "    panes:",
+          `      - "echo ran >> ${marker}"`,
+        ].join("\n"),
+      );
+
+      await applyWorkspace(server, workspace, { commands: "always" });
+      await drain(server, "twice", marker);
+      await applyWorkspace(server, workspace, { commands: "always" });
+      await drain(server, "twice", marker);
+
+      expect(ranCount(await readMarker(marker))).toBe(2);
     });
   }, 90_000);
 

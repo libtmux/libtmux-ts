@@ -48,10 +48,14 @@
     "test:package": "bun run build && ../../node_modules/.bin/publint && ../../node_modules/.bin/attw --pack . --profile esm-only"
   },
   "dependencies": {
-    "libtmux": "0.0.1-alpha.7",
     "zod": "4.4.3"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "libtmux": "0.0.1-alpha.7"
+  },
+  "peerDependencies": {
+    "libtmux": "0.0.1-alpha.7"
+  },
   "engines": {
     "node": ">=22"
   }
