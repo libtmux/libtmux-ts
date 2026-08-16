@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import { Server } from "libtmux/server";
+
 import { readCallerEnvironment } from "../src/caller.js";
+import { describeUnreachable } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
 import { PaneTail } from "../src/live.js";
 import { effectiveWaitMs, resolvePolicy, tierAllows } from "../src/policy.js";
@@ -117,6 +120,27 @@ describe("policy", () => {
     expect(tierAllows("mutating", "readonly")).toBe(true);
     expect(tierAllows("mutating", "destructive")).toBe(false);
     expect(tierAllows("destructive", "destructive")).toBe(true);
+  });
+});
+
+describe("unreachable server", () => {
+  test("names the variable an operator set, because the agent did not set it", () => {
+    const byPath = describeUnreachable(
+      new Server({ socketPath: "/tmp/ltx-gone" }),
+      "cannot reach tmux: no server running on /tmp/ltx-gone",
+    );
+    expect(byPath).toContain("LIBTMUX_SOCKET_PATH=/tmp/ltx-gone");
+    // The recovery matters more than the reason: an agent told only that
+    // something failed reports "unavailable" and stops, which is what one did.
+    expect(byPath).toContain("new_session");
+    expect(byPath).toContain("report it rather than retrying");
+
+    expect(describeUnreachable(new Server({ socketName: "agent" }), "cannot reach tmux")).toContain(
+      "LIBTMUX_SOCKET_NAME=agent",
+    );
+    expect(describeUnreachable(new Server(), "cannot reach tmux")).toContain(
+      "no socket configured",
+    );
   });
 });
 

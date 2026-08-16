@@ -23,6 +23,38 @@ export interface ToolContext {
   readonly tmux: Server;
 }
 
+/**
+ * Say what to do about a server that is not there.
+ *
+ * The library names the socket it tried, which is the whole answer for a
+ * caller who chose it. An agent did not: an MCP client hands this process an
+ * environment and nothing else, so the socket came from an operator and the
+ * agent's only useful move is to say which one was wrong and how it is set.
+ * Without that it reports "unavailable" and stops — which is what a real one
+ * did, against a server that was running the whole time.
+ */
+export function describeUnreachable(tmux: Server, reason: string): string {
+  const configured =
+    tmux.socketPath !== undefined
+      ? `LIBTMUX_SOCKET_PATH=${tmux.socketPath}`
+      : tmux.socketName !== undefined
+        ? `LIBTMUX_SOCKET_NAME=${tmux.socketName}`
+        : "no socket configured, so tmux's default was used";
+  return (
+    `${reason}\n\nThis server was launched with ${configured}. That is set by whoever ` +
+    `configured this MCP server, not by you — report it rather than retrying. ` +
+    `Start a server there with new_session if creating one is what was wanted.`
+  );
+}
+
+function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
+  return work.catch((error: unknown) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    if (!reason.startsWith("cannot reach tmux")) throw error;
+    throw new Error(describeUnreachable(tmux, reason), { cause: error });
+  });
+}
+
 export function createContext(
   tmux: Server,
   policy: Policy,
@@ -33,7 +65,7 @@ export function createContext(
     hub,
     identity: (snapshot) => resolveCallerIdentity(tmux, snapshot),
     policy,
-    snapshot: () => tmux.snapshot(),
+    snapshot: () => withRecovery(tmux, tmux.snapshot()),
     tmux,
   };
 }
