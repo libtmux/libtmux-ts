@@ -47,7 +47,28 @@ function candidatesFor(snapshot: ServerSnapshot, handle: Child): readonly Child[
   }
 }
 
-function sameEntity(left: Child, right: Child): boolean {
+/**
+ * Whether two handles are two readings of one thing.
+ *
+ * The deliberate opposite of `liveHandlesEqual`, which asks whether two handles
+ * are interchangeable. Both are correct, and they disagree about clients on
+ * purpose:
+ *
+ * | | `liveHandlesEqual` | `isSameSubject` |
+ * | --- | --- | --- |
+ * | pane, window, session | server, kind, id | connection, epoch, kind, id |
+ * | client | every field of the row | `client_name` alone |
+ *
+ * `equals` is a question about two values a caller is holding, so a client read
+ * at two instants is two different things — its state is most of what a client
+ * is. This is the question `refreshed` asks of a later snapshot, so a client
+ * read again has to be recognisable as itself however much of it changed;
+ * comparing the rest would mean a re-read never finds its own subject.
+ *
+ * Merging them would break one caller or the other, which is why they are named
+ * apart and pointed at each other rather than shared.
+ */
+function isSameSubject(left: Child, right: Child): boolean {
   const a = entityRefForHandle(left);
   const b = entityRefForHandle(right);
   if (a.kind === "client" || b.kind === "client") {
@@ -80,7 +101,7 @@ export async function refreshedHandle<Handle extends Child>(
   const winlink = winlinkRefForHandle(handle);
   const found = candidatesFor(snapshot, handle).find(
     (candidate) =>
-      sameEntity(candidate, handle) && sameWinlink(winlinkRefForHandle(candidate), winlink),
+      isSameSubject(candidate, handle) && sameWinlink(winlinkRefForHandle(candidate), winlink),
   );
   if (found === undefined) {
     throw new LibTmuxException(`${handle.toString()} no longer exists on the server`);
