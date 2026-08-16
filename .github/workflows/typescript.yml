@@ -59,6 +59,12 @@ jobs:
       - run: echo "$HOME/tmux-builds/tmux-3.2a/bin" >> "$GITHUB_PATH"
       - run: tmux -V
 
+      # A shell the MCP server's framing deliberately cannot address, which is
+      # the only way to prove it refuses one. The suite names it rather than
+      # skipping without it.
+      - name: Install fish
+        run: sudo apt-get install -y fish
+
       - run: bun install --frozen-lockfile
 
       # Formatting, linting and the cross-package READMEs are the workspace's,
@@ -140,6 +146,10 @@ jobs:
   # "3.2a or newer" is a claim about 3.3a, 3.5 and 3.6 too, and a matrix of the
   # ends and two favourites proves it for none of them — 3.7 already turned out
   # to be the one release that accepts `break-pane -n` and ignores it.
+  #
+  # The library's suites only: the consumers are thin over it, so a tmux
+  # difference they could hit is one its own suites hit first, and running them
+  # eight times buys a repeat rather than a reading.
   tmux:
     runs-on: ubuntu-latest
     strategy:
@@ -223,9 +233,3 @@ jobs:
         run: |
           bun run test:integration
           bun run test:differential
-
-      - name: Exercise the consumers against this tmux
-        run: |
-          ( cd packages/mcp && bun run test )
-          ( cd packages/workspace && bun run test )
-          ( cd examples && bun run test )

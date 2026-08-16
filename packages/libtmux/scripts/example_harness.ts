@@ -86,7 +86,14 @@ function split(code: string): { readonly body: string; readonly imports: string 
   const body: string[] = [];
   for (const line of code.split("\n")) {
     if (/^import\s/u.test(line)) {
-      const rewritten = line.replace(/"libtmux"/u, '"../../src/index.js"');
+      // Resolved to source, not to `dist`. A README block imports the package
+      // the way a reader does, and compiling that against the built output
+      // would make this gate depend on a build having run first — which is how
+      // `libtmux/engine` typechecked here and failed in CI, where the check
+      // runs before the build.
+      const rewritten = line
+        .replace(/"libtmux"/u, '"../../src/index.js"')
+        .replace(/"libtmux\/([\w-]+)"/u, '"../../src/$1.js"');
       // A README block shows the import a reader would write, and the preamble
       // has already introduced some of those names for the examples that do not
       // show one. Keeping both is a duplicate identifier rather than a problem
