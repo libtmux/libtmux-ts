@@ -112,13 +112,14 @@ agent's cleanup can reap the session you are working in.
 
 ### Tune what it will do
 
-| Variable                       | Default  | Effect                                             |
-| ------------------------------ | -------- | -------------------------------------------------- |
-| `LIBTMUX_SAFETY`               | mutating | `readonly`, `mutating`, or `destructive`           |
-| `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller           |
-| `LIBTMUX_MCP_TASK_WAIT_MAX_MS` | 600000   | Ceiling on a wait running as a task                |
-| `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links |
-| `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections      |
+| Variable                       | Default  | Effect                                                |
+| ------------------------------ | -------- | ----------------------------------------------------- |
+| `LIBTMUX_SAFETY`               | mutating | `readonly`, `mutating`, or `destructive`              |
+| `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller              |
+| `LIBTMUX_MCP_TASK_WAIT_MAX_MS` | 600000   | Ceiling on a wait running as a task                   |
+| `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links    |
+| `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections         |
+| `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool names, when a tier is too coarse |
 
 Two ceilings rather than one, because the two waits cost different things. A
 blocking wait spends the agent's turn and cannot be called off mid-flight, so it
@@ -134,6 +135,15 @@ tool an agent cannot see is one it cannot spend a turn being denied.
 - `readonly` — reading, watching, and waiting. Nothing writes.
 - `mutating` — the above, plus typing, splitting, creating, and renaming.
 - `destructive` — the above, plus `kill_pane`, `kill_window`, `kill_session`.
+
+`LIBTMUX_MCP_TOOLS` narrows further when a tier is the wrong shape. A tier
+answers how much an agent may change; a list answers which of it, and "read and
+type, never kill" is not a degree of typing. A tool left off the list is never
+registered, so an agent cannot spend a turn discovering it:
+
+```console
+$ LIBTMUX_MCP_TOOLS=list_panes,capture_pane,run_command libtmux-mcp
+```
 
 Independently of the tier, the server refuses to write to or kill **the pane it
 is running in** and any pane **a person is currently watching**, unless the call

@@ -6,6 +6,7 @@
  * the tool rather than of the call, so they are declared once beside it.
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 
 import { tierAllows, type Policy, type SafetyTier } from "./policy.js";
@@ -49,4 +50,56 @@ export const OPEN_WORLD: ToolAnnotations = {
 
 export function offers(policy: Policy, tier: SafetyTier): boolean {
   return tierAllows(policy.safety, tier);
+}
+
+/**
+ * The server the tool modules register against, filtered by the allowlist.
+ *
+ * Wrapped once here rather than checked in each module: a tool that forgot the
+ * check would be offered anyway, and "the allowlist covers every tool" is not
+ * something a reviewer can see by reading one file. A tool that is not listed
+ * is never registered, so it is not merely refused — an agent cannot spend a
+ * turn discovering it.
+ */
+export function offeredTools(mcp: McpServer, policy: Policy): McpServer {
+  const allowed = policy.tools;
+  if (allowed === undefined) return mcp;
+  /**
+   * Call the real registration only for a listed name.
+   *
+   * The method is read off its owner inside the call and invoked on it, so it
+   * stays bound to the object the SDK expects `this` to be.
+   */
+  const filtered =
+    (owner: object, method: string) =>
+    (name: string, ...rest: readonly unknown[]): unknown => {
+      if (!allowed.has(name)) return undefined;
+      const register = Reflect.get(owner, method) as (...args: readonly unknown[]) => unknown;
+      return register.call(owner, name, ...rest);
+    };
+
+  return new Proxy(mcp, {
+    get(target, property, receiver): unknown {
+      if (property === "registerTool") return filtered(target, "registerTool");
+      // A task tool registers through its own object, so filtering only
+      // `registerTool` would leave `wait_for_text_task` offered by a server
+      // that was told not to.
+      if (property === "experimental") {
+        const experimental = target.experimental;
+        const tasks = experimental.tasks;
+        return {
+          ...experimental,
+          tasks: new Proxy(tasks, {
+            get(taskTarget, taskProperty, taskReceiver): unknown {
+              if (taskProperty !== "registerToolTask") {
+                return Reflect.get(taskTarget, taskProperty, taskReceiver) as unknown;
+              }
+              return filtered(taskTarget, "registerToolTask");
+            },
+          }),
+        };
+      }
+      return Reflect.get(target, property, receiver) as unknown;
+    },
+  });
 }

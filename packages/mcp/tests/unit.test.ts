@@ -123,6 +123,19 @@ describe("policy", () => {
   });
 });
 
+describe("tool allowlist", () => {
+  test("reads a list, and treats a blank value as no decision", () => {
+    expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: "list_panes, capture_pane" }).tools).toEqual(
+      new Set(["list_panes", "capture_pane"]),
+    );
+    // Blank means "I did not decide", not "offer nothing" — the second is a
+    // puzzle rather than a policy.
+    expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: "" }).tools).toBeUndefined();
+    expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: " , " }).tools).toBeUndefined();
+    expect(resolvePolicy({}).tools).toBeUndefined();
+  });
+});
+
 describe("unreachable server", () => {
   test("names the variable an operator set, because the agent did not set it", () => {
     const byPath = describeUnreachable(

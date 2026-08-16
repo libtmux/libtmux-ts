@@ -10,6 +10,7 @@ import { readCallerEnvironment } from "./caller.js";
 import { createContext } from "./context.js";
 import { buildInstructions } from "./instructions.js";
 import { resolvePolicy, type Policy } from "./policy.js";
+import { offeredTools } from "./register.js";
 import { registerCapture } from "./tools/capture.js";
 import { registerDiscovery } from "./tools/discovery.js";
 import { registerInput } from "./tools/input.js";
@@ -54,14 +55,17 @@ export function createTmuxMcpServer(
     },
   );
 
-  registerDiscovery(mcp, context);
-  registerCapture(mcp, context);
-  registerInput(mcp, context);
-  registerLifecycle(mcp, context);
-  registerLayout(mcp, context);
-  registerSettings(mcp, context);
-  registerWait(mcp, context);
-  registerWorkspace(mcp, context);
+  // Every tool registers against the filtered view, so the allowlist cannot be
+  // half-applied by a module that forgot it.
+  const offered = offeredTools(mcp, policy);
+  registerDiscovery(offered, context);
+  registerCapture(offered, context);
+  registerInput(offered, context);
+  registerLifecycle(offered, context);
+  registerLayout(offered, context);
+  registerSettings(offered, context);
+  registerWait(offered, context);
+  registerWorkspace(offered, context);
   registerResources(mcp, context);
   registerPrompts(mcp, context);
 

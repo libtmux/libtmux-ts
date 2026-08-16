@@ -64,6 +64,18 @@ export interface Policy {
   readonly safety: SafetyTier;
   /** Ceiling on a wait running as a task. */
   readonly taskWaitMaxMs: number;
+  /**
+   * The only tools to offer, when an operator has narrowed it that far.
+   *
+   * A tier answers "how much may this agent change"; this answers "which of it".
+   * Pointing a fleet at one tmux server is where the difference matters: read
+   * and type, never kill, is a shape no tier has because killing is not a
+   * degree of typing.
+   *
+   * Undefined offers everything the tier allows, which is the common case and
+   * the one that needs no configuration.
+   */
+  readonly tools: ReadonlySet<string> | undefined;
 }
 
 function clamp(value: number, floor: number, limit: number): number {
@@ -81,6 +93,22 @@ function readInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Read a comma-separated allowlist, treating an empty value as no list.
+ *
+ * Not as an empty list: a variable someone set and left blank means "I did not
+ * decide", and answering it with a server that offers nothing is a puzzle
+ * rather than a policy.
+ */
+function readToolAllowlist(raw: string | undefined): ReadonlySet<string> | undefined {
+  if (raw === undefined) return undefined;
+  const names = raw
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+  return names.length === 0 ? undefined : new Set(names);
 }
 
 function readSafety(raw: string | undefined): SafetyTier {
@@ -103,6 +131,7 @@ export function resolvePolicy(
     liveEnabled: environment.LIBTMUX_MCP_LIVE !== "0",
     maxResultLines: readInteger(environment.LIBTMUX_MCP_MAX_RESULT_LINES, DEFAULT_MAX_RESULT_LINES),
     safety: readSafety(environment.LIBTMUX_SAFETY),
+    tools: readToolAllowlist(environment.LIBTMUX_MCP_TOOLS),
     taskWaitMaxMs: clamp(
       readInteger(environment.LIBTMUX_MCP_TASK_WAIT_MAX_MS, DEFAULT_TASK_WAIT_MS),
       TASK_WAIT_FLOOR_MS,
