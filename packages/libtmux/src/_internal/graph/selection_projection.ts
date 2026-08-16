@@ -3,13 +3,13 @@ import {
   type WhereField,
   type WhereModel,
 } from "../../_generated/where_fields.js";
-import type { LogicalRef } from "../../common.js";
 import {
   createGraphRecordRef,
   graphRecordRefsEqual,
   isNormalizedGraph,
   type GraphCapture,
   type GraphEntity,
+  type GraphEntityRef,
   type GraphRecord,
   type GraphRecordRef,
   type GraphSource,
@@ -51,7 +51,7 @@ type ProjectionScalars = Readonly<Record<string, string | null>>;
 
 export interface ProjectionRecord {
   readonly adjacency: readonly ProjectionAdjacency[];
-  readonly entity: LogicalRef;
+  readonly entity: GraphEntityRef;
   readonly model: WhereModel;
   readonly ref: GraphRecordRef;
   readonly scalars: ProjectionScalars;
@@ -64,7 +64,7 @@ declare class SelectionProjectionNominal {
 
 export interface SelectionProjection extends SelectionProjectionNominal {
   readonly capture: GraphCapture;
-  readonly entities: readonly GraphEntity<LogicalRef>[];
+  readonly entities: readonly GraphEntity<GraphEntityRef>[];
   readonly members: readonly GraphRecordRef[];
   readonly records: readonly ProjectionRecord[];
   readonly winlinks: readonly WinlinkEntity[];
@@ -193,7 +193,7 @@ function snapshotDataArray(value: unknown, label: string): readonly unknown[] {
 }
 
 function isWhereModel(value: unknown): value is WhereModel {
-  return value === "session" || value === "window" || value === "pane";
+  return value === "session" || value === "window" || value === "pane" || value === "client";
 }
 
 function snapshotDescriptor(model: WhereModel, value: unknown): ProjectionDescriptor {
@@ -291,10 +291,11 @@ function snapshotDescriptor(model: WhereModel, value: unknown): ProjectionDescri
 function snapshotDescriptors(value: unknown): DescriptorSnapshots {
   const descriptors = readStrictDataRecord(
     value,
-    ["pane", "session", "window"],
+    ["client", "pane", "session", "window"],
     "projection descriptors",
   );
   return Object.freeze({
+    client: snapshotDescriptor("client", descriptors.client),
     pane: snapshotDescriptor("pane", descriptors.pane),
     session: snapshotDescriptor("session", descriptors.session),
     window: snapshotDescriptor("window", descriptors.window),
@@ -304,7 +305,7 @@ function snapshotDescriptors(value: unknown): DescriptorSnapshots {
 function rootModel(source: GraphSource): WhereModel {
   switch (source.listCommand) {
     case "list-clients":
-      return invalidProjection("client sources cannot create a selection projection");
+      return "client";
     case "list-panes":
       return "pane";
     case "list-sessions":
@@ -330,14 +331,30 @@ function createRecordIndex(graph: NormalizedGraph): RecordIndex {
   return bySource;
 }
 
-function logicalEntityForRecord(record: GraphRecord): LogicalRef {
+function logicalEntityForRecord(record: GraphRecord): GraphEntityRef {
   if (!isWhereModel(record.model) || record.entity.kind !== record.model) {
     return invalidProjection("reachable graph record has an invalid projection model");
   }
   return record.entity;
 }
 
-function cloneLogicalRef(ref: LogicalRef): LogicalRef {
+/**
+ * Copy an entity reference, so a projection never shares one with its graph.
+ *
+ * A client is not a {@link LogicalRef}: tmux gives it no id of its own, so it
+ * carries the terminal's name where the others carry a branded `$n`/`@n`/`%n`.
+ * It is still an entity a projection can be built from, which is why this takes
+ * the wider type.
+ */
+function cloneLogicalRef(ref: GraphEntityRef): GraphEntityRef {
+  if (ref.kind === "client") {
+    return Object.freeze({
+      connection: ref.connection,
+      epoch: ref.epoch,
+      kind: "client" as const,
+      id: ref.id,
+    });
+  }
   switch (ref.kind) {
     case "session":
       return createLogicalRef({
@@ -373,7 +390,7 @@ function cloneWinlinkRef(ref: WinlinkRef): WinlinkRef {
   });
 }
 
-function logicalRefKey(ref: LogicalRef): string {
+function logicalRefKey(ref: GraphEntityRef): string {
   return JSON.stringify([ref.connection, ref.epoch, ref.kind, ref.id]);
 }
 
@@ -554,7 +571,7 @@ export class SelectionProjectionBuilder {
   private addReachable(record: GraphRecord): void {
     if (this.reachableSet.has(record)) return;
     if (!isWhereModel(record.model)) {
-      return invalidProjection("client records cannot be reached by a selection projection");
+      return invalidProjection("record has no queryable model");
     }
     this.reachableSet.add(record);
     this.reachableRecords.push(record);
@@ -622,11 +639,16 @@ export class SelectionProjectionBuilder {
       });
     });
 
-    const graphEntities = new Map<string, GraphEntity<LogicalRef>>();
-    for (const entity of [...this.graph.sessions, ...this.graph.windows, ...this.graph.panes]) {
+    const graphEntities = new Map<string, GraphEntity<GraphEntityRef>>();
+    for (const entity of [
+      ...this.graph.sessions,
+      ...this.graph.windows,
+      ...this.graph.panes,
+      ...this.graph.clients,
+    ]) {
       graphEntities.set(logicalRefKey(entity.ref), entity);
     }
-    const entities: GraphEntity<LogicalRef>[] = [];
+    const entities: GraphEntity<GraphEntityRef>[] = [];
     const seenEntities = new Set<string>();
     for (const record of this.reachableRecords) {
       const ref = logicalEntityForRecord(record);

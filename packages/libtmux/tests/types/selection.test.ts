@@ -1,10 +1,7 @@
 import { Client } from "../../src/client.js";
 import type { SelectionProjection } from "../../src/_internal/graph/selection_projection.js";
 import type { ModelForKind } from "../../src/_internal/runtime/model_kind.js";
-import {
-  createClientSelection,
-  createProjectedSelection,
-} from "../../src/_internal/selection/evaluate.js";
+import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
 import { Session } from "../../src/session.js";
@@ -12,6 +9,7 @@ import { Window } from "../../src/window.js";
 import * as selectionModule from "../../src/selection.js";
 import {
   parseLegacyWhere,
+  type ClientWhere,
   type PaneWhere,
   type RegexCriteriaData,
   type Selection,
@@ -69,7 +67,7 @@ type ExpectedParseLegacyWhere = <Model extends "session" | "window">(
   model: Model,
   input: unknown,
 ) => Extract<WhereDocumentV1, { readonly model: Model }>;
-type ExpectedCreateProjectedSelection = <Kind extends "pane" | "session" | "window">(
+type ExpectedCreateProjectedSelection = <Kind extends "client" | "pane" | "session" | "window">(
   model: Kind,
   values: readonly ModelForKind<Kind>[],
   projection: SelectionProjection,
@@ -96,16 +94,13 @@ type _SelectionKeys = Expect<
 type _SessionWhere = Expect<Equal<WhereOf<Session>, SessionWhere>>;
 type _WindowWhere = Expect<Equal<WhereOf<Window>, WindowWhere>>;
 type _PaneWhere = Expect<Equal<WhereOf<Pane>, PaneWhere>>;
-type _ClientWhere = Expect<Equal<WhereOf<Client>, never>>;
+type _ClientWhere = Expect<Equal<WhereOf<Client>, ClientWhere>>;
 type _ServerWhere = Expect<Equal<WhereOf<Server>, never>>;
 type _UnknownWhere = Expect<Equal<WhereOf<unknown>, never>>;
 type _StructuralWhere = Expect<Equal<WhereOf<StructuralSession>, never>>;
 type _ParseLegacyWhere = Expect<Equal<typeof parseLegacyWhere, ExpectedParseLegacyWhere>>;
 type _CreateProjectedSelection = Expect<
   Equal<typeof createProjectedSelection, ExpectedCreateProjectedSelection>
->;
-type _CreateClientSelection = Expect<
-  Equal<typeof createClientSelection, (values: readonly Client[]) => Selection<Client>>
 >;
 type _RuntimeExports = Expect<Equal<keyof typeof selectionModule, "parseLegacyWhere">>;
 type _RegexData = Expect<
@@ -172,10 +167,11 @@ sessions.filter({ name: "main" });
 sessions.where((value: Session) => value.name === "main");
 // @ts-expect-error Session criteria do not accept Window fields.
 sessions.where({ window_id: "@1" });
-// @ts-expect-error Client has no declarative criteria.
-clients.where({});
-// @ts-expect-error Client cardinality is criteria-free.
-clients.first({});
+// A client is queryable like any other model, by its own fields.
+const controlClients = clients.where({ controlMode: "1" });
+clients.first({ tty: "" });
+// @ts-expect-error Client criteria do not accept another model's fields.
+clients.where({ paneId: "%1" });
 // @ts-expect-error Selection has no exactly-one get alias.
 sessions.get({ name: "main" });
 // @ts-expect-error Selection has no Array mutation surface.
@@ -184,14 +180,14 @@ sessions.push(session);
 void sessions[0];
 // @ts-expect-error QueryList is intentionally absent.
 type MissingQueryList = import("../../src/selection.js").QueryList<Session>;
-// @ts-expect-error ClientWhere is intentionally absent.
-type MissingClientWhere = import("../../src/selection.js").ClientWhere;
+type PresentClientWhere = import("../../src/selection.js").ClientWhere;
 // @ts-expect-error scalar helper types remain private implementation details.
 type MissingStringFilter = import("../../src/selection.js").StringFilter;
 
 void callbackFiltered;
+void controlClients;
 void narrowed;
 void (null as unknown as InvalidSelection);
 void (null as unknown as MissingQueryList);
-void (null as unknown as MissingClientWhere);
+void (null as unknown as PresentClientWhere);
 void (null as unknown as MissingStringFilter);

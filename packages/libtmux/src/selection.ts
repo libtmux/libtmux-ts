@@ -195,6 +195,40 @@ export interface PaneWhere {
   readonly session?: OneRelation<SessionWhere>;
 }
 
+export interface ClientWhere {
+  readonly AND?: readonly ClientWhere[];
+  readonly OR?: readonly ClientWhere[];
+  readonly NOT?: readonly ClientWhere[];
+  readonly activity?: ScalarCriteria;
+  readonly cellHeight?: ScalarCriteria;
+  readonly cellWidth?: ScalarCriteria;
+  readonly clientSession?: ScalarCriteria;
+  readonly controlMode?: ScalarCriteria;
+  readonly created?: ScalarCriteria;
+  readonly discarded?: ScalarCriteria;
+  readonly flags?: ScalarCriteria;
+  readonly height?: ScalarCriteria;
+  readonly keyTable?: ScalarCriteria;
+  readonly lastSession?: ScalarCriteria;
+  readonly modeFormat?: ScalarCriteria;
+  readonly name?: ScalarCriteria;
+  readonly pid?: ScalarCriteria;
+  readonly prefix?: ScalarCriteria;
+  readonly readonly?: ScalarCriteria;
+  readonly termfeatures?: ScalarCriteria;
+  readonly termname?: ScalarCriteria;
+  readonly termtype?: ScalarCriteria;
+  readonly tty?: ScalarCriteria;
+  readonly uid?: ScalarCriteria;
+  readonly user?: ScalarCriteria;
+  readonly utf8?: ScalarCriteria;
+  readonly width?: ScalarCriteria;
+  readonly written?: ScalarCriteria;
+  readonly session?: OneRelation<SessionWhere>;
+  readonly window?: OneRelation<WindowWhere>;
+  readonly pane?: OneRelation<PaneWhere>;
+}
+
 // </libtmux-generated-where-types>
 
 type WhereForKind<Kind> = Kind extends "session"
@@ -203,7 +237,9 @@ type WhereForKind<Kind> = Kind extends "session"
     ? WindowWhere
     : Kind extends "pane"
       ? PaneWhere
-      : never;
+      : Kind extends "client"
+        ? ClientWhere
+        : never;
 
 export type WhereOf<Model> = WhereForKind<ModelKindOf<Model>>;
 
@@ -354,7 +390,8 @@ export interface Selection<Model> extends Iterable<Model> {
 export type WhereDocumentV1 =
   | { readonly model: "session"; readonly version: 1; readonly where: SessionWhere }
   | { readonly model: "window"; readonly version: 1; readonly where: WindowWhere }
-  | { readonly model: "pane"; readonly version: 1; readonly where: PaneWhere };
+  | { readonly model: "pane"; readonly version: 1; readonly where: PaneWhere }
+  | { readonly model: "client"; readonly version: 1; readonly where: ClientWhere };
 
 export function parseLegacyWhere<Model extends "session" | "window">(
   model: Model,

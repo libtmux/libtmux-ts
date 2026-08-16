@@ -99,6 +99,11 @@ const graph = normalizeGraph({
 });
 const builder = SelectionProjectionBuilder.create({
   descriptors: {
+    client: {
+      fields: WHERE_FIELDS_V1.client,
+      model: "client",
+      relations: WHERE_RELATIONS_V1.client,
+    },
     pane: {
       fields: WHERE_FIELDS_V1.pane,
       model: "pane",

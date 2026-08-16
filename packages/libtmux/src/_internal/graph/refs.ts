@@ -11,6 +11,7 @@ import type {
   WindowIdInput,
 } from "../../common.js";
 import { QueryValidationError } from "../../exc.js";
+import type { GraphEntityRef } from "./model.js";
 
 type LogicalRefForKind<Kind extends TmuxIdKind> = Extract<LogicalRef, { readonly kind: Kind }>;
 
@@ -250,6 +251,27 @@ export function logicalRefsEqual(left: LogicalRef, right: LogicalRef): boolean {
     parsedLeft.kind === parsedRight.kind &&
     parsedLeft.id === parsedRight.id
   );
+}
+
+/**
+ * Compare two entity references, whichever kind they are.
+ *
+ * {@link logicalRefsEqual} validates its arguments as logical references, and a
+ * client is not one — tmux gives it no id of its own, so it carries the
+ * terminal's name where a session carries a branded `$n`. Clients are still
+ * entities a projection can be built from, so the comparison has to admit them.
+ */
+export function graphEntityRefsEqual(left: GraphEntityRef, right: GraphEntityRef): boolean {
+  if (left.kind === "client" || right.kind === "client") {
+    return (
+      left.kind === "client" &&
+      right.kind === "client" &&
+      left.connection === right.connection &&
+      left.epoch === right.epoch &&
+      left.id === right.id
+    );
+  }
+  return logicalRefsEqual(left, right);
 }
 
 export function createWinlinkRef(input: WinlinkRefInput): WinlinkRef {

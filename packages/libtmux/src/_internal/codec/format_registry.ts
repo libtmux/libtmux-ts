@@ -23,7 +23,7 @@ type SnapshotDestination =
   | "window"
   | "winlink";
 
-export type CriteriaModel = "pane" | "session" | "window";
+export type CriteriaModel = "client" | "pane" | "session" | "window";
 
 export interface FormatFieldRecord {
   readonly criteriaWireNames: Readonly<Partial<Record<CriteriaModel, string>>>;
@@ -41,7 +41,7 @@ export interface WhereSchemaVersion {
   readonly version: number;
 }
 
-const criteriaModels = ["session", "window", "pane"] as const;
+const criteriaModels = ["session", "window", "pane", "client"] as const;
 
 export interface CriteriaRelation {
   readonly cardinality: "many" | "one";
@@ -58,6 +58,19 @@ export interface CriteriaRelation {
  */
 export const CRITERIA_RELATIONS_V1: Readonly<Record<CriteriaModel, readonly CriteriaRelation[]>> =
   Object.freeze({
+    client: Object.freeze([
+      Object.freeze({
+        cardinality: "one" as const,
+        name: "session",
+        targetModel: "session" as const,
+      }),
+      Object.freeze({
+        cardinality: "one" as const,
+        name: "window",
+        targetModel: "window" as const,
+      }),
+      Object.freeze({ cardinality: "one" as const, name: "pane", targetModel: "pane" as const }),
+    ]),
     pane: Object.freeze([
       Object.freeze({
         cardinality: "one" as const,
@@ -251,6 +264,7 @@ export function formatFieldsForListCommand(
 
 export function validateWhereSchemaHistory(history: readonly WhereSchemaVersion[]): void {
   const previouslyShipped: Record<CriteriaModel, Set<string>> = {
+    client: new Set(),
     pane: new Set(),
     session: new Set(),
     window: new Set(),
@@ -384,7 +398,7 @@ function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string
   const lines = [
     'import type { FormatFieldName } from "./format_field_names.js";',
     "",
-    'export type WhereModel = "pane" | "session" | "window";',
+    'export type WhereModel = "client" | "pane" | "session" | "window";',
     "",
     "export interface WhereField {",
     "  /** The camelCase key a caller writes in criteria. */",
@@ -421,6 +435,7 @@ function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string
     "  session: sessionFields,",
     "  window: windowFields,",
     "  pane: paneFields,",
+    "  client: clientFields,",
     "});",
     "",
     "export const WHERE_ALIASES_V1: Readonly<Record<WhereModel, Readonly<Record<string, string>>>> =",
@@ -428,6 +443,7 @@ function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string
     "    session: emptyAliases,",
     "    window: emptyAliases,",
     "    pane: emptyAliases,",
+    "    client: emptyAliases,",
     "  });",
     "",
   );

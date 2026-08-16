@@ -391,9 +391,12 @@ describe("format registry", () => {
       criteriaWireNames: {},
       scalarFilterDomain: null,
     });
+    // `client_name` is client-scope, so it is a criteria field of the client
+    // model and of no other — unlike `pid`, which is universal and is criteria
+    // for nobody.
     expect(FORMAT_REGISTRY.find(({ token }) => token === "client_name")).toMatchObject({
-      criteriaWireNames: {},
-      scalarFilterDomain: null,
+      criteriaWireNames: { client: "client_name" },
+      scalarFilterDomain: "string",
     });
   });
 
@@ -441,7 +444,7 @@ describe("format registry", () => {
     for (const aliases of Object.values(WHERE_ALIASES_V1)) {
       expect(Object.isFrozen(aliases)).toBe(true);
     }
-    expect(Object.keys(WHERE_FIELDS_V1)).toEqual(["session", "window", "pane"]);
+    expect(Object.keys(WHERE_FIELDS_V1)).toEqual(["session", "window", "pane", "client"]);
     expect(WHERE_FIELDS_V1.session).toHaveLength(23);
     expect(WHERE_FIELDS_V1.window).toHaveLength(34);
     expect(WHERE_FIELDS_V1.pane).toHaveLength(70);
@@ -458,7 +461,7 @@ describe("format registry", () => {
       for (const field of fields) {
         expect(
           FORMAT_REGISTRY.find(({ token }) => token === field.token)?.criteriaWireNames[
-            model as "pane" | "session" | "window"
+            model as "client" | "pane" | "session" | "window"
           ],
         ).toBe(field.wireName);
       }
@@ -466,23 +469,29 @@ describe("format registry", () => {
     expect(WHERE_FIELDS_V1.session.some(({ wireName }) => wireName === "name")).toBe(true);
     expect(WHERE_FIELDS_V1.window.some(({ wireName }) => wireName === "name")).toBe(true);
     expect(WHERE_FIELDS_V1.pane.some(({ wireName }) => wireName === "name")).toBe(false);
-    expect(JSON.stringify(WHERE_FIELDS_V1)).not.toContain("client_name");
+    // A client's own fields belong to the client model and to nothing else:
+    // `client_name` is how tmux identifies a client, and a session filtered by
+    // it would be filtering on a column its rows do not have.
+    expect(WHERE_FIELDS_V1.client.some(({ token }) => token === "client_name")).toBe(true);
+    for (const model of ["session", "window", "pane"] as const) {
+      expect(WHERE_FIELDS_V1[model].some(({ token }) => token.startsWith("client_"))).toBe(false);
+    }
     expect(JSON.stringify(WHERE_FIELDS_V1)).not.toContain("refresh");
   });
 
   test("keeps schema version 1 alias-free and validates future alias provenance", () => {
-    expect(WHERE_ALIASES_V1).toEqual({ pane: {}, session: {}, window: {} });
+    expect(WHERE_ALIASES_V1).toEqual({ client: {}, pane: {}, session: {}, window: {} });
 
     expect(() =>
       validateWhereSchemaHistory([
         {
-          aliases: { pane: {}, session: {}, window: {} },
-          fields: { pane: ["pane_id"], session: ["name"], window: ["name"] },
+          aliases: { client: {}, pane: {}, session: {}, window: {} },
+          fields: { client: [], pane: ["pane_id"], session: ["name"], window: ["name"] },
           version: 1,
         },
         {
-          aliases: { pane: {}, session: { name: "label" }, window: {} },
-          fields: { pane: ["pane_id"], session: ["label"], window: ["name"] },
+          aliases: { client: {}, pane: {}, session: { name: "label" }, window: {} },
+          fields: { client: [], pane: ["pane_id"], session: ["label"], window: ["name"] },
           version: 2,
         },
       ]),
@@ -491,13 +500,13 @@ describe("format registry", () => {
     expect(() =>
       validateWhereSchemaHistory([
         {
-          aliases: { pane: {}, session: {}, window: {} },
-          fields: { pane: ["pane_id"], session: ["name"], window: ["name"] },
+          aliases: { client: {}, pane: {}, session: {}, window: {} },
+          fields: { client: [], pane: ["pane_id"], session: ["name"], window: ["name"] },
           version: 1,
         },
         {
-          aliases: { pane: {}, session: { neverShipped: "name" }, window: {} },
-          fields: { pane: ["pane_id"], session: ["name"], window: ["name"] },
+          aliases: { client: {}, pane: {}, session: { neverShipped: "name" }, window: {} },
+          fields: { client: [], pane: ["pane_id"], session: ["name"], window: ["name"] },
           version: 2,
         },
       ]),
@@ -506,8 +515,8 @@ describe("format registry", () => {
     expect(() =>
       validateWhereSchemaHistory([
         {
-          aliases: { pane: {}, session: { oldName: "name" }, window: {} },
-          fields: { pane: ["pane_id"], session: ["name"], window: ["name"] },
+          aliases: { client: {}, pane: {}, session: { oldName: "name" }, window: {} },
+          fields: { client: [], pane: ["pane_id"], session: ["name"], window: ["name"] },
           version: 1,
         },
       ]),

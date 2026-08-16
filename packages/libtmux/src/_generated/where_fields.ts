@@ -1,6 +1,6 @@
 import type { FormatFieldName } from "./format_field_names.js";
 
-export type WhereModel = "pane" | "session" | "window";
+export type WhereModel = "client" | "pane" | "session" | "window";
 
 export interface WhereField {
   /** The camelCase key a caller writes in criteria. */
@@ -732,12 +732,166 @@ const paneFields: readonly WhereField[] = Object.freeze([
   }),
 ]);
 
+const clientFields: readonly WhereField[] = Object.freeze([
+  Object.freeze({
+    criteriaName: "activity",
+    domain: "string",
+    token: "client_activity",
+    wireName: "client_activity",
+  }),
+  Object.freeze({
+    criteriaName: "cellHeight",
+    domain: "string",
+    token: "client_cell_height",
+    wireName: "client_cell_height",
+  }),
+  Object.freeze({
+    criteriaName: "cellWidth",
+    domain: "string",
+    token: "client_cell_width",
+    wireName: "client_cell_width",
+  }),
+  Object.freeze({
+    criteriaName: "controlMode",
+    domain: "string",
+    token: "client_control_mode",
+    wireName: "client_control_mode",
+  }),
+  Object.freeze({
+    criteriaName: "created",
+    domain: "string",
+    token: "client_created",
+    wireName: "client_created",
+  }),
+  Object.freeze({
+    criteriaName: "discarded",
+    domain: "string",
+    token: "client_discarded",
+    wireName: "client_discarded",
+  }),
+  Object.freeze({
+    criteriaName: "flags",
+    domain: "string",
+    token: "client_flags",
+    wireName: "client_flags",
+  }),
+  Object.freeze({
+    criteriaName: "height",
+    domain: "string",
+    token: "client_height",
+    wireName: "client_height",
+  }),
+  Object.freeze({
+    criteriaName: "keyTable",
+    domain: "string",
+    token: "client_key_table",
+    wireName: "client_key_table",
+  }),
+  Object.freeze({
+    criteriaName: "lastSession",
+    domain: "string",
+    token: "client_last_session",
+    wireName: "client_last_session",
+  }),
+  Object.freeze({
+    criteriaName: "modeFormat",
+    domain: "string",
+    token: "client_mode_format",
+    wireName: "client_mode_format",
+  }),
+  Object.freeze({
+    criteriaName: "name",
+    domain: "string",
+    token: "client_name",
+    wireName: "client_name",
+  }),
+  Object.freeze({
+    criteriaName: "pid",
+    domain: "string",
+    token: "client_pid",
+    wireName: "client_pid",
+  }),
+  Object.freeze({
+    criteriaName: "prefix",
+    domain: "string",
+    token: "client_prefix",
+    wireName: "client_prefix",
+  }),
+  Object.freeze({
+    criteriaName: "readonly",
+    domain: "string",
+    token: "client_readonly",
+    wireName: "client_readonly",
+  }),
+  Object.freeze({
+    criteriaName: "clientSession",
+    domain: "string",
+    token: "client_session",
+    wireName: "client_session",
+  }),
+  Object.freeze({
+    criteriaName: "termfeatures",
+    domain: "string",
+    token: "client_termfeatures",
+    wireName: "client_termfeatures",
+  }),
+  Object.freeze({
+    criteriaName: "termname",
+    domain: "string",
+    token: "client_termname",
+    wireName: "client_termname",
+  }),
+  Object.freeze({
+    criteriaName: "termtype",
+    domain: "string",
+    token: "client_termtype",
+    wireName: "client_termtype",
+  }),
+  Object.freeze({
+    criteriaName: "tty",
+    domain: "string",
+    token: "client_tty",
+    wireName: "client_tty",
+  }),
+  Object.freeze({
+    criteriaName: "uid",
+    domain: "string",
+    token: "client_uid",
+    wireName: "client_uid",
+  }),
+  Object.freeze({
+    criteriaName: "user",
+    domain: "string",
+    token: "client_user",
+    wireName: "client_user",
+  }),
+  Object.freeze({
+    criteriaName: "utf8",
+    domain: "string",
+    token: "client_utf8",
+    wireName: "client_utf8",
+  }),
+  Object.freeze({
+    criteriaName: "width",
+    domain: "string",
+    token: "client_width",
+    wireName: "client_width",
+  }),
+  Object.freeze({
+    criteriaName: "written",
+    domain: "string",
+    token: "client_written",
+    wireName: "client_written",
+  }),
+]);
+
 const emptyAliases: Readonly<Record<string, string>> = Object.freeze({});
 
 export const WHERE_FIELDS_V1: Readonly<Record<WhereModel, readonly WhereField[]>> = Object.freeze({
   session: sessionFields,
   window: windowFields,
   pane: paneFields,
+  client: clientFields,
 });
 
 export const WHERE_ALIASES_V1: Readonly<Record<WhereModel, Readonly<Record<string, string>>>> =
@@ -745,6 +899,7 @@ export const WHERE_ALIASES_V1: Readonly<Record<WhereModel, Readonly<Record<strin
     session: emptyAliases,
     window: emptyAliases,
     pane: emptyAliases,
+    client: emptyAliases,
   });
 
 export interface WhereRelation {
@@ -754,6 +909,23 @@ export interface WhereRelation {
 }
 
 export const WHERE_RELATIONS_V1: Readonly<{
+  readonly client: readonly [
+    {
+      readonly cardinality: "one";
+      readonly name: "session";
+      readonly targetModel: "session";
+    },
+    {
+      readonly cardinality: "one";
+      readonly name: "window";
+      readonly targetModel: "window";
+    },
+    {
+      readonly cardinality: "one";
+      readonly name: "pane";
+      readonly targetModel: "pane";
+    },
+  ];
   readonly pane: readonly [
     {
       readonly cardinality: "one";
@@ -811,6 +983,11 @@ export const WHERE_RELATIONS_V1: Readonly<{
     },
   ];
 }> = Object.freeze({
+  client: Object.freeze([
+    Object.freeze({ cardinality: "one", name: "session", targetModel: "session" }),
+    Object.freeze({ cardinality: "one", name: "window", targetModel: "window" }),
+    Object.freeze({ cardinality: "one", name: "pane", targetModel: "pane" }),
+  ] as const),
   pane: Object.freeze([
     Object.freeze({ cardinality: "one", name: "window", targetModel: "window" }),
     Object.freeze({ cardinality: "one", name: "session", targetModel: "session" }),

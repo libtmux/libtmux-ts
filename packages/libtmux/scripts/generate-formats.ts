@@ -48,8 +48,9 @@ const formatsSourceUrl =
   "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py";
 const generatedWhereRegionStart = "// <libtmux-generated-where-types>";
 const generatedWhereRegionEnd = "// </libtmux-generated-where-types>";
-const criteriaModels = ["session", "window", "pane"] as const;
+const criteriaModels = ["session", "window", "pane", "client"] as const;
 const criteriaInterfaceNames = {
+  client: "ClientWhere",
   pane: "PaneWhere",
   session: "SessionWhere",
   window: "WindowWhere",
@@ -152,7 +153,7 @@ function renderGeneratedWhereRelationsSource(): string {
     "",
     "export const WHERE_RELATIONS_V1: Readonly<{",
   ];
-  for (const model of ["pane", "session", "window"] as const) {
+  for (const model of ["client", "pane", "session", "window"] as const) {
     lines.push(`  readonly ${model}: readonly [`);
     for (const relation of CRITERIA_RELATIONS_V1[model]) {
       lines.push(
@@ -166,7 +167,7 @@ function renderGeneratedWhereRelationsSource(): string {
     lines.push("  ];");
   }
   lines.push("}> = Object.freeze({");
-  for (const model of ["pane", "session", "window"] as const) {
+  for (const model of ["client", "pane", "session", "window"] as const) {
     lines.push(`  ${model}: Object.freeze([`);
     for (const relation of CRITERIA_RELATIONS_V1[model]) {
       lines.push(

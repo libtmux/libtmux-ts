@@ -36,7 +36,6 @@ import {
   materializeClientRecord,
   materializeProjectionMembers,
   materializeProjectionRecord,
-  replaceHandleSnapshotFromGraph,
 } from "../../src/_internal/graph/materialize.js";
 import { decodeLogicalRef } from "../../src/_internal/graph/refs.js";
 import {
@@ -51,9 +50,7 @@ import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   entityRefForHandle,
-  graphRecordRefForHandle,
   logicalRefForHandle,
-  originGraphForHandle,
   snapshotForHandle,
   winlinkRefForHandle,
 } from "../../src/_internal/runtime/live_handle.js";
@@ -180,6 +177,7 @@ async function graphFor(
 
 function descriptors(): Readonly<Record<WhereModel, ProjectionDescriptor>> {
   return {
+    client: { fields: WHERE_FIELDS_V1.client, model: "client", relations: [] },
     pane: { fields: WHERE_FIELDS_V1.pane, model: "pane", relations: [] },
     session: { fields: WHERE_FIELDS_V1.session, model: "session", relations: [] },
     window: { fields: WHERE_FIELDS_V1.window, model: "window", relations: [] },
@@ -937,8 +935,15 @@ describe("authenticated handle materialization", () => {
 
     expect(reconstructedReplacement).not.toBe(replacementRef);
     expect(reconstructedReplacement).toEqual(replacementRef);
-    await replaceHandleSnapshotFromGraph(handle, replacementGraph, reconstructedReplacement);
-    assertScalarSnapshot(handle, replacementRow);
+    const later = await materializeClientRecord(
+      fixture.server,
+      replacementGraph,
+      reconstructedReplacement,
+    );
+    assertScalarSnapshot(later, replacementRow);
+    // The earlier reading is untouched: a graph produces handles, and never
+    // reaches back into ones another graph already produced.
+    assertScalarSnapshot(handle, originalRow);
   });
 
   test("rejects an authentic projection paired with a different authentic graph", async () => {
@@ -1111,62 +1116,6 @@ describe("authenticated handle materialization", () => {
     expect(fixture.transport.requests).toHaveLength(1);
   });
 
-  test("rolls back replacement when a cached capability epoch changes after selection", async () => {
-    const fixture = runtimeFixture({ alias: "cached-replacement" });
-    const originalRow = completeFormatRow({
-      pane_id: "%1",
-      pane_title: "before",
-      session_id: "$1",
-      window_id: "@1",
-      window_index: "1",
-    });
-    const originalGraph = await graphFor(fixture.runtime, [
-      source("original-pane", "list-panes", [originalRow]),
-    ]);
-    const originalProjection = projectionFor(originalGraph, "original-pane");
-    const handle = (await materializeProjectionRecord(
-      fixture.server,
-      originalProjection,
-      originalGraph,
-      projectionRecord(originalProjection),
-    )) as Pane;
-    const oldSnapshot = snapshotForHandle(handle);
-    const oldEntity = entityRefForHandle(handle);
-    const oldRef = logicalRefForHandle(handle);
-    const oldWinlink = winlinkRefForHandle(handle);
-    const oldServer = handle.server;
-    const replacementGraph = await graphFor(fixture.runtime, [
-      source("replacement-pane", "list-panes", [
-        completeFormatRow({
-          pane_id: "%1",
-          pane_title: "must-not-commit",
-          session_id: "$2",
-          window_id: "@2",
-          window_index: "2",
-        }),
-      ]),
-    ]);
-    expect(fixture.transport.requests).toHaveLength(1);
-
-    const pending = replaceHandleSnapshotFromGraph(
-      handle,
-      replacementGraph,
-      graphRecordRef(replacementGraph, "replacement-pane"),
-    );
-    expect(invalidateRuntimeEpoch(fixture.runtime)).toBe(epoch(1));
-
-    await expect(pending).rejects.toBeInstanceOf(LibTmuxException);
-    expect(fixture.transport.requests).toHaveLength(1);
-    expect(snapshotForHandle(handle)).toBe(oldSnapshot);
-    expect(entityRefForHandle(handle)).toBe(oldEntity);
-    expect(logicalRefForHandle(handle)).toBe(oldRef);
-    expect(winlinkRefForHandle(handle)).toBe(oldWinlink);
-    expect(handle.server).toBe(oldServer);
-    for (const token of FORMAT_FIELD_TOKENS) {
-      expect(handle.format[token]).toBe(oldSnapshot[token]);
-    }
-  });
-
   test("preserves contextual duplicates and creates fresh handles", async () => {
     const fixture = runtimeFixture();
     const graph = await graphFor(fixture.runtime, [
@@ -1254,535 +1203,6 @@ describe("authenticated handle materialization", () => {
     expect(handle.server).toBe(fixture.server);
     expect(entityRefForHandle(handle)).toBe(graphRecord(graph, "windows").entity);
     assertScalarSnapshot(handle, windowRow);
-  });
-
-  test("swaps a complete row and contextual winlink atomically", async () => {
-    const fixture = runtimeFixture();
-    const originalGraph = await graphFor(fixture.runtime, [
-      source("original", "list-windows", [
-        completeFormatRow({
-          config_files: "",
-          session_id: "$1",
-          window_id: "@7",
-          window_index: "1",
-          window_name: "before",
-        }),
-      ]),
-    ]);
-    const originalProjection = projectionFor(originalGraph, "original");
-    const handle = (await materializeProjectionRecord(
-      fixture.server,
-      originalProjection,
-      originalGraph,
-      projectionRecord(originalProjection),
-    )) as Window;
-    const originalRecord = graphRecordRef(originalGraph, "original");
-    const oldSnapshot = snapshotForHandle(handle);
-    const oldRef = logicalRefForHandle(handle);
-    const replacementGraph = await graphFor(fixture.runtime, [
-      source("replacement", "list-windows", [
-        completeFormatRow({
-          config_files: "replacement",
-          session_id: "$2",
-          window_id: "@7",
-          window_index: "8",
-          window_name: "after",
-        }),
-      ]),
-    ]);
-    const replacementRecord = graphRecordRef(replacementGraph, "replacement");
-
-    const replacement = replaceHandleSnapshotFromGraph(handle, replacementGraph, replacementRecord);
-    expect(originGraphForHandle(handle)).toBe(originalGraph);
-    expect(graphRecordRefForHandle(handle)).toEqual(originalRecord);
-    expect(handle.name).toBe("before");
-    expect(handle.configFiles).toBe("");
-    const originalWinlink = winlinkRefForHandle(handle);
-    if (originalWinlink === null) throw new Error("window handle requires a winlink");
-    expect(originalWinlink.windowIndex).toBe("1");
-
-    await replacement;
-
-    expect(handle.name).toBe("after");
-    expect(handle.configFiles).toBe("replacement");
-    const replacedWinlink = winlinkRefForHandle(handle);
-    if (replacedWinlink === null) throw new Error("window handle requires a winlink");
-    expect(replacedWinlink.windowIndex).toBe("8");
-    expect(snapshotForHandle(handle)).not.toBe(oldSnapshot);
-    expect(logicalRefForHandle(handle)).toEqual(oldRef);
-    expect(originGraphForHandle(handle)).toBe(replacementGraph);
-    expect(graphRecordRefForHandle(handle)).toEqual(replacementRecord);
-  });
-
-  test("replaces a Session row and rolls back every rejected evidence path", async () => {
-    const fixture = runtimeFixture({ alias: "session-replacement" });
-    const originalRow = completeFormatRow({
-      config_files: "",
-      session_id: "$7",
-      session_name: "before",
-    });
-    const originalGraph = await graphFor(fixture.runtime, [
-      source("original-session", "list-sessions", [originalRow]),
-    ]);
-    const originalProjection = projectionFor(originalGraph, "original-session");
-    const handle = (await materializeProjectionRecord(
-      fixture.server,
-      originalProjection,
-      originalGraph,
-      projectionRecord(originalProjection),
-    )) as Session;
-    const originalSnapshot = snapshotForHandle(handle);
-    const originalEntity = entityRefForHandle(handle);
-    const originalRef = logicalRefForHandle(handle);
-    const originalServer = handle.server;
-    expect(winlinkRefForHandle(handle)).toBeNull();
-
-    const replacementRow = completeFormatRow({
-      config_files: "replacement.conf",
-      session_id: "$7",
-      session_name: "after",
-    });
-    const replacementGraph = await graphFor(fixture.runtime, [
-      source("replacement-session", "list-sessions", [replacementRow]),
-    ]);
-    const replacement = replaceHandleSnapshotFromGraph(
-      handle,
-      replacementGraph,
-      graphRecordRef(replacementGraph, "replacement-session"),
-    );
-
-    expect(snapshotForHandle(handle)).toBe(originalSnapshot);
-    expect(handle.name).toBe("before");
-    await replacement;
-
-    expect(snapshotForHandle(handle)).not.toBe(originalSnapshot);
-    expect(entityRefForHandle(handle)).toBe(originalEntity);
-    expect(logicalRefForHandle(handle)).toBe(originalRef);
-    expect(handle.server).toBe(originalServer);
-    expect(winlinkRefForHandle(handle)).toBeNull();
-    assertScalarSnapshot(handle, replacementRow);
-
-    const wrongIdentityGraph = await graphFor(fixture.runtime, [
-      source("wrong-session", "list-sessions", [
-        completeFormatRow({ ...replacementRow, session_id: "$8", session_name: "wrong" }),
-      ]),
-    ]);
-    const wrongModelGraph = await graphFor(fixture.runtime, [
-      source("wrong-model-session", "list-windows", [
-        completeFormatRow({
-          ...replacementRow,
-          session_id: "$7",
-          window_id: "@1",
-          window_index: "1",
-        }),
-      ]),
-    ]);
-    const foreignFixture = runtimeFixture({ alias: "foreign-session-replacement" });
-    const foreignRuntimeGraph = await graphFor(foreignFixture.runtime, [
-      source("foreign-session", "list-sessions", [completeFormatRow({ ...replacementRow })]),
-    ]);
-    const staleCapabilityGraph = await graphFor(
-      fixture.runtime,
-      [
-        source("stale-session", "list-sessions", [
-          completeFormatRow({ ...replacementRow, session_name: "stale" }),
-        ]),
-      ],
-      "stale-fingerprint",
-    );
-    const preservedSnapshot = snapshotForHandle(handle);
-    const preservedEntity = entityRefForHandle(handle);
-    const preservedRef = logicalRefForHandle(handle);
-    const preservedServer = handle.server;
-    const attempts: Array<() => Promise<void>> = [
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          wrongIdentityGraph,
-          graphRecordRef(wrongIdentityGraph, "wrong-session"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          wrongModelGraph,
-          graphRecordRef(wrongModelGraph, "wrong-model-session"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          foreignRuntimeGraph,
-          graphRecordRef(foreignRuntimeGraph, "foreign-session"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          staleCapabilityGraph,
-          graphRecordRef(staleCapabilityGraph, "stale-session"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(handle, replacementGraph, {
-          ordinal: 0,
-          source: createGraphSourceId("replacement-session"),
-        } as GraphRecordRef),
-    ];
-
-    for (const attempt of attempts) {
-      let observed: unknown;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- every rejected Session replacement must preserve one state.
-        await attempt();
-      } catch (error) {
-        observed = error;
-      }
-      expect(observed).toBeInstanceOf(Error);
-      expect(snapshotForHandle(handle)).toBe(preservedSnapshot);
-      expect(entityRefForHandle(handle)).toBe(preservedEntity);
-      expect(logicalRefForHandle(handle)).toBe(preservedRef);
-      expect(handle.server).toBe(preservedServer);
-      expect(winlinkRefForHandle(handle)).toBeNull();
-      for (const token of FORMAT_FIELD_TOKENS) {
-        expect(handle.format[token]).toBe(preservedSnapshot[token]);
-      }
-    }
-  });
-
-  test("replaces a Pane row and adopts its new authenticated winlink", async () => {
-    const fixture = runtimeFixture();
-    const originalRow = completeFormatRow({
-      buffer_name: "before-buffer",
-      config_files: "",
-      pane_id: "%7",
-      pane_title: "before",
-      session_id: "$1",
-      window_id: "@1",
-      window_index: "1",
-    });
-    const originalGraph = await graphFor(fixture.runtime, [
-      source("original-pane", "list-panes", [originalRow]),
-    ]);
-    const originalProjection = projectionFor(originalGraph, "original-pane");
-    const handle = (await materializeProjectionRecord(
-      fixture.server,
-      originalProjection,
-      originalGraph,
-      projectionRecord(originalProjection),
-    )) as Pane;
-    const oldSnapshot = snapshotForHandle(handle);
-    const oldRef = logicalRefForHandle(handle);
-    const oldServer = handle.server;
-    const replacementRow = completeFormatRow({
-      buffer_name: "after-buffer",
-      config_files: "replacement.conf",
-      pane_id: "%7",
-      pane_title: "after",
-      session_id: "$2",
-      window_id: "@2",
-      window_index: "8",
-    });
-    const replacementGraph = await graphFor(fixture.runtime, [
-      source("replacement-pane", "list-panes", [replacementRow]),
-    ]);
-
-    await replaceHandleSnapshotFromGraph(
-      handle,
-      replacementGraph,
-      graphRecordRef(replacementGraph, "replacement-pane"),
-    );
-
-    expect(snapshotForHandle(handle)).not.toBe(oldSnapshot);
-    expect(logicalRefForHandle(handle)).toBe(oldRef);
-    expect(handle.server).toBe(oldServer);
-    assertScalarSnapshot(handle, replacementRow);
-    const replacementWinlink = winlinkRefForHandle(handle);
-    expect(replacementWinlink).toMatchObject({
-      sessionId: "$2",
-      windowId: "@2",
-      windowIndex: "8",
-    });
-  });
-
-  test("failed replacement preserves the old row, entity, and winlink", async () => {
-    const fixture = runtimeFixture();
-    const graph = await graphFor(fixture.runtime, [
-      source("original", "list-panes", [
-        completeFormatRow({
-          pane_id: "%1",
-          pane_title: "before",
-          session_id: "$1",
-          window_id: "@1",
-          window_index: "1",
-        }),
-      ]),
-    ]);
-    const projection = projectionFor(graph, "original");
-    const handle = (await materializeProjectionRecord(
-      fixture.server,
-      projection,
-      graph,
-      projectionRecord(projection),
-    )) as Pane;
-    const oldSnapshot = snapshotForHandle(handle);
-    const oldRef = logicalRefForHandle(handle);
-    const oldWinlink = winlinkRefForHandle(handle);
-    const wrongEntityGraph = await graphFor(fixture.runtime, [
-      source("wrong", "list-panes", [
-        completeFormatRow({
-          pane_id: "%2",
-          pane_title: "wrong",
-          session_id: "$2",
-          window_id: "@2",
-          window_index: "2",
-        }),
-      ]),
-    ]);
-    const staleCapabilityGraph = await graphFor(
-      fixture.runtime,
-      [
-        source("stale", "list-panes", [
-          completeFormatRow({
-            pane_id: "%1",
-            pane_title: "stale",
-            session_id: "$2",
-            window_id: "@2",
-            window_index: "2",
-          }),
-        ]),
-      ],
-      "stale-fingerprint",
-    );
-    const wrongModelGraph = await graphFor(fixture.runtime, [
-      source("wrong-model", "list-windows", [
-        completeFormatRow({
-          pane_id: "%1",
-          session_id: "$1",
-          window_id: "@1",
-          window_index: "1",
-        }),
-      ]),
-    ]);
-    const foreignFixture = runtimeFixture({ alias: "foreign-replacement" });
-    const foreignRuntimeGraph = await graphFor(foreignFixture.runtime, [
-      source("foreign-runtime", "list-panes", [
-        completeFormatRow({
-          pane_id: "%1",
-          pane_title: "foreign",
-          session_id: "$1",
-          window_id: "@1",
-          window_index: "1",
-        }),
-      ]),
-    ]);
-    const attempts: Array<() => Promise<void>> = [
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          wrongEntityGraph,
-          graphRecordRef(wrongEntityGraph, "wrong"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          staleCapabilityGraph,
-          graphRecordRef(staleCapabilityGraph, "stale"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          wrongModelGraph,
-          graphRecordRef(wrongModelGraph, "wrong-model"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          foreignRuntimeGraph,
-          graphRecordRef(foreignRuntimeGraph, "foreign-runtime"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(handle, graph, {
-          ordinal: 0,
-          source: createGraphSourceId("original"),
-        } as GraphRecordRef),
-    ];
-
-    for (const attempt of attempts) {
-      let observed: unknown;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- each failure must preserve the same atomic state.
-        await attempt();
-      } catch (error) {
-        observed = error;
-      }
-      expect(observed).toBeInstanceOf(Error);
-      expect(snapshotForHandle(handle)).toBe(oldSnapshot);
-      expect(logicalRefForHandle(handle)).toBe(oldRef);
-      expect(winlinkRefForHandle(handle)).toBe(oldWinlink);
-      for (const token of FORMAT_FIELD_TOKENS) {
-        expect(handle.format[token]).toBe(oldSnapshot[token]);
-      }
-    }
-  });
-
-  test("replaces a Client row and rejects identity, model, runtime, and capability drift", async () => {
-    const fixture = runtimeFixture({
-      alias: "client-replacement",
-      connection: { socketName: "client-replacement" },
-    });
-    const originalRow = completeFormatRow({
-      client_name: "client-one",
-      client_width: "80",
-      config_files: "before.conf",
-    });
-    const originalGraph = await graphFor(fixture.runtime, [
-      source("original-client", "list-clients", [originalRow]),
-    ]);
-    const handle = await materializeClientRecord(
-      fixture.server,
-      originalGraph,
-      graphRecordRef(originalGraph, "original-client"),
-    );
-    const originalSnapshot = snapshotForHandle(handle);
-    const originalEntity = entityRefForHandle(handle);
-    const originalServer = handle.server;
-    const replacementRow = completeFormatRow({
-      client_name: "client-one",
-      client_width: "132",
-      config_files: "after.conf",
-    });
-    const replacementGraph = await graphFor(fixture.runtime, [
-      source("replacement-client", "list-clients", [replacementRow]),
-    ]);
-
-    await replaceHandleSnapshotFromGraph(
-      handle,
-      replacementGraph,
-      graphRecordRef(replacementGraph, "replacement-client"),
-    );
-
-    expect(snapshotForHandle(handle)).not.toBe(originalSnapshot);
-    expect(entityRefForHandle(handle)).toBe(originalEntity);
-    expect(handle.server).toBe(originalServer);
-    assertScalarSnapshot(handle, replacementRow);
-
-    const wrongIdentityGraph = await graphFor(fixture.runtime, [
-      source("wrong-client", "list-clients", [
-        completeFormatRow({ ...replacementRow, client_name: "client-two" }),
-      ]),
-    ]);
-    const wrongModelGraph = await graphFor(fixture.runtime, [
-      source("wrong-model-client", "list-sessions", [
-        completeFormatRow({ client_name: "client-one", session_id: "$1" }),
-      ]),
-    ]);
-    const foreignFixture = runtimeFixture({
-      alias: "foreign-client-replacement",
-      connection: { socketName: "client-replacement" },
-    });
-    const foreignRuntimeGraph = await graphFor(foreignFixture.runtime, [
-      source("foreign-client", "list-clients", [completeFormatRow({ ...replacementRow })]),
-    ]);
-    const staleCapabilityGraph = await graphFor(
-      fixture.runtime,
-      [
-        source("stale-client", "list-clients", [
-          completeFormatRow({ ...replacementRow, client_width: "200" }),
-        ]),
-      ],
-      "stale-fingerprint",
-    );
-    const preservedSnapshot = snapshotForHandle(handle);
-    const preservedEntity = entityRefForHandle(handle);
-    const preservedServer = handle.server;
-    const preservedWinlink = winlinkRefForHandle(handle);
-    const attempts: Array<() => Promise<void>> = [
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          wrongIdentityGraph,
-          graphRecordRef(wrongIdentityGraph, "wrong-client"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          wrongModelGraph,
-          graphRecordRef(wrongModelGraph, "wrong-model-client"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          foreignRuntimeGraph,
-          graphRecordRef(foreignRuntimeGraph, "foreign-client"),
-        ),
-      () =>
-        replaceHandleSnapshotFromGraph(
-          handle,
-          staleCapabilityGraph,
-          graphRecordRef(staleCapabilityGraph, "stale-client"),
-        ),
-    ];
-
-    for (const attempt of attempts) {
-      let observed: unknown;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- every rejected Client replacement must preserve one state.
-        await attempt();
-      } catch (error) {
-        observed = error;
-      }
-      expect(observed).toBeInstanceOf(Error);
-      expect(snapshotForHandle(handle)).toBe(preservedSnapshot);
-      expect(entityRefForHandle(handle)).toBe(preservedEntity);
-      expect(handle.server).toBe(preservedServer);
-      expect(winlinkRefForHandle(handle)).toBe(preservedWinlink);
-      for (const token of FORMAT_FIELD_TOKENS) {
-        expect(handle.format[token]).toBe(preservedSnapshot[token]);
-      }
-    }
-  });
-
-  test("rejects structural graphs for Client materialization and replacement", async () => {
-    const fixture = runtimeFixture({ alias: "structural-client-graph" });
-    const originalRow = completeFormatRow({ client_name: "client-one", client_width: "80" });
-    const originalGraph = await graphFor(fixture.runtime, [
-      source("original-client", "list-clients", [originalRow]),
-    ]);
-
-    await expect(
-      materializeClientRecord(
-        fixture.server,
-        { ...originalGraph } as NormalizedGraph,
-        graphRecordRef(originalGraph, "original-client"),
-      ),
-    ).rejects.toBeInstanceOf(QueryValidationError);
-
-    const handle = await materializeClientRecord(
-      fixture.server,
-      originalGraph,
-      graphRecordRef(originalGraph, "original-client"),
-    );
-    const oldSnapshot = snapshotForHandle(handle);
-    const oldEntity = entityRefForHandle(handle);
-    const oldServer = handle.server;
-    const oldWinlink = winlinkRefForHandle(handle);
-    const replacementGraph = await graphFor(fixture.runtime, [
-      source("replacement-client", "list-clients", [
-        completeFormatRow({ client_name: "client-one", client_width: "132" }),
-      ]),
-    ]);
-
-    await expect(
-      replaceHandleSnapshotFromGraph(
-        handle,
-        { ...replacementGraph } as NormalizedGraph,
-        graphRecordRef(replacementGraph, "replacement-client"),
-      ),
-    ).rejects.toBeInstanceOf(QueryValidationError);
-    expect(snapshotForHandle(handle)).toBe(oldSnapshot);
-    expect(entityRefForHandle(handle)).toBe(oldEntity);
-    expect(handle.server).toBe(oldServer);
-    expect(winlinkRefForHandle(handle)).toBe(oldWinlink);
-    for (const token of FORMAT_FIELD_TOKENS) {
-      expect(handle.format[token]).toBe(oldSnapshot[token]);
-    }
   });
 
   test("rejects direct runtime construction of child handles", () => {
@@ -1881,7 +1301,7 @@ describe("Python-compatible handle equality", () => {
     expect(constructed).toBeUndefined();
   });
 
-  test("compares Session, Window, and Pane only by their raw IDs", async () => {
+  test("compares Session, Window, and Pane by connection, epoch, and raw ID", async () => {
     const left = runtimeFixture({
       alias: "left",
       connection: { socketName: "left" },
@@ -2024,11 +1444,48 @@ describe("Python-compatible handle equality", () => {
       ),
     ]);
 
-    expect(leftSession.equals(rightSession)).toBe(true);
+    // A second reading of the same object on the same connection is the same
+    // object, even though it is a different handle.
+    const [leftSessionAgain, leftWindowAgain, leftPaneAgain] = await Promise.all([
+      materializeProjectionRecord(
+        left.server,
+        leftSessionProjection,
+        leftGraph,
+        projectionRecord(leftSessionProjection, 0),
+      ),
+      materializeProjectionRecord(
+        left.server,
+        leftWindowProjection,
+        leftGraph,
+        projectionRecord(leftWindowProjection, 0),
+      ),
+      materializeProjectionRecord(
+        left.server,
+        leftPaneProjection,
+        leftGraph,
+        projectionRecord(leftPaneProjection, 0),
+      ),
+    ]);
+    expect(leftSessionAgain).not.toBe(leftSession);
+    expect(leftSession.equals(leftSessionAgain)).toBe(true);
+    expect(leftWindow.equals(leftWindowAgain)).toBe(true);
+    expect(leftPane.equals(leftPaneAgain)).toBe(true);
+
+    // `$1`, `@1`, and `%1` exist on both servers and name nothing in common.
+    // Answering "equal" here is how a handle from one server ends up targeting
+    // an object on another.
+    expect(leftSession.equals(rightSession)).toBe(false);
+    expect(leftWindow.equals(rightWindow)).toBe(false);
+    expect(leftPane.equals(rightPane)).toBe(false);
+
+    // The raw-id question still has an answer; it is just a different question.
+    expect((leftSession as Session).sameTmuxIdAs(rightSession as Session)).toBe(true);
+    expect((leftWindow as Window).sameTmuxIdAs(rightWindow as Window)).toBe(true);
+    expect((leftPane as Pane).sameTmuxIdAs(rightPane as Pane)).toBe(true);
+    expect((leftSession as Session).sameTmuxIdAs(differentSession as Session)).toBe(false);
+
     expect(leftSession.equals(differentSession)).toBe(false);
-    expect(leftWindow.equals(rightWindow)).toBe(true);
     expect(leftWindow.equals(differentWindow)).toBe(false);
-    expect(leftPane.equals(rightPane)).toBe(true);
     expect(leftPane.equals(differentPane)).toBe(false);
     expect(leftSession.equals(leftWindow)).toBe(false);
     expect(leftWindow.equals(leftPane)).toBe(false);

@@ -56,6 +56,7 @@ export interface RichProjectedHarness {
 }
 
 export interface ClientHarness {
+  readonly projection: SelectionProjection;
   readonly graph: NormalizedGraph;
   readonly runtime: RuntimeContext;
   readonly transport: RecordingTransport;
@@ -128,6 +129,15 @@ async function graphFor(
 }
 
 const descriptors: Readonly<Record<WhereModel, ProjectionDescriptor>> = {
+  client: {
+    fields: WHERE_FIELDS_V1.client,
+    model: "client",
+    relations: [
+      { cardinality: "one", name: "session", targetModel: "session" },
+      { cardinality: "one", name: "window", targetModel: "window" },
+      { cardinality: "one", name: "pane", targetModel: "pane" },
+    ],
+  },
   pane: {
     fields: WHERE_FIELDS_V1.pane,
     model: "pane",
@@ -178,6 +188,13 @@ function builderFor(graph: NormalizedGraph, rootSource: string): SelectionProjec
   });
 }
 
+/** A client attached to nothing this graph lists: every relation resolves to null. */
+function hydrateDetachedClient(builder: SelectionProjectionBuilder, client: GraphRecordRef): void {
+  builder.materializeOne(client, "session", null);
+  builder.materializeOne(client, "window", null);
+  builder.materializeOne(client, "pane", null);
+}
+
 function hydrateEmptySession(builder: SelectionProjectionBuilder, session: GraphRecordRef): void {
   builder.materializeMany(session, "windows", []);
   builder.materializeMany(session, "panes", []);
@@ -185,21 +202,21 @@ function hydrateEmptySession(builder: SelectionProjectionBuilder, session: Graph
   builder.materializeOne(session, "activePane", null);
 }
 
-function requireSessions(values: readonly (Session | Window | Pane)[]): readonly Session[] {
+function requireSessions(values: readonly (Client | Session | Window | Pane)[]): readonly Session[] {
   if (!values.every((value) => value instanceof Session)) {
     throw new Error("fixture materialized a non-Session member");
   }
   return values;
 }
 
-function requireWindows(values: readonly (Session | Window | Pane)[]): readonly Window[] {
+function requireWindows(values: readonly (Client | Session | Window | Pane)[]): readonly Window[] {
   if (!values.every((value) => value instanceof Window)) {
     throw new Error("fixture materialized a non-Window member");
   }
   return values;
 }
 
-function requirePanes(values: readonly (Session | Window | Pane)[]): readonly Pane[] {
+function requirePanes(values: readonly (Client | Session | Window | Pane)[]): readonly Pane[] {
   if (!values.every((value) => value instanceof Pane)) {
     throw new Error("fixture materialized a non-Pane member");
   }
@@ -359,7 +376,7 @@ async function projectedHarness<Model extends Session | Window | Pane>(
   transport: RecordingTransport,
   graph: NormalizedGraph,
   rootSource: string,
-  requireModel: (values: readonly (Session | Window | Pane)[]) => readonly Model[],
+  requireModel: (values: readonly (Client | Session | Window | Pane)[]) => readonly Model[],
 ): Promise<ProjectedHarness<Model>> {
   const builder = builderFor(graph, rootSource);
   hydrateRichProjection(builder, graph, rootSource);
@@ -512,11 +529,14 @@ export async function createClientHarness(names: readonly string[]): Promise<Cli
     ),
   ]);
   const server = createServerWithRuntime(runtime);
+  const clientBuilder = builderFor(graph, "clients-root");
+  for (const ref of sourceRefs(graph, "clients-root")) hydrateDetachedClient(clientBuilder, ref);
+  const projection = clientBuilder.seal();
   const values = await Promise.all(
     sourceRefs(graph, "clients-root").map((ref) => materializeClientRecord(server, graph, ref)),
   );
   if (!values.every((value) => value instanceof Client)) {
     throw new Error("fixture materialized a non-Client member");
   }
-  return { graph, runtime, transport, values: Object.freeze(values) };
+  return { graph, projection, runtime, transport, values: Object.freeze(values) };
 }

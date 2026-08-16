@@ -6,6 +6,7 @@ export { Window, type WindowPlans } from "./window.js";
 
 export {
   parseLegacyWhere,
+  type ClientWhere,
   type PaneWhere,
   type RegexCriteriaData,
   type Selection,
@@ -55,6 +56,7 @@ export type {
   TmuxPaneModeChangedEvent,
   TmuxPasteBufferEvent,
   TmuxReconnectedEvent,
+  TmuxReconnectingEvent,
   TmuxSessionEvent,
   TmuxSessionWindowChangedEvent,
   TmuxSessionsChangedEvent,
@@ -77,5 +79,8 @@ export {
   ObjectDoesNotExist,
   QueryValidationError,
   TmuxCommandError,
+  TmuxTransportError,
+  type TmuxTransportErrorKind,
 } from "./exc.js";
+export type { DeliveryStatus } from "./common.js";
 export { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";

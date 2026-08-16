@@ -9,7 +9,6 @@ import {
   materializeClientRecord,
   materializeProjectionMembers,
   materializeProjectionRecord,
-  replaceHandleSnapshotFromGraph,
 } from "../../src/_internal/graph/materialize.js";
 import type {
   ProjectionRecord,
@@ -92,7 +91,7 @@ type ExpectedRuntimeContext = {
 };
 
 type Child = Client | Pane | Session | Window;
-type ProjectedChild = Pane | Session | Window;
+type ProjectedChild = Client | Pane | Session | Window;
 
 type _ServerOptions = Expect<Equal<ServerOptions, ExpectedServerOptions>>;
 type _ServerConstructor = Expect<
@@ -158,10 +157,18 @@ type _SessionPanes = Expect<Equal<Session["panes"], Selection<Pane>>>;
 type _WindowSession = Expect<Equal<Window["session"], Session | undefined>>;
 type _PaneWindow = Expect<Equal<Pane["window"], Window | undefined>>;
 
-type _ClientRefresh = Expect<Equal<Client["refresh"], () => Promise<void>>>;
-type _PaneRefresh = Expect<Equal<Pane["refresh"], () => Promise<void>>>;
-type _SessionRefresh = Expect<Equal<Session["refresh"], () => Promise<void>>>;
-type _WindowRefresh = Expect<Equal<Window["refresh"], () => Promise<void>>>;
+// A refreshed handle is the same kind as its receiver, so a caller never has to
+// re-narrow what it already knew.
+type _ClientRefreshed = Expect<Equal<Client["refreshed"], () => Promise<Client>>>;
+type _PaneRefreshed = Expect<Equal<Pane["refreshed"], () => Promise<Pane>>>;
+type _SessionRefreshed = Expect<Equal<Session["refreshed"], () => Promise<Session>>>;
+type _WindowRefreshed = Expect<Equal<Window["refreshed"], () => Promise<Window>>>;
+
+// `sameTmuxIdAs` takes its own model rather than `unknown`: comparing raw ids
+// across models is a question with no useful answer, and the type says so.
+type _PaneSameId = Expect<Equal<Pane["sameTmuxIdAs"], (other: Pane) => boolean>>;
+type _SessionSameId = Expect<Equal<Session["sameTmuxIdAs"], (other: Session) => boolean>>;
+type _WindowSameId = Expect<Equal<Window["sameTmuxIdAs"], (other: Window) => boolean>>;
 
 type _ModelKind = Expect<Equal<ModelKind, "client" | "pane" | "server" | "session" | "window">>;
 type _ClientForKind = Expect<Equal<ModelForKind<"client">, Client>>;
@@ -232,12 +239,6 @@ type _MaterializeClientRecord = Expect<
   Equal<
     typeof materializeClientRecord,
     (server: Server, graph: NormalizedGraph, record: GraphRecordRef) => Promise<Client>
-  >
->;
-type _ReplaceHandleSnapshot = Expect<
-  Equal<
-    typeof replaceHandleSnapshotFromGraph,
-    (handle: Child, graph: NormalizedGraph, record: GraphRecordRef) => Promise<void>
   >
 >;
 type _EntityRefForHandle = Expect<
@@ -342,7 +343,6 @@ export type {
   _PaneKind,
   _PaneModule,
   _PaneSnapshot,
-  _ReplaceHandleSnapshot,
   _RuntimeForServer,
   _RuntimeContext,
   _RuntimeContextOptions,

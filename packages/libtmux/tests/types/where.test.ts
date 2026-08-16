@@ -9,6 +9,7 @@ import {
 } from "../../src/_internal/selection/serialization.js";
 import {
   parseLegacyWhere,
+  type ClientWhere,
   type PaneWhere,
   type RegexCriteriaData,
   type Selection,
@@ -74,7 +75,8 @@ type WritableKeys<Value> = {
 type ExpectedDocument =
   | { readonly model: "session"; readonly version: 1; readonly where: SessionWhere }
   | { readonly model: "window"; readonly version: 1; readonly where: WindowWhere }
-  | { readonly model: "pane"; readonly version: 1; readonly where: PaneWhere };
+  | { readonly model: "pane"; readonly version: 1; readonly where: PaneWhere }
+  | { readonly model: "client"; readonly version: 1; readonly where: ClientWhere };
 
 type _Document = Expect<Equal<WhereDocumentV1, ExpectedDocument>>;
 type _DecodeDocument = Expect<
@@ -301,9 +303,9 @@ type _NoSessionWireRelations = Expect<
 type _NoWindowWireRelations = Expect<
   Equal<Extract<keyof WindowWhere, "active_pane" | "linked_sessions">, never>
 >;
-type _ClientStillNever = Expect<Equal<WhereOf<Client>, never>>;
+type _ClientIsQueryable = Expect<Equal<WhereOf<Client>, ClientWhere>>;
 type _RelationModels = Expect<
-  Equal<keyof typeof WHERE_RELATIONS_V1, "pane" | "session" | "window">
+  Equal<keyof typeof WHERE_RELATIONS_V1, "client" | "pane" | "session" | "window">
 >;
 type _SessionRelationMetadata = Expect<
   Equal<

@@ -104,6 +104,7 @@ describe("Task 8 package boundary", () => {
     expect(Object.keys(manifest.exports)).toContain("./selection");
     expect(manifest.files).toEqual(["CHANGELOG.md", "dist", "!dist/_internal/test"]);
     expect(ast.exported.map(({ name }) => name).sort()).toEqual([
+      "ClientWhere",
       "PaneWhere",
       "RegexCriteriaData",
       "Selection",

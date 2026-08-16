@@ -561,7 +561,9 @@ function parseCriteria(
 }
 
 function parseModel(value: unknown): WhereModel {
-  if (value !== "session" && value !== "window" && value !== "pane") return invalidQuery();
+  if (value !== "session" && value !== "window" && value !== "pane" && value !== "client") {
+    return invalidQuery();
+  }
   return value;
 }
 

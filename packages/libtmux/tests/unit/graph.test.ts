@@ -80,6 +80,11 @@ function descriptors(
   overrides: Readonly<Partial<Record<WhereModel, ProjectionDescriptor>>> = {},
 ): Readonly<Record<WhereModel, ProjectionDescriptor>> {
   return {
+    client: overrides.client ?? {
+      fields: WHERE_FIELDS_V1.client,
+      model: "client",
+      relations: [],
+    },
     pane: overrides.pane ?? {
       fields: WHERE_FIELDS_V1.pane,
       model: "pane",
@@ -1324,7 +1329,7 @@ describe("selection projection snapshots", () => {
     expect(targeted.records[0]?.winlink?.windowIndex).toBe("4");
   });
 
-  test("rejects client roots because no Client Where descriptor exists", () => {
+  test("builds a client root, which tmux identifies by terminal rather than by id", () => {
     const graph = normalizeGraph({
       capture: capture(),
       sources: [
@@ -1332,12 +1337,15 @@ describe("selection projection snapshots", () => {
       ],
     });
 
-    expect(() =>
-      SelectionProjectionBuilder.create({
-        descriptors: descriptors(),
-        graph,
-        source: createGraphSourceId("clients"),
-      }),
-    ).toThrow(/client/);
+    const projection = SelectionProjectionBuilder.create({
+      descriptors: descriptors(),
+      graph,
+      source: createGraphSourceId("clients"),
+    }).seal();
+
+    expect(projection.members).toHaveLength(1);
+    expect(projection.records[0]?.model).toBe("client");
+    // No branded `$n`/`@n`/`%n`: a client's entity id is the terminal name.
+    expect(projection.records[0]?.entity.kind).toBe("client");
   });
 });

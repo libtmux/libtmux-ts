@@ -7,7 +7,7 @@ import type { ModelForKind } from "../runtime/model_kind.js";
 import { createProjectedSelection } from "../selection/evaluate.js";
 import { hydrateProjection } from "./hydrate.js";
 
-export type ProjectedModel = "pane" | "session" | "window";
+export type ProjectedModel = "client" | "pane" | "session" | "window";
 
 /**
  * The listing each model draws its members from.
@@ -16,6 +16,7 @@ export type ProjectedModel = "pane" | "session" | "window";
  * compile error here instead of an empty projection at runtime.
  */
 const MEMBER_SOURCES: Readonly<Record<ProjectedModel, GraphSourceId>> = Object.freeze({
+  client: createGraphSourceId("clients"),
   pane: createGraphSourceId("panes"),
   session: createGraphSourceId("sessions"),
   window: createGraphSourceId("windows"),

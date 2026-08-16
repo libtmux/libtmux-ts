@@ -8,7 +8,7 @@ import { Session } from "../../session.js";
 import { Window } from "../../window.js";
 import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
-import { logicalRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
+import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
   isSelectionProjection,
   originGraphForSelectionProjection,
@@ -26,8 +26,8 @@ import {
 } from "../runtime/live_handle.js";
 import { compileWhere, type CompiledWhere } from "./compile.js";
 
-type ProjectedKind = "pane" | "session" | "window";
-type ProjectedModel = Pane | Session | Window;
+type ProjectedKind = "client" | "pane" | "session" | "window";
+type ProjectedModel = Client | Pane | Session | Window;
 
 interface SelectionEntry<Model> {
   readonly record: ProjectionRecord | null;
@@ -40,13 +40,7 @@ interface ProjectedSelectionState {
   readonly resolve: (reference: GraphRecordRef) => ProjectionRecord | undefined;
 }
 
-interface ClientSelectionState {
-  readonly kind: "client";
-  readonly projection: null;
-  readonly resolve: null;
-}
-
-type SelectionState = ClientSelectionState | ProjectedSelectionState;
+type SelectionState = ProjectedSelectionState;
 
 const emptyQuery: Readonly<Record<string, unknown>> = Object.freeze({});
 const selectionConstructionToken: object = Object.freeze({});
@@ -169,6 +163,8 @@ function hasProjectedClass(model: ProjectedKind, value: unknown): value is Proje
   if ((typeof value !== "object" && typeof value !== "function") || value === null) return false;
   if (nodeTypes.isProxy(value)) return false;
   switch (model) {
+    case "client":
+      return value instanceof Client;
     case "pane":
       return value instanceof Pane;
     case "session":
@@ -195,7 +191,7 @@ function authenticateProjectedValue(
       graph !== projectionGraph ||
       !graphRecordRefsEqual(graphRecord, record.ref) ||
       entity.kind !== model ||
-      !logicalRefsEqual(record.entity, entity)
+      !graphEntityRefsEqual(record.entity, entity)
     )
       return invalidSelection();
     for (const field of WHERE_FIELDS_V1[model]) {
@@ -208,25 +204,6 @@ function authenticateProjectedValue(
     ) {
       return invalidSelection();
     }
-  } catch (error) {
-    if (error instanceof QueryValidationError) throw error;
-    return invalidSelection(error);
-  }
-}
-
-function authenticateClient(value: unknown): asserts value is Client {
-  if (
-    (typeof value !== "object" && typeof value !== "function") ||
-    value === null ||
-    nodeTypes.isProxy(value) ||
-    !(value instanceof Client)
-  ) {
-    return invalidSelection();
-  }
-  try {
-    const entity = entityRefForHandle(value);
-    snapshotForHandle(value);
-    if (entity.kind !== "client" || winlinkRefForHandle(value) !== null) return invalidSelection();
   } catch (error) {
     if (error instanceof QueryValidationError) throw error;
     return invalidSelection(error);
@@ -263,16 +240,6 @@ function projectedEntries<Kind extends ProjectedKind>(
     entries: Object.freeze(entries),
     state: Object.freeze({ kind: model, projection, resolve }),
   };
-}
-
-function clientEntries(values: readonly Client[]): readonly SelectionEntry<Client>[] {
-  const copiedValues = snapshotValues(values);
-  const entries: Array<SelectionEntry<Client>> = [];
-  for (const value of copiedValues) {
-    authenticateClient(value);
-    entries.push(Object.freeze({ record: null, value }));
-  }
-  return Object.freeze(entries);
 }
 
 class SelectionImpl<Model> implements Selection<Model> {
@@ -324,30 +291,32 @@ class SelectionImpl<Model> implements Selection<Model> {
   }
 
   where(criteria: WhereOf<Model>): Selection<Model> {
-    if (criteria === undefined || this.#state.kind === "client") return invalidSelection();
+    if (criteria === undefined) return invalidSelection();
     const matched = this.#matchingEntries(criteria);
     return new SelectionImpl(selectionConstructionToken, matched, this.#state);
   }
 
   first(criteria?: WhereOf<Model>): Model | undefined {
-    return this.#matchingEntries(criteria).at(0)?.value;
+    return this.#scan(criteria, 1).entries[0]?.value;
   }
 
   one(criteria?: WhereOf<Model>): Model {
-    const { entries, query } = this.#matchingWithQuery(criteria);
+    // Two is enough to know it is not one, so a server with a thousand panes
+    // costs the same as one with two.
+    const { entries, query } = this.#scan(criteria, 2);
     if (entries.length === 0) throw new NoMatchError({ query });
     if (entries.length !== 1) throw new MultipleMatchesError({ count: entries.length, query });
     return entries[0]!.value;
   }
 
   oneOrUndefined(criteria?: WhereOf<Model>): Model | undefined {
-    const { entries, query } = this.#matchingWithQuery(criteria);
+    const { entries, query } = this.#scan(criteria, 2);
     if (entries.length > 1) throw new MultipleMatchesError({ count: entries.length, query });
     return entries[0]?.value;
   }
 
   exists(criteria?: WhereOf<Model>): boolean {
-    return this.#matchingEntries(criteria).length > 0;
+    return this.#scan(criteria, 1).entries.length > 0;
   }
 
   count(criteria?: WhereOf<Model>): number {
@@ -356,7 +325,6 @@ class SelectionImpl<Model> implements Selection<Model> {
 
   #compile(criteria: unknown): CompiledWhere | null {
     if (criteria === undefined) return null;
-    if (this.#state.kind === "client") return invalidSelection();
     return compileWhere(this.#state.kind, criteria);
   }
 
@@ -368,13 +336,40 @@ class SelectionImpl<Model> implements Selection<Model> {
     readonly entries: readonly SelectionEntry<Model>[];
     readonly query: Readonly<Record<string, unknown>>;
   } {
+    return this.#scan(criteria, Number.POSITIVE_INFINITY);
+  }
+
+  /**
+   * Members matching `criteria`, stopping once `limit` of them are found.
+   *
+   * `first` and `exists` want one, `one` wants to know whether there are two;
+   * only `count` and `where` genuinely need the whole set. Matching a member
+   * can mean resolving its relations, so stopping early is not merely fewer
+   * comparisons.
+   */
+  #scan(
+    criteria: unknown,
+    limit: number,
+  ): {
+    readonly entries: readonly SelectionEntry<Model>[];
+    readonly query: Readonly<Record<string, unknown>>;
+  } {
     const compiled = this.#compile(criteria);
-    if (compiled === null) return { entries: this.#entries, query: emptyQuery };
-    if (this.#state.kind === "client") return invalidSelection();
+    if (compiled === null) {
+      const unfiltered =
+        limit >= this.#entries.length
+          ? this.#entries
+          : Object.freeze(this.#entries.slice(0, limit));
+      return { entries: unfiltered, query: emptyQuery };
+    }
     const state = this.#state;
-    const entries = this.#entries.filter(({ record }) =>
-      record === null ? false : compiled.matches(record, state.resolve),
-    );
+    const entries: SelectionEntry<Model>[] = [];
+    for (const entry of this.#entries) {
+      if (entry.record === null) continue;
+      if (!compiled.matches(entry.record, state.resolve)) continue;
+      entries.push(entry);
+      if (entries.length >= limit) break;
+    }
     return { entries: Object.freeze(entries), query: compiled.query };
   }
 }
@@ -387,18 +382,9 @@ export function createProjectedSelection<Kind extends ProjectedKind>(
   values: readonly ModelForKind<Kind>[],
   projection: SelectionProjection,
 ): Selection<ModelForKind<Kind>> {
-  if (model !== "pane" && model !== "session" && model !== "window") {
+  if (model !== "pane" && model !== "session" && model !== "window" && model !== "client") {
     return invalidSelection();
   }
   const { entries, state } = projectedEntries(model, values, projection);
   return new SelectionImpl(selectionConstructionToken, entries, state);
-}
-
-export function createClientSelection(values: readonly Client[]): Selection<Client> {
-  const state: ClientSelectionState = Object.freeze({
-    kind: "client",
-    projection: null,
-    resolve: null,
-  });
-  return new SelectionImpl(selectionConstructionToken, clientEntries(values), state);
 }

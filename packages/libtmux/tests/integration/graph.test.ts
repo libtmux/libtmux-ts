@@ -90,6 +90,11 @@ async function withTestServer(
 
 function descriptors(): Readonly<Record<WhereModel, ProjectionDescriptor>> {
   return {
+    client: {
+      fields: WHERE_FIELDS_V1.client,
+      model: "client",
+      relations: [],
+    },
     pane: {
       fields: WHERE_FIELDS_V1.pane,
       model: "pane",

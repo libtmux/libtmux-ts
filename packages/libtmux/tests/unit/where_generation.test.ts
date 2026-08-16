@@ -14,6 +14,33 @@ import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 const markerStart = "// <libtmux-generated-where-types>";
 const markerEnd = "// </libtmux-generated-where-types>";
 const expectedScalarKeys = {
+  client: [
+    "activity",
+    "cellHeight",
+    "cellWidth",
+    "clientSession",
+    "controlMode",
+    "created",
+    "discarded",
+    "flags",
+    "height",
+    "keyTable",
+    "lastSession",
+    "modeFormat",
+    "name",
+    "pid",
+    "prefix",
+    "readonly",
+    "termfeatures",
+    "termname",
+    "termtype",
+    "tty",
+    "uid",
+    "user",
+    "utf8",
+    "width",
+    "written",
+  ],
   session: [
     "activeWindowIndex",
     "activity",
@@ -149,11 +176,17 @@ const expectedScalarKeys = {
   ],
 } as const;
 const expectedRelationKeys = {
+  client: ["pane", "session", "window"],
   session: ["activePane", "activeWindow", "panes", "windows"],
   window: ["activePane", "linkedSessions", "panes", "session"],
   pane: ["session", "window"],
 } as const;
 const expectedRelations = {
+  client: [
+    { cardinality: "one", name: "session", targetModel: "session" },
+    { cardinality: "one", name: "window", targetModel: "window" },
+    { cardinality: "one", name: "pane", targetModel: "pane" },
+  ],
   pane: [
     { cardinality: "one", name: "window", targetModel: "window" },
     { cardinality: "one", name: "session", targetModel: "session" },
@@ -232,7 +265,7 @@ try {
       statement.kind === SyntaxKind.InterfaceDeclaration &&
       statement.getStart(sourceFile) >= start &&
       statement.getEnd() <= end &&
-      ["SessionWhere", "WindowWhere", "PaneWhere"].includes(statement.name?.text))
+      ["SessionWhere", "WindowWhere", "PaneWhere", "ClientWhere"].includes(statement.name?.text))
     .map((statement) => ({
       exported: hasModifier(statement, SyntaxKind.ExportKeyword),
       heritageCount: statement.heritageClauses?.length ?? 0,
@@ -398,17 +431,20 @@ describe("generated Where contract", () => {
       expect(selectionSource).not.toContain("linked_sessions?");
       expect(selectionSource).not.toContain("children");
       expect(generatedAst.forbiddenKinds).toEqual([]);
-      expect(generatedAst.statements).toHaveLength(3);
+      // One criteria interface per queryable model.
+      expect(generatedAst.statements).toHaveLength(4);
       expect(
         generatedAst.statements
           .map(({ kind, name }) => ({ kind, name }))
           .sort((left, right) => left.name.localeCompare(right.name)),
       ).toEqual([
+        { kind: "InterfaceDeclaration", name: "ClientWhere" },
         { kind: "InterfaceDeclaration", name: "PaneWhere" },
         { kind: "InterfaceDeclaration", name: "SessionWhere" },
         { kind: "InterfaceDeclaration", name: "WindowWhere" },
       ]);
       expect(generatedAst.interfaces.map(({ name }) => name).sort()).toEqual([
+        "ClientWhere",
         "PaneWhere",
         "SessionWhere",
         "WindowWhere",
@@ -417,6 +453,7 @@ describe("generated Where contract", () => {
         ["session", "SessionWhere"],
         ["window", "WindowWhere"],
         ["pane", "PaneWhere"],
+        ["client", "ClientWhere"],
       ] as const) {
         const generatedInterface = generatedAst.interfaces.find(
           (candidate) => candidate.name === interfaceName,

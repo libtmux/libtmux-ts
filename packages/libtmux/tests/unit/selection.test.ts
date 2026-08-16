@@ -3,10 +3,7 @@ import { types as nodeTypes } from "node:util";
 
 import { Client } from "../../src/client.js";
 import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
-import {
-  createClientSelection,
-  createProjectedSelection,
-} from "../../src/_internal/selection/evaluate.js";
+import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import {
   entityRefForHandle,
   snapshotForHandle,
@@ -74,10 +71,7 @@ describe("Selection collection contract", () => {
     const internalModule = await import("../../src/_internal/selection/evaluate.js");
 
     expect(Object.keys(selectionModule)).toEqual(["parseLegacyWhere"]);
-    expect(Object.keys(internalModule).sort()).toEqual([
-      "createClientSelection",
-      "createProjectedSelection",
-    ]);
+    expect(Object.keys(internalModule).sort()).toEqual(["createProjectedSelection"]);
     expect(Reflect.get(selectionModule, "Selection")).toBeUndefined();
     const runtimeConstructor = Reflect.get(selection, "constructor") as Function;
     expect(runtimeConstructor).not.toBe(selectionModule);
@@ -446,9 +440,13 @@ describe("internal Selection construction", () => {
     );
   });
 
-  test("constructs authentic Client selections without declarative criteria", async () => {
+  test("constructs authentic Client selections that answer declarative criteria", async () => {
     const harness = await createClientHarness(["/dev/pts/1", "/dev/pts/2"]);
-    const selection: Selection<Client> = createClientSelection(harness.values);
+    const selection: Selection<Client> = createProjectedSelection(
+      "client",
+      harness.values,
+      harness.projection,
+    );
     const requestCount = harness.transport.requests.length;
 
     const initialValues = selection.toArray();
@@ -476,12 +474,24 @@ describe("internal Selection construction", () => {
     expect(optionalAmbiguous.query).toEqual({});
     assertDeepFrozenData(optionalAmbiguous.query);
 
-    const criteria = { name: "forbidden" };
-    for (const method of ["first", "one", "oneOrUndefined", "exists", "count"] as const) {
-      expectInvalidQuery(() => Reflect.apply(selection[method], selection, [criteria]));
-    }
+    // A client is queryable like anything else: it has fields of its own, and
+    // `.filter` was the only way to reach them before.
+    expect(selection.count({ name: "/dev/pts/2" })).toBe(1);
+    expect(selection.one({ name: { endsWith: "2" } })).toBe(harness.values[1]!);
+    expect(selection.where({ name: { startsWith: "/dev/pts/" } }).count()).toBe(2);
+    expect(selection.exists({ name: "/dev/pts/9" })).toBe(false);
+    expect(harness.transport.requests).toHaveLength(requestCount);
+
+    // A field that is not the client model's own is still refused. Reached
+    // through Reflect because the type already rules it out.
     const where = Reflect.get(selection, "where") as (...arguments_: unknown[]) => unknown;
-    expectInvalidQuery(() => Reflect.apply(where, selection, [{}]));
-    expectInvalidQuery(() => createClientSelection([Object.create(Client.prototype) as Client]));
+    expectInvalidQuery(() => Reflect.apply(where, selection, [{ paneId: "%1" }]));
+    expectInvalidQuery(() =>
+      createProjectedSelection(
+        "client",
+        [Object.create(Client.prototype) as Client],
+        harness.projection,
+      ),
+    );
   });
 });
