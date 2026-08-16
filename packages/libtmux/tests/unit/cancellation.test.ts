@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 
 import { readProcessIdentity, type ProcessIdentity } from "../../src/_internal/test/run_root.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
-import { TransportError } from "../../src/_internal/transport/types.js";
+import { TmuxTransportError } from "../../src/_internal/transport/types.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
@@ -95,7 +95,7 @@ describe("transport cancellation", () => {
       });
       throw new Error("expected cancellation");
     } catch (error) {
-      expect(error).toBeInstanceOf(TransportError);
+      expect(error).toBeInstanceOf(TmuxTransportError);
       expect(error).toMatchObject({ delivery: "not_started", kind: "cancelled" });
     }
   });
@@ -119,7 +119,7 @@ describe("transport cancellation", () => {
         await execution;
         throw new Error("expected cancellation");
       } catch (error) {
-        expect(error).toBeInstanceOf(TransportError);
+        expect(error).toBeInstanceOf(TmuxTransportError);
         expect(error).toMatchObject({
           delivery: "indeterminate",
           kind: "cancelled",
@@ -184,9 +184,9 @@ describe("transport cancellation", () => {
       expect(performance.now() - interruptedAt).toBeLessThan(3_000);
       if (outcome.kind === "error") failure = outcome.error;
 
-      expect(failure).toBeInstanceOf(TransportError);
+      expect(failure).toBeInstanceOf(TmuxTransportError);
       expect(failure).toMatchObject({ delivery: "indeterminate", kind: "cancelled" });
-      const diagnostic = failure as TransportError;
+      const diagnostic = failure as TmuxTransportError;
       expect(new TextDecoder().decode(diagnostic.stdout)).toBe("launch-frame\n");
       expect(new TextDecoder().decode(diagnostic.stderr)).toBe("launch-diagnostic\n");
       diagnostic.stdout[0] = 0;
@@ -229,9 +229,9 @@ describe("transport cancellation", () => {
       expect(outcome.kind).not.toBe("deadline");
       expect(performance.now() - startedAt).toBeLessThan(10_000);
       if (outcome.kind !== "error") throw new Error("expected transport timeout");
-      expect(outcome.error).toBeInstanceOf(TransportError);
+      expect(outcome.error).toBeInstanceOf(TmuxTransportError);
       expect(outcome.error).toMatchObject({ delivery: "indeterminate", kind: "timeout" });
-      const diagnostic = outcome.error as TransportError;
+      const diagnostic = outcome.error as TmuxTransportError;
       expect(new TextDecoder().decode(diagnostic.stdout)).toBe("launch-frame\n");
       expect(new TextDecoder().decode(diagnostic.stderr)).toBe("launch-diagnostic\n");
     } finally {

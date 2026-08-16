@@ -1,5 +1,7 @@
 import { types as nodeTypes } from "node:util";
 
+import type { DeliveryStatus } from "./common.js";
+
 export type Query = Readonly<Record<string, unknown>>;
 
 interface ExceptionOptions {
@@ -132,6 +134,65 @@ export class LibTmuxException extends Error {
       ? `${this.name}: ${this.message}`
       : `${this.subcommand}: ${this.message}`;
   }
+}
+
+/** What went wrong between this process and tmux, as opposed to inside tmux. */
+export type TmuxTransportErrorKind = "cancelled" | "pipe" | "protocol" | "spawn" | "timeout";
+
+/**
+ * A command did not complete, and this is how far it got.
+ *
+ * The reason this is on the error rather than inferred from it: after a
+ * timeout, "did tmux run this?" has no default answer, and retrying a mutation
+ * that already applied is how one `kill-session` becomes two. `not_started` is
+ * the only status a caller may retry blindly.
+ */
+export class TmuxTransportError extends LibTmuxException {
+  readonly #stderr: Uint8Array;
+  readonly #stdout: Uint8Array;
+  /** How far the command got before this failure. */
+  readonly delivery: DeliveryStatus;
+  /** Which part of reaching tmux failed. */
+  readonly kind: TmuxTransportErrorKind;
+  /**
+   * The signal that ended the process, when one did.
+   *
+   * A plain string rather than Node's `NodeJS.Signals`: these declarations are
+   * gated to compile with no ambient Node types, and a consumer compares this
+   * against `"SIGKILL"` either way.
+   */
+  readonly signal: string | null | undefined;
+
+  constructor(message: string, options: TmuxTransportErrorOptions) {
+    super(message, {
+      ...(options.cause === undefined ? {} : { cause: options.cause }),
+      ...(options.subcommand === undefined ? {} : { subcommand: options.subcommand }),
+    });
+    this.name = "TmuxTransportError";
+    this.delivery = options.delivery;
+    this.kind = options.kind;
+    this.signal = options.signal;
+    this.#stderr = new Uint8Array(options.stderr ?? []);
+    this.#stdout = new Uint8Array(options.stdout ?? []);
+  }
+
+  /** Whatever tmux wrote to stderr before the failure, copied. */
+  get stderr(): Uint8Array {
+    return new Uint8Array(this.#stderr);
+  }
+
+  /** Whatever tmux wrote to stdout before the failure, copied. */
+  get stdout(): Uint8Array {
+    return new Uint8Array(this.#stdout);
+  }
+}
+
+export interface TmuxTransportErrorOptions extends ExceptionOptions {
+  readonly delivery: DeliveryStatus;
+  readonly kind: TmuxTransportErrorKind;
+  readonly signal?: string | null;
+  readonly stderr?: Uint8Array;
+  readonly stdout?: Uint8Array;
 }
 
 export class DeprecatedError extends LibTmuxException {

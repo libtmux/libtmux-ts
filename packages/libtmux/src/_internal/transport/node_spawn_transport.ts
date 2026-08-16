@@ -5,7 +5,7 @@ import type { Readable } from "node:stream";
 
 import type { DeliveryStatus } from "../../common.js";
 import type { CommandRequest, RawCommandResult } from "./types.js";
-import { snapshotCommandRequest, TransportError } from "./types.js";
+import { snapshotCommandRequest, TmuxTransportError } from "./types.js";
 
 export interface NodeSpawnTransportOptions {
   readonly postKillGraceMs?: number;
@@ -70,7 +70,7 @@ export class NodeSpawnTransport {
   async execute(request: CommandRequest): Promise<RawCommandResult> {
     const submitted = snapshotCommandRequest(request);
     if (isAborted(submitted.signal)) {
-      throw new TransportError("command cancelled before spawn", {
+      throw new TmuxTransportError("command cancelled before spawn", {
         delivery: "not_started",
         kind: "cancelled",
       });
@@ -89,7 +89,7 @@ export class NodeSpawnTransport {
       // looking through their own code for a bug that is a missing binary or
       // a wrong path.
       const code = (error as NodeJS.ErrnoException).code;
-      throw new TransportError(
+      throw new TmuxTransportError(
         `could not run ${submitted.executable}${code === undefined ? "" : ` (${code})`}`,
         { cause: error, delivery: "not_started", kind: "spawn" },
       );
@@ -233,7 +233,7 @@ export class NodeSpawnTransport {
       : await Promise.all([stdoutStatePromise, stderrStatePromise]);
 
     if (interruption !== undefined) {
-      throw new TransportError(
+      throw new TmuxTransportError(
         interruption === "timeout" ? "command timed out" : "command cancelled",
         {
           delivery,
@@ -248,7 +248,7 @@ export class NodeSpawnTransport {
       // spawn reports a missing or unexecutable binary here rather than by
       // throwing, so this is the path a wrong tmuxBin actually takes.
       const code = (spawnError as NodeJS.ErrnoException).code;
-      throw new TransportError(
+      throw new TmuxTransportError(
         `could not run ${submitted.executable}${code === undefined ? "" : ` (${code})`}`,
         {
           cause: spawnError,
@@ -259,7 +259,7 @@ export class NodeSpawnTransport {
       );
     }
     if (stdinError !== undefined) {
-      throw new TransportError("command stdin failed", {
+      throw new TmuxTransportError("command stdin failed", {
         cause: stdinError,
         delivery: "indeterminate",
         kind: "pipe",
@@ -267,7 +267,7 @@ export class NodeSpawnTransport {
       });
     }
     if (stdoutState.status === "rejected" && !drainageDiscarded) {
-      throw new TransportError("command output failed", {
+      throw new TmuxTransportError("command output failed", {
         cause: stdoutState.reason,
         delivery: "indeterminate",
         kind: "pipe",
@@ -275,7 +275,7 @@ export class NodeSpawnTransport {
       });
     }
     if (stderrState.status === "rejected" && !drainageDiscarded) {
-      throw new TransportError("command output failed", {
+      throw new TmuxTransportError("command output failed", {
         cause: stderrState.reason,
         delivery: "indeterminate",
         kind: "pipe",
@@ -284,7 +284,7 @@ export class NodeSpawnTransport {
     }
     const terminal = observedExit ?? close;
     if (terminal.code === null) {
-      throw new TransportError("command closed without an exit code", {
+      throw new TmuxTransportError("command closed without an exit code", {
         delivery: "indeterminate",
         kind: "protocol",
         signal: terminal.signal,

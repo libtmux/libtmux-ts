@@ -9,7 +9,7 @@ import type { TmuxConnection } from "../runtime/connection.js";
 import type { CapabilityBinding, TmuxCapabilities } from "../runtime/capabilities.js";
 import type { TmuxVersion } from "../runtime/tmux_version.js";
 import {
-  TransportError,
+  TmuxTransportError,
   type CommandTransport,
   type RawCommandResult,
 } from "../transport/types.js";
@@ -219,7 +219,7 @@ function decodedStderr(bytes: Uint8Array): string {
 
 const tmuxStderrByFailure = new WeakMap<LibTmuxException, string>();
 
-function withTmuxStderr(error: LibTmuxException, stderr: string): LibTmuxException {
+function withTmuxStderr<Error extends LibTmuxException>(error: Error, stderr: string): Error {
   tmuxStderrByFailure.set(error, stderr);
   return error;
 }
@@ -239,11 +239,24 @@ function commandFailure(
   return withTmuxStderr(new LibTmuxException(message, { subcommand: listCommand }), stderr);
 }
 
-function transportFailure(listCommand: ListCommand, error: TransportError): LibTmuxException {
+/**
+ * Re-describe a transport failure as one, rather than as a generic exception.
+ *
+ * Acquiring a snapshot is the one path that used to flatten this into a bare
+ * {@link LibTmuxException}, which meant the same timeout had a different
+ * observable type depending on which command hit it — and cost the caller the
+ * `delivery` that says whether a retry is safe.
+ */
+function transportFailure(listCommand: ListCommand, error: TmuxTransportError): TmuxTransportError {
   const stderr = decodedStderr(error.stderr);
   return withTmuxStderr(
-    new LibTmuxException(stderr === "" ? error.message : stderr, {
+    new TmuxTransportError(stderr === "" ? error.message : stderr, {
       cause: error,
+      delivery: error.delivery,
+      kind: error.kind,
+      ...(error.signal === undefined ? {} : { signal: error.signal }),
+      stderr: error.stderr,
+      stdout: error.stdout,
       subcommand: listCommand,
     }),
     stderr,
@@ -368,7 +381,7 @@ export async function executeGuardedList(
   try {
     result = await options.transport.execute(commandRequest);
   } catch (error) {
-    if (!(error instanceof TransportError)) throw error;
+    if (!(error instanceof TmuxTransportError)) throw error;
     throw transportFailure(options.listCommand, error);
   }
   const failure = commandFailure(options.listCommand, result);

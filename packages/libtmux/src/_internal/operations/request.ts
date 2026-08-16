@@ -7,7 +7,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../transport/types.js";
-import { snapshotCommandRequest, TransportError } from "../transport/types.js";
+import { snapshotCommandRequest, TmuxTransportError } from "../transport/types.js";
 
 export function connectionArguments(connection: TmuxConnection): string[] {
   const args: string[] = [];
@@ -86,7 +86,7 @@ export async function executeBatch(
         }),
       );
     } catch (error) {
-      if (!(error instanceof TransportError)) throw error;
+      if (!(error instanceof TmuxTransportError)) throw error;
       outcomes.push(
         Object.freeze({
           delivery: error.delivery,

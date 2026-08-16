@@ -90,7 +90,10 @@ import { deriveTmuxCapabilities } from ${moduleUrl("dist/_internal/runtime/capab
 import { TmuxConnection } from ${moduleUrl("dist/_internal/runtime/connection.js")};
 import { ControlMode } from ${controlModeModule};
 import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_spawn_transport.js")};
-import { TransportError } from ${moduleUrl("dist/_internal/transport/types.js")};
+// From the package root, not the internal module: a caller deciding whether a
+// timed-out mutation is safe to retry has to be able to name this type, so the
+// emitted lane proves it is reachable the way a consumer reaches it.
+import { TmuxTransportError } from ${moduleUrl("dist/index.js")};
 import { prepareRunRoot, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup } from ${runRootModule};
 import { TestServer } from ${moduleUrl("dist/_internal/test/test_server.js")};
 import { FORMAT_SEPARATOR } from ${moduleUrl("dist/formats.js")};
@@ -320,7 +323,7 @@ const cancelled = transport.execute({
 await waitForFile(markerPath);
 controller.abort();
 await assert.rejects(cancelled, (error) => {
-  assert.ok(error instanceof TransportError);
+  assert.ok(error instanceof TmuxTransportError);
   assert.equal(error.delivery, "indeterminate");
   assert.equal(error.kind, "cancelled");
   assert.equal(error.signal, "SIGKILL");
@@ -333,7 +336,7 @@ const timedOut = transport.execute({
   timeoutMs: 500,
 });
 await assert.rejects(timedOut, (error) => {
-  assert.ok(error instanceof TransportError);
+  assert.ok(error instanceof TmuxTransportError);
   assert.equal(error.delivery, "indeterminate");
   assert.equal(error.kind, "timeout");
   assert.equal(error.signal, "SIGKILL");
@@ -353,7 +356,7 @@ partialController.abort();
 try {
   const partialOutcome = await settleWithin(partialExecution, 800);
   assert.equal(partialOutcome.kind, "error");
-  assert.ok(partialOutcome.error instanceof TransportError);
+  assert.ok(partialOutcome.error instanceof TmuxTransportError);
   assert.equal(partialOutcome.error.kind, "cancelled");
   assert.equal(new TextDecoder().decode(partialOutcome.error.stdout), "launch-frame\\n");
   assert.equal(new TextDecoder().decode(partialOutcome.error.stderr), "launch-diagnostic\\n");
@@ -387,7 +390,7 @@ const timeoutHolder = await readHolderIdentity(timeoutPipeMarker);
 try {
   const timeoutOutcome = await heldPipeOutcome;
   assert.equal(timeoutOutcome.kind, "error");
-  assert.ok(timeoutOutcome.error instanceof TransportError);
+  assert.ok(timeoutOutcome.error instanceof TmuxTransportError);
   assert.equal(timeoutOutcome.error.kind, "timeout");
   assert.equal(new TextDecoder().decode(timeoutOutcome.error.stdout), "launch-frame\\n");
   assert.equal(new TextDecoder().decode(timeoutOutcome.error.stderr), "launch-diagnostic\\n");
@@ -432,7 +435,7 @@ try {
     assert.equal(outcome.value.signal, null);
     assert.ok(performance.now() - cancelledAfterExitAt < 900);
   } else {
-    assert.ok(outcome.error instanceof TransportError);
+    assert.ok(outcome.error instanceof TmuxTransportError);
     assert.equal(outcome.error.kind, "cancelled");
   }
 } finally {
@@ -468,7 +471,7 @@ try {
     assert.equal(outcome.value.returncode, 0);
     assert.equal(outcome.value.signal, null);
   } else {
-    assert.ok(outcome.error instanceof TransportError);
+    assert.ok(outcome.error instanceof TmuxTransportError);
     assert.equal(outcome.error.kind, "timeout");
   }
 } finally {

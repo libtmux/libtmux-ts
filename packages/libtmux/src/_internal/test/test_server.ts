@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { adaptRawResult } from "../operations/request.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
-import { TransportError, type RawCommandResult } from "../transport/types.js";
+import { TmuxTransportError, type RawCommandResult } from "../transport/types.js";
 import {
   assertControllerCurrent as assertPersistedControllerCurrent,
   beginFixtureLaunch,
@@ -328,9 +328,9 @@ export class TestServer {
           timeoutMs: 3_000,
         });
       } catch (error) {
-        if (error instanceof TransportError && error.delivery === "not_started") {
+        if (error instanceof TmuxTransportError && error.delivery === "not_started") {
           record = await rollbackFixtureLaunchNotStarted(attempt);
-        } else if (error instanceof TransportError && error.stdout.length > 0) {
+        } else if (error instanceof TmuxTransportError && error.stdout.length > 0) {
           try {
             const partial = parseLaunchFrame(error.stdout, record.socketPath);
             await promote(partial.daemonPid);
@@ -383,7 +383,7 @@ export class TestServer {
           "readiness",
           Math.min(250, remainingMs),
         ).catch((error: unknown) => {
-          if (error instanceof TransportError && error.kind === "timeout") return undefined;
+          if (error instanceof TmuxTransportError && error.kind === "timeout") return undefined;
           throw error;
         });
         if (

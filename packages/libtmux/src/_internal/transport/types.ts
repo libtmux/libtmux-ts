@@ -1,4 +1,9 @@
 import type { CommandResult, DeliveryStatus, OperationStatus } from "../../common.js";
+// One transport error type, and it is the public one: a caller deciding
+// whether a timed-out mutation is safe to retry needs `delivery`, and an
+// internal-only class would mean re-deriving it at the package boundary.
+export { TmuxTransportError } from "../../exc.js";
+import type { TmuxTransportError as TmuxTransportErrorType } from "../../exc.js";
 import type { AbortLike } from "../../types.js";
 
 export interface CommandRequest {
@@ -33,46 +38,15 @@ export function snapshotCommandRequest(request: CommandRequest): CommandRequest 
 export interface RawCommandResult {
   readonly cmd: readonly string[];
   readonly returncode: number;
-  readonly signal: NodeJS.Signals | null;
+  /**
+   * The signal that ended the process, as a plain string.
+   *
+   * Not `NodeJS.Signals`: these declarations are gated to compile with no
+   * ambient Node types, and this one is reachable from the package root.
+   */
+  readonly signal: string | null;
   readonly stderr: Uint8Array;
   readonly stdout: Uint8Array;
-}
-
-export type TransportErrorKind = "cancelled" | "pipe" | "protocol" | "spawn" | "timeout";
-
-interface TransportErrorOptions {
-  readonly cause?: unknown;
-  readonly delivery: DeliveryStatus;
-  readonly kind: TransportErrorKind;
-  readonly signal?: NodeJS.Signals | null;
-  readonly stderr?: Uint8Array;
-  readonly stdout?: Uint8Array;
-}
-
-export class TransportError extends Error {
-  readonly #stderr: Uint8Array;
-  readonly #stdout: Uint8Array;
-  readonly delivery: DeliveryStatus;
-  readonly kind: TransportErrorKind;
-  readonly signal: NodeJS.Signals | null | undefined;
-
-  constructor(message: string, options: TransportErrorOptions) {
-    super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = "TransportError";
-    this.delivery = options.delivery;
-    this.kind = options.kind;
-    this.signal = options.signal;
-    this.#stderr = new Uint8Array(options.stderr ?? []);
-    this.#stdout = new Uint8Array(options.stdout ?? []);
-  }
-
-  get stderr(): Uint8Array {
-    return new Uint8Array(this.#stderr);
-  }
-
-  get stdout(): Uint8Array {
-    return new Uint8Array(this.#stdout);
-  }
 }
 
 export interface CommandTransport {
@@ -81,7 +55,7 @@ export interface CommandTransport {
 
 export interface BatchOutcome {
   readonly delivery: DeliveryStatus;
-  readonly error?: TransportError;
+  readonly error?: TmuxTransportErrorType;
   readonly index: number;
   readonly rawResult?: RawCommandResult;
   readonly request: CommandRequest;
