@@ -162,9 +162,19 @@ Python release it names. `oxfmt` formats TypeScript but not JSON, and
 `check-parity.ts --write` re-renders the file in a style the committed one does
 not use — so edit entries surgically as text and leave the rest byte-for-byte.
 
-A ported row names the TypeScript that covers it. Prefer
-`./module#instance:Class.member`, which pins the member, over
-`./module#value:Class`, which only pins its class.
+A ported row names the TypeScript that covers it, and a row that claims a
+member has to cite one: `./module#instance:Class.member` for the prototype,
+`./module#value:Class.member` for the static side. `./module#value:Class`
+compiles to `typeof Class` and says only that the class is exported, which is
+the whole claim for a class row and none of it for a method — renaming
+`refresh` to `refreshed` once left five rows citing a method that had stopped
+existing, with the gate green throughout. A row claims a member when its kind
+is `method` or `property`, or when its `typescript` field names `Class.member`;
+the gate reads that rather than a list, so it needs no maintaining.
+
+A member of a generic type needs the type instantiated to be read at all, so
+the locator carries the arguments: `./selection#type:Selection<never>.one`.
+`never` satisfies any parameter without asserting anything about it.
 
 `parity/python-0.62.0.baseline.json` is what the Python release contributes:
 the symbols it exposes, and the git object kind of every path the ledger cites.

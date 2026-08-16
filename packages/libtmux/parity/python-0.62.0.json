@@ -50,7 +50,7 @@
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.cmd"]
     },
     {
       "adaptation": "The ability to run a command is a method on each handle rather than a structural protocol a caller implements.",
@@ -69,7 +69,7 @@
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.cmd"]
     },
     {
       "adaptation": "The environment methods sit directly on Server and Session; TypeScript classes compose by declaration rather than by mixin.",
@@ -88,7 +88,7 @@
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showEnvironment"]
     },
     {
       "adaptation": "Running a tmux command is a method on the object it addresses rather than a free-standing command class, so the target comes from the handle.",
@@ -107,7 +107,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.cmd"]
     },
     {
       "adaptation": null,
@@ -202,7 +202,7 @@
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showHooks"]
     },
     {
       "adaptation": null,
@@ -240,7 +240,7 @@
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showOptions"]
     },
     {
       "adaptation": null,
@@ -354,7 +354,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.height"]
     },
     {
       "adaptation": null,
@@ -373,7 +373,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.id"]
     },
     {
       "adaptation": null,
@@ -392,7 +392,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.index"]
     },
     {
       "adaptation": null,
@@ -411,7 +411,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.resize"]
     },
     {
       "adaptation": null,
@@ -430,7 +430,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.select"]
     },
     {
       "adaptation": null,
@@ -449,7 +449,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.split"]
     },
     {
       "adaptation": null,
@@ -468,7 +468,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.title"]
     },
     {
       "adaptation": null,
@@ -487,7 +487,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.width"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -563,7 +563,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.kill"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -753,7 +753,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.id"]
     },
     {
       "adaptation": null,
@@ -772,7 +772,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.kill"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -810,7 +810,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.name"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -943,7 +943,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.height"]
     },
     {
       "adaptation": null,
@@ -962,7 +962,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.id"]
     },
     {
       "adaptation": null,
@@ -981,7 +981,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.index"]
     },
     {
       "adaptation": null,
@@ -1000,7 +1000,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.kill"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -1038,7 +1038,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.name"]
     },
     {
       "adaptation": null,
@@ -1057,7 +1057,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.select"]
     },
     {
       "adaptation": null,
@@ -1076,7 +1076,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.setOption"]
     },
     {
       "adaptation": null,
@@ -1095,7 +1095,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.showOptions"]
     },
     {
       "adaptation": null,
@@ -1114,7 +1114,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.showOptions"]
     },
     {
       "adaptation": null,
@@ -1133,7 +1133,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.split"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -1171,7 +1171,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.width"]
     },
     {
       "adaptation": null,
@@ -5807,7 +5807,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.version"]
     },
     {
       "adaptation": "The version belongs to the server being driven rather than to a module-level lookup, and `raw` carries tmux's own string.",
@@ -5826,7 +5826,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.version"]
     },
     {
       "adaptation": "One comparison against a minimum replaces the four directional helpers; a test for strictly greater than a version reads the parsed value from `version()`.",
@@ -5845,7 +5845,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.versionAtLeast"]
     },
     {
       "adaptation": "One comparison against a minimum replaces the four directional helpers; `version()` returns the parsed value for anything else.",
@@ -5864,7 +5864,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.versionAtLeast"]
     },
     {
       "adaptation": "One comparison against a minimum replaces the four directional helpers; a test for strictly less than a version reads the parsed value from `version()`.",
@@ -5883,7 +5883,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.versionAtLeast"]
     },
     {
       "adaptation": "One comparison against a minimum replaces the four directional helpers; a test for less than or equal to a version reads the parsed value from `version()`.",
@@ -5902,7 +5902,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.versionAtLeast"]
     },
     {
       "adaptation": "One comparison against a minimum replaces the four directional helpers; `version()` returns the parsed value for anything else.",
@@ -5921,7 +5921,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.versionAtLeast"]
     },
     {
       "adaptation": "The version belongs to the server being driven rather than to a module-level lookup, and is probed once per connection and cached.",
@@ -5940,7 +5940,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.version"]
     },
     {
       "adaptation": "A failing command throws TmuxCommandError on its own, carrying tmux's stderr, exit code, and arguments, so no caller has to opt in to the check.",
@@ -5959,7 +5959,7 @@
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.cmd"]
     },
     {
       "adaptation": null,
@@ -5997,7 +5997,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.refreshed"]
     },
     {
       "adaptation": "Listing every object of a kind is not a separate call here: `snapshot()` runs the four list commands in one round and returns them already normalized into handles, so a caller never assembles a format string or parses a row.",
@@ -6016,7 +6016,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": null,
@@ -6187,7 +6187,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": null,
@@ -6206,7 +6206,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./client#value:Client"]
+      "typescriptSymbols": ["./client#instance:Client.refreshed"]
     },
     {
       "adaptation": "Named for the tmux environment it reads rather than for POSIX `getenv`, and it distinguishes a variable marked for removal (`null`) from one tmux does not carry (`undefined`).",
@@ -6225,7 +6225,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.getEnvironment"]
     },
     {
       "adaptation": null,
@@ -6244,7 +6244,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.removeEnvironment"]
     },
     {
       "adaptation": null,
@@ -6263,7 +6263,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.setEnvironment"]
     },
     {
       "adaptation": null,
@@ -6282,7 +6282,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showEnvironment"]
     },
     {
       "adaptation": null,
@@ -6301,7 +6301,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.unsetEnvironment"]
     },
     {
       "adaptation": null,
@@ -6339,7 +6339,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.setHook"]
     },
     {
       "adaptation": "Binding several hooks is a loop over the single-hook writer, which keeps a failure attributable to the hook that caused it.",
@@ -6358,7 +6358,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.setHook"]
     },
     {
       "adaptation": "One reader returns every hook as a map, so a single lookup is a `get` on the result rather than another round trip to tmux.",
@@ -6377,7 +6377,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showHooks"]
     },
     {
       "adaptation": null,
@@ -6396,7 +6396,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showHooks"]
     },
     {
       "adaptation": null,
@@ -6415,7 +6415,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.unsetHook"]
     },
     {
       "adaptation": null,
@@ -6434,7 +6434,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.setOption"]
     },
     {
       "adaptation": "One reader returns every option as a map, so a single lookup is a `get` on the result rather than another round trip to tmux.",
@@ -6453,7 +6453,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showOptions"]
     },
     {
       "adaptation": null,
@@ -6472,7 +6472,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.showOptions"]
     },
     {
       "adaptation": null,
@@ -6491,7 +6491,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.unsetOption"]
     },
     {
       "adaptation": null,
@@ -6510,7 +6510,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.breakOut"]
     },
     {
       "adaptation": null,
@@ -6529,7 +6529,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.capture"]
     },
     {
       "adaptation": null,
@@ -6548,7 +6548,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.chooseBuffer"]
     },
     {
       "adaptation": null,
@@ -6586,7 +6586,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.chooseTree"]
     },
     {
       "adaptation": null,
@@ -6605,7 +6605,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.clearHistory"]
     },
     {
       "adaptation": null,
@@ -6624,7 +6624,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.clearHistory"]
     },
     {
       "adaptation": null,
@@ -6662,7 +6662,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.cmd"]
     },
     {
       "adaptation": "Entering and leaving copy mode are separate, named methods rather than one call whose direction is a flag.",
@@ -6681,7 +6681,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.enterCopyMode"]
     },
     {
       "adaptation": null,
@@ -6700,7 +6700,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.customizeMode"]
     },
     {
       "adaptation": null,
@@ -6719,7 +6719,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.displayMessage"]
     },
     {
       "adaptation": null,
@@ -6757,7 +6757,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.displayPopup"]
     },
     {
       "adaptation": "Sending Enter is `sendKeys(\"\")`, which already appends it, rather than a method for one key.",
@@ -6776,7 +6776,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.sendKeys"]
     },
     {
       "adaptation": null,
@@ -6795,7 +6795,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.findWindow"]
     },
     {
       "adaptation": "One entry point reads `$TMUX` and resolves the session the caller is running inside; the window and pane it contains come from that session's relations.",
@@ -6814,7 +6814,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#value:Session.fromEnv"]
     },
     {
       "adaptation": "A handle is resolved from a snapshot rather than constructed from a bare id, which is what keeps its scalars and relations consistent with the instant they were read: `snapshot.panes.where({ id }).one()`.",
@@ -6833,7 +6833,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": "Named for its direction: the pane the method is called on is the one that moves.",
@@ -6852,7 +6852,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.joinTo"]
     },
     {
       "adaptation": null,
@@ -6871,7 +6871,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.kill"]
     },
     {
       "adaptation": "Moving a pane into another window is the same tmux operation as joining it there, so one method covers both.",
@@ -6890,7 +6890,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.joinTo"]
     },
     {
       "adaptation": "`split` is the tmux verb, and `shellCommand` supplies what the new pane runs.",
@@ -6909,7 +6909,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.split"]
     },
     {
       "adaptation": null,
@@ -6928,7 +6928,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.pasteBuffer"]
     },
     {
       "adaptation": null,
@@ -6947,7 +6947,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.pipe"]
     },
     {
       "adaptation": null,
@@ -6966,7 +6966,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.refreshed"]
     },
     {
       "adaptation": "Clearing the pane's history is the durable half of Python's reset; the terminal-state reset it pairs with is `cmd(\"send-keys\", [\"-R\"])`.",
@@ -6985,7 +6985,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.clearHistory"]
     },
     {
       "adaptation": null,
@@ -7004,7 +7004,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.resize"]
     },
     {
       "adaptation": null,
@@ -7023,7 +7023,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.respawn"]
     },
     {
       "adaptation": null,
@@ -7042,7 +7042,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.select"]
     },
     {
       "adaptation": null,
@@ -7061,7 +7061,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.sendKeys"]
     },
     {
       "adaptation": null,
@@ -7080,7 +7080,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.sendPrefix"]
     },
     {
       "adaptation": "One resize takes what to change: `width` and `height` set a size, and `direction` with `amount` adjusts relatively, which is tmux's `-L`/`-R`/`-U`/`-D`.",
@@ -7099,7 +7099,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.resize"]
     },
     {
       "adaptation": null,
@@ -7118,7 +7118,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.setTitle"]
     },
     {
       "adaptation": "One resize takes what to change: `width` and `height` set a size, and `direction` with `amount` adjusts relatively, which is tmux's `-L`/`-R`/`-U`/`-D`.",
@@ -7137,7 +7137,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.resize"]
     },
     {
       "adaptation": null,
@@ -7156,7 +7156,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.split"]
     },
     {
       "adaptation": "Named for what it takes: the pane to trade places with.",
@@ -7175,7 +7175,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.swapWith"]
     },
     {
       "adaptation": null,
@@ -7251,7 +7251,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.cmd"]
     },
     {
       "adaptation": null,
@@ -7308,7 +7308,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.deleteBuffer"]
     },
     {
       "adaptation": null,
@@ -7346,7 +7346,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./client#value:Client"]
+      "typescriptSymbols": ["./client#instance:Client.detach"]
     },
     {
       "adaptation": "A menu is drawn over the client viewing a pane, so it belongs to that pane.",
@@ -7365,7 +7365,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.displayMenu"]
     },
     {
       "adaptation": "A message is displayed to the client viewing a pane, so it belongs to the pane whose client sees it.",
@@ -7384,7 +7384,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.displayMessage"]
     },
     {
       "adaptation": "One entry point reads `$TMUX` and resolves the session the caller is running inside; the window and pane it contains come from that session's relations.",
@@ -7403,7 +7403,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#value:Session.fromEnv"]
     },
     {
       "adaptation": null,
@@ -7422,7 +7422,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.hasSession"]
     },
     {
       "adaptation": null,
@@ -7441,7 +7441,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.ifShell"]
     },
     {
       "adaptation": null,
@@ -7460,7 +7460,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.isAlive"]
     },
     {
       "adaptation": null,
@@ -7479,7 +7479,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.kill"]
     },
     {
       "adaptation": null,
@@ -7498,7 +7498,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.kill"]
     },
     {
       "adaptation": null,
@@ -7517,7 +7517,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.listBuffers"]
     },
     {
       "adaptation": "Clients are a selection on the server, queried the same way sessions, windows, and panes are.",
@@ -7536,7 +7536,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.clients"]
     },
     {
       "adaptation": null,
@@ -7555,7 +7555,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.listCommands"]
     },
     {
       "adaptation": null,
@@ -7593,7 +7593,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.loadBuffer"]
     },
     {
       "adaptation": null,
@@ -7650,7 +7650,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.newSession"]
     },
     {
       "adaptation": null,
@@ -7669,7 +7669,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.raiseIfDead"]
     },
     {
       "adaptation": null,
@@ -7707,7 +7707,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.runShell"]
     },
     {
       "adaptation": "Reading a buffer returns its lines to the caller, who writes them wherever they want, rather than tmux writing a file on their behalf.",
@@ -7726,7 +7726,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.showBuffer"]
     },
     {
       "adaptation": "Querying is declarative on a snapshot rather than a per-object search method, so this is `snapshot.panes.where(criteria)` — composable, serializable, and the same on every model.",
@@ -7745,7 +7745,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": "Querying is declarative on a snapshot rather than a per-object search method, so this is `snapshot.sessions.where(criteria)` — composable, serializable, and the same on every model.",
@@ -7764,7 +7764,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": "Querying is declarative on a snapshot rather than a per-object search method, so this is `snapshot.windows.where(criteria)` — composable, serializable, and the same on every model.",
@@ -7783,7 +7783,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": null,
@@ -7821,7 +7821,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.setBuffer"]
     },
     {
       "adaptation": null,
@@ -7840,7 +7840,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.showBuffer"]
     },
     {
       "adaptation": null,
@@ -7897,7 +7897,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.sourceFile"]
     },
     {
       "adaptation": null,
@@ -8030,7 +8030,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.cmd"]
     },
     {
       "adaptation": "Detaching belongs to the client being detached rather than to a session it happens to be viewing.",
@@ -8049,7 +8049,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./client#value:Client"]
+      "typescriptSymbols": ["./client#instance:Client.detach"]
     },
     {
       "adaptation": "Reads `$TMUX` to resolve the session the calling process is running inside.",
@@ -8068,7 +8068,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#value:Session.fromEnv"]
     },
     {
       "adaptation": "A handle is resolved from a snapshot rather than constructed from a bare id, which is what keeps its scalars and relations consistent with the instant they were read: `snapshot.sessions.where({ id }).one()`.",
@@ -8087,7 +8087,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": null,
@@ -8106,7 +8106,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.kill"]
     },
     {
       "adaptation": null,
@@ -8125,7 +8125,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.kill"]
     },
     {
       "adaptation": "One selector takes a window target, so `selectWindow(\"last\")` covers this and any target tmux accepts without a method per direction.",
@@ -8144,7 +8144,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.selectWindow"]
     },
     {
       "adaptation": null,
@@ -8182,7 +8182,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.newWindow"]
     },
     {
       "adaptation": "One selector takes a window target, so `selectWindow(\"next\")` covers this and any target tmux accepts without a method per direction.",
@@ -8201,7 +8201,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.selectWindow"]
     },
     {
       "adaptation": "One selector takes a window target, so `selectWindow(\"previous\")` covers this and any target tmux accepts without a method per direction.",
@@ -8220,7 +8220,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.selectWindow"]
     },
     {
       "adaptation": null,
@@ -8239,7 +8239,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.refreshed"]
     },
     {
       "adaptation": null,
@@ -8258,7 +8258,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.rename"]
     },
     {
       "adaptation": "Querying is declarative on a snapshot rather than a per-object search method, so this is `snapshot.panes.where(criteria)` — composable, serializable, and the same on every model.",
@@ -8277,7 +8277,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": "Querying is declarative on a snapshot rather than a per-object search method, so this is `snapshot.windows.where(criteria)` — composable, serializable, and the same on every model.",
@@ -8296,7 +8296,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": null,
@@ -8315,7 +8315,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.selectWindow"]
     },
     {
       "adaptation": null,
@@ -8353,7 +8353,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.cmd"]
     },
     {
       "adaptation": "A message is displayed to the client viewing a pane, so it belongs to the pane whose client sees it.",
@@ -8372,7 +8372,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.displayMessage"]
     },
     {
       "adaptation": "One entry point reads `$TMUX` and resolves the session the caller is running inside; the window and pane it contains come from that session's relations.",
@@ -8391,7 +8391,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#value:Session.fromEnv"]
     },
     {
       "adaptation": "A handle is resolved from a snapshot rather than constructed from a bare id, which is what keeps its scalars and relations consistent with the instant they were read: `snapshot.windows.where({ id }).one()`.",
@@ -8410,7 +8410,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": null,
@@ -8429,7 +8429,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.kill"]
     },
     {
       "adaptation": null,
@@ -8467,7 +8467,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.link"]
     },
     {
       "adaptation": null,
@@ -8486,7 +8486,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.move"]
     },
     {
       "adaptation": "tmux splits an existing pane rather than adding a bare one, so the operation belongs to the pane being divided, and `shellCommand` carries what it runs.",
@@ -8505,7 +8505,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.split"]
     },
     {
       "adaptation": "A window is created on its session rather than on a sibling window, and `shellCommand` supplies what it runs.",
@@ -8524,7 +8524,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.newWindow"]
     },
     {
       "adaptation": null,
@@ -8543,7 +8543,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.nextLayout"]
     },
     {
       "adaptation": null,
@@ -8562,7 +8562,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.previousLayout"]
     },
     {
       "adaptation": null,
@@ -8581,7 +8581,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.refreshed"]
     },
     {
       "adaptation": null,
@@ -8600,7 +8600,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.rename"]
     },
     {
       "adaptation": "one options object with camelCase names; `largest` and `smallest` name what tmux's -A and -a do rather than Python's expand and shrink; resolves to nothing, since a snapshot is what reports the new size",
@@ -8657,7 +8657,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.rotate"]
     },
     {
       "adaptation": "Querying is declarative on a snapshot rather than a per-object search method, so this is `snapshot.panes.where(criteria)` — composable, serializable, and the same on every model.",
@@ -8676,7 +8676,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.snapshot"]
     },
     {
       "adaptation": null,
@@ -8695,7 +8695,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.select"]
     },
     {
       "adaptation": null,
@@ -8714,7 +8714,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.selectLayout"]
     },
     {
       "adaptation": null,
@@ -8733,7 +8733,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.select"]
     },
     {
       "adaptation": null,
@@ -8752,7 +8752,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.split"]
     },
     {
       "adaptation": "Named for what it takes: the window to trade places with.",
@@ -8771,7 +8771,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.swapWith"]
     },
     {
       "adaptation": null,
@@ -8790,7 +8790,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.unlink"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -8809,7 +8809,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./selection#type:Selection"]
+      "typescriptSymbols": ["./session#instance:Session.activePane"]
     },
     {
       "adaptation": "A client's session is a relation on the handle rather than a separate attachment lookup.",
@@ -8828,7 +8828,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./client#value:Client"]
+      "typescriptSymbols": ["./client#instance:Client.session"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -8847,7 +8847,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./selection#type:Selection"]
+      "typescriptSymbols": ["./session#instance:Session.activeWindow"]
     },
     {
       "adaptation": null,
@@ -8866,7 +8866,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.atBottom"]
     },
     {
       "adaptation": null,
@@ -8885,7 +8885,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.atLeft"]
     },
     {
       "adaptation": null,
@@ -8904,7 +8904,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.atRight"]
     },
     {
       "adaptation": null,
@@ -8923,7 +8923,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.atTop"]
     },
     {
       "adaptation": null,
@@ -8942,7 +8942,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.session"]
     },
     {
       "adaptation": null,
@@ -8961,7 +8961,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.window"]
     },
     {
       "adaptation": "Lookup and traversal are answered by a snapshot Selection — criteria, relations, and the cardinality accessors — rather than by a method per shape on each model. `session.windows.one({ name })` covers get, where, find_where, get_by_id, children, and the list_* and attached_* accessors together.",
@@ -8980,7 +8980,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./selection#type:Selection"]
+      "typescriptSymbols": ["./server#instance:Server.sessions"]
     },
     {
       "adaptation": null,
@@ -8999,7 +8999,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.clients"]
     },
     {
       "adaptation": null,
@@ -9018,7 +9018,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.panes"]
     },
     {
       "adaptation": null,
@@ -9037,7 +9037,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.sessions"]
     },
     {
       "adaptation": null,
@@ -9056,7 +9056,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.windows"]
     },
     {
       "adaptation": null,
@@ -9075,7 +9075,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.activePane"]
     },
     {
       "adaptation": null,
@@ -9094,7 +9094,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.activeWindow"]
     },
     {
       "adaptation": null,
@@ -9113,7 +9113,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.panes"]
     },
     {
       "adaptation": null,
@@ -9132,7 +9132,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.windows"]
     },
     {
       "adaptation": null,
@@ -9151,7 +9151,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.activePane"]
     },
     {
       "adaptation": null,
@@ -9170,7 +9170,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.linkedSessions"]
     },
     {
       "adaptation": null,
@@ -9189,7 +9189,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.panes"]
     },
     {
       "adaptation": null,
@@ -9208,7 +9208,7 @@
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.session"]
     },
     {
       "adaptation": null,
@@ -9969,7 +9969,7 @@
         "realTmuxScenario": "not-applicable: behavior is deterministic over validated in-memory values",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./client#value:Client"]
+      "typescriptSymbols": ["./client#instance:Client.equals"]
     },
     {
       "adaptation": "Callable command protocol maps to the explicit async cmd method",
@@ -10218,7 +10218,7 @@
         "realTmuxScenario": "not-applicable: behavior is deterministic over validated in-memory values",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./selection#type:Selection"]
+      "typescriptSymbols": ["./selection#type:Selection<never>.one"]
     },
     {
       "adaptation": "Concatenation uses explicit defensive arrays",
@@ -10882,7 +10882,7 @@
         "realTmuxScenario": "not-applicable: behavior is deterministic over validated in-memory values",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./pane#value:Pane"]
+      "typescriptSymbols": ["./pane#instance:Pane.equals"]
     },
     {
       "adaptation": "Equality compares socket_name and socket_path selectors",
@@ -10902,7 +10902,7 @@
         "realTmuxScenario": "not-applicable: behavior is deterministic over validated in-memory values",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./server#value:Server"]
+      "typescriptSymbols": ["./server#instance:Server.equals"]
     },
     {
       "adaptation": "Equality compares the raw owner ID only, including cross-server and contextual winlink warts",
@@ -10922,7 +10922,7 @@
         "realTmuxScenario": "not-applicable: behavior is deterministic over validated in-memory values",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./session#value:Session"]
+      "typescriptSymbols": ["./session#instance:Session.equals"]
     },
     {
       "adaptation": "Equality compares the raw owner ID only, including cross-server and contextual winlink warts",
@@ -10942,7 +10942,7 @@
         "realTmuxScenario": "not-applicable: behavior is deterministic over validated in-memory values",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./window#value:Window"]
+      "typescriptSymbols": ["./window#instance:Window.equals"]
     },
     {
       "adaptation": "Iterator returns itself and each next call produces an eight-character sample; namer is the shared sequence instance",
