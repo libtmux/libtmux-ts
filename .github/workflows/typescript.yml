@@ -110,6 +110,10 @@ jobs:
       # Every temporary directory the suites create is named for this
       # package, so a sweep can never reap another libtmux port's servers.
       - run: bun run test:namespace
+      # dependabot is the one configuration nothing else here executes, so a
+      # placeholder in it reads exactly like a working one until a dependency
+      # has been stale for a year.
+      - run: bun run ci:config
 
       - name: Gate the library
         working-directory: packages/libtmux
