@@ -6,6 +6,23 @@ import { z } from "zod";
 
 import { Server } from "libtmux/server";
 
+import manifest from "../package.json" with { type: "json" };
+
+/** The version this server reports, taken from the manifest so it cannot drift from the release. */
+const PACKAGE_VERSION: string = manifest.version;
+
+/**
+ * How long a tool waits on tmux before giving up.
+ *
+ * The library itself imposes no deadline — a caller may legitimately want to
+ * wait as long as tmux takes. An MCP server is not that caller: it answers a
+ * client that is waiting on it, and a wedged daemon would otherwise hold that
+ * client forever.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
+/** How much of a pane's output one wait may accumulate before the oldest is dropped. */
+const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
+
 /**
  * An MCP server exposing a tmux server through libtmux.
  *
@@ -14,7 +31,7 @@ import { Server } from "libtmux/server";
  * property the acquisition design was chosen for.
  */
 export function createTmuxMcpServer(tmux: Server): McpServer {
-  const mcp = new McpServer({ name: "libtmux", version: "0.1.0" });
+  const mcp = new McpServer({ name: "libtmux", version: PACKAGE_VERSION });
 
   mcp.registerTool(
     "list_sessions",
@@ -126,37 +143,60 @@ export function createTmuxMcpServer(tmux: Server): McpServer {
   );
 
   mcp.registerTool(
-    "wait_for_output",
+    "run_and_wait",
     {
       description:
-        "Wait until a pane prints the given text, returning what it printed. " +
-        "Streams tmux's own notifications rather than polling the pane. " +
+        "Send keys to a pane and wait until it prints the given text, returning " +
+        "what it printed. Streams tmux's own notifications rather than polling. " +
         "A pane echoes what is typed into it, so text that also appears in the " +
         "keys being sent matches that echo immediately: wait for something the " +
         "command prints, such as its output or a marker echoed after it.",
       inputSchema: {
         contains: z.string(),
+        keys: z.string(),
+        literal: z.boolean().optional(),
+        maxOutputBytes: z.number().int().positive().optional(),
         paneId: z.string(),
         timeoutMs: z.number().int().positive().optional(),
       },
-      title: "Wait for pane output",
+      title: "Run in a pane and wait for its output",
     },
-    async ({ contains, paneId, timeoutMs }) => {
-      // This is the tool an agent actually needs: run something, then wait for
-      // it to say something. Polling would either miss output between reads or
-      // burn a command per read; the stream reports it as tmux emits it.
-      const events = tmux.watch();
-      const deadline = setTimeout(() => void events.close(), timeoutMs ?? 30_000);
+    async ({ contains, keys, literal, maxOutputBytes, paneId, timeoutMs }) => {
+      const snapshot = await tmux.snapshot();
+      const pane = snapshot.panes.oneOrUndefined({ id: paneId });
+      if (pane === undefined) {
+        return { content: [{ text: `No pane ${paneId}`, type: "text" }], isError: true };
+      }
+      // A control client is only told about panes in the session it attached
+      // to, and an untargeted attach picks whichever session tmux considers
+      // most recent. Watching this pane's own session is what makes the answer
+      // depend on the pane asked about rather than on that guess.
+      const sessionId = pane.sessionId;
+      if (sessionId === null) {
+        return {
+          content: [{ text: `Pane ${paneId} has no session`, type: "text" }],
+          isError: true,
+        };
+      }
+
+      const limit = maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+      await using events = tmux.watch({ target: sessionId });
+      const deadline = setTimeout(() => void events.close(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
       let seen = "";
       try {
-        // A control client hears nothing that happened before it attached, so
-        // anything the pane printed while this was still connecting is gone.
-        // Waiting for the attach is what makes the deadline the only reason
-        // this can come back empty.
+        // Subscribe, attach, *then* send. The previous shape left this to a
+        // separate tool call, so a command that printed before the watcher
+        // attached was never seen and the wait ran to its deadline against
+        // output that had already happened.
         await events.ready();
+        await pane.sendKeys(keys, literal === undefined ? {} : { literal });
+
         for await (const event of events) {
           if (event.kind !== "output" || event.paneId !== paneId) continue;
           seen += event.data;
+          // A rolling window: the match may straddle two notifications, so keep
+          // enough to span one, and never let a chatty pane grow without bound.
+          if (seen.length > limit) seen = seen.slice(seen.length - limit);
           if (seen.includes(contains)) {
             return { content: [{ text: seen, type: "text" }] };
           }
@@ -164,8 +204,19 @@ export function createTmuxMcpServer(tmux: Server): McpServer {
       } finally {
         clearTimeout(deadline);
       }
+      // Distinguish "it never printed that" from "it may have, and this could
+      // not keep up" — the same empty-handed result otherwise.
+      const dropped = events.dropped;
       return {
-        content: [{ text: `Pane ${paneId} did not print ${contains}`, type: "text" }],
+        content: [
+          {
+            text:
+              dropped > 0
+                ? `Pane ${paneId} did not print ${contains} in what was seen; ${String(dropped)} notifications were dropped, so it may have`
+                : `Pane ${paneId} did not print ${contains}`,
+            type: "text",
+          },
+        ],
         isError: true,
       };
     },
@@ -190,6 +241,9 @@ export function serverFromEnvironment(
   const socketName = environment.LIBTMUX_SOCKET_NAME;
   const tmuxBin = environment.LIBTMUX_TMUX_BIN;
   return new Server({
+    // Bounded here rather than in the library: this process answers a client
+    // that is waiting, so "wait as long as tmux takes" is not an option it has.
+    timeoutMs: DEFAULT_TIMEOUT_MS,
     ...(socketPath === undefined || socketPath === "" ? {} : { socketPath }),
     ...(socketName === undefined || socketName === "" ? {} : { socketName }),
     ...(tmuxBin === undefined || tmuxBin === "" ? {} : { tmuxBin }),

@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%20%7C%203.4%20%7C%203.7%20%7C%203.7b-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Part of [libtmux for Bun and TypeScript](../../README.md). Built on
@@ -19,8 +19,14 @@ Part of [libtmux for Bun and TypeScript](../../README.md). Built on
 
 An agent that drives a terminal needs two things a shell tool does not give it:
 somewhere durable to run commands, and a way to **wait for output** without
-burning a call per poll. A tmux server is the first. `wait_for_output` is the
+burning a call per poll. A tmux server is the first. `run_and_wait` is the
 second — it streams tmux's own notifications rather than re-reading the pane.
+
+Running and waiting are one tool rather than two on purpose. Split across two
+calls, a command that finishes quickly prints before the second call has
+attached, and tmux tells a control client nothing that happened before it
+arrived — so the wait runs to its deadline against output that already
+happened. One call subscribes, attaches, _then_ sends.
 
 ## Install
 
@@ -89,14 +95,14 @@ an agent's cleanup can reap the session you are working in.
 
 ## Tools
 
-| Tool              | Arguments                              | Returns                                          |
-| ----------------- | -------------------------------------- | ------------------------------------------------ |
-| `list_sessions`   | —                                      | Every session with its id, name and window count |
-| `list_panes`      | `session?`                             | Panes, with command, session and window          |
-| `capture_pane`    | `paneId`, `start?`                     | Visible contents, or into the scrollback         |
-| `send_keys`       | `paneId`, `keys`, `enter?`, `literal?` | Confirmation                                     |
-| `new_session`     | `name?`                                | The created session                              |
-| `wait_for_output` | `paneId`, `contains`, `timeoutMs?`     | What the pane printed                            |
+| Tool            | Arguments                                                     | Returns                                          |
+| --------------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| `list_sessions` | —                                                             | Every session with its id, name and window count |
+| `list_panes`    | `session?`                                                    | Panes, with command, session and window          |
+| `capture_pane`  | `paneId`, `start?`                                            | Visible contents, or into the scrollback         |
+| `send_keys`     | `paneId`, `keys`, `enter?`, `literal?`                        | Confirmation                                     |
+| `new_session`   | `name?`                                                       | The created session                              |
+| `run_and_wait`  | `paneId`, `keys`, `contains`, `timeoutMs?`, `maxOutputBytes?` | What the pane printed                            |
 
 Every tool takes its own snapshot, so two concurrent requests observe their own
 instant rather than sharing mutable state.

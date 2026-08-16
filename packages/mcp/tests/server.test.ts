@@ -1,6 +1,7 @@
-// SPIKE: reaches across packages for the library's test harness, which is
-// not on its published surface. Needs a decision: export a ./testing
-// subpath, or move the harness to a package of its own.
+// Reaches across packages for the library's real-tmux fixture harness. That is
+// deliberate and settled: the harness reaches into the library's internals, so
+// it cannot be published, and nothing outside this repository needs it. An
+// in-repo consumer therefore reaches for it by path.
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,8 +106,8 @@ describe("MCP consumer", () => {
           "list_panes",
           "list_sessions",
           "new_session",
+          "run_and_wait",
           "send_keys",
-          "wait_for_output",
         ]);
 
         const sessions = JSON.parse(
@@ -195,29 +196,54 @@ describe("MCP consumer", () => {
     });
   }, 40_000);
 
-  test("waits for pane output without polling the pane", async () => {
+  test("runs and waits on a pane outside the session tmux would have attached", async () => {
     await withServer(async (fixture) => {
       const tmux = serverFor(fixture);
-      createTmuxMcpServer(tmux);
+      // A second session, created last, is the one an untargeted control client
+      // attaches to — and tmux tells a control client about its own session's
+      // panes only. The pane asked about here is deliberately in the *other*
+      // session, which is the case an untargeted watch can never answer.
+      await tmux.newSession({ name: "most-recent" });
+      const pane = (await tmux.snapshot()).panes.one({
+        session: { is: { name: fixture.sessionName } },
+      });
 
-      // The sequence wait_for_output performs: watch first, then act, then read
-      // what tmux reports. The capture loop above is what this replaces.
-      const events = tmux.watch();
+      await withClient(fixture, async (client) => {
+        const answer = await client.callTool({
+          arguments: {
+            contains: "cross-session-marker",
+            keys: "printf 'cross-session-marker\\n'",
+            paneId: pane.id,
+            timeoutMs: 15_000,
+          },
+          name: "run_and_wait",
+        });
+
+        expect(answer.isError ?? false).toBe(false);
+        expect(toolText(answer)).toContain("cross-session-marker");
+      });
+    });
+  }, 40_000);
+
+  test("reports a pane that never prints what was asked for", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
       const pane = (await tmux.snapshot()).panes.one();
-      // A control client hears nothing that happened before it attached, so the
-      // send has to wait for the attach rather than for a duration that hopes to
-      // outlast it.
-      await events.ready();
-      await pane.sendKeys("printf 'streamed-marker\\n'");
 
-      let seen = "";
-      for await (const event of events) {
-        if (event.kind !== "output" || event.paneId !== pane.id) continue;
-        seen += event.data;
-        if (seen.includes("streamed-marker")) break;
-      }
+      await withClient(fixture, async (client) => {
+        const answer = await client.callTool({
+          arguments: {
+            contains: "never-printed-by-this",
+            keys: "printf 'something-else\\n'",
+            paneId: pane.id,
+            timeoutMs: 2_000,
+          },
+          name: "run_and_wait",
+        });
 
-      expect(seen).toContain("streamed-marker");
+        expect(answer.isError).toBe(true);
+        expect(toolText(answer)).toContain("did not print");
+      });
     });
   }, 40_000);
 });
