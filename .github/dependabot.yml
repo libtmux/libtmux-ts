@@ -20,8 +20,9 @@ updates:
         patterns:
           - "*"
     open-pull-requests-limit: 3
+    # The trailing space stops Dependabot appending a colon.
     commit-message:
-      prefix: "repo(chore[deps])"
+      prefix: "js(deps) "
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -32,4 +33,4 @@ updates:
           - "*"
     open-pull-requests-limit: 3
     commit-message:
-      prefix: "ci(chore[actions])"
+      prefix: "ci(deps) "
