@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { FORMAT_VALUE_TYPES } from "../../src/_generated/field_types.js";
 import { decodeFormatValue, encodeFormatValue } from "../../src/_internal/codec/format_values.js";
+import { FORMAT_VALUE_TYPES } from "../../src/_generated/field_types.js";
 
 describe("decoding what tmux sends", () => {
   test("reads a number field as a number", () => {
@@ -68,6 +68,42 @@ describe("encoding what a caller writes", () => {
     expect(encodeFormatValue("pane_active", "1")).toBe("1");
     expect(encodeFormatValue("pane_current_command", "zsh")).toBe("zsh");
     expect(encodeFormatValue("pane_pid", null)).toBeNull();
+  });
+
+  /**
+   * The `where` types promise a text domain; this is what makes it a fact.
+   *
+   * `ScalarCriteria`'s text side is not a taste — it is exactly what this
+   * function can emit for that kind of field, which is what lets a serialized
+   * query decode back into the same type it was authored in. If the encoder
+   * ever emits something outside it, the types start describing documents this
+   * library does not produce, and that has to fail here rather than in a
+   * consumer's editor.
+   */
+  test("emits only the text the where types admit, for every declared field", () => {
+    const flag = /^[01]$/u;
+    // What `${number}` accepts: TypeScript's numeric literal grammar, which is
+    // what `String` of a safe integer produces.
+    const numeric = /^-?\d+$/u;
+
+    const offenders: string[] = [];
+    for (const [token, type] of Object.entries(FORMAT_VALUE_TYPES)) {
+      const samples =
+        type === "boolean"
+          ? [true, false]
+          : type === "time"
+            ? [new Date(0), new Date(1_700_000_000_000), new Date(2_000_000_000_000)]
+            : [0, -1, 1, 2_334_787, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER];
+      for (const sample of samples) {
+        const encoded = encodeFormatValue(token, sample);
+        const shape = type === "boolean" ? flag : numeric;
+        if (typeof encoded !== "string" || !shape.test(encoded)) {
+          offenders.push(`${token} (${type}): ${String(sample)} -> ${JSON.stringify(encoded)}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 
   test("round-trips every declared field through both directions", () => {

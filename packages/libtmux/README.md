@@ -422,17 +422,31 @@ pane.format.pane_active; // "1"
 ```
 
 Criteria take the decoded shape as well as the text, and mean the same thing
-either way — but the text is narrowed to what the field can hold, so a typed
-field stays typed:
+either way. The text side is there because the wire is: a serialized query
+carries tmux's text, and `WhereDocumentV1` types both what you write and what
+comes back — so it is exactly what this library's encoder can emit for that
+field, and nothing else.
 
 ```ts
 snapshot.panes.where({ active: true });
-snapshot.panes.where({ active: "1" }); // the text tmux sends for a flag
-snapshot.panes.where({ pid: "2334787" }); // and for a number
-// @ts-expect-error a flag is "0" or "1"; text that is neither is a mistake
+snapshot.panes.where({ active: "1" }); // what a flag encodes to
+snapshot.panes.where({ pid: "2334787" }); // and a number
+// @ts-expect-error a flag encodes to "0" or "1"; nothing else is a flag
 snapshot.panes.where({ active: "yes" });
-// @ts-expect-error and a numeric field will never read "banana"
+// @ts-expect-error and no number encodes to "banana"
 snapshot.panes.where({ pid: "banana" });
+```
+
+A `string` you have at runtime — from a config file, an argument, a raw
+`.format` value — is not in that domain, because nothing knows yet whether it
+is. Say what it means:
+
+```ts
+const fromConfig = process.argv[2] ?? "";
+snapshot.windows.where({ index: Number(fromConfig) });
+// Or ask about the characters rather than the value, which is what the
+// substring operators are for and why they stay plain strings.
+snapshot.windows.where({ index: { contains: fromConfig } });
 ```
 
 Together, on a server with two windows. This is a literal excerpt of

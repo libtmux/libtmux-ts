@@ -6,10 +6,21 @@ import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/lega
  * `where({ active: true })` and `where({ active: "1" })` are the same query,
  * and serialize identically.
  *
- * `Raw` is that text side, narrowed to what the field can hold rather than left
- * as `string`. A numeric field takes `"3"` and refuses `"banana"`, which is the
- * point of having typed the field — accepting tmux's text was never meant to
- * mean accepting any text.
+ * The text side exists because the wire does. `encodeFormatValue` lowers every
+ * criterion to tmux's text before a query is serialized, and
+ * `WhereDocumentV1` types both what a caller writes and what
+ * `decodeWhereDocument` gives back — so a type that refused text would be
+ * lying about the documents this library's own encoder produces. That is the
+ * difference from an ORM, whose query AST never round-trips through a type the
+ * caller also authors.
+ *
+ * `Raw` is therefore not a taste. It is **exactly the encoder's output
+ * domain**: `"0" | "1"` for a flag because that is what `encodeFormatValue`
+ * emits for a boolean, `${number}` for a number and a time because that is
+ * `String` of a safe integer. Text outside it is text this library could never
+ * have written, which is why `where({ index: "banana" })` is refused and why
+ * there is no escape hatch admitting it — one would break the round trip the
+ * text side exists for. `format_values.test.ts` holds the two in step.
  *
  * The substring operations stay `string` deliberately: `contains` asks about
  * the characters tmux sent, and a numeric field's text has characters like any
