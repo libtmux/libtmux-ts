@@ -21,31 +21,23 @@ describe("decoding what tmux sends", () => {
 
   test("leaves a string field exactly as tmux sent it", () => {
     expect(decodeFormatValue("pane_current_command", "zsh")).toBe("zsh");
-    // `%0` and `$0` read as integers to anything that only looks at digits, and
-    // an identity that decoded to a number would lose its sigil and its meaning.
     expect(decodeFormatValue("pane_id", "%0")).toBe("%0");
     expect(decodeFormatValue("session_id", "$0")).toBe("$0");
   });
 
   test("keeps an empty string field empty rather than absent", () => {
-    // tmux read no configuration files, which is an answer. Only a typed field
-    // uses blank to mean the question did not apply.
     expect(decodeFormatValue("config_files", "")).toBe("");
     expect(decodeFormatValue("pane_pid", "")).toBeNull();
     expect(decodeFormatValue("pane_active", "")).toBeNull();
   });
 
   test("answers null for a value the declared type disowns", () => {
-    // A disagreement between this port's table and the tmux in front of it.
-    // NaN would travel into arithmetic and surface somewhere else entirely.
     expect(decodeFormatValue("pane_pid", "not a pid")).toBeNull();
     expect(decodeFormatValue("pane_active", "2")).toBeNull();
     expect(decodeFormatValue("session_created", "nonsense")).toBeNull();
   });
 
   test("answers null for a time that has not happened", () => {
-    // tmux writes 0 for a session never attached to. The epoch is not that
-    // moment, and a Date of 1970 reads as one.
     expect(decodeFormatValue("session_last_attached", "0")).toBeNull();
   });
 
@@ -73,7 +65,6 @@ describe("encoding what a caller writes", () => {
   });
 
   test("leaves a value already in wire form alone", () => {
-    // `where({ active: "1" })` keeps working beside `where({ active: true })`.
     expect(encodeFormatValue("pane_active", "1")).toBe("1");
     expect(encodeFormatValue("pane_current_command", "zsh")).toBe("zsh");
     expect(encodeFormatValue("pane_pid", null)).toBeNull();

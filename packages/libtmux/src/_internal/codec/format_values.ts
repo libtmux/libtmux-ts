@@ -1,28 +1,15 @@
 import { FORMAT_VALUE_TYPES, type FormatValueType } from "../../_generated/field_types.js";
 
 /**
- * Turn the text tmux sends into the value it stands for, and back.
+ * Convert between the text tmux sends and the value it stands for.
  *
- * tmux has one wire type. Everything is text: a pid is `"2334787"`, an active
- * pane is `"1"`, and a session's creation time is `"1786878571"`. Which fields
- * are really numbers, booleans and times is generated into
- * `_generated/field_types.ts` from tmux's own format.c, and held to a live
- * server by tests/integration/format_types.test.ts.
- *
- * Decoding happens where a row becomes a handle and nowhere else. The row keeps
- * the text — `handle.format.pane_pid` is still `"2334787"` — so nothing here
- * can lose information a caller might want.
+ * tmux has one wire type. Which fields are really numbers, booleans and times
+ * is generated into `_generated/field_types.ts`; anything absent from it is
+ * text. Decoding happens where a row becomes a handle, and the row keeps the
+ * text, so `handle.format.pane_pid` is still `"2334787"`.
  */
 
-/**
- * A value tmux did not give, or gave in a shape its own format table disowns.
- *
- * Both answer `null`. An unparseable value is a disagreement between this
- * port's table and the tmux in front of it, and `null` is what a caller already
- * handles for a field that does not apply; `NaN` or `Invalid Date` would travel
- * silently into arithmetic and comparisons instead, and surface somewhere else
- * entirely.
- */
+/** A decoded field value. `null` covers both "tmux said nothing" and "unparseable". */
 export type DecodedValue = boolean | number | string | Date | null;
 
 const integer = /^-?\d+$/u;
@@ -30,10 +17,8 @@ const integer = /^-?\d+$/u;
 export function decodeFormatValue(token: string, value: string | null): DecodedValue {
   if (value === null) return null;
   const type = FORMAT_VALUE_TYPES[token];
-  // A string field is returned as tmux sent it, empty included: `config_files`
-  // holds `""` when tmux read no configuration, which is an answer rather than
-  // the absence of one, and only a typed field can say "not applicable" by
-  // going blank.
+  // Empty means "not applicable" only for a typed field. `config_files` holds
+  // `""` when tmux read no configuration, which is an answer.
   if (type === undefined) return value;
   if (value === "") return null;
   switch (type) {
@@ -50,8 +35,7 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
     case "time": {
       if (!integer.test(value)) return null;
       const seconds = Number(value);
-      // tmux writes 0 for a time that has not happened — a session never
-      // attached to, a pane that has not died. The epoch is not that moment.
+      // tmux writes 0 for a time that has not happened.
       if (seconds <= 0 || !Number.isSafeInteger(seconds)) return null;
       return new Date(seconds * 1000);
     }
@@ -61,11 +45,8 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
 /**
  * The text tmux would have sent for a decoded value.
  *
- * The inverse of {@link decodeFormatValue}, for criteria: a caller writing
- * `where({ active: true })` is describing a row whose `pane_active` is `"1"`,
- * and comparisons happen against the text because that is what a row holds.
- * A value already in its wire form is passed through, so `where({ active: "1" })`
- * keeps working beside it.
+ * The inverse of {@link decodeFormatValue}, so criteria compare against what a
+ * row holds. A value already in wire form passes through unchanged.
  */
 export function encodeFormatValue(token: string, value: unknown): unknown {
   const type: FormatValueType | undefined = FORMAT_VALUE_TYPES[token];

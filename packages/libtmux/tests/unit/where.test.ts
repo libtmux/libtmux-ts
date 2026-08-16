@@ -1578,7 +1578,6 @@ describe("typed criteria values", () => {
     const harness = await createRichProjectedHarness();
     const panes = createProjectedSelection("pane", harness.panes.values, harness.panes.projection);
 
-    // `pane_active` is `"1"` on the row. Both spellings describe the same panes.
     expect(
       panes
         .where({ active: true })
@@ -1644,8 +1643,6 @@ describe("typed criteria values", () => {
       harness.sessions.projection,
     );
 
-    // The relation's criteria are the target model's, so the encoding has to
-    // recurse with that model or `true` reaches the comparison as a boolean.
     expect(sessions.where({ panes: { some: { active: true } } }).count()).toBe(
       sessions.where({ panes: { some: { active: "1" } } }).count(),
     );
@@ -1653,9 +1650,8 @@ describe("typed criteria values", () => {
   });
 
   test("serializes a typed query as the text it always was", () => {
-    // The wire format did not need a second version: a typed value is spelled
-    // out before it reaches the document, so a query written either way stores
-    // and reads back identically.
+    // A typed value is spelled out before it reaches the document, so the wire
+    // format is unchanged.
     const typed = encodeWhereDocument({
       model: "pane",
       version: 1,

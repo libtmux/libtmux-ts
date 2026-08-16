@@ -11,8 +11,7 @@ export type FormatValueType = "boolean" | "number" | "time";
  * Derived from tmux's own format.c and held to a live server by
  * tests/integration/format_types.test.ts on every version CI runs.
  *
- * Local: `DecodedFormatValue` is what a caller needs, and exporting the
- * table beside it would publish a second way to ask the same question.
+ * Local: `DecodedFormatValue` is what a caller needs.
  */
 interface FormatValueTypes {
   readonly active_window_index: "number";

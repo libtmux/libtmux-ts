@@ -474,18 +474,15 @@ export interface WatchOptions {
    */
   readonly maxPendingCommands?: number;
   /**
-   * How many seconds tmux may hold a pane's output before pausing that pane.
+   * Seconds tmux may hold a pane's output before pausing that pane.
    *
-   * Off by default, which leaves tmux's own remedy in place — and tmux's own
-   * remedy is to kill the client. A control client that lets a pane's output
-   * back up for five minutes is dropped with "too far behind", taking every
-   * other pane and every pending command with it.
+   * Off by default, which leaves tmux's remedy for a client that falls behind:
+   * at five minutes it drops the connection with "too far behind", losing
+   * every other pane and every pending command with it.
    *
-   * Set this and tmux instead discards what it was holding for the one pane
-   * that fell behind, reports it as a `pause` event, and stops sending for it.
-   * The connection asks the pane back immediately and reports the `continue`,
-   * so the two events are a record of what was missed rather than something a
-   * caller has to act on.
+   * Set, tmux instead discards what it held for the one pane that fell behind
+   * and emits `pause`. The connection asks the pane back and emits `continue`,
+   * so the pair records what was missed rather than needing a response.
    */
   readonly pauseAfterSeconds?: number;
   /** Abort the connection when this signal fires. */

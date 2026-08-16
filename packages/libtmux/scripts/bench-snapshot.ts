@@ -1,12 +1,9 @@
 /**
  * What a snapshot costs as the server it reads gets bigger.
  *
- * A snapshot is four list commands regardless of topology, and every row comes
- * back completed to all 178 format fields. Those are design decisions with an
- * obvious objection — that a caller who wants one pane's title pays for the
- * whole server — and no number attached to it. This attaches one, so an
- * argument for a reduced model or a field projection can be made against a
- * measurement rather than an intuition.
+ * A snapshot is four list commands whatever the topology, and every row is
+ * completed to all 178 fields. This is the measurement an argument for a
+ * reduced model or a field projection has to start from.
  *
  * Run with `bun scripts/bench-snapshot.ts`. Numbers belong to the machine and
  * the tmux that produced them, both of which are reported.
@@ -96,8 +93,8 @@ async function build(server: Server, shape: Shape): Promise<void> {
       // eslint-disable-next-line no-await-in-loop -- as above.
       await server.cmd("new-window", ["-d", "-t", name], { target: null });
     }
-    // By id rather than by index: `base-index` is a user option, so a bench
-    // that counts from zero measures whichever configuration ran it.
+    // By id: `base-index` is a user option, so counting from zero would
+    // measure whichever configuration ran this.
     // eslint-disable-next-line no-await-in-loop -- as above.
     const windows = await server.cmd("list-windows", ["-t", name, "-F", "#{window_id}"], {
       target: null,
@@ -116,8 +113,7 @@ async function measure(shape: Shape, socketPath: string, tmuxBin: string): Promi
   try {
     await build(server, shape);
 
-    // One snapshot before the timed ones: the first pays for whatever tmux
-    // still has to page in, which is the machine rather than the design.
+    // Warm-up: the first snapshot pays for whatever tmux has to page in.
     await server.snapshot();
 
     const timings: number[] = [];

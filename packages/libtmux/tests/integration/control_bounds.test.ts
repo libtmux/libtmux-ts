@@ -134,9 +134,7 @@ describe("control-mode resource bounds", () => {
       const server = serverFor(fixture);
       await using live = await server.connect({ pauseAfterSeconds: 1 });
 
-      // tmux reports the flags it is holding for this client. Without the
-      // request the list has no `pause-after` in it, and tmux's own remedy for
-      // a client that falls behind is to kill it with "too far behind".
+      // tmux reports the flags it holds for this client.
       const flags = await live.cmd("display-message", ["-p", "#{client_flags}"]);
       expect(flags.join("")).toContain("pause-after=1");
     });
@@ -149,43 +147,37 @@ describe("control-mode resource bounds", () => {
       const events = live.subscribe();
       await events.ready();
 
-      // A real backlog rather than a synthetic one. `refresh-client -A
-      // %id:pause` does put the pane in the same state, but tmux writes the
-      // resulting `%pause` inside that command's own block, which is not where
-      // one arrives when tmux pauses a pane on its own — so it would prove the
-      // handling of a line this code will never see that way.
-      //
-      // `yes` fills the pane faster than tmux can hand it over, and blocking
-      // this thread is what stops the handover: a consumer that does not
-      // return to its event loop is the case `pause-after` exists for, and the
-      // only way to build a real backlog against a connection that otherwise
-      // drains as fast as tmux fills.
-      await live.cmd("new-window", ["-d", "yes"]);
-      await live.cmd("new-window", ["-d", "yes"]);
-      const busyUntil = Date.now() + 4_000;
-      while (Date.now() < busyUntil) {
-        // Deliberately synchronous.
-      }
+      const paneId = (await live.snapshot()).panes.toArray()[0]?.id;
+      expect(paneId).toBeDefined();
 
-      // Both halves in one pass: a stream is consumed, not replayed, so two
-      // `find` calls would have the second reject rather than wait.
-      //
-      // The pane coming back without the caller asking is what makes
-      // pause-after usable at all: tmux discards what it was holding and sends
-      // nothing further for that pane until asked, so a connection that only
-      // listens loses it for the rest of its life.
+      // Waiting for a real backlog races the socket buffer and tmux's timer.
+      // This reaches the same state on demand, and delivers the `%pause` inside
+      // the command's block — where one lands whenever a pane backs up while a
+      // command is in flight, which is what `pause-after` exists for.
+      await live.cmd("refresh-client", ["-A", `${paneId!}:pause`]);
+
+      // Raced against a timer: the loop body only runs when an event arrives,
+      // so a deadline tested inside it is not a deadline.
       const paused = new Set<string>();
       const resumed = new Set<string>();
-      const deadline = Date.now() + 30_000;
-      for await (const event of events) {
-        if (event.kind === "pause") paused.add(event.paneId);
-        if (event.kind === "continue") resumed.add(event.paneId);
-        if (paused.size > 0 && [...paused].every((pane) => resumed.has(pane))) break;
-        if (Date.now() > deadline) break;
-      }
+      const collected = (async () => {
+        for await (const event of events) {
+          if (event.kind === "pause") paused.add(event.paneId);
+          if (event.kind === "continue") resumed.add(event.paneId);
+          if (paused.size > 0 && [...paused].every((pane) => resumed.has(pane))) return;
+        }
+      })();
+      await Promise.race([
+        collected,
+        new Promise((resolve) => {
+          setTimeout(resolve, 20_000).unref();
+        }),
+      ]);
 
-      expect(paused.size).toBeGreaterThan(0);
-      expect([...paused].filter((pane) => !resumed.has(pane))).toEqual([]);
+      // tmux sends nothing further for a paused pane until asked, so a
+      // connection that only listens loses it permanently.
+      expect([...paused]).toEqual([paneId!]);
+      expect([...resumed]).toEqual([paneId!]);
     });
   }, 90_000);
 });

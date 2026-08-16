@@ -582,20 +582,15 @@ function evidenceRecords(
 /**
  * Whether a row claims a member, and so has to cite one.
  *
- * A locator like `./pane#value:Pane` compiles to `typeof Pane`, which says the
- * class is exported and nothing else. That is the whole claim for a `class`
- * row, and no claim at all for the method inside it: renaming `refresh` to
- * `refreshed` left five rows citing a method that no longer existed and this
- * gate stayed green through it. `#instance:Class.member` reaches the prototype
- * and `#value:Class.member` the static side, and each stops compiling the
- * moment the member is gone.
+ * `./pane#value:Pane` compiles to `typeof Pane`, which proves the class is
+ * exported and nothing about the method inside it. `#instance:Class.member`
+ * reaches the prototype and `#value:Class.member` the static side, and each
+ * stops compiling the moment the member is gone.
  *
- * Two ways to claim a member, and a row needs only one of them. A `method` or
- * `property` row is one by definition. Any other kind is one when its
- * `typescript` field names `Class.member` — which is how the 23 compatibility
- * aliases that map onto a single member are covered without asking the same of
- * the 21 that map onto `Selection` as a whole, where there is no one member to
- * name and forcing a citation would only invent a wrong one.
+ * A `method` or `property` row claims a member by definition; any other kind
+ * does when its `typescript` field names `Class.member`. That covers an alias
+ * mapping onto one member without demanding a citation from one mapping onto
+ * `Selection` as a whole, where naming a single member would invent an answer.
  */
 function claimsMember(kind: ParityKind | null, typescript: string | null): boolean {
   if (kind === "method" || kind === "property") return true;
@@ -638,13 +633,11 @@ function verifyEvidencePaths(manifest: ParityManifest): void {
 }
 
 /**
- * A locator, optionally carrying type arguments for the symbol it names.
+ * A locator, optionally carrying type arguments.
  *
- * `Selection<never>.one` rather than `Selection.one`: a member of a generic
- * type cannot be read without instantiating it, and `never` instantiates any
- * type parameter without asserting anything about what it is. Without this the
- * only citable form for such a member is the bare type, which is the class-only
- * problem again wearing a different hat.
+ * A member of a generic type cannot be read without instantiating it, so
+ * `Selection<never>.one`; `never` satisfies any parameter without asserting
+ * anything about it.
  */
 const typescriptSymbolPattern =
   /^(?:\.|\.\/[a-z][a-z0-9_-]*)#(?:type|value|instance|well-known-instance):[A-Za-z_$][A-Za-z0-9_$]*(?:<[A-Za-z_$][A-Za-z0-9_$]*(?:,\s*[A-Za-z_$][A-Za-z0-9_$]*)*>)?(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/;
@@ -751,9 +744,8 @@ async function verifyTypeScriptSymbols(
   const activated = parsed.filter(({ activated }) => activated);
   if (activated.length === 0) return;
 
-  // Reported together rather than one per run: this is the shape a ledger is
-  // migrated in, and a gate that names one row per invocation turns a hundred
-  // edits into a hundred runs.
+  // Reported together: a gate that names one row per run turns a migration
+  // into a hundred runs.
   const unpinned = activated.filter((entry) => entry.claimsMember && entry.locator.path.length < 2);
   if (unpinned.length > 0) {
     fail(
@@ -822,10 +814,7 @@ async function verifyTypeScriptSymbols(
     if (result.exitCode !== 0) {
       const diagnostics = `${result.stdout.toString()}${result.stderr.toString()}`.trim();
       // The probe is one import per locator, a blank line, then one type per
-      // locator in the same order — so a diagnostic's line number names the row
-      // that caused it. Reporting the whole ledger instead, which is what this
-      // used to do, makes the reader diff three hundred locators against a
-      // compiler error to find the one that moved.
+      // locator in the same order, so a diagnostic's line number names its row.
       const blamed = new Map<string, string>();
       for (const [, line] of diagnostics.matchAll(
         new RegExp(`^${probeName.replaceAll(".", "\\.")}\\((\\d+),\\d+\\)`, "gmu"),

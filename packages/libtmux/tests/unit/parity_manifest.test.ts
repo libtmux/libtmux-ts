@@ -707,10 +707,6 @@ describe("Python 0.62.0 parity manifest", () => {
       "TypeScript symbols that do not exist",
     ],
     [
-      // The rename that motivated this: a method row citing only its class
-      // compiles to `typeof Pane`, which stays true however the method is
-      // spelled. `refresh` became `refreshed` and five rows kept pointing at a
-      // method that no longer existed, green the whole way.
       "member row citing only its class",
       (manifest) => {
         const symbol = manifest.publicSymbols.find(
@@ -721,8 +717,6 @@ describe("Python 0.62.0 parity manifest", () => {
       "cite only their class, which proves nothing about the member",
     ],
     [
-      // The claim is read off `typescript`, not off a list of kinds, so a
-      // compatibility alias that maps onto one member has to name it too.
       "compatibility alias naming a member but citing its class",
       (manifest) => {
         const symbol = manifest.publicSymbols.find(
@@ -733,8 +727,6 @@ describe("Python 0.62.0 parity manifest", () => {
       "cite only their class, which proves nothing about the member",
     ],
     [
-      // The escape hatch has to stay narrow: type arguments read a member of a
-      // generic type, and mean nothing on a value.
       "type arguments on a value locator",
       (manifest) => {
         const symbol = manifest.publicSymbols.find(

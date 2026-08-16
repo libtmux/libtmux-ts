@@ -19,7 +19,6 @@ describe("framing tmux's byte stream into lines", () => {
 
   test("holds a partial line back rather than reporting half of one", () => {
     const framer = new LineFramer();
-    // A socket hands over whatever arrived, which is not a line.
     expect(feed(framer, "%output %1 hel")).toEqual([]);
     expect(framer.pending).toBeGreaterThan(0);
     expect(feed(framer, "lo\n")).toEqual(["%output %1 hello"]);
@@ -47,7 +46,7 @@ describe("framing tmux's byte stream into lines", () => {
   test("does not split a multi-byte character that spans two chunks", () => {
     const framer = new LineFramer();
     const encoded = encoder.encode("%output %1 ␞\n");
-    // The separator is three bytes; cut through the middle of it.
+    // The separator is three bytes; cut through the middle.
     expect(framer.push(encoded.subarray(0, encoded.length - 2))).toEqual([]);
     const lines = framer.push(encoded.subarray(encoded.length - 2));
     expect(lines?.map((line) => decoder.decode(line))).toEqual(["%output %1 ␞"]);
@@ -55,9 +54,6 @@ describe("framing tmux's byte stream into lines", () => {
 
   test("gives up on a line past the bound, and drops what it held", () => {
     const framer = new LineFramer();
-    // A line this long is not a line: the stream is no longer parseable, and
-    // holding more of it only postpones the same conclusion while the heap
-    // grows.
     expect(framer.push(new Uint8Array(MAX_CARRY_BYTES + 1))).toBeUndefined();
     expect(framer.pending).toBe(0);
   });
@@ -65,8 +61,6 @@ describe("framing tmux's byte stream into lines", () => {
   test("forgets a partial line on reset", () => {
     const framer = new LineFramer();
     expect(feed(framer, "half a li")).toEqual([]);
-    // A reconnect is a different tmux process; what the last one started
-    // saying is not the beginning of what this one will say.
     framer.reset();
     expect(framer.pending).toBe(0);
     expect(feed(framer, "%exit\n")).toEqual(["%exit"]);

@@ -180,12 +180,9 @@ export function initializeLiveHandle<Handle extends Child>(
  * {@link liveHandlesShareTmuxId} is the raw-id comparison, for callers who
  * genuinely want it.
  *
- * `isSameSubject`, in `operations/refreshed.ts`, is the other question and gives
- * a different answer for clients on purpose: this asks whether two handles are
- * interchangeable, so a client read at two instants is two things, since its
- * state is most of what a client is. That one asks whether a later snapshot
- * holds the same subject, so a client has to stay recognisable as itself
- * however much of it changed. Neither can be used for the other's job.
+ * `isSameSubject`, in `operations/refreshed.ts`, answers the other question and
+ * differs for clients on purpose: this one compares the whole row, that one
+ * compares `client_name`. Neither can do the other's job.
  */
 export function liveHandlesEqual(left: Child, other: unknown): boolean {
   const leftState = stateForValue(left);

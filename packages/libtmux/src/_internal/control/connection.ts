@@ -11,6 +11,9 @@ import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream
 
 const encoder = new TextEncoder();
 
+/** The exact shape of tmux's two flow-control notifications. */
+const FLOW_CONTROL_LINE = /^%(?:pause|continue) %\d+$/u;
+
 /**
  * Bounds on what one connection may hold in memory.
  *
@@ -154,12 +157,10 @@ export class ControlConnection implements CommandTransport {
   #stderrBytes = 0;
   readonly #maxPendingCommands: number;
   /**
-   * How long tmux may hold a pane's output for this client before pausing it.
+   * Seconds tmux may hold a pane's output before pausing it.
    *
-   * Undefined leaves tmux's own remedy in place, which is not a remedy: at
-   * `CONTROL_MAXIMUM_AGE` — five minutes — it sets `exit_message` to "too far
-   * behind" and kills the client outright. Asking for `pause-after` trades the
-   * whole connection for one pane's output, which is the trade worth making.
+   * Undefined leaves tmux's own remedy: at five minutes behind it kills the
+   * client with "too far behind".
    */
   readonly #pauseAfterSeconds: number | undefined;
   /** Panes tmux has paused and this connection has not yet asked back. */
@@ -360,8 +361,6 @@ export class ControlConnection implements CommandTransport {
   #consume(chunk: Buffer): void {
     const lines = this.#framer.push(chunk);
     if (lines === undefined) {
-      // tmux's protocol is line-oriented, so a line past the framer's bound is
-      // not one: the stream is no longer something this can parse.
       this.#fail(
         new TmuxTransportError("tmux control mode sent an unterminated line", {
           delivery: "indeterminate",
@@ -444,6 +443,19 @@ export class ControlConnection implements CommandTransport {
       // notification by its first character, so position decides and not shape.
       if (this.#inBlock) {
         const text = new TextDecoder().decode(line);
+        // tmux appends notifications to whatever block is open, so a pane that
+        // backs up during a command has its `%pause` land in that command's
+        // output. Swallowed there, the pane is never asked back.
+        //
+        // Matched whole: a pane id is `%1`, indistinguishable from a
+        // notification by its first character.
+        if (FLOW_CONTROL_LINE.test(text)) {
+          const flow = parseControlLine(line);
+          if (flow?.kind === "pause" || flow?.kind === "continue") {
+            this.#routeFlowControl(flow);
+            return;
+          }
+        }
         const block = this.#block;
         if (block === undefined) {
           // Nobody is waiting for this: it is tmux explaining an attach. Keep
@@ -463,13 +475,11 @@ export class ControlConnection implements CommandTransport {
         return;
       }
       if (parsed === undefined) return;
-      if (parsed.kind === "pause") this.#paused.add(parsed.paneId);
-      if (parsed.kind === "continue") this.#paused.delete(parsed.paneId);
+      if (parsed.kind === "pause" || parsed.kind === "continue") {
+        this.#routeFlowControl(parsed);
+        return;
+      }
       for (const sink of this.#sinks) sink.push(parsed);
-      // Asked back as soon as it is reported. tmux discards what it was
-      // holding for a paused pane and sends nothing more for it until told
-      // otherwise, so a connection that only listens loses that pane for good.
-      if (parsed.kind === "pause") this.#resumePane(parsed.paneId);
       return;
     }
     {
@@ -482,8 +492,7 @@ export class ControlConnection implements CommandTransport {
           this.#attachOutcome ??= { kind: "attached" };
           this.#attached?.resolve();
           this.#reopening = false;
-          // Re-asked on every attach, not once: the flag lives on the tmux
-          // client, and a reconnect is a new client that has never heard of it.
+          // The flag lives on the tmux client, so a reconnect needs it again.
           this.#requestPauseAfter();
           // The outage ends here, not when the replacement process started:
           // until tmux accepts the attach, the new client is carrying nothing.
@@ -601,13 +610,8 @@ export class ControlConnection implements CommandTransport {
   /**
    * Ask tmux to pause a pane rather than kill this client when it falls behind.
    *
-   * Without the flag tmux's only remedy is `CONTROL_MAXIMUM_AGE`: five minutes
-   * after a pane's output starts backing up it drops the whole connection with
-   * "too far behind". With it, that pane alone stops until it is asked back.
-   *
-   * Sent rather than awaited. It is an optimisation of tmux's behaviour, not a
-   * precondition of anything the caller asked for, so a tmux that refuses it
-   * leaves the connection working exactly as it did before.
+   * Sent rather than awaited: a tmux that refuses it leaves the connection
+   * working as before.
    */
   #requestPauseAfter(): void {
     const seconds = this.#pauseAfterSeconds;
@@ -618,33 +622,21 @@ export class ControlConnection implements CommandTransport {
     }).catch(() => undefined);
   }
 
-  /**
-   * Ask tmux to resume a pane it paused, and report that it did.
-   *
-   * tmux answers with `%continue %N` — but inside this command's own
-   * `%begin`/`%end` block, because that is where everything it writes while
-   * running a command goes. So the confirmation for a resume this connection
-   * asked for can never arrive as a notification, and a subscriber watching for
-   * one would wait forever. The event is published from the response instead,
-   * and only when tmux actually confirmed: a pause with no matching continue
-   * then means the resume failed, which is worth being able to see.
-   */
+  /** Publish a pause or resume, and ask a paused pane back. */
+  #routeFlowControl(event: { kind: "continue" | "pause"; paneId: string }): void {
+    if (event.kind === "pause") this.#paused.add(event.paneId);
+    else this.#paused.delete(event.paneId);
+    for (const sink of this.#sinks) sink.push(event);
+    // tmux sends nothing more for a paused pane until told otherwise.
+    if (event.kind === "pause") this.#resumePane(event.paneId);
+  }
+
+  /** Ask tmux to resume a pane it paused. tmux answers with `%continue`. */
   #resumePane(paneId: string): void {
     void this.execute({
       args: ["refresh-client", "-A", `${paneId}:continue`],
       executable: this.#executable,
-    }).then(
-      (result) => {
-        const confirmed = new TextDecoder()
-          .decode(result.stdout)
-          .split("\n")
-          .some((line) => line.trim() === `%continue ${paneId}`);
-        if (!confirmed) return;
-        this.#paused.delete(paneId);
-        for (const sink of this.#sinks) sink.push({ kind: "continue", paneId });
-      },
-      () => undefined,
-    );
+    }).catch(() => undefined);
   }
 
   execute(request: CommandRequest): Promise<RawCommandResult> {

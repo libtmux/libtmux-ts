@@ -345,13 +345,7 @@ function renderFormatFieldsSource(fields: readonly GeneratedFormatField[]): stri
 
 export interface GeneratedWhereField {
   readonly criteriaName: string;
-  /**
-   * What a caller may write for this field beside the text tmux sends.
-   *
-   * The same table the typed accessors are generated from, so `pane.active`
-   * being a boolean and `where({ active: true })` compiling are one fact rather
-   * than two that can drift.
-   */
+  /** What a caller may write beside the text, from the same table as the accessors. */
   readonly domain: FormatValueType | "string";
   readonly token: FormatFieldName;
   readonly wireName: string;

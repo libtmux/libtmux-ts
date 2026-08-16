@@ -2,16 +2,9 @@ import type { ModelKindOf } from "./_internal/runtime/model_kind.js";
 import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/legacy.js";
 
 /**
- * The value a field's criteria may be written as, beside the text tmux sends.
- *
- * A field this port knows the shape of accepts that shape as well as the string
- * — `where({ active: true })` and `where({ active: "1" })` describe the same
- * pane, and `where({ pid: { in: [2334787, 2334788] } })` the same two. The
- * typed form is spelled out to its wire text before anything compares it, so
- * the serialized query is unchanged either way.
- *
- * `never` for a field that is text to begin with, which collapses every union
- * below back to the string-only form it had.
+ * A field's criteria accept its decoded shape as well as the text tmux sends:
+ * `where({ active: true })` and `where({ active: "1" })` are the same query,
+ * and serialize identically. `never` for a field that is text to begin with.
  */
 type StringFilterFields<Value = never> = {
   readonly contains?: string;

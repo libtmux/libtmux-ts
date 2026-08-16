@@ -19,15 +19,9 @@ export type CompleteFormatRow = Readonly<Record<FormatFieldName, string | null>>
 /**
  * Idiomatic property names layered over a row, carrying decoded values.
  *
- * tmux answers every field as text, so the row underneath is text; a caller who
- * asks a pane for its `pid` wants a number, and one who asks whether it is
- * `active` wants a boolean rather than the string `"1"`. The row itself stays
- * reachable as `handle.format`, which is the escape hatch for anything this
- * decoding gets in the way of.
- *
- * Nullability is taken from the row rather than restated. An identity field is
- * guaranteed populated and stays non-null through the swap, so `pane.windowIndex`
- * is a `number` while `pane.pid` is `number | null`.
+ * The row underneath stays text and stays reachable as `handle.format`.
+ * Nullability is taken from the row rather than restated, so an identity field
+ * stays non-null through the swap.
  */
 export type AliasedFields<Row, Aliases extends Readonly<Record<string, keyof Row>>> = {
   readonly [Key in keyof Aliases]: Aliases[Key] extends FormatFieldName

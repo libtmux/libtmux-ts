@@ -59,14 +59,10 @@ function candidatesFor(snapshot: ServerSnapshot, handle: Child): readonly Child[
  * | pane, window, session | server, kind, id | connection, epoch, kind, id |
  * | client | every field of the row | `client_name` alone |
  *
- * `equals` is a question about two values a caller is holding, so a client read
- * at two instants is two different things — its state is most of what a client
- * is. This is the question `refreshed` asks of a later snapshot, so a client
- * read again has to be recognisable as itself however much of it changed;
- * comparing the rest would mean a re-read never finds its own subject.
- *
- * Merging them would break one caller or the other, which is why they are named
- * apart and pointed at each other rather than shared.
+ * `equals` compares two values a caller holds, so a client read at two instants
+ * is two things. This asks whether a later snapshot holds the same subject, so
+ * a client must stay recognisable however much of it changed. Merging them
+ * breaks one caller or the other.
  */
 function isSameSubject(left: Child, right: Child): boolean {
   const a = entityRefForHandle(left);

@@ -666,8 +666,6 @@ async function readValueTypes(tokens: ReadonlySet<string>): Promise<ReadonlyMap<
         `format value-type fixture declares ${token} as unknown type ${String(type)}`,
       );
     }
-    // A declaration for a field this port does not carry would generate an
-    // accessor onto nothing, and reads as coverage while being the opposite.
     if (!tokens.has(token)) {
       throw new Error(`format value-type fixture declares ${token}, which is not a format field`);
     }
@@ -676,13 +674,7 @@ async function readValueTypes(tokens: ReadonlySet<string>): Promise<ReadonlyMap<
   return types;
 }
 
-/**
- * The value each format field really carries, at the type level and at runtime.
- *
- * tmux answers every field as text, and a caller who wants `pane_pid` wants a
- * number. The wire is left alone — `handle.format.pane_pid` is still the string
- * tmux sent — and the decoding happens once, where a row becomes a handle.
- */
+/** The value each format field carries, at the type level and at runtime. */
 function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
   const entries = [...types].sort(([left], [right]) => (left < right ? -1 : 1));
   return `${[
@@ -699,16 +691,14 @@ function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
     " * Derived from tmux's own format.c and held to a live server by",
     " * tests/integration/format_types.test.ts on every version CI runs.",
     " *",
-    " * Local: `DecodedFormatValue` is what a caller needs, and exporting the",
-    " * table beside it would publish a second way to ask the same question.",
+    " * Local: `DecodedFormatValue` is what a caller needs.",
     " */",
     "interface FormatValueTypes {",
     ...entries.map(([token, type]) => `  readonly ${token}: "${type}";`),
     "}",
     "",
-    // Written the way oxfmt writes it: `format:check` runs over the generated
-    // tree too, and a shape it would rewrite makes the two gates disagree
-    // forever — one reformats the file and the other reports it stale.
+    // Written the way oxfmt writes it: `format:check` covers the generated
+    // tree, so a shape it would rewrite makes it and `generate:check` disagree.
     "/** What a caller reads for one field, once the text has been decoded. */",
     "export type DecodedFormatValue<Token extends FormatFieldName> = Token extends keyof FormatValueTypes",
     '  ? FormatValueTypes[Token] extends "number"',

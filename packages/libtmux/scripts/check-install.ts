@@ -8,19 +8,13 @@ import { resolveNode22 } from "../src/_internal/test/node22.js";
 /**
  * Install the tarball into a project that has never seen this repository.
  *
- * `test:package` reads the tarball; this one uses it. The difference is what
- * has actually shipped broken: a release whose `dist` was never built, and an
- * install command that 404'd. Both packed, both linted clean, and neither was
- * ever installed by anything before a user tried it.
+ * `test:package` reads the tarball; this one uses it. The project is empty
+ * apart from the tarball, so nothing resolves through the workspace — no
+ * `paths`, no hoisted `node_modules`, no source tree — and what `exports` names
+ * has to be all there is.
  *
- * The project is empty apart from the tarball, so nothing here can resolve
- * through the workspace: no `paths`, no hoisted `node_modules`, no source tree
- * to fall back to. What the package says it exports has to be all there is.
- *
- * Node rather than Bun, at the floor the package claims. The tarball is what a
- * Node consumer installs, and the emitted declarations are what their
- * typechecker reads; running it under the toolchain that built it would prove
- * neither.
+ * Node at the floor the package claims, not Bun: the tarball is what a Node
+ * consumer installs.
  */
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -36,9 +30,7 @@ async function run(
 ): Promise<{ stderr: string; stdout: string }> {
   const child = Bun.spawn([...command], {
     cwd,
-    // npm resolves nothing from the registry here — the package has no runtime
-    // dependencies, which is what makes an offline install a real check rather
-    // than a network test.
+    // The package has no runtime dependencies, so this install is offline.
     env: { ...process.env, NPM_CONFIG_AUDIT: "false", NPM_CONFIG_FUND: "false" },
     stderr: "pipe",
     stdout: "pipe",
@@ -73,16 +65,12 @@ try {
   );
   await run(["npm", "install", "--no-save", tarball], project);
 
-  // Import by name and use it. Resolving the entry point proves `exports` and
-  // `dist` agree; constructing a Server proves the module actually evaluates,
-  // which a missing internal file would fail at rather than at import.
+  // Resolving proves `exports` and `dist` agree; calling proves the modules
+  // evaluate, which a missing internal file fails at rather than at import.
   const probe = join(project, "probe.mjs");
   await writeFile(
     probe,
     [
-      // The root entry point and one subpath, because `exports` names each
-      // separately and a release has shipped with one of them pointing at
-      // nothing.
       `import { Server, TmuxTransportError, PaneDirection } from "${manifest.name}";`,
       `import { parseLegacyWhere } from "${manifest.name}/selection";`,
       "const server = new Server({ socketName: 'ltx-canary' });",
@@ -91,8 +79,6 @@ try {
       "if (typeof TmuxTransportError !== 'function') throw new Error('TmuxTransportError is missing');",
       "if (typeof parseLegacyWhere !== 'function') throw new Error('parseLegacyWhere is missing');",
       "if (PaneDirection.Above === undefined) throw new Error('PaneDirection is missing');",
-      // Something that runs rather than merely resolves: a module that imports
-      // a file the tarball left out fails at evaluation, not at import.
       "const where = parseLegacyWhere('window', { name__contains: 'logs' });",
       "if (where.model !== 'window') throw new Error('parseLegacyWhere answered the wrong model');",
       "process.stdout.write('ok\\n');",
