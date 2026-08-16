@@ -6,10 +6,13 @@ import type { TmuxConnection } from "../runtime/connection.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
+import { LineFramer } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
 
-const NEWLINE = 0x0a;
 const encoder = new TextEncoder();
+
+/** The exact shape of tmux's two flow-control notifications. */
+const FLOW_CONTROL_LINE = /^%(?:pause|continue) %\d+$/u;
 
 /**
  * Bounds on what one connection may hold in memory.
@@ -21,8 +24,6 @@ const encoder = new TextEncoder();
  */
 const DEFAULT_MAX_PENDING_COMMANDS = 1024;
 const DEFAULT_MAX_COMMAND_BYTES = 64 * 1024 * 1024;
-/** A control line tmux has not terminated. Its longest legitimate form is one command's output line. */
-const MAX_CARRY_BYTES = 16 * 1024 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
 /** How long a closing process is given to leave before it is killed outright. */
@@ -124,7 +125,7 @@ export class ControlConnection implements CommandTransport {
   readonly #pending: PendingCommand[] = [];
   readonly #sinks = new Set<EventSink>();
   readonly #bufferSize: number;
-  #carry = new Uint8Array(0);
+  readonly #framer = new LineFramer();
   /**
    * The tail of a character split across two `%output` notifications, per pane.
    *
@@ -155,6 +156,15 @@ export class ControlConnection implements CommandTransport {
   readonly #stderr: Buffer[] = [];
   #stderrBytes = 0;
   readonly #maxPendingCommands: number;
+  /**
+   * Seconds tmux may hold a pane's output before pausing it.
+   *
+   * Undefined leaves tmux's own remedy: at five minutes behind it kills the
+   * client with "too far behind".
+   */
+  readonly #pauseAfterSeconds: number | undefined;
+  /** Panes tmux has paused and this connection has not yet asked back. */
+  readonly #paused = new Set<string>();
   readonly #maxCommandBytes: number;
   /**
    * Writes that tmux's stdin was not ready to take.
@@ -200,9 +210,13 @@ export class ControlConnection implements CommandTransport {
     }
     const maxPendingCommands = options.maxPendingCommands ?? DEFAULT_MAX_PENDING_COMMANDS;
     const maxCommandBytes = options.maxCommandBytes ?? DEFAULT_MAX_COMMAND_BYTES;
+    const pauseAfterSeconds = options.pauseAfterSeconds;
     for (const [name, value] of [
       ["maxPendingCommands", maxPendingCommands],
       ["maxCommandBytes", maxCommandBytes],
+      ...(pauseAfterSeconds === undefined
+        ? []
+        : ([["pauseAfterSeconds", pauseAfterSeconds]] as const)),
     ] as const) {
       if (!Number.isInteger(value) || value < 1) {
         throw new TypeError(`${name} must be a positive integer`);
@@ -210,6 +224,7 @@ export class ControlConnection implements CommandTransport {
     }
     this.#maxPendingCommands = maxPendingCommands;
     this.#maxCommandBytes = maxCommandBytes;
+    this.#pauseAfterSeconds = pauseAfterSeconds;
     const globals = connectionArguments(connection);
     this.#signal = options.signal;
 
@@ -344,29 +359,17 @@ export class ControlConnection implements CommandTransport {
   }
 
   #consume(chunk: Buffer): void {
-    const merged = new Uint8Array(this.#carry.length + chunk.length);
-    merged.set(this.#carry);
-    merged.set(chunk, this.#carry.length);
-    let start = 0;
-    for (;;) {
-      const newline = merged.indexOf(NEWLINE, start);
-      if (newline === -1) break;
-      this.#route(merged.subarray(start, newline));
-      start = newline + 1;
-    }
-    this.#carry = merged.subarray(start);
-    if (this.#carry.length > MAX_CARRY_BYTES) {
-      // tmux's protocol is line-oriented, so a line this long is not one: the
-      // stream is no longer something this can parse, and holding more of it
-      // only postpones the same conclusion.
-      this.#carry = new Uint8Array(0);
+    const lines = this.#framer.push(chunk);
+    if (lines === undefined) {
       this.#fail(
         new TmuxTransportError("tmux control mode sent an unterminated line", {
           delivery: "indeterminate",
           kind: "protocol",
         }),
       );
+      return;
     }
+    for (const line of lines) this.#route(line);
   }
 
   /**
@@ -440,6 +443,19 @@ export class ControlConnection implements CommandTransport {
       // notification by its first character, so position decides and not shape.
       if (this.#inBlock) {
         const text = new TextDecoder().decode(line);
+        // tmux appends notifications to whatever block is open, so a pane that
+        // backs up during a command has its `%pause` land in that command's
+        // output. Swallowed there, the pane is never asked back.
+        //
+        // Matched whole: a pane id is `%1`, indistinguishable from a
+        // notification by its first character.
+        if (FLOW_CONTROL_LINE.test(text)) {
+          const flow = parseControlLine(line);
+          if (flow?.kind === "pause" || flow?.kind === "continue") {
+            this.#routeFlowControl(flow);
+            return;
+          }
+        }
         const block = this.#block;
         if (block === undefined) {
           // Nobody is waiting for this: it is tmux explaining an attach. Keep
@@ -459,6 +475,10 @@ export class ControlConnection implements CommandTransport {
         return;
       }
       if (parsed === undefined) return;
+      if (parsed.kind === "pause" || parsed.kind === "continue") {
+        this.#routeFlowControl(parsed);
+        return;
+      }
       for (const sink of this.#sinks) sink.push(parsed);
       return;
     }
@@ -472,6 +492,8 @@ export class ControlConnection implements CommandTransport {
           this.#attachOutcome ??= { kind: "attached" };
           this.#attached?.resolve();
           this.#reopening = false;
+          // The flag lives on the tmux client, so a reconnect needs it again.
+          this.#requestPauseAfter();
           // The outage ends here, not when the replacement process started:
           // until tmux accepts the attach, the new client is carrying nothing.
           const recovered = this.#reconnectingAttempt;
@@ -539,7 +561,7 @@ export class ControlConnection implements CommandTransport {
     setTimeout(
       () => {
         if (this.#closed) return;
-        this.#carry = new Uint8Array(0);
+        this.#framer.reset();
         this.#partial.clear();
         this.#block = undefined;
         this.#inBlock = false;
@@ -583,6 +605,38 @@ export class ControlConnection implements CommandTransport {
     for (const command of outstanding) {
       if (settle(command)) command.reject(reason);
     }
+  }
+
+  /**
+   * Ask tmux to pause a pane rather than kill this client when it falls behind.
+   *
+   * Sent rather than awaited: a tmux that refuses it leaves the connection
+   * working as before.
+   */
+  #requestPauseAfter(): void {
+    const seconds = this.#pauseAfterSeconds;
+    if (seconds === undefined) return;
+    void this.execute({
+      args: ["refresh-client", "-f", `pause-after=${String(seconds)}`],
+      executable: this.#executable,
+    }).catch(() => undefined);
+  }
+
+  /** Publish a pause or resume, and ask a paused pane back. */
+  #routeFlowControl(event: { kind: "continue" | "pause"; paneId: string }): void {
+    if (event.kind === "pause") this.#paused.add(event.paneId);
+    else this.#paused.delete(event.paneId);
+    for (const sink of this.#sinks) sink.push(event);
+    // tmux sends nothing more for a paused pane until told otherwise.
+    if (event.kind === "pause") this.#resumePane(event.paneId);
+  }
+
+  /** Ask tmux to resume a pane it paused. tmux answers with `%continue`. */
+  #resumePane(paneId: string): void {
+    void this.execute({
+      args: ["refresh-client", "-A", `${paneId}:continue`],
+      executable: this.#executable,
+    }).catch(() => undefined);
   }
 
   execute(request: CommandRequest): Promise<RawCommandResult> {

@@ -128,10 +128,12 @@ type _WindowSnapshot = Expect<
 type _SessionAliases = Expect<
   Equal<Pick<Session, "id" | "name">, { readonly id: string; readonly name: string | null }>
 >;
+// `window_index` is a number tmux guarantees on a listed row, so it decodes
+// without becoming nullable; `window_id` keeps its `@` and stays text.
 type _WindowAliases = Expect<
   Equal<
     Pick<Window, "id" | "index" | "name">,
-    { readonly id: string; readonly index: string; readonly name: string | null }
+    { readonly id: string; readonly index: number; readonly name: string | null }
   >
 >;
 type _PaneAliases = Expect<
@@ -144,7 +146,12 @@ type _PaneAliases = Expect<
 type _ClientSessionIsRelation = Expect<Equal<Client["session"], Session | undefined>>;
 type _ClientSessionScalar = Expect<Equal<Client["clientSession"], string | null>>;
 // tmux exposes both `pid` and `pane_pid`, so the pane keeps the longer name.
-type _PanePid = Expect<Equal<Pane["panePid"], string | null>>;
+// Both decode to a number; the text tmux sent stays on `format`.
+type _PanePid = Expect<Equal<Pane["panePid"], number | null>>;
+type _ServerPid = Expect<Equal<Pane["pid"], number | null>>;
+type _PaneRawPid = Expect<Equal<Pane["format"]["pane_pid"], string | null>>;
+type _PaneActive = Expect<Equal<Pane["active"], boolean | null>>;
+type _SessionCreated = Expect<Equal<Session["created"], Date | null>>;
 
 type _ServerEquals = Expect<Equal<Server["equals"], (other: unknown) => boolean>>;
 type _ClientEquals = Expect<Equal<Client["equals"], (other: unknown) => boolean>>;

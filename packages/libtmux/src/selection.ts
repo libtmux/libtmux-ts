@@ -1,29 +1,34 @@
 import type { ModelKindOf } from "./_internal/runtime/model_kind.js";
 import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/legacy.js";
 
-type StringFilterFields = {
+/**
+ * A field's criteria accept its decoded shape as well as the text tmux sends:
+ * `where({ active: true })` and `where({ active: "1" })` are the same query,
+ * and serialize identically. `never` for a field that is text to begin with.
+ */
+type StringFilterFields<Value = never> = {
   readonly contains?: string;
   readonly endsWith?: string;
-  readonly equals?: string | null;
-  readonly in?: readonly string[];
+  readonly equals?: Value | string | null;
+  readonly in?: readonly (Value | string)[];
   readonly mode?: "insensitive";
-  readonly notIn?: readonly string[];
+  readonly notIn?: readonly (Value | string)[];
   readonly regex?: RegexCriteriaData;
   readonly startsWith?: string;
 };
 
-type StringFilter = StringFilterFields &
+type StringFilter<Value = never> = StringFilterFields<Value> &
   (
     | { readonly contains: string }
     | { readonly endsWith: string }
-    | { readonly equals: string | null }
-    | { readonly in: readonly string[] }
-    | { readonly notIn: readonly string[] }
+    | { readonly equals: Value | string | null }
+    | { readonly in: readonly (Value | string)[] }
+    | { readonly notIn: readonly (Value | string)[] }
     | { readonly regex: RegexCriteriaData }
     | { readonly startsWith: string }
   );
 
-type ScalarCriteria = string | null | StringFilter;
+type ScalarCriteria<Value = never> = Value | string | null | StringFilter<Value>;
 
 type ManyRelation<Where> =
   | { readonly every?: Where; readonly none?: Where; readonly some: Where }
@@ -44,28 +49,28 @@ export interface SessionWhere {
   readonly AND?: readonly SessionWhere[];
   readonly OR?: readonly SessionWhere[];
   readonly NOT?: readonly SessionWhere[];
-  readonly activeWindowIndex?: ScalarCriteria;
-  readonly activity?: ScalarCriteria;
+  readonly activeWindowIndex?: ScalarCriteria<number>;
+  readonly activity?: ScalarCriteria<Date>;
   readonly alerts?: ScalarCriteria;
-  readonly attached?: ScalarCriteria;
+  readonly attached?: ScalarCriteria<number>;
   readonly attachedList?: ScalarCriteria;
-  readonly created?: ScalarCriteria;
-  readonly format?: ScalarCriteria;
+  readonly created?: ScalarCriteria<Date>;
+  readonly format?: ScalarCriteria<boolean>;
   readonly group?: ScalarCriteria;
-  readonly groupAttached?: ScalarCriteria;
+  readonly groupAttached?: ScalarCriteria<number>;
   readonly groupAttachedList?: ScalarCriteria;
   readonly groupList?: ScalarCriteria;
-  readonly groupManyAttached?: ScalarCriteria;
-  readonly groupSize?: ScalarCriteria;
-  readonly grouped?: ScalarCriteria;
+  readonly groupManyAttached?: ScalarCriteria<boolean>;
+  readonly groupSize?: ScalarCriteria<number>;
+  readonly grouped?: ScalarCriteria<boolean>;
   readonly id?: ScalarCriteria;
-  readonly lastAttached?: ScalarCriteria;
-  readonly lastWindowIndex?: ScalarCriteria;
-  readonly manyAttached?: ScalarCriteria;
-  readonly marked?: ScalarCriteria;
+  readonly lastAttached?: ScalarCriteria<Date>;
+  readonly lastWindowIndex?: ScalarCriteria<number>;
+  readonly manyAttached?: ScalarCriteria<boolean>;
+  readonly marked?: ScalarCriteria<boolean>;
   readonly name?: ScalarCriteria;
   readonly path?: ScalarCriteria;
-  readonly sessionWindows?: ScalarCriteria;
+  readonly sessionWindows?: ScalarCriteria<number>;
   readonly stack?: ScalarCriteria;
   readonly windows?: ManyRelation<WindowWhere>;
   readonly panes?: ManyRelation<PaneWhere>;
@@ -77,40 +82,40 @@ export interface WindowWhere {
   readonly AND?: readonly WindowWhere[];
   readonly OR?: readonly WindowWhere[];
   readonly NOT?: readonly WindowWhere[];
-  readonly active?: ScalarCriteria;
-  readonly activeClients?: ScalarCriteria;
+  readonly active?: ScalarCriteria<boolean>;
+  readonly activeClients?: ScalarCriteria<number>;
   readonly activeClientsList?: ScalarCriteria;
-  readonly activeSessions?: ScalarCriteria;
+  readonly activeSessions?: ScalarCriteria<number>;
   readonly activeSessionsList?: ScalarCriteria;
-  readonly activity?: ScalarCriteria;
-  readonly activityFlag?: ScalarCriteria;
-  readonly bellFlag?: ScalarCriteria;
-  readonly bigger?: ScalarCriteria;
-  readonly cellHeight?: ScalarCriteria;
-  readonly cellWidth?: ScalarCriteria;
-  readonly endFlag?: ScalarCriteria;
+  readonly activity?: ScalarCriteria<Date>;
+  readonly activityFlag?: ScalarCriteria<boolean>;
+  readonly bellFlag?: ScalarCriteria<boolean>;
+  readonly bigger?: ScalarCriteria<boolean>;
+  readonly cellHeight?: ScalarCriteria<number>;
+  readonly cellWidth?: ScalarCriteria<number>;
+  readonly endFlag?: ScalarCriteria<boolean>;
   readonly flags?: ScalarCriteria;
-  readonly format?: ScalarCriteria;
-  readonly height?: ScalarCriteria;
+  readonly format?: ScalarCriteria<boolean>;
+  readonly height?: ScalarCriteria<number>;
   readonly id?: ScalarCriteria;
-  readonly index?: ScalarCriteria;
-  readonly lastFlag?: ScalarCriteria;
+  readonly index?: ScalarCriteria<number>;
+  readonly lastFlag?: ScalarCriteria<boolean>;
   readonly layout?: ScalarCriteria;
-  readonly linked?: ScalarCriteria;
+  readonly linked?: ScalarCriteria<boolean>;
   readonly linkedSessionsList?: ScalarCriteria;
-  readonly markedFlag?: ScalarCriteria;
+  readonly markedFlag?: ScalarCriteria<boolean>;
   readonly name?: ScalarCriteria;
-  readonly offsetX?: ScalarCriteria;
-  readonly offsetY?: ScalarCriteria;
+  readonly offsetX?: ScalarCriteria<number>;
+  readonly offsetY?: ScalarCriteria<number>;
   readonly rawFlags?: ScalarCriteria;
-  readonly silenceFlag?: ScalarCriteria;
-  readonly stackIndex?: ScalarCriteria;
-  readonly startFlag?: ScalarCriteria;
+  readonly silenceFlag?: ScalarCriteria<boolean>;
+  readonly stackIndex?: ScalarCriteria<number>;
+  readonly startFlag?: ScalarCriteria<boolean>;
   readonly visibleLayout?: ScalarCriteria;
-  readonly width?: ScalarCriteria;
-  readonly windowLinkedSessions?: ScalarCriteria;
-  readonly windowPanes?: ScalarCriteria;
-  readonly zoomedFlag?: ScalarCriteria;
+  readonly width?: ScalarCriteria<number>;
+  readonly windowLinkedSessions?: ScalarCriteria<number>;
+  readonly windowPanes?: ScalarCriteria<number>;
+  readonly zoomedFlag?: ScalarCriteria<boolean>;
   readonly session?: OneRelation<SessionWhere>;
   readonly linkedSessions?: ManyRelation<SessionWhere>;
   readonly panes?: ManyRelation<PaneWhere>;
@@ -121,76 +126,76 @@ export interface PaneWhere {
   readonly AND?: readonly PaneWhere[];
   readonly OR?: readonly PaneWhere[];
   readonly NOT?: readonly PaneWhere[];
-  readonly active?: ScalarCriteria;
-  readonly alternateSavedX?: ScalarCriteria;
-  readonly alternateSavedY?: ScalarCriteria;
-  readonly atBottom?: ScalarCriteria;
-  readonly atLeft?: ScalarCriteria;
-  readonly atRight?: ScalarCriteria;
-  readonly atTop?: ScalarCriteria;
+  readonly active?: ScalarCriteria<boolean>;
+  readonly alternateSavedX?: ScalarCriteria<number>;
+  readonly alternateSavedY?: ScalarCriteria<number>;
+  readonly atBottom?: ScalarCriteria<boolean>;
+  readonly atLeft?: ScalarCriteria<boolean>;
+  readonly atRight?: ScalarCriteria<boolean>;
+  readonly atTop?: ScalarCriteria<boolean>;
   readonly bg?: ScalarCriteria;
-  readonly bottom?: ScalarCriteria;
-  readonly bracketPasteFlag?: ScalarCriteria;
+  readonly bottom?: ScalarCriteria<number>;
+  readonly bracketPasteFlag?: ScalarCriteria<boolean>;
   readonly currentCommand?: ScalarCriteria;
   readonly currentPath?: ScalarCriteria;
   readonly cursorCharacter?: ScalarCriteria;
-  readonly cursorFlag?: ScalarCriteria;
-  readonly cursorX?: ScalarCriteria;
-  readonly cursorY?: ScalarCriteria;
-  readonly dead?: ScalarCriteria;
+  readonly cursorFlag?: ScalarCriteria<boolean>;
+  readonly cursorX?: ScalarCriteria<number>;
+  readonly cursorY?: ScalarCriteria<number>;
+  readonly dead?: ScalarCriteria<boolean>;
   readonly deadSignal?: ScalarCriteria;
-  readonly deadStatus?: ScalarCriteria;
-  readonly deadTime?: ScalarCriteria;
+  readonly deadStatus?: ScalarCriteria<number>;
+  readonly deadTime?: ScalarCriteria<Date>;
   readonly fg?: ScalarCriteria;
   readonly flags?: ScalarCriteria;
-  readonly floatingFlag?: ScalarCriteria;
-  readonly format?: ScalarCriteria;
-  readonly height?: ScalarCriteria;
-  readonly historyBytes?: ScalarCriteria;
-  readonly historyLimit?: ScalarCriteria;
-  readonly historySize?: ScalarCriteria;
+  readonly floatingFlag?: ScalarCriteria<boolean>;
+  readonly format?: ScalarCriteria<boolean>;
+  readonly height?: ScalarCriteria<number>;
+  readonly historyBytes?: ScalarCriteria<number>;
+  readonly historyLimit?: ScalarCriteria<number>;
+  readonly historySize?: ScalarCriteria<number>;
   readonly id?: ScalarCriteria;
-  readonly inMode?: ScalarCriteria;
-  readonly index?: ScalarCriteria;
-  readonly inputOff?: ScalarCriteria;
-  readonly insertFlag?: ScalarCriteria;
-  readonly keypadCursorFlag?: ScalarCriteria;
-  readonly keypadFlag?: ScalarCriteria;
-  readonly last?: ScalarCriteria;
-  readonly left?: ScalarCriteria;
-  readonly marked?: ScalarCriteria;
-  readonly markedSet?: ScalarCriteria;
+  readonly inMode?: ScalarCriteria<number>;
+  readonly index?: ScalarCriteria<number>;
+  readonly inputOff?: ScalarCriteria<boolean>;
+  readonly insertFlag?: ScalarCriteria<boolean>;
+  readonly keypadCursorFlag?: ScalarCriteria<boolean>;
+  readonly keypadFlag?: ScalarCriteria<boolean>;
+  readonly last?: ScalarCriteria<boolean>;
+  readonly left?: ScalarCriteria<number>;
+  readonly marked?: ScalarCriteria<boolean>;
+  readonly markedSet?: ScalarCriteria<boolean>;
   readonly mode?: ScalarCriteria;
-  readonly mouseAllFlag?: ScalarCriteria;
-  readonly mouseAnyFlag?: ScalarCriteria;
-  readonly mouseButtonFlag?: ScalarCriteria;
-  readonly mouseSgrFlag?: ScalarCriteria;
-  readonly mouseStandardFlag?: ScalarCriteria;
-  readonly originFlag?: ScalarCriteria;
+  readonly mouseAllFlag?: ScalarCriteria<boolean>;
+  readonly mouseAnyFlag?: ScalarCriteria<boolean>;
+  readonly mouseButtonFlag?: ScalarCriteria<boolean>;
+  readonly mouseSgrFlag?: ScalarCriteria<boolean>;
+  readonly mouseStandardFlag?: ScalarCriteria<boolean>;
+  readonly originFlag?: ScalarCriteria<boolean>;
   readonly path?: ScalarCriteria;
-  readonly pbProgress?: ScalarCriteria;
+  readonly pbProgress?: ScalarCriteria<number>;
   readonly pbState?: ScalarCriteria;
-  readonly pid?: ScalarCriteria;
-  readonly pipe?: ScalarCriteria;
-  readonly pipePid?: ScalarCriteria;
-  readonly right?: ScalarCriteria;
-  readonly scrollRegionLower?: ScalarCriteria;
-  readonly scrollRegionUpper?: ScalarCriteria;
+  readonly pid?: ScalarCriteria<number>;
+  readonly pipe?: ScalarCriteria<boolean>;
+  readonly pipePid?: ScalarCriteria<number>;
+  readonly right?: ScalarCriteria<number>;
+  readonly scrollRegionLower?: ScalarCriteria<number>;
+  readonly scrollRegionUpper?: ScalarCriteria<number>;
   readonly searchString?: ScalarCriteria;
   readonly startCommand?: ScalarCriteria;
   readonly startPath?: ScalarCriteria;
-  readonly synchronized?: ScalarCriteria;
-  readonly synchronizedOutputFlag?: ScalarCriteria;
+  readonly synchronized?: ScalarCriteria<boolean>;
+  readonly synchronizedOutputFlag?: ScalarCriteria<boolean>;
   readonly tabs?: ScalarCriteria;
   readonly title?: ScalarCriteria;
-  readonly top?: ScalarCriteria;
+  readonly top?: ScalarCriteria<number>;
   readonly tty?: ScalarCriteria;
-  readonly width?: ScalarCriteria;
-  readonly wrapFlag?: ScalarCriteria;
-  readonly x?: ScalarCriteria;
-  readonly y?: ScalarCriteria;
-  readonly z?: ScalarCriteria;
-  readonly zoomedFlag?: ScalarCriteria;
+  readonly width?: ScalarCriteria<number>;
+  readonly wrapFlag?: ScalarCriteria<boolean>;
+  readonly x?: ScalarCriteria<number>;
+  readonly y?: ScalarCriteria<number>;
+  readonly z?: ScalarCriteria<number>;
+  readonly zoomedFlag?: ScalarCriteria<boolean>;
   readonly window?: OneRelation<WindowWhere>;
   readonly session?: OneRelation<SessionWhere>;
 }
@@ -199,31 +204,31 @@ export interface ClientWhere {
   readonly AND?: readonly ClientWhere[];
   readonly OR?: readonly ClientWhere[];
   readonly NOT?: readonly ClientWhere[];
-  readonly activity?: ScalarCriteria;
-  readonly cellHeight?: ScalarCriteria;
-  readonly cellWidth?: ScalarCriteria;
+  readonly activity?: ScalarCriteria<Date>;
+  readonly cellHeight?: ScalarCriteria<number>;
+  readonly cellWidth?: ScalarCriteria<number>;
   readonly clientSession?: ScalarCriteria;
-  readonly controlMode?: ScalarCriteria;
-  readonly created?: ScalarCriteria;
-  readonly discarded?: ScalarCriteria;
+  readonly controlMode?: ScalarCriteria<boolean>;
+  readonly created?: ScalarCriteria<Date>;
+  readonly discarded?: ScalarCriteria<number>;
   readonly flags?: ScalarCriteria;
-  readonly height?: ScalarCriteria;
+  readonly height?: ScalarCriteria<number>;
   readonly keyTable?: ScalarCriteria;
   readonly lastSession?: ScalarCriteria;
   readonly modeFormat?: ScalarCriteria;
   readonly name?: ScalarCriteria;
-  readonly pid?: ScalarCriteria;
-  readonly prefix?: ScalarCriteria;
-  readonly readonly?: ScalarCriteria;
+  readonly pid?: ScalarCriteria<number>;
+  readonly prefix?: ScalarCriteria<boolean>;
+  readonly readonly?: ScalarCriteria<boolean>;
   readonly termfeatures?: ScalarCriteria;
   readonly termname?: ScalarCriteria;
   readonly termtype?: ScalarCriteria;
   readonly tty?: ScalarCriteria;
-  readonly uid?: ScalarCriteria;
+  readonly uid?: ScalarCriteria<number>;
   readonly user?: ScalarCriteria;
-  readonly utf8?: ScalarCriteria;
-  readonly width?: ScalarCriteria;
-  readonly written?: ScalarCriteria;
+  readonly utf8?: ScalarCriteria<boolean>;
+  readonly width?: ScalarCriteria<number>;
+  readonly written?: ScalarCriteria<number>;
   readonly session?: OneRelation<SessionWhere>;
   readonly window?: OneRelation<WindowWhere>;
   readonly pane?: OneRelation<PaneWhere>;

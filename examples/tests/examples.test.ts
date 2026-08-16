@@ -6,9 +6,10 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { quickstart } from "../quickstart.js";
+import { reportPanes } from "../fields.js";
 import { buildWorkspace, removeWorkspace } from "../workspace.js";
 import { buildAndSettle, runAndWait } from "../agent.js";
-import { collectPaneOutput, watchUntilWindowOpens } from "../watch.js";
+import { collectPaneOutput, watchUntilWindowOpens, watchWithBackpressure } from "../watch.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -65,6 +66,26 @@ describe("documented examples", () => {
     });
   }, 60_000);
 
+  test("the fields example reads decoded values against real tmux", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      const report = await reportPanes(server);
+
+      // Values tmux sent as text, used as the types they stand for.
+      expect(report.activeCount).toBe(2);
+      expect(report.area).toBeGreaterThan(0);
+      expect(report.pids.every((pid) => Number.isSafeInteger(pid) && pid > 0)).toBe(true);
+      expect(report.pids.length).toBeGreaterThan(0);
+      expect(report.sessionAgeMs).toBeGreaterThanOrEqual(0);
+      expect(report.sessionAgeMs).toBeLessThan(60_000);
+    });
+  }, 60_000);
+
   test("the watch example observes a window opening", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
@@ -98,6 +119,23 @@ describe("documented examples", () => {
       ]);
 
       expect(await collected).toContain("example-marker");
+    });
+  }, 60_000);
+
+  test("the pause-after example reports a pause and its resume", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      const flow = await watchWithBackpressure(server);
+
+      // A pause and the resume this connection asked for, in that order.
+      expect(flow.length).toBe(2);
+      expect(flow[0]?.startsWith("pause %")).toBe(true);
+      expect(flow[1]).toBe(flow[0]?.replace("pause", "continue"));
     });
   }, 60_000);
 

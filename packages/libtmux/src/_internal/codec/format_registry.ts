@@ -2,6 +2,7 @@ function camelCase(value: string): string {
   return value.replace(/_([a-z0-9])/g, (_match, character: string) => character.toUpperCase());
 }
 
+import { FORMAT_VALUE_TYPES, type FormatValueType } from "../../_generated/field_types.js";
 import type { FormatFieldName, FormatScope } from "../../_generated/format_field_names.js";
 import type { ListCommand } from "./format_types.js";
 import {
@@ -344,7 +345,8 @@ function renderFormatFieldsSource(fields: readonly GeneratedFormatField[]): stri
 
 export interface GeneratedWhereField {
   readonly criteriaName: string;
-  readonly domain: "string";
+  /** What a caller may write beside the text, from the same table as the accessors. */
+  readonly domain: FormatValueType | "string";
   readonly token: FormatFieldName;
   readonly wireName: string;
 }
@@ -382,7 +384,7 @@ function generatedWhereFields(
         : [
             {
               criteriaName: criteriaName(field.token, model, taken),
-              domain: "string" as const,
+              domain: FORMAT_VALUE_TYPES[field.token] ?? ("string" as const),
               token: field.token,
               wireName,
             },

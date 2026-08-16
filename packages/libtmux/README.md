@@ -69,7 +69,8 @@ programs need the first, and reach for the second when they have to react.
 [Snapshots](#snapshots) ·
 [Querying](#querying) ·
 [Relations](#relations) ·
-[Field names](#field-names)
+[Field names](#field-names) ·
+[Field values](#field-values)
 
 **Changing it** ·
 [Operations](#operations) ·
@@ -210,6 +211,19 @@ The stream is an `AsyncDisposable`, so `await using` ends the tmux process when
 the scope exits, including on a thrown error. A consumer that falls behind gets
 its oldest events dropped rather than an unbounded buffer; `events.dropped`
 counts them and `bufferSize` sets the bound.
+
+That bound is this side's. tmux keeps its own, and its remedy for a client that
+lets a pane's output back up is to kill it — five minutes behind and the whole
+connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause
+the one pane instead:
+
+```ts
+await using paced = await server.connect({ pauseAfterSeconds: 5 });
+```
+
+tmux then reports `pause` for the pane it stopped, the connection asks it back
+at once, and `continue` follows. The pair is a record of what was missed, not
+something to act on.
 
 A connection attaches, so it needs a session to attach to. Connecting to a
 server with none fails at `connect()` with tmux's own words rather than through
@@ -375,6 +389,73 @@ window.index; // window_index
 session.name; // session_name
 
 pane.format.pane_current_command;
+```
+
+## Field values
+
+tmux has one wire type, and everything on it is text. A field whose shape this
+port knows is decoded on the way out, so a pid is a number, a flag is a boolean,
+and a timestamp is a `Date`:
+
+```ts
+pane.panePid; // number | null
+pane.active; // boolean | null
+session.created; // Date | null
+window.index; // number — an identity tmux always populates, so never null
+```
+
+Which fields those are comes from tmux's own `format.c`, and an integration test
+holds every one of them to a live server on each version CI runs. Anything else
+is left exactly as tmux sent it, empty string included.
+
+The text is never lost. `format` is the row as it arrived:
+
+```ts
+pane.format.pane_pid; // "2334787"
+pane.format.pane_active; // "1"
+```
+
+Criteria take the decoded shape as well as the text, and mean the same thing
+either way:
+
+```ts
+snapshot.panes.where({ active: true });
+snapshot.panes.where({ active: "1" });
+```
+
+Together, on a server with two windows. This is a literal excerpt of
+[`examples/fields.ts`](../../examples/fields.ts), which the integration suite
+runs against a real tmux server:
+
+<!-- runs: examples/fields.ts -->
+
+```ts
+const snapshot = await server.snapshot();
+const panes = snapshot.panes.where({ session: { is: { name: "fields" } } });
+
+// Numbers arrive as numbers, so geometry is arithmetic rather than parsing.
+const area = panes
+  .toArray()
+  .reduce((total, pane) => total + (pane.width ?? 0) * (pane.height ?? 0), 0);
+
+// Flags arrive as booleans. `"0"` is truthy; `false` is not.
+const activeCount = panes.count({ active: true });
+
+// A criterion takes the decoded shape as readily as the text tmux sends.
+const pids = panes
+  .toArray()
+  .map((pane) => pane.panePid)
+  .filter((pid): pid is number => pid !== null);
+
+// Times arrive as Date.
+const created = snapshot.sessions.one({ name: "fields" }).created;
+if (created === null) throw new Error("expected tmux to report a creation time");
+const sessionAgeMs = Date.now() - created.getTime();
+
+// The text tmux actually sent is still on the row. Each window has an active
+// pane, so this narrows to one window before asking for one pane.
+const raw = panes.one({ active: true, window: { is: { name: "second" } } }).format.pane_active;
+if (raw !== "1") throw new Error(`expected the raw row to hold "1", saw ${JSON.stringify(raw)}`);
 ```
 
 Criteria are camelCase too, and serialize to tmux's stable spellings so a stored

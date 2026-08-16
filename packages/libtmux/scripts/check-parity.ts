@@ -564,16 +564,37 @@ function verifyManualProvenance(
   }
 }
 
-function evidenceRecords(manifest: ParityManifest): Array<{ key: string; record: EvidenceFields }> {
+function evidenceRecords(
+  manifest: ParityManifest,
+): Array<{ key: string; kind: ParityKind | null; record: EvidenceFields }> {
   return [
     ...manifest.publicSymbols.map((record) => ({
       key: `${record.kind}:${record.python}`,
+      kind: record.kind,
       record,
     })),
-    ...manifest.observableBehaviors.map((record) => ({ key: record.id, record })),
-    ...manifest.typescriptExtensions.map((record) => ({ key: record.id, record })),
-    ...manifest.internalExclusions.map((record) => ({ key: record.id, record })),
+    ...manifest.observableBehaviors.map((record) => ({ key: record.id, kind: null, record })),
+    ...manifest.typescriptExtensions.map((record) => ({ key: record.id, kind: null, record })),
+    ...manifest.internalExclusions.map((record) => ({ key: record.id, kind: null, record })),
   ];
+}
+
+/**
+ * Whether a row claims a member, and so has to cite one.
+ *
+ * `./pane#value:Pane` compiles to `typeof Pane`, which proves the class is
+ * exported and nothing about the method inside it. `#instance:Class.member`
+ * reaches the prototype and `#value:Class.member` the static side, and each
+ * stops compiling the moment the member is gone.
+ *
+ * A `method` or `property` row claims a member by definition; any other kind
+ * does when its `typescript` field names `Class.member`. That covers an alias
+ * mapping onto one member without demanding a citation from one mapping onto
+ * `Selection` as a whole, where naming a single member would invent an answer.
+ */
+function claimsMember(kind: ParityKind | null, typescript: string | null): boolean {
+  if (kind === "method" || kind === "property") return true;
+  return typescript !== null && /^[A-Z][A-Za-z0-9_]*\.[A-Za-z_$][A-Za-z0-9_$]*$/.test(typescript);
 }
 
 const evidencePathPatterns = {
@@ -611,14 +632,22 @@ function verifyEvidencePaths(manifest: ParityManifest): void {
   }
 }
 
+/**
+ * A locator, optionally carrying type arguments.
+ *
+ * A member of a generic type cannot be read without instantiating it, so
+ * `Selection<never>.one`; `never` satisfies any parameter without asserting
+ * anything about it.
+ */
 const typescriptSymbolPattern =
-  /^(?:\.|\.\/[a-z][a-z0-9_-]*)#(?:type|value|instance|well-known-instance):[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/;
+  /^(?:\.|\.\/[a-z][a-z0-9_-]*)#(?:type|value|instance|well-known-instance):[A-Za-z_$][A-Za-z0-9_$]*(?:<[A-Za-z_$][A-Za-z0-9_$]*(?:,\s*[A-Za-z_$][A-Za-z0-9_$]*)*>)?(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/;
 
 interface TypeScriptSymbolLocator {
   kind: "instance" | "type" | "value" | "well-known-instance";
   moduleName: string;
   path: string[];
   raw: string;
+  typeArguments: string;
 }
 
 function parseTypeScriptSymbol(key: string, locator: string): TypeScriptSymbolLocator {
@@ -631,7 +660,17 @@ function parseTypeScriptSymbol(key: string, locator: string): TypeScriptSymbolLo
     TypeScriptSymbolLocator["kind"],
     string,
   ];
-  const path = symbol.split(".");
+  const opening = symbol.indexOf("<");
+  const closing = symbol.indexOf(">");
+  const typeArguments = opening === -1 ? "" : symbol.slice(opening, closing + 1);
+  const bare = opening === -1 ? symbol : `${symbol.slice(0, opening)}${symbol.slice(closing + 1)}`;
+  const path = bare.split(".");
+  if (typeArguments !== "" && kind !== "type") {
+    fail(`${key} type arguments are only meaningful on a type locator: ${locator}`);
+  }
+  if (typeArguments !== "" && path.length < 2) {
+    fail(`${key} type arguments say nothing without a member to read: ${locator}`);
+  }
   if (kind === "instance" && path.length < 2) {
     fail(`${key} instance symbol locator requires a member: ${locator}`);
   }
@@ -641,7 +680,7 @@ function parseTypeScriptSymbol(key: string, locator: string): TypeScriptSymbolLo
   ) {
     fail(`${key} has invalid well-known TypeScript symbol locator: ${locator}`);
   }
-  return { kind, moduleName, path, raw: locator };
+  return { kind, moduleName, path, raw: locator, typeArguments };
 }
 
 function probeType(locator: TypeScriptSymbolLocator, index: number): string {
@@ -649,7 +688,7 @@ function probeType(locator: TypeScriptSymbolLocator, index: number): string {
   const indexedMembers = members.map((member) => `["${member}"]`).join("");
   if (locator.kind === "type") {
     if (members.length === 0) return "";
-    return `type ParityTarget${index} = ParityTypes${index}.${top}${indexedMembers};`;
+    return `type ParityTarget${index} = ParityTypes${index}.${top}${locator.typeArguments}${indexedMembers};`;
   }
   if (locator.kind === "instance") {
     return `type ParityTarget${index} = (typeof ParityValues${index}.${top}.prototype)${indexedMembers};`;
@@ -694,9 +733,10 @@ async function verifyTypeScriptSymbols(
   manifest: ParityManifest,
   packageManifestPath: string,
 ): Promise<void> {
-  const parsed = evidenceRecords(manifest).flatMap(({ key, record }) =>
+  const parsed = evidenceRecords(manifest).flatMap(({ key, kind, record }) =>
     record.typescriptSymbols.map((raw) => ({
       activated: record.status === "implemented" || record.status === "adapted",
+      claimsMember: claimsMember(kind, record.typescript),
       key,
       locator: parseTypeScriptSymbol(key, raw),
     })),
@@ -704,12 +744,24 @@ async function verifyTypeScriptSymbols(
   const activated = parsed.filter(({ activated }) => activated);
   if (activated.length === 0) return;
 
+  // Reported together: a gate that names one row per run turns a migration
+  // into a hundred runs.
+  const unpinned = activated.filter((entry) => entry.claimsMember && entry.locator.path.length < 2);
+  if (unpinned.length > 0) {
+    fail(
+      `${String(unpinned.length)} member rows cite only their class, which proves nothing about the member:\n${unpinned
+        .map(({ key, locator }) => `  ${key} -> ${locator.raw}\n`)
+        .join("")}`,
+    );
+  }
+
   const packageManifest = JSON.parse(await readFile(packageManifestPath, "utf8")) as {
     exports?: Record<string, unknown>;
   };
   const exports = packageManifest.exports ?? {};
   const locators: TypeScriptSymbolLocator[] = [];
   const sources: ExportSource[] = [];
+  const keys: string[] = [];
   for (const { key, locator } of activated) {
     if (!Object.hasOwn(exports, locator.moduleName)) {
       fail(`${key} TypeScript module is not exported: ${locator.moduleName}`);
@@ -721,6 +773,7 @@ async function verifyTypeScriptSymbols(
     }
     locators.push(locator);
     sources.push(source);
+    keys.push(key);
   }
 
   const imports = locators.flatMap((locator, index) => {
@@ -759,10 +812,24 @@ async function verifyTypeScriptSymbols(
       { cwd: tsRoot, stderr: "pipe", stdout: "pipe" },
     );
     if (result.exitCode !== 0) {
+      const diagnostics = `${result.stdout.toString()}${result.stderr.toString()}`.trim();
+      // The probe is one import per locator, a blank line, then one type per
+      // locator in the same order, so a diagnostic's line number names its row.
+      const blamed = new Map<string, string>();
+      for (const [, line] of diagnostics.matchAll(
+        new RegExp(`^${probeName.replaceAll(".", "\\.")}\\((\\d+),\\d+\\)`, "gmu"),
+      )) {
+        const reported = Number(line);
+        const index = reported <= imports.length ? reported - 1 : reported - (imports.length + 2);
+        const locator = locators[index];
+        if (locator !== undefined) blamed.set(locator.raw, keys[index] ?? "");
+      }
+      const attribution =
+        blamed.size > 0
+          ? `${[...blamed].map(([raw, key]) => `  ${key} -> ${raw}\n`).join("")}`
+          : `  (no row could be blamed; the probe itself may be malformed)\n`;
       fail(
-        `TypeScript symbol does not exist or does not typecheck: ${locators
-          .map(({ raw }) => raw)
-          .join(", ")}\n${result.stdout.toString()}${result.stderr.toString()}`.trim(),
+        `TypeScript symbols that do not exist or do not typecheck:\n${attribution}\n${diagnostics}`,
       );
     }
   } finally {

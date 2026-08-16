@@ -128,6 +128,10 @@ jobs:
           bun run typecheck:ambient-free
           bun run typecheck:tooling
           bun run test:package
+          # Packing and linting the tarball is not installing it. The two
+          # releases this repository shipped broken — one with no dist, one
+          # whose install command 404'd — both packed clean.
+          bun run test:install
 
       - name: Test the library
         working-directory: packages/libtmux

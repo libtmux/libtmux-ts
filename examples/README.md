@@ -1,6 +1,6 @@
 # Examples
 
-Four runnable programs, each executed by the integration suite against a real,
+Runnable programs, each executed by the integration suite against a real,
 isolated tmux server — so the code here is the code that runs, and a README
 recipe drawn from it is [checked against it](../scripts/check-doc-runnable.ts)
 on every commit.
@@ -56,6 +56,7 @@ session.
 | [`watch.ts`](watch.ts)           | Reacting over control mode: waiting for a window to open, and following a pane until a marker arrives                           |
 | [`agent.ts`](agent.ts)           | Act and wait on one connection: run a command until its output arrives, then wait for the server to reach a shape               |
 | [`workspace.ts`](workspace.ts)   | Building a session from a declared layout, with an inherited environment and a teardown that treats "already gone" as an answer |
+| [`fields.ts`](fields.ts)         | Reading decoded values: geometry as arithmetic, flags as booleans, timestamps as `Date`, and the raw row beside them            |
 
 ## Where to go next
 

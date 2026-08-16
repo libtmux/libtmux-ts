@@ -704,7 +704,37 @@ describe("Python 0.62.0 parity manifest", () => {
         symbol.unitTest = "tests/unit/parity_manifest.test.ts";
         symbol.declarationTest = "tests/fixtures/negative-declarations/query_list.test.ts";
       },
-      "TypeScript symbol does not exist",
+      "TypeScript symbols that do not exist",
+    ],
+    [
+      "member row citing only its class",
+      (manifest) => {
+        const symbol = manifest.publicSymbols.find(
+          ({ python }) => python === "libtmux.pane.Pane.send_keys",
+        )!;
+        symbol.typescriptSymbols = ["./pane#value:Pane"];
+      },
+      "cite only their class, which proves nothing about the member",
+    ],
+    [
+      "compatibility alias naming a member but citing its class",
+      (manifest) => {
+        const symbol = manifest.publicSymbols.find(
+          ({ python }) => python === "libtmux.pane.Pane.split_window",
+        )!;
+        symbol.typescriptSymbols = ["./pane#value:Pane"];
+      },
+      "cite only their class, which proves nothing about the member",
+    ],
+    [
+      "type arguments on a value locator",
+      (manifest) => {
+        const symbol = manifest.publicSymbols.find(
+          ({ python }) => python === "libtmux.pane.Pane.send_keys",
+        )!;
+        symbol.typescriptSymbols = ["./pane#value:Pane<never>.sendKeys"];
+      },
+      "type arguments are only meaningful on a type locator",
     ],
     [
       "unexported TypeScript module",

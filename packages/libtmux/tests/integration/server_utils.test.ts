@@ -106,7 +106,7 @@ describe("server utilities", () => {
       await session.selectWindow("last");
 
       // Relative selection is accepted and leaves exactly one active window.
-      const active = (await server.snapshot()).windows.filter((window) => window.active === "1");
+      const active = (await server.snapshot()).windows.filter((window) => window.active === true);
       expect(active.length).toBe(1);
     });
   }, 40_000);

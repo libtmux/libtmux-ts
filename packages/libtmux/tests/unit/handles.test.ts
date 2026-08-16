@@ -918,7 +918,8 @@ describe("authenticated handle materialization", () => {
       originalGraph,
       reconstructedOriginal,
     );
-    expect(handle.width).toBe("80");
+    expect(handle.width).toBe(80);
+    expect(handle.format.client_width).toBe("80");
 
     const replacementRow = completeFormatRow({
       client_name: "client-ref",

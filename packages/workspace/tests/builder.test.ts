@@ -263,11 +263,11 @@ describe("workspace builder", () => {
 
       const snapshot = await server.snapshot();
       const active = snapshot.windows.one({
-        active: "1",
+        active: true,
         session: { is: { name: "focused" } },
       });
       expect(active.name).toBe("second");
-      expect(active.panes.one({ active: "1" }).index).toBe("1");
+      expect(active.panes.one({ active: true }).index).toBe(1);
     });
   }, 90_000);
 

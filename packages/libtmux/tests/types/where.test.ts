@@ -35,24 +35,24 @@ type MutuallyAssignable<Left, Right> = [Left] extends [Right]
     : false
   : false;
 
-type ExpectedStringFilterFields = {
+type ExpectedStringFilterFields<Value = never> = {
   readonly contains?: string;
   readonly endsWith?: string;
-  readonly equals?: string | null;
-  readonly in?: readonly string[];
+  readonly equals?: Value | string | null;
+  readonly in?: readonly (Value | string)[];
   readonly mode?: "insensitive";
-  readonly notIn?: readonly string[];
+  readonly notIn?: readonly (Value | string)[];
   readonly regex?: { readonly flags: "" | "m" | "ms" | "s"; readonly pattern: string };
   readonly startsWith?: string;
 };
 
-type ExpectedStringFilter = ExpectedStringFilterFields &
+type ExpectedStringFilter<Value = never> = ExpectedStringFilterFields<Value> &
   (
     | { readonly contains: string }
     | { readonly endsWith: string }
-    | { readonly equals: string | null }
-    | { readonly in: readonly string[] }
-    | { readonly notIn: readonly string[] }
+    | { readonly equals: Value | string | null }
+    | { readonly in: readonly (Value | string)[] }
+    | { readonly notIn: readonly (Value | string)[] }
     | {
         readonly regex: {
           readonly flags: "" | "m" | "ms" | "s";
@@ -62,9 +62,26 @@ type ExpectedStringFilter = ExpectedStringFilterFields &
     | { readonly startsWith: string }
   );
 
-type ExpectedScalarCriteria = string | null | ExpectedStringFilter | undefined;
-type AllScalarCriteriaMatch<Where, Keys extends keyof Where> = {
-  [Key in Keys]-?: MutuallyAssignable<Where[Key], ExpectedScalarCriteria>;
+type ExpectedScalarCriteria<Value = never> =
+  | Value
+  | string
+  | null
+  | ExpectedStringFilter<Value>
+  | undefined;
+
+/**
+ * Every scalar criteria still accepts the text tmux sends.
+ *
+ * The check that used to live here demanded each field be exactly the
+ * string-only criteria, which stopped being true when the typed fields learned
+ * their own shapes. What has to stay true is weaker and more useful: whatever a
+ * field gained, a caller who writes the string keeps working. A field that
+ * accepted only its typed value would fail this.
+ */
+type AllScalarCriteriaAcceptStrings<Where, Keys extends keyof Where> = {
+  [Key in Keys]-?: [ExpectedScalarCriteria, Where[Key]] extends [Where[Key], unknown]
+    ? true
+    : false;
 }[Keys];
 type WritableKeys<Value> = {
   [Key in keyof Value]-?: Equal<Pick<Value, Key>, Readonly<Pick<Value, Key>>> extends true
@@ -259,12 +276,28 @@ type _SessionScalarKeys = Expect<Equal<SessionScalarKeys, ExpectedSessionScalarK
 type _WindowScalarKeys = Expect<Equal<WindowScalarKeys, ExpectedWindowScalarKeys>>;
 type _PaneScalarKeys = Expect<Equal<PaneScalarKeys, ExpectedPaneScalarKeys>>;
 type _SessionScalarShapes = Expect<
-  Equal<AllScalarCriteriaMatch<SessionWhere, SessionScalarKeys>, true>
+  Equal<AllScalarCriteriaAcceptStrings<SessionWhere, SessionScalarKeys>, true>
 >;
 type _WindowScalarShapes = Expect<
-  Equal<AllScalarCriteriaMatch<WindowWhere, WindowScalarKeys>, true>
+  Equal<AllScalarCriteriaAcceptStrings<WindowWhere, WindowScalarKeys>, true>
 >;
-type _PaneScalarShapes = Expect<Equal<AllScalarCriteriaMatch<PaneWhere, PaneScalarKeys>, true>>;
+type _PaneScalarShapes = Expect<
+  Equal<AllScalarCriteriaAcceptStrings<PaneWhere, PaneScalarKeys>, true>
+>;
+
+// A field tmux answers with text is exactly what it always was.
+type _StringDomain = Expect<MutuallyAssignable<SessionWhere["name"], ExpectedScalarCriteria>>;
+// A field this port knows the shape of takes that shape too, and only that one.
+type _BooleanDomain = Expect<
+  MutuallyAssignable<PaneWhere["active"], ExpectedScalarCriteria<boolean>>
+>;
+type _NumberDomain = Expect<MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number>>>;
+type _TimeDomain = Expect<
+  MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date>>
+>;
+// An identity keeps its sigil, so it stays text however numeric it looks.
+type _IdentityDomain = Expect<MutuallyAssignable<PaneWhere["id"], ExpectedScalarCriteria>>;
+
 type ActualStringFilter = Exclude<SessionWhere["name"], null | string | undefined>;
 type _StringFilterShape = Expect<MutuallyAssignable<ActualStringFilter, ExpectedStringFilter>>;
 type _StringFilterKeys = Expect<

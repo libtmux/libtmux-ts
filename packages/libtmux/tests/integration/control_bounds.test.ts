@@ -122,6 +122,62 @@ describe("control-mode resource bounds", () => {
         /maxPendingCommands/u,
       );
       await expect(server.connect({ maxCommandBytes: -1 })).rejects.toThrow(/maxCommandBytes/u);
+      await expect(server.connect({ pauseAfterSeconds: 0 })).rejects.toThrow(/pauseAfterSeconds/u);
+      await expect(server.connect({ pauseAfterSeconds: 1.5 })).rejects.toThrow(
+        /pauseAfterSeconds/u,
+      );
     });
   }, 40_000);
+
+  test("asks tmux to pause a pane rather than drop the client behind it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect({ pauseAfterSeconds: 1 });
+
+      // tmux reports the flags it holds for this client.
+      const flags = await live.cmd("display-message", ["-p", "#{client_flags}"]);
+      expect(flags.join("")).toContain("pause-after=1");
+    });
+  }, 40_000);
+
+  test("resumes a paused pane instead of leaving it stopped", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect({ pauseAfterSeconds: 1 });
+      const events = live.subscribe();
+      await events.ready();
+
+      const paneId = (await live.snapshot()).panes.toArray()[0]?.id;
+      expect(paneId).toBeDefined();
+
+      // Waiting for a real backlog races the socket buffer and tmux's timer.
+      // This reaches the same state on demand, and delivers the `%pause` inside
+      // the command's block — where one lands whenever a pane backs up while a
+      // command is in flight, which is what `pause-after` exists for.
+      await live.cmd("refresh-client", ["-A", `${paneId!}:pause`]);
+
+      // Raced against a timer: the loop body only runs when an event arrives,
+      // so a deadline tested inside it is not a deadline.
+      const paused = new Set<string>();
+      const resumed = new Set<string>();
+      const collected = (async () => {
+        for await (const event of events) {
+          if (event.kind === "pause") paused.add(event.paneId);
+          if (event.kind === "continue") resumed.add(event.paneId);
+          if (paused.size > 0 && [...paused].every((pane) => resumed.has(pane))) return;
+        }
+      })();
+      await Promise.race([
+        collected,
+        new Promise((resolve) => {
+          setTimeout(resolve, 20_000).unref();
+        }),
+      ]);
+
+      // tmux sends nothing further for a paused pane until asked, so a
+      // connection that only listens loses it permanently.
+      expect([...paused]).toEqual([paneId!]);
+      expect([...resumed]).toEqual([paneId!]);
+    });
+  }, 90_000);
 });

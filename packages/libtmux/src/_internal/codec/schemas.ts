@@ -1,5 +1,6 @@
 import { v, type Validator } from "../validate.js";
 
+import type { DecodedFormatValue } from "../../_generated/field_types.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import type { ListCommand } from "./format_types.js";
@@ -15,9 +16,19 @@ export type CompleteFormatRow = Readonly<Record<FormatFieldName, string | null>>
  * row guarantees its whole ancestry — so the guarantee is expressed per model
  * rather than flattened onto every field.
  */
-/** Idiomatic property names layered over a row, resolving to the same values. */
+/**
+ * Idiomatic property names layered over a row, carrying decoded values.
+ *
+ * The row underneath stays text and stays reachable as `handle.format`.
+ * Nullability is taken from the row rather than restated, so an identity field
+ * stays non-null through the swap.
+ */
 export type AliasedFields<Row, Aliases extends Readonly<Record<string, keyof Row>>> = {
-  readonly [Key in keyof Aliases]: Row[Aliases[Key]];
+  readonly [Key in keyof Aliases]: Aliases[Key] extends FormatFieldName
+    ? null extends Row[Aliases[Key]]
+      ? DecodedFormatValue<Aliases[Key]> | null
+      : DecodedFormatValue<Aliases[Key]>
+    : Row[Aliases[Key]];
 };
 
 export type RowWithIdentities<Identities extends FormatFieldName> = {

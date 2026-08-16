@@ -473,6 +473,18 @@ export interface WatchOptions {
    * retry.
    */
   readonly maxPendingCommands?: number;
+  /**
+   * Seconds tmux may hold a pane's output before pausing that pane.
+   *
+   * Off by default, which leaves tmux's remedy for a client that falls behind:
+   * at five minutes it drops the connection with "too far behind", losing
+   * every other pane and every pending command with it.
+   *
+   * Set, tmux instead discards what it held for the one pane that fell behind
+   * and emits `pause`. The connection asks the pane back and emits `continue`,
+   * so the pair records what was missed rather than needing a response.
+   */
+  readonly pauseAfterSeconds?: number;
   /** Abort the connection when this signal fires. */
   readonly signal?: AbortLike;
   /**

@@ -22,6 +22,18 @@ and `latest` is stated rather than inherited so it cannot lag. A second
 `npm publish` and nothing else, so writing one needs a token in the repository,
 which is what publishing this way exists to avoid.
 
+That reasoning holds only while every version is a prerelease, so the publish
+workflow now refuses a version that is not one rather than tagging it `latest`
+by habit. The first stable release wants `latest`; a prerelease cut after it
+does not, and moving `latest` backwards onto an alpha is the failure the check
+exists to prevent. Whoever cuts that release decides the tag.
+
+`test:package` reads the tarball and `test:install` uses it — a clean
+directory, `npm install` of the packed file, and a Node 22 process that imports
+the package by name and runs something. Nothing there can resolve through the
+workspace, which is the point: the two releases this repository shipped broken
+both packed and linted clean.
+
 An in-repo consumer resolves `libtmux` to source through `paths` in its own
 tsconfig, so a branded class has one type identity rather than one per build
 output. The published `exports` deliberately name only `dist`: source is not in
@@ -162,9 +174,19 @@ Python release it names. `oxfmt` formats TypeScript but not JSON, and
 `check-parity.ts --write` re-renders the file in a style the committed one does
 not use — so edit entries surgically as text and leave the rest byte-for-byte.
 
-A ported row names the TypeScript that covers it. Prefer
-`./module#instance:Class.member`, which pins the member, over
-`./module#value:Class`, which only pins its class.
+A ported row names the TypeScript that covers it, and a row that claims a
+member has to cite one: `./module#instance:Class.member` for the prototype,
+`./module#value:Class.member` for the static side. `./module#value:Class`
+compiles to `typeof Class` and says only that the class is exported, which is
+the whole claim for a class row and none of it for a method: a rename leaves
+such a row citing a method that no longer exists, and the gate stays green.
+A row claims a member when its kind
+is `method` or `property`, or when its `typescript` field names `Class.member`;
+the gate reads that rather than a list, so it needs no maintaining.
+
+A member of a generic type needs the type instantiated to be read at all, so
+the locator carries the arguments: `./selection#type:Selection<never>.one`.
+`never` satisfies any parameter without asserting anything about it.
 
 `parity/python-0.62.0.baseline.json` is what the Python release contributes:
 the symbols it exposes, and the git object kind of every path the ledger cites.
@@ -220,6 +242,26 @@ Do not edit the tree while `test:compat` runs. It spawns the suite once per
 build and reads the working tree each time, so a mid-run edit produces failures
 attributed to whichever tmux happened to be current.
 
+Two benchmarks answer questions the gates do not, and are run by hand rather
+than wired to a script — `package.json` lists gates, and a number that varies
+with the machine is not one.
+
+Grid the transports against batching and concurrency:
+
+```console
+$ bun packages/libtmux/scripts/bench-modes.ts
+```
+
+Measure what a snapshot costs as the server grows, which is where any argument
+for a reduced model or a field projection has to start. It reports the command
+count, which the design holds flat, against the bytes and wall clock, which grow
+with the server — what a projection would address, and what it would cost to
+give up:
+
+```console
+$ bun packages/libtmux/scripts/bench-snapshot.ts
+```
+
 tmux argument grammar is worth checking rather than assuming: an adjustment like
 `resize-pane -U 2` is a _positional_ argument, so it has to follow every flag.
 Written next to its direction it turns any later flag into surplus arguments and
@@ -243,6 +285,7 @@ been red is an assumption.
 ## Git Commit Standards
 
 Format commit messages as:
+
 ```
 Scope(type[detail]): concise description
 
@@ -258,6 +301,7 @@ body lines at ≤72 chars. Separate the `why:` and `what:` blocks with a
 blank line.
 
 Common commit types:
+
 - **feat**: New features or enhancements
 - **fix**: Bug fixes
 - **refactor**: Code restructuring without functional change
@@ -271,6 +315,7 @@ Common commit types:
 - **ai(rules[AGENTS])**: AI rule updates
 
 Example:
+
 ```
 Pane(feat[sendKeys]): Add support for a literal flag
 
@@ -291,6 +336,7 @@ the detailed why/what in the commit body. Don't use the
 `Scope(type[detail]):` format for releases — don't bury the lede.
 
 For multi-line commits, use heredoc to preserve formatting:
+
 ```bash
 git commit -m "$(cat <<'EOF'
 Scope(feat[detail]): Concise description

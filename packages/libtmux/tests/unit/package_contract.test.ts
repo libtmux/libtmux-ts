@@ -57,6 +57,7 @@ const expectedScripts = {
   "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
   "test:compat": "bun scripts/check-tmux-compat.ts",
   "test:package": "bun run build && bun scripts/check-package.ts",
+  "test:install": "bun run build && bun scripts/check-install.ts",
   "test:type-performance": "bun scripts/check-type-performance.ts --check",
   "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
   typecheck: "tsc -p tsconfig.json --noEmit",
