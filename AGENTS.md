@@ -5,11 +5,6 @@ Python library of the same name. Nothing here is Python — a convention you
 recognise from that project (uv, ruff, mypy, pytest, doctests, NumPy
 docstrings) does not apply unless it is written down below.
 
-Commit subjects are `Scope(type[detail]): concise description`, at most 50
-characters, followed by a blank line, a `why:` paragraph explaining the
-necessity, and a `what:` list of the changes. Types: `feat`, `fix`,
-`refactor`, `docs`, `chore`, `test`, `style`, `ci`.
-
 ## Layout
 
 A workspace. `packages/libtmux` is the library; `packages/mcp` and
@@ -180,3 +175,101 @@ server. A test asserting on timing carries a bound sized for what it does.
 
 Before claiming a test or a gate works, show it failing. A gate that has never
 been red is an assumption.
+
+## Git Commit Standards
+
+Format commit messages as:
+```
+Scope(type[detail]): concise description
+
+why: Explanation of necessity or impact.
+
+what:
+- Specific technical changes made
+- Focused on a single topic
+```
+
+Keep the subject ≤50 chars (excluding any trailing `(#NN)` PR ref); wrap
+body lines at ≤72 chars. Separate the `why:` and `what:` blocks with a
+blank line.
+
+Common commit types:
+- **feat**: New features or enhancements
+- **fix**: Bug fixes
+- **refactor**: Code restructuring without functional change
+- **docs**: Documentation updates
+- **chore**: Maintenance (dependencies, tooling, config)
+- **test**: Test-related updates
+- **style**: Code style and formatting
+- **ci**: Workflow and pipeline changes
+- **js(deps)**: Dependencies
+- **js(deps[dev])**: Dev Dependencies
+- **ai(rules[AGENTS])**: AI rule updates
+
+Example:
+```
+Pane(feat[sendKeys]): Add support for a literal flag
+
+why: Send characters without tmux interpreting them.
+
+what:
+- Add a literal field to SendKeysOptions
+- Pass -l when it is set
+```
+
+### Release commits
+
+Never create tags. Never push tags. The user handles tagging and tag
+pushes (tags trigger the CI publish workflow).
+
+Release commit subjects are plain and short: `Tag v<version>`. Put
+the detailed why/what in the commit body. Don't use the
+`Scope(type[detail]):` format for releases — don't bury the lede.
+
+For multi-line commits, use heredoc to preserve formatting:
+```bash
+git commit -m "$(cat <<'EOF'
+Scope(feat[detail]): Concise description
+
+why: Explanation of the change.
+
+what:
+- First change
+- Second change
+EOF
+)"
+```
+
+## Code Blocks
+
+Code blocks are paste-and-run units: pasting one block runs exactly one
+intended action. Doctests and other executed examples are exempt — the test
+suite runs them, nobody pastes them.
+
+- **One command per block.** Multiple steps may share a block only when
+  explicitly chained with `&&`, `;`, or `\` continuations — the chain is
+  then one logical command.
+- **Explanations go in prose above the block**, never as `#` comments inside it.
+- **Command menus are per-command blocks with prose lead-ins**, not tables.
+- **Shell commands use the `console` tag with a `$ ` prefix.** This separates
+  interactive commands from scripts and enables prompt-aware copy.
+- **Split long commands with `\`** — one flag or flag+value pair per indented
+  continuation line, positional arguments last.
+
+Good:
+
+Show the last ten commits as a graph:
+
+```console
+$ git log \
+    --max-count=10 \
+    --graph \
+    --oneline
+```
+
+Bad:
+
+```console
+# Show the last ten commits as a graph
+$ git log --max-count=10 --graph --oneline
+```
