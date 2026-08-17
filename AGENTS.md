@@ -346,6 +346,21 @@ server. A test asserting on timing carries a bound sized for what it does.
 Before claiming a test or a gate works, show it failing. A gate that has never
 been red is an assumption.
 
+**A parser that reads bytes this package did not write gets a randomized
+target.** `tests/unit/control_fuzz.test.ts` covers the control-mode framer,
+the notification parser and the UTF-8 holdback; add to it when adding a parser
+in that position. Seeded, so a failure reproduces from the seed it prints, and
+bounded, so it runs on the ordinary gate rather than needing a toolchain of its
+own. `LIBTMUX_FUZZ_ITERATIONS` and `LIBTMUX_FUZZ_SEED` turn it into a soak:
+
+```console
+$ LIBTMUX_FUZZ_ITERATIONS=200000 bun test tests/unit/control_fuzz.test.ts
+```
+
+A target that has never caught anything proves only that the generator is
+narrow. Break each parser it covers once, and confirm the target goes red for
+that break specifically.
+
 ## Git Commit Standards
 
 Format commit messages as:
