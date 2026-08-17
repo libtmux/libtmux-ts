@@ -12,7 +12,23 @@ remember.
 
 ## Unreleased
 
+## 0.1.0-alpha.3
+
 ### Fixed
+
+**`@libtmux/mcp` served nothing when installed.** `npm i -g` and `npx` both
+install a `bin` as a symlink, and the guard deciding whether the file is the
+program compared `process.argv[1]` against `import.meta.url` raw — through a
+link those are the link and its target, never equal. The process exited with
+status 0 having served no tools, which is what both documented installation
+methods did in `0.1.0-alpha.2`. Running the built server through a symlink is
+now a gate.
+
+**`LIBTMUX_SAFETY` widened on a typo.** An unrecognised value fell back to the
+default, and the default is `mutating` — so `read-only`, `read_only` or `ro`
+produced a server offering `send_keys` and every creating tool on a socket
+meant to be read-only, silently. It now narrows to `readonly` on a value it
+cannot read, and says on stderr which tier it chose and why.
 
 **A supplied engine no longer loses its commands to this machine's tmux.** An
 engine says tmux is somewhere this process cannot spawn it, and four calls did
@@ -40,12 +56,25 @@ engines that declare none as different rather than guessing from the socket.
 A caller choosing between one connection and a command per read needs it, which
 is how `applyWorkspace` now decides.
 
+**`wait_for_text` reports `alreadyOnScreen`.** A wait that misses now says when
+the pattern is on the pane already, because it printed before the wait began. A
+wait still refuses to match what was there first — stale text satisfying a wait
+is the bug that avoids — but "it printed before you asked" and "it never
+printed" are different answers, and only one is worth waiting again for.
+
 **`guardRequest` and `refusedByGuard` from `libtmux/engine`.** The wrapper that
 makes tmux refuse a command on a daemon that reissued its ids was private to the
 built-in transport, while `asSingleInvocation` was published — so an engine
 author inherited the obligation whose absence is invisible until a restart, and
 none of the helper for it. These are the same functions the built-in engine
 calls, so the two cannot drift.
+
+### Changed
+
+The control-mode parsers are now fuzzed on the ordinary gate: chunking is
+invisible to the line framer, the carry stays inside its bound, and neither the
+notification parser nor the UTF-8 holdback throws on arbitrary bytes. Each was
+broken once and confirmed red for the property it breaks.
 
 ## 0.1.0-alpha.2
 
