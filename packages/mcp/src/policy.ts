@@ -111,8 +111,24 @@ function readToolAllowlist(raw: string | undefined): ReadonlySet<string> | undef
   return names.length === 0 ? undefined : new Set(names);
 }
 
+/**
+ * Read a tier, narrowing rather than widening on a name nobody recognises.
+ *
+ * Falling back is right for the same reason {@link readInteger} does it: the
+ * variable comes from wherever the process was started, and a server that
+ * refuses to launch takes its explanation with it. Falling back *upward* is
+ * not. `read-only` and `read_only` are how `readonly` is usually mistyped, and
+ * answering them with the default hands an agent the tools the operator was
+ * trying to withhold — a mistake that looks exactly like a working
+ * configuration. The startup line names the tier in force, which is where
+ * this becomes visible.
+ */
 function readSafety(raw: string | undefined): SafetyTier {
-  return raw === "readonly" || raw === "destructive" || raw === "mutating" ? raw : "mutating";
+  if (raw === undefined) return "mutating";
+  const named = raw.trim().toLowerCase();
+  if (named === "readonly" || named === "read-only") return "readonly";
+  if (named === "mutating" || named === "destructive") return named;
+  return "readonly";
 }
 
 export function resolvePolicy(

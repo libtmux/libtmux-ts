@@ -22,6 +22,7 @@ import { registerWait } from "./tools/wait.js";
 import { registerWorkspace } from "./tools/workspace.js";
 import { registerPrompts } from "./prompts.js";
 import { registerResources } from "./resources.js";
+import { describeStartup } from "./startup.js";
 
 import manifest from "../package.json" with { type: "json" };
 
@@ -110,7 +111,23 @@ export function serverFromEnvironment(
 
 /** Serve over stdio when run directly. */
 export async function main(): Promise<void> {
-  const mcp = createTmuxMcpServer(serverFromEnvironment());
+  // Resolved once and handed to both, so the line cannot describe a policy
+  // other than the one the tools were registered under.
+  const policy = resolvePolicy();
+  const tmux = serverFromEnvironment();
+  const mcp = createTmuxMcpServer(tmux, { policy });
+  // stderr, because stdout is the protocol: a byte written there that is not
+  // a JSON-RPC frame ends the session. Once, before serving, so a later
+  // question about which tmux this process chose and how much it was allowed
+  // to do has an answer that does not depend on reproducing the launch.
+  process.stderr.write(
+    `${describeStartup({
+      caller: readCallerEnvironment(),
+      policy,
+      server: tmux,
+      version: PACKAGE_VERSION,
+    })}\n`,
+  );
   await mcp.connect(new StdioServerTransport());
 }
 

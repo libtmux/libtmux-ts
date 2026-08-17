@@ -136,6 +136,18 @@ tool an agent cannot see is one it cannot spend a turn being denied.
 - `mutating` — the above, plus typing, splitting, creating, and renaming.
 - `destructive` — the above, plus `kill_pane`, `kill_window`, `kill_session`.
 
+A name this list does not hold falls to `readonly`, not to the default —
+`read-only` and `read_only` are how `readonly` is usually mistyped, and
+answering a typo with a wider surface than the one asked for is the wrong
+direction to be wrong in. The server writes one line to stderr as it starts,
+naming the socket and the tier actually in force, which is where a typo shows
+up:
+
+```console
+$ libtmux-mcp
+libtmux-mcp 0.1.0-alpha.2 serving agents at the readonly tier
+```
+
 `LIBTMUX_MCP_TOOLS` narrows further when a tier is the wrong shape. A tier
 answers how much an agent may change; a list answers which of it, and "read and
 type, never kill" is not a degree of typing. A tool left off the list is never

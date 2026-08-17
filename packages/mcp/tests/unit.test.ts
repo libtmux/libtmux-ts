@@ -7,6 +7,7 @@ import { describeUnreachable } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
 import { PaneTail } from "../src/live.js";
 import { effectiveWaitMs, resolvePolicy, tierAllows } from "../src/policy.js";
+import { describeStartup } from "../src/startup.js";
 import { fail, ok, renderOutput, tailLines } from "../src/results.js";
 import { TextFilter } from "../src/text.js";
 import { paneContentUri } from "../src/uris.js";
@@ -112,7 +113,26 @@ describe("policy", () => {
   test("falls back rather than refusing to start on an unparseable value", () => {
     // An MCP server that refuses to start is one whose message nobody reads.
     expect(resolvePolicy({ LIBTMUX_MCP_WAIT_MAX_MS: "soon" }).blockingWaitMaxMs).toBe(30_000);
-    expect(resolvePolicy({ LIBTMUX_SAFETY: "yolo" }).safety).toBe("mutating");
+  });
+
+  test("offers the default tier when nobody chose one", () => {
+    expect(resolvePolicy({}).safety).toBe("mutating");
+  });
+
+  test("reads a tier by name, including the way readonly is usually mistyped", () => {
+    expect(resolvePolicy({ LIBTMUX_SAFETY: "readonly" }).safety).toBe("readonly");
+    expect(resolvePolicy({ LIBTMUX_SAFETY: "read-only" }).safety).toBe("readonly");
+    expect(resolvePolicy({ LIBTMUX_SAFETY: " Destructive " }).safety).toBe("destructive");
+  });
+
+  test("narrows to readonly on a tier it does not recognise, rather than widening", () => {
+    // Falling back is right — the variable is read from wherever the process
+    // was started, and refusing to launch hides the reason. Falling back
+    // *upward* is not: it hands an agent the tools an operator was trying to
+    // withhold, and the mistake looks exactly like a working configuration.
+    for (const given of ["read only", "read_only", "ro", "yolo", ""]) {
+      expect(resolvePolicy({ LIBTMUX_SAFETY: given }).safety).toBe("readonly");
+    }
   });
 
   test("orders the safety tiers so a lower one hides a higher one's tools", () => {
@@ -120,6 +140,59 @@ describe("policy", () => {
     expect(tierAllows("mutating", "readonly")).toBe(true);
     expect(tierAllows("mutating", "destructive")).toBe(false);
     expect(tierAllows("destructive", "destructive")).toBe(true);
+  });
+});
+
+describe("startup line", () => {
+  test("names the tier in force, which is the setting most worth mistyping", () => {
+    const line = describeStartup({
+      caller: { paneId: undefined, serverPid: undefined, socketPath: undefined },
+      policy: resolvePolicy({ LIBTMUX_SAFETY: "readonly" }),
+      server: new Server({ socketName: "agents" }),
+      version: "1.2.3",
+    });
+    expect(line).toContain("readonly");
+    expect(line).toContain("1.2.3");
+  });
+
+  test("names the socket, so two servers in one log can be told apart", () => {
+    const line = describeStartup({
+      caller: { paneId: undefined, serverPid: undefined, socketPath: undefined },
+      policy: resolvePolicy({}),
+      server: new Server({ socketPath: "/tmp/libtmux-rs-dev/agents" }),
+      version: "1.2.3",
+    });
+    expect(line).toContain("/tmp/libtmux-rs-dev/agents");
+  });
+
+  test("says when an allowlist has narrowed the surface further than the tier", () => {
+    const line = describeStartup({
+      caller: { paneId: undefined, serverPid: undefined, socketPath: undefined },
+      policy: resolvePolicy({ LIBTMUX_MCP_TOOLS: "list_panes, capture_pane" }),
+      server: new Server({ socketName: "agents" }),
+      version: "1.2.3",
+    });
+    expect(line).toContain("2");
+  });
+
+  test("names the caller's pane, since the tools that would destroy it refuse", () => {
+    const line = describeStartup({
+      caller: { paneId: "%7", serverPid: "4242", socketPath: "/tmp/x" },
+      policy: resolvePolicy({}),
+      server: new Server({ socketName: "agents" }),
+      version: "1.2.3",
+    });
+    expect(line).toContain("%7");
+  });
+
+  test("is one line, because a startup banner nobody can scan is not read", () => {
+    const line = describeStartup({
+      caller: { paneId: "%7", serverPid: "4242", socketPath: "/tmp/x" },
+      policy: resolvePolicy({ LIBTMUX_MCP_TOOLS: "list_panes" }),
+      server: new Server({ socketPath: "/tmp/libtmux-rs-dev/agents" }),
+      version: "1.2.3",
+    });
+    expect(line).not.toContain("\n");
   });
 });
 

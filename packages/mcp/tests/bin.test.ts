@@ -82,13 +82,20 @@ describe("the installed program", () => {
       const linked = await handshake(link);
 
       expect(direct.tools).toBeGreaterThan(0);
-      expect({ stderr: linked.stderr, tools: linked.tools > 0 }).toEqual({
-        stderr: "",
-        tools: true,
-      });
+      expect(linked.tools).toBeGreaterThan(0);
       expect(linked.tools).toBe(direct.tools);
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
+  }, 60_000);
+
+  test("says which authority it is running with, on stderr", async () => {
+    // stdout is the protocol. `handshake` parses every line it reads there as
+    // JSON-RPC, so a banner written to the wrong stream fails this by
+    // throwing rather than by this assertion.
+    const { stderr } = await handshake(built);
+
+    expect(stderr).toContain("mutating");
+    expect(stderr.trimEnd().split("\n")).toHaveLength(1);
   }, 60_000);
 });
