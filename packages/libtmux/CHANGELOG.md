@@ -12,6 +12,41 @@ remember.
 
 ## Unreleased
 
+### Fixed
+
+**A supplied engine no longer loses its commands to this machine's tmux.** An
+engine says tmux is somewhere this process cannot spawn it, and four calls did
+not know that. `watch()` and `connect()` opened a local `tmux -C attach` and ran
+everything over it. `Server.open()` consulted `LIBTMUX_TRANSPORT` and routed to
+`connect()` when it said `control`, so a variable set by whoever launched the
+process silently moved an engine-backed server to the local daemon and reported
+success. `equals()` compared socket addresses alone, so two engines reaching
+different hosts through the same socket path were one server. This was already
+reaching users through `@libtmux/workspace`, which held a control connection for
+the whole reconciliation: a workspace applied through an engine was built on the
+wrong machine.
+
+`watch()` and `connect()` now refuse an engine-backed server and name what to
+use instead; `Server.open()` ignores `LIBTMUX_TRANSPORT` when an engine is
+given, and refuses `transport: "control"` written alongside one.
+
+### Added
+
+**`CommandTransport.endpoint`, so two engines can be told apart.** A socket path
+on another machine is not an address. `equals()` compares it, and reports two
+engines that declare none as different rather than guessing from the socket.
+
+**`Server.engine`**, the accessor every other `ServerOptions` field already had.
+A caller choosing between one connection and a command per read needs it, which
+is how `applyWorkspace` now decides.
+
+**`guardRequest` and `refusedByGuard` from `libtmux/engine`.** The wrapper that
+makes tmux refuse a command on a daemon that reissued its ids was private to the
+built-in transport, while `asSingleInvocation` was published — so an engine
+author inherited the obligation whose absence is invisible until a restart, and
+none of the helper for it. These are the same functions the built-in engine
+calls, so the two cannot drift.
+
 ## 0.1.0-alpha.2
 
 ### Changed

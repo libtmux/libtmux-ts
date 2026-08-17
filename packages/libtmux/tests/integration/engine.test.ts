@@ -11,7 +11,13 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { Server } from "../../src/server.js";
-import { asSingleInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
+import {
+  asSingleInvocation,
+  guardRequest,
+  MAX_PACKED_ARGV_BYTES,
+  refusedByGuard,
+} from "../../src/engine.js";
+import { TmuxServerRestarted } from "../../src/exc.js";
 import type {
   DaemonGuard,
   TmuxCommandRequest,
@@ -59,12 +65,23 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
   };
 
   return {
-    execute: (request: TmuxCommandRequest) => {
+    async execute(request: TmuxCommandRequest) {
       // The obligation an engine is least likely to meet by accident. Dropping
       // it costs nothing until a daemon restarts, and then a handle read before
-      // the restart addresses whatever now holds its id.
+      // the restart addresses whatever now holds its id. Both halves: the
+      // wrapper that makes tmux refuse, and the reply that tells that refusal
+      // from the command itself having failed.
       const guarded = guardRequest(request);
-      return run(guarded.executable, guarded.args, guarded.environment, guarded.stdin);
+      const result = await run(
+        guarded.executable,
+        guarded.args,
+        guarded.environment,
+        guarded.stdin,
+      );
+      if (request.daemonGuard !== undefined && refusedByGuard(result.returncode, result.stderr)) {
+        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+      }
+      return result;
     },
     async executeGroup(requests: readonly TmuxCommandRequest[]) {
       const [first] = requests;

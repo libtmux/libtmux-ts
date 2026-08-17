@@ -81,7 +81,19 @@ export function fencedBlocks(text: string, origin: (line: number) => string): re
 /** Names the preamble already brings in, which a block may not import again. */
 const PROVIDED = new Set(["Server", "Session"]);
 
-function split(code: string): { readonly body: string; readonly imports: string } {
+/**
+ * Separate a block's imports from its body, dropping the ones already in scope.
+ *
+ * `taken` carries the names emitted so far, across every block: the generated
+ * module holds one copy of each import above bodies that are separate
+ * functions, so two blocks showing a reader the same import would otherwise
+ * collide as a duplicate identifier — a complaint about the harness rather
+ * than about either example.
+ */
+function split(
+  code: string,
+  taken: Map<string, string>,
+): { readonly body: string; readonly imports: string } {
   const imports: string[] = [];
   const body: string[] = [];
   for (const line of code.split("\n")) {
@@ -94,20 +106,27 @@ function split(code: string): { readonly body: string; readonly imports: string 
       const rewritten = line
         .replace(/"libtmux"/u, '"../../src/index.js"')
         .replace(/"libtmux\/([\w-]+)"/u, '"../../src/$1.js"');
-      // A README block shows the import a reader would write, and the preamble
-      // has already introduced some of those names for the examples that do not
-      // show one. Keeping both is a duplicate identifier rather than a problem
-      // with either, so the block's redundant specifiers come off here.
+      // One line per import. A wrapped one leaves its specifiers in the body,
+      // and the errors that produces name the prose around the block rather
+      // than the import that caused them.
+      if (rewritten.includes("{") && !rewritten.includes("}")) {
+        throw new Error(`an example import must fit on one line: ${line}`);
+      }
       const named = /^import \{([^}]*)\} from (.*)$/u.exec(rewritten);
       if (named === null) {
         imports.push(rewritten);
         continue;
       }
+      const from = named[2] ?? "";
       const kept = (named[1] ?? "")
         .split(",")
         .map((specifier) => specifier.trim())
-        .filter((specifier) => specifier !== "" && !PROVIDED.has(specifier));
-      if (kept.length > 0) imports.push(`import { ${kept.join(", ")} } from ${named[2] ?? ""}`);
+        .filter((specifier) => specifier !== "" && !PROVIDED.has(specifier))
+        // Kept when the same name arrives from somewhere else, so the
+        // collision is reported rather than resolved to whichever came first.
+        .filter((specifier) => taken.get(specifier) !== from);
+      for (const specifier of kept) taken.set(specifier, from);
+      if (kept.length > 0) imports.push(`import { ${kept.join(", ")} } from ${from}`);
       continue;
     }
     body.push(line);
@@ -128,8 +147,9 @@ export async function typecheckExamples(
 ): Promise<void> {
   const imports: string[] = [];
   const bodies: string[] = [];
+  const taken = new Map<string, string>();
   for (const [index, example] of examples.entries()) {
-    const { body, imports: exampleImports } = split(example.code);
+    const { body, imports: exampleImports } = split(example.code, taken);
     if (exampleImports !== "") imports.push(exampleImports);
     bodies.push(
       `// ${example.origin}\nexport async function example${String(index)}(): Promise<void> {\n${body}\n}\n`,

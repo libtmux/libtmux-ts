@@ -739,13 +739,9 @@ operation, so replacing that operation moves the whole library to a tmux reached
 over ssh, inside a container, or behind a daemon:
 
 ```ts
-import { Server } from "libtmux";
-import {
-  asSingleInvocation,
-  guardRequest,
-  type TmuxCommandResult,
-  type TmuxEngine,
-} from "libtmux/engine";
+import { Server, TmuxServerRestarted } from "libtmux";
+import { asSingleInvocation, guardRequest, refusedByGuard } from "libtmux/engine";
+import type { TmuxCommandResult, TmuxEngine } from "libtmux/engine";
 
 /** `run` is yours: give it an argument vector, get back what tmux wrote. */
 function engineOver(
@@ -756,12 +752,18 @@ function engineOver(
     // Where this reaches tmux. A socket path on another machine is not an
     // address, so without this two servers on the same path compare equal.
     endpoint,
-    execute: (request) => {
+    async execute(request) {
       // A command addressed by id must not run on a daemon that reissued that
-      // id. This is the wrapper the built-in engine applies, published rather
-      // than described so an engine inherits restart safety.
+      // id. These two are the wrapper and its reply, published rather than
+      // described so an engine inherits restart safety instead of rebuilding
+      // it: `guardRequest` makes tmux refuse, `refusedByGuard` tells that
+      // refusal from the command itself having failed.
       const guarded = guardRequest(request);
-      return run([guarded.executable, ...guarded.args], guarded.stdin);
+      const result = await run([guarded.executable, ...guarded.args], guarded.stdin);
+      if (request.daemonGuard !== undefined && refusedByGuard(result.returncode, result.stderr)) {
+        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+      }
+      return result;
     },
     async executeGroup(requests) {
       const first = requests[0];
