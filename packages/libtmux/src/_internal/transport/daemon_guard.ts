@@ -1,4 +1,6 @@
+import { subcommandOf } from "./group.js";
 import { quoteCommand } from "./lexer.js";
+import type { CommandRequest } from "./types.js";
 
 /**
  * Making a command refuse to run on a daemon that is not the one it was read
@@ -82,6 +84,24 @@ export function guardedChain(chain: string, daemon: DaemonGuard): readonly strin
     chain,
     quoteCommand(ELSE_BRANCH),
   ]);
+}
+
+/**
+ * Rebuild a request so tmux itself refuses it on the wrong daemon.
+ *
+ * The request form of {@link guardedArgv}, which is what a transport is handed.
+ * Returned unchanged when there is nothing to guard: no guard was asked for,
+ * or the command carries stdin — `load-buffer -` reads the client's stdin and
+ * an `if-shell` branch is a command tmux runs for itself, and no command that
+ * takes stdin addresses an object by id anyway.
+ */
+export function guardRequest(request: CommandRequest): CommandRequest {
+  const daemon = request.daemonGuard;
+  if (daemon === undefined || request.stdin !== undefined) return request;
+  const subcommand = subcommandOf(request.args);
+  if (subcommand.length === 0) return request;
+  const connectionArgs = request.args.slice(0, request.args.length - subcommand.length);
+  return { ...request, args: guardedArgv(connectionArgs, subcommand, daemon) };
 }
 
 /** Whether a failed result is the guard refusing rather than the command failing. */

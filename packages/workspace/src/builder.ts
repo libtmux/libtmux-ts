@@ -102,8 +102,15 @@ export async function applyWorkspace(
   // control connection rather than a process per read. The session has to
   // exist first: a control client attaches, and there is nothing to attach to
   // on an empty server.
-  await using live = await server.connect({ target: created.id });
-  let session = (await live.snapshot()).sessions.one({ id: created.id });
+  //
+  // A server built with an engine gets no connection: control mode is a
+  // process this one spawns, and an engine means tmux is somewhere it cannot.
+  // The reads are the same either way, so the apply proceeds and pays a
+  // command each rather than reconciling against whichever local tmux answers.
+  await using live =
+    server.engine === undefined ? await server.connect({ target: created.id }) : undefined;
+  const reader = live ?? server;
+  let session = (await reader.snapshot()).sessions.one({ id: created.id });
 
   for (const [option, value] of Object.entries(workspace.options ?? {})) {
     // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.

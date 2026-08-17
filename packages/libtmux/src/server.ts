@@ -61,6 +61,7 @@ import {
   runtimeForServer,
   runtimeForServerValue,
   type DaemonIdentity,
+  type RuntimeContext,
 } from "./_internal/runtime/context.js";
 import { TmuxConnection } from "./_internal/runtime/connection.js";
 
@@ -99,9 +100,14 @@ export interface ServerOptions {
    *
    * The built-in engine spawns a process per command; supplying one moves every
    * layer above it — snapshots, queries, handles — to a tmux reached however
-   * you reach it. See `libtmux/engine` for what an engine owes its caller;
-   * `transport` selects between the built-in ones and is ignored when this is
-   * given.
+   * you reach it. See `libtmux/engine` for what an engine owes its caller.
+   *
+   * `LIBTMUX_TRANSPORT` is ignored when this is given: the variable comes from
+   * whoever started the process and would move every command to *this*
+   * machine's tmux. Naming `transport: "control"` here as well is refused
+   * instead, because control mode is a process this one spawns and an engine
+   * says tmux is not somewhere it can. {@link Server.watch} and
+   * {@link Server.connect} refuse for the same reason.
    */
   readonly engine?: CommandTransport;
 }
@@ -136,6 +142,37 @@ function socketAddress(connection: TmuxConnection): string {
   return `name ${tmpdir} ${connection.socketName ?? "default"}`;
 }
 
+/**
+ * Which tmux this runtime addresses, or `undefined` when that is unknowable.
+ *
+ * An engine's socket is a path on a machine this process cannot see, so the
+ * socket alone does not name the daemon. Unknowable rather than guessed: an
+ * engine that declares no endpoint is the one case where answering would mean
+ * inventing the fact the comparison turns on.
+ */
+function serverAddress(runtime: RuntimeContext): string | undefined {
+  const socket = socketAddress(runtime.connection);
+  if (runtime.engine === undefined) return `local ${socket}`;
+  const endpoint = runtime.engine.endpoint;
+  if (endpoint === undefined || endpoint === "") return undefined;
+  return `engine ${endpoint} ${socket}`;
+}
+
+/**
+ * Refuse a call that can only reach a tmux this process can spawn.
+ *
+ * Control mode is a `tmux -C attach` child of this process. An engine exists
+ * because tmux is somewhere this process cannot spawn it, so spawning anyway
+ * would attach to whatever local tmux happens to be there — and every command
+ * afterwards would succeed against the wrong server.
+ */
+function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
+  if (runtime.engine === undefined) return;
+  throw new LibTmuxException(
+    `${method}() holds a local tmux control process open, which a server built with an engine has no way to reach. Use snapshot() and the mutating methods, which travel through the engine, or build a Server without one to watch a local daemon.`,
+  );
+}
+
 export class Server {
   declare private readonly serverBrand: undefined;
 
@@ -159,6 +196,7 @@ export class Server {
       connection,
       connectionAlias: randomUUID() as ConnectionAlias,
       daemonEpoch: 0 as DaemonEpoch,
+      ...(options?.engine === undefined ? {} : { engine: options.engine }),
       ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       transport: options?.engine ?? new NodeSpawnTransport(),
     });
@@ -185,8 +223,20 @@ export class Server {
    */
   static async open(options?: ServerOptions): Promise<ManagedServer> {
     const environment = options?.environment ?? process.env;
+    // Named together, these contradict: control mode is a process this one
+    // spawns, and an engine says tmux is not somewhere this process spawns.
+    // Refused rather than resolved, the way socketName and socketPath are.
+    if (options?.engine !== undefined && options.transport === "control") {
+      throw new TypeError('transport: "control" and engine are mutually exclusive');
+    }
     const server = new Server(options);
-    if (transportFrom(options, environment) === "control") return server.connect();
+    // An engine ignores `LIBTMUX_TRANSPORT` rather than obeying it. The
+    // variable is set by whoever started the process; the engine is written by
+    // the caller, about where their tmux is. Obeying the variable would move
+    // every command to this machine's tmux, and report success.
+    if (options?.engine === undefined && transportFrom(options, environment) === "control") {
+      return server.connect();
+    }
     // Nothing is held, so releasing it is a no-op — but the call has to exist,
     // or switching modes by configuration would mean editing the caller.
     return Object.defineProperties(server, {
@@ -280,6 +330,22 @@ export class Server {
   }
 
   /**
+   * The engine this server was built with, if it was given one.
+   *
+   * `undefined` means tmux is a process this one can spawn, which is what
+   * {@link Server.watch} and {@link Server.connect} need and what a caller
+   * choosing between a connection and a command per read has to know.
+   *
+   * ```ts
+   * const reader = server.engine === undefined ? await server.connect() : server;
+   * (await reader.snapshot()).windows.count();
+   * ```
+   */
+  get engine(): CommandTransport | undefined {
+    return runtimeForServerValue(this)?.engine;
+  }
+
+  /**
    * The tmux executable this server runs.
    *
    * ```ts
@@ -323,7 +389,9 @@ export class Server {
    * attaches to a session; a server with no sessions has nothing to watch.
    */
   watch(options?: WatchOptions): TmuxEventStream {
-    return watchServer(runtimeForServer(this).connection, options);
+    const runtime = runtimeForServer(this);
+    refuseWithoutLocalTmux(runtime, "watch");
+    return watchServer(runtime.connection, options);
   }
 
   /**
@@ -346,6 +414,7 @@ export class Server {
    */
   async connect(options?: WatchOptions): Promise<ConnectedServer> {
     const runtime = runtimeForServer(this);
+    refuseWithoutLocalTmux(runtime, "connect");
     const connection = new ControlConnection(
       runtime.connection,
       options,
@@ -963,6 +1032,8 @@ export class Server {
     const runtime = runtimeForServerValue(this);
     const otherRuntime = runtimeForServerValue(other);
     if (runtime === undefined || otherRuntime === undefined) return false;
-    return socketAddress(runtime.connection) === socketAddress(otherRuntime.connection);
+    if (runtime === otherRuntime) return true;
+    const address = serverAddress(runtime);
+    return address !== undefined && address === serverAddress(otherRuntime);
   }
 }

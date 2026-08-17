@@ -77,6 +77,7 @@ type ExpectedRuntimeContextOptions = {
   readonly connection: TmuxConnection;
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
+  readonly engine?: CommandTransport;
   readonly logger?: TmuxLogger;
   readonly timeoutMs?: number;
   readonly transport: CommandTransport;
@@ -88,6 +89,7 @@ type ExpectedRuntimeContext = {
   readonly connection: TmuxConnection;
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
+  readonly engine: CommandTransport | undefined;
   readonly logger: TmuxLogger;
   readonly timeoutMs: number | undefined;
   readonly transport: CommandTransport;

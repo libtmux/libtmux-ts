@@ -6,6 +6,9 @@ import {
   guardedArgv,
   refusedByGuard,
 } from "../../src/_internal/transport/daemon_guard.js";
+// Through the public entry an engine author imports, not the internal path,
+// so this fails if the export is dropped from `libtmux/engine`.
+import { guardRequest } from "../../src/engine.js";
 
 const encoder = new TextEncoder();
 const daemon = { pid: "4242", startTime: "1700000000" };
@@ -50,6 +53,38 @@ describe("daemon guard", () => {
     expect(argv.at(-2)).toBe(
       `'send-keys' '-t' '%1' '-l' 'a b;kill-server "c" '\\''d'\\'' #{pane_id} \\e'`,
     );
+  });
+
+  test("guards a whole request, which is what an engine is handed", () => {
+    // An engine receives requests, not argv, and the built-in transport is the
+    // only thing that knew how to turn the guard on one into the wrapper tmux
+    // enforces. Published so an implementer inherits restart safety instead of
+    // reimplementing `if-shell -F`, the impossible else branch, and the stderr
+    // that tells a refusal from a failure.
+    // Global flags carry their value joined, which is what makes "the
+    // subcommand starts at the first argument without a leading dash" exact.
+    const guarded = guardRequest({
+      args: ["-S/tmp/ltx", "kill-pane", "-t", "%3"],
+      daemonGuard: daemon,
+      executable: "tmux",
+    });
+
+    expect(guarded.args).toEqual(guardedArgv(["-S/tmp/ltx"], ["kill-pane", "-t", "%3"], daemon));
+  });
+
+  test("leaves alone a request there is nothing to guard", () => {
+    const unguarded = { args: ["-S/tmp/ltx", "list-panes"], executable: "tmux" };
+    expect(guardRequest(unguarded)).toBe(unguarded);
+
+    // `load-buffer -` reads the client's stdin, and an if-shell branch is a
+    // command tmux runs for itself, with no stdin to give it.
+    const piped = {
+      args: ["load-buffer", "-"],
+      daemonGuard: daemon,
+      executable: "tmux",
+      stdin: encoder.encode("hi"),
+    };
+    expect(guardRequest(piped)).toBe(piped);
   });
 
   test("tells the guard refusing from the command failing", () => {

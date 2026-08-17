@@ -11,7 +11,7 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { Server } from "../../src/server.js";
-import { asSingleInvocation, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
+import { asSingleInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
 import type {
   DaemonGuard,
   TmuxCommandRequest,
@@ -59,8 +59,13 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
   };
 
   return {
-    execute: (request: TmuxCommandRequest) =>
-      run(request.executable, request.args, request.environment, request.stdin),
+    execute: (request: TmuxCommandRequest) => {
+      // The obligation an engine is least likely to meet by accident. Dropping
+      // it costs nothing until a daemon restarts, and then a handle read before
+      // the restart addresses whatever now holds its id.
+      const guarded = guardRequest(request);
+      return run(guarded.executable, guarded.args, guarded.environment, guarded.stdin);
+    },
     async executeGroup(requests: readonly TmuxCommandRequest[]) {
       const [first] = requests;
       if (first === undefined) return [];
@@ -126,13 +131,17 @@ describe("a supplied engine", () => {
       const window = await (await server.snapshot()).sessions.one().newWindow({ name: "remote" });
       expect(window.name).toBe("remote");
 
-      // An engine sees the guard it is obliged to honour, so an implementer can
-      // tell a request that must not survive a restart from one that may.
+      // An engine sees the guard it is obliged to honour, and honouring it is
+      // one published call rather than a reimplementation of `if-shell -F`,
+      // the impossible else branch, and the stderr that tells a refusal from a
+      // failure. What reaches tmux is what the built-in engine would have sent.
       const guards: (DaemonGuard | undefined)[] = [];
+      const sent: (readonly string[])[] = [];
       const guarded = new Server({
         engine: {
           execute: (request) => {
             guards.push(request.daemonGuard);
+            sent.push(guardRequest(request).args);
             return shellEngine(() => undefined).execute(request);
           },
           executeGroup: (requests) => shellEngine(() => undefined).executeGroup(requests),
@@ -147,6 +156,16 @@ describe("a supplied engine", () => {
         .one({ name: "remote" })
         .setOption("main-pane-width", "81");
       expect(guards.some((guard) => guard !== undefined)).toBe(true);
+
+      const wrapped = sent.filter((argv) => argv.includes("if-shell"));
+      expect(wrapped).not.toBeEmpty();
+      for (const argv of wrapped) {
+        expect(argv).toContain("-F");
+        // The else branch is what makes a refusal visible: tmux answers a false
+        // condition with no output and status 0, which reads as a command that
+        // printed nothing.
+        expect(argv.at(-1)).toContain("libtmux-daemon-restarted");
+      }
 
       const snapshot = await server.snapshot();
       expect(snapshot.windows.count({ name: "remote" })).toBe(1);
@@ -166,6 +185,100 @@ describe("a supplied engine", () => {
       for (const argv of listings) {
         expect(argv.filter((argument) => argument.startsWith("list-"))).toHaveLength(4);
       }
+    });
+  }, 60_000);
+
+  test("echoes the engine back, the way it echoes every other option", async () => {
+    await withServer(async (fixture) => {
+      const engine = shellEngine(() => undefined);
+      const shared = {
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      };
+
+      // What a caller downstream needs to know before reaching for a call
+      // that only a local tmux can answer.
+      expect(new Server({ ...shared, engine }).engine).toBe(engine);
+      expect(new Server(shared).engine).toBeUndefined();
+    });
+  }, 60_000);
+
+  test("refuses the two calls that can only drive a local tmux", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        engine: shellEngine(() => undefined),
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      // Both hold a `tmux -C attach` process open, which this process spawns.
+      // An engine exists to put tmux somewhere this process cannot spawn it,
+      // so quietly attaching to a local one would run the caller's commands
+      // against the wrong machine and report success.
+      expect(() => server.watch()).toThrow(/engine/u);
+      await expect(server.connect()).rejects.toThrow(/engine/u);
+    });
+  }, 60_000);
+
+  test("keeps an engine when the environment asks for control mode", async () => {
+    await withServer(async (fixture) => {
+      const invocations: (readonly string[])[] = [];
+      // Set by whoever started the process, not by the caller who supplied the
+      // engine. The engine is the more specific instruction, so it wins.
+      await using opened = await Server.open({
+        engine: shellEngine((argv) => invocations.push(argv)),
+        environment: { ...fixture.controllerEnvironment, LIBTMUX_TRANSPORT: "control" },
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      expect((await opened.snapshot()).sessions.count()).toBeGreaterThan(0);
+      expect(invocations).not.toBeEmpty();
+    });
+  }, 60_000);
+
+  test("refuses a control transport asked for in the same breath as an engine", async () => {
+    // Ambient configuration is ignored; a contradiction the caller wrote on
+    // purpose is refused, the way socketName and socketPath are.
+    await expect(
+      Server.open({ engine: shellEngine(() => undefined), transport: "control" }),
+    ).rejects.toThrow(TypeError);
+  }, 60_000);
+
+  test("tells two engines apart when they say where they reach", async () => {
+    await withServer(async (fixture) => {
+      const at = (endpoint: string): Server =>
+        new Server({
+          engine: { ...shellEngine(() => undefined), endpoint },
+          environment: fixture.controllerEnvironment,
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+
+      // Same socket path, different machines. Comparing only the socket is
+      // what made these look like one server.
+      expect(at("ssh://build-01").equals(at("ssh://build-02"))).toBe(false);
+      expect(at("ssh://build-01").equals(at("ssh://build-01"))).toBe(true);
+    });
+  }, 60_000);
+
+  test("never calls an engine that cannot say where it reaches equal to another", async () => {
+    await withServer(async (fixture) => {
+      const anonymous = (): Server =>
+        new Server({
+          engine: shellEngine(() => undefined),
+          environment: fixture.controllerEnvironment,
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+
+      // An engine that declares no endpoint knows something this does not.
+      // Answering "same server" from the socket alone is the guess that was
+      // wrong; answering "different" costs a caller a comparison they can make
+      // themselves.
+      expect(anonymous().equals(anonymous())).toBe(false);
     });
   }, 60_000);
 });

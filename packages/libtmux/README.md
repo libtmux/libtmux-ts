@@ -740,14 +740,29 @@ over ssh, inside a container, or behind a daemon:
 
 ```ts
 import { Server } from "libtmux";
-import { asSingleInvocation, type TmuxCommandResult, type TmuxEngine } from "libtmux/engine";
+import {
+  asSingleInvocation,
+  guardRequest,
+  type TmuxCommandResult,
+  type TmuxEngine,
+} from "libtmux/engine";
 
 /** `run` is yours: give it an argument vector, get back what tmux wrote. */
 function engineOver(
+  endpoint: string,
   run: (argv: readonly string[], stdin: Uint8Array | undefined) => Promise<TmuxCommandResult>,
 ): TmuxEngine {
   return {
-    execute: (request) => run([request.executable, ...request.args], request.stdin),
+    // Where this reaches tmux. A socket path on another machine is not an
+    // address, so without this two servers on the same path compare equal.
+    endpoint,
+    execute: (request) => {
+      // A command addressed by id must not run on a daemon that reissued that
+      // id. This is the wrapper the built-in engine applies, published rather
+      // than described so an engine inherits restart safety.
+      const guarded = guardRequest(request);
+      return run([guarded.executable, ...guarded.args], guarded.stdin);
+    },
     async executeGroup(requests) {
       const first = requests[0];
       if (first === undefined) return [];
@@ -764,7 +779,7 @@ function engineOver(
 // Standing in for ssh or `docker exec`: the point is that nothing above the
 // seam knows where tmux is.
 const remote = new Server({
-  engine: engineOver(async (argv) => {
+  engine: engineOver("ssh://build-host", async (argv) => {
     const child = Bun.spawn(["ssh", "build-host", ...argv], { stderr: "pipe", stdout: "pipe" });
     const [returncode, stdout, stderr] = await Promise.all([
       child.exited,
@@ -785,9 +800,17 @@ const remote = new Server({
 The seam is bytes in, bytes out, and stops there on purpose. One at the graph
 would make every implementer responsible for framing, capability gating and
 normalization; this one leaves them responsible only for the part that differs.
-Two obligations come with it, both documented on `TmuxEngine`: run a group as
-one command list, and either honour a request's `daemonGuard` or be bound to one
-daemon the way a control connection is.
+Two obligations come with it, both documented on `TmuxEngine` and both with a
+helper rather than a description to follow: run a group as one command list
+(`asSingleInvocation`), and either honour a request's `daemonGuard`
+(`guardRequest`) or be bound to one daemon the way a control connection is.
+
+`watch()` and `connect()` are the two calls an engine does not carry. Both hold
+a local `tmux -C attach` process open, which is the thing an engine exists to
+avoid needing, so they refuse rather than attaching to whichever tmux this
+machine happens to be running. `LIBTMUX_TRANSPORT` is ignored for the same
+reason, and naming `transport: "control"` alongside an engine is refused
+outright.
 
 ### Choosing the transport from outside
 

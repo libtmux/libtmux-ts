@@ -12,6 +12,8 @@ import {
 } from "../../libtmux/src/_internal/test/run_root.js";
 import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
 import { Server } from "libtmux/server";
+import { asSingleInvocation } from "libtmux/engine";
+import type { TmuxCommandRequest, TmuxCommandResult, TmuxEngine } from "libtmux/engine";
 import { applyWorkspace, planWorkspace } from "../src/builder.js";
 import { OWNERSHIP_OPTION } from "../src/ownership.js";
 import { parseWorkspaceYaml } from "../src/config.js";
@@ -27,6 +29,61 @@ function serverFor(fixture: TestServer): Server {
     socketPath: fixture.socketPath,
     tmuxBin: fixture.tmuxExecutable,
   });
+}
+
+/**
+ * A tmux reached the long way round, standing in for ssh or `docker exec`.
+ *
+ * Trimmed from the library's own engine fixture. What matters here is only
+ * that nothing this package does spawns tmux itself.
+ */
+function shellEngine(onInvocation: () => void): TmuxEngine {
+  const run = async (
+    request: TmuxCommandRequest,
+    args: readonly string[],
+  ): Promise<TmuxCommandResult> => {
+    onInvocation();
+    const quoted = [request.executable, ...args]
+      .map((argument) => `'${argument.replaceAll("'", `'\\''`)}'`)
+      .join(" ");
+    const child = Bun.spawn(["sh", "-c", quoted], {
+      env: { ...request.environment },
+      ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).arrayBuffer(),
+      new Response(child.stderr).arrayBuffer(),
+    ]);
+    return {
+      cmd: [request.executable, ...args],
+      returncode: code,
+      signal: null,
+      stderr: new Uint8Array(stderr),
+      stdout: new Uint8Array(stdout),
+    };
+  };
+
+  return {
+    endpoint: "sh://local",
+    execute: (request) => run(request, request.args),
+    async executeGroup(requests) {
+      const [first] = requests;
+      if (first === undefined) return [];
+      const invocation = asSingleInvocation(requests);
+      const result = await run(first, invocation.args);
+      const sections = invocation.sections(result.stdout);
+      return sections.map((stdout, index) => ({
+        cmd: result.cmd,
+        returncode: index === sections.length - 1 ? result.returncode : 0,
+        signal: null,
+        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
+        stdout,
+      }));
+    },
+  };
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
@@ -144,6 +201,31 @@ describe("workspace builder", () => {
       parseWorkspaceYaml("session_name: x\nwindows:\n  - panes:\n      - true\n"),
     ).toThrow();
   });
+
+  test("builds through a supplied engine, spawning no tmux of its own", async () => {
+    await withServer(async (fixture) => {
+      let invocations = 0;
+      const server = new Server({
+        engine: shellEngine(() => {
+          invocations += 1;
+        }),
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      // Reconciling holds a control connection open when it can, which is a
+      // process this one spawns. An engine says tmux is not somewhere this
+      // process can spawn it, so the apply has to do without rather than
+      // attach to whichever local tmux answers.
+      const session = await applyWorkspace(server, parseWorkspaceYaml(WORKSPACE));
+
+      expect(session.windows.map((window) => window.name)).toEqual(["editor", "server"]);
+      const snapshot = await server.snapshot();
+      expect(snapshot.panes.count({ window: { is: { name: "editor" } } })).toBe(2);
+      expect(invocations).toBeGreaterThan(0);
+    });
+  }, 120_000);
 
   test("builds the described session without a stray leading window", async () => {
     await withServer(async (fixture) => {

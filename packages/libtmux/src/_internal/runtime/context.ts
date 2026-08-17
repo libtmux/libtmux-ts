@@ -53,6 +53,8 @@ export interface RuntimeContextOptions {
   readonly connection: TmuxConnection;
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
+  /** The caller's engine, when they supplied one. See {@link RuntimeContext.engine}. */
+  readonly engine?: CommandTransport;
   readonly logger?: TmuxLogger;
   readonly timeoutMs?: number;
   readonly transport: CommandTransport;
@@ -66,6 +68,15 @@ export interface RuntimeContext {
   readonly connection: TmuxConnection;
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
+  /**
+   * The engine a caller supplied, separate from the transport in use.
+   *
+   * `transport` answers what runs a command now, and a connected server
+   * replaces it with its own connection. This answers whether tmux is
+   * somewhere this process can reach by spawning — which is what the calls
+   * that spawn have to know, and what tells two servers apart.
+   */
+  readonly engine: CommandTransport | undefined;
   readonly logger: TmuxLogger;
   readonly transport: CommandTransport;
   readonly warnings: TmuxWarningSink;
@@ -103,6 +114,7 @@ export function createRuntimeContext(options: RuntimeContextOptions): RuntimeCon
     get daemonEpoch(): DaemonEpoch {
       return state.daemonEpoch;
     },
+    engine: options.engine,
     logger: options.logger ?? noopLogger,
     timeoutMs: options.timeoutMs,
     transport: options.transport,

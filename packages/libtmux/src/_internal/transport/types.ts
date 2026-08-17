@@ -85,9 +85,24 @@ export interface RawCommandResult {
  * `daemonGuard`, when a request carries one, must reach tmux — or the engine
  * must be bound to one daemon for its lifetime, the way a control connection
  * is. Ignoring it on a reconnecting engine means a handle read before a restart
- * addressing whatever now holds its id.
+ * addressing whatever now holds its id. `guardRequest` is what the built-in
+ * engine calls to honour it, published so an implementer does not reproduce
+ * the wrapper, its else branch, and the stderr that tells refusal from failure.
  */
 export interface CommandTransport {
+  /**
+   * Where this engine reaches tmux, as one comparable string.
+   *
+   * The socket is not the address when an engine is in play: `/tmp/tmux-1000/x`
+   * on two machines is two daemons, and comparing servers by socket alone
+   * reports them as one. Anything stable and distinct will do — `ssh://host`,
+   * a container id, a URL.
+   *
+   * Optional because only comparison needs it. An engine that leaves it unset
+   * is never reported equal to another engine, which is the answer that cannot
+   * be wrong when the reach is unknown.
+   */
+  readonly endpoint?: string;
   execute(request: CommandRequest): Promise<RawCommandResult>;
   /**
    * Run these commands as one tmux command list.
