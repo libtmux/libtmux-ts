@@ -25,6 +25,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
+import { readLaunchFrame } from "../support/launch_frame.js";
+
 import { resolveNode22 } from "../../src/_internal/test/node22.js";
 import {
   beginFixtureLaunch,
@@ -217,6 +219,26 @@ async function readMarker<T>(path: string, timeoutMs = 30_000): Promise<T> {
  * to allow. A marker that never arrives still fails, just later, while a tight
  * bound fails a worker that was merely slow to start.
  */
+/**
+ * Reap in a `finally` without erasing why the test failed.
+ *
+ * A throw from `finally` replaces the exception in flight, so a cleanup step
+ * that refuses — `waitForProcessExit` rejects a pid of 0 on purpose — reports
+ * itself and buries the failure that produced the bad pid. That is how a
+ * launch-frame race reached CI as "refusing to wait on 0" with nothing to say
+ * where the 0 came from. The reason is still surfaced, on stderr, where it
+ * cannot displace the real one.
+ */
+async function reapWithoutMasking(label: string, reap: () => Promise<void>): Promise<void> {
+  try {
+    await reap();
+  } catch (error) {
+    process.stderr.write(
+      `cleanup step ${label} did not complete: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  }
+}
+
 async function waitForPath(path: string, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -614,12 +636,13 @@ describe("worker and exact-root reaping", () => {
     let socketPath: string | undefined;
     let wrapperPid: number | undefined;
     try {
-      await waitForPath(marker);
-      const [rawWrapperPid, frame] = (await readFile(marker, "utf8")).trim().split("\n");
-      wrapperPid = Number(rawWrapperPid);
-      [socketPath, daemonPid] = [frame?.split("\t")[0], Number(frame?.split("\t")[1])];
+      const launched = await readLaunchFrame(marker);
+      [wrapperPid, socketPath, daemonPid] = [
+        launched.wrapperPid,
+        launched.socketPath,
+        launched.daemonPid,
+      ];
       expect(processExists(daemonPid)).toBe(true);
-      if (socketPath === undefined) throw new Error("launch wrapper omitted the socket path");
       captured = await captureTmuxCleanup(
         daemonPid,
         socketPath,
@@ -641,7 +664,10 @@ describe("worker and exact-root reaping", () => {
         worker.kill("SIGKILL");
         await exitChildWithin(worker, 2_000);
       }
-      if (wrapperPid !== undefined) await waitForProcessExit(wrapperPid);
+      const reaped = wrapperPid;
+      if (reaped !== undefined) {
+        await reapWithoutMasking("wrapper exit", () => waitForProcessExit(reaped));
+      }
       if (captured !== undefined) await terminateCapturedTmux(captured);
       await reapOwnedRunRoot(root).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
@@ -658,11 +684,10 @@ describe("worker and exact-root reaping", () => {
     let captured: CapturedTmuxCleanup | undefined;
     let wrapperPid: number | undefined;
     try {
-      await waitForPath(marker);
-      const [rawWrapperPid, frame] = (await readFile(marker, "utf8")).trim().split("\n");
-      wrapperPid = Number(rawWrapperPid);
-      const socketPath = frame?.split("\t")[0];
-      const daemonPid = Number(frame?.split("\t")[1]);
+      const launched = await readLaunchFrame(marker);
+      wrapperPid = launched.wrapperPid;
+      const socketPath = launched.socketPath;
+      const daemonPid = launched.daemonPid;
       if (socketPath === undefined || !Number.isSafeInteger(daemonPid)) {
         throw new Error("launch wrapper returned an invalid frame");
       }
@@ -711,7 +736,10 @@ describe("worker and exact-root reaping", () => {
         worker.kill("SIGKILL");
         await exitChildWithin(worker, 2_000);
       }
-      if (wrapperPid !== undefined) await waitForProcessExit(wrapperPid);
+      const reaped = wrapperPid;
+      if (reaped !== undefined) {
+        await reapWithoutMasking("wrapper exit", () => waitForProcessExit(reaped));
+      }
       if (captured !== undefined) await terminateCapturedTmux(captured);
       await rm(parent, { force: true, recursive: true });
     }
