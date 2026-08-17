@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,18 @@ import { describe, expect, test } from "bun:test";
  * runs this file as a program through a link.
  */
 const built = fileURLToPath(new URL("../dist/server.js", import.meta.url));
+
+/**
+ * Say what is missing rather than reporting it as a broken server.
+ *
+ * This suite runs the emitted program, so it needs the build that `test` runs
+ * first. Without it Node answers MODULE_NOT_FOUND on stderr and every
+ * assertion here fails describing a server that never started — which is how
+ * a stale local `dist` let this pass on one machine and fail in CI.
+ */
+if (!existsSync(built)) {
+  throw new Error(`${built} is not built; run \`bun run build\` in packages/mcp first`);
+}
 
 async function handshake(command: string): Promise<{ tools: number; stderr: string }> {
   const child = Bun.spawn(["node", command], {
