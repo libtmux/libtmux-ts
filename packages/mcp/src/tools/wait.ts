@@ -123,6 +123,7 @@ async function renderWait(
   report: WaitReport,
   maxLines: number | undefined,
   describe: string,
+  matches: (text: string) => string | undefined,
 ): Promise<CallToolResult> {
   const paneId = pane.id;
   if (report.outcome === "no_stream") {
@@ -138,14 +139,24 @@ async function renderWait(
       ? ""
       : tailLines(await pane.capture().catch(() => []), limit).lines.join("\n");
 
+  // A wait is deliberately blind to what was already on the screen: matching it
+  // would let text from an hour ago satisfy a wait that should have failed. But
+  // "it printed just before you asked" and "it never printed" are different
+  // answers, and only one of them is worth waiting again for — so the screen is
+  // tested here, where it changes what the caller is told rather than whether
+  // the wait matched.
+  const alreadyOnScreen = screen !== "" && matches(screen) !== undefined;
+
   const note =
     report.outcome === "matched"
       ? `matched ${describe}`
       : report.outcome === "cancelled"
         ? "cancelled before it matched"
-        : report.outcome === "pane_died"
-          ? "the pane exited before it matched; waiting again cannot help"
-          : `no match in ${String(report.effectiveTimeoutMs)}ms — call again with cursor=${String(report.cursor)} to carry on from here`;
+        : alreadyOnScreen
+          ? `no match while waiting, but ${describe} is on the pane now — it printed before this wait began. Read it with capture_pane; wait again from cursor=${String(report.cursor)} only if you want the next one`
+          : report.outcome === "pane_died"
+            ? "the pane exited before it matched; waiting again cannot help"
+            : `no match in ${String(report.effectiveTimeoutMs)}ms — call again with cursor=${String(report.cursor)} to carry on from here`;
 
   const body =
     screen === ""
@@ -154,6 +165,7 @@ async function renderWait(
 
   return ok(
     {
+      alreadyOnScreen,
       cursor: report.cursor,
       effectiveTimeoutMs: report.effectiveTimeoutMs,
       matched: report.matched,
@@ -167,6 +179,11 @@ async function renderWait(
 }
 
 const waitOutputSchema = {
+  alreadyOnScreen: z
+    .boolean()
+    .describe(
+      "The pattern is on the pane now but printed before this wait began, so the wait could not match it. Read it with capture_pane rather than waiting again.",
+    ),
   cursor: z.number().int().describe("Pass to observe or to another wait to carry on from here."),
   effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced, after clamping."),
   matched: z.string().nullable().describe("The text that matched, or null."),
@@ -277,6 +294,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       args.patterns === undefined || args.patterns.length === 0
         ? "new output"
         : args.patterns.join(" or "),
+      matcher,
     );
   }
 

@@ -304,6 +304,51 @@ describe("waiting", () => {
     });
   }, 60_000);
 
+  test("says the pattern is already on the pane rather than only timing out", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        // Printed through tmux directly, so nothing here has ever streamed this
+        // pane and the line cannot be in the stream — the shape an agent meets
+        // when it is handed a task about a process somebody else started. The
+        // wait still must not match it: stale text satisfying a wait is the bug
+        // this avoids. But "it printed before you asked" and "it never printed"
+        // are different answers, and a real agent had to work that out itself.
+        await fixture.executeText(["send-keys", "-t", paneId, "echo migration-complete", "Enter"]);
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["migration-complete"], timeoutMs: 1_500 },
+          name: "wait_for_text",
+        });
+        const result = structured<{
+          alreadyOnScreen: boolean;
+          matched: string | null;
+          outcome: string;
+        }>(answer);
+        expect({
+          alreadyOnScreen: result.alreadyOnScreen,
+          matched: result.matched,
+          outcome: result.outcome,
+        }).toEqual({ alreadyOnScreen: true, matched: null, outcome: "timed_out" });
+        expect(toolText(answer)).toContain("printed before this wait began");
+        expect(toolText(answer)).toContain("capture_pane");
+      });
+    });
+  }, 90_000);
+
+  test("does not claim a pattern is on the pane when it is not", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["never-printed-anywhere"], timeoutMs: 1_500 },
+          name: "wait_for_text",
+        });
+        expect(structured<{ alreadyOnScreen: boolean }>(answer).alreadyOnScreen).toBe(false);
+      });
+    });
+  }, 90_000);
+
   test("clamps an over-large timeout and reports the one it used", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
