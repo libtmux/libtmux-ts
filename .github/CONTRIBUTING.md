@@ -81,6 +81,37 @@ $ bun run docs:claims
 $ bun run docs:runnable
 ```
 
+### Writing an example a gate can see
+
+The fence decides whether a block is compiled. Only ` ```ts ` is collected; a
+` ```typescript ` block is prose to every checker here, so it compiles nowhere
+and fails nothing. Reach for `typescript` only where a fragment is meant not to
+compile — the comment samples in [WRITING.md](WRITING.md#source-comments) are
+that case.
+
+Four checks read those blocks, and not from the same files. `typecheck:readme`
+at the root compiles the READMEs that span packages — `README.md`,
+`examples/README.md`, `packages/mcp/README.md`, and
+`packages/workspace/README.md` — each in the directory it lives in, so a bare
+specifier resolves the way it would for someone who installed that package
+rather than the way a hoisted `node_modules` happens to allow.
+`packages/libtmux` runs its own against its own API. `typecheck:symbols`
+compiles the example on every public method and getter, and fails naming the
+ones that carry none. `docs:runnable` is the marker, described in
+[examples/README.md](../examples/README.md#quoting-an-example-in-a-readme).
+
+Each block is wrapped in a function of its own, so a `const` declared in one
+cannot satisfy the next: a snippet has to stand on its own, the way a reader
+will paste it. Imports hoist and merge by module, so two blocks may import the
+same symbol without declaring it twice.
+
+A block may also use a few names without introducing them. The cross-package
+check declares `server`, `snapshot`, and `selection`; the library's own harness
+declares those alongside `session`, `window`, `pane`, `client`, and the
+arguments a runnable example takes. That last part is what lets a quoted recipe
+name an argument where the example named one, instead of inventing a literal
+the example never had.
+
 Every temporary directory the suites create is named for this package, so a
 sweep can never reap another libtmux port's servers:
 
