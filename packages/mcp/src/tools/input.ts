@@ -132,7 +132,9 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         "the command so a pane's echo of what you typed can never be mistaken for " +
         "what the command printed, and it knows when the command actually ended " +
         "rather than guessing from the screen. The command runs in a subshell, so " +
-        "cd and export do not persist to a later call.",
+        "cd and export do not persist to a later call. A pane is effectively " +
+        "single-writer: the check that it is at a shell prompt is one look taken " +
+        "before sending, not a lock, so two callers sharing a pane interleave.",
       inputSchema: {
         command: z.string().describe("The shell command to run."),
         force: z
@@ -208,7 +210,11 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           ? `exit ${String(result.exitStatus ?? -1)}`
           : result.outcome === "pane_died"
             ? "the pane exited while the command ran"
-            : `still running after ${String(result.effectiveTimeoutMs)}ms — call again to keep waiting, or send_keys C-c to stop it`;
+            : // Not "call again": a second call mints a fresh marker and sends a
+              // whole new command, so it cannot resume this wait even in
+              // principle — and the shell guard refuses it anyway, because the
+              // pane is now running the first command rather than a shell.
+              `still running after ${String(result.effectiveTimeoutMs)}ms — wait_for_text on ${paneId} keeps waiting for it, or send_keys C-c stops it`;
 
       return ok(
         {
