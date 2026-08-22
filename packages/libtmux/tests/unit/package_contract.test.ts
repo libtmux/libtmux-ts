@@ -83,8 +83,8 @@ const expectedDevDependencies = {
   // else would name a version that does not install.
   "@types/node": "22.20.1",
   knip: "6.32.2",
-  oxfmt: "0.63.0",
-  oxlint: "1.78.0",
+  oxfmt: "0.64.0",
+  oxlint: "1.79.0",
   "oxlint-tsgolint": "7.0.2001",
   typescript: "7.0.2",
   zod: "4.4.3",
