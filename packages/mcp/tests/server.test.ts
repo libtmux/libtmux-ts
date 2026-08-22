@@ -604,6 +604,55 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("keeps respawn_pane from killing a process below the destructive tier", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        // Something for killFirst to end. Without a live process the respawn
+        // is uncontroversial and would pass whatever the tier.
+        await client.callTool({
+          arguments: { command: "sleep 120", paneId, timeoutMs: 1_000 },
+          name: "run_command",
+        });
+
+        const refused = await client.callTool({
+          arguments: { killFirst: true, paneId },
+          name: "respawn_pane",
+        });
+        expect((refused as { isError?: boolean }).isError).toBe(true);
+        // kill_pane is hidden at this tier, and killFirst reached the same end
+        // by another road.
+        expect(toolText(refused)).toContain("destructive");
+
+        // The recovery path this tool exists for is untouched: no killFirst,
+        // and tmux refuses on its own terms rather than on the tier.
+        const alive = await client.callTool({ arguments: { paneId }, name: "respawn_pane" });
+        expect(toolText(alive)).not.toContain("destructive");
+      });
+    });
+  }, 60_000);
+
+  test("allows respawn_pane to kill under the destructive tier", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const paneId = await shellPaneId(client);
+          await client.callTool({
+            arguments: { command: "sleep 120", paneId, timeoutMs: 1_000 },
+            name: "run_command",
+          });
+          const done = await client.callTool({
+            arguments: { killFirst: true, paneId },
+            name: "respawn_pane",
+          });
+          expect((done as { isError?: boolean }).isError ?? false).toBe(false);
+        },
+        { LIBTMUX_SAFETY: "destructive" },
+      );
+    });
+  }, 60_000);
+
   test("offers killing only under the destructive tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

@@ -220,6 +220,28 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "restart");
       if (isFailure(pane)) return pane;
+      if (killFirst === true) {
+        // Respawning a dead pane is recovery and belongs at this tier. Killing
+        // what is still running is tmux's own kill by another name, and a tier
+        // that hides kill_pane cannot offer the same end by another road.
+        if (!offers(context.policy, "destructive")) {
+          return fail({
+            hint:
+              "Respawn without killFirst to recover a pane whose process has already " +
+              "exited, or run this server at the destructive tier.",
+            reason:
+              `Refusing to replace what is running in ${paneId}: killFirst ends that ` +
+              `process, and this server offers the ${context.policy.safety} tier.`,
+          });
+        }
+        const guard = guardDestructive(
+          identity.callerPaneId,
+          identity.attendedPaneIds,
+          paneId,
+          force,
+        );
+        if (guard !== undefined) return guard;
+      }
       await pane.respawn(shellCommand, killFirst === undefined ? {} : { kill: killFirst });
       const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
       return ok({ pane: view }, paneLine(view));
