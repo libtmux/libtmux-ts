@@ -73,7 +73,15 @@ function no<T>(value: T | null | undefined, fallback: T): T {
   return value ?? fallback;
 }
 
-export function paneView(pane: ReadablePane, identity?: CallerIdentity): PaneView {
+/**
+ * Project a pane, including whether anybody is watching it.
+ *
+ * `identity` is required rather than optional because these two fields are the
+ * whole safety signal and they are declared, so a caller that omitted it got
+ * `false` — a fact about the call site, presented as a fact about the pane.
+ * Six tools did, including on this server's own pane.
+ */
+export function paneView(pane: ReadablePane, identity: CallerIdentity): PaneView {
   return {
     active: no(pane.active, false),
     command: no(pane.currentCommand, ""),
@@ -82,8 +90,8 @@ export function paneView(pane: ReadablePane, identity?: CallerIdentity): PaneVie
     height: no(pane.height, 0),
     id: pane.id,
     index: no(pane.index, 0),
-    isAttended: identity !== undefined && isAttended(identity, pane.id),
-    isCallerPane: identity !== undefined && isCallerPane(identity, pane.id),
+    isAttended: isAttended(identity, pane.id),
+    isCallerPane: isCallerPane(identity, pane.id),
     sessionId: no(pane.sessionId, ""),
     sessionName: no(pane.sessionName, ""),
     title: no(pane.title, ""),

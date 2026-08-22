@@ -85,7 +85,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
           ...(width === undefined ? {} : { width }),
         });
       }
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -106,7 +107,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       await pane.select();
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -174,7 +176,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       // but swapWith takes the pane itself, which the read-only view withholds.
       await pane.swapWith(snapshot.panes.one({ id: otherPaneId }));
       const after = await context.snapshot();
-      const views = [paneId, otherPaneId].map((id) => paneView(after.panes.one({ id })));
+      const identity = await context.identity(after);
+      const views = [paneId, otherPaneId].map((id) => paneView(after.panes.one({ id }), identity));
       return ok({ panes: views }, views.map(paneLine).join("\n"));
     },
   );
@@ -227,7 +230,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       await pane.setTitle(title);
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
       return ok({ pane: view }, paneLine(view));
     },
   );

@@ -643,6 +643,39 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("answers isCallerPane the same way from every tool that returns a pane", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      const paneId = (await tmux.snapshot()).panes.one().id;
+      await withClient(
+        fixture,
+        async (client) => {
+          const callerFlag = async (
+            tool: string,
+            args: Record<string, unknown>,
+          ): Promise<boolean> =>
+            structured<{ pane: { isCallerPane: boolean } }>(
+              await client.callTool({ arguments: args, name: tool }),
+            ).pane.isCallerPane;
+
+          // get_pane hands paneView the identity and has always been right.
+          expect(await callerFlag("get_pane", { paneId })).toBe(true);
+
+          // The same pane in the same instant, through tools that built their
+          // view without one. The field is declared, so false reads as a fact
+          // about the pane rather than about the call site.
+          expect(await callerFlag("set_pane_title", { paneId, title: "probe" })).toBe(true);
+          expect(await callerFlag("select_pane", { paneId })).toBe(true);
+          expect(await callerFlag("resize_pane", { paneId, width: 40 })).toBe(true);
+        },
+        {
+          TMUX: `${fixture.socketPath},${String((await tmux.daemonIdentity())?.pid ?? "")},0`,
+          TMUX_PANE: paneId,
+        },
+      );
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

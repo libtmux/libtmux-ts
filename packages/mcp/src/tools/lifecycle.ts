@@ -146,7 +146,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         ...(shellCommand === undefined ? {} : { shellCommand }),
         ...(startDirectory === undefined ? {} : { startDirectory }),
       });
-      const view = paneView(created);
+      const view = paneView(created, await context.identity(snapshot));
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -243,7 +243,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         if (guard !== undefined) return guard;
       }
       await pane.respawn(shellCommand, killFirst === undefined ? {} : { kill: killFirst });
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const view = paneView((await context.snapshot()).panes.one({ id: paneId }), identity);
       return ok({ pane: view }, paneLine(view));
     },
   );
