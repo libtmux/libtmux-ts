@@ -154,6 +154,14 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       },
       outputSchema: {
         effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        droppedLines: z
+          .number()
+          .int()
+          .describe(
+            "Lines of output withheld by maxLines. The text half says so in a " +
+              "notice; a caller reading only the structured half would otherwise " +
+              "take the tail for the whole.",
+          ),
         missedBytes: z
           .number()
           .int()
@@ -249,6 +257,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           effectiveTimeoutMs: result.effectiveTimeoutMs,
           exitStatus: result.exitStatus,
           foreignOutputSuspected: result.foreignOutputSuspected,
+          droppedLines: trimmed.droppedLines,
           missedBytes: result.missedBytes,
           outcome: result.outcome,
           output: trimmed.lines.join("\n"),

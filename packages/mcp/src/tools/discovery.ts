@@ -26,6 +26,25 @@ import {
   windowViewSchema,
 } from "../views.js";
 
+/**
+ * A path, safe to put in a result.
+ *
+ * A socket path is not a tmux name: `check_name` never sees it, so it can hold
+ * a newline or any other control byte, and this one reaches an agent's context
+ * on every call. Escaping it here keeps a path from introducing a line break
+ * into a reply that is read as lines.
+ */
+function printable(value: string | null | undefined): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  let escaped = "";
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    escaped +=
+      code < 0x20 || code === 0x7f ? `\\x${code.toString(16).padStart(2, "0")}` : character;
+  }
+  return escaped;
+}
+
 export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "readonly")) return;
 
@@ -206,15 +225,23 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     },
     async () => {
       const snapshot = await context.snapshot();
-      const [version, identity] = await Promise.all([
+      const [version, identity, resolvedSocket] = await Promise.all([
         context.tmux.version(),
         context.tmux.daemonIdentity(),
+        // The constructor argument is what this process was told, and on the
+        // default socket it was told nothing — so this reported null about a
+        // server that has a socket like any other, while the text rendering
+        // said "<default socket>" and the two disagreed. tmux knows.
+        context.tmux
+          .cmd("display-message", ["-p", "#{socket_path}"], { target: null })
+          .then((lines) => lines[0] ?? "")
+          .catch(() => ""),
       ]);
       const structured = {
         panes: snapshot.panes.count(),
         pid: identity?.pid ?? null,
         sessions: snapshot.sessions.count(),
-        socketPath: context.tmux.socketPath ?? null,
+        socketPath: printable(resolvedSocket === "" ? context.tmux.socketPath : resolvedSocket),
         version: version.raw,
         windows: snapshot.windows.count(),
       };

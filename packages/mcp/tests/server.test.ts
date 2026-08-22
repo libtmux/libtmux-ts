@@ -1022,6 +1022,31 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("reports the socket it is actually driving", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const info = structured<{ socketPath: string | null }>(
+          await client.callTool({ arguments: {}, name: "server_info" }),
+        );
+        const asked = structured<{ value: string }>(
+          await client.callTool({
+            arguments: { format: "#{socket_path}" },
+            name: "display_message",
+          }),
+        );
+        // The two used to be able to disagree: this read the constructor
+        // argument while display_message asked tmux. They now have one source.
+        //
+        // The case that made it null — a server reached on the default socket,
+        // where nothing was passed in — cannot be reproduced here, because the
+        // suite only ever runs against sockets it owns. This pins the
+        // agreement rather than that case.
+        expect(info.socketPath).toBe(asked.value);
+        expect(info.socketPath).toBe(fixture.socketPath);
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

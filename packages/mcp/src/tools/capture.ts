@@ -40,7 +40,12 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .number()
           .int()
           .optional()
-          .describe("Last line; negative counts back from the bottom."),
+          .describe(
+            "Last line, on the same scale as start: 0 is the top of the visible " +
+              "screen and negative reaches back into history. It does not count " +
+              "back from the bottom, so end:-1 is one line above the screen top, " +
+              "not the last line of output.",
+          ),
         joinWrapped: z.boolean().optional().describe("Rejoin lines tmux wrapped."),
         maxLines: z
           .number()
