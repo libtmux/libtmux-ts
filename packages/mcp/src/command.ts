@@ -32,14 +32,74 @@ const FALLBACK_SCROLLBACK = 400;
 /** How often the fallback re-reads the pane when no stream is available. */
 const FALLBACK_POLL_MS = 60;
 
-function frame(command: string, id: string, suppressHistory: boolean): string {
+/**
+ * Wrap a command so its output can be told from the pane's echo of it.
+ *
+ * The leading space is what keeps the command out of the history file of a
+ * shell set to HIST_IGNORE_SPACE or HISTCONTROL=ignorespace. It used to be
+ * skipped for a multiline command, which is exactly the shape a here-doc or a
+ * pasted block takes — so the one case most likely to carry a secret was the
+ * one case that persisted it to disk. Both shells record a multiline buffer as
+ * a single history entry, so the space suppresses it the same way; verified
+ * against zsh with the option set, where the spaced form is absent from the
+ * file and the unspaced form is written in full.
+ */
+export function frame(command: string, id: string, suppressHistory: boolean): string {
   const multiline = command.includes("\n") || command.includes("\r");
-  const prefix = suppressHistory && !multiline ? " " : "";
+  const prefix = suppressHistory ? " " : "";
   const open = `${prefix}m=${id}; printf '%s\\n' "\${m}_S"; (`;
   const close = `); s=$?; printf '%s %s\\n' "\${m}_E" "$s"`;
   return multiline
     ? `${open}\n${command.replace(/\s+$/, "")}\n${close}`
     : `${open} ${command} ${close}`;
+}
+
+/** A framing marker: `<id>_S` or `<id>_E`, as the shell prints it. */
+const MARKER = /\b(ltx[0-9a-f]+)_([SE])\b/u;
+/** A framing command, as the pane echoes it back when somebody types one. */
+const FRAMING_ECHO = /(?:^|\s)m=(ltx[0-9a-f]+);/u;
+
+/**
+ * Remove another caller's framing, and its output, from this caller's body.
+ *
+ * Ids are unique, so no run ever matches another's markers — but the body
+ * between one run's markers is everything the pane printed meanwhile, which on
+ * a shared pane includes a second caller's echoed command and its output. That
+ * is not noise: a command carries whatever the other agent put in it, so the
+ * result of one call disclosed the input of another. Every agent CLI on a
+ * machine can point at one server, which makes two callers on one pane the
+ * ordinary case rather than a contrived one.
+ *
+ * A pane is single-writer and nothing here can lock it across processes, so
+ * this cleans the report rather than preventing the overlap.
+ */
+export function withoutForeignFraming(body: string, id: string): string {
+  const lines = body.split("\n");
+  const foreign = (value: string): boolean => value !== id;
+
+  // A foreign run whose start and end are both here brackets that run's own
+  // output, which belongs to its caller. An unterminated one is left alone:
+  // dropping to the end of the body would take this caller's output with it.
+  const drop = new Set<number>();
+  for (const [index, line] of lines.entries()) {
+    const start = MARKER.exec(line);
+    if (start?.[2] !== "S" || !foreign(start[1] ?? "")) continue;
+    const closes = lines.findIndex(
+      (later, at) => at > index && later.includes(`${start[1] ?? ""}_E`),
+    );
+    if (closes < 0) continue;
+    for (let at = index; at <= closes; at += 1) drop.add(at);
+  }
+
+  return lines
+    .filter((line, index) => {
+      if (drop.has(index)) return false;
+      const echo = FRAMING_ECHO.exec(line);
+      if (echo !== null && foreign(echo[1] ?? "")) return false;
+      const marker = MARKER.exec(line);
+      return marker === null || !foreign(marker[1] ?? "");
+    })
+    .join("\n");
 }
 
 /** Pull the command's own output out of the framed stream. */
@@ -61,7 +121,7 @@ function slice(
     exitStatus: Number.isFinite(parsed) ? parsed : null,
     // The end marker is printed on its own line, so the body ends with the
     // newline that preceded it; trailing CR comes from the pty, not the command.
-    output: body.replace(/\r?\n?$/, "").replaceAll("\r\n", "\n"),
+    output: withoutForeignFraming(body.replace(/\r?\n?$/, "").replaceAll("\r\n", "\n"), id),
   };
 }
 

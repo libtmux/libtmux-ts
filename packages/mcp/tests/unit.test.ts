@@ -5,6 +5,7 @@ import { Server } from "libtmux/server";
 import { readCallerEnvironment } from "../src/caller.js";
 import { describeUnreachable } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
+import { frame, withoutForeignFraming } from "../src/command.js";
 import { PaneTail } from "../src/live.js";
 import { effectiveWaitMs, resolvePolicy, tierAllows } from "../src/policy.js";
 import { describeStartup } from "../src/startup.js";
@@ -323,5 +324,54 @@ describe("instructions", () => {
 describe("uris", () => {
   test("escape a pane id so its % does not read as an escape", () => {
     expect(paneContentUri("%1")).toBe("tmux://panes/%251/content");
+  });
+});
+
+describe("command framing", () => {
+  test("keeps a multiline command out of the shell history too", () => {
+    // The leading space is the whole mechanism, and a shell records a
+    // multiline buffer as one entry — so skipping it there put the shape most
+    // likely to carry a secret, a pasted block, into the history file.
+    expect(frame("echo one", "ltxabc", true).startsWith(" ")).toBe(true);
+    expect(frame("echo one\necho two", "ltxabc", true).startsWith(" ")).toBe(true);
+    expect(frame("echo one\recho two", "ltxabc", true).startsWith(" ")).toBe(true);
+  });
+
+  test("leaves the space off when the caller did not ask for suppression", () => {
+    expect(frame("echo one", "ltxabc", false).startsWith(" ")).toBe(false);
+    expect(frame("echo one\necho two", "ltxabc", false).startsWith(" ")).toBe(false);
+  });
+});
+
+describe("concurrent framing", () => {
+  // The stream one caller sees when a second caller types into the same pane
+  // partway through: the second command's echo, its markers, and its output.
+  const contaminated = [
+    "AAA-start",
+    ` m=ltxbbb222; printf '%s\\n' "\${m}_S"; ( echo BBB-secret ); s=$?`,
+    "ltxbbb222_S",
+    "BBB-secret",
+    "ltxbbb222_E 0",
+    "AAA-end",
+  ].join("\n");
+
+  test("keeps another caller's command and output out of this one's", () => {
+    const cleaned = withoutForeignFraming(contaminated, "ltxaaa111");
+    expect(cleaned).toBe("AAA-start\nAAA-end");
+    // The command text is the disclosure that matters: it carries whatever the
+    // other agent put in it.
+    expect(cleaned).not.toContain("BBB-secret");
+    expect(cleaned).not.toContain("ltxbbb222");
+  });
+
+  test("leaves this caller's own output alone", () => {
+    expect(withoutForeignFraming("one\ntwo\nthree", "ltxaaa111")).toBe("one\ntwo\nthree");
+  });
+
+  test("keeps output when a foreign run has not finished", () => {
+    // No closing marker for the other run, so dropping to the end of the body
+    // would take this caller's output with it. Its echo and marker still go.
+    const unterminated = ["AAA-start", "ltxbbb222_S", "AAA-end"].join("\n");
+    expect(withoutForeignFraming(unterminated, "ltxaaa111")).toBe("AAA-start\nAAA-end");
   });
 });
