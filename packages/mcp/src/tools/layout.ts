@@ -216,6 +216,76 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
   );
 
   mcp.registerTool(
+    "move_pane",
+    {
+      annotations: MUTATING,
+      description:
+        "Move a pane into another window as a split, or break it out into a window " +
+        "of its own by naming no destination. The pane keeps its id and whatever is " +
+        "running in it, which killing it and splitting again does not. Moving a " +
+        "window's last pane destroys that window.",
+      inputSchema: {
+        paneId: z.string(),
+        vertical: z
+          .boolean()
+          .optional()
+          .describe(
+            "Join as a horizontal split rather than a vertical one. Unused when breaking out.",
+          ),
+        windowId: z
+          .string()
+          .optional()
+          .describe("Window to move it into. Omit to break it out into a window of its own."),
+        windowName: z.string().optional().describe("Name for the window a break-out creates."),
+      },
+      outputSchema: { pane: paneViewSchema },
+      title: "Move pane",
+    },
+    async ({ paneId, vertical, windowId, windowName }) => {
+      const snapshot = await context.snapshot();
+      const pane = requirePane(snapshot, paneId);
+      if (isFailure(pane)) return pane;
+      if (windowId === undefined) {
+        await pane.breakOut(windowName);
+      } else {
+        const window = requireWindow(snapshot, windowId);
+        if (isFailure(window)) return window;
+        await pane.joinTo(window.id, vertical === undefined ? {} : { vertical });
+      }
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
+      context.topologyChanged();
+      return ok({ pane: view }, paneLine(view));
+    },
+  );
+
+  mcp.registerTool(
+    "swap_window",
+    {
+      annotations: MUTATING,
+      description:
+        "Exchange the positions of two windows, which may be in different sessions. " +
+        "Each keeps its id, its panes and what is running in them; only where they " +
+        "sit changes. This is swap_pane's analogue one level up.",
+      inputSchema: { otherWindowId: z.string(), windowId: z.string() },
+      outputSchema: { windows: z.array(windowViewSchema) },
+      title: "Swap windows",
+    },
+    async ({ otherWindowId, windowId }) => {
+      const snapshot = await context.snapshot();
+      const window = requireWindow(snapshot, windowId);
+      if (isFailure(window)) return window;
+      const other = requireWindow(snapshot, otherWindowId);
+      if (isFailure(other)) return other;
+      await window.swapWith(other);
+      const after = await context.snapshot();
+      const views = [windowId, otherWindowId].map((id) => windowView(after.windows.one({ id })));
+      context.topologyChanged();
+      return ok({ windows: views }, views.map(windowLine).join("\n"));
+    },
+  );
+
+  mcp.registerTool(
     "set_pane_title",
     {
       annotations: MUTATING,

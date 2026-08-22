@@ -979,6 +979,49 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("moves a pane between windows and back out again", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const tmux = serverFor(fixture);
+        const session = (await tmux.snapshot()).sessions.one().name ?? "";
+        const home = structured<{ paneId: string; window: { id: string } }>(
+          await client.callTool({
+            arguments: { name: "home", session },
+            name: "new_window",
+          }),
+        );
+        const guest = structured<{ paneId: string; window: { id: string } }>(
+          await client.callTool({
+            arguments: { name: "guest", session },
+            name: "new_window",
+          }),
+        );
+
+        // The one topology operation with no path: a pane could be made,
+        // destroyed, and exchanged in place, but not moved into another
+        // window. Joining keeps the pane and what runs in it.
+        const joined = structured<{ pane: { id: string; windowId: string } }>(
+          await client.callTool({
+            arguments: { paneId: guest.paneId, windowId: home.window.id },
+            name: "move_pane",
+          }),
+        ).pane;
+        expect(joined.id).toBe(guest.paneId);
+        expect(joined.windowId).toBe(home.window.id);
+
+        // And back out into a window of its own, by naming no destination.
+        const broken = structured<{ pane: { id: string; windowId: string } }>(
+          await client.callTool({
+            arguments: { paneId: guest.paneId, windowName: "extracted" },
+            name: "move_pane",
+          }),
+        ).pane;
+        expect(broken.id).toBe(guest.paneId);
+        expect(broken.windowId).not.toBe(home.window.id);
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(
