@@ -9,9 +9,10 @@
 
 import { z } from "zod";
 
-import type { Client, Pane, Session, Window } from "libtmux";
+import type { Client, Session, Window } from "libtmux";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
+import type { ReadablePane } from "./context.js";
 
 export const paneViewSchema = z.object({
   active: z.boolean().describe("Whether this is its window's active pane."),
@@ -72,7 +73,7 @@ function no<T>(value: T | null | undefined, fallback: T): T {
   return value ?? fallback;
 }
 
-export function paneView(pane: Pane, identity?: CallerIdentity): PaneView {
+export function paneView(pane: ReadablePane, identity?: CallerIdentity): PaneView {
   return {
     active: no(pane.active, false),
     command: no(pane.currentCommand, ""),

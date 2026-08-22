@@ -10,7 +10,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, requireSession, type ToolContext } from "../context.js";
+import {
+  isFailure,
+  requirePane,
+  requireSession,
+  requireWritablePane,
+  type ToolContext,
+} from "../context.js";
 import { MUTATING, offers, READ_ONLY } from "../register.js";
 import { fail, ok } from "../results.js";
 
@@ -259,13 +265,21 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Paste a named buffer into a pane.",
-      inputSchema: { name: z.string(), paneId: z.string() },
+      inputSchema: {
+        force: z
+          .boolean()
+          .optional()
+          .describe("Write even to the pane this server runs in. Default false."),
+        name: z.string(),
+        paneId: z.string(),
+      },
       outputSchema: { name: z.string(), paneId: z.string() },
       title: "Paste buffer",
     },
-    async ({ name, paneId }) => {
+    async ({ force, name, paneId }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
+      const identity = await context.identity(snapshot);
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
       await pane.pasteBuffer(name);
       return ok({ name, paneId }, `Pasted buffer ${name} into ${paneId}.`);

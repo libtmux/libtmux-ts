@@ -15,6 +15,7 @@ import {
   isFailure,
   requirePane,
   requireSession,
+  requireWritablePane,
   requireWindow,
   type ToolContext,
 } from "../context.js";
@@ -200,6 +201,10 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         "Restart a pane's command in place, keeping the pane and its id. Use to " +
         "recover a pane whose process died, rather than killing and re-splitting.",
       inputSchema: {
+        force: z
+          .boolean()
+          .optional()
+          .describe("Write even to the pane this server runs in. Default false."),
         killFirst: z
           .boolean()
           .optional()
@@ -210,9 +215,10 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       outputSchema: { pane: paneViewSchema },
       title: "Respawn pane",
     },
-    async ({ killFirst, paneId, shellCommand }) => {
+    async ({ force, killFirst, paneId, shellCommand }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
+      const identity = await context.identity(snapshot);
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "restart");
       if (isFailure(pane)) return pane;
       await pane.respawn(shellCommand, killFirst === undefined ? {} : { kill: killFirst });
       const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
@@ -235,9 +241,11 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     },
     async ({ force, paneId }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "kill");
+      if (isFailure(pane)) return pane;
+      // requireWritablePane already refused this server's own pane; this adds
+      // the refusal for a pane somebody else is watching.
       const guard = guardDestructive(
         identity.callerPaneId,
         identity.attendedPaneIds,

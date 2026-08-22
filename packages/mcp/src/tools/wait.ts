@@ -12,9 +12,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import type { Pane } from "libtmux";
-
-import { isFailure, requirePane, type ToolContext } from "../context.js";
+import { isFailure, requirePane, type ReadablePane, type ToolContext } from "../context.js";
 import { effectiveWaitMs } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
@@ -41,7 +39,7 @@ const LIVENESS_MS = 500;
  */
 async function waitForOutput(
   context: ToolContext,
-  pane: Pane,
+  pane: ReadablePane,
   options: {
     readonly cursor?: number;
     readonly matches: (text: string) => string | undefined;
@@ -119,7 +117,7 @@ async function waitForOutput(
  */
 async function renderWait(
   context: ToolContext,
-  pane: Pane,
+  pane: ReadablePane,
   report: WaitReport,
   maxLines: number | undefined,
   describe: string,

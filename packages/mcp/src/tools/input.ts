@@ -9,8 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isCallerPane } from "../caller.js";
-import { isFailure, requirePane, type ToolContext } from "../context.js";
+import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
 import { MUTATING, offers, OPEN_WORLD } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
 import { runFramedCommand } from "../command.js";
@@ -74,16 +73,9 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
     },
     async ({ enter, force, keys, literal, paneId }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
-
-      if (force !== true && isCallerPane(identity, paneId)) {
-        return fail({
-          hint: "That is this server's own terminal. Pick another pane, or pass force to mean it.",
-          reason: `Refusing to type into ${paneId}: it is the pane this MCP server runs in.`,
-        });
-      }
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
+      if (isFailure(pane)) return pane;
 
       await pane.sendKeys(keys, {
         ...(enter === undefined ? {} : { enter }),
@@ -107,15 +99,20 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         "key parser would claim.",
       inputSchema: {
         enter: z.boolean().optional().describe("Press Enter afterwards. Default false."),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Write even to the pane this server runs in. Default false."),
         paneId: z.string(),
         text: z.string(),
       },
       outputSchema: { bytes: z.number().int(), paneId: z.string() },
       title: "Paste text",
     },
-    async ({ enter, paneId, text }) => {
+    async ({ enter, force, paneId, text }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
+      const identity = await context.identity(snapshot);
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
       await pane.sendKeys(text, { enter: enter ?? false, literal: true });
       return ok(
@@ -176,16 +173,9 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         return fail({ reason: "command must not be empty." });
       }
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
-
-      if (force !== true && isCallerPane(identity, paneId)) {
-        return fail({
-          hint: "Pick another pane, or pass force to mean it.",
-          reason: `Refusing to run in ${paneId}: it is the pane this MCP server runs in.`,
-        });
-      }
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "run in");
+      if (isFailure(pane)) return pane;
       const running = shellName(pane.currentCommand ?? "");
       if (force !== true && OTHER_SHELLS.has(running)) {
         // Not a `force` case: forcing it would send POSIX syntax to a shell

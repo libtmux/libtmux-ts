@@ -9,7 +9,7 @@
 import type { Pane, ServerSnapshot, Session, Window } from "libtmux";
 import type { Server } from "libtmux/server";
 
-import { resolveCallerIdentity, type CallerIdentity } from "./caller.js";
+import { isCallerPane, resolveCallerIdentity, type CallerIdentity } from "./caller.js";
 import { LiveHub } from "./live.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
@@ -79,9 +79,25 @@ const SUGGESTION_LIMIT = 12;
  * A bare "no such pane" costs the agent a turn to discover what it should have
  * asked for. Naming the panes that do exist makes the failed call the last one.
  */
-export function requirePane(snapshot: ServerSnapshot, paneId: string): CallToolResult | Pane {
-  const pane = snapshot.panes.oneOrUndefined({ id: paneId });
-  if (pane !== undefined) return pane;
+/**
+ * The pane operations that put input into a pane, or end what runs in it.
+ *
+ * Named so the type system can withhold them. Resizing and retitling are not
+ * here: they rearrange a pane without reaching the program inside it.
+ */
+type PaneWrite = "kill" | "pasteBuffer" | "respawn" | "sendKeys";
+
+/**
+ * A pane resolved for reading and arranging, but not for writing into.
+ *
+ * `requirePane` hands this back so that a tool which goes on to type into the
+ * pane does not compile. The guard used to be a per-tool convention, and three
+ * write tools were shipped without it; withholding the methods is what makes
+ * the next one impossible rather than merely discouraged.
+ */
+export type ReadablePane = Omit<Pane, PaneWrite>;
+
+function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult {
   const available = snapshot.panes
     .toArray()
     .slice(0, SUGGESTION_LIMIT)
@@ -96,6 +112,40 @@ export function requirePane(snapshot: ServerSnapshot, paneId: string): CallToolR
         : `Panes on this server: ${available.join(", ")}`,
     reason: `No pane ${paneId} on this server.`,
   });
+}
+
+export function requirePane(
+  snapshot: ServerSnapshot,
+  paneId: string,
+): CallToolResult | ReadablePane {
+  return snapshot.panes.oneOrUndefined({ id: paneId }) ?? paneNotFound(snapshot, paneId);
+}
+
+/**
+ * Find a pane this caller is cleared to write into.
+ *
+ * The one pane worth refusing is the terminal this server is running in:
+ * typing into it puts the agent's own keystrokes in front of the person
+ * watching, and tmux cannot undo that. `force` is how a caller says it meant
+ * that pane. `verb` names the act in the refusal, because "refusing to restart"
+ * and "refusing to type into" send a caller to different remedies.
+ */
+export function requireWritablePane(
+  snapshot: ServerSnapshot,
+  identity: CallerIdentity,
+  paneId: string,
+  force: boolean | undefined,
+  verb = "write into",
+): CallToolResult | Pane {
+  const pane = snapshot.panes.oneOrUndefined({ id: paneId });
+  if (pane === undefined) return paneNotFound(snapshot, paneId);
+  if (force !== true && isCallerPane(identity, paneId)) {
+    return fail({
+      hint: "That is this server's own terminal. Pick another pane, or pass force to mean it.",
+      reason: `Refusing to ${verb} ${paneId}: it is the pane this MCP server runs in.`,
+    });
+  }
+  return pane;
 }
 
 export function requireSession(snapshot: ServerSnapshot, target: string): CallToolResult | Session {

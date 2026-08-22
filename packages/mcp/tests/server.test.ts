@@ -540,6 +540,52 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("refuses every write path into the pane it runs in", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      const paneId = (await tmux.snapshot()).panes.one().id;
+      await withClient(
+        fixture,
+        async (client) => {
+          // Staged out of band: filling a buffer is not itself a write into a
+          // pane, so it has to succeed for paste_buffer to have something to
+          // refuse.
+          await client.callTool({ arguments: { name: "guard", text: "x" }, name: "load_buffer" });
+
+          // Empty text, and no killFirst: each probe proves the guard without
+          // putting a character in the terminal or ending the process in it if
+          // the guard is missing.
+          const refusesWrite = async (
+            tool: string,
+            args: Record<string, unknown>,
+          ): Promise<void> => {
+            const refused = await client.callTool({ arguments: args, name: tool });
+            expect((refused as { isError?: boolean }).isError).toBe(true);
+            // Not merely an error: tmux refuses respawn_pane on a live pane for
+            // its own reasons, which would pass an isError check while the
+            // guard was still missing.
+            expect(toolText(refused)).toContain("own terminal");
+          };
+
+          await refusesWrite("paste_text", { paneId, text: "" });
+          await refusesWrite("paste_buffer", { name: "guard", paneId });
+          await refusesWrite("respawn_pane", { paneId });
+
+          // And force is how each one says it meant that pane after all.
+          const forced = await client.callTool({
+            arguments: { force: true, paneId, text: "" },
+            name: "paste_text",
+          });
+          expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
+        },
+        {
+          TMUX: `${fixture.socketPath},${String((await tmux.daemonIdentity())?.pid ?? "")},0`,
+          TMUX_PANE: paneId,
+        },
+      );
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

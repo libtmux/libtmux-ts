@@ -169,7 +169,10 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       const other = requirePane(snapshot, otherPaneId);
       if (isFailure(other)) return other;
-      await pane.swapWith(other);
+      // Validated above for the not-found message. Swapping arranges two panes
+      // rather than writing into either, so neither needs the write guard —
+      // but swapWith takes the pane itself, which the read-only view withholds.
+      await pane.swapWith(snapshot.panes.one({ id: otherPaneId }));
       const after = await context.snapshot();
       const views = [paneId, otherPaneId].map((id) => paneView(after.panes.one({ id })));
       return ok({ panes: views }, views.map(paneLine).join("\n"));
