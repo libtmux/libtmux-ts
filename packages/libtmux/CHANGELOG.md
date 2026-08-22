@@ -12,6 +12,14 @@ remember.
 
 ## Unreleased
 
+## 0.1.0-alpha.4
+
+No change to the published code: `dist` is identical to `0.1.0-alpha.3`, and
+nothing in the API moved. The repository changed around it — the lint and
+format toolchain, a contract test that had drifted from the manifests it
+pins, and how the project writes down its own conventions — but none of that
+reaches an installed package.
+
 ## 0.1.0-alpha.3
 
 ### Fixed
