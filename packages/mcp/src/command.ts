@@ -24,6 +24,8 @@ export interface FramedResult {
   readonly exitStatus: number | null;
   /** Another writer was seen in this command's own output. */
   readonly foreignOutputSuspected: boolean;
+  /** Output that fell out of the pane's buffer before this read reached it. */
+  readonly missedBytes: number;
   readonly outcome: "completed" | "pane_died" | "timed_out";
   readonly output: string;
 }
@@ -124,18 +126,32 @@ export function withoutForeignFraming(
   return { foreignOutputSuspected: seen, text: kept.join("\n") };
 }
 
-/** Pull the command's own output out of the framed stream. */
+/**
+ * Pull the command's own output out of the framed stream.
+ *
+ * `startSeen` is what makes this independent of how much the command printed.
+ * The start marker is printed first, so it is the first thing evicted once the
+ * output passes the tail's limit — and re-deriving the whole frame each pass
+ * meant a command that printed more than the buffer holds could never be
+ * matched again, ran to its deadline, and was reported as still running when
+ * it had already finished. The end marker alone carries the exit status, which
+ * is the one thing this tool exists to know.
+ */
 function slice(
   stream: string,
   id: string,
+  startSeen: boolean,
 ): { exitStatus: number | null; foreignOutputSuspected: boolean; output: string } | undefined {
   const startAt = stream.indexOf(`${id}_S`);
-  if (startAt < 0) return undefined;
-  const endAt = stream.indexOf(`${id}_E`, startAt);
+  if (startAt < 0 && !startSeen) return undefined;
+  const endAt = stream.indexOf(`${id}_E`, startAt < 0 ? 0 : startAt);
   if (endAt < 0) return undefined;
 
-  const afterStart = stream.indexOf("\n", startAt);
-  const body = afterStart < 0 || afterStart > endAt ? "" : stream.slice(afterStart + 1, endAt);
+  // With the start marker gone, the retained buffer opens partway through the
+  // command's own output, so that is where the body begins.
+  const afterStart = startAt < 0 ? 0 : stream.indexOf("\n", startAt) + 1;
+  const body =
+    startAt >= 0 && (afterStart === 0 || afterStart > endAt) ? "" : stream.slice(afterStart, endAt);
   const statusLine = stream.slice(endAt).split("\n", 1)[0] ?? "";
   const parsed = Number.parseInt(statusLine.slice(`${id}_E`.length).trim(), 10);
 
@@ -182,15 +198,22 @@ export async function runFramedCommand(
   await pane.sendKeys(payload, { literal: true });
 
   const deadline = Date.now() + budget;
+  let startSeen = false;
+  let missedBytes = 0;
   while (Date.now() < deadline && signal?.aborted !== true) {
-    const stream =
-      tail === undefined
-        ? // eslint-disable-next-line no-await-in-loop -- each read follows the last.
-          (await pane.capture({ start: -FALLBACK_SCROLLBACK }).catch(() => [])).join("\n")
-        : tail.read(cursor).text;
-    const found = slice(stream, id);
+    let stream: string;
+    if (tail === undefined) {
+      // eslint-disable-next-line no-await-in-loop -- each read follows the last.
+      stream = (await pane.capture({ start: -FALLBACK_SCROLLBACK }).catch(() => [])).join("\n");
+    } else {
+      const reading = tail.read(cursor);
+      stream = reading.text;
+      missedBytes = Math.max(missedBytes, reading.missedBytes);
+    }
+    startSeen ||= stream.includes(`${id}_S`);
+    const found = slice(stream, id, startSeen);
     if (found !== undefined) {
-      return { effectiveTimeoutMs: budget, ...found, outcome: "completed" };
+      return { effectiveTimeoutMs: budget, missedBytes, ...found, outcome: "completed" };
     }
     // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
     await (tail === undefined
@@ -211,11 +234,15 @@ export async function runFramedCommand(
   // sharing the pane for longer, not less.
   const cleaned = withoutForeignFraming(output.replaceAll("\r\n", "\n"), id);
 
-  const alive = (await context.snapshot()).panes.exists({ id: pane.id });
+  // Present is not alive: a pane kept by remain-on-exit still exists, and
+  // reporting timed_out for it says the command may yet finish.
+  const after = (await context.snapshot()).panes.oneOrUndefined({ id: pane.id });
+  const alive = after !== undefined && after.dead !== true;
   return {
     effectiveTimeoutMs: budget,
     exitStatus: null,
     foreignOutputSuspected: cleaned.foreignOutputSuspected,
+    missedBytes,
     outcome: alive ? "timed_out" : "pane_died",
     output: cleaned.text,
   };

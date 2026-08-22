@@ -154,6 +154,14 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       },
       outputSchema: {
         effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        missedBytes: z
+          .number()
+          .int()
+          .describe(
+            "Output that fell out of the pane's buffer before this read reached it. " +
+              "Nonzero means the command printed more than was kept, so the output here " +
+              "starts partway through it.",
+          ),
         foreignOutputSuspected: z
           .boolean()
           .describe(
@@ -186,6 +194,18 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "run in");
       if (isFailure(pane)) return pane;
+      if (pane.dead === true) {
+        // Not a `force` case: a dead pane has no process to read the command,
+        // so forcing it would spend the whole timeout waiting for a marker
+        // that cannot be printed. The shell check below would pass — a dead
+        // pane still reports the command it last ran.
+        return fail({
+          hint: "respawn_pane restarts a pane's command, keeping the pane and its id.",
+          reason:
+            `Pane ${paneId} is dead: its process exited and the pane is kept only because ` +
+            `remain-on-exit is set, so nothing there can run a command.`,
+        });
+      }
       const running = shellName(pane.currentCommand ?? "");
       if (force !== true && OTHER_SHELLS.has(running)) {
         // Not a `force` case: forcing it would send POSIX syntax to a shell
@@ -229,6 +249,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           effectiveTimeoutMs: result.effectiveTimeoutMs,
           exitStatus: result.exitStatus,
           foreignOutputSuspected: result.foreignOutputSuspected,
+          missedBytes: result.missedBytes,
           outcome: result.outcome,
           output: trimmed.lines.join("\n"),
           paneId,
