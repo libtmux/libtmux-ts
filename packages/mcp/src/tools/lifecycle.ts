@@ -137,7 +137,10 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .describe("Default below."),
         paneId: z.string(),
         shellCommand: z.string().optional(),
-        startDirectory: z.string().optional(),
+        startDirectory: z
+          .string()
+          .optional()
+          .describe("Defaults to the directory the pane being split is in."),
       },
       outputSchema: { pane: paneViewSchema },
       title: "Split pane",
@@ -146,10 +149,16 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
+      // tmux resolves a split's directory from the client, then the SESSION,
+      // and never consults the pane being split — so splitting a pane sitting
+      // in /etc produced one in the session's directory. "Split this pane"
+      // reads as "keep working here", so the source pane's directory is the
+      // default; naming one still overrides it.
+      const inherited = startDirectory ?? pane.currentPath ?? undefined;
       const created = await pane.split({
         ...(direction === undefined ? {} : { direction: DIRECTIONS[direction] }),
         ...(shellCommand === undefined ? {} : { shellCommand }),
-        ...(startDirectory === undefined ? {} : { startDirectory }),
+        ...(inherited === undefined ? {} : { startDirectory: inherited }),
       });
       const view = paneView(created, await context.identity(snapshot));
       context.topologyChanged();

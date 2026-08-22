@@ -1069,6 +1069,37 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("splits a pane into the directory that pane is in", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({ arguments: { command: "cd /etc", paneId }, name: "run_command" });
+        // run_command runs in a subshell, so move the pane itself.
+        await client.callTool({
+          arguments: { enter: true, keys: "cd /etc", paneId },
+          name: "send_keys",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 700));
+
+        const split = structured<{ pane: { cwd: string } }>(
+          await client.callTool({ arguments: { paneId }, name: "split_pane" }),
+        ).pane;
+        // tmux consults the client and then the session, never the pane being
+        // split, so this used to land in the session's directory.
+        expect(split.cwd).toBe("/etc");
+
+        // Naming one still wins over the inherited default.
+        const named = structured<{ pane: { cwd: string } }>(
+          await client.callTool({
+            arguments: { paneId, startDirectory: "/tmp" },
+            name: "split_pane",
+          }),
+        ).pane;
+        expect(named.cwd).toBe("/tmp");
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(
