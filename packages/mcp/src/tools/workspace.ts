@@ -88,17 +88,19 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
 
       const after = await context.snapshot();
       const identity = await context.identity(after);
-      // Ordered by the names asked for rather than by tmux's window index, so
-      // `panes[i]` is the window `windows[i]` described.
-      const panes = windows
-        .map((window) => {
-          const target = after.windows
-            .toArray()
-            .find((entry) => entry.sessionId === created.id && entry.name === window.name);
-          return target === undefined
-            ? undefined
-            : after.panes.toArray().find((pane) => pane.windowId === target.id);
-        })
+      // Ordered so `panes[i]` is the window `windows[i]` described. Matched by
+      // position rather than by name: tmux does not require a window name to be
+      // unique, and three windows called "shell" resolved every lookup to the
+      // first of them, reporting one pane three times. The windows were made in
+      // this order, into a session made for them, so their index is the order
+      // they were asked for.
+      const inOrder = after.windows
+        .toArray()
+        .filter((entry) => entry.sessionId === created.id)
+        .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))
+        .slice(0, windows.length);
+      const panes = inOrder
+        .map((target) => after.panes.toArray().find((pane) => pane.windowId === target.id))
         .filter((pane) => pane !== undefined)
         .map((pane) => paneView(pane, identity));
 

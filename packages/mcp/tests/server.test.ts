@@ -14,6 +14,7 @@ import {
 import { describe, expect, test } from "bun:test";
 
 import { createTmuxMcpServer } from "../src/server.js";
+import { paneContentUri } from "../src/uris.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -795,6 +796,131 @@ describe("staying out of the way", () => {
       });
     });
   }, 120_000);
+
+  test("reads back every resource URI it publishes", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        // The sigils that make a tmux id readable — % $ @ — are exactly the
+        // characters a URI path escapes, so a published id that does not
+        // survive the round trip is every id, not an unlucky one.
+        const { resources } = await client.listResources();
+        const perObject = resources.filter((resource) => /\/(?:%25|%24|%40)/u.test(resource.uri));
+        expect(perObject.length).toBeGreaterThan(0);
+
+        for (const resource of perObject) {
+          // eslint-disable-next-line no-await-in-loop -- each read follows the last.
+          const read = await client.readResource({ uri: resource.uri });
+          expect(read.contents.length, `${resource.uri} read back nothing`).toBeGreaterThan(0);
+        }
+
+        // And the link a tool hands back is the same string, so it resolves
+        // for the same reason.
+        const paneId = await shellPaneId(client);
+        const link = paneContentUri(paneId);
+        const viaLink = await client.readResource({ uri: link });
+        expect(viaLink.contents.length).toBeGreaterThan(0);
+      });
+    });
+  }, 60_000);
+
+  test("refuses to run a command in a dead pane", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      await withClient(fixture, async (client) => {
+        const session = (await tmux.snapshot()).sessions.one().name ?? "";
+        const made = structured<{ paneId: string; window: { id: string } }>(
+          await client.callTool({
+            arguments: { name: "doomed", session },
+            name: "new_window",
+          }),
+        );
+        // remain-on-exit is a window option, which this server cannot yet
+        // reach — the library can, and the fixture needs a pane that stays
+        // after its process exits.
+        const window = (await tmux.snapshot()).windows.one({ id: made.window.id });
+        await window.setOption("remain-on-exit", "on");
+
+        await client.callTool({
+          arguments: { enter: true, keys: "exit 7", paneId: made.paneId },
+          name: "send_keys",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+
+        const pane = structured<{ pane: { dead: boolean } }>(
+          await client.callTool({ arguments: { paneId: made.paneId }, name: "get_pane" }),
+        ).pane;
+        expect(pane.dead).toBe(true);
+
+        // The whole timeout used to be spent here waiting for a marker that
+        // cannot be printed, and the result then claimed the command was
+        // still running. A dead pane reports the command it last ran, so the
+        // shell check passed it through.
+        const started = Date.now();
+        const refused = await client.callTool({
+          arguments: { command: "echo hi", paneId: made.paneId, timeoutMs: 8_000 },
+          name: "run_command",
+        });
+        expect((refused as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(refused)).toContain("respawn_pane");
+        expect(Date.now() - started).toBeLessThan(4_000);
+      });
+    });
+  }, 60_000);
+
+  test("reports a command that outran the buffer as finished", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        // Past the tail's byte limit, so the start marker is evicted before
+        // the end marker arrives. The command still finished; only the
+        // evidence of where its output began is gone.
+        const result = structured<{
+          exitStatus: number | null;
+          missedBytes: number;
+          outcome: string;
+        }>(
+          await client.callTool({
+            arguments: {
+              command:
+                "i=0; while [ $i -lt 12000 ]; do echo 0123456789012345678901234567890; " +
+                "i=$((i+1)); done; exit 3",
+              maxLines: 5,
+              paneId,
+              timeoutMs: 40_000,
+            },
+            name: "run_command",
+          }),
+        );
+        expect(result.outcome).toBe("completed");
+        expect(result.exitStatus).toBe(3);
+        // And the output is short of what the command printed, which the
+        // caller is told rather than left to infer.
+        expect(result.missedBytes).toBeGreaterThan(0);
+      });
+    });
+  }, 120_000);
+
+  test("returns one pane per window even when the names repeat", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const built = structured<{ panes: { id: string; windowId: string }[] }>(
+          await client.callTool({
+            arguments: {
+              session: "dup",
+              windows: [{ name: "same" }, { name: "same" }, { name: "same" }],
+            },
+            name: "build_workspace",
+          }),
+        );
+        expect(built.panes).toHaveLength(3);
+        // tmux does not require a window name to be unique, and matching by
+        // name resolved all three to the first window — so the caller was
+        // handed one pane three times and invited to skip list_panes.
+        expect(new Set(built.panes.map((pane) => pane.id)).size).toBe(3);
+        expect(new Set(built.panes.map((pane) => pane.windowId)).size).toBe(3);
+      });
+    });
+  }, 60_000);
 
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
