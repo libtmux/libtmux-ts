@@ -168,7 +168,8 @@ export function requireLiveCursor(
       "you are handed. A cursor does not carry across panes, or across a dropped " +
       "control connection.",
     reason:
-      `Cursor ${String(from)} is ${String(ahead)} bytes past everything pane ${paneId} has ` +
+      `Cursor ${String(from)} is ${String(ahead)} byte${ahead === 1 ? "" : "s"} past everything ` +
+      `pane ${paneId} has ` +
       `streamed, which is now at ${String(tail.cursor)}.`,
   });
 }

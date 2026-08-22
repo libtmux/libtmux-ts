@@ -321,15 +321,29 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
     (args, extra) => run(extra.signal, args, false),
   );
 
+  /**
+   * Whether the client on the other end actually speaks tasks.
+   *
+   * The task ceiling is traded for a handle that arrives at once and can be
+   * cancelled. A client that declares no task capability gets neither: the SDK
+   * runs the tool and polls on its behalf, so the call blocks and cannot be
+   * called off. Charging it the task ceiling hands it the worst combination
+   * available — an uncancellable wait carrying twenty times the ceiling the
+   * blocking tool would have used — which is the turn-destroying outcome the
+   * low blocking ceiling exists to prevent.
+   */
+  const clientSpeaksTasks = (): boolean => mcp.server.getClientCapabilities()?.tasks !== undefined;
+
   // The same wait, offered as a task. A client that speaks tasks gets a handle
   // immediately and can cancel; one that does not has the SDK poll on its
   // behalf and sees exactly the blocking tool it saw before — which is why this
-  // is `optional` rather than `required`.
+  // is `optional` rather than `required`, and why the ceiling follows the
+  // client's capability rather than the tool's name.
   mcp.experimental.tasks.registerToolTask(
     "wait_for_text_task",
     {
       annotations: READ_ONLY,
-      description: `${description} Runs as a task: you get a handle at once and can do other work, so a long timeoutMs costs you nothing to wait on.`,
+      description: `${description} If your client speaks tasks, you get a handle at once and can do other work, so a long timeoutMs costs nothing to wait on. If it does not, this blocks exactly like wait_for_text and is held to the same lower ceiling — the reply says which one it used.`,
       execution: { taskSupport: "optional" },
       inputSchema,
       outputSchema: waitOutputSchema,
@@ -343,7 +357,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
           pollInterval: 200,
           ttl: context.policy.taskWaitMaxMs + 60_000,
         });
-        void run(extra.signal, args, true)
+        void run(extra.signal, args, clientSpeaksTasks())
           .then((result) => extra.taskStore.storeTaskResult(task.taskId, "completed", result))
           .catch((error: unknown) =>
             extra.taskStore.storeTaskResult(

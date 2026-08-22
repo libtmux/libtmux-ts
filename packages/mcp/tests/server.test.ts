@@ -676,6 +676,31 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("holds a task wait to the blocking ceiling when the client has no tasks", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { command: "echo ready-now", paneId },
+          name: "run_command",
+        });
+
+        // Matches at once, so this asserts which ceiling was chosen rather
+        // than spending it. This client declares no task capability, so the
+        // SDK runs the tool and polls on its behalf: the call blocks and
+        // cannot be cancelled, which is what the task ceiling is traded for.
+        const result = structured<{ effectiveTimeoutMs: number; outcome: string }>(
+          await client.callTool({
+            arguments: { paneId, patterns: ["ready-now"], timeoutMs: 5_000_000 },
+            name: "wait_for_text_task",
+          }),
+        );
+        expect(result.outcome).toBe("matched");
+        expect(result.effectiveTimeoutMs).toBe(30_000);
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(
