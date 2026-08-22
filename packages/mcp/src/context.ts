@@ -83,6 +83,22 @@ export function createContext(
 const SUGGESTION_LIMIT = 12;
 
 /**
+ * Name some of what exists, and say when that is not all of it.
+ *
+ * A list that stops at twelve with no marker reads as the whole list, so an
+ * agent that does not find what it asked for concludes it is not there — and
+ * on a busy server the twelve shown are rarely the twelve it wants. Naming the
+ * remainder and the tool that lists it costs one clause.
+ */
+function suggest(all: readonly string[], listing: string): string {
+  const shown = all.slice(0, SUGGESTION_LIMIT);
+  const rest = all.length - shown.length;
+  return rest === 0
+    ? shown.join(", ")
+    : `${shown.join(", ")}, and ${String(rest)} more — ${listing} lists them all`;
+}
+
+/**
  * The pane operations that put input into a pane, or end what runs in it.
  *
  * Named so the type system can withhold them. Resizing and retitling are not
@@ -103,7 +119,6 @@ export type ReadablePane = Omit<Pane, PaneWrite>;
 function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult {
   const available = snapshot.panes
     .toArray()
-    .slice(0, SUGGESTION_LIMIT)
     .map(
       (entry) =>
         `${entry.id} (${entry.sessionName ?? "?"}:${entry.windowName ?? "?"} ${entry.currentCommand ?? "?"})`,
@@ -112,7 +127,7 @@ function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult 
     hint:
       available.length === 0
         ? "This server has no panes. Create one with new_session."
-        : `Panes on this server: ${available.join(", ")}`,
+        : `Panes on this server: ${suggest(available, "list_panes")}`,
     reason: `No pane ${paneId} on this server.`,
   });
 }
@@ -190,13 +205,12 @@ export function requireSession(snapshot: ServerSnapshot, target: string): CallTo
   if (byName !== undefined) return byName;
   const available = snapshot.sessions
     .toArray()
-    .slice(0, SUGGESTION_LIMIT)
     .map((entry) => `${entry.id} (${entry.name ?? "?"})`);
   return fail({
     hint:
       available.length === 0
         ? "This server has no sessions. Create one with new_session."
-        : `Sessions on this server: ${available.join(", ")}`,
+        : `Sessions on this server: ${suggest(available, "list_sessions")}`,
     reason: `No session ${target} on this server.`,
   });
 }
@@ -206,13 +220,12 @@ export function requireWindow(snapshot: ServerSnapshot, target: string): CallToo
   if (byId !== undefined) return byId;
   const available = snapshot.windows
     .toArray()
-    .slice(0, SUGGESTION_LIMIT)
     .map((entry) => `${entry.id} (${entry.sessionName ?? "?"}:${entry.name ?? "?"})`);
   return fail({
     hint:
       available.length === 0
         ? "This server has no windows."
-        : `Windows on this server: ${available.join(", ")}`,
+        : `Windows on this server: ${suggest(available, "list_windows")}`,
     reason: `No window ${target} on this server.`,
   });
 }
