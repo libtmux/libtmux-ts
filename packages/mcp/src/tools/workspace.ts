@@ -102,6 +102,7 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
         .filter((pane) => pane !== undefined)
         .map((pane) => paneView(pane, identity));
 
+      context.topologyChanged();
       return ok(
         { panes, sessionId: created.id },
         `Built ${session} (${created.id}) with ${String(panes.length)} windows:\n${panes.map(paneLine).join("\n")}`,

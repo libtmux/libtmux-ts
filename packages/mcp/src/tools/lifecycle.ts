@@ -78,6 +78,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         session,
         snapshot.windows.count({ session: { is: { id: session.id } } }),
       );
+      context.topologyChanged();
       return ok(
         { paneId: pane?.id ?? "", session: view, windowId: pane?.windowId ?? "" },
         `Created ${view.name} (${view.id}); its pane is ${pane?.id ?? "unknown"}.`,
@@ -111,6 +112,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const after = await context.snapshot();
       const pane = after.panes.first({ window: { is: { id: window.id } } });
       const view = windowView(window);
+      context.topologyChanged();
       return ok(
         { paneId: pane?.id ?? "", window: view },
         `${windowLine(view)}; its pane is ${pane?.id ?? "unknown"}.`,
@@ -147,6 +149,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         ...(startDirectory === undefined ? {} : { startDirectory }),
       });
       const view = paneView(created, await context.identity(snapshot));
+      context.topologyChanged();
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -170,6 +173,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         after.sessions.one({ id: found.id }),
         after.windows.count({ session: { is: { id: found.id } } }),
       );
+      context.topologyChanged();
       return ok({ session: view }, `Renamed ${found.id} to ${name}.`);
     },
   );
@@ -189,6 +193,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       if (isFailure(window)) return window;
       await window.rename(name);
       const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      context.topologyChanged();
       return ok({ window: view }, windowLine(view));
     },
   );
@@ -276,6 +281,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       );
       if (guard !== undefined) return guard;
       await pane.kill();
+      context.topologyChanged();
       return ok({ killed: paneId }, `Killed ${paneId}.`);
     },
   );
@@ -305,6 +311,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         if (guard !== undefined) return guard;
       }
       await window.kill();
+      context.topologyChanged();
       return ok({ killed: windowId }, `Killed ${windowId} and its ${String(inside.length)} panes.`);
     },
   );
@@ -334,6 +341,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         if (guard !== undefined) return guard;
       }
       await found.kill();
+      context.topologyChanged();
       return ok({ killed: found.id }, `Killed ${found.id} and its ${String(inside.length)} panes.`);
     },
   );

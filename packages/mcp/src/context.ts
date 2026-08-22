@@ -21,6 +21,13 @@ export interface ToolContext {
   readonly policy: Policy;
   snapshot(): Promise<ServerSnapshot>;
   readonly tmux: Server;
+  /**
+   * Say that this call changed which sessions, windows or panes exist.
+   *
+   * Called from the success path of every tool that adds, removes or renames
+   * one. Coalesced by the notifier, so calling it freely is the point.
+   */
+  topologyChanged(): void;
 }
 
 /**
@@ -58,6 +65,7 @@ function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
 export function createContext(
   tmux: Server,
   policy: Policy,
+  topologyChanged: () => void = () => undefined,
 ): ToolContext & { close(): Promise<void> } {
   const hub = new LiveHub(tmux);
   return {
@@ -67,18 +75,13 @@ export function createContext(
     policy,
     snapshot: () => withRecovery(tmux, tmux.snapshot()),
     tmux,
+    topologyChanged,
   };
 }
 
 /** How many alternatives an error lists before the list stops helping. */
 const SUGGESTION_LIMIT = 12;
 
-/**
- * Find a pane, or say what exists instead.
- *
- * A bare "no such pane" costs the agent a turn to discover what it should have
- * asked for. Naming the panes that do exist makes the failed call the last one.
- */
 /**
  * The pane operations that put input into a pane, or end what runs in it.
  *
@@ -114,6 +117,12 @@ function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult 
   });
 }
 
+/**
+ * Find a pane, or say what exists instead.
+ *
+ * A bare "no such pane" costs the agent a turn to discover what it should have
+ * asked for. Naming the panes that do exist makes the failed call the last one.
+ */
 export function requirePane(
   snapshot: ServerSnapshot,
   paneId: string,

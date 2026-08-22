@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  ResourceListChangedNotificationSchema,
+  ResourceUpdatedNotificationSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, test } from "bun:test";
 
 import { createTmuxMcpServer } from "../src/server.js";
@@ -697,6 +700,36 @@ describe("staying out of the way", () => {
         );
         expect(result.outcome).toBe("matched");
         expect(result.effectiveTimeoutMs).toBe(30_000);
+      });
+    });
+  }, 60_000);
+
+  test("says the resource list changed when it changes it", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        let notices = 0;
+        client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+          notices += 1;
+        });
+
+        const paneId = await shellPaneId(client);
+        await client.callTool({ arguments: { paneId }, name: "split_pane" });
+        // Longer than the coalescing window, so the notice has landed.
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        expect(notices).toBeGreaterThan(0);
+
+        // One intent that makes a session, three windows and their panes is
+        // one notice, not nine: a client refreshes the whole list per notice.
+        notices = 0;
+        await client.callTool({
+          arguments: {
+            session: "coalesced",
+            windows: [{ name: "one" }, { name: "two" }, { name: "three" }],
+          },
+          name: "build_workspace",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        expect(notices).toBe(1);
       });
     });
   }, 60_000);

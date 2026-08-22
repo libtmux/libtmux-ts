@@ -21,7 +21,7 @@ import { registerSettings } from "./tools/settings.js";
 import { registerWait } from "./tools/wait.js";
 import { registerWorkspace } from "./tools/workspace.js";
 import { registerPrompts } from "./prompts.js";
-import { registerResources } from "./resources.js";
+import { createListChangedNotifier, registerResources } from "./resources.js";
 import { describeStartup } from "./startup.js";
 
 import manifest from "../package.json" with { type: "json" };
@@ -44,8 +44,6 @@ export function createTmuxMcpServer(
 ): McpServer {
   const environment = options.environment ?? process.env;
   const policy = options.policy ?? resolvePolicy(environment);
-  const context = createContext(tmux, policy);
-
   const mcp = new McpServer(
     { name: "libtmux", title: "tmux", version: PACKAGE_VERSION },
     {
@@ -56,6 +54,10 @@ export function createTmuxMcpServer(
       taskStore: new InMemoryTaskStore(),
     },
   );
+
+  // Built after the server so a tool can say the resource list changed; the
+  // notifier needs somewhere to send it.
+  const context = createContext(tmux, policy, createListChangedNotifier(mcp));
 
   // Every tool registers against the filtered view, so the allowlist cannot be
   // half-applied by a module that forgot it.

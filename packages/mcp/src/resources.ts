@@ -241,7 +241,14 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
 function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
   const watching = new Map<string, () => void>();
 
-  mcp.server.registerCapabilities({ resources: { listChanged: true, subscribe: true } });
+  mcp.server.registerCapabilities({
+    resources: {
+      listChanged: true,
+      // The subscribe handler needs a control connection and can only throw
+      // without one. A capability is a promise, so it follows the ability.
+      ...(context.policy.liveEnabled ? { subscribe: true } : {}),
+    },
+  });
 
   mcp.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
     const uri = request.params.uri;
@@ -293,4 +300,30 @@ function paneIdOfContentUri(uri: string): string | undefined {
   const match = /^tmux:\/\/panes\/([^/]+)\/content$/.exec(uri);
   const encoded = match?.[1];
   return encoded === undefined ? undefined : decodeURIComponent(encoded);
+}
+
+/**
+ * Say the resource list changed, at most once per coalescing window.
+ *
+ * A client that believes `listChanged` caches the list and refreshes only on
+ * notice, so a list this server changed and did not announce is a world the
+ * agent goes on acting in after it is gone. Every split, every new window and
+ * every dead pane changes it, which is why this is cheap enough to send from
+ * each of them: build_workspace makes a session, its windows and their panes
+ * in one call, and that is one notice rather than nine.
+ *
+ * This covers changes this server made. A change somebody else made on the
+ * same tmux server still goes unannounced — that needs a control connection
+ * held for structural notifications, which is a lifecycle question of its own.
+ */
+export function createListChangedNotifier(mcp: McpServer): () => void {
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  return (): void => {
+    if (pending !== undefined) return;
+    pending = setTimeout(() => {
+      pending = undefined;
+      void mcp.server.sendResourceListChanged().catch(() => undefined);
+    }, UPDATE_COALESCE_MS);
+    pending.unref?.();
+  };
 }

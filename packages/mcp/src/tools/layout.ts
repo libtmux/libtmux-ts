@@ -210,6 +210,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         ...(destination === undefined ? {} : { session: destination }),
       });
       const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      context.topologyChanged();
       return ok({ window: view }, windowLine(view));
     },
   );
