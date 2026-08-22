@@ -357,21 +357,34 @@ describe("concurrent framing", () => {
 
   test("keeps another caller's command and output out of this one's", () => {
     const cleaned = withoutForeignFraming(contaminated, "ltxaaa111");
-    expect(cleaned).toBe("AAA-start\nAAA-end");
-    // The command text is the disclosure that matters: it carries whatever the
-    // other agent put in it.
-    expect(cleaned).not.toContain("BBB-secret");
-    expect(cleaned).not.toContain("ltxbbb222");
+    expect(cleaned.text).toBe("AAA-start\nAAA-end");
+    expect(cleaned.text).not.toContain("BBB-secret");
+    expect(cleaned.text).not.toContain("ltxbbb222");
+    // Removed, and said so: what was cleaned is still evidence that the pane
+    // had another writer, so output with no marker may be theirs too.
+    expect(cleaned.foreignOutputSuspected).toBe(true);
   });
 
-  test("leaves this caller's own output alone", () => {
-    expect(withoutForeignFraming("one\ntwo\nthree", "ltxaaa111")).toBe("one\ntwo\nthree");
+  test("leaves this caller's own output alone and claims nothing", () => {
+    const cleaned = withoutForeignFraming("one\ntwo\nthree", "ltxaaa111");
+    expect(cleaned.text).toBe("one\ntwo\nthree");
+    expect(cleaned.foreignOutputSuspected).toBe(false);
   });
 
-  test("keeps output when a foreign run has not finished", () => {
-    // No closing marker for the other run, so dropping to the end of the body
-    // would take this caller's output with it. Its echo and marker still go.
-    const unterminated = ["AAA-start", "ltxbbb222_S", "AAA-end"].join("\n");
-    expect(withoutForeignFraming(unterminated, "ltxaaa111")).toBe("AAA-start\nAAA-end");
+  test("reports what it cannot bracket rather than guessing", () => {
+    // A background job is a genuinely concurrent writer: its start marker
+    // lands inside this body with no end marker to bracket it. Dropping to
+    // the end would take OURS-end, which is real output, so the orphaned line
+    // stays and the result says another writer was here.
+    const unterminated = ["OURS-start", "ltxdeadbeef01_S", "FOREIGN-SECRET-42", "OURS-end"].join(
+      "\n",
+    );
+    const cleaned = withoutForeignFraming(unterminated, "ltxaaa111");
+    expect(cleaned.text).toContain("OURS-start");
+    expect(cleaned.text).toContain("OURS-end");
+    expect(cleaned.text).not.toContain("ltxdeadbeef01");
+    // The honest part: the secret is still there, and the caller is told so
+    // rather than handed it silently or handed a hole silently.
+    expect(cleaned.foreignOutputSuspected).toBe(true);
   });
 });

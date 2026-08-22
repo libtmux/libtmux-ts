@@ -22,6 +22,8 @@ import { effectiveWaitMs } from "./policy.js";
 export interface FramedResult {
   readonly effectiveTimeoutMs: number;
   readonly exitStatus: number | null;
+  /** Another writer was seen in this command's own output. */
+  readonly foreignOutputSuspected: boolean;
   readonly outcome: "completed" | "pane_died" | "timed_out";
   readonly output: string;
 }
@@ -71,9 +73,21 @@ const FRAMING_ECHO = /(?:^|\s)m=(ltx[0-9a-f]+);/u;
  * ordinary case rather than a contrived one.
  *
  * A pane is single-writer and nothing here can lock it across processes, so
- * this cleans the report rather than preventing the overlap.
+ * this cleans the report rather than preventing the overlap — and it cannot
+ * clean all of it. A foreign run that started before this one and printed
+ * during it leaves output with no marker anywhere in this body, textually
+ * indistinguishable from this command's own; a foreign run still going when
+ * this one ends leaves output that cannot be bracketed. Dropping to the end of
+ * the body on an unterminated marker would take this caller's real output with
+ * it, so the choice is between silently returning someone else's output and
+ * silently returning a hole. It reports instead: `foreignOutputSuspected` says
+ * another writer was seen in this body. False is not proof of cleanliness —
+ * only that no foreign marker appeared here.
  */
-export function withoutForeignFraming(body: string, id: string): string {
+export function withoutForeignFraming(
+  body: string,
+  id: string,
+): { readonly foreignOutputSuspected: boolean; readonly text: string } {
   const lines = body.split("\n");
   const foreign = (value: string): boolean => value !== id;
 
@@ -91,22 +105,30 @@ export function withoutForeignFraming(body: string, id: string): string {
     for (let at = index; at <= closes; at += 1) drop.add(at);
   }
 
-  return lines
-    .filter((line, index) => {
-      if (drop.has(index)) return false;
-      const echo = FRAMING_ECHO.exec(line);
-      if (echo !== null && foreign(echo[1] ?? "")) return false;
-      const marker = MARKER.exec(line);
-      return marker === null || !foreign(marker[1] ?? "");
-    })
-    .join("\n");
+  let seen = drop.size > 0;
+  const kept = lines.filter((line, index) => {
+    if (drop.has(index)) return false;
+    const echo = FRAMING_ECHO.exec(line);
+    if (echo !== null && foreign(echo[1] ?? "")) {
+      seen = true;
+      return false;
+    }
+    const marker = MARKER.exec(line);
+    if (marker !== null && foreign(marker[1] ?? "")) {
+      seen = true;
+      return false;
+    }
+    return true;
+  });
+
+  return { foreignOutputSuspected: seen, text: kept.join("\n") };
 }
 
 /** Pull the command's own output out of the framed stream. */
 function slice(
   stream: string,
   id: string,
-): { exitStatus: number | null; output: string } | undefined {
+): { exitStatus: number | null; foreignOutputSuspected: boolean; output: string } | undefined {
   const startAt = stream.indexOf(`${id}_S`);
   if (startAt < 0) return undefined;
   const endAt = stream.indexOf(`${id}_E`, startAt);
@@ -117,11 +139,14 @@ function slice(
   const statusLine = stream.slice(endAt).split("\n", 1)[0] ?? "";
   const parsed = Number.parseInt(statusLine.slice(`${id}_E`.length).trim(), 10);
 
+  // The end marker is printed on its own line, so the body ends with the
+  // newline that preceded it; trailing CR comes from the pty, not the command.
+  const cleaned = withoutForeignFraming(body.replace(/\r?\n?$/, "").replaceAll("\r\n", "\n"), id);
+
   return {
     exitStatus: Number.isFinite(parsed) ? parsed : null,
-    // The end marker is printed on its own line, so the body ends with the
-    // newline that preceded it; trailing CR comes from the pty, not the command.
-    output: withoutForeignFraming(body.replace(/\r?\n?$/, "").replaceAll("\r\n", "\n"), id),
+    foreignOutputSuspected: cleaned.foreignOutputSuspected,
+    output: cleaned.text,
   };
 }
 
@@ -182,18 +207,27 @@ export async function runFramedCommand(
   const startAt = partial.indexOf(`${id}_S`);
   const afterStart = startAt < 0 ? -1 : partial.indexOf("\n", startAt);
   const output = afterStart < 0 ? partial : partial.slice(afterStart + 1);
+  // The same cleaning as the completed path: a command that timed out has been
+  // sharing the pane for longer, not less.
+  const cleaned = withoutForeignFraming(output.replaceAll("\r\n", "\n"), id);
 
   const alive = (await context.snapshot()).panes.exists({ id: pane.id });
   return {
     effectiveTimeoutMs: budget,
     exitStatus: null,
+    foreignOutputSuspected: cleaned.foreignOutputSuspected,
     outcome: alive ? "timed_out" : "pane_died",
-    output: output.replaceAll("\r\n", "\n"),
+    output: cleaned.text,
   };
 }
 
 /**
- * A short id, unique enough that two concurrent runs cannot read each other's.
+ * A short id, unique enough that no run matches another's markers.
+ *
+ * That is a weaker guarantee than it sounds: matching is safe, attribution is
+ * not. The body between one run's markers is whatever the pane printed, so
+ * uniqueness keeps two runs from reading each other's *markers*, not from
+ * reading each other's *output*.
  *
  * Letters and digits only: the id is pasted into a shell word, so anything a
  * shell would treat as syntax cannot appear in it.

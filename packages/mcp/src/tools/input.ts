@@ -154,6 +154,14 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       },
       outputSchema: {
         effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        foreignOutputSuspected: z
+          .boolean()
+          .describe(
+            "Another writer printed into this pane while the command ran. Output " +
+              "that could be attributed to them was removed; what is left may still " +
+              "include theirs. False means no foreign marker was seen, not that the " +
+              "output is certainly this command's.",
+          ),
         exitStatus: z
           .number()
           .int()
@@ -220,12 +228,18 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         {
           effectiveTimeoutMs: result.effectiveTimeoutMs,
           exitStatus: result.exitStatus,
+          foreignOutputSuspected: result.foreignOutputSuspected,
           outcome: result.outcome,
           output: trimmed.lines.join("\n"),
           paneId,
           stillRunning: result.outcome === "timed_out",
         },
-        `${renderOutput(trimmed)}\n\n[${headline}]`,
+        `${renderOutput(trimmed)}\n\n[${headline}]${
+          result.foreignOutputSuspected
+            ? "\n[another writer printed into this pane while the command ran; " +
+              "output attributable to them was removed, what remains may still be theirs]"
+            : ""
+        }`,
       );
     },
   );
