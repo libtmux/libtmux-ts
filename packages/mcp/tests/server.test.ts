@@ -1100,6 +1100,60 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("says when a layout string was accepted and ignored", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const session = (await serverFor(fixture).snapshot()).sessions.one().name ?? "";
+        const wide = structured<{ paneId: string; window: { id: string } }>(
+          await client.callTool({ arguments: { name: "wide", session }, name: "new_window" }),
+        );
+        await client.callTool({ arguments: { paneId: wide.paneId }, name: "split_pane" });
+        const twoPane = structured<{ window: { layout: string } }>(
+          await client.callTool({
+            arguments: { layout: "even-horizontal", windowId: wide.window.id },
+            name: "select_layout",
+          }),
+        ).window.layout;
+
+        const narrow = structured<{ window: { id: string } }>(
+          await client.callTool({ arguments: { name: "narrow", session }, name: "new_window" }),
+        ).window;
+
+        // tmux exits 0 for a layout describing a different set of panes and
+        // changes nothing, so the call looks like it worked.
+        const ignored = await client.callTool({
+          arguments: { layout: twoPane, windowId: narrow.id },
+          name: "select_layout",
+        });
+        expect(toolText(ignored)).toContain("was not applied");
+
+        // The quiet half: a layout that does apply says nothing, or the notice
+        // is noise on every call rather than a signal.
+        const applied = await client.callTool({
+          arguments: { layout: "even-vertical", windowId: wide.window.id },
+          name: "select_layout",
+        });
+        expect(toolText(applied)).not.toContain("was not applied");
+      });
+    });
+  }, 60_000);
+
+  test("lists the hooks that run, and counts the rest", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const shown = structured<{ hooks: Record<string, string>; unset: number }>(
+          await client.callTool({ arguments: {}, name: "show_hooks" }),
+        );
+        // tmux reports its whole table, nearly all of it empty; the question is
+        // which hooks run.
+        expect(shown.unset).toBeGreaterThan(0);
+        for (const [name, command] of Object.entries(shown.hooks)) {
+          expect(command, `${name} was listed with no command`).not.toBe("");
+        }
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

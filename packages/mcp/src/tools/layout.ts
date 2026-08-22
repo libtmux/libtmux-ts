@@ -152,7 +152,20 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(window)) return window;
       await window.selectLayout(layout);
       const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
-      return ok({ window: view }, windowLine(view));
+      // A layout string describing a different number of panes is accepted and
+      // does nothing: tmux exits 0 and leaves the window alone. A named layout
+      // is always applied, so only the string form can silently miss — and the
+      // window this returns already knows which layout it ended up with.
+      const ignored =
+        !LAYOUTS.includes(layout as (typeof LAYOUTS)[number]) && view.layout !== layout;
+      return ok(
+        { window: view },
+        windowLine(view) +
+          (ignored
+            ? `\n\n[the layout string was not applied: this window is still ${view.layout}. ` +
+              `tmux accepts a layout describing a different set of panes and changes nothing.]`
+            : ""),
+      );
     },
   );
 

@@ -100,7 +100,13 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       inputSchema: {
         session: z.string().optional().describe("Session scope; omit for server scope."),
       },
-      outputSchema: { hooks: z.record(z.string(), z.string()) },
+      outputSchema: {
+        hooks: z.record(z.string(), z.string()),
+        unset: z
+          .number()
+          .int()
+          .describe("Hook names tmux defines that carry no command, and so are not listed."),
+      },
       title: "Show hooks",
     },
     async ({ session }) => {
@@ -113,11 +119,15 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         if (isFailure(found)) return found;
         read = await found.showHooks();
       }
-      const hooks = Object.fromEntries(read);
+      // tmux reports its whole hook table, roughly a hundred names, nearly all
+      // carrying nothing. The question a caller is asking is which hooks run,
+      // and a wall of empty strings buries the handful that do.
+      const hooks = Object.fromEntries([...read].filter(([, command]) => command !== ""));
+      const unset = read.size - Object.keys(hooks).length;
       return ok(
-        { hooks },
+        { hooks, unset },
         Object.keys(hooks).length === 0
-          ? "No hooks set."
+          ? `No hooks set. ${String(unset)} hook names exist and carry nothing.`
           : Object.entries(hooks)
               .map(([name, value]) => `${name} ${value}`)
               .join("\n"),
