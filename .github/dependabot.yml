@@ -31,14 +31,3 @@ updates:
     # The trailing space stops Dependabot appending a colon.
     commit-message:
       prefix: "js(deps) "
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    groups:
-      actions:
-        patterns:
-          - "*"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "ci(deps) "
