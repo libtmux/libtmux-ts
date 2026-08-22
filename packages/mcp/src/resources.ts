@@ -15,10 +15,17 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
+  type CallToolResult,
   type ReadResourceResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import type { ToolContext } from "./context.js";
+import {
+  isFailure,
+  requirePane,
+  requireSession,
+  requireWindow,
+  type ToolContext,
+} from "./context.js";
 import {
   paneContentUri,
   paneUri,
@@ -37,6 +44,32 @@ const UPDATE_COALESCE_MS = 500;
 const JSON_MIME = "application/json";
 /** Pane contents are terminal text: neither JSON to parse nor HTML to render. */
 const TEXT_MIME = "text/plain";
+
+/**
+ * Read a template variable back as the id that was published.
+ *
+ * The sigils that make a tmux id readable — `%` for a pane, `$` for a session,
+ * `@` for a window — are exactly the characters a URI path escapes, so every
+ * published id arrives encoded and no id arrives intact by luck. Encoding on
+ * the way out without decoding on the way in made the only resolvable form the
+ * one this server never advertises.
+ */
+function publishedId(value: unknown): string {
+  return decodeURIComponent(String(value));
+}
+
+/**
+ * Throw what a lookup would have told a tool caller.
+ *
+ * A resource read cannot return a tool result, and the alternatives those
+ * results carry are the reason a miss stops costing a turn. Reducing them to
+ * "No pane %1" on the way through is how the resource surface ended up worse
+ * than the tool surface for the same question.
+ */
+function resourceError(failure: CallToolResult): Error {
+  const [first] = failure.content;
+  return new Error(first?.type === "text" ? first.text : "Not found");
+}
 
 function jsonResource(uri: string, value: unknown): ReadResourceResult {
   return { contents: [{ mimeType: JSON_MIME, text: JSON.stringify(value, null, 2), uri }] };
@@ -118,12 +151,11 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     }),
     { description: "One session with its windows.", mimeType: JSON_MIME, title: "Session" },
     async (uri, { sessionId }) => {
-      const target = String(sessionId);
+      const target = publishedId(sessionId);
       const snapshot = await context.snapshot();
-      const session =
-        snapshot.sessions.oneOrUndefined({ id: target }) ??
-        snapshot.sessions.oneOrUndefined({ name: target });
-      if (session === undefined) throw new Error(`No session ${target}`);
+      const found = requireSession(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const session = found;
       return jsonResource(uri.href, {
         ...sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
         windows: snapshot.windows
@@ -154,10 +186,11 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     }),
     { description: "One window with its panes.", mimeType: JSON_MIME, title: "Window" },
     async (uri, { windowId }) => {
-      const target = String(windowId);
+      const target = publishedId(windowId);
       const snapshot = await context.snapshot();
-      const window = snapshot.windows.oneOrUndefined({ id: target });
-      if (window === undefined) throw new Error(`No window ${target}`);
+      const found = requireWindow(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const window = found;
       const identity = await context.identity(snapshot);
       return jsonResource(uri.href, {
         ...windowView(window),
@@ -193,10 +226,11 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     }),
     { description: "One pane's metadata.", mimeType: JSON_MIME, title: "Pane" },
     async (uri, { paneId }) => {
-      const target = String(paneId);
+      const target = publishedId(paneId);
       const snapshot = await context.snapshot();
-      const pane = snapshot.panes.oneOrUndefined({ id: target });
-      if (pane === undefined) throw new Error(`No pane ${target}`);
+      const found = requirePane(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const pane = found;
       return jsonResource(uri.href, paneView(pane, await context.identity(snapshot)));
     },
   );
@@ -220,10 +254,11 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       title: "Pane contents",
     },
     async (uri, { paneId }) => {
-      const target = String(paneId);
+      const target = publishedId(paneId);
       const snapshot = await context.snapshot();
-      const pane = snapshot.panes.oneOrUndefined({ id: target });
-      if (pane === undefined) throw new Error(`No pane ${target}`);
+      const found = requirePane(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const pane = found;
       return textResource(uri.href, (await pane.capture()).join("\n"));
     },
   );
