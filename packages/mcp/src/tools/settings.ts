@@ -22,6 +22,28 @@ import { fail, ok } from "../results.js";
 
 const SCOPES = ["server", "session", "pane"] as const;
 
+/**
+ * Refuse a scope that names nothing.
+ *
+ * "" is a legal tmux session name, so using it as the absent-target sentinel
+ * meant an untargeted call was a lookup that could succeed — against whichever
+ * session happened to be called "". Every write it made went somewhere the
+ * caller never named.
+ */
+function requireTarget(
+  scope: (typeof SCOPES)[number],
+  target: string | undefined,
+): ReturnType<typeof fail> | undefined {
+  if (scope === "server" || target !== undefined) return undefined;
+  return fail({
+    hint:
+      scope === "session"
+        ? "Name the session, or leave scope off to reach the server's own options."
+        : "Name the pane, or leave scope off to reach the server's own options.",
+    reason: `${scope} scope needs a target: it says which ${scope} to act on.`,
+  });
+}
+
 export function registerSettings(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "readonly")) return;
 
@@ -42,6 +64,8 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
     },
     async ({ scope, target }) => {
       const chosen = scope ?? "server";
+      const missing = requireTarget(chosen, target);
+      if (missing !== undefined) return missing;
       const snapshot = await context.snapshot();
       let read: ReadonlyMap<string, string>;
       if (chosen === "server") {
@@ -195,6 +219,8 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
     },
     async ({ name, scope, target, value }) => {
       const chosen = scope ?? "server";
+      const missing = requireTarget(chosen, target);
+      if (missing !== undefined) return missing;
       const snapshot = await context.snapshot();
       if (chosen === "server") {
         await context.tmux.setOption(name, value);
@@ -208,6 +234,45 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         await pane.setOption(name, value);
       }
       return ok({ name, scope: chosen, value }, `Set ${chosen} option ${name} to ${value}.`);
+    },
+  );
+
+  mcp.registerTool(
+    "unset_option",
+    {
+      annotations: MUTATING,
+      description:
+        "Remove one tmux option at a scope, so it falls back to the value it " +
+        "inherits. This is how a set_option is undone: without it a wrong value " +
+        "set from here could not be taken back from here.",
+      inputSchema: {
+        name: z.string(),
+        scope: z.enum(SCOPES).optional().describe("Default server."),
+        target: z
+          .string()
+          .optional()
+          .describe("Session id/name or pane id, required for those scopes."),
+      },
+      outputSchema: { name: z.string(), scope: z.string() },
+      title: "Unset option",
+    },
+    async ({ name, scope, target }) => {
+      const chosen = scope ?? "server";
+      const missing = requireTarget(chosen, target);
+      if (missing !== undefined) return missing;
+      const snapshot = await context.snapshot();
+      if (chosen === "server") {
+        await context.tmux.unsetOption(name);
+      } else if (chosen === "session") {
+        const found = requireSession(snapshot, target ?? "");
+        if (isFailure(found)) return found;
+        await found.unsetOption(name);
+      } else {
+        const pane = requirePane(snapshot, target ?? "");
+        if (isFailure(pane)) return pane;
+        await pane.unsetOption(name);
+      }
+      return ok({ name, scope: chosen }, `Unset ${chosen} option ${name}; it now inherits.`);
     },
   );
 

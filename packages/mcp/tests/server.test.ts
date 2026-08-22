@@ -922,6 +922,63 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("needs a target for a scope that has one", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        // "" is a legal tmux session name, so using it as the absent-target
+        // sentinel meant an untargeted call looked up a session that can
+        // exist — and wrote to it.
+        const refused = await client.callTool({
+          arguments: { name: "@probe", scope: "session", value: "went-somewhere" },
+          name: "set_option",
+        });
+        expect((refused as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(refused)).toContain("target");
+
+        const reading = await client.callTool({
+          arguments: { scope: "session" },
+          name: "show_options",
+        });
+        expect((reading as { isError?: boolean }).isError).toBe(true);
+      });
+    });
+  }, 60_000);
+
+  test("unsets an option so it falls back to what it inherits", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const session = (await serverFor(fixture).snapshot()).sessions.one().name ?? "";
+        await client.callTool({
+          arguments: { name: "@probe", scope: "session", target: session, value: "mine" },
+          name: "set_option",
+        });
+        expect(
+          structured<{ options: Record<string, string> }>(
+            await client.callTool({
+              arguments: { scope: "session", target: session },
+              name: "show_options",
+            }),
+          ).options["@probe"],
+        ).toBe("mine");
+
+        // Setting is reachable and unsetting was not, so a wrong value was
+        // permanent from inside this server.
+        await client.callTool({
+          arguments: { name: "@probe", scope: "session", target: session },
+          name: "unset_option",
+        });
+        expect(
+          structured<{ options: Record<string, string> }>(
+            await client.callTool({
+              arguments: { scope: "session", target: session },
+              name: "show_options",
+            }),
+          ).options["@probe"],
+        ).toBeUndefined();
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(
