@@ -3,462 +3,60 @@
 Rules for this repository: `libtmux` for Bun and TypeScript, a port of the
 Python library of the same name. Nothing here is Python — a convention you
 recognise from that project (uv, ruff, mypy, pytest, doctests, NumPy
-docstrings) does not apply unless it is written down below.
-
-## Layout
-
-A workspace. `packages/libtmux` is the library; `packages/mcp` and
-`packages/workspace` are consumers built on it, and all three are published to
-npm together under one version, from one tag. `examples/` holds runnable
-examples and is the only `private` package here. Each declares its own
-dependencies — a dependency the root happens to install is not one a package
-may use.
-
-A release is a tag, and the tag is refused unless every manifest agrees with
-it. Everything ships as a prerelease under `latest` and no other dist-tag:
-while every version is an alpha, the newest one is what `npm i` should fetch,
-and `latest` is stated rather than inherited so it cannot lag. A second
-`alpha` tag was tried and removed — trusted publishing authenticates
-`npm publish` and nothing else, so writing one needs a token in the repository,
-which is what publishing this way exists to avoid.
-
-That reasoning holds only while every version is a prerelease, so the publish
-workflow now refuses a version that is not one rather than tagging it `latest`
-by habit. The first stable release wants `latest`; a prerelease cut after it
-does not, and moving `latest` backwards onto an alpha is the failure the check
-exists to prevent. Whoever cuts that release decides the tag.
-
-`test:package` reads the tarball and `test:install` uses it — a clean
-directory, `npm install` of the packed file, and a Node 22 process that imports
-the package by name and runs something. Nothing there can resolve through the
-workspace, which is the point: the two releases this repository shipped broken
-both packed and linted clean.
-
-An in-repo consumer resolves `libtmux` to source through `paths` in its own
-tsconfig, so a branded class has one type identity rather than one per build
-output. The published `exports` deliberately name only `dist`: source is not in
-the tarball, so no condition may point at it.
-
-Consumer tests use the library's real-tmux fixture harness directly, across the
-package boundary. That harness reaches into the library's internals and cannot
-be published, so it stays where it is and in-repo consumers reach for it by
-path. Nothing outside this repository needs it.
-
-`attic/` is where reference material goes to rest. `packages/libtmux/parity` is
-not that: it is a gate input, read by `check-parity.ts`, `generate-formats.ts`
-and five unit tests, and it lives beside its readers.
-
-## Toolchain
-
-Bun, `oxlint`, `oxfmt`, `tsgolint`. `package.json` is the list of gates; run
-them, do not re-derive them. `.github/workflows/typescript.yml` is the order CI
-runs them in, and every script it runs has to pass before a change is done.
-
-Zero runtime dependencies is a property under test, not an aspiration. Anything
-new belongs in `devDependencies` or nowhere.
-
-## Documentation is a gate
-
-Every public method, getter, and readonly field carries a ` ```ts ` example, and
-every example is compiled against the tree — a signature with no example fails
-`typecheck:symbols`, and one that no longer compiles fails it too.
-
-`docs/api.md` is generated from the doc comments that implement it. Never edit
-it by hand; run `bun run docs:api` and commit the result.
-
-The prose around the snippets is gated too, from the root: `docs:links`
-resolves every relative link and `#anchor` in every tracked Markdown file,
-`docs:claims` holds the ` ```console ` blocks to paths and packages that exist
-and pins any tmux badge to the CI matrix, and `docs:runnable` requires a block
-marked
-
-```
-<!-- runs: examples/agent.ts -->
-```
-
-to be drawn line for line from that example — which the integration suite runs
-against a real server. Compiling a snippet proves it typechecks; only that
-marker proves it works.
-
-Do not write counts into prose — how many symbols are ported, how many fields a
-version is asked for. They go stale silently and no reader needs them. Counts
-that pin a fixture or guard an invariant are different, and belong in code.
-
-## Comments earn their maintenance cost
-
-A comment ships only if it passes all three gates. Fail any: delete or rewrite.
-Borderline: delete — borderline means the information is reconstructible, which
-is what makes deletion cheap.
-
-**Loss.** Three years from now, would losing this cost a maintainer real time
-rediscovering intent, an invariant, a constraint, or a failure mode the code and
-tests do not already make obvious?
-
-**Elite.** Would SQLite, Redis, the Go standard library, or CPython write this
-comment, at this length? Those projects state the constraint and stop. They do
-not argue with an imagined objector.
-
-**Upkeep.** Will it stay true without maintenance? A comment that hand-syncs a
-value the code owns — a count, an offset, a line reference, a duplicated
-constant — is false the first time that value moves.
-
-### Ceiling
-
-One or two lines. A comment reaching four is either carrying several facts, in
-which case split it, or arguing, in which case cut it to the fact.
-
-Rationale, alternatives weighed, and the story of how the code got here belong
-in the commit message: timestamped, attached to the exact diff, and free to
-maintain.
-
-A comment often holds both a constraint and the deliberation that found it. Keep
-the constraint, cut the deliberation. "Runs at most once per second" survives;
-"this is the right trade for now" does not.
-
-### Keep
-
-- Why over how: upstream quirks, protocol and compatibility constraints,
-  performance tradeoffs still part of the contract.
-- Invariants, preconditions, ordering, lifetime, and concurrency requirements
-  that types and tests cannot express.
-- Code that looks wrong but is not, so a later cleanup does not reintroduce the
-  bug.
-- A high-level sketch of an algorithm whose local operations do not reveal the
-  whole.
-
-### Delete
-
-- Narration of the next lines; code translated into English.
-- Restated names, types, defaults, or control flow.
-- Values duplicated from the code and hand-synced.
-- Justification, hedging, or apology for a choice.
-- Speculation about future requirements.
-- History version control already holds, including commented-out code.
-- Ticket and issue numbers. They say nothing to a reader without tracker access,
-  and they rot when the tracker moves. Unfinished work goes in the tracker, not
-  the source.
-- Transient observations — "currently", "for now", "the latest release" —
-  that go stale with no nearby edit.
-
-### The upkeep gate in practice
-
-It reaches values that track our own code. It does not reach frozen external
-facts.
-
-Bad (Delete):
-
-```typescript
-// There are 321 tests to complete for servers.
-```
-
-Good (Keep):
-
-```typescript
-// tmux < 3.2 reports the pane ID only after the command completes,
-// so this query must stay separate.
-```
-
-### Documentation exception
-
-Doctests, minimal usage examples, and param, return, and raises lines on public
-API are exempt from the loss gate — they serve the caller, not the maintainer.
-They are exempt from nothing else. Ceiling: a good man page entry.
-
-TSDoc summaries, `@param` and `@returns` tags, and the compiled examples fall
-under this exception.
-
-## The parity ledger
-
-`parity/python-0.62.0.json` records a decision for every public symbol of the
-Python release it names. `oxfmt` formats TypeScript but not JSON, and
-`check-parity.ts --write` re-renders the file in a style the committed one does
-not use — so edit entries surgically as text and leave the rest byte-for-byte.
-
-A ported row names the TypeScript that covers it, and a row that claims a
-member has to cite one: `./module#instance:Class.member` for the prototype,
-`./module#value:Class.member` for the static side. `./module#value:Class`
-compiles to `typeof Class` and says only that the class is exported, which is
-the whole claim for a class row and none of it for a method: a rename leaves
-such a row citing a method that no longer exists, and the gate stays green.
-A row claims a member when its kind
-is `method` or `property`, or when its `typescript` field names `Class.member`;
-the gate reads that rather than a list, so it needs no maintaining.
-
-A member of a generic type needs the type instantiated to be read at all, so
-the locator carries the arguments: `./selection#type:Selection<never>.one`.
-`never` satisfies any parameter without asserting anything about it.
-
-`parity/python-0.62.0.baseline.json` is what the Python release contributes:
-the symbols it exposes, and the git object kind of every path the ledger cites.
-It is generated, not written, and the gate reads it instead of a checkout — so
-checking parity needs no Python sources and no network.
-
-The baseline it names is a released tag, so nothing in it can change on its
-own. Regenerate only to admit a new evidence path or to move to a different
-release, and commit the result:
-
-```console
-$ bun packages/libtmux/scripts/check-parity.ts \
-    --regenerate-baseline \
-    --python-repo ../libtmux
-```
-
-The differential suite is the other half, and it does need the code: it runs
-the real Python library as an oracle and compares this port against it. Point
-`LIBTMUX_PYTHON_REPO` at a checkout carrying the pinned commit — a shallow
-clone of the tag is enough:
-
-```console
-$ git clone --branch v0.62.0 --depth 1 \
-    https://github.com/tmux-python/libtmux.git
-```
-
-Without it those tests skip rather than fail, because a missing oracle is not
-evidence that the port is wrong. CI clones it, so they always run there.
-
-## Real tmux
-
-Probe before you commit. `~/.local/share/libtmux-tmux-matrix` holds the
-supported range as `<version>/bin/tmux` prefixes; point `LIBTMUX_TMUX_BUILDS` at
-it for `bun run test:compat`.
-
-Other libtmux ports run their own suites on this machine, so everything this
-one leaves in the temporary directory is named `ltx…` and nothing else is.
-`/tmp/libtmux-*` is not ours to take — `/tmp/libtmux-java-test` and
-`/tmp/libtmux-swift-dev` are someone else's, and a sweep that cannot tell them
-apart reaps their servers. `test:namespace` is the gate; `makeTestDirectory`
-applies the prefix, and a suite that starts a live server calls
-`assertOwnedSocketPath` before it touches one.
-
-Ownership is a prefix rather than a parent directory, deliberately. Nesting
-everything under `/tmp/libtmux-ts-test/` was tried and cost fifteen bytes of
-the socket budget below, which put the longest fixture path at 104 and failed
-the suite with "File name too long".
-
-Keep the names short for the same reason. Unset `TMUX` and `TMUX_PANE` too, so
-a probe cannot reach the terminal you are working in.
-
-Do not edit the tree while `test:compat` runs. It spawns the suite once per
-build and reads the working tree each time, so a mid-run edit produces failures
-attributed to whichever tmux happened to be current.
-
-Two benchmarks answer questions the gates do not, and are run by hand rather
-than wired to a script — `package.json` lists gates, and a number that varies
-with the machine is not one.
-
-Grid the transports against batching and concurrency:
-
-```console
-$ bun packages/libtmux/scripts/bench-modes.ts
-```
-
-Measure what a snapshot costs as the server grows, which is where any argument
-for a reduced model or a field projection has to start. It reports the command
-count, which the design holds flat, against the bytes and wall clock, which grow
-with the server — what a projection would address, and what it would cost to
-give up:
-
-```console
-$ bun packages/libtmux/scripts/bench-snapshot.ts
-```
-
-tmux argument grammar is worth checking rather than assuming: an adjustment like
-`resize-pane -U 2` is a _positional_ argument, so it has to follow every flag.
-Written next to its direction it turns any later flag into surplus arguments and
-tmux rejects the command.
-
-## The MCP server
-
-Five facts hold its design up. Each was read out of tmux's source or found by
-running the thing, and each is expensive to rediscover.
-
-**Output notifications are session-scoped.** `control_write_output` in
-`control.c` returns early unless the pane's window is linked into the control
-client's own session, so one connection cannot tail a server. Structural
-notifications — `%pane-mode-changed`, `%sessions-changed` — are global; `%output`
-is not. That is why `LiveHub` keys connections by session and opens one only for
-a session something is watching.
-
-**Attaching a control client does not resize anything.** `ignore_client_size` in
-`resize.c` skips a control client that has not set `CLIENT_SIZECHANGED` or
-`CLIENT_WINDOWSIZECHANGED`, which only `refresh-client -C` does. Nothing here
-sends it. Send it and every persistent connection starts shrinking the panes of
-whoever is attached.
-
-**An error result must carry no `structuredContent`.** A client validates that
-field against the tool's `outputSchema` whether or not `isError` is set, so a
-failure carrying its own diagnostic shape is rejected as a protocol violation
-and the model never reads the reason. `fail()` returns text alone for this.
-
-**`run_command`'s framing is POSIX shell and nothing else.** It sends
-`m=id; printf …; ( … ); s=$?`; fish rejects the assignment, csh spells the status
-`$status`. The tool refuses a shell it cannot address rather than letting the
-wait run out against a syntax error — and `force` does not override that one,
-because forcing it cannot work.
-
-The echo trap is what the framing exists for. The command carries `${m}_S` and
-the shell prints `<id>_S`; the two are equal only after expansion, so the literal
-never appears in what was typed and a match on it is always the printed one.
-
-**Two wait ceilings, not one.** A blocking wait spends the agent's turn and
-cannot be called off mid-flight, so it is held low. The same wait as an MCP task
-hands back a handle at once and can be cancelled, so it may run as long as the
-work does. `taskSupport` is `optional`, which means a client that does not speak
-tasks has the SDK poll on its behalf and sees the blocking tool it expects —
-that is what makes shipping tasks safe rather than a compatibility break. Keep
-the task's `pollInterval` low, because it is the added latency of that path.
-
-Every wait takes the request's `AbortSignal` and stops on it. Without that a
-cancelled call keeps its loop and its connection for the rest of a deadline
-nobody is waiting on, and nothing observable from the client says so — which is
-why the gate for it is a unit test on `PaneTail.changed` rather than a tool call.
-
-`observe` reports the byte stream in write order and cannot resolve cursor
-addressing; `capture_pane` reads tmux's rendered grid. They are not two ways to
-read one thing, and the tool descriptions say so.
-
-## Platforms
-
-Linux is what CI proves. The library itself has no platform-specific code —
-`node_spawn_transport.ts` escalates SIGTERM to SIGKILL and force-settles a
-process whose descendants hold the pipe, with no `/proc` and no pidfd. The
-supervisor in `src/_internal/test/run_root.ts` is the Linux part: process
-identity is `linux:<boot id>:<start time>`, read from `/proc`.
-
-So macOS is untested, not unsupported, and the honest order of work is to port
-the supervisor and then add the lane. A lane added before that failed forty
-tests on its first run and was removed again; `preflight.ts` now says which
-requirement is missing instead of letting a checkout discover it as ENOENT from
-a file nobody mentioned.
-
-## Node
-
-The emitted-package lanes run on Node 22 and the floor is never substituted: a
-newer Node says nothing about the version the package claims to support.
-`resolveNode22` finds one from `LIBTMUX_NODE22` or from mise; nothing else
-should look for a Node itself.
-
-## Tests
-
-Real tmux, isolated sockets, deterministic cleanup — no mocks standing in for a
-server. A test asserting on timing carries a bound sized for what it does.
-
-Before claiming a test or a gate works, show it failing. A gate that has never
-been red is an assumption.
-
-**A parser that reads bytes this package did not write gets a randomized
-target.** `tests/unit/control_fuzz.test.ts` covers the control-mode framer,
-the notification parser and the UTF-8 holdback; add to it when adding a parser
-in that position. Seeded, so a failure reproduces from the seed it prints, and
-bounded, so it runs on the ordinary gate rather than needing a toolchain of its
-own. `LIBTMUX_FUZZ_ITERATIONS` and `LIBTMUX_FUZZ_SEED` turn it into a soak:
-
-```console
-$ LIBTMUX_FUZZ_ITERATIONS=200000 bun test tests/unit/control_fuzz.test.ts
-```
-
-A target that has never caught anything proves only that the generator is
-narrow. Break each parser it covers once, and confirm the target goes red for
-that break specifically.
-
-## Git Commit Standards
-
-Format commit messages as:
-
-```
-Scope(type[detail]): concise description
-
-why: Explanation of necessity or impact.
-
-what:
-- Specific technical changes made
-- Focused on a single topic
-```
-
-Keep the subject ≤50 chars (excluding any trailing `(#NN)` PR ref); wrap
-body lines at ≤72 chars. Separate the `why:` and `what:` blocks with a
-blank line.
-
-Common commit types:
-
-- **feat**: New features or enhancements
-- **fix**: Bug fixes
-- **refactor**: Code restructuring without functional change
-- **docs**: Documentation updates
-- **chore**: Maintenance (dependencies, tooling, config)
-- **test**: Test-related updates
-- **style**: Code style and formatting
-- **ci**: Workflow and pipeline changes
-- **js(deps)**: Dependencies
-- **js(deps[dev])**: Dev Dependencies
-- **ai(rules[AGENTS])**: AI rule updates
-
-Example:
-
-```
-Pane(feat[sendKeys]): Add support for a literal flag
-
-why: Send characters without tmux interpreting them.
-
-what:
-- Add a literal field to SendKeysOptions
-- Pass -l when it is set
-```
-
-### Release commits
-
-Never create tags. Never push tags. The user handles tagging and tag
-pushes (tags trigger the CI publish workflow).
-
-Release commit subjects are plain and short: `Tag v<version>`. Put
-the detailed why/what in the commit body. Don't use the
-`Scope(type[detail]):` format for releases — don't bury the lede.
-
-For multi-line commits, use heredoc to preserve formatting:
-
-```bash
-git commit -m "$(cat <<'EOF'
-Scope(feat[detail]): Concise description
-
-why: Explanation of the change.
-
-what:
-- First change
-- Second change
-EOF
-)"
-```
-
-## Code Blocks
-
-Code blocks are paste-and-run units: pasting one block runs exactly one
-intended action. Doctests and other executed examples are exempt — the test
-suite runs them, nobody pastes them.
-
-- **One command per block.** Multiple steps may share a block only when
-  explicitly chained with `&&`, `;`, or `\` continuations — the chain is
-  then one logical command.
-- **Explanations go in prose above the block**, never as `#` comments inside it.
-- **Command menus are per-command blocks with prose lead-ins**, not tables.
-- **Shell commands use the `console` tag with a `$ ` prefix.** This separates
-  interactive commands from scripts and enables prompt-aware copy.
-- **Split long commands with `\`** — one flag or flag+value pair per indented
-  continuation line, positional arguments last.
-
-Good:
-
-Show the last ten commits as a graph:
-
-```console
-$ git log \
-    --max-count=10 \
-    --graph \
-    --oneline
-```
-
-Bad:
-
-```console
-# Show the last ten commits as a graph
-$ git log --max-count=10 --graph --oneline
-```
+docstrings) does not apply unless a file here says so.
+
+Follow the conventions already in the tree, and keep a change scoped to what
+was asked for.
+
+## What is here
+
+A Bun workspace. Every package declares its own dependencies — one the root
+happens to install is not one a package may use.
+
+| Path                 | Package              | What it is                                                                                                                      |
+| -------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/libtmux`   | `libtmux`            | The library. Server, sessions, windows, panes, clients, formats, selections, snapshots, and engines. Zero runtime dependencies. |
+| `packages/mcp`       | `@libtmux/mcp`       | Serves one tmux server to Model Context Protocol clients.                                                                       |
+| `packages/workspace` | `@libtmux/workspace` | Builds tmux sessions from declarative YAML.                                                                                     |
+| `examples`           | —                    | Runnable examples, used as tests. The only `private` package.                                                                   |
+
+The three published packages ship together under one version, from one tag.
+`attic/` is where reference material goes to rest; `packages/libtmux/parity` is
+not that — it is a gate input, read by `check-parity.ts`,
+`generate-formats.ts` and five unit tests, and it lives beside its readers.
+
+## Which policy applies
+
+- Documentation, user-facing text, `CHANGELOG.md`, release notes, commit
+  messages, TSDoc, and source comments:
+  [.github/WRITING.md](.github/WRITING.md)
+- Building, testing, the gates, real tmux, releases, and pull requests:
+  [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md)
+- Anything under `packages/mcp`:
+  [packages/mcp/AGENTS.md](packages/mcp/AGENTS.md)
+- Reporting or assessing a vulnerability: [SECURITY.md](SECURITY.md)
+
+Each of those is the single home for its subject. Where a rule seems to be
+stated twice, the file listed above is the one that governs.
+
+## Change discipline
+
+- Make the smallest coherent change that solves the verified problem; keep
+  unrelated cleanup out of it.
+- Reuse an existing file, helper, API, or test before adding a new one.
+- Add a file only for a durable boundary — a distinct responsibility,
+  independent reuse, or splitting an oversized module — not for a single-use
+  helper or a one-line re-export.
+- Zero runtime dependencies is a property under test, not an aspiration.
+  Anything new belongs in `devDependencies` or nowhere.
+- A passing gate is evidence only once it has been shown capable of failing.
+  Pair a new test with a deliberate break that proves it bites.
+
+## References
+
+- [API reference](packages/libtmux/docs/api.md) — generated from the doc
+  comments that implement it
+- [Changelog](packages/libtmux/CHANGELOG.md)
+- Python library, which this ports: https://libtmux.git-pull.com/
+- tmux manual: http://man.openbsd.org/OpenBSD-current/man1/tmux.1
+- TSDoc, the doc-comment syntax: https://tsdoc.org/

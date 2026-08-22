@@ -1,6 +1,6 @@
 <div align="center">
 
-# libtmux
+# libtmux for TypeScript
 
 **Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, zero runtime dependencies.**
 
@@ -23,13 +23,10 @@
 ---
 
 > [!WARNING]
-> **Alpha.** Published as a prerelease: the API can change between alpha
-> releases without a deprecation cycle, and it is not covered by semantic
-> versioning until `0.1.0`. Pin an exact version, and read the
-> [changelog](packages/libtmux/CHANGELOG.md) before you upgrade.
->
-> What is already true: the suite runs against real tmux on every commit, and
-> every example on this page is compiled — several are executed.
+> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
+> settled, and any release may change or remove exported identifiers without a
+> deprecation period. Pin an exact version. Not recommended for production.
+> Read the [changelog](packages/libtmux/CHANGELOG.md) before you upgrade.
 
 ## Is this for you?
 
@@ -298,9 +295,10 @@ examples             runnable examples, used as tests
 attic                reference notes
 ```
 
-Working here: [AGENTS.md](AGENTS.md) covers the layout, the gates, how to probe
-real tmux without tripping over socket path limits, and why a gate that has
-never been red is an assumption.
+Working here: [AGENTS.md](AGENTS.md) routes to the policy that governs a
+change. The layout and the change discipline live there; how we write is in
+[.github/WRITING.md](.github/WRITING.md), and the gates, real tmux, and
+releases are in [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
 ## License
 
