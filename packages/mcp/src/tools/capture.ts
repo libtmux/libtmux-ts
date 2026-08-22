@@ -9,7 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, type ToolContext } from "../context.js";
+import { isFailure, requireLiveCursor, requirePane, type ToolContext } from "../context.js";
 import { offers, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, resourceLink, tailLines } from "../results.js";
 import { paneContentUri } from "../uris.js";
@@ -158,7 +158,10 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         });
       }
 
-      const seeding = !context.hub.hasTail(sessionId, paneId);
+      // Whether to seed is a question about the call, not about the server:
+      // deciding it on whether a tail happened to exist handed the second
+      // caller the whole retained buffer and told it it had not been seeded.
+      const seeding = cursor === undefined;
       const tail = await context.hub.tail(sessionId, paneId);
 
       // No control connection: answer with a capture rather than an error, and
@@ -180,6 +183,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           renderOutput(trimmed),
         );
       }
+
+      const stale = requireLiveCursor(tail, cursor, paneId);
+      if (stale !== undefined) return stale;
 
       if (seeding) {
         const captured = await pane.capture({ start: -SEED_LINES });

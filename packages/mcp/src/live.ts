@@ -96,6 +96,20 @@ export class PaneTail {
   }
 
   /**
+   * How far past this stream's end a cursor sits, or 0 when it is within it.
+   *
+   * A cursor counts bytes inside one tail's lifetime, and a tail does not
+   * outlive its connection: when the event stream ends the link is marked
+   * failed, and the next acquire opens a fresh one whose tails start at zero.
+   * A cursor held across that lands either below the new end, where it reseeds
+   * honestly, or above it — where `read` slices past the buffer and answers ""
+   * with nothing missed, reporting a pane that is printing as quiet.
+   */
+  ahead(from: number | undefined): number {
+    return from === undefined ? 0 : Math.max(0, from - this.#end);
+  }
+
+  /**
    * What arrived after `from`.
    *
    * `missedBytes` is what fell out of the buffer before this read reached it —

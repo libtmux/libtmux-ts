@@ -10,7 +10,7 @@ import type { Pane, ServerSnapshot, Session, Window } from "libtmux";
 import type { Server } from "libtmux/server";
 
 import { isCallerPane, resolveCallerIdentity, type CallerIdentity } from "./caller.js";
-import { LiveHub } from "./live.js";
+import { LiveHub, type PaneTail } from "./live.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -146,6 +146,31 @@ export function requireWritablePane(
     });
   }
   return pane;
+}
+
+/**
+ * Refuse a cursor that belongs to a different stream.
+ *
+ * The alternative is the worst answer this server can give: "nothing new",
+ * forever, about a pane that is printing. Saying where the stream actually is
+ * makes the next call the right one.
+ */
+export function requireLiveCursor(
+  tail: PaneTail,
+  from: number | undefined,
+  paneId: string,
+): CallToolResult | undefined {
+  const ahead = tail.ahead(from);
+  if (ahead === 0) return undefined;
+  return fail({
+    hint:
+      "Omit cursor to start from what the pane shows now, then pass back the cursor " +
+      "you are handed. A cursor does not carry across panes, or across a dropped " +
+      "control connection.",
+    reason:
+      `Cursor ${String(from)} is ${String(ahead)} bytes past everything pane ${paneId} has ` +
+      `streamed, which is now at ${String(tail.cursor)}.`,
+  });
 }
 
 export function requireSession(snapshot: ServerSnapshot, target: string): CallToolResult | Session {

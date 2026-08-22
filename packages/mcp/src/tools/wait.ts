@@ -12,7 +12,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, type ReadablePane, type ToolContext } from "../context.js";
+import {
+  isFailure,
+  requireLiveCursor,
+  requirePane,
+  type ReadablePane,
+  type ToolContext,
+} from "../context.js";
 import { effectiveWaitMs } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
@@ -277,6 +283,13 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
     const snapshot = await context.snapshot();
     const pane = requirePane(snapshot, args.paneId);
     if (isFailure(pane)) return pane;
+
+    if (args.cursor !== undefined && pane.sessionId !== null) {
+      const tail = await context.hub.tail(pane.sessionId, pane.id);
+      const stale =
+        tail === undefined ? undefined : requireLiveCursor(tail, args.cursor, args.paneId);
+      if (stale !== undefined) return stale;
+    }
 
     const report = await waitForOutput(context, pane, {
       ...(args.cursor === undefined ? {} : { cursor: args.cursor }),

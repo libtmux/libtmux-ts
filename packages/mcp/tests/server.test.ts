@@ -460,9 +460,12 @@ describe("observing", () => {
         expect(second.cursor).toBeGreaterThan(first.cursor);
 
         // Nothing happened since, so the delta is empty rather than the screen.
+        // This used to pass a cursor a million bytes past the end, which is the
+        // same empty answer for the wrong reason — the pane could have been
+        // printing throughout and this would still have read "".
         const third = structured<{ text: string }>(
           await client.callTool({
-            arguments: { cursor: second.cursor + 1_000_000, paneId, waitMs: 200 },
+            arguments: { cursor: second.cursor, paneId, waitMs: 200 },
             name: "observe",
           }),
         );
@@ -583,6 +586,60 @@ describe("staying out of the way", () => {
           TMUX_PANE: paneId,
         },
       );
+    });
+  }, 60_000);
+
+  test("refuses a cursor that belongs to a different stream", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        // Opens the tail, so the stream has a real position to be ahead of.
+        await client.callTool({ arguments: { command: "echo one", paneId }, name: "run_command" });
+
+        const ahead = await client.callTool({
+          arguments: { cursor: 999_999_999, paneId },
+          name: "observe",
+        });
+        expect((ahead as { isError?: boolean }).isError).toBe(true);
+        // Names the cursor it was given and the remedy, so the next call is the
+        // right one rather than the same one.
+        expect(toolText(ahead)).toContain("999999999");
+        expect(toolText(ahead)).toContain("Omit cursor");
+
+        // The same hole, where the caller's own timeout used to hide it: a
+        // clean "timed_out" reported while the pane was printing.
+        const waited = await client.callTool({
+          arguments: { cursor: 999_999_999, paneId, patterns: ["never-x"], timeoutMs: 1_000 },
+          name: "wait_for_text",
+        });
+        expect((waited as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(waited)).toContain("Omit cursor");
+      });
+    });
+  }, 60_000);
+
+  test("seeds observe on an absent cursor, not on an absent tail", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        // run_command opens a tail. Seeding used to be decided by whether one
+        // existed, so this second caller was handed the whole retained buffer
+        // and told it had not been seeded.
+        await client.callTool({ arguments: { command: "echo one", paneId }, name: "run_command" });
+
+        const seeded = structured<{ cursor: number; seeded: boolean }>(
+          await client.callTool({ arguments: { paneId }, name: "observe" }),
+        );
+        expect(seeded.seeded).toBe(true);
+
+        // And the cursor it hands back is one that yields only what came after.
+        await client.callTool({ arguments: { command: "echo two", paneId }, name: "run_command" });
+        const delta = structured<{ text: string }>(
+          await client.callTool({ arguments: { cursor: seeded.cursor, paneId }, name: "observe" }),
+        );
+        expect(delta.text).toContain("two");
+        expect(delta.text).not.toContain("one");
+      });
     });
   }, 60_000);
 
