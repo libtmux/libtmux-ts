@@ -5,7 +5,7 @@ import { Server } from "libtmux/server";
 import { readCallerEnvironment } from "../src/caller.js";
 import { describeUnreachable } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
-import { frame, withoutForeignFraming } from "../src/command.js";
+import { frame, randomId, withoutForeignFraming } from "../src/command.js";
 import { PaneTail } from "../src/live.js";
 import { effectiveWaitMs, resolvePolicy, tierAllows } from "../src/policy.js";
 import { describeStartup } from "../src/startup.js";
@@ -386,5 +386,20 @@ describe("concurrent framing", () => {
     // The honest part: the secret is still there, and the caller is told so
     // rather than handed it silently or handed a hole silently.
     expect(cleaned.foreignOutputSuspected).toBe(true);
+  });
+});
+
+describe("framing ids", () => {
+  test("the scrubber recognises the ids this server actually mints", () => {
+    // MARKER matches lowercase hex, which is what randomId emits today, and
+    // nothing else says the two are coupled. Widen the alphabet and the
+    // scrubber stops recognising foreign framing — it would report clean
+    // output and keep the other caller's, a disclosure failure with no
+    // symptom. This is the only thing that would go red.
+    for (let index = 0; index < 200; index += 1) {
+      const minted = `ltx${randomId()}`;
+      const seen = withoutForeignFraming(`ours\n${minted}_S\ntheirs`, "ltxnottheone");
+      expect(seen.foreignOutputSuspected, `${minted} was not recognised as framing`).toBe(true);
+    }
   });
 });

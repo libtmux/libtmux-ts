@@ -232,6 +232,6 @@ export async function runFramedCommand(
  * Letters and digits only: the id is pasted into a shell word, so anything a
  * shell would treat as syntax cannot appear in it.
  */
-function randomId(): string {
+export function randomId(): string {
   return randomUUID().replaceAll("-", "").slice(0, 10);
 }
