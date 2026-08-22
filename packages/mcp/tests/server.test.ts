@@ -734,6 +734,68 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("resolves a session filter the way every other tool resolves one", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const first = structured<{ session: { id: string; name: string } }>(
+          await client.callTool({ arguments: { name: "real" }, name: "new_session" }),
+        ).session;
+
+        // A session whose NAME is another session's ID. tmux treats a leading
+        // $ as an id lookup that fails rather than falling through to names,
+        // and requireSession resolves id first — so the filters must not match
+        // both namespaces at once.
+        await client.callTool({ arguments: { name: first.id }, name: "new_session" });
+
+        const panes = structured<{ panes: { sessionId: string }[] }>(
+          await client.callTool({ arguments: { session: first.id }, name: "list_panes" }),
+        ).panes;
+        expect(panes.length).toBeGreaterThan(0);
+        expect([...new Set(panes.map((pane) => pane.sessionId))]).toEqual([first.id]);
+
+        const windows = structured<{ windows: { sessionId: string }[] }>(
+          await client.callTool({ arguments: { session: first.id }, name: "list_windows" }),
+        ).windows;
+        expect([...new Set(windows.map((window) => window.sessionId))]).toEqual([first.id]);
+
+        // A session that does not exist is an error naming what does, not an
+        // empty list an agent reads as "this session has no panes".
+        const missing = await client.callTool({
+          arguments: { session: "nosuchsession" },
+          name: "list_panes",
+        });
+        expect((missing as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(missing)).toContain("Sessions on this server");
+      });
+    });
+  }, 60_000);
+
+  test("says when an error's list of alternatives is not all of them", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        // Past the twelve an error will name. The list used to stop there with
+        // no marker, so an agent read twelve of fifteen as all of them.
+        for (let index = 0; index < 14; index += 1) {
+          // eslint-disable-next-line no-await-in-loop -- each session follows the last.
+          await client.callTool({
+            arguments: { name: `bulk-${String(index)}` },
+            name: "new_session",
+          });
+        }
+
+        const missing = await client.callTool({
+          arguments: { session: "nosuchsession" },
+          name: "list_windows",
+        });
+        expect((missing as { isError?: boolean }).isError).toBe(true);
+        const text = toolText(missing);
+        expect(text).toContain("more");
+        // And what to call to see the rest, so the failed call is the last one.
+        expect(text).toContain("list_sessions");
+      });
+    });
+  }, 120_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

@@ -9,7 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, type ToolContext } from "../context.js";
+import { isFailure, requirePane, requireSession, type ToolContext } from "../context.js";
 import { offers, READ_ONLY } from "../register.js";
 import { ok } from "../results.js";
 import {
@@ -71,10 +71,13 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     async ({ session }) => {
       const snapshot = await context.snapshot();
       const all = snapshot.windows.toArray();
+      // Resolved rather than matched: an id and a name are different
+      // namespaces, and matching either meant one string picked two sessions
+      // here while requireSession picked one everywhere else.
+      const target = session === undefined ? undefined : requireSession(snapshot, session);
+      if (target !== undefined && isFailure(target)) return target;
       const windows = (
-        session === undefined
-          ? all
-          : all.filter((window) => window.sessionId === session || window.sessionName === session)
+        target === undefined ? all : all.filter((window) => window.sessionId === target.id)
       ).map(windowView);
       return ok(
         { windows },
@@ -101,11 +104,13 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     async ({ session, window }) => {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
+      const target = session === undefined ? undefined : requireSession(snapshot, session);
+      if (target !== undefined && isFailure(target)) return target;
       const panes = snapshot.panes
         .toArray()
         .filter(
           (pane) =>
-            (session === undefined || pane.sessionId === session || pane.sessionName === session) &&
+            (target === undefined || pane.sessionId === target.id) &&
             (window === undefined || pane.windowId === window),
         )
         .map((pane) => paneView(pane, identity));

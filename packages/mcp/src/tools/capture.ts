@@ -9,7 +9,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requireLiveCursor, requirePane, type ToolContext } from "../context.js";
+import {
+  isFailure,
+  requireLiveCursor,
+  requirePane,
+  requireSession,
+  type ToolContext,
+} from "../context.js";
 import { offers, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, resourceLink, tailLines } from "../results.js";
 import { paneContentUri } from "../uris.js";
@@ -295,12 +301,11 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       }
 
       const snapshot = await context.snapshot();
+      const target = session === undefined ? undefined : requireSession(snapshot, session);
+      if (target !== undefined && isFailure(target)) return target;
       const panes = snapshot.panes
         .toArray()
-        .filter(
-          (pane) =>
-            session === undefined || pane.sessionId === session || pane.sessionName === session,
-        );
+        .filter((pane) => target === undefined || pane.sessionId === target.id);
       const perPane = maxMatchesPerPane ?? 5;
       const start =
         scrollbackLines === undefined || scrollbackLines === 0 ? undefined : -scrollbackLines;
