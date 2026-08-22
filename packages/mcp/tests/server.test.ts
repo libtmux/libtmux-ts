@@ -1047,6 +1047,28 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("says when a pane did not start where it was asked to", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const session = (await serverFor(fixture).snapshot()).sessions.one().name ?? "";
+        // tmux chdirs in the forked child and falls back silently, so this
+        // succeeds and the pane is somewhere else entirely.
+        const made = await client.callTool({
+          arguments: {
+            name: "elsewhere",
+            session,
+            startDirectory: "/definitely-not-a-directory-xyz",
+          },
+          name: "new_window",
+        });
+        expect((made as { isError?: boolean }).isError ?? false).toBe(false);
+        const text = toolText(made);
+        expect(text).toContain("was not used");
+        expect(text).toContain("/definitely-not-a-directory-xyz");
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

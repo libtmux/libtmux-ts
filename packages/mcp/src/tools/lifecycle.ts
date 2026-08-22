@@ -22,6 +22,7 @@ import {
 import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
+  directoryNote,
   paneLine,
   paneView,
   paneViewSchema,
@@ -81,7 +82,8 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       context.topologyChanged();
       return ok(
         { paneId: pane?.id ?? "", session: view, windowId: pane?.windowId ?? "" },
-        `Created ${view.name} (${view.id}); its pane is ${pane?.id ?? "unknown"}.`,
+        `Created ${view.name} (${view.id}); its pane is ${pane?.id ?? "unknown"}.` +
+          directoryNote(startDirectory, pane?.currentPath),
       );
     },
   );
@@ -115,7 +117,8 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       context.topologyChanged();
       return ok(
         { paneId: pane?.id ?? "", window: view },
-        `${windowLine(view)}; its pane is ${pane?.id ?? "unknown"}.`,
+        `${windowLine(view)}; its pane is ${pane?.id ?? "unknown"}.` +
+          directoryNote(startDirectory, pane?.currentPath),
       );
     },
   );
@@ -150,7 +153,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       });
       const view = paneView(created, await context.identity(snapshot));
       context.topologyChanged();
-      return ok({ pane: view }, paneLine(view));
+      return ok({ pane: view }, paneLine(view) + directoryNote(startDirectory, view.cwd));
     },
   );
 

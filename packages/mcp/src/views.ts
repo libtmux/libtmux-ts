@@ -159,3 +159,24 @@ export function windowLine(view: WindowView): string {
     .join(",");
   return `${view.id}  ${view.sessionName}:${String(view.index)} ${view.name}  ${String(view.panes)} panes${marks === "" ? "" : ` [${marks}]`}`;
 }
+
+/**
+ * Say when a pane did not start where it was asked to.
+ *
+ * tmux chdirs in the forked child (`spawn.c`), and when the directory is not
+ * usable it falls back to the session's, then home, then "/" — with no channel
+ * to report that it did. The command succeeds and the pane is somewhere else.
+ * This layer is the only one that can notice, because it knows what was asked
+ * for and can read where the pane landed.
+ */
+export function directoryNote(
+  requested: string | undefined,
+  landed: string | null | undefined,
+): string {
+  const actual = landed ?? "";
+  if (requested === undefined || actual === "" || actual === requested) return "";
+  return (
+    `\n\n[startDirectory ${requested} was not used: the pane is in ${actual}. ` +
+    `tmux falls back silently when it cannot enter the directory.]`
+  );
+}
