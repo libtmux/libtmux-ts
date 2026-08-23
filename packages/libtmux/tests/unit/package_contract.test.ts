@@ -60,6 +60,7 @@ const expectedScripts = {
   "test:compat": "bun scripts/check-tmux-compat.ts",
   "test:coverage": "bun run build && bun scripts/check-coverage.ts",
   "test:package": "bun run build && bun scripts/check-package.ts",
+  "test:readme": "bun scripts/doc-examples/check-readme-runs.ts",
   "test:install": "bun run build && bun scripts/check-install.ts",
   "test:type-performance": "bun scripts/check-type-performance.ts --check",
   "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",

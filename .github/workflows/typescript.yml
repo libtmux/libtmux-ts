@@ -81,6 +81,10 @@ jobs:
       - run: bun run docs:links
       - run: bun run docs:claims
       - run: bun run docs:runnable
+      # Compiling a snippet proves it typechecks; only running it proves the
+      # target exists and the recipe terminates. This starts real tmux servers,
+      # so it also has to leave none behind, and it says so if it does.
+      - run: bun run --cwd packages/libtmux test:readme
       # Every temporary directory the suites create is named for this
       # package, so a sweep can never reap another libtmux port's servers.
       - run: bun run test:namespace
