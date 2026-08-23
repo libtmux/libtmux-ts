@@ -15,6 +15,12 @@ import { fileURLToPath } from "node:url";
  *
  * The last earns the file. `packages/*` picks up a new package on its own; a
  * workspace added beside it does not.
+ *
+ * What this deliberately does not claim: that every ecosystem dependabot could
+ * file for is configured. Action pins are maintained by a researched sweep that
+ * reads every `uses:` line and lands one commit per action, so there is no
+ * github-actions entry to find and requiring one held this gate red against a
+ * decision the repository had already made.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -150,10 +156,6 @@ for (const directory of manifests) {
       `${configPath}: ${join(directory, "package.json")} is a workspace manifest no bun entry covers`,
     );
   }
-}
-
-if (!(covered.get("github-actions") ?? new Set<string>()).has("")) {
-  failures.push(`${configPath}: no github-actions entry covers the workflows at the root`);
 }
 
 if (failures.length > 0) {

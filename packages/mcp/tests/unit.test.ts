@@ -5,6 +5,7 @@ import { Server } from "libtmux/server";
 import { readCallerEnvironment } from "../src/caller.js";
 import { describeUnreachable } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
+import { frame, randomId, withoutForeignFraming } from "../src/command.js";
 import { PaneTail } from "../src/live.js";
 import { effectiveWaitMs, resolvePolicy, tierAllows } from "../src/policy.js";
 import { describeStartup } from "../src/startup.js";
@@ -224,9 +225,10 @@ describe("unreachable server", () => {
     expect(describeUnreachable(new Server({ socketName: "agent" }), "cannot reach tmux")).toContain(
       "LIBTMUX_SOCKET_NAME=agent",
     );
-    expect(describeUnreachable(new Server(), "cannot reach tmux")).toContain(
-      "no socket configured",
-    );
+    // Nothing set at all, so there is no knob to send anyone to. The wording
+    // covers the executable as well as the socket now, since a bad binary and
+    // a bad socket reach here identically.
+    expect(describeUnreachable(new Server(), "cannot reach tmux")).toContain("nothing configured");
   });
 });
 
@@ -323,5 +325,126 @@ describe("instructions", () => {
 describe("uris", () => {
   test("escape a pane id so its % does not read as an escape", () => {
     expect(paneContentUri("%1")).toBe("tmux://panes/%251/content");
+  });
+});
+
+describe("command framing", () => {
+  test("keeps a multiline command out of the shell history too", () => {
+    // The leading space is the whole mechanism, and a shell records a
+    // multiline buffer as one entry — so skipping it there put the shape most
+    // likely to carry a secret, a pasted block, into the history file.
+    expect(frame("echo one", "ltxabc", true).startsWith(" ")).toBe(true);
+    expect(frame("echo one\necho two", "ltxabc", true).startsWith(" ")).toBe(true);
+    expect(frame("echo one\recho two", "ltxabc", true).startsWith(" ")).toBe(true);
+  });
+
+  test("leaves the space off when the caller did not ask for suppression", () => {
+    expect(frame("echo one", "ltxabc", false).startsWith(" ")).toBe(false);
+    expect(frame("echo one\necho two", "ltxabc", false).startsWith(" ")).toBe(false);
+  });
+});
+
+describe("concurrent framing", () => {
+  // The stream one caller sees when a second caller types into the same pane
+  // partway through: the second command's echo, its markers, and its output.
+  const contaminated = [
+    "AAA-start",
+    ` m=ltxbbb222; printf '%s\\n' "\${m}_S"; ( echo BBB-secret ); s=$?`,
+    "ltxbbb222_S",
+    "BBB-secret",
+    "ltxbbb222_E 0",
+    "AAA-end",
+  ].join("\n");
+
+  test("keeps another caller's command and output out of this one's", () => {
+    const cleaned = withoutForeignFraming(contaminated, "ltxaaa111");
+    expect(cleaned.text).toBe("AAA-start\nAAA-end");
+    expect(cleaned.text).not.toContain("BBB-secret");
+    expect(cleaned.text).not.toContain("ltxbbb222");
+    // Removed, and said so: what was cleaned is still evidence that the pane
+    // had another writer, so output with no marker may be theirs too.
+    expect(cleaned.foreignOutputSuspected).toBe(true);
+  });
+
+  test("leaves this caller's own output alone and claims nothing", () => {
+    const cleaned = withoutForeignFraming("one\ntwo\nthree", "ltxaaa111");
+    expect(cleaned.text).toBe("one\ntwo\nthree");
+    expect(cleaned.foreignOutputSuspected).toBe(false);
+  });
+
+  test("reports what it cannot bracket rather than guessing", () => {
+    // A background job is a genuinely concurrent writer: its start marker
+    // lands inside this body with no end marker to bracket it. Dropping to
+    // the end would take OURS-end, which is real output, so the orphaned line
+    // stays and the result says another writer was here.
+    const unterminated = ["OURS-start", "ltxdeadbeef01_S", "FOREIGN-SECRET-42", "OURS-end"].join(
+      "\n",
+    );
+    const cleaned = withoutForeignFraming(unterminated, "ltxaaa111");
+    expect(cleaned.text).toContain("OURS-start");
+    expect(cleaned.text).toContain("OURS-end");
+    expect(cleaned.text).not.toContain("ltxdeadbeef01");
+    // The honest part: the secret is still there, and the caller is told so
+    // rather than handed it silently or handed a hole silently.
+    expect(cleaned.foreignOutputSuspected).toBe(true);
+  });
+});
+
+describe("framing ids", () => {
+  test("the scrubber recognises the ids this server actually mints", () => {
+    // MARKER matches lowercase hex, which is what randomId emits today, and
+    // nothing else says the two are coupled. Widen the alphabet and the
+    // scrubber stops recognising foreign framing — it would report clean
+    // output and keep the other caller's, a disclosure failure with no
+    // symptom. This is the only thing that would go red.
+    for (let index = 0; index < 200; index += 1) {
+      const minted = `ltx${randomId()}`;
+      const seen = withoutForeignFraming(`ours\n${minted}_S\ntheirs`, "ltxnottheone");
+      expect(seen.foreignOutputSuspected, `${minted} was not recognised as framing`).toBe(true);
+    }
+  });
+});
+
+describe("tail lifetime", () => {
+  test("a tail reports going unread, and reading resets it", async () => {
+    // Reading is what keeps a tail alive. A pane writing into one nobody is
+    // watching is not a reason to hold its connection open — which is what
+    // used to happen, because nothing ever removed a tail and so the close
+    // path's own guard made it unreachable for any observed session.
+    const tail = new PaneTail("%1");
+    expect(tail.idleMs(Date.now())).toBeLessThan(50);
+    expect(tail.idleMs(Date.now() + 60_000)).toBeGreaterThanOrEqual(60_000);
+
+    tail.append("output nobody asked for");
+    // Still idle: the pane wrote, nothing read.
+    expect(tail.idleMs(Date.now() + 60_000)).toBeGreaterThanOrEqual(60_000);
+
+    tail.read(undefined);
+    expect(tail.idleMs(Date.now())).toBeLessThan(50);
+  });
+});
+
+describe("unreachable guidance", () => {
+  test("names the executable when that is what was configured", () => {
+    // A bad binary and a bad socket both surface as "cannot reach tmux". This
+    // text is the only channel to the human who can fix either, so naming the
+    // healthy one sends them to check something that is fine.
+    const said = describeUnreachable(
+      new Server({ socketName: "fine", tmuxBin: "/nonexistent/tmux" }),
+      "cannot reach tmux: could not run /nonexistent/tmux (ENOENT)",
+    );
+    expect(said).toContain("LIBTMUX_TMUX_BIN=/nonexistent/tmux");
+    expect(said).toContain("LIBTMUX_SOCKET_NAME=fine");
+  });
+
+  test("says nothing about an executable nobody chose", () => {
+    // The quiet half: naming a default nobody set is noise, and would make the
+    // line say something was configured when it was not.
+    const said = describeUnreachable(
+      new Server({ socketName: "fine" }),
+      "cannot reach tmux: error connecting to /tmp/tmux-1000/fine",
+    );
+    expect(said).not.toContain("LIBTMUX_TMUX_BIN");
+    expect(said).toContain("LIBTMUX_SOCKET_NAME=fine");
   });
 });

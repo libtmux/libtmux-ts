@@ -9,8 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isCallerPane } from "../caller.js";
-import { isFailure, requirePane, type ToolContext } from "../context.js";
+import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
 import { MUTATING, offers, OPEN_WORLD } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
 import { runFramedCommand } from "../command.js";
@@ -74,16 +73,9 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
     },
     async ({ enter, force, keys, literal, paneId }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
-
-      if (force !== true && isCallerPane(identity, paneId)) {
-        return fail({
-          hint: "That is this server's own terminal. Pick another pane, or pass force to mean it.",
-          reason: `Refusing to type into ${paneId}: it is the pane this MCP server runs in.`,
-        });
-      }
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
+      if (isFailure(pane)) return pane;
 
       await pane.sendKeys(keys, {
         ...(enter === undefined ? {} : { enter }),
@@ -107,15 +99,20 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         "key parser would claim.",
       inputSchema: {
         enter: z.boolean().optional().describe("Press Enter afterwards. Default false."),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Write even to the pane this server runs in. Default false."),
         paneId: z.string(),
         text: z.string(),
       },
       outputSchema: { bytes: z.number().int(), paneId: z.string() },
       title: "Paste text",
     },
-    async ({ enter, paneId, text }) => {
+    async ({ enter, force, paneId, text }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
+      const identity = await context.identity(snapshot);
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
       await pane.sendKeys(text, { enter: enter ?? false, literal: true });
       return ok(
@@ -135,7 +132,9 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         "the command so a pane's echo of what you typed can never be mistaken for " +
         "what the command printed, and it knows when the command actually ended " +
         "rather than guessing from the screen. The command runs in a subshell, so " +
-        "cd and export do not persist to a later call.",
+        "cd and export do not persist to a later call. A pane is effectively " +
+        "single-writer: the check that it is at a shell prompt is one look taken " +
+        "before sending, not a lock, so two callers sharing a pane interleave.",
       inputSchema: {
         command: z.string().describe("The shell command to run."),
         force: z
@@ -155,6 +154,30 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       },
       outputSchema: {
         effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        droppedLines: z
+          .number()
+          .int()
+          .describe(
+            "Lines of output withheld by maxLines. The text half says so in a " +
+              "notice; a caller reading only the structured half would otherwise " +
+              "take the tail for the whole.",
+          ),
+        missedBytes: z
+          .number()
+          .int()
+          .describe(
+            "Output that fell out of the pane's buffer before this read reached it. " +
+              "Nonzero means the command printed more than was kept, so the output here " +
+              "starts partway through it.",
+          ),
+        foreignOutputSuspected: z
+          .boolean()
+          .describe(
+            "Another writer printed into this pane while the command ran. Output " +
+              "that could be attributed to them was removed; what is left may still " +
+              "include theirs. False means no foreign marker was seen, not that the " +
+              "output is certainly this command's.",
+          ),
         exitStatus: z
           .number()
           .int()
@@ -176,14 +199,19 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         return fail({ reason: "command must not be empty." });
       }
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
-
-      if (force !== true && isCallerPane(identity, paneId)) {
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "run in");
+      if (isFailure(pane)) return pane;
+      if (pane.dead === true) {
+        // Not a `force` case: a dead pane has no process to read the command,
+        // so forcing it would spend the whole timeout waiting for a marker
+        // that cannot be printed. The shell check below would pass — a dead
+        // pane still reports the command it last ran.
         return fail({
-          hint: "Pick another pane, or pass force to mean it.",
-          reason: `Refusing to run in ${paneId}: it is the pane this MCP server runs in.`,
+          hint: "respawn_pane restarts a pane's command, keeping the pane and its id.",
+          reason:
+            `Pane ${paneId} is dead: its process exited and the pane is kept only because ` +
+            `remain-on-exit is set, so nothing there can run a command.`,
         });
       }
       const running = shellName(pane.currentCommand ?? "");
@@ -218,18 +246,30 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           ? `exit ${String(result.exitStatus ?? -1)}`
           : result.outcome === "pane_died"
             ? "the pane exited while the command ran"
-            : `still running after ${String(result.effectiveTimeoutMs)}ms — call again to keep waiting, or send_keys C-c to stop it`;
+            : // Not "call again": a second call mints a fresh marker and sends a
+              // whole new command, so it cannot resume this wait even in
+              // principle — and the shell guard refuses it anyway, because the
+              // pane is now running the first command rather than a shell.
+              `still running after ${String(result.effectiveTimeoutMs)}ms — wait_for_text on ${paneId} keeps waiting for it, or send_keys C-c stops it`;
 
       return ok(
         {
           effectiveTimeoutMs: result.effectiveTimeoutMs,
           exitStatus: result.exitStatus,
+          foreignOutputSuspected: result.foreignOutputSuspected,
+          droppedLines: trimmed.droppedLines,
+          missedBytes: result.missedBytes,
           outcome: result.outcome,
           output: trimmed.lines.join("\n"),
           paneId,
           stillRunning: result.outcome === "timed_out",
         },
-        `${renderOutput(trimmed)}\n\n[${headline}]`,
+        `${renderOutput(trimmed)}\n\n[${headline}]${
+          result.foreignOutputSuspected
+            ? "\n[another writer printed into this pane while the command ran; " +
+              "output attributable to them was removed, what remains may still be theirs]"
+            : ""
+        }`,
       );
     },
   );

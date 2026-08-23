@@ -47,6 +47,7 @@ import {
   listBuffers,
   listCommands,
   loadBuffer,
+  saveBuffer,
   setBuffer,
   showBuffer,
   sourceFile,
@@ -620,6 +621,69 @@ export class Server {
    */
   unsetOption(name: string): Promise<void> {
     return unsetOption(runtimeForServer(this), "server", null, name);
+  }
+
+  /**
+   * Write a paste buffer to a file instead of reading it back.
+   *
+   * `showBuffer` returns the contents through this process; for a large buffer
+   * that means holding it in memory to put it somewhere else. tmux writes the
+   * file itself, on the machine tmux is running on.
+   *
+   * ```ts
+   * await server.saveBuffer("captured", "/tmp/build.log");
+   * ```
+   */
+  saveBuffer(name: string, path: string, options?: { readonly append?: boolean }): Promise<void> {
+    return saveBuffer(runtimeForServer(this), name, path, options);
+  }
+
+  /**
+   * Read the defaults every session or window inherits.
+   *
+   * Most of tmux's options live here rather than on an object: a session that
+   * has set nothing reports nothing, while the values actually governing it
+   * are these. `history-limit` and `default-shell` are both global session
+   * options and `remain-on-exit` a global window one; none of the three is
+   * readable any other way.
+   *
+   * ```ts
+   * const defaults = await server.showGlobalOptions("session");
+   * defaults.get("default-shell");
+   * ```
+   */
+  showGlobalOptions(scope: "session" | "window"): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForServer(this), scope, null, { global: true });
+  }
+
+  /**
+   * Set a default every session or window inherits.
+   *
+   * ```ts
+   * await server.setGlobalOption("session", "history-limit", "50000");
+   * ```
+   */
+  setGlobalOption(
+    scope: "session" | "window",
+    name: string,
+    value: string,
+    options?: SetOptionOptions,
+  ): Promise<void> {
+    return setOption(runtimeForServer(this), scope, null, name, value, {
+      ...options,
+      global: true,
+    });
+  }
+
+  /**
+   * Remove a default, so tmux falls back to its own built-in value.
+   *
+   * ```ts
+   * await server.unsetGlobalOption("session", "history-limit");
+   * ```
+   */
+  unsetGlobalOption(scope: "session" | "window", name: string): Promise<void> {
+    return unsetOption(runtimeForServer(this), scope, null, name, { global: true });
   }
 
   /**

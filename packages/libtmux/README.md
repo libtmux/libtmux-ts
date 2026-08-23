@@ -638,7 +638,14 @@ as the tmux id, because `%1` is unique only within one running daemon — two
 servers both have one, and so does the pane that replaced it after a restart.
 `sameTmuxIdAs` is the raw-id comparison when that is genuinely what you want.
 Every handle also has `showOptions` / `setOption` / `unsetOption`, and `format`
-for tmux's own field names.
+for tmux's own field names. `Pane.pipeTo` streams a pane to a command for as
+long as the pipe is open, and `Server.saveBuffer` writes a buffer to a file
+without bringing it back through this process. Those read one object's own view: a session that
+has set nothing reports nothing, while the values actually governing it are
+tmux's global defaults. `Server.showGlobalOptions`, `setGlobalOption` and
+`unsetGlobalOption` reach those, taking `"session"` or `"window"` for which
+table — `history-limit` and `default-shell` live in the first, `remain-on-exit`
+in the second, and none of the three is readable any other way.
 
 ## Commands this package does not model
 
@@ -1016,9 +1023,22 @@ const opened = await live.subscribe().find((event) => event.kind === "window-add
 ## Options and hooks
 
 ```ts
+// A pane keeps history-limit lines and a stream reader keeps a bounded buffer,
+// so output larger than either is gone before anything asks. tmux can send it
+// somewhere durable instead, and write a buffer out without reading it back.
+await pane.pipeTo("cat >> /tmp/build.log");
+await pane.pipeTo();
+await server.saveBuffer("captured", "/tmp/captured.txt");
+
 await session.setOption("status-left", "[work] ");
 (await session.showOptions()).get("status-left");
 await session.unsetOption("status-left");
+
+// A handle reports its own view. A session that has set nothing reports
+// nothing, while the defaults governing it are tmux's global tables.
+(await server.showGlobalOptions("session")).get("history-limit");
+await server.setGlobalOption("window", "remain-on-exit", "on");
+await server.unsetGlobalOption("window", "remain-on-exit");
 
 await server.setHook("after-new-window", "display-message created");
 await server.showHooks();

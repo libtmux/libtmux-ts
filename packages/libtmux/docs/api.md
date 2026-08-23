@@ -9,7 +9,7 @@ page is for looking one thing up.
 
 ## Server
 
-[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -336,6 +336,65 @@ Remove a server-scope option.
 
 ```ts
 await server.unsetOption("escape-time");
+```
+
+#### `Server.saveBuffer`
+
+```ts
+saveBuffer(name: string, path: string, options?: { readonly append?: boolean }): Promise<void>
+```
+
+Write a paste buffer to a file instead of reading it back.
+
+`showBuffer` returns the contents through this process; for a large buffer
+that means holding it in memory to put it somewhere else. tmux writes the
+file itself, on the machine tmux is running on.
+
+```ts
+await server.saveBuffer("captured", "/tmp/build.log");
+```
+
+#### `Server.showGlobalOptions`
+
+```ts
+showGlobalOptions(scope: "session" | "window"): Promise<ReadonlyMap<string, string>>
+```
+
+Read the defaults every session or window inherits.
+
+Most of tmux's options live here rather than on an object: a session that
+has set nothing reports nothing, while the values actually governing it
+are these. `history-limit` and `default-shell` are both global session
+options and `remain-on-exit` a global window one; none of the three is
+readable any other way.
+
+```ts
+const defaults = await server.showGlobalOptions("session");
+defaults.get("default-shell");
+```
+
+#### `Server.setGlobalOption`
+
+```ts
+setGlobalOption( scope: "session" | "window", name: string, value: string, options?: SetOptionOptions, ): Promise<void>
+```
+
+Set a default every session or window inherits.
+
+```ts
+await server.setGlobalOption("session", "history-limit", "50000");
+```
+
+#### `Server.unsetGlobalOption`
+
+```ts
+unsetGlobalOption(scope: "session" | "window", name: string): Promise<void>
+```
+
+Remove a default, so tmux falls back to its own built-in value.
+
+```ts
+await server.unsetGlobalOption("session", "history-limit");
 ```
 
 #### `Server.showHooks`
@@ -1451,7 +1510,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -1712,6 +1771,23 @@ Restart this pane's command in place.
 
 ```ts
 await pane.respawn("htop", { kill: true });
+```
+
+#### `Pane.pipeTo`
+
+```ts
+pipeTo(command?: string, options?: { readonly toggle?: boolean }): Promise<void>
+```
+
+Send everything this pane writes to a shell command as well as its screen.
+
+A pane keeps `history-limit` lines and a stream reader keeps a bounded
+buffer, so output larger than either is gone before anything asks for it.
+The command runs for as long as the pipe is open, which is how a long
+build is captured whole. Pass no command to stop one.
+
+```ts
+await pane.pipeTo("cat >> /tmp/build.log");
 ```
 
 #### `Pane.breakOut`

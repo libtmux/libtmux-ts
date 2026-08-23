@@ -15,10 +15,17 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
+  type CallToolResult,
   type ReadResourceResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import type { ToolContext } from "./context.js";
+import {
+  isFailure,
+  requirePane,
+  requireSession,
+  requireWindow,
+  type ToolContext,
+} from "./context.js";
 import {
   paneContentUri,
   paneUri,
@@ -38,6 +45,32 @@ const JSON_MIME = "application/json";
 /** Pane contents are terminal text: neither JSON to parse nor HTML to render. */
 const TEXT_MIME = "text/plain";
 
+/**
+ * Read a template variable back as the id that was published.
+ *
+ * The sigils that make a tmux id readable — `%` for a pane, `$` for a session,
+ * `@` for a window — are exactly the characters a URI path escapes, so every
+ * published id arrives encoded and no id arrives intact by luck. Encoding on
+ * the way out without decoding on the way in made the only resolvable form the
+ * one this server never advertises.
+ */
+function publishedId(value: unknown): string {
+  return decodeURIComponent(String(value));
+}
+
+/**
+ * Throw what a lookup would have told a tool caller.
+ *
+ * A resource read cannot return a tool result, and the alternatives those
+ * results carry are the reason a miss stops costing a turn. Reducing them to
+ * "No pane %1" on the way through is how the resource surface ended up worse
+ * than the tool surface for the same question.
+ */
+function resourceError(failure: CallToolResult): Error {
+  const [first] = failure.content;
+  return new Error(first?.type === "text" ? first.text : "Not found");
+}
+
 function jsonResource(uri: string, value: unknown): ReadResourceResult {
   return { contents: [{ mimeType: JSON_MIME, text: JSON.stringify(value, null, 2), uri }] };
 }
@@ -46,7 +79,59 @@ function textResource(uri: string, text: string): ReadResourceResult {
   return { contents: [{ mimeType: TEXT_MIME, text, uri }] };
 }
 
+/** The notifications that change which sessions, windows or panes exist. */
+const STRUCTURAL = new Set([
+  "session-renamed",
+  "sessions-changed",
+  "unlinked-window-add",
+  "unlinked-window-close",
+  "unlinked-window-renamed",
+  "window-add",
+  "window-close",
+  "window-renamed",
+]);
+
+/**
+ * Announce a change somebody else made.
+ *
+ * Sending `listChanged` from this server's own mutating tools covers what this
+ * server did, and this server is not the only thing changing the list: a
+ * person in a terminal, or another agent on the same tmux server, changes it
+ * too — and a client that believes `listChanged` refreshes only on notice.
+ *
+ * Anchored on the first read of a browsable list rather than at startup, so a
+ * server nobody browses holds no connection for this. If the anchor cannot be
+ * opened, because there is no session to attach to, the next read tries again.
+ */
+function watchTopology(context: ToolContext, announce: () => void): () => void {
+  let stop: (() => void) | undefined;
+  let starting = false;
+
+  return (): void => {
+    if (stop !== undefined || starting || !context.policy.liveEnabled) return;
+    starting = true;
+    void context.hub
+      .anchor((event) => {
+        if (STRUCTURAL.has(event.kind)) announce();
+      })
+      .then((opened) => {
+        stop = opened;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        starting = false;
+      });
+  };
+}
+
 export function registerResources(mcp: McpServer, context: ToolContext): void {
+  // Reading a browsable list is what says somebody is browsing, and so the
+  // point at which it is worth holding a connection to hear about changes
+  // this server did not make.
+  const watching = watchTopology(context, () => {
+    context.topologyChanged();
+  });
+
   mcp.registerResource(
     "sessions",
     SESSIONS_URI,
@@ -108,22 +193,24 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
             .flatMap((session) => [session.id, session.name ?? ""])
             .filter((candidate) => candidate !== "" && candidate.startsWith(value)),
       },
-      list: async () => ({
-        resources: (await context.snapshot()).sessions.toArray().map((session) => ({
-          mimeType: JSON_MIME,
-          name: session.name ?? session.id,
-          uri: sessionUri(session.id),
-        })),
-      }),
+      list: async () => (
+        watching(),
+        {
+          resources: (await context.snapshot()).sessions.toArray().map((session) => ({
+            mimeType: JSON_MIME,
+            name: session.name ?? session.id,
+            uri: sessionUri(session.id),
+          })),
+        }
+      ),
     }),
     { description: "One session with its windows.", mimeType: JSON_MIME, title: "Session" },
     async (uri, { sessionId }) => {
-      const target = String(sessionId);
+      const target = publishedId(sessionId);
       const snapshot = await context.snapshot();
-      const session =
-        snapshot.sessions.oneOrUndefined({ id: target }) ??
-        snapshot.sessions.oneOrUndefined({ name: target });
-      if (session === undefined) throw new Error(`No session ${target}`);
+      const found = requireSession(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const session = found;
       return jsonResource(uri.href, {
         ...sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
         windows: snapshot.windows
@@ -144,20 +231,24 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
             .map((window) => window.id)
             .filter((candidate) => candidate.startsWith(value)),
       },
-      list: async () => ({
-        resources: (await context.snapshot()).windows.toArray().map((window) => ({
-          mimeType: JSON_MIME,
-          name: `${window.sessionName ?? "?"}:${window.name ?? window.id}`,
-          uri: windowUri(window.id),
-        })),
-      }),
+      list: async () => (
+        watching(),
+        {
+          resources: (await context.snapshot()).windows.toArray().map((window) => ({
+            mimeType: JSON_MIME,
+            name: `${window.sessionName ?? "?"}:${window.name ?? window.id}`,
+            uri: windowUri(window.id),
+          })),
+        }
+      ),
     }),
     { description: "One window with its panes.", mimeType: JSON_MIME, title: "Window" },
     async (uri, { windowId }) => {
-      const target = String(windowId);
+      const target = publishedId(windowId);
       const snapshot = await context.snapshot();
-      const window = snapshot.windows.oneOrUndefined({ id: target });
-      if (window === undefined) throw new Error(`No window ${target}`);
+      const found = requireWindow(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const window = found;
       const identity = await context.identity(snapshot);
       return jsonResource(uri.href, {
         ...windowView(window),
@@ -180,6 +271,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     new ResourceTemplate("tmux://panes/{paneId}", {
       complete: { paneId: completePaneId },
       list: async () => {
+        watching();
         const snapshot = await context.snapshot();
         return {
           resources: snapshot.panes.toArray().map((pane) => ({
@@ -193,10 +285,11 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     }),
     { description: "One pane's metadata.", mimeType: JSON_MIME, title: "Pane" },
     async (uri, { paneId }) => {
-      const target = String(paneId);
+      const target = publishedId(paneId);
       const snapshot = await context.snapshot();
-      const pane = snapshot.panes.oneOrUndefined({ id: target });
-      if (pane === undefined) throw new Error(`No pane ${target}`);
+      const found = requirePane(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const pane = found;
       return jsonResource(uri.href, paneView(pane, await context.identity(snapshot)));
     },
   );
@@ -205,14 +298,17 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     "pane-content",
     new ResourceTemplate("tmux://panes/{paneId}/content", {
       complete: { paneId: completePaneId },
-      list: async () => ({
-        resources: (await context.snapshot()).panes.toArray().map((pane) => ({
-          description: `What ${pane.id} is showing.`,
-          mimeType: TEXT_MIME,
-          name: `${pane.id} contents`,
-          uri: paneContentUri(pane.id),
-        })),
-      }),
+      list: async () => (
+        watching(),
+        {
+          resources: (await context.snapshot()).panes.toArray().map((pane) => ({
+            description: `What ${pane.id} is showing.`,
+            mimeType: TEXT_MIME,
+            name: `${pane.id} contents`,
+            uri: paneContentUri(pane.id),
+          })),
+        }
+      ),
     }),
     {
       description: "What a pane is showing, as text. Subscribe to be told when it changes.",
@@ -220,10 +316,11 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       title: "Pane contents",
     },
     async (uri, { paneId }) => {
-      const target = String(paneId);
+      const target = publishedId(paneId);
       const snapshot = await context.snapshot();
-      const pane = snapshot.panes.oneOrUndefined({ id: target });
-      if (pane === undefined) throw new Error(`No pane ${target}`);
+      const found = requirePane(snapshot, target);
+      if (isFailure(found)) throw resourceError(found);
+      const pane = found;
       return textResource(uri.href, (await pane.capture()).join("\n"));
     },
   );
@@ -241,7 +338,14 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
 function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
   const watching = new Map<string, () => void>();
 
-  mcp.server.registerCapabilities({ resources: { listChanged: true, subscribe: true } });
+  mcp.server.registerCapabilities({
+    resources: {
+      listChanged: true,
+      // The subscribe handler needs a control connection and can only throw
+      // without one. A capability is a promise, so it follows the ability.
+      ...(context.policy.liveEnabled ? { subscribe: true } : {}),
+    },
+  });
 
   mcp.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
     const uri = request.params.uri;
@@ -293,4 +397,30 @@ function paneIdOfContentUri(uri: string): string | undefined {
   const match = /^tmux:\/\/panes\/([^/]+)\/content$/.exec(uri);
   const encoded = match?.[1];
   return encoded === undefined ? undefined : decodeURIComponent(encoded);
+}
+
+/**
+ * Say the resource list changed, at most once per coalescing window.
+ *
+ * A client that believes `listChanged` caches the list and refreshes only on
+ * notice, so a list this server changed and did not announce is a world the
+ * agent goes on acting in after it is gone. Every split, every new window and
+ * every dead pane changes it, which is why this is cheap enough to send from
+ * each of them: build_workspace makes a session, its windows and their panes
+ * in one call, and that is one notice rather than nine.
+ *
+ * This covers changes this server made. A change somebody else made on the
+ * same tmux server still goes unannounced — that needs a control connection
+ * held for structural notifications, which is a lifecycle question of its own.
+ */
+export function createListChangedNotifier(mcp: McpServer): () => void {
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  return (): void => {
+    if (pending !== undefined) return;
+    pending = setTimeout(() => {
+      pending = undefined;
+      void mcp.server.sendResourceListChanged().catch(() => undefined);
+    }, UPDATE_COALESCE_MS);
+    pending.unref?.();
+  };
 }

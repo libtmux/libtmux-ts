@@ -38,6 +38,8 @@ const DEFAULT_TAIL_BYTES = 256 * 1024;
  */
 export class PaneTail {
   #buffer = "";
+  /** When something last read this tail, for deciding whether it is still wanted. */
+  #touched = Date.now();
   /** Absolute offset of the first character still held. */
   #base = 0;
   #end = 0;
@@ -80,6 +82,7 @@ export class PaneTail {
    * what lets a caller that has gone away stop it early.
    */
   changed(timeoutMs: number, signal?: AbortSignal): Promise<void> {
+    this.#touched = Date.now();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.#waiters = this.#waiters.filter((entry) => entry !== wake);
@@ -96,6 +99,30 @@ export class PaneTail {
   }
 
   /**
+   * How far past this stream's end a cursor sits, or 0 when it is within it.
+   *
+   * A cursor counts bytes inside one tail's lifetime, and a tail does not
+   * outlive its connection: when the event stream ends the link is marked
+   * failed, and the next acquire opens a fresh one whose tails start at zero.
+   * A cursor held across that lands either below the new end, where it reseeds
+   * honestly, or above it — where `read` slices past the buffer and answers ""
+   * with nothing missed, reporting a pane that is printing as quiet.
+   */
+  /**
+   * How long since anything read this tail.
+   *
+   * Reading is what keeps a tail alive; a pane writing into one nobody is
+   * watching is not a reason to hold a connection open for it.
+   */
+  idleMs(now: number): number {
+    return now - this.#touched;
+  }
+
+  ahead(from: number | undefined): number {
+    return from === undefined ? 0 : Math.max(0, from - this.#end);
+  }
+
+  /**
    * What arrived after `from`.
    *
    * `missedBytes` is what fell out of the buffer before this read reached it —
@@ -107,6 +134,7 @@ export class PaneTail {
     readonly missedBytes: number;
     readonly text: string;
   } {
+    this.#touched = Date.now();
     const start = from ?? this.#base;
     const missed = Math.max(0, this.#base - start);
     const offset = Math.max(0, start - this.#base);
@@ -137,10 +165,13 @@ export class LiveHub {
   readonly #links = new Map<string, SessionLink>();
   readonly #opening = new Map<string, Promise<SessionLink>>();
   readonly #tmux: Server;
+  /** How long a tail may go unread, and a link unused, before both are let go. */
+  readonly #lingerMs: number;
   #closed = false;
 
-  constructor(tmux: Server) {
+  constructor(tmux: Server, options: { readonly lingerMs?: number } = {}) {
     this.#tmux = tmux;
+    this.#lingerMs = options.lingerMs ?? LINGER_MS;
   }
 
   /**
@@ -232,12 +263,49 @@ export class LiveHub {
     if (existing !== undefined) return existing;
     const tail = new PaneTail(paneId);
     link.tails.set(paneId, tail);
+    // Starts the sweep. Without this a tail created and then abandoned would
+    // hold its connection forever, since nothing else schedules a close.
+    this.#scheduleClose(sessionId, link);
     return tail;
   }
 
   /** Whether a tail is already running, which decides if a read can be a delta. */
   hasTail(sessionId: string, paneId: string): boolean {
     return this.#links.get(sessionId)?.tails.has(paneId) ?? false;
+  }
+
+  /**
+   * Hold one connection for the notifications that are not about a pane.
+   *
+   * tmux's structural notifications — a window added, closed or renamed, the
+   * session list changing — are global rather than session-scoped, so one
+   * connection hears about the whole server. What it is anchored to only
+   * decides where it is attached, not what it is told.
+   *
+   * The anchor is told not to detach when that session is destroyed. Under
+   * tmux's default the connection would simply drop, and this is the one
+   * connection whose whole purpose is to still be there; with the flag set,
+   * tmux re-anchors the client to another session and names it in a
+   * `%session-changed`. `refresh-client -f` sets client flags and nothing
+   * else — it is not `-C`, which is what makes a persistent connection start
+   * resizing the panes of whoever is attached.
+   *
+   * With no session on the server there is nothing to anchor to and this
+   * returns undefined: a control client cannot attach to nothing, and creating
+   * a session to hold one would change the server as a side effect of reading
+   * it.
+   */
+  async anchor(listener: (event: TmuxEvent) => void): Promise<(() => void) | undefined> {
+    const snapshot = await this.#tmux.snapshot().catch(() => undefined);
+    const session = snapshot?.sessions.toArray()[0];
+    if (session === undefined) return undefined;
+    const stop = await this.listen(session.id, listener);
+    if (stop === undefined) return undefined;
+    await this.#links
+      .get(session.id)
+      ?.connected.cmd("refresh-client", ["-f", "no-detach-on-destroy"], { target: null })
+      .catch(() => undefined);
+    return stop;
   }
 
   /**
@@ -261,14 +329,43 @@ export class LiveHub {
     };
   }
 
-  #scheduleClose(sessionId: string, link: SessionLink): void {
-    if (link.tails.size > 0 || link.listeners.size > 0) return;
+  /**
+   * Let go of a session's connection once nothing is using it.
+   *
+   * This used to refuse to run while the link held any tail, and nothing ever
+   * removed one — so for any session a tool had observed, `tails.size` stayed
+   * above zero for the life of the process and the linger could never elapse.
+   * The server accumulated one control-mode client per observed session and
+   * released none of them; tmux counts every one.
+   *
+   * A tail nobody has read within the linger is not being watched, so it goes.
+   * That invalidates its cursor, which is only safe because a cursor from a
+   * replaced tail is now refused with an explanation rather than answered with
+   * a silent "nothing new".
+   */
+  #scheduleClose(sessionId: string, link: SessionLink, delayMs = this.#lingerMs): void {
+    if (link.listeners.size > 0) return;
     if (link.closeTimer !== undefined) return;
     link.closeTimer = setTimeout(() => {
-      if (link.tails.size > 0 || link.listeners.size > 0) return;
+      link.closeTimer = undefined;
+      const now = Date.now();
+      for (const [paneId, tail] of link.tails) {
+        if (tail.idleMs(now) >= this.#lingerMs) link.tails.delete(paneId);
+      }
+      if (link.tails.size > 0 || link.listeners.size > 0) {
+        // Come back when the tail used most recently becomes eligible, rather
+        // than a whole linger from now. The timer is armed when a tail is
+        // created and a tail is read just after that, so it is always a little
+        // short of the threshold on the first sweep — and waiting another full
+        // linger each time doubled how long a connection nobody was reading
+        // stayed open.
+        const remaining = [...link.tails.values()].map((tail) => this.#lingerMs - tail.idleMs(now));
+        this.#scheduleClose(sessionId, link, Math.max(1, Math.max(...remaining)));
+        return;
+      }
       if (this.#links.get(sessionId) === link) this.#links.delete(sessionId);
       void link.connected.close().catch(() => undefined);
-    }, LINGER_MS);
+    }, delayMs);
     // A lingering connection must not be what keeps the process alive.
     link.closeTimer.unref?.();
   }

@@ -9,8 +9,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, type ToolContext } from "../context.js";
-import { offers, READ_ONLY } from "../register.js";
+import {
+  isFailure,
+  requireLiveCursor,
+  requirePane,
+  requireSession,
+  type ToolContext,
+} from "../context.js";
+import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, resourceLink, tailLines } from "../results.js";
 import { paneContentUri } from "../uris.js";
 
@@ -34,7 +40,12 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .number()
           .int()
           .optional()
-          .describe("Last line; negative counts back from the bottom."),
+          .describe(
+            "Last line, on the same scale as start: 0 is the top of the visible " +
+              "screen and negative reaches back into history. It does not count " +
+              "back from the bottom, so end:-1 is one line above the screen top, " +
+              "not the last line of output.",
+          ),
         joinWrapped: z.boolean().optional().describe("Rejoin lines tmux wrapped."),
         maxLines: z
           .number()
@@ -158,8 +169,18 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         });
       }
 
-      const seeding = !context.hub.hasTail(sessionId, paneId);
-      const tail = await context.hub.tail(sessionId, paneId);
+      // Whether to seed is a question about the call, not about the server:
+      // deciding it on whether a tail happened to exist handed the second
+      // caller the whole retained buffer and told it it had not been seeded.
+      const seeding = cursor === undefined;
+      // The knob exists so an operator can stop this server opening control
+      // clients at all — a constrained host, a client limit, a shared tmux.
+      // run_command and wait_for_text consult it; this opened one anyway, and
+      // then reported streaming:true, which is accurate and so useless for
+      // noticing. The capture fallback below is already written for this.
+      const tail = context.policy.liveEnabled
+        ? await context.hub.tail(sessionId, paneId)
+        : undefined;
 
       // No control connection: answer with a capture rather than an error, and
       // say so, so the caller knows the cursor it gets back is not a stream
@@ -180,6 +201,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           renderOutput(trimmed),
         );
       }
+
+      const stale = requireLiveCursor(tail, cursor, paneId);
+      if (stale !== undefined) return stale;
 
       if (seeding) {
         const captured = await pane.capture({ start: -SEED_LINES });
@@ -239,6 +263,74 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
   );
 
   mcp.registerTool(
+    "pipe_pane",
+    {
+      annotations: OPEN_WORLD,
+      description:
+        "Send everything a pane writes to a shell command, for as long as the pipe " +
+        "is open. Use this for output too large to read back: a pane keeps only " +
+        "history-limit lines and observe keeps a bounded buffer, so a long build " +
+        "outruns both and the earliest output is gone before anyone asks. " +
+        "'cat >> /tmp/build.log' captures it whole and costs nothing to leave " +
+        "running. Call with no command to stop. The pipe attaches to the pane, not " +
+        "to the process in it, so it survives respawn_pane and keeps running until " +
+        "something stops it. The command runs on the machine tmux runs on, and does " +
+        "whatever it does — this server cannot tell.",
+      inputSchema: {
+        toggle: z
+          .boolean()
+          .optional()
+          .describe(
+            "Start a pipe when none is open, and stop one when there is. tmux " +
+              "closes the existing pipe before honouring this, so against a pane " +
+              "somebody else is capturing it stops their capture rather than " +
+              "leaving it alone.",
+          ),
+        paneId: z.string(),
+        shellCommand: z
+          .string()
+          .optional()
+          .describe("Omit to stop a pipe this pane already has open."),
+      },
+      outputSchema: {
+        paneId: z.string(),
+        piping: z
+          .boolean()
+          .describe(
+            "Whether the pane is piped now, read back from tmux. A toggle against " +
+              "a pane already being piped closes that pipe and opens none, so this " +
+              "is false even though a command was given.",
+          ),
+      },
+      title: "Pipe pane output",
+    },
+    async ({ paneId, shellCommand, toggle }) => {
+      const snapshot = await context.snapshot();
+      // A read: tmux sends the pane's output to the command and writes nothing
+      // back, which is its default when neither -I nor -O is given. Adding -I
+      // would reverse that — the command's output would reach the pane as
+      // input — and this would then need requireWritablePane, not requirePane.
+      const pane = requirePane(snapshot, paneId);
+      if (isFailure(pane)) return pane;
+      await pane.pipeTo(shellCommand, toggle === undefined ? {} : { toggle });
+      // Ask the pane rather than restating the request. tmux destroys an open
+      // pipe before deciding whether to open a new one, so supplying a command
+      // is not the same as having a pipe afterwards — and reporting the request
+      // back made a toggle that stopped somebody else's capture look identical
+      // to one that started yours.
+      const piping = (await pane.displayMessage("#{pane_pipe}"))[0] === "1";
+      const stopped =
+        shellCommand === undefined
+          ? `Stopped piping ${paneId}.`
+          : `Stopped piping ${paneId}: toggle closed the pipe that was open and started none.`;
+      return ok(
+        { paneId, piping },
+        piping ? `Piping ${paneId} into: ${String(shellCommand)}` : stopped,
+      );
+    },
+  );
+
+  mcp.registerTool(
     "search_panes",
     {
       annotations: READ_ONLY,
@@ -289,12 +381,11 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       }
 
       const snapshot = await context.snapshot();
+      const target = session === undefined ? undefined : requireSession(snapshot, session);
+      if (target !== undefined && isFailure(target)) return target;
       const panes = snapshot.panes
         .toArray()
-        .filter(
-          (pane) =>
-            session === undefined || pane.sessionId === session || pane.sessionName === session,
-        );
+        .filter((pane) => target === undefined || pane.sessionId === target.id);
       const perPane = maxMatchesPerPane ?? 5;
       const start =
         scrollbackLines === undefined || scrollbackLines === 0 ? undefined : -scrollbackLines;

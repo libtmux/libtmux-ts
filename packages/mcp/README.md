@@ -186,6 +186,14 @@ can decide what to auto-approve.
 | `capture_pane` | The rendered screen, or into the scrollback |
 | `observe`      | Only what is new since your cursor          |
 | `search_panes` | Which panes are showing something           |
+| `pipe_pane`    | Sends a pane's output to a command, durably |
+
+A pane keeps `history-limit` lines and `observe` keeps a bounded buffer, so
+output larger than either is gone before anything asks for it. `pipe_pane` is
+tmux's answer: the command runs for as long as the pipe is open, so a long build
+is captured whole and costs nothing to leave running. It attaches to the pane
+rather than to the process in it, so it survives `respawn_pane` and keeps
+running until something stops it.
 
 ### Do things
 
@@ -205,14 +213,36 @@ can decide what to auto-approve.
 ### Build and arrange
 
 `build_workspace`, `new_session`, `new_window`, `split_pane`, `respawn_pane`,
-`rename_session`, `rename_window`, `resize_pane`, `select_pane`, `select_window`,
-`select_layout`, `swap_pane`, `move_window`, `set_pane_title`.
+`rename_session`, `rename_window`, `resize_pane`, `resize_window`,
+`select_pane`, `select_window`, `select_layout`, `swap_pane`, `swap_window`,
+`move_pane`, `move_window`, `set_pane_title`.
+
+`move_pane` joins a pane into another window, or breaks it out into one of its
+own when no destination is named; the pane keeps its id and whatever runs in it,
+which killing and splitting again does not.
+
+A detached session has no client to size it, so tmux gives it 80 columns and
+every program in it formats to that. `new_session` takes `width` and `height`,
+and `resize_window` changes one afterwards — `resize_pane` only redistributes
+space inside a window. A program that formats to its terminal width truncates at
+the source, where no capture option recovers the columns.
 
 ### Configure
 
-`show_options`, `set_option`, `show_hooks`, `show_environment`,
-`set_environment`, `list_buffers`, `show_buffer`, `load_buffer`, `paste_buffer`,
-`delete_buffer`.
+`show_options`, `set_option`, `unset_option`, `show_hooks`, `show_environment`,
+`set_environment`, `list_buffers`, `show_buffer`, `load_buffer`, `save_buffer`,
+`paste_buffer`, `delete_buffer`.
+
+Options live in six scopes: `server`, `session`, `global-session`, `window`,
+`global-window` and `pane`. A handle reports only what was set on it, so a
+session that has set nothing reports nothing while the values governing it are
+the global tables — `history-limit`, which decides how far `capture_pane` reaches
+back, and `default-shell`, which decides what a new pane runs, both live there.
+`unset_option` puts an option back to what it inherits.
+
+`show_buffer` returns a buffer's contents; `save_buffer` writes it to a file on
+tmux's own machine instead, which is the one to reach for when the point is to
+store it rather than read it.
 
 Hooks are readable but not writable. A hook outlives the process that sets it,
 so an agent that sets one leaves behaviour behind in somebody's tmux that

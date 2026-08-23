@@ -51,6 +51,12 @@ stated twice, the file listed above is the one that governs.
   Anything new belongs in `devDependencies` or nowhere.
 - A passing gate is evidence only once it has been shown capable of failing.
   Pair a new test with a deliberate break that proves it bites.
+- **Reaching past a layer to set a test up is a finding about that layer.**
+  If a fixture needs `tmux` directly, or the MCP's test needs `libtmux`, write
+  down what was unreachable before carrying on — a fixture needs whatever the
+  real workload needs, so the setup step probes the surface honestly where
+  reading the API does not. This found window-scope options and window size,
+  two gaps that reasoning about the tool list had missed.
 
 ## References
 

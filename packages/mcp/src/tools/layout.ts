@@ -19,7 +19,7 @@ import {
   type ToolContext,
 } from "../context.js";
 import { MUTATING, offers } from "../register.js";
-import { ok } from "../results.js";
+import { fail, ok } from "../results.js";
 import {
   paneLine,
   paneView,
@@ -85,7 +85,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
           ...(width === undefined ? {} : { width }),
         });
       }
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -106,7 +107,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       await pane.select();
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -150,7 +152,20 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(window)) return window;
       await window.selectLayout(layout);
       const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
-      return ok({ window: view }, windowLine(view));
+      // A layout string describing a different number of panes is accepted and
+      // does nothing: tmux exits 0 and leaves the window alone. A named layout
+      // is always applied, so only the string form can silently miss — and the
+      // window this returns already knows which layout it ended up with.
+      const ignored =
+        !LAYOUTS.includes(layout as (typeof LAYOUTS)[number]) && view.layout !== layout;
+      return ok(
+        { window: view },
+        windowLine(view) +
+          (ignored
+            ? `\n\n[the layout string was not applied: this window is still ${view.layout}. ` +
+              `tmux accepts a layout describing a different set of panes and changes nothing.]`
+            : ""),
+      );
     },
   );
 
@@ -169,9 +184,13 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       const other = requirePane(snapshot, otherPaneId);
       if (isFailure(other)) return other;
-      await pane.swapWith(other);
+      // Validated above for the not-found message. Swapping arranges two panes
+      // rather than writing into either, so neither needs the write guard —
+      // but swapWith takes the pane itself, which the read-only view withholds.
+      await pane.swapWith(snapshot.panes.one({ id: otherPaneId }));
       const after = await context.snapshot();
-      const views = [paneId, otherPaneId].map((id) => paneView(after.panes.one({ id })));
+      const identity = await context.identity(after);
+      const views = [paneId, otherPaneId].map((id) => paneView(after.panes.one({ id }), identity));
       return ok({ panes: views }, views.map(paneLine).join("\n"));
     },
   );
@@ -204,7 +223,117 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         ...(destination === undefined ? {} : { session: destination }),
       });
       const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      context.topologyChanged();
       return ok({ window: view }, windowLine(view));
+    },
+  );
+
+  mcp.registerTool(
+    "resize_window",
+    {
+      annotations: MUTATING,
+      description:
+        "Set a window's size in cells. A detached window is whatever size tmux " +
+        "guessed, and a program that formats to its terminal width truncates to " +
+        "that at the source — no capture option recovers those columns, because " +
+        "they were never printed. resize_pane only redistributes space inside a " +
+        "window and cannot grow one. A client attached to the window will " +
+        "overwrite this when it next changes; window-size manual makes a size of " +
+        "your own stick.",
+      inputSchema: {
+        height: z.number().int().positive().optional(),
+        width: z.number().int().positive().optional(),
+        windowId: z.string(),
+      },
+      outputSchema: { window: windowViewSchema },
+      title: "Resize window",
+    },
+    async ({ height, width, windowId }) => {
+      if (width === undefined && height === undefined) {
+        return fail({
+          hint: "Pass width, height, or both.",
+          reason: "resize_window needs a size to set.",
+        });
+      }
+      const snapshot = await context.snapshot();
+      const window = requireWindow(snapshot, windowId);
+      if (isFailure(window)) return window;
+      await window.resize({
+        ...(height === undefined ? {} : { height }),
+        ...(width === undefined ? {} : { width }),
+      });
+      const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      return ok({ window: view }, windowLine(view));
+    },
+  );
+
+  mcp.registerTool(
+    "move_pane",
+    {
+      annotations: MUTATING,
+      description:
+        "Move a pane into another window as a split, or break it out into a window " +
+        "of its own by naming no destination. The pane keeps its id and whatever is " +
+        "running in it, which killing it and splitting again does not. Moving a " +
+        "window's last pane destroys that window.",
+      inputSchema: {
+        paneId: z.string(),
+        vertical: z
+          .boolean()
+          .optional()
+          .describe(
+            "Join as a horizontal split rather than a vertical one. Unused when breaking out.",
+          ),
+        windowId: z
+          .string()
+          .optional()
+          .describe("Window to move it into. Omit to break it out into a window of its own."),
+        windowName: z.string().optional().describe("Name for the window a break-out creates."),
+      },
+      outputSchema: { pane: paneViewSchema },
+      title: "Move pane",
+    },
+    async ({ paneId, vertical, windowId, windowName }) => {
+      const snapshot = await context.snapshot();
+      const pane = requirePane(snapshot, paneId);
+      if (isFailure(pane)) return pane;
+      if (windowId === undefined) {
+        await pane.breakOut(windowName);
+      } else {
+        const window = requireWindow(snapshot, windowId);
+        if (isFailure(window)) return window;
+        await pane.joinTo(window.id, vertical === undefined ? {} : { vertical });
+      }
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
+      context.topologyChanged();
+      return ok({ pane: view }, paneLine(view));
+    },
+  );
+
+  mcp.registerTool(
+    "swap_window",
+    {
+      annotations: MUTATING,
+      description:
+        "Exchange the positions of two windows, which may be in different sessions. " +
+        "Each keeps its id, its panes and what is running in them; only where they " +
+        "sit changes. This is swap_pane's analogue one level up.",
+      inputSchema: { otherWindowId: z.string(), windowId: z.string() },
+      outputSchema: { windows: z.array(windowViewSchema) },
+      title: "Swap windows",
+    },
+    async ({ otherWindowId, windowId }) => {
+      const snapshot = await context.snapshot();
+      const window = requireWindow(snapshot, windowId);
+      if (isFailure(window)) return window;
+      const other = requireWindow(snapshot, otherWindowId);
+      if (isFailure(other)) return other;
+      await window.swapWith(other);
+      const after = await context.snapshot();
+      const views = [windowId, otherWindowId].map((id) => windowView(after.windows.one({ id })));
+      context.topologyChanged();
+      return ok({ windows: views }, views.map(windowLine).join("\n"));
     },
   );
 
@@ -224,7 +353,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       await pane.setTitle(title);
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const after = await context.snapshot();
+      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
       return ok({ pane: view }, paneLine(view));
     },
   );

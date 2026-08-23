@@ -9,7 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, type ToolContext } from "../context.js";
+import { isFailure, requirePane, requireSession, type ToolContext } from "../context.js";
 import { offers, READ_ONLY } from "../register.js";
 import { ok } from "../results.js";
 import {
@@ -25,6 +25,91 @@ import {
   windowView,
   windowViewSchema,
 } from "../views.js";
+
+/**
+ * A path, safe to put in a result.
+ *
+ * A socket path is not a tmux name: `check_name` never sees it, so it can hold
+ * a newline or any other control byte, and this one reaches an agent's context
+ * on every call. Escaping it here keeps a path from introducing a line break
+ * into a reply that is read as lines.
+ */
+function printable(value: string | null | undefined): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  let escaped = "";
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    escaped +=
+      code < 0x20 || code === 0x7f ? `\\x${code.toString(16).padStart(2, "0")}` : character;
+  }
+  return escaped;
+}
+
+/**
+ * The bare variable names in a tmux format.
+ *
+ * Only `#{name}` is a name. Everything else tmux allows inside the braces —
+ * `#{?cond,a,b}`, `#{==:x,y}`, `#{s/a/b/:var}`, `#{e|...}`, `#{T:...}` — is an
+ * expression, and an identifier test skips all of them because none is one.
+ * Rejecting a working format would be worse than the silence this replaces.
+ */
+function formatVariables(format: string): readonly string[] {
+  const names: string[] = [];
+  for (const match of format.matchAll(/#\{([^{}]*)\}/gu)) {
+    const inner = match[1] ?? "";
+    if (/^[a-zA-Z_][a-zA-Z0-9_]*$/u.test(inner)) names.push(inner);
+  }
+  return names;
+}
+
+/**
+ * Say which names in a format tmux does not know.
+ *
+ * tmux prints nothing for a field it has never heard of and exits 0, so a typo
+ * and a genuinely empty field are the same answer — in the one tool documented
+ * as the escape hatch for fields nothing else projects, which is where a
+ * hand-written format is most likely. `display-message -a` enumerates the
+ * table, so the two can be told apart.
+ *
+ * Enumerated against the same target the caller used: the set is
+ * target-dependent, and a pane field checked at server scope would look
+ * missing when it is only out of scope.
+ *
+ * Asking the running tmux rather than carrying a table is what makes this
+ * version-aware: 3.4 knows 120 variables against a pane and 3.7 knows 141, so
+ * a format written against a newer server is told exactly which field the
+ * older one lacks, and a field added in a future tmux needs no change here.
+ * A static list would be faster and would quietly lose all of that.
+ */
+async function unknownFields(
+  enumerate: () => Promise<readonly string[]>,
+  asked: readonly string[],
+  value: string,
+): Promise<readonly string[]> {
+  // Extracting the names is pure string work, so it happens first and for
+  // free. The table is consulted when nothing resolved, and also when more
+  // than one name could have contributed — a format mixing a known field with
+  // an unknown one produces something that reads like a value, so partial
+  // resolution is invisible in a way a wholly empty result is not. One name
+  // that resolved is the common case and still costs nothing.
+  if (asked.length === 0) return [];
+  if (value !== "" && asked.length < 2) return [];
+  const known = new Set(
+    (await enumerate().catch(() => [])).map((line) => line.slice(0, line.indexOf("="))),
+  );
+  if (known.size === 0) return [];
+  return asked.filter((name) => !known.has(name));
+}
+
+/** How an empty result explains itself. */
+function emptyNote(unknown: readonly string[]): string {
+  if (unknown.length === 0) return "";
+  return (
+    `\n\n[tmux has no ${unknown.length === 1 ? "field" : "fields"} ${unknown.join(", ")}. ` +
+    `It prints nothing for a name it does not know, so an empty value can be a typo ` +
+    `rather than an empty field.]`
+  );
+}
 
 export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "readonly")) return;
@@ -71,10 +156,13 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     async ({ session }) => {
       const snapshot = await context.snapshot();
       const all = snapshot.windows.toArray();
+      // Resolved rather than matched: an id and a name are different
+      // namespaces, and matching either meant one string picked two sessions
+      // here while requireSession picked one everywhere else.
+      const target = session === undefined ? undefined : requireSession(snapshot, session);
+      if (target !== undefined && isFailure(target)) return target;
       const windows = (
-        session === undefined
-          ? all
-          : all.filter((window) => window.sessionId === session || window.sessionName === session)
+        target === undefined ? all : all.filter((window) => window.sessionId === target.id)
       ).map(windowView);
       return ok(
         { windows },
@@ -101,11 +189,13 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     async ({ session, window }) => {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
+      const target = session === undefined ? undefined : requireSession(snapshot, session);
+      if (target !== undefined && isFailure(target)) return target;
       const panes = snapshot.panes
         .toArray()
         .filter(
           (pane) =>
-            (session === undefined || pane.sessionId === session || pane.sessionName === session) &&
+            (target === undefined || pane.sessionId === target.id) &&
             (window === undefined || pane.windowId === window),
         )
         .map((pane) => paneView(pane, identity));
@@ -201,15 +291,23 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     },
     async () => {
       const snapshot = await context.snapshot();
-      const [version, identity] = await Promise.all([
+      const [version, identity, resolvedSocket] = await Promise.all([
         context.tmux.version(),
         context.tmux.daemonIdentity(),
+        // The constructor argument is what this process was told, and on the
+        // default socket it was told nothing — so this reported null about a
+        // server that has a socket like any other, while the text rendering
+        // said "<default socket>" and the two disagreed. tmux knows.
+        context.tmux
+          .cmd("display-message", ["-p", "#{socket_path}"], { target: null })
+          .then((lines) => lines[0] ?? "")
+          .catch(() => ""),
       ]);
       const structured = {
         panes: snapshot.panes.count(),
         pid: identity?.pid ?? null,
         sessions: snapshot.sessions.count(),
-        socketPath: context.tmux.socketPath ?? null,
+        socketPath: printable(resolvedSocket === "" ? context.tmux.socketPath : resolvedSocket),
         version: version.raw,
         windows: snapshot.windows.count(),
       };
@@ -242,11 +340,23 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         if (isFailure(pane)) return pane;
         const lines = await pane.displayMessage(format);
         const value = lines.join("\n");
-        return ok({ value }, value);
+        // displayMessage takes a format, not flags, so the enumeration goes
+        // through the command with the same pane as its target.
+        const unknown = await unknownFields(
+          () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
+          formatVariables(format),
+          value,
+        );
+        return ok({ value }, value + emptyNote(unknown));
       }
       const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
       const value = lines.join("\n");
-      return ok({ value }, value);
+      const unknown = await unknownFields(
+        () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
+        formatVariables(format),
+        value,
+      );
+      return ok({ value }, value + emptyNote(unknown));
     },
   );
 }

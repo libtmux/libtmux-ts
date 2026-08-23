@@ -15,12 +15,14 @@ import {
   isFailure,
   requirePane,
   requireSession,
+  requireWritablePane,
   requireWindow,
   type ToolContext,
 } from "../context.js";
-import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
+import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
+  directoryNote,
   paneLine,
   paneView,
   paneViewSchema,
@@ -44,7 +46,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "new_session",
     {
-      annotations: MUTATING,
+      annotations: MUTATING_OPEN_WORLD,
       description:
         "Create a detached session and return it with its first window and pane, " +
         "so you can start working without listing anything first.",
@@ -54,7 +56,23 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .string()
           .optional()
           .describe("Run this instead of a shell. The session ends when it exits."),
+        height: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Rows. Default 24, because a detached session has no client to size it."),
         startDirectory: z.string().optional(),
+        width: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "Columns. Default 80, and a program that formats to its terminal width — ps, " +
+              "git log --graph, docker ps — truncates to that at the source, where no " +
+              "capture option can recover it.",
+          ),
         windowName: z.string().optional(),
       },
       outputSchema: {
@@ -64,11 +82,13 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       },
       title: "New session",
     },
-    async ({ name, shellCommand, startDirectory, windowName }) => {
+    async ({ height, name, shellCommand, startDirectory, width, windowName }) => {
       const session = await context.tmux.newSession({
         ...(name === undefined ? {} : { name }),
         ...(shellCommand === undefined ? {} : { shellCommand }),
         ...(startDirectory === undefined ? {} : { startDirectory }),
+        ...(width === undefined ? {} : { width }),
+        ...(height === undefined ? {} : { height }),
         ...(windowName === undefined ? {} : { windowName }),
       });
       const snapshot = await context.snapshot();
@@ -77,9 +97,11 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         session,
         snapshot.windows.count({ session: { is: { id: session.id } } }),
       );
+      context.topologyChanged();
       return ok(
         { paneId: pane?.id ?? "", session: view, windowId: pane?.windowId ?? "" },
-        `Created ${view.name} (${view.id}); its pane is ${pane?.id ?? "unknown"}.`,
+        `Created ${view.name} (${view.id}); its pane is ${pane?.id ?? "unknown"}.` +
+          directoryNote(startDirectory, pane?.currentPath),
       );
     },
   );
@@ -87,7 +109,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "new_window",
     {
-      annotations: MUTATING,
+      annotations: MUTATING_OPEN_WORLD,
       description: "Add a window to a session and return it with its pane.",
       inputSchema: {
         name: z.string().optional(),
@@ -110,9 +132,11 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const after = await context.snapshot();
       const pane = after.panes.first({ window: { is: { id: window.id } } });
       const view = windowView(window);
+      context.topologyChanged();
       return ok(
         { paneId: pane?.id ?? "", window: view },
-        `${windowLine(view)}; its pane is ${pane?.id ?? "unknown"}.`,
+        `${windowLine(view)}; its pane is ${pane?.id ?? "unknown"}.` +
+          directoryNote(startDirectory, pane?.currentPath),
       );
     },
   );
@@ -120,7 +144,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "split_pane",
     {
-      annotations: MUTATING,
+      annotations: MUTATING_OPEN_WORLD,
       description:
         "Split a pane and return the new one. Direction is where the new pane goes " +
         "relative to the one you split.",
@@ -131,7 +155,10 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .describe("Default below."),
         paneId: z.string(),
         shellCommand: z.string().optional(),
-        startDirectory: z.string().optional(),
+        startDirectory: z
+          .string()
+          .optional()
+          .describe("Defaults to the directory the pane being split is in."),
       },
       outputSchema: { pane: paneViewSchema },
       title: "Split pane",
@@ -140,13 +167,20 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
+      // tmux resolves a split's directory from the client, then the SESSION,
+      // and never consults the pane being split — so splitting a pane sitting
+      // in /etc produced one in the session's directory. "Split this pane"
+      // reads as "keep working here", so the source pane's directory is the
+      // default; naming one still overrides it.
+      const inherited = startDirectory ?? pane.currentPath ?? undefined;
       const created = await pane.split({
         ...(direction === undefined ? {} : { direction: DIRECTIONS[direction] }),
         ...(shellCommand === undefined ? {} : { shellCommand }),
-        ...(startDirectory === undefined ? {} : { startDirectory }),
+        ...(inherited === undefined ? {} : { startDirectory: inherited }),
       });
-      const view = paneView(created);
-      return ok({ pane: view }, paneLine(view));
+      const view = paneView(created, await context.identity(snapshot));
+      context.topologyChanged();
+      return ok({ pane: view }, paneLine(view) + directoryNote(startDirectory, view.cwd));
     },
   );
 
@@ -169,6 +203,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         after.sessions.one({ id: found.id }),
         after.windows.count({ session: { is: { id: found.id } } }),
       );
+      context.topologyChanged();
       return ok({ session: view }, `Renamed ${found.id} to ${name}.`);
     },
   );
@@ -188,6 +223,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       if (isFailure(window)) return window;
       await window.rename(name);
       const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      context.topologyChanged();
       return ok({ window: view }, windowLine(view));
     },
   );
@@ -195,11 +231,17 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "respawn_pane",
     {
-      annotations: MUTATING,
+      annotations: offers(context.policy, "destructive")
+        ? { ...MUTATING_OPEN_WORLD, destructiveHint: true }
+        : MUTATING_OPEN_WORLD,
       description:
         "Restart a pane's command in place, keeping the pane and its id. Use to " +
         "recover a pane whose process died, rather than killing and re-splitting.",
       inputSchema: {
+        force: z
+          .boolean()
+          .optional()
+          .describe("Write even to the pane this server runs in. Default false."),
         killFirst: z
           .boolean()
           .optional()
@@ -210,12 +252,35 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       outputSchema: { pane: paneViewSchema },
       title: "Respawn pane",
     },
-    async ({ killFirst, paneId, shellCommand }) => {
+    async ({ force, killFirst, paneId, shellCommand }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
+      const identity = await context.identity(snapshot);
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "restart");
       if (isFailure(pane)) return pane;
+      if (killFirst === true) {
+        // Respawning a dead pane is recovery and belongs at this tier. Killing
+        // what is still running is tmux's own kill by another name, and a tier
+        // that hides kill_pane cannot offer the same end by another road.
+        if (!offers(context.policy, "destructive")) {
+          return fail({
+            hint:
+              "Respawn without killFirst to recover a pane whose process has already " +
+              "exited, or run this server at the destructive tier.",
+            reason:
+              `Refusing to replace what is running in ${paneId}: killFirst ends that ` +
+              `process, and this server offers the ${context.policy.safety} tier.`,
+          });
+        }
+        const guard = guardDestructive(
+          identity.callerPaneId,
+          identity.attendedPaneIds,
+          paneId,
+          force,
+        );
+        if (guard !== undefined) return guard;
+      }
       await pane.respawn(shellCommand, killFirst === undefined ? {} : { kill: killFirst });
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }));
+      const view = paneView((await context.snapshot()).panes.one({ id: paneId }), identity);
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -235,9 +300,11 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     },
     async ({ force, paneId }) => {
       const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
+      const pane = requireWritablePane(snapshot, identity, paneId, force, "kill");
+      if (isFailure(pane)) return pane;
+      // requireWritablePane already refused this server's own pane; this adds
+      // the refusal for a pane somebody else is watching.
       const guard = guardDestructive(
         identity.callerPaneId,
         identity.attendedPaneIds,
@@ -246,6 +313,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       );
       if (guard !== undefined) return guard;
       await pane.kill();
+      context.topologyChanged();
       return ok({ killed: paneId }, `Killed ${paneId}.`);
     },
   );
@@ -275,6 +343,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         if (guard !== undefined) return guard;
       }
       await window.kill();
+      context.topologyChanged();
       return ok({ killed: windowId }, `Killed ${windowId} and its ${String(inside.length)} panes.`);
     },
   );
@@ -304,6 +373,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         if (guard !== undefined) return guard;
       }
       await found.kill();
+      context.topologyChanged();
       return ok({ killed: found.id }, `Killed ${found.id} and its ${String(inside.length)} panes.`);
     },
   );

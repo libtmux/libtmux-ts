@@ -9,9 +9,10 @@
 
 import { z } from "zod";
 
-import type { Client, Pane, Session, Window } from "libtmux";
+import type { Client, Session, Window } from "libtmux";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
+import type { ReadablePane } from "./context.js";
 
 export const paneViewSchema = z.object({
   active: z.boolean().describe("Whether this is its window's active pane."),
@@ -72,7 +73,15 @@ function no<T>(value: T | null | undefined, fallback: T): T {
   return value ?? fallback;
 }
 
-export function paneView(pane: Pane, identity?: CallerIdentity): PaneView {
+/**
+ * Project a pane, including whether anybody is watching it.
+ *
+ * `identity` is required rather than optional because these two fields are the
+ * whole safety signal and they are declared, so a caller that omitted it got
+ * `false` — a fact about the call site, presented as a fact about the pane.
+ * Six tools did, including on this server's own pane.
+ */
+export function paneView(pane: ReadablePane, identity: CallerIdentity): PaneView {
   return {
     active: no(pane.active, false),
     command: no(pane.currentCommand, ""),
@@ -81,8 +90,8 @@ export function paneView(pane: Pane, identity?: CallerIdentity): PaneView {
     height: no(pane.height, 0),
     id: pane.id,
     index: no(pane.index, 0),
-    isAttended: identity !== undefined && isAttended(identity, pane.id),
-    isCallerPane: identity !== undefined && isCallerPane(identity, pane.id),
+    isAttended: isAttended(identity, pane.id),
+    isCallerPane: isCallerPane(identity, pane.id),
     sessionId: no(pane.sessionId, ""),
     sessionName: no(pane.sessionName, ""),
     title: no(pane.title, ""),
@@ -149,4 +158,25 @@ export function windowLine(view: WindowView): string {
     .filter((mark) => mark !== "")
     .join(",");
   return `${view.id}  ${view.sessionName}:${String(view.index)} ${view.name}  ${String(view.panes)} panes${marks === "" ? "" : ` [${marks}]`}`;
+}
+
+/**
+ * Say when a pane did not start where it was asked to.
+ *
+ * tmux chdirs in the forked child (`spawn.c`), and when the directory is not
+ * usable it falls back to the session's, then home, then "/" — with no channel
+ * to report that it did. The command succeeds and the pane is somewhere else.
+ * This layer is the only one that can notice, because it knows what was asked
+ * for and can read where the pane landed.
+ */
+export function directoryNote(
+  requested: string | undefined,
+  landed: string | null | undefined,
+): string {
+  const actual = landed ?? "";
+  if (requested === undefined || actual === "" || actual === requested) return "";
+  return (
+    `\n\n[startDirectory ${requested} was not used: the pane is in ${actual}. ` +
+    `tmux falls back silently when it cannot enter the directory.]`
+  );
 }
