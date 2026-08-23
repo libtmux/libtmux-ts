@@ -127,8 +127,13 @@ describe("control-mode resource bounds", () => {
       // fallback for the other reason, and the test would prove nothing.
       const command = "echo first; echo second";
       expect(command.includes("\n")).toBe(false);
-      expect(await live.runShell(command)).toEqual(await server.runShell(command));
-      expect(await live.runShell(command)).toEqual(["first", "second"]);
+
+      const spawned = await server.runShell(command);
+      expect(await live.runShell(command)).toEqual(spawned);
+      // 3.3a and 3.4 suppress a clientless run-shell's output entirely, which
+      // is the difference LIBTMUX_TMUX_BUILDS exists to surface. Where this
+      // tmux answers at all, both transports have to answer with the output.
+      if (spawned.length > 0) expect(await live.runShell(command)).toEqual(["first", "second"]);
     });
   }, 40_000);
 

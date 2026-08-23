@@ -134,6 +134,55 @@ describe("option reads", () => {
     });
   }, 30_000);
 
+  /**
+   * What this package reads back, against what tmux says the value is.
+   *
+   * `show-options -v` prints the value with no quoting of its own, so it is
+   * tmux's own answer to the question the escaped form is asking. Comparing
+   * against it rather than against the value that was set keeps the test true
+   * on a tmux that stores something else -- 3.4 keeps the backslash from a `$`,
+   * which later versions do not.
+   */
+  test("reads an option value back the way tmux itself reports it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const values: readonly string[] = [
+        "plain",
+        "",
+        `he said "hi"`,
+        "$HOME/x",
+        "a; b; c",
+        "a #{b} c",
+        "{ x }",
+        "percent%pct",
+        "'single'",
+        "space in it",
+        "trailing ",
+        "#hash",
+        "back\\slash",
+        "tab\there",
+        "~tilde",
+        `"`,
+        "$",
+        "'",
+        `a"b`,
+        "#{?pane_in_mode,COPY,}",
+        "#[fg=red]$USER@#H",
+      ];
+
+      for (const [index, value] of values.entries()) {
+        const name = `@round-trip-${String(index)}`;
+        // eslint-disable-next-line no-await-in-loop -- one option at a time is the test.
+        await server.setOption(name, value);
+        // eslint-disable-next-line no-await-in-loop -- same.
+        const reported = (await server.cmd("show-options", ["-s", "-v", name])).join("\n");
+        // eslint-disable-next-line no-await-in-loop -- same.
+        const decoded = (await server.showOptions()).get(name);
+        expect(decoded).toBe(reported);
+      }
+    });
+  }, 60_000);
+
   test("rejects an unknown option with a tmux-sourced error", async () => {
     await withServer(async (fixture) => {
       await expect(serverFor(fixture).setOption("definitely-not-an-option", "1")).rejects.toThrow(

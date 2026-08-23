@@ -11,6 +11,71 @@ const SCOPE_FLAGS: Readonly<Record<OptionScope, readonly string[]>> = Object.fre
   window: ["-w"],
 });
 
+/** What `vis(3)` writes for a byte that cannot be printed, and its byte. */
+const CONTROL_ESCAPES: ReadonlyMap<string, string> = new Map([
+  ["0", "\0"],
+  ["a", "\u0007"],
+  ["b", "\b"],
+  ["f", "\f"],
+  ["n", "\n"],
+  ["r", "\r"],
+  ["s", " "],
+  ["t", "\t"],
+  ["v", "\v"],
+]);
+
+/**
+ * Undo the `vis(3)` escaping inside a quoted or bare value.
+ *
+ * A backslash introduces a three-digit octal byte, one of the C-style letters
+ * above, or a character standing for itself — which is how `\\`, `\"`, `\$`
+ * and `\~` all arrive back as what they were.
+ */
+function unescapeValue(text: string): string {
+  if (!text.includes("\\")) return text;
+  let result = "";
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "\\") {
+      result += text[index];
+      continue;
+    }
+    const next = text[index + 1];
+    if (next === undefined) {
+      result += "\\";
+      break;
+    }
+    const octal = /^[0-7]{3}/u.exec(text.slice(index + 1, index + 4));
+    if (octal !== null) {
+      result += String.fromCharCode(Number.parseInt(octal[0], 8));
+      index += 3;
+      continue;
+    }
+    result += CONTROL_ESCAPES.get(next) ?? next;
+    index += 1;
+  }
+  return result;
+}
+
+/**
+ * Read the value tmux printed for an option or a hook back into what was set.
+ *
+ * `args_escape` wraps a value in double quotes when it holds any of `` #';${}%``,
+ * in single quotes when it holds a `"` or a space and none of those, and writes
+ * an empty value as `''`. Inside either, and bare, `vis(3)` escaping renders a
+ * backslash — and within double quotes a `"` or a `$` — with a leading one.
+ *
+ * Reversed shallowly, a `status-left` or a hook comes back still carrying its
+ * own escaping, and an empty option reads as two characters rather than none.
+ * A value tmux did not need to quote passes through untouched.
+ */
+export function decodeOptionValue(raw: string): string {
+  if (raw === "''") return "";
+  const wrapped =
+    raw.length >= 2 &&
+    ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")));
+  return unescapeValue(wrapped ? raw.slice(1, -1) : raw);
+}
+
 /**
  * tmux prints one option per line as a name and an optional value, quoting the
  * value only when it needs to. Array-valued options arrive as repeated lines
@@ -21,11 +86,7 @@ export function parseNameValueLine(line: string): readonly [string, string] | un
   if (line === "") return undefined;
   const separator = line.indexOf(" ");
   if (separator === -1) return [line, ""];
-  const name = line.slice(0, separator);
-  const raw = line.slice(separator + 1);
-  const unquoted =
-    raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
-  return [name, unquoted];
+  return [line.slice(0, separator), decodeOptionValue(line.slice(separator + 1))];
 }
 
 /**
