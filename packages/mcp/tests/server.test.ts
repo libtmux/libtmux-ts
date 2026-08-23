@@ -1154,6 +1154,45 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("tells a mistyped format from an empty field", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+
+        // tmux prints nothing for a name it has never heard of and exits 0, so
+        // this used to be the same answer as a field that is genuinely empty.
+        const typo = await client.callTool({
+          arguments: { format: "#{nonexistent_field_xyz}", paneId, target: paneId },
+          name: "display_message",
+        });
+        expect(toolText(typo)).toContain("nonexistent_field_xyz");
+
+        // The quiet half, twice over. A format that resolves says nothing...
+        const resolved = await client.callTool({
+          arguments: { format: "#{pane_id}", target: paneId },
+          name: "display_message",
+        });
+        expect(toolText(resolved)).toContain(paneId);
+        expect(toolText(resolved)).not.toContain("has no field");
+
+        // ...and a real field that is merely empty is not called a typo.
+        const empty = await client.callTool({
+          arguments: { format: "#{pane_start_command}", target: paneId },
+          name: "display_message",
+        });
+        expect(toolText(empty)).not.toContain("has no field");
+
+        // An expression is not a name, and rejecting a working format would be
+        // worse than the silence this replaces.
+        const expression = await client.callTool({
+          arguments: { format: "#{?pane_dead,dead,live}", target: paneId },
+          name: "display_message",
+        });
+        expect(toolText(expression)).not.toContain("has no field");
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

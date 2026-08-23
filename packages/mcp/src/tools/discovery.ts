@@ -45,6 +45,60 @@ function printable(value: string | null | undefined): string | null {
   return escaped;
 }
 
+/**
+ * The bare variable names in a tmux format.
+ *
+ * Only `#{name}` is a name. Everything else tmux allows inside the braces —
+ * `#{?cond,a,b}`, `#{==:x,y}`, `#{s/a/b/:var}`, `#{e|...}`, `#{T:...}` — is an
+ * expression, and an identifier test skips all of them because none is one.
+ * Rejecting a working format would be worse than the silence this replaces.
+ */
+function formatVariables(format: string): readonly string[] {
+  const names: string[] = [];
+  for (const match of format.matchAll(/#\{([^{}]*)\}/gu)) {
+    const inner = match[1] ?? "";
+    if (/^[a-zA-Z_][a-zA-Z0-9_]*$/u.test(inner)) names.push(inner);
+  }
+  return names;
+}
+
+/**
+ * Say which names in a format tmux does not know.
+ *
+ * tmux prints nothing for a field it has never heard of and exits 0, so a typo
+ * and a genuinely empty field are the same answer — in the one tool documented
+ * as the escape hatch for fields nothing else projects, which is where a
+ * hand-written format is most likely. `display-message -a` enumerates the
+ * table, so the two can be told apart.
+ *
+ * Only consulted when the value came back empty, so a format that resolved
+ * costs nothing. Enumerated against the same target the caller used: the set
+ * is target-dependent, and a pane field checked at server scope would look
+ * missing when it is only out of scope.
+ */
+async function unknownFields(
+  enumerate: () => Promise<readonly string[]>,
+  format: string,
+): Promise<readonly string[]> {
+  const asked = formatVariables(format);
+  if (asked.length === 0) return [];
+  const known = new Set(
+    (await enumerate().catch(() => [])).map((line) => line.slice(0, line.indexOf("="))),
+  );
+  if (known.size === 0) return [];
+  return asked.filter((name) => !known.has(name));
+}
+
+/** How an empty result explains itself. */
+function emptyNote(unknown: readonly string[]): string {
+  if (unknown.length === 0) return "";
+  return (
+    `\n\n[tmux has no ${unknown.length === 1 ? "field" : "fields"} ${unknown.join(", ")}. ` +
+    `It prints nothing for a name it does not know, so an empty value can be a typo ` +
+    `rather than an empty field.]`
+  );
+}
+
 export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "readonly")) return;
 
@@ -274,11 +328,27 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         if (isFailure(pane)) return pane;
         const lines = await pane.displayMessage(format);
         const value = lines.join("\n");
-        return ok({ value }, value);
+        // displayMessage takes a format, not flags, so the enumeration goes
+        // through the command with the same pane as its target.
+        const unknown =
+          value === ""
+            ? await unknownFields(
+                () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
+                format,
+              )
+            : [];
+        return ok({ value }, value + emptyNote(unknown));
       }
       const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
       const value = lines.join("\n");
-      return ok({ value }, value);
+      const unknown =
+        value === ""
+          ? await unknownFields(
+              () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
+              format,
+            )
+          : [];
+      return ok({ value }, value + emptyNote(unknown));
     },
   );
 }
