@@ -621,16 +621,18 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
   close(): Promise<void>;
   /**
    * Resolve with the first event `matches` accepts, or undefined if the
-   * deadline passes first.
+   * deadline passes or the stream is closed first.
    *
    * This consumes the stream, which is what iterating it does anyway. It exists
    * because every caller otherwise writes the same loop, deadline, and cleanup,
    * and forgetting the deadline turns a missed event into a hang.
    *
-   * @throws LibTmuxException when the stream ends before a match — the server
-   * went away, or something closed it. Undefined therefore means the deadline
-   * and nothing else, so a caller reporting "it never printed the marker" is
-   * only ever saying that about a workload that really did not print it.
+   * @throws LibTmuxException when the stream ends under the wait — the server
+   * went away, or the connection dropped. Closing it on purpose is not that: a
+   * caller cancelling, or a scope ending, answers undefined, because deciding
+   * to stop waiting is not a failure anyone should have to catch. Undefined
+   * therefore means the deadline passed or the wait was called off, and only
+   * the deadline says the workload really did not print what was waited for.
    */
   find(
     matches: (event: TmuxEvent) => boolean,

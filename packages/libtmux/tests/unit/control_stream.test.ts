@@ -78,7 +78,7 @@ describe("event stream lifetime", () => {
    * tmux server went away underneath it — a diagnosis that sends someone to
    * read their own workload for a transport failure.
    */
-  test("answers undefined for the deadline and nothing else", async () => {
+  test("answers undefined when the deadline passes", async () => {
     const sink = createEventStream(() => Promise.resolve(), 4);
     expect(await sink.stream.find(() => false, { timeoutMs: 10 })).toBeUndefined();
   });
