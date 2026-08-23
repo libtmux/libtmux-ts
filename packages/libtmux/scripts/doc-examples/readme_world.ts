@@ -52,6 +52,22 @@ const MAKE_STUB = '#!/bin/sh\necho "BUILD OK"\n';
  */
 const STAYS_UP = "#!/bin/sh\nexec sleep 600\n";
 
+/**
+ * The commands the fixture supplies, because a machine cannot be assumed to
+ * have them.
+ *
+ * Exported so the gate can hold the README to this list. A command named in an
+ * example and missing from here runs on whichever machine happens to have it
+ * installed, which is how five blocks passed locally and failed on CI.
+ */
+export const STAYS_UP_COMMANDS: readonly string[] = Object.freeze([
+  "npm",
+  "just",
+  "nvim",
+  "journalctl",
+  "htop",
+]);
+
 export interface World {
   readonly bindings: Record<string, unknown>;
   readonly dispose: () => Promise<void>;
@@ -140,7 +156,7 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   // `tail`, `git`, `ls` and `echo` are already everywhere; these are not, and a
   // missing one takes its pane down at once — which the prose says will happen,
   // and which then looks like the example failing.
-  for (const name of ["npm", "just", "nvim", "journalctl", "htop"]) {
+  for (const name of STAYS_UP_COMMANDS) {
     // eslint-disable-next-line no-await-in-loop -- two files, written in order.
     await writeFile(join(binary, name), STAYS_UP, { mode: 0o755 });
   }

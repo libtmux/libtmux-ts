@@ -30,6 +30,50 @@ import { bindingsFor, fencedBlocks, type Example } from "./example_harness.js";
  */
 
 const OUTPUT = "README.md";
+
+/**
+ * Commands a machine running this can be assumed to have.
+ *
+ * Everything else an example names has to be supplied by the fixture. The
+ * distinction is not fussiness: a pane whose command does not exist dies the
+ * moment it starts, so an example naming an uninstalled command fails for a
+ * reason that has nothing to do with the example — on some machines and not
+ * others, which is the worst version of a gate.
+ */
+const UBIQUITOUS: ReadonlySet<string> = new Set([
+  "cat",
+  "echo",
+  "git",
+  "ls",
+  "printf",
+  "sh",
+  "sleep",
+  "tail",
+  "true",
+]);
+
+/**
+ * The executables an example asks a pane to run.
+ *
+ * `shellCommand` and `respawn` replace a pane's process outright. A `sendKeys`
+ * string with a space in it is a command line rather than a keypress, and
+ * `sendKeys("q")` is the latter.
+ */
+function commandsNamedBy(example: Example): readonly string[] {
+  const found: string[] = [];
+  const patterns = [
+    /shellCommand:\s*"(?<line>[^"]+)"/gu,
+    /\brespawn\(\s*"(?<line>[^"]+)"/gu,
+    /\bsendKeys\(\s*"(?<line>[^" ]+ [^"]*)"/gu,
+  ];
+  for (const pattern of patterns) {
+    for (const match of example.code.matchAll(pattern)) {
+      const first = (match.groups?.["line"] ?? "").trim().split(/\s+/u)[0];
+      if (first !== undefined && first !== "") found.push(first);
+    }
+  }
+  return found;
+}
 /** Long enough for a real server to answer, short enough to name a deadlock. */
 const DEADLINE_MS = 15_000;
 
@@ -99,6 +143,24 @@ if (blocks.length === 0) throw new Error(`no \`\`\`ts blocks found in ${OUTPUT}`
 // A block that builds its own `new Server()` reaches tmux's default socket.
 // Pointing TMUX_TMPDIR somewhere disposable is what keeps it off the server the
 // person running this is sitting in.
+const { STAYS_UP_COMMANDS } = await import("./readme_world.js");
+const supplied = new Set([...STAYS_UP_COMMANDS, "make"]);
+const unsupplied = blocks
+  .filter((block) => block.coverage === undefined)
+  .flatMap((block) => commandsNamedBy(block).map((name) => ({ name, origin: block.origin })))
+  .filter((named) => !supplied.has(named.name) && !UBIQUITOUS.has(named.name));
+if (unsupplied.length > 0) {
+  for (const named of unsupplied) {
+    process.stderr.write(
+      `${named.origin} names \`${named.name}\`, which the fixture does not supply\n`,
+    );
+  }
+  process.stderr.write(
+    "\nAdd it to STAYS_UP_COMMANDS in readme_world.ts, or to UBIQUITOUS here if every machine has it.\n",
+  );
+  process.exit(1);
+}
+
 const isolated = await mkdtemp(join(tmpdir(), "ltx-readme-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;
 
