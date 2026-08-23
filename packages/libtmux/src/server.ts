@@ -457,39 +457,75 @@ export class Server {
       invalidateRuntimeEpoch(boundRuntime);
     });
     const bound = createServerWithRuntime(boundRuntime) as ConnectedServer;
+
+    /**
+     * The waits this connection has outstanding, so closing it can answer them.
+     *
+     * Closing on purpose — a caller cancelling, a scope ending — rejects every
+     * wait in flight, and a wait nobody is holding any more becomes an
+     * unhandled rejection the caller cannot even catch. Marking each one
+     * handled first silences exactly those, and only those: a daemon that dies
+     * never comes through here, so a real failure stays as loud as it was, and
+     * so does a wait somebody forgot to await that later times out.
+     *
+     * Held as records rather than as the promises themselves. Attaching
+     * `.finally` to a promise to clean up after it marks that promise handled
+     * at the moment it is created, which would silence every wait always and
+     * leave this looking like it worked.
+     */
+    const waiting = new Set<{ promise?: Promise<ServerSnapshot> }>();
+    const closeWaits = (): Promise<void> => {
+      for (const entry of waiting) entry.promise?.catch(() => undefined);
+      return connection.close();
+    };
+
     Object.defineProperties(bound, {
-      close: { value: () => connection.close() },
+      close: { value: closeWaits },
       subscribe: { value: () => connection.subscribe() },
       waitFor: {
-        value: async (
+        value: (
           matches: (snapshot: ServerSnapshot) => boolean,
           options: { readonly timeoutMs?: number } = {},
         ): Promise<ServerSnapshot> => {
-          // Subscribe before reading, or a change that lands between the read
-          // and the subscription is never seen and the wait hangs on a
-          // condition that is already true.
-          const events = connection.subscribe();
-          let deadlinePassed = false;
-          const deadline = setTimeout(() => {
-            deadlinePassed = true;
-            void events.close();
-          }, options.timeoutMs ?? 30_000);
-          try {
-            let snapshot = await bound.snapshot();
-            if (matches(snapshot)) return snapshot;
-            for await (const _event of events) {
-              snapshot = await bound.snapshot();
+          const entry: { promise?: Promise<ServerSnapshot> } = {};
+          const run = async (): Promise<ServerSnapshot> => {
+            // Subscribe before reading, or a change that lands between the read
+            // and the subscription is never seen and the wait hangs on a
+            // condition that is already true.
+            const events = connection.subscribe();
+            let deadlinePassed = false;
+            const deadline = setTimeout(() => {
+              deadlinePassed = true;
+              void events.close();
+            }, options.timeoutMs ?? 30_000);
+            try {
+              let snapshot = await bound.snapshot();
               if (matches(snapshot)) return snapshot;
+              for await (const _event of events) {
+                snapshot = await bound.snapshot();
+                if (matches(snapshot)) return snapshot;
+              }
+            } finally {
+              clearTimeout(deadline);
+              await events.close();
+              // Inside the body on purpose: cleaning up from outside means
+              // attaching a handler to the promise, which marks it handled the
+              // moment it exists and silences every wait rather than the closed
+              // ones.
+              waiting.delete(entry);
             }
-          } finally {
-            clearTimeout(deadline);
-            await events.close();
-          }
-          // Waiting out a deadline and losing the connection are different
-          // outcomes, and only one of them says anything about the condition.
-          throw deadlinePassed
-            ? new WaitTimeout("the awaited tmux state did not arrive before the deadline")
-            : new LibTmuxException("the tmux event stream ended before the awaited state arrived");
+            // Waiting out a deadline and losing the connection are different
+            // outcomes, and only one of them says anything about the condition.
+            throw deadlinePassed
+              ? new WaitTimeout("the awaited tmux state did not arrive before the deadline")
+              : new LibTmuxException(
+                  "the tmux event stream ended before the awaited state arrived",
+                );
+          };
+          const promise = run();
+          entry.promise = promise;
+          waiting.add(entry);
+          return promise;
         },
       },
       // A chained line draws one response block per command from tmux, and this
@@ -503,7 +539,7 @@ export class Server {
         ): Promise<readonly (readonly string[])[]> =>
           runPipelineSequentially(boundRuntime, commands, options),
       },
-      [Symbol.asyncDispose]: { value: () => connection.close() },
+      [Symbol.asyncDispose]: { value: closeWaits },
     });
     return bound;
   }
