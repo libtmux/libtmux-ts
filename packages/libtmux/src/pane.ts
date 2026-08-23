@@ -105,7 +105,11 @@ export class Pane {
   }
 
   /**
-   * Every option this pane currently sees, including inherited values.
+   * Every option set on this pane itself, not the ones it inherits.
+   *
+   * A fresh pane usually has none, so an empty map here means nothing was
+   * set on this pane — not that the option has no value. `showResolvedOptions`
+   * answers what actually governs it.
    *
    * ```ts
    * const options = await pane.showOptions();

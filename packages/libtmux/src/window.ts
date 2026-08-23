@@ -150,7 +150,11 @@ export class Window {
   }
 
   /**
-   * Every option this window currently sees, including inherited values.
+   * Every option set on this window itself, not the ones it inherits.
+   *
+   * A fresh window usually has none, so an empty map here means nothing was
+   * set on this window — not that the option has no value. `showResolvedOptions`
+   * answers what actually governs it.
    *
    * ```ts
    * const options = await window.showOptions();

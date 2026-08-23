@@ -89,7 +89,11 @@ export class Session {
   }
 
   /**
-   * Every option this session currently sees, including inherited values.
+   * Every option set on this session itself, not the ones it inherits.
+   *
+   * A fresh session usually has none, so an empty map here means nothing was
+   * set on this session — not that the option has no value. `showResolvedOptions`
+   * answers what actually governs it.
    *
    * ```ts
    * const options = await session.showOptions();

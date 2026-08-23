@@ -936,7 +936,11 @@ const [editor, logs] = await server.batch([
 showOptions(): Promise<ReadonlyMap<string, string>>
 ```
 
-Every option this session currently sees, including inherited values.
+Every option set on this session itself, not the ones it inherits.
+
+A fresh session usually has none, so an empty map here means nothing was
+set on this session — not that the option has no value. `showResolvedOptions`
+answers what actually governs it.
 
 ```ts
 const options = await session.showOptions();
@@ -1314,7 +1318,11 @@ created.id;
 showOptions(): Promise<ReadonlyMap<string, string>>
 ```
 
-Every option this window currently sees, including inherited values.
+Every option set on this window itself, not the ones it inherits.
+
+A fresh window usually has none, so an empty map here means nothing was
+set on this window — not that the option has no value. `showResolvedOptions`
+answers what actually governs it.
 
 ```ts
 const options = await window.showOptions();
@@ -1664,7 +1672,11 @@ created.id;
 showOptions(): Promise<ReadonlyMap<string, string>>
 ```
 
-Every option this pane currently sees, including inherited values.
+Every option set on this pane itself, not the ones it inherits.
+
+A fresh pane usually has none, so an empty map here means nothing was
+set on this pane — not that the option has no value. `showResolvedOptions`
+answers what actually governs it.
 
 ```ts
 const options = await pane.showOptions();
