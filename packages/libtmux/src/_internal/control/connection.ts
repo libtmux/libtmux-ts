@@ -60,6 +60,31 @@ function carriesNewline(argv: readonly string[]): boolean {
 }
 
 /**
+ * Whether tmux answers this command outside the block it opened for it.
+ *
+ * `run-shell` starts a job and returns `CMD_RETURN_WAIT`, but the closing guard
+ * is written when the command returns rather than when the job finishes. The
+ * block is therefore empty and the output follows it as bare lines belonging to
+ * no command, which a control client has no way to attribute and this one drops
+ * — so `runShell` answers nothing at all over a connection.
+ *
+ * Every form goes, including `-b`, which prints to a pane and would not have
+ * needed to: telling them apart means parsing `run-shell`'s flags, and reading
+ * them wrong reintroduces the silence this exists to remove. The command forks
+ * a shell either way, so a tmux process beside it is not what makes it costly.
+ */
+function answersOutsideItsBlock(argv: readonly string[]): boolean {
+  return argv[0] === "run-shell" || argv[0] === "run";
+}
+
+/** Why control mode cannot carry this command, named for the caller. */
+function unwritableReason(argv: readonly string[]): string | undefined {
+  if (carriesNewline(argv)) return "a newline in an argument";
+  if (answersOutsideItsBlock(argv)) return "run-shell output, which tmux writes after the block";
+  return undefined;
+}
+
+/**
  * A command list submitted together, so a failure can retire its remainder.
  *
  * tmux removes the rest of a list when one of its commands fails, and says so
@@ -206,13 +231,13 @@ export class ControlConnection implements CommandTransport {
   /**
    * A transport for the commands this connection cannot carry.
    *
-   * tmux's control protocol has no channel for a command's stdin, so
-   * `load-buffer` and friends have nowhere to put their payload. Handing them
-   * to a spawning transport keeps the promise the two modes are built on —
-   * that choosing one never edits the caller — instead of making a connected
-   * server a server with a hole in it.
+   * Some commands cannot travel over a connection at all: control mode has no
+   * channel for stdin, no way to write a newline inside an argument, and no way
+   * to frame `run-shell`'s output. Handing those to a spawning transport keeps
+   * the promise the two modes are built on — that choosing one never edits the
+   * caller — instead of making a connected server a server with holes in it.
    */
-  readonly #stdinFallback: CommandTransport | undefined;
+  readonly #spawnFallback: CommandTransport | undefined;
 
   /**
    * Told when this connection stops being proof of one daemon.
@@ -231,7 +256,7 @@ export class ControlConnection implements CommandTransport {
     streamEndsConnection = true,
     stdinFallback?: CommandTransport,
   ) {
-    this.#stdinFallback = stdinFallback;
+    this.#spawnFallback = stdinFallback;
     const bufferSize = options.bufferSize ?? DEFAULT_BUFFER_SIZE;
     // Validated before the spawn, so a rejected size cannot leak a process.
     if (!Number.isInteger(bufferSize) || bufferSize < 1) {
@@ -712,7 +737,7 @@ export class ControlConnection implements CommandTransport {
     if (request.stdin !== undefined) {
       // The request still carries this connection's socket flags, so the
       // spawned command reaches the same server this one is attached to.
-      const fallback = this.#stdinFallback;
+      const fallback = this.#spawnFallback;
       if (fallback !== undefined) return fallback.execute(request);
       return Promise.reject(
         new TmuxTransportError("control mode cannot carry command stdin", {
@@ -731,14 +756,15 @@ export class ControlConnection implements CommandTransport {
         }),
       );
     }
-    if (carriesNewline(argv)) {
-      // Spawning hands argv to execve, where a newline is one more byte of one
-      // argument. tmux accepts it in a buffer and refuses it in a window name,
-      // and either answer is its to give — this one only has to reach it.
-      const fallback = this.#stdinFallback;
+    const unwritable = unwritableReason(argv);
+    if (unwritable !== undefined) {
+      // A spawned tmux hands argv to execve and reads the whole reply from a
+      // pipe, so both of these are ordinary there. Which answer tmux gives is
+      // still tmux's to give — this only has to let the command reach it.
+      const fallback = this.#spawnFallback;
       if (fallback !== undefined) return fallback.execute(request);
       return Promise.reject(
-        new TmuxTransportError("control mode cannot carry a newline in an argument", {
+        new TmuxTransportError(`control mode cannot carry ${unwritable}`, {
           delivery: "not_started",
           kind: "protocol",
         }),
@@ -800,13 +826,14 @@ export class ControlConnection implements CommandTransport {
         }),
       );
     }
-    if (argvs.some(carriesNewline)) {
+    const unwritable = argvs.map(unwritableReason).find((reason) => reason !== undefined);
+    if (unwritable !== undefined) {
       // The whole list goes, not the one command: splitting it would cost the
       // single instant that is the reason a list is written as one line.
-      const fallback = this.#stdinFallback;
+      const fallback = this.#spawnFallback;
       if (fallback !== undefined) return fallback.executeGroup(requests);
       return Promise.reject(
-        new TmuxTransportError("control mode cannot carry a newline in an argument", {
+        new TmuxTransportError(`control mode cannot carry ${unwritable}`, {
           delivery: "not_started",
           kind: "protocol",
         }),

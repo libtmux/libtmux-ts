@@ -115,6 +115,23 @@ describe("control-mode resource bounds", () => {
     });
   }, 40_000);
 
+  test("carries run-shell output, which tmux writes after the block", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+
+      // tmux writes `run-shell`'s closing guard when the command returns, not
+      // when the job finishes, so its output arrives as bare lines belonging to
+      // no command. Answering nothing is what a connection would otherwise do.
+      // No newline in the command itself: one would route it to the same
+      // fallback for the other reason, and the test would prove nothing.
+      const command = "echo first; echo second";
+      expect(command.includes("\n")).toBe(false);
+      expect(await live.runShell(command)).toEqual(await server.runShell(command));
+      expect(await live.runShell(command)).toEqual(["first", "second"]);
+    });
+  }, 40_000);
+
   test("rejects a bound that is not a positive integer, before spawning", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
