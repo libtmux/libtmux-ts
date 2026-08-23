@@ -6,6 +6,7 @@ import {
   WHERE_RELATIONS_V1,
   type WhereModel,
 } from "../src/_generated/where_fields.js";
+import { scalarOperatorNames } from "../src/_internal/selection/compile.js";
 import { packageRoot } from "./package_root.js";
 
 /**
@@ -31,17 +32,8 @@ const TITLES: Readonly<Record<WhereModel, string>> = {
   window: "Window",
 };
 
-/** The operators a scalar criterion takes, from the compiler's own list. */
-const SCALAR_OPERATORS: readonly string[] = [
-  "contains",
-  "endsWith",
-  "equals",
-  "in",
-  "mode",
-  "notIn",
-  "regex",
-  "startsWith",
-];
+/** The operators a scalar criterion takes, read from the compiler itself. */
+const SCALAR_OPERATORS: readonly string[] = [...scalarOperatorNames];
 
 function renderModel(model: WhereModel): readonly string[] {
   const fields = WHERE_FIELDS_V1[model]

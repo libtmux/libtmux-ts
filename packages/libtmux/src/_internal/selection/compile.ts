@@ -109,11 +109,20 @@ export interface CompiledWhere {
   matches(record: ProjectionRecord, resolve: RecordResolver): boolean;
 }
 
-const logicalNames = Object.freeze(["AND", "NOT", "OR"] as const);
+const logicalNames = Object.freeze(["AND", "NOT", "OR"]);
 /** How a relation is quantified, by whether it holds one target or many. */
 const MANY_QUANTIFIERS: readonly string[] = Object.freeze(["every", "none", "some"]);
 const ONE_QUANTIFIERS: readonly string[] = Object.freeze(["is", "isNot"]);
-const scalarOperatorNames = Object.freeze([
+/**
+ * The operators a scalar criterion takes.
+ *
+ * Exported because the criteria reference lists them, and a reference that
+ * keeps its own copy of a vocabulary is a claim nothing checks: the generator
+ * would read the copy, the committed file would match what the generator
+ * wrote, and the gate would pass over an operator this compiler no longer
+ * accepts.
+ */
+export const scalarOperatorNames: readonly string[] = Object.freeze([
   "contains",
   "endsWith",
   "equals",
@@ -555,7 +564,7 @@ function parseScalar(value: unknown, state: ParseState): ParsedScalar {
     const record = snapshotObject(value, state);
     if (record.size === 0) return invalidQuery(state, `expected one of ${OPERATORS}`);
     for (const key of record.keys()) {
-      if (scalarOperatorNames.includes(key as never)) continue;
+      if (scalarOperatorNames.includes(key)) continue;
       return at(state, key, () =>
         invalidQuery(
           state,
