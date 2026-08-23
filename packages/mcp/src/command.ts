@@ -129,21 +129,20 @@ export function withoutForeignFraming(
 /**
  * Pull the command's own output out of the framed stream.
  *
- * `startSeen` is what makes this independent of how much the command printed.
- * The start marker is printed first, so it is the first thing evicted once the
- * output passes the tail's limit — and re-deriving the whole frame each pass
- * meant a command that printed more than the buffer holds could never be
- * matched again, ran to its deadline, and was reported as still running when
- * it had already finished. The end marker alone carries the exit status, which
- * is the one thing this tool exists to know.
+ * The end marker alone is proof that the command finished, and carries its
+ * status; the id is unique, so nothing else can print one. The start marker is
+ * only needed to locate where the body begins — and it is printed first, so it
+ * is the first thing lost, whether to the tail's byte limit or to a fallback
+ * capture that samples the last few hundred lines. Requiring it meant a command
+ * that outran either bound ran to its deadline and was reported as still
+ * running after it had already finished, which is worse than reporting it
+ * finished with output that starts partway through.
  */
 function slice(
   stream: string,
   id: string,
-  startSeen: boolean,
 ): { exitStatus: number | null; foreignOutputSuspected: boolean; output: string } | undefined {
   const startAt = stream.indexOf(`${id}_S`);
-  if (startAt < 0 && !startSeen) return undefined;
   const endAt = stream.indexOf(`${id}_E`, startAt < 0 ? 0 : startAt);
   if (endAt < 0) return undefined;
 
@@ -198,7 +197,6 @@ export async function runFramedCommand(
   await pane.sendKeys(payload, { literal: true });
 
   const deadline = Date.now() + budget;
-  let startSeen = false;
   let missedBytes = 0;
   while (Date.now() < deadline && signal?.aborted !== true) {
     let stream: string;
@@ -210,8 +208,7 @@ export async function runFramedCommand(
       stream = reading.text;
       missedBytes = Math.max(missedBytes, reading.missedBytes);
     }
-    startSeen ||= stream.includes(`${id}_S`);
-    const found = slice(stream, id, startSeen);
+    const found = slice(stream, id);
     if (found !== undefined) {
       return { effectiveTimeoutMs: budget, missedBytes, ...found, outcome: "completed" };
     }
