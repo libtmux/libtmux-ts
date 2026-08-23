@@ -99,6 +99,36 @@ describe("pane input and capture", () => {
     });
   }, 40_000);
 
+  test("keeps the escape sequences that style the text when asked", async () => {
+    await withServer(async (fixture) => {
+      const pane = (await serverFor(fixture).snapshot()).panes.one();
+      const escape = String.fromCharCode(27);
+
+      await pane.sendKeys(`printf '${escape}[31mred-marker${escape}[0m\\n'`);
+      await captureUntil(pane, (captured) => captured.some((line) => line.includes("red-marker")));
+
+      const plain = (await pane.capture()).join("\n");
+      const styled = (await pane.capture({ escapeSequences: true })).join("\n");
+
+      // The characters are in both; only one carries what a terminal would
+      // render them with, which is the difference the flag is for.
+      expect(plain).toContain("red-marker");
+      expect(styled).toContain("red-marker");
+      expect(plain).not.toContain(escape);
+      expect(styled).toContain(escape);
+    });
+  }, 40_000);
+
+  test("answers tmux's own reason for a pane with no alternate screen", async () => {
+    await withServer(async (fixture) => {
+      const pane = (await serverFor(fixture).snapshot()).panes.one();
+
+      // A shell is not a full-screen program, so there is nothing to capture
+      // and tmux says so rather than returning the ordinary screen.
+      await expect(pane.capture({ alternateScreen: true })).rejects.toThrow(/alternate screen/u);
+    });
+  }, 40_000);
+
   test("clears scrollback history without disturbing the visible pane", async () => {
     await withServer(async (fixture) => {
       const pane = (await serverFor(fixture).snapshot()).panes.one();

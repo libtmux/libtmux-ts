@@ -102,4 +102,56 @@ describe("lifecycle command arguments", () => {
 
     expect(args).not.toContain("--");
   });
+
+  test("passes each environment pair as its own flag", async () => {
+    for (const [label, run] of [
+      [
+        "new-session",
+        (transport: Recorder) =>
+          newSession({} as never, runtimeFor(transport), {
+            environment: { EMPTY: "", PAIR: "a=b=c" },
+          }),
+      ],
+      [
+        "new-window",
+        (transport: Recorder) =>
+          newWindow({} as never, runtimeFor(transport), "$0", {
+            environment: { EMPTY: "", PAIR: "a=b=c" },
+          }),
+      ],
+      [
+        "split-window",
+        (transport: Recorder) =>
+          splitWindow({} as never, runtimeFor(transport), "%0", {
+            environment: { EMPTY: "", PAIR: "a=b=c" },
+          }),
+      ],
+    ] as const) {
+      // eslint-disable-next-line no-await-in-loop -- one command per creator.
+      const args = await argumentsFor(run);
+      // One flag per pair, so a value holding `=` is not split at the first one.
+      expect(args).toEqual(expect.arrayContaining(["-e", "PAIR=a=b=c"]));
+      expect(args).toEqual(expect.arrayContaining(["-e", "EMPTY="]));
+      expect(args.filter((argument) => argument === "-e")).toHaveLength(2);
+      expect(label).toBeDefined();
+    }
+  });
+
+  test("sizes a split in cells or in a share of the pane", async () => {
+    const cells = await argumentsFor((transport) =>
+      splitWindow({} as never, runtimeFor(transport), "%0", { size: 20 }),
+    );
+    expect(cells.slice(cells.indexOf("-l"), cells.indexOf("-l") + 2)).toEqual(["-l", "20"]);
+
+    const share = await argumentsFor((transport) =>
+      splitWindow({} as never, runtimeFor(transport), "%0", { size: "30%" }),
+    );
+    expect(share.slice(share.indexOf("-l"), share.indexOf("-l") + 2)).toEqual(["-l", "30%"]);
+
+    // Without it tmux halves the pane, and saying so is tmux's job not ours.
+    const halved = await argumentsFor((transport) =>
+      splitWindow({} as never, runtimeFor(transport), "%0", {}),
+    );
+    expect(halved).not.toContain("-l");
+  });
 });

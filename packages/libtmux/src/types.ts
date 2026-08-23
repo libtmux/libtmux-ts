@@ -25,12 +25,23 @@ export interface ServerSnapshot {
 
 export interface NewSessionOptions extends CommandOptions {
   /**
+   * Variables to set in the process this starts, tmux's `-e`.
+   *
+   * Each pair goes as its own flag, so a value holding `=` arrives whole. This
+   * is the only scope that fits one process: `setEnvironment` writes the
+   * session's, which every later pane in it inherits too.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
+  /**
    * Rows for the session's first window.
    *
    * A detached session has no client to take its size from, so tmux gives it
    * 80x24 and every program in it formats to that. Nothing can widen it
    * afterwards except `Window.resize`, and a width-aware program has already
    * truncated its output by then rather than wrapped it.
+   *
+   * tmux 3.2 ignores both for a detached session and gives 80x24 anyway;
+   * 3.3 is the first release that honours them.
    */
   readonly height?: number;
   readonly name?: string;
@@ -49,6 +60,14 @@ export interface NewSessionOptions extends CommandOptions {
 }
 
 export interface NewWindowOptions extends CommandOptions {
+  /**
+   * Variables to set in the process this starts, tmux's `-e`.
+   *
+   * Each pair goes as its own flag, so a value holding `=` arrives whole. This
+   * is the only scope that fits one process: `setEnvironment` writes the
+   * session's, which every later pane in it inherits too.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
   /**
    * Place the window before or after the session's current window.
    *
@@ -70,6 +89,21 @@ export interface NewWindowOptions extends CommandOptions {
 }
 
 export interface SplitOptions extends CommandOptions {
+  /**
+   * Variables to set in the process this starts, tmux's `-e`.
+   *
+   * Each pair goes as its own flag, so a value holding `=` arrives whole. This
+   * is the only scope that fits one process: `setEnvironment` writes the
+   * session's, which every later pane in it inherits too.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
+  /**
+   * How big the new pane is, tmux's `-l`.
+   *
+   * A number is cells along the split's own axis; a `"30%"` string is that
+   * share of the pane being divided. Without it tmux halves the pane.
+   */
+  readonly size?: number | `${number}%`;
   /**
    * Which side of this pane the new one takes.
    *
@@ -121,8 +155,25 @@ export interface SetOptionOptions extends CommandOptions {
 }
 
 export interface CaptureOptions extends CommandOptions {
+  /**
+   * Capture the alternate screen instead, tmux's `-a`.
+   *
+   * What a full-screen program is displaying — an editor, a pager — which is
+   * not in the pane's scrollback and so is not what an ordinary capture reads.
+   * tmux fails with "no alternate screen" for a pane running nothing that uses
+   * one.
+   */
+  readonly alternateScreen?: boolean;
   /** Last line to capture; negative counts back from the visible bottom. */
   readonly end?: number;
+  /**
+   * Keep the escape sequences that colour and style the text, tmux's `-e`.
+   *
+   * Off by default, which reads the characters alone. On, the result is what a
+   * terminal would render rather than what a person would read, so it is for
+   * reproducing a display rather than for matching against.
+   */
+  readonly escapeSequences?: boolean;
   /** Join wrapped lines, matching tmux's `-J`. */
   readonly joinWrapped?: boolean;
   /** First line to capture; negative reaches into scrollback history. */

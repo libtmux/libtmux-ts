@@ -38,6 +38,8 @@ export async function capturePane(
       "capture-pane",
       "-p",
       ...(paneId == null ? [] : ["-t", paneId]),
+      ...(options.alternateScreen === true ? ["-a"] : []),
+      ...(options.escapeSequences === true ? ["-e"] : []),
       ...(options.joinWrapped === true ? ["-J"] : []),
       ...(options.start === undefined ? [] : ["-S", String(options.start)]),
       ...(options.end === undefined ? [] : ["-E", String(options.end)]),
