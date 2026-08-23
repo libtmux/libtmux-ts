@@ -155,6 +155,28 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("links a second placement into its own session when none is named", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // Created later, so it is the session tmux considers current.
+      await server.newSession({ name: "newer" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      const origin = window.sessionId;
+
+      // A window can hold two placements in one session, at two indexes; that
+      // is what an omitted destination session asks for here.
+      await window.link({ index: 4 });
+
+      const placements = (await server.snapshot()).windows.filter(
+        (candidate) => candidate.id === window.id,
+      );
+      expect(placements.length).toBe(2);
+      expect(placements.map((candidate) => candidate.sessionId)).toEqual([origin, origin]);
+    });
+  }, 40_000);
+
   test("keeps a moved window in its own session when none is named", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
