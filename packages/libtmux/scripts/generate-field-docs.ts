@@ -6,7 +6,7 @@ import {
   WHERE_RELATIONS_V1,
   type WhereModel,
 } from "../src/_generated/where_fields.js";
-import { tsRoot } from "./example_harness.js";
+import { packageRoot } from "./package_root.js";
 
 /**
  * Write the criteria reference from the table the compiler matches against.
@@ -101,7 +101,7 @@ function render(): string {
   return lines.join("\n").trimEnd();
 }
 
-const target = join(tsRoot, OUTPUT);
+const target = join(packageRoot, OUTPUT);
 const wanted = `${render()}\n`;
 const models = String(MODELS.length);
 

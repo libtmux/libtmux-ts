@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { tsRoot } from "./example_harness.js";
+import { packageRoot } from "./package_root.js";
 
 /**
  * Read the public surface of the handle classes out of their source.
@@ -180,7 +180,10 @@ export function classesOf(source: string, file: string): readonly ApiClass[] {
 /** The whole documented surface, in the order a reader meets it. */
 export async function readApiSurface(): Promise<readonly ApiClass[]> {
   const sources = await Promise.all(
-    SOURCES.map(async (file) => ({ file, source: await readFile(join(tsRoot, file), "utf8") })),
+    SOURCES.map(async (file) => ({
+      file,
+      source: await readFile(join(packageRoot, file), "utf8"),
+    })),
   );
   return sources.flatMap(({ file, source }) => classesOf(source, file));
 }

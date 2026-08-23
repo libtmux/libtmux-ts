@@ -65,8 +65,8 @@ const expectedScripts = {
   "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
   typecheck: "tsc -p tsconfig.json --noEmit",
   "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",
-  "typecheck:readme": "bun scripts/check-readme-examples.ts",
-  "typecheck:symbols": "bun scripts/check-symbol-examples.ts",
+  "typecheck:readme": "bun scripts/doc-examples/check-readme-examples.ts",
+  "typecheck:symbols": "bun scripts/doc-examples/check-symbol-examples.ts",
   "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
   "test:unit": "bun run build && bun scripts/run-unit-tests.ts",
 };

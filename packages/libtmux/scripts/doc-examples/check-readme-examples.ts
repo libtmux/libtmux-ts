@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
-import { fencedBlocks, tsRoot, typecheckExamples } from "./example_harness.js";
+import { packageRoot } from "../package_root.js";
+import { fencedBlocks, typecheckExamples } from "./example_harness.js";
 
 /**
  * Typecheck every TypeScript block in the README against the package's own API.
@@ -11,7 +12,7 @@ import { fencedBlocks, tsRoot, typecheckExamples } from "./example_harness.js";
  * wrong order for as long as it had existed.
  */
 
-const readme = await Bun.file(join(tsRoot, "README.md")).text();
+const readme = await Bun.file(join(packageRoot, "README.md")).text();
 const blocks = fencedBlocks(readme, (line) => `README.md:${String(line)}`);
 if (blocks.length === 0) throw new Error("no ```ts blocks found in the README");
 

@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { readApiSurface, type ApiClass } from "./api_surface.js";
-import { tsRoot } from "./example_harness.js";
+import { packageRoot } from "./package_root.js";
 
 /**
  * Write the API reference from the source that implements it.
@@ -70,7 +70,7 @@ const rendered = [
   .replace(/\n{3,}/gu, "\n\n")
   .trimEnd();
 
-const target = join(tsRoot, OUTPUT);
+const target = join(packageRoot, OUTPUT);
 const wanted = `${rendered}\n`;
 
 if (process.argv.includes("--check")) {
