@@ -23,7 +23,7 @@ const typeScriptExecutable = fileURLToPath(new URL("../../node_modules/.bin/tsc"
  * compiles, and the execution path binds them so the same fragment runs. A name
  * that exists for only one of those is a fragment that compiles and cannot run.
  */
-export const BINDINGS: readonly string[] = Object.freeze([
+const BINDINGS: readonly string[] = Object.freeze([
   "server",
   "session",
   "window",
@@ -46,7 +46,7 @@ export const BINDINGS: readonly string[] = Object.freeze([
  * shadow an ambient declaration; a runtime binding in the same scope is a
  * redeclaration, so the execution path has to leave those alone.
  */
-export function declaresOwn(body: string, name: string): boolean {
+function declaresOwn(body: string, name: string): boolean {
   return new RegExp(`\\b(?:const|let|var|using|function|class)\\s+${name}\\b`, "u").test(body);
 }
 
@@ -58,7 +58,7 @@ export function bindingsFor(body: string): readonly string[] {
 }
 
 /** Names an example may use without introducing them, and what they are. */
-export const PREAMBLE = `
+const PREAMBLE = `
 import { Server, Session } from "../../src/index.js";
 import type {
   Client as ClientHandle,
@@ -99,7 +99,7 @@ declare const marker: string;
  * worth having and is all it proves, so a block that cannot be run says which
  * of the two it is rather than sitting silently uncovered.
  */
-export type Coverage =
+type Coverage =
   | { readonly kind: "runs"; readonly source: string }
   | { readonly kind: "static"; readonly reason: string };
 
