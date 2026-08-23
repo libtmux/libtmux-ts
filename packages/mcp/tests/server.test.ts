@@ -1209,6 +1209,70 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("reaches the options a session actually inherits", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const session = (await serverFor(fixture).snapshot()).sessions.one().name ?? "";
+
+        // A session that has set nothing reports nothing, and that used to be
+        // the whole answer — while the values governing it live in the global
+        // scopes, which nothing could reach.
+        const own = structured<{ options: Record<string, string> }>(
+          await client.callTool({
+            arguments: { scope: "session", target: session },
+            name: "show_options",
+          }),
+        ).options;
+
+        const inherited = structured<{ options: Record<string, string> }>(
+          await client.callTool({ arguments: { scope: "global-session" }, name: "show_options" }),
+        ).options;
+        expect(Object.keys(inherited).length).toBeGreaterThan(Object.keys(own).length);
+        // default-shell decides what a new pane runs, and run_command refuses a
+        // shell it cannot address; history-limit decides how far capture_pane's
+        // negative start reaches. Both are global SESSION options — checked
+        // against tmux rather than assumed, since guessing the scope is how a
+        // present option reads as missing.
+        expect(inherited["default-shell"]).toBeDefined();
+        expect(inherited["history-limit"]).toBeDefined();
+
+        // The window table is a different set: remain-on-exit lives there, and
+        // is what keeps a pane whose process has exited.
+        const windows = structured<{ options: Record<string, string> }>(
+          await client.callTool({ arguments: { scope: "global-window" }, name: "show_options" }),
+        ).options;
+        expect(windows["remain-on-exit"]).toBeDefined();
+
+        // Writable and undoable at the same scope.
+        await client.callTool({
+          arguments: { name: "@probe", scope: "global-session", value: "inherited" },
+          name: "set_option",
+        });
+        expect(
+          structured<{ options: Record<string, string> }>(
+            await client.callTool({ arguments: { scope: "global-session" }, name: "show_options" }),
+          ).options["@probe"],
+        ).toBe("inherited");
+        await client.callTool({
+          arguments: { name: "@probe", scope: "global-session" },
+          name: "unset_option",
+        });
+        expect(
+          structured<{ options: Record<string, string> }>(
+            await client.callTool({ arguments: { scope: "global-session" }, name: "show_options" }),
+          ).options["@probe"],
+        ).toBeUndefined();
+
+        // A global scope names no object, so it must not demand a target.
+        const noTarget = await client.callTool({
+          arguments: { scope: "global-window" },
+          name: "show_options",
+        });
+        expect((noTarget as { isError?: boolean }).isError ?? false).toBe(false);
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

@@ -14,13 +14,28 @@ import {
   isFailure,
   requirePane,
   requireSession,
+  requireWindow,
   requireWritablePane,
   type ToolContext,
 } from "../context.js";
 import { MUTATING, offers, READ_ONLY } from "../register.js";
 import { fail, ok } from "../results.js";
 
-const SCOPES = ["server", "session", "pane"] as const;
+/**
+ * The six scopes tmux keeps options in.
+ *
+ * The two global ones hold most of them: a session that has set nothing
+ * reports nothing, while the values actually governing it are the global
+ * session defaults. `history-limit`, which decides how far a capture reaches
+ * back, and `default-shell`, which decides what a new pane runs, are only
+ * readable there.
+ */
+const SCOPES = ["server", "session", "global-session", "window", "global-window", "pane"] as const;
+
+/** Whether a scope names one object, and so needs a target. */
+function targeted(scope: (typeof SCOPES)[number]): boolean {
+  return scope === "session" || scope === "window" || scope === "pane";
+}
 
 /**
  * Refuse a scope that names nothing.
@@ -34,14 +49,61 @@ function requireTarget(
   scope: (typeof SCOPES)[number],
   target: string | undefined,
 ): ReturnType<typeof fail> | undefined {
-  if (scope === "server" || target !== undefined) return undefined;
+  if (!targeted(scope) || target !== undefined) return undefined;
   return fail({
     hint:
-      scope === "session"
-        ? "Name the session, or leave scope off to reach the server's own options."
-        : "Name the pane, or leave scope off to reach the server's own options.",
+      `Name the ${scope}, or use global-${scope === "pane" ? "window" : scope} for the ` +
+      `default every ${scope} inherits.`,
     reason: `${scope} scope needs a target: it says which ${scope} to act on.`,
   });
+}
+
+/** The three things every scope can do, whichever object holds it. */
+interface OptionSite {
+  set(name: string, value: string): Promise<void>;
+  show(): Promise<ReadonlyMap<string, string>>;
+  unset(name: string): Promise<void>;
+}
+
+/**
+ * Resolve a scope to the thing that holds its options.
+ *
+ * One dispatch for reading, writing and unsetting, so a scope cannot be
+ * offered by one and quietly fall through to another in the next.
+ */
+async function optionSite(
+  context: ToolContext,
+  scope: (typeof SCOPES)[number],
+  target: string | undefined,
+): Promise<ReturnType<typeof fail> | OptionSite> {
+  if (scope === "server") {
+    return {
+      set: (name, value) => context.tmux.setOption(name, value),
+      show: () => context.tmux.showOptions(),
+      unset: (name) => context.tmux.unsetOption(name),
+    };
+  }
+  if (scope === "global-session" || scope === "global-window") {
+    const inner = scope === "global-session" ? "session" : "window";
+    return {
+      set: (name, value) => context.tmux.setGlobalOption(inner, name, value),
+      show: () => context.tmux.showGlobalOptions(inner),
+      unset: (name) => context.tmux.unsetGlobalOption(inner, name),
+    };
+  }
+  const snapshot = await context.snapshot();
+  const found =
+    scope === "session"
+      ? requireSession(snapshot, target ?? "")
+      : scope === "window"
+        ? requireWindow(snapshot, target ?? "")
+        : requirePane(snapshot, target ?? "");
+  if (isFailure(found)) return found;
+  return {
+    set: (name, value) => found.setOption(name, value),
+    show: () => found.showOptions(),
+    unset: (name) => found.unsetOption(name),
+  };
 }
 
 export function registerSettings(mcp: McpServer, context: ToolContext): void {
@@ -66,19 +128,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       const chosen = scope ?? "server";
       const missing = requireTarget(chosen, target);
       if (missing !== undefined) return missing;
-      const snapshot = await context.snapshot();
-      let read: ReadonlyMap<string, string>;
-      if (chosen === "server") {
-        read = await context.tmux.showOptions();
-      } else if (chosen === "session") {
-        const found = requireSession(snapshot, target ?? "");
-        if (isFailure(found)) return found;
-        read = await found.showOptions();
-      } else {
-        const pane = requirePane(snapshot, target ?? "");
-        if (isFailure(pane)) return pane;
-        read = await pane.showOptions();
-      }
+      const site = await optionSite(context, chosen, target);
+      if (isFailure(site)) return site;
+      const read = await site.show();
       const options = Object.fromEntries(read);
       return ok(
         { options, scope: chosen },
@@ -231,18 +283,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       const chosen = scope ?? "server";
       const missing = requireTarget(chosen, target);
       if (missing !== undefined) return missing;
-      const snapshot = await context.snapshot();
-      if (chosen === "server") {
-        await context.tmux.setOption(name, value);
-      } else if (chosen === "session") {
-        const found = requireSession(snapshot, target ?? "");
-        if (isFailure(found)) return found;
-        await found.setOption(name, value);
-      } else {
-        const pane = requirePane(snapshot, target ?? "");
-        if (isFailure(pane)) return pane;
-        await pane.setOption(name, value);
-      }
+      const site = await optionSite(context, chosen, target);
+      if (isFailure(site)) return site;
+      await site.set(name, value);
       return ok({ name, scope: chosen, value }, `Set ${chosen} option ${name} to ${value}.`);
     },
   );
@@ -270,18 +313,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       const chosen = scope ?? "server";
       const missing = requireTarget(chosen, target);
       if (missing !== undefined) return missing;
-      const snapshot = await context.snapshot();
-      if (chosen === "server") {
-        await context.tmux.unsetOption(name);
-      } else if (chosen === "session") {
-        const found = requireSession(snapshot, target ?? "");
-        if (isFailure(found)) return found;
-        await found.unsetOption(name);
-      } else {
-        const pane = requirePane(snapshot, target ?? "");
-        if (isFailure(pane)) return pane;
-        await pane.unsetOption(name);
-      }
+      const site = await optionSite(context, chosen, target);
+      if (isFailure(site)) return site;
+      await site.unset(name);
       return ok({ name, scope: chosen }, `Unset ${chosen} option ${name}; it now inherits.`);
     },
   );

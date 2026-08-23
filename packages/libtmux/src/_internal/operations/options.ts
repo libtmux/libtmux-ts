@@ -33,17 +33,21 @@ export function parseNameValueLine(line: string): readonly [string, string] | un
  *
  * This is the scope's own view, not a resolved one. Window and pane scopes list
  * only what was set on them, so a freshly created pane reports nothing at all
- * rather than the values it would inherit. Resolving inheritance needs tmux's
+ * rather than the values it would inherit. `global` reads the defaults every
+ * session or window inherits, which is where most of tmux's options live and
+ * where a per-object read finds nothing. Resolving inheritance needs tmux's
  * `-A`, which is a separate reader because it changes what a caller is asking.
  */
 export async function showOptions(
   runtime: RuntimeContext,
   scope: OptionScope,
   target?: string | null,
+  flags: { readonly global?: boolean } = {},
 ): Promise<ReadonlyMap<string, string>> {
   const lines = await runCommand(runtime, [
     "show-options",
     ...SCOPE_FLAGS[scope],
+    ...(flags.global === true ? ["-g"] : []),
     ...(target == null ? [] : ["-t", target]),
   ]);
 
