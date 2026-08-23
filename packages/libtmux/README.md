@@ -981,6 +981,8 @@ it, and the more specific one wins:
 
 With none of them, commands spawn.
 
+<!-- static: attaches tmux's default socket, which a reader already has a server on and this isolated harness deliberately does not -->
+
 ```ts
 await using managed = await Server.open({ transport: "control" });
 const counted = (await managed.snapshot()).sessions.count();

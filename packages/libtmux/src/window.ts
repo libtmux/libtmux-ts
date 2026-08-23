@@ -341,7 +341,7 @@ export class Window {
    * Link this window into another session, giving it a second placement.
    *
    * ```ts
-   * await window.link({ session: "other-session" });
+   * await window.link({ session: "other" });
    * ```
    */
   link(options: MoveWindowOptions): Promise<void> {

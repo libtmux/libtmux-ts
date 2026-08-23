@@ -85,6 +85,10 @@ jobs:
       # target exists and the recipe terminates. This starts real tmux servers,
       # so it also has to leave none behind, and it says so if it does.
       - run: bun run --cwd packages/libtmux test:readme
+      # The 158 examples on public symbols. Compiling them proved they typecheck
+      # and never once ran them; a one-liner that reads a property is still a
+      # claim about what that property answers.
+      - run: bun run --cwd packages/libtmux test:symbols
       # Every temporary directory the suites create is named for this
       # package, so a sweep can never reap another libtmux port's servers.
       - run: bun run test:namespace
