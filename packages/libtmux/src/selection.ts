@@ -301,7 +301,18 @@ export interface Selection<Model> extends Iterable<Model> {
    * ```
    */
   readonly length: number;
-  /** Iterate in tmux's own order. Each call is a fresh iterator. */
+  /**
+   * Iterate in tmux's own order.
+   *
+   * Each call returns a fresh iterator, so a selection can be walked more than
+   * once: spread it and then loop it, and the second pass is not empty. This is
+   * what `for...of`, spread and destructuring all go through.
+   *
+   * ```ts
+   * for (const window of snapshot.windows) window.name;
+   * [...snapshot.windows].length === snapshot.windows.length;
+   * ```
+   */
   [Symbol.iterator](): IterableIterator<Model>;
   /**
    * The member at `index`, or undefined when the index is out of range.

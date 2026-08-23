@@ -2190,7 +2190,7 @@ declarative criteria that are data — serializable, inspectable, sendable over
 a wire — and `filter` takes an ordinary predicate. Reach for `where` unless
 the question genuinely needs to run code.
 
-[`length`](#selectionlength) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
+[`length`](#selectionlength) · [`[Symbol.iterator]`](#selection[symbol.iterator]) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
 
 ### Properties
 
@@ -2207,6 +2207,23 @@ snapshot.windows.length;
 ```
 
 ### Methods
+
+#### `Selection.[Symbol.iterator]`
+
+```ts
+[Symbol.iterator](): IterableIterator<Model>
+```
+
+Iterate in tmux's own order.
+
+Each call returns a fresh iterator, so a selection can be walked more than
+once: spread it and then loop it, and the second pass is not empty. This is
+what `for...of`, spread and destructuring all go through.
+
+```ts
+for (const window of snapshot.windows) window.name;
+[...snapshot.windows].length === snapshot.windows.length;
+```
 
 #### `Selection.at`
 
