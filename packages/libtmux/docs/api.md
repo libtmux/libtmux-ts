@@ -1919,7 +1919,10 @@ await pane.pipeTo("cat >> /tmp/build.log");
 breakOut(windowName?: string): Promise<void>
 ```
 
-Move this pane out into a window of its own.
+Move this pane out into a window of its own, in the session it is in.
+
+tmux places a break with no destination in whichever session is current,
+which is the attached one rather than this pane's.
 
 ```ts
 await pane.breakOut("extracted");

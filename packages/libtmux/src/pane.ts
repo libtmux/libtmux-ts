@@ -347,14 +347,17 @@ export class Pane {
   }
 
   /**
-   * Move this pane out into a window of its own.
+   * Move this pane out into a window of its own, in the session it is in.
+   *
+   * tmux places a break with no destination in whichever session is current,
+   * which is the attached one rather than this pane's.
    *
    * ```ts
    * await pane.breakOut("extracted");
    * ```
    */
   breakOut(windowName?: string): Promise<void> {
-    return breakPane(runtimeForHandle(this), this.id, windowName);
+    return breakPane(runtimeForHandle(this), this.id, windowName, this.sessionId);
   }
 
   /**

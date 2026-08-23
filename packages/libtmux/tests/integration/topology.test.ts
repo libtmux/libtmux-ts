@@ -267,6 +267,30 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("breaks a pane out into its own session, not the current one", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // A session created later is what tmux considers current, and a break
+      // with no destination takes its session from there.
+      await server.newSession({ name: "newer" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      const origin = window.sessionId;
+      await window.split();
+      const pane = (await server.snapshot()).panes
+        .filter((candidate) => candidate.windowId === window.id)
+        .toArray()
+        .at(-1);
+      if (pane === undefined) throw new Error("expected a pane to break out");
+
+      await pane.breakOut("broken-out");
+
+      const broken = (await server.snapshot()).windows.one({ name: "broken-out" });
+      expect(broken.sessionId).toBe(origin);
+    });
+  }, 40_000);
+
   test("applies a layout and resizes a pane", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
