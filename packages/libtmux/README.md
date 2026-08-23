@@ -1198,8 +1198,12 @@ await server.raiseIfDead(); // the assertion form
 Every error extends `LibTmuxException`. A query that matches nothing raises
 `NoMatchError`, one that matches several where you asked for one raises
 `MultipleMatchesError`, and criteria the schema rejects raise
-`QueryValidationError`. `ObjectDoesNotExist`, `MultipleObjectsReturned`, and
-`DeprecatedError` exist for compatibility with the Python library's names.
+`QueryValidationError`. A `waitFor` that reaches its deadline with the condition
+still unmet raises `WaitTimeout`, which is worth catching by name: it says the
+state never arrived, where a `LibTmuxException` from the same call says only
+that the connection ended and nothing about the condition.
+`ObjectDoesNotExist`, `MultipleObjectsReturned`, and `DeprecatedError` exist for
+compatibility with the Python library's names.
 
 `parseLegacyWhere` converts Python-style `name__contains=` filter strings into
 criteria, for code being ported rather than written fresh.
