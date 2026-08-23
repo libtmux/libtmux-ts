@@ -20,6 +20,10 @@ const readmes = [
   "examples/README.md",
   "packages/mcp/README.md",
   "packages/workspace/README.md",
+  // Generated, and its examples were compiled by nothing: the package's own
+  // gate reads its README, and this one read everything above the package. A
+  // reference that teaches a call is as wrong as a README that does.
+  "packages/libtmux/docs/criteria.md",
 ];
 
 interface Block {
