@@ -25,6 +25,20 @@ export interface ServerSnapshot {
 
 export interface NewSessionOptions extends CommandOptions {
   /**
+   * Share another session's windows, tmux's `-t`.
+   *
+   * Names a session to group with, not a group: tmux puts the new session in
+   * that session's group, or starts one named for it. Members share one window
+   * list, so a window created in either appears in both and a window moved in
+   * either moves in both — unlike a linked window, where each session keeps its
+   * own list and its own index for it.
+   *
+   * The group a session ended up in is `Session.group`. `windowName`,
+   * `shellCommand` and `startDirectory` describe a first window, and a grouped
+   * session does not make one, so tmux ignores them here.
+   */
+  readonly groupWith?: string;
+  /**
    * Variables to set in the process this starts, tmux's `-e`.
    *
    * Each pair goes as its own flag, so a value holding `=` arrives whole. This

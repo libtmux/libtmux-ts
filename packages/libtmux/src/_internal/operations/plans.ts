@@ -34,6 +34,7 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
     "-F",
     "#{session_id}",
     ...(options.name === undefined ? [] : ["-s", options.name]),
+    ...(options.groupWith === undefined ? [] : ["-t", options.groupWith]),
     ...(options.windowName === undefined ? [] : ["-n", options.windowName]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [

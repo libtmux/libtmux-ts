@@ -301,6 +301,10 @@ export class Window {
   /**
    * Move this window to another session or index without selecting it.
    *
+   * Moves this placement. Sessions that are grouped share one window list, so
+   * moving a window they share moves it in all of them; sessions that merely
+   * link the same window keep their own lists, and only this one moves.
+   *
    * ```ts
    * await window.move({ index: 3 });
    * ```
@@ -322,6 +326,11 @@ export class Window {
 
   /**
    * Remove this placement, leaving the window's other placements intact.
+   *
+   * For a window linked into several sessions. A window shared because its
+   * sessions are grouped is not linked, and tmux refuses with "window only
+   * linked to one session" — a group member leaves by being killed, not by
+   * unlinking.
    *
    * ```ts
    * await window.unlink();

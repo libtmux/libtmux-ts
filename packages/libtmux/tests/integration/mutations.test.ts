@@ -270,6 +270,31 @@ describe("lifecycle mutations", () => {
     });
   }, 60_000);
 
+  test("groups a session with another, sharing one window list", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const first = await server.newSession({ name: "leader", windowName: "shared" });
+      const joined = await server.newSession({ groupWith: "leader", name: "follower" });
+
+      let snapshot = await server.snapshot();
+      // tmux names the group after the session grouped with, when it had none.
+      expect(snapshot.sessions.one({ id: first.id }).group).toBe("leader");
+      expect(snapshot.sessions.one({ id: joined.id }).group).toBe("leader");
+      expect(snapshot.sessions.count({ group: "leader" })).toBe(2);
+
+      // The list is shared, not copied: a window made in one is in both.
+      await snapshot.sessions.one({ id: first.id }).newWindow({ name: "added" });
+      snapshot = await server.snapshot();
+      for (const session of [first.id, joined.id]) {
+        expect(
+          snapshot.windows
+            .filter((window) => window.sessionId === session)
+            .map((window) => window.name),
+        ).toEqual(["shared", "added"]);
+      }
+    });
+  }, 40_000);
+
   test("sizes a split rather than halving the pane", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
