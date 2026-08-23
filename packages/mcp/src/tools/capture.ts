@@ -173,7 +173,14 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       // deciding it on whether a tail happened to exist handed the second
       // caller the whole retained buffer and told it it had not been seeded.
       const seeding = cursor === undefined;
-      const tail = await context.hub.tail(sessionId, paneId);
+      // The knob exists so an operator can stop this server opening control
+      // clients at all — a constrained host, a client limit, a shared tmux.
+      // run_command and wait_for_text consult it; this opened one anyway, and
+      // then reported streaming:true, which is accurate and so useless for
+      // noticing. The capture fallback below is already written for this.
+      const tail = context.policy.liveEnabled
+        ? await context.hub.tail(sessionId, paneId)
+        : undefined;
 
       // No control connection: answer with a capture rather than an error, and
       // say so, so the caller knows the cursor it gets back is not a stream
