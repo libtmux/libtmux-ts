@@ -181,12 +181,18 @@ export interface SetOptionOptions extends CommandOptions {
 
 export interface CaptureOptions extends CommandOptions {
   /**
-   * Capture the alternate screen instead, tmux's `-a`.
+   * Capture the screen saved underneath a full-screen program, tmux's `-a`.
    *
-   * What a full-screen program is displaying — an editor, a pager — which is
-   * not in the pane's scrollback and so is not what an ordinary capture reads.
-   * tmux fails with "no alternate screen" for a pane running nothing that uses
-   * one.
+   * Not what that program is displaying — an ordinary capture already reads
+   * that, because the program's display is the pane's visible grid. tmux saves
+   * the *normal* screen when a program switches to the alternate one
+   * (`screen_alternate_on` copies the grid into `saved_grid`, which is what
+   * `-a` reads), so this answers with what an editor or a pager is covering
+   * up, not with the editor or the pager.
+   *
+   * It exists only while such a program is running: tmux frees the saved grid
+   * when the program leaves the alternate screen, and fails with "no alternate
+   * screen" whenever there is nothing on it.
    */
   readonly alternateScreen?: boolean;
   /** Last line to capture; negative counts back from the visible bottom. */

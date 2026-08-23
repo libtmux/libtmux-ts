@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import type { Server as ServerHandle } from "../../src/server.js";
 import { Server } from "../../src/server.js";
+import { sweepStrayTmux } from "./tmux_sweep.js";
 
 /**
  * The world a README fragment is written against.
@@ -147,6 +148,12 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   const home = join(request.scratch, `home-${String(request.index)}`);
   await mkdir(home, { recursive: true });
   await writeFile(join(home, ".tmux.conf"), TMUX_CONF);
+  // SPIKE finding: on a machine whose login shell is zsh with no `.zshrc` at
+  // all, zsh opens its interactive first-run "newuser install" prompt instead
+  // of a shell, and a block that sends keys types into that menu rather than
+  // a command — `sendKeys("make build")` never runs `make`, and the block
+  // hangs until the deadline. An empty `.zshrc` is enough to skip the prompt.
+  await writeFile(join(home, ".zshrc"), "");
   await writeFile(join(home, "payload.bin"), new Uint8Array([0, 1, 2, 3]));
   const binary = join(home, "bin");
   await mkdir(binary, { recursive: true });
@@ -212,6 +219,16 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
     // not news. The gate's real check is the single reap at the end, which
     // sees every fixture this run created.
     await fixture.dispose().catch(() => undefined);
+    // SPIKE finding: this fixture is not the only server a block can start.
+    // `new Server()` and `Server.open()` reach tmux's default socket under
+    // `TMUX_TMPDIR` rather than this fixture's own, and nothing above closes
+    // that — README.md's own quickstart does exactly this and leaves the
+    // daemon running. Swept per block, matching this file's own promise that
+    // "a block that kills a session — or the server — costs the next one
+    // nothing": the next `new Server()` should find silence, not whatever
+    // the block before it left running.
+    const tmpdir = process.env["TMUX_TMPDIR"];
+    if (tmpdir !== undefined) await sweepStrayTmux(tmpdir).catch(() => []);
     await rm(home, { force: true, recursive: true });
   };
 

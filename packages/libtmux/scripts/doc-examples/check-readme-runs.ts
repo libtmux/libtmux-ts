@@ -9,7 +9,8 @@ import {
 } from "../../src/_internal/test/run_root.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { packageRoot } from "../package_root.js";
-import { bindingsFor, fencedBlocks, type Example } from "./example_harness.js";
+import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
+import { sweepStrayTmux } from "./tmux_sweep.js";
 
 /**
  * Run every README example against a real tmux server.
@@ -83,47 +84,13 @@ interface Outcome {
   readonly state: "covered" | "excused" | "failed" | "ran";
 }
 
-/**
- * Separate an example's imports from its body, pointing them at this tree.
- *
- * The same bargain the typecheck path makes: a reader's `"libtmux"` is this
- * working tree, so a block is judged against the source rather than against
- * whatever release happens to be installed.
- */
-function split(code: string, taken: Map<string, string>): { body: string; imports: string } {
-  const imports: string[] = [];
-  const body: string[] = [];
-  for (const line of code.split("\n")) {
-    if (!/^import\s/u.test(line)) {
-      body.push(line);
-      continue;
-    }
-    const rewritten = line
-      .replace(/"libtmux"/u, '"../../src/index.js"')
-      .replace(/"libtmux\/([\w-]+)"/u, '"../../src/$1.js"');
-    const named = /^import \{([^}]*)\} from (.*)$/u.exec(rewritten);
-    if (named === null) {
-      imports.push(rewritten);
-      continue;
-    }
-    const from = named[2] ?? "";
-    const kept = (named[1] ?? "")
-      .split(",")
-      .map((specifier) => specifier.trim())
-      .filter((specifier) => specifier !== "" && taken.get(specifier) !== from);
-    for (const specifier of kept) taken.set(specifier, from);
-    if (kept.length > 0) imports.push(`import { ${kept.join(", ")} } from ${from}`);
-  }
-  return { body: body.join("\n"), imports: imports.join("\n") };
-}
-
 /** One callable per block, binding only the names it uses and does not declare. */
 function generate(examples: readonly Example[]): string {
   const imports: string[] = [];
   const bodies: string[] = [];
   const taken = new Map<string, string>();
   for (const [index, example] of examples.entries()) {
-    const { body, imports: exampleImports } = split(example.code, taken);
+    const { body, imports: exampleImports } = splitForExecution(example.code, taken);
     if (exampleImports !== "") imports.push(exampleImports);
     const needed = bindingsFor(body);
     const bind = needed.length === 0 ? "" : `  const { ${needed.join(", ")} } = world;\n`;
@@ -179,6 +146,7 @@ await prepareRunRoot(runRoot);
 const scratch = join(parent, "blocks");
 await mkdir(scratch, { recursive: true });
 let leaks: readonly string[] = [];
+let strayServers: readonly string[] = [];
 
 try {
   await writeFile(modulePath, generate(blocks));
@@ -251,6 +219,9 @@ try {
       leaks = (await reapOwnedRunRoot(runRoot)).leaks;
     },
     async () => {
+      // Before the directory it lives under is removed: a socket file gone
+      // does not stop the daemon behind it, so this has to run first.
+      strayServers = await sweepStrayTmux(isolated);
       await rm(parent, { force: true, recursive: true });
       await rm(directory, { force: true, recursive: true });
       await rm(isolated, { force: true, recursive: true });
@@ -269,6 +240,13 @@ for (const outcome of failed) {
 if (leaks.length > 0) {
   process.stderr.write(`${leaks.join("\n")}\n`);
   process.stderr.write(`\n${OUTPUT} examples left tmux servers behind.\n`);
+  process.exit(1);
+}
+if (strayServers.length > 0) {
+  process.stderr.write(`${strayServers.join("\n")}\n`);
+  process.stderr.write(
+    `\n${OUTPUT} examples left tmux servers behind that this package's own fixtures do not track — a block built its own \`new Server()\` or \`Server.open()\` and nothing closed it. Killed above; the run is not clean.\n`,
+  );
   process.exit(1);
 }
 if (failed.length > 0) {

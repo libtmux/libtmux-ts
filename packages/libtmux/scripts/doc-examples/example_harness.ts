@@ -45,9 +45,27 @@ const BINDINGS: readonly string[] = Object.freeze([
  * A self-contained example declares its own `server`. TypeScript lets that
  * shadow an ambient declaration; a runtime binding in the same scope is a
  * redeclaration, so the execution path has to leave those alone.
+ *
+ * SPIKE finding: the plain form missed `const [editor, logs] = await
+ * server.batch([...])` — a destructured `editor` never matches
+ * `const\s+editor`, so the execution path bound an ambient `editor` in the
+ * same scope the example redeclares, which only reads as a real "already
+ * declared" error once a block is actually run rather than typechecked
+ * (TypeScript happily lets a function body shadow a module-level `declare
+ * const`). Two symbol examples hit this. The array and object forms below are
+ * not a full destructuring parser — a name nested inside a further pattern
+ * would still be missed — but they cover what this repository's examples use.
  */
 function declaresOwn(body: string, name: string): boolean {
-  return new RegExp(`\\b(?:const|let|var|using|function|class)\\s+${name}\\b`, "u").test(body);
+  if (new RegExp(`\\b(?:const|let|var|using|function|class)\\s+${name}\\b`, "u").test(body)) {
+    return true;
+  }
+  if (
+    new RegExp(`\\b(?:const|let|var)\\s*\\[[^\\]]*\\b${name}\\b[^\\]]*\\]\\s*=`, "u").test(body)
+  ) {
+    return true;
+  }
+  return new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*=`, "u").test(body);
 }
 
 /** The bindings a block refers to and does not introduce itself. */
@@ -155,6 +173,46 @@ export function fencedBlocks(text: string, origin: (line: number) => string): re
   }
   if (open !== undefined) throw new Error("an example block was never closed");
   return blocks;
+}
+
+/**
+ * Separate an example's imports from its body, pointing them at this tree.
+ *
+ * Shared by every executor — README blocks and TSDoc symbol examples alike —
+ * because both make the same bargain: a reader's `"libtmux"` is this working
+ * tree, so a block runs against the source rather than against whatever
+ * release happens to be installed. `taken` carries import specifiers seen
+ * across earlier blocks in the same generated module, so two examples naming
+ * the same import do not collide as a duplicate declaration.
+ */
+export function splitForExecution(
+  code: string,
+  taken: Map<string, string>,
+): { body: string; imports: string } {
+  const imports: string[] = [];
+  const body: string[] = [];
+  for (const line of code.split("\n")) {
+    if (!/^import\s/u.test(line)) {
+      body.push(line);
+      continue;
+    }
+    const rewritten = line
+      .replace(/"libtmux"/u, '"../../src/index.js"')
+      .replace(/"libtmux\/([\w-]+)"/u, '"../../src/$1.js"');
+    const named = /^import \{([^}]*)\} from (.*)$/u.exec(rewritten);
+    if (named === null) {
+      imports.push(rewritten);
+      continue;
+    }
+    const from = named[2] ?? "";
+    const kept = (named[1] ?? "")
+      .split(",")
+      .map((specifier) => specifier.trim())
+      .filter((specifier) => specifier !== "" && taken.get(specifier) !== from);
+    for (const specifier of kept) taken.set(specifier, from);
+    if (kept.length > 0) imports.push(`import { ${kept.join(", ")} } from ${from}`);
+  }
+  return { body: body.join("\n"), imports: imports.join("\n") };
 }
 
 /**
