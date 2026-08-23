@@ -185,7 +185,7 @@ export function parseControlLine(
       return {
         age: Number(age),
         data: decodeOutput(paneId, unescapeOutput(line.subarray(markerEnd + 1))),
-        kind: "extended-output",
+        kind: "output",
         paneId,
       };
     }

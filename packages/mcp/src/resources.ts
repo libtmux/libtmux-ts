@@ -367,7 +367,7 @@ function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
     // flushed. This bounds that to twice a second however fast the pane talks.
     let pending: ReturnType<typeof setTimeout> | undefined;
     const stop = await context.hub.listen(sessionId, (event) => {
-      if (event.kind !== "output" && event.kind !== "extended-output") return;
+      if (event.kind !== "output") return;
       if (event.paneId !== paneId) return;
       if (pending !== undefined) return;
       pending = setTimeout(() => {

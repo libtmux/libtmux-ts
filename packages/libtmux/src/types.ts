@@ -273,23 +273,25 @@ export type WindowTarget = "last" | "next" | "previous" | (string & Record<never
  * `format` draws: tmux's vocabulary for tmux's data, ours for our shape.
  */
 
-/** A pane produced output. */
+/**
+ * A pane produced output.
+ *
+ * One kind whichever way tmux wrote it. Under {@link WatchOptions.pauseAfterSeconds}
+ * tmux writes `%extended-output` rather than `%output` for every pane, and a
+ * caller that had to rename its own event on enabling a safety knob would find
+ * out by receiving nothing at the moment backpressure began.
+ */
 export interface TmuxOutputEvent {
+  /**
+   * Milliseconds tmux held this data before writing it, where it reported one.
+   *
+   * Present only under {@link WatchOptions.pauseAfterSeconds}, which is what
+   * asks tmux to report it, and rising is how a consumer notices it is falling
+   * behind before tmux pauses the pane.
+   */
+  readonly age?: number;
   readonly data: string;
   readonly kind: "output";
-  readonly paneId: string;
-}
-
-/**
- * A pane produced output on a connection that asked for age reporting.
- *
- * `age` is milliseconds between tmux buffering the data and writing it, which
- * is how a consumer notices it is falling behind.
- */
-export interface TmuxExtendedOutputEvent {
-  readonly age: number;
-  readonly data: string;
-  readonly kind: "extended-output";
   readonly paneId: string;
 }
 
@@ -426,7 +428,6 @@ export type TmuxEvent =
   | TmuxClientDetachedEvent
   | TmuxClientSessionChangedEvent
   | TmuxExitEvent
-  | TmuxExtendedOutputEvent
   | TmuxLayoutChangeEvent
   | TmuxMessageEvent
   | TmuxOutputEvent

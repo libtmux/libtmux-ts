@@ -228,7 +228,7 @@ export class LiveHub {
     const events = link.connected.subscribe();
     try {
       for await (const event of events) {
-        if (event.kind === "output" || event.kind === "extended-output") {
+        if (event.kind === "output") {
           link.tails.get(event.paneId)?.append(event.data);
         }
         for (const listener of link.listeners) listener(event);

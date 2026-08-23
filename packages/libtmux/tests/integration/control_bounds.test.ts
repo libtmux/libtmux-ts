@@ -157,6 +157,32 @@ describe("control-mode resource bounds", () => {
     });
   }, 40_000);
 
+  test("reports a pane's output as output with pause-after enabled", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "aged" });
+      await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
+      const events = live.subscribe();
+      await events.ready();
+
+      const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+      const printed = events.find(
+        (event) => event.kind === "output" && event.data.includes("aged-marker"),
+        { timeoutMs: 20_000 },
+      );
+      await pane.sendKeys("echo aged-marker-here");
+      const event = await printed;
+      await events.close();
+
+      // tmux writes `%extended-output` for every pane once pause-after is set,
+      // so a consumer filtering on "output" would stop seeing anything at the
+      // moment backpressure began — which is when it most needs to see it.
+      expect(event?.kind).toBe("output");
+      // The age tmux reported comes with it rather than instead of it.
+      expect(typeof (event as { readonly age?: number }).age).toBe("number");
+    });
+  }, 40_000);
+
   test("resumes a paused pane instead of leaving it stopped", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

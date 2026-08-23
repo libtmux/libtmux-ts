@@ -48,7 +48,6 @@ export type {
   TmuxEvent,
   TmuxEventStream,
   TmuxExitEvent,
-  TmuxExtendedOutputEvent,
   TmuxLayoutChangeEvent,
   TmuxMessageEvent,
   TmuxOutputEvent,

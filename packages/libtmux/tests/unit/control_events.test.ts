@@ -162,11 +162,14 @@ describe("control-mode line parsing", () => {
     });
   });
 
-  test("parses extended-output past its age and colon marker", () => {
+  test("parses extended-output past its age and colon marker, as output", () => {
+    // One kind whichever way tmux wrote it: pauseAfterSeconds switches tmux to
+    // %extended-output for every pane, and a consumer filtering on "output"
+    // would otherwise stop seeing anything the moment it fell behind.
     expect(event("%extended-output %1 512 : late data")).toEqual({
       age: 512,
       data: "late data",
-      kind: "extended-output",
+      kind: "output",
       paneId: "%1",
     });
   });
