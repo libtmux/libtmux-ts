@@ -1363,6 +1363,32 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("says the list changed when another client changes it", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      await withClient(fixture, async (client) => {
+        let notices = 0;
+        client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+          notices += 1;
+        });
+
+        // Browsing is what starts the watch: a server nobody browses holds no
+        // connection for this.
+        await client.listResources();
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        notices = 0;
+
+        // Not through this server. A person in a terminal, or another agent on
+        // the same tmux server, changes the list too — and a client that
+        // believes listChanged refreshes only on notice.
+        const session = (await tmux.snapshot()).sessions.one();
+        await session.newWindow({ name: "made-elsewhere" });
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        expect(notices).toBeGreaterThan(0);
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

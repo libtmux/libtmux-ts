@@ -275,6 +275,40 @@ export class LiveHub {
   }
 
   /**
+   * Hold one connection for the notifications that are not about a pane.
+   *
+   * tmux's structural notifications — a window added, closed or renamed, the
+   * session list changing — are global rather than session-scoped, so one
+   * connection hears about the whole server. What it is anchored to only
+   * decides where it is attached, not what it is told.
+   *
+   * The anchor is told not to detach when that session is destroyed. Under
+   * tmux's default the connection would simply drop, and this is the one
+   * connection whose whole purpose is to still be there; with the flag set,
+   * tmux re-anchors the client to another session and names it in a
+   * `%session-changed`. `refresh-client -f` sets client flags and nothing
+   * else — it is not `-C`, which is what makes a persistent connection start
+   * resizing the panes of whoever is attached.
+   *
+   * With no session on the server there is nothing to anchor to and this
+   * returns undefined: a control client cannot attach to nothing, and creating
+   * a session to hold one would change the server as a side effect of reading
+   * it.
+   */
+  async anchor(listener: (event: TmuxEvent) => void): Promise<(() => void) | undefined> {
+    const snapshot = await this.#tmux.snapshot().catch(() => undefined);
+    const session = snapshot?.sessions.toArray()[0];
+    if (session === undefined) return undefined;
+    const stop = await this.listen(session.id, listener);
+    if (stop === undefined) return undefined;
+    await this.#links
+      .get(session.id)
+      ?.connected.cmd("refresh-client", ["-f", "no-detach-on-destroy"], { target: null })
+      .catch(() => undefined);
+    return stop;
+  }
+
+  /**
    * Call `listener` for every notification on a session until the returned
    * function is called.
    */
