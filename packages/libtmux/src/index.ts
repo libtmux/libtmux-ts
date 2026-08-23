@@ -82,6 +82,7 @@ export {
   TmuxServerRestarted,
   TmuxTransportError,
   type TmuxTransportErrorKind,
+  WaitTimeout,
 } from "./exc.js";
 export type { DeliveryStatus } from "./common.js";
 export { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";
