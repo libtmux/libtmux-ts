@@ -125,24 +125,27 @@ describe("an argument cannot become a command", () => {
     });
   }, 60_000);
 
-  test("answers a value tmux refuses the same way over both transports", async () => {
+  test("answers a name holding a newline the same way over both transports", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
 
-      // tmux validates a window name and refuses this one. Which answer it
-      // gives is tmux's to decide; both transports have to carry the same one.
-      const spawned = await server.cmd("new-window", ["-d", "-n", "a\nb"]).then(
-        () => "resolved",
-        (error: unknown) => (error as Error).message,
-      );
-      const connected = await live.cmd("new-window", ["-d", "-n", "a\nb"]).then(
-        () => "resolved",
-        (error: unknown) => (error as Error).message,
-      );
+      // What tmux answers here is version-dependent — 3.7 rejects a window
+      // name holding a newline and earlier versions store it — which is the
+      // reason this compares the two transports rather than naming an answer.
+      const name = `a\nnew-session -d -s injected`;
+      const outcome = async (target: Server): Promise<string> =>
+        target.cmd("new-window", ["-d", "-n", name]).then(
+          () => "resolved",
+          (error: unknown) => (error as Error).message,
+        );
+
+      const spawned = await outcome(server);
+      const connected = await outcome(live);
 
       expect(connected).toBe(spawned);
-      expect(connected).not.toBe("resolved");
+      // Whichever answer tmux gave, the second line was never a command.
+      expect((await server.snapshot()).sessions.exists({ name: "injected" })).toBe(false);
     });
   }, 60_000);
 
