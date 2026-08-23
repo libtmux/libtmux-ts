@@ -1406,7 +1406,7 @@ await window.rename("editor");
 #### `Window.move`
 
 ```ts
-move(options?: MoveWindowOptions): Promise<void>
+move(options: MoveWindowOptions = {}): Promise<void>
 ```
 
 Move this window to another session or index without selecting it.

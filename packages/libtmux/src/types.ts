@@ -183,7 +183,13 @@ export interface CaptureOptions extends CommandOptions {
 export interface MoveWindowOptions extends CommandOptions {
   /** Destination index; tmux picks the next free one when omitted. */
   readonly index?: number;
-  /** Destination session; the window stays in its own session when omitted. */
+  /**
+   * Destination session; the window stays in its own session when omitted.
+   *
+   * Omitted means this window's session, not tmux's current one — tmux reads a
+   * destination of `:3` as index 3 of whichever session it happens to consider
+   * current, which is rarely the one a caller holding this window means.
+   */
   readonly session?: string;
 }
 

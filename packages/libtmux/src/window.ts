@@ -49,7 +49,6 @@ export interface WindowPlans {
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
-// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 /**
  * This placement, as tmux addresses one.
  *
@@ -63,10 +62,24 @@ export interface WindowPlans {
  * `selectLayout` and `resize` act on the window itself, wherever it is linked,
  * and naming a session there would suggest a choice that does not exist.
  */
+/**
+ * Fill in the destination session the caller left out.
+ *
+ * tmux reads a destination of `:3` as index 3 of the *current* session, which
+ * is whichever one it happens to consider current — not this window's. Naming
+ * the window's own is what makes "the window stays in its own session when
+ * omitted" true, and it is the only reading under which omitting the session is
+ * a smaller request rather than a different one.
+ */
+function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOptions {
+  return { ...options, session: options.session ?? window.sessionId };
+}
+
 function placementTarget(window: Window): string {
   return `${window.sessionId}:${window.id}`;
 }
 
+// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Window {
   declare private readonly windowBrand: undefined;
   /**
@@ -292,8 +305,8 @@ export class Window {
    * await window.move({ index: 3 });
    * ```
    */
-  move(options?: MoveWindowOptions): Promise<void> {
-    return moveWindow(runtimeForHandle(this), placementTarget(this), options);
+  move(options: MoveWindowOptions = {}): Promise<void> {
+    return moveWindow(runtimeForHandle(this), placementTarget(this), inThisSession(this, options));
   }
 
   /**
@@ -304,7 +317,7 @@ export class Window {
    * ```
    */
   link(options: MoveWindowOptions): Promise<void> {
-    return linkWindow(runtimeForHandle(this), this.id, options);
+    return linkWindow(runtimeForHandle(this), this.id, inThisSession(this, options));
   }
 
   /**

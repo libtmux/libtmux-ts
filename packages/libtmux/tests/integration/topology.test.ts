@@ -155,6 +155,27 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("keeps a moved window in its own session when none is named", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // A second session, created later, is what tmux considers current — so
+      // an unnamed destination goes there rather than staying put.
+      await server.newSession({ name: "newer" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      const origin = window.sessionId;
+
+      await window.move({ index: 7 });
+
+      const moved = (await server.snapshot()).windows
+        .filter((candidate) => candidate.id === window.id)
+        .one();
+      expect(moved.index).toBe(7);
+      expect(moved.sessionId).toBe(origin);
+    });
+  }, 40_000);
+
   test("applies a layout and resizes a pane", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
