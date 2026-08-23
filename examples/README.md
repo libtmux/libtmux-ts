@@ -53,11 +53,12 @@ driving your session.
 | File                             | What it demonstrates                                                                                                            |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | [`quickstart.ts`](quickstart.ts) | Acquisition, filtering, relations, pane input, and error handling in one pass                                                   |
-| [`watch.ts`](watch.ts)           | Reacting over control mode: waiting for a window to open, and following a pane until a marker arrives                           |
+| [`watch.ts`](watch.ts)           | Reacting over control mode: waiting for a window to open, following a pane, reading it under backpressure, and ending a wait    |
 | [`agent.ts`](agent.ts)           | Act and wait on one connection: run a command until its output arrives, then wait for the server to reach a shape               |
 | [`workspace.ts`](workspace.ts)   | Building a session from a declared layout, with an inherited environment and a teardown that treats "already gone" as an answer |
 | [`fields.ts`](fields.ts)         | Reading decoded values: geometry as arithmetic, flags as booleans, timestamps as `Date`, and the raw row beside them            |
 | [`mcp-agent.ts`](mcp-agent.ts)   | Driving tmux over the Model Context Protocol rather than the API, on linked in-memory transports                                |
+| [`engine.ts`](engine.ts)         | Reaching tmux through a transport you supply, honouring the two obligations the seam documents                                  |
 
 ## Quoting an example in a README
 

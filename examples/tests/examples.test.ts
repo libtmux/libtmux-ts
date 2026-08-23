@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 
 import { quickstart } from "../quickstart.js";
 import { reportPanes } from "../fields.js";
+import { throughACustomEngine } from "../engine.js";
 import { buildWorkspace, removeWorkspace } from "../workspace.js";
 import { buildAndSettle, runAndWait } from "../agent.js";
 import {
@@ -168,6 +169,25 @@ describe("documented examples", () => {
 
       expect(read.text).toContain("paced-marker");
       expect(read.reportedAge).toBe(true);
+    });
+  }, 60_000);
+
+  test("the engine example drives tmux through a supplied transport", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      await server.newSession({ name: "reachable" });
+
+      // A Server built with an engine has no socket of its own: everything it
+      // knows arrives through the one operation the engine implements. Seeing
+      // the same sessions is what says the seam carries the whole API.
+      const throughEngine = await throughACustomEngine(server);
+
+      expect(throughEngine).toBe((await server.snapshot()).sessions.count());
+      expect(throughEngine).toBeGreaterThan(0);
     });
   }, 60_000);
 
