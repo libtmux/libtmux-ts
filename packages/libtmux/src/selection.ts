@@ -79,11 +79,15 @@ export interface SessionWhere {
   readonly AND?: readonly SessionWhere[];
   readonly OR?: readonly SessionWhere[];
   readonly NOT?: readonly SessionWhere[];
+  readonly active?: ScalarCriteria<boolean, RawFlag>;
   readonly activeWindowIndex?: ScalarCriteria<number, RawNumber>;
   readonly activity?: ScalarCriteria<Date, RawNumber>;
+  readonly activityFlag?: ScalarCriteria<boolean, RawFlag>;
+  readonly alert?: ScalarCriteria;
   readonly alerts?: ScalarCriteria;
   readonly attached?: ScalarCriteria<number, RawNumber>;
   readonly attachedList?: ScalarCriteria;
+  readonly bellFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly created?: ScalarCriteria<Date, RawNumber>;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
   readonly group?: ScalarCriteria;
@@ -101,6 +105,7 @@ export interface SessionWhere {
   readonly name?: ScalarCriteria;
   readonly path?: ScalarCriteria;
   readonly sessionWindows?: ScalarCriteria<number, RawNumber>;
+  readonly silenceFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly stack?: ScalarCriteria;
   readonly windows?: ManyRelation<WindowWhere>;
   readonly panes?: ManyRelation<PaneWhere>;
@@ -157,6 +162,7 @@ export interface PaneWhere {
   readonly OR?: readonly PaneWhere[];
   readonly NOT?: readonly PaneWhere[];
   readonly active?: ScalarCriteria<boolean, RawFlag>;
+  readonly alternateOn?: ScalarCriteria<boolean, RawFlag>;
   readonly alternateSavedX?: ScalarCriteria<number, RawNumber>;
   readonly alternateSavedY?: ScalarCriteria<number, RawNumber>;
   readonly atBottom?: ScalarCriteria<boolean, RawFlag>;
@@ -168,8 +174,12 @@ export interface PaneWhere {
   readonly bracketPasteFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly currentCommand?: ScalarCriteria;
   readonly currentPath?: ScalarCriteria;
+  readonly cursorBlinking?: ScalarCriteria<boolean, RawFlag>;
   readonly cursorCharacter?: ScalarCriteria;
+  readonly cursorColour?: ScalarCriteria;
   readonly cursorFlag?: ScalarCriteria<boolean, RawFlag>;
+  readonly cursorShape?: ScalarCriteria;
+  readonly cursorVeryVisible?: ScalarCriteria<boolean, RawFlag>;
   readonly cursorX?: ScalarCriteria<number, RawNumber>;
   readonly cursorY?: ScalarCriteria<number, RawNumber>;
   readonly dead?: ScalarCriteria<boolean, RawFlag>;
@@ -181,6 +191,7 @@ export interface PaneWhere {
   readonly floatingFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
   readonly height?: ScalarCriteria<number, RawNumber>;
+  readonly historyAllBytes?: ScalarCriteria;
   readonly historyBytes?: ScalarCriteria<number, RawNumber>;
   readonly historyLimit?: ScalarCriteria<number, RawNumber>;
   readonly historySize?: ScalarCriteria<number, RawNumber>;
@@ -189,6 +200,7 @@ export interface PaneWhere {
   readonly index?: ScalarCriteria<number, RawNumber>;
   readonly inputOff?: ScalarCriteria<boolean, RawFlag>;
   readonly insertFlag?: ScalarCriteria<boolean, RawFlag>;
+  readonly keyMode?: ScalarCriteria;
   readonly keypadCursorFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly keypadFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly last?: ScalarCriteria<boolean, RawFlag>;
@@ -220,6 +232,7 @@ export interface PaneWhere {
   readonly title?: ScalarCriteria;
   readonly top?: ScalarCriteria<number, RawNumber>;
   readonly tty?: ScalarCriteria;
+  readonly unseenChanges?: ScalarCriteria<boolean, RawFlag>;
   readonly width?: ScalarCriteria<number, RawNumber>;
   readonly wrapFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly x?: ScalarCriteria<number, RawNumber>;

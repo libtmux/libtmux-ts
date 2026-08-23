@@ -12,6 +12,7 @@ import {
   criteriaFieldsForModel,
   renderGeneratedFormatSources,
 } from "../src/_internal/codec/format_registry.js";
+import { parseTmuxVersion } from "../src/_internal/runtime/tmux_version.js";
 
 export interface GenerateFormatsOptions {
   readonly mode: "check" | "write";
@@ -44,6 +45,7 @@ const usage = "usage: generate-formats.ts (--check|--write)";
 const taskRoot = fileURLToPath(new URL("..", import.meta.url));
 const fixturePath = join(taskRoot, "tests/fixtures/python-0.62.0-format-fields.json");
 const valueTypePath = join(taskRoot, "tests/fixtures/tmux-format-value-types.json");
+const tmuxFieldPath = join(taskRoot, "tests/fixtures/tmux-format-fields.json");
 const neoSourceUrl = "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py";
 const formatsSourceUrl =
   "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py";
@@ -478,9 +480,18 @@ function renderPublicSymbol(row: Record<string, unknown>, indentation: string): 
   return rendered.replaceAll("\n", `\n${indentation}`);
 }
 
+/**
+ * The parity manifest, rendered from the oracle and never from the vocabulary.
+ *
+ * `fields` is required rather than defaulted. It used to default to the
+ * generated fields, which was the same set — and stopped being once the
+ * vocabulary began tracking tmux. A parity manifest built from tmux-only
+ * fields would claim parity for symbols Python does not have, and it would do
+ * it by omission at a call site rather than by anyone deciding to.
+ */
 export function renderTask5ParityManifest(
   source: string,
-  fields: readonly GeneratedFormatField[] = GENERATED_FORMAT_FIELDS,
+  fields: readonly GeneratedFormatField[],
 ): string {
   const expected = task5PublicSymbols(fields);
   const bounds = arrayBounds(source, "publicSymbols");
@@ -657,6 +668,46 @@ function renderFieldAliasesSource(tokens: readonly string[]): string {
 }
 
 /** The declared shape of every field tmux does not answer with a string. */
+/**
+ * The fields tmux has that the Python library does not.
+ *
+ * Read separately and unioned in by the caller, never merged into the oracle:
+ * `readFixture` proves that file is Python 0.62.0 by hashing its tokens, and a
+ * field added there would recompute the hash and retire the proof.
+ */
+async function readTmuxFields(
+  parity: readonly GeneratedFormatField[],
+): Promise<readonly GeneratedFormatField[]> {
+  const parsed = JSON.parse(await readFile(tmuxFieldPath, "utf8")) as unknown;
+  if (
+    !isRecord(parsed) ||
+    !exactKeys(parsed, ["fields", "note"]) ||
+    !Array.isArray(parsed.fields)
+  ) {
+    throw new Error("tmux format fixture must contain exactly fields and note");
+  }
+  const known = new Set<string>(parity.map(({ token }) => token));
+  return Object.freeze(
+    parsed.fields.map((value) => {
+      if (!isRecord(value) || !exactKeys(value, ["scope", "since", "token"])) {
+        throw new Error("tmux format field must contain exactly scope, since and token");
+      }
+      const { scope, since, token } = value;
+      if (typeof scope !== "string" || typeof since !== "string" || typeof token !== "string") {
+        throw new Error("tmux format field scope, since and token must be strings");
+      }
+      // A token in both sources would be a field the oracle already carries,
+      // which means this file has drifted into duplicating parity rather than
+      // extending it.
+      if (known.has(token)) {
+        throw new Error(`tmux format field ${token} is already in the Python fixture`);
+      }
+      parseTmuxVersion(since);
+      return Object.freeze({ scope, since, token }) as unknown as GeneratedFormatField;
+    }),
+  );
+}
+
 async function readValueTypes(tokens: ReadonlySet<string>): Promise<ReadonlyMap<string, string>> {
   const parsed = JSON.parse(await readFile(valueTypePath, "utf8")) as unknown;
   if (!isRecord(parsed) || !exactKeys(parsed, ["note", "types"]) || !isRecord(parsed.types)) {
@@ -720,8 +771,19 @@ function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
 
 export async function generateFormats(options: GenerateFormatsOptions): Promise<void> {
   const fixture = await readFixture();
-  const generated = renderGeneratedFormatSources(fixture.fields);
-  const valueTypes = await readValueTypes(new Set(fixture.fields.map(({ token }) => token)));
+  // Two sources, and only one of them is an oracle. `readFixture` digests the
+  // Python fixture's tokens to prove it is Python 0.62.0; these are unioned in
+  // afterwards, so the vocabulary tracks tmux while the proof of parity stays
+  // exactly what it was. The parity manifest below is rendered from the oracle
+  // alone, for the same reason.
+  const tmuxOnly = await readTmuxFields(fixture.fields);
+  const vocabulary = Object.freeze(
+    [...fixture.fields, ...tmuxOnly].toSorted((left, right) =>
+      left.token < right.token ? -1 : left.token > right.token ? 1 : 0,
+    ),
+  );
+  const generated = renderGeneratedFormatSources(vocabulary);
+  const valueTypes = await readValueTypes(new Set(vocabulary.map(({ token }) => token)));
   const currentParity = await readFile(options.parityManifestPath, "utf8");
   const expected = new Map<string, string>([
     [
@@ -735,7 +797,7 @@ export async function generateFormats(options: GenerateFormatsOptions): Promise<
     [join(options.outputDirectory, "field_types.ts"), renderFieldTypesSource(valueTypes)],
     [
       join(options.outputDirectory, "field_aliases.ts"),
-      renderFieldAliasesSource(fixture.fields.map(({ token }) => token)),
+      renderFieldAliasesSource(vocabulary.map(({ token }) => token)),
     ],
     [
       join(options.outputDirectory, "where_fields.ts"),
@@ -747,7 +809,7 @@ export async function generateFormats(options: GenerateFormatsOptions): Promise<
     const currentSelection = await readFile(options.selectionSourcePath, "utf8");
     expected.set(
       options.selectionSourcePath,
-      renderSelectionWithGeneratedWhereTypes(currentSelection, fixture.fields),
+      renderSelectionWithGeneratedWhereTypes(currentSelection, vocabulary),
     );
   }
   const expectedEntries = [...expected];

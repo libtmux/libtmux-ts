@@ -44,11 +44,32 @@ const sessionFields: readonly WhereField[] = Object.freeze([
     wireName: "name",
   }),
   Object.freeze({
+    criteriaName: "active",
+    domain: "string",
+    since: "3.6",
+    token: "session_active",
+    wireName: "session_active",
+  }),
+  Object.freeze({
     criteriaName: "activity",
     domain: "string",
     since: "3.2a",
     token: "session_activity",
     wireName: "session_activity",
+  }),
+  Object.freeze({
+    criteriaName: "activityFlag",
+    domain: "string",
+    since: "3.6",
+    token: "session_activity_flag",
+    wireName: "session_activity_flag",
+  }),
+  Object.freeze({
+    criteriaName: "alert",
+    domain: "string",
+    since: "3.6",
+    token: "session_alert",
+    wireName: "session_alert",
   }),
   Object.freeze({
     criteriaName: "alerts",
@@ -70,6 +91,13 @@ const sessionFields: readonly WhereField[] = Object.freeze([
     since: "3.2a",
     token: "session_attached_list",
     wireName: "session_attached_list",
+  }),
+  Object.freeze({
+    criteriaName: "bellFlag",
+    domain: "string",
+    since: "3.6",
+    token: "session_bell_flag",
+    wireName: "session_bell_flag",
   }),
   Object.freeze({
     criteriaName: "created",
@@ -168,6 +196,13 @@ const sessionFields: readonly WhereField[] = Object.freeze([
     since: "3.2a",
     token: "session_path",
     wireName: "session_path",
+  }),
+  Object.freeze({
+    criteriaName: "silenceFlag",
+    domain: "string",
+    since: "3.6",
+    token: "session_silence_flag",
+    wireName: "session_silence_flag",
   }),
   Object.freeze({
     criteriaName: "stack",
@@ -428,6 +463,13 @@ const windowFields: readonly WhereField[] = Object.freeze([
 
 const paneFields: readonly WhereField[] = Object.freeze([
   Object.freeze({
+    criteriaName: "alternateOn",
+    domain: "string",
+    since: "3.2a",
+    token: "alternate_on",
+    wireName: "alternate_on",
+  }),
+  Object.freeze({
     criteriaName: "alternateSavedX",
     domain: "string",
     since: "3.2a",
@@ -449,6 +491,13 @@ const paneFields: readonly WhereField[] = Object.freeze([
     wireName: "bracket_paste_flag",
   }),
   Object.freeze({
+    criteriaName: "cursorBlinking",
+    domain: "string",
+    since: "3.6",
+    token: "cursor_blinking",
+    wireName: "cursor_blinking",
+  }),
+  Object.freeze({
     criteriaName: "cursorCharacter",
     domain: "string",
     since: "3.2a",
@@ -456,11 +505,32 @@ const paneFields: readonly WhereField[] = Object.freeze([
     wireName: "cursor_character",
   }),
   Object.freeze({
+    criteriaName: "cursorColour",
+    domain: "string",
+    since: "3.6",
+    token: "cursor_colour",
+    wireName: "cursor_colour",
+  }),
+  Object.freeze({
     criteriaName: "cursorFlag",
     domain: "string",
     since: "3.2a",
     token: "cursor_flag",
     wireName: "cursor_flag",
+  }),
+  Object.freeze({
+    criteriaName: "cursorShape",
+    domain: "string",
+    since: "3.6",
+    token: "cursor_shape",
+    wireName: "cursor_shape",
+  }),
+  Object.freeze({
+    criteriaName: "cursorVeryVisible",
+    domain: "string",
+    since: "3.6",
+    token: "cursor_very_visible",
+    wireName: "cursor_very_visible",
   }),
   Object.freeze({
     criteriaName: "cursorX",
@@ -475,6 +545,13 @@ const paneFields: readonly WhereField[] = Object.freeze([
     since: "3.2a",
     token: "cursor_y",
     wireName: "cursor_y",
+  }),
+  Object.freeze({
+    criteriaName: "historyAllBytes",
+    domain: "string",
+    since: "3.2a",
+    token: "history_all_bytes",
+    wireName: "history_all_bytes",
   }),
   Object.freeze({
     criteriaName: "historyBytes",
@@ -715,6 +792,13 @@ const paneFields: readonly WhereField[] = Object.freeze([
     wireName: "pane_input_off",
   }),
   Object.freeze({
+    criteriaName: "keyMode",
+    domain: "string",
+    since: "3.5",
+    token: "pane_key_mode",
+    wireName: "pane_key_mode",
+  }),
+  Object.freeze({
     criteriaName: "last",
     domain: "string",
     since: "3.2a",
@@ -853,6 +937,13 @@ const paneFields: readonly WhereField[] = Object.freeze([
     since: "3.2a",
     token: "pane_tty",
     wireName: "pane_tty",
+  }),
+  Object.freeze({
+    criteriaName: "unseenChanges",
+    domain: "string",
+    since: "3.4",
+    token: "pane_unseen_changes",
+    wireName: "pane_unseen_changes",
   }),
   Object.freeze({
     criteriaName: "width",

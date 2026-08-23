@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 
 import { generateFormats, renderTask5ParityManifest } from "../../scripts/generate-formats.js";
+import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import {
   CLIENT_FORMATS,
   FORMAT_SEPARATOR,
@@ -39,11 +40,20 @@ interface PythonFormatFixture {
 }
 
 const fixtureUrl = new URL("../fixtures/python-0.62.0-format-fields.json", import.meta.url);
+const tmuxFieldUrl = new URL("../fixtures/tmux-format-fields.json", import.meta.url);
 const parityManifestUrl = new URL("../../parity/python-0.62.0.json", import.meta.url);
 const tsRootPath = fileURLToPath(new URL("../..", import.meta.url));
 
 async function readFixture(): Promise<PythonFormatFixture> {
   return JSON.parse(await readFile(fixtureUrl, "utf8")) as PythonFormatFixture;
+}
+
+/** The fields tmux has that Python does not, kept out of the oracle. */
+async function readTmuxOnlyFields(): Promise<PythonFormatFixture["fields"]> {
+  const parsed = JSON.parse(await readFile(tmuxFieldUrl, "utf8")) as {
+    fields: PythonFormatFixture["fields"];
+  };
+  return parsed.fields;
 }
 
 async function runBoundedCommand(
@@ -248,9 +258,23 @@ describe("format registry", () => {
       tag: "v0.62.0",
       tree: "eee900223a11c00a4b9b0cc6944e7d5a4d503bc8",
     });
-    expect(
-      FORMAT_REGISTRY.map(({ scope, since, token }) => ({ scope, since: since.raw, token })),
-    ).toEqual(fixture.fields);
+    // Parity is a floor, not the whole registry. Every field Python has must be
+    // here with the same scope and version floor; the registry may carry more,
+    // and what more is exactly the tmux source beside the oracle.
+    const registry = FORMAT_REGISTRY.map(({ scope, since, token }) => ({
+      scope,
+      since: since.raw,
+      token,
+    }));
+    const tmuxOnly = await readTmuxOnlyFields();
+    for (const field of fixture.fields) {
+      expect(registry, field.token).toContainEqual(field);
+    }
+    expect(registry.toSorted((left, right) => (left.token < right.token ? -1 : 1))).toEqual(
+      [...fixture.fields, ...tmuxOnly].toSorted((left, right) =>
+        left.token < right.token ? -1 : 1,
+      ),
+    );
     expect(Object.isFrozen(FORMAT_REGISTRY)).toBe(true);
     expect(Object.isFrozen(FORMAT_FIELD_TOKENS)).toBe(true);
     for (const field of FORMAT_REGISTRY) {
@@ -267,8 +291,12 @@ describe("format registry", () => {
       expect(Object.isFrozen(field.criteriaWireNames), field.token).toBe(true);
       expect(Object.isFrozen(field.since), field.token).toBe(true);
     }
-    expect(new Set(FORMAT_REGISTRY.map(({ token }) => token)).size).toBe(178);
-    expect(FORMAT_FIELD_TOKENS).toEqual(fixture.fields.map(({ token }) => token));
+    expect(new Set(FORMAT_REGISTRY.map(({ token }) => token)).size).toBe(
+      fixture.fields.length + tmuxOnly.length,
+    );
+    for (const { token } of fixture.fields) {
+      expect(FORMAT_FIELD_TOKENS, token).toContain(token);
+    }
     expect(
       createHash("sha256")
         .update(JSON.stringify(fixture.fields.map(({ token }) => token)))
@@ -281,13 +309,19 @@ describe("format registry", () => {
     const resolved = fixture.fields.map(({ token }) => lookupFormatField(token));
 
     expect(fixture.fields).toHaveLength(178);
-    expect(FORMAT_REGISTRY).toHaveLength(fixture.fields.length);
+    expect(FORMAT_REGISTRY).toHaveLength(
+      fixture.fields.length + (await readTmuxOnlyFields()).length,
+    );
     expect(resolved).not.toContain(undefined);
-    expect(resolved).toEqual([...FORMAT_REGISTRY]);
+    // By token rather than by position: the registry carries the tmux fields
+    // too, sorted in among these, so an oracle field's index in the fixture is
+    // no longer its index in the registry. What must hold is that looking one
+    // up yields the registry's own frozen record, not a copy of it.
+    const byToken = new Map(FORMAT_REGISTRY.map((field) => [field.token, field]));
     for (const [index, { token }] of fixture.fields.entries()) {
       expect(resolved[index], token).toBeDefined();
       expect(resolved[index]?.token, token).toBe(token);
-      expect(resolved[index], token).toBe(FORMAT_REGISTRY[index]);
+      expect(resolved[index], token).toBe(byToken.get(token));
     }
     expect(lookupFormatField("libtmux_nonexistent_format_token")).toBeUndefined();
   });
@@ -401,12 +435,18 @@ describe("format registry", () => {
   });
 
   test("selects Python list scopes while carrying version floors", () => {
+    // Every release the package supports, because the vocabulary tracks tmux
+    // now: 3.4, 3.5 and 3.6 each gain fields Python never had, so a run that
+    // skipped them would prove the gating only where Python happened to grow.
     const expectedCounts = {
-      "3.2a": { clients: 148, panes: 123, sessions: 123, windows: 123 },
-      "3.3": { clients: 150, panes: 125, sessions: 125, windows: 125 },
-      "3.7": { clients: 161, panes: 136, sessions: 136, windows: 136 },
-      "3.7a": { clients: 161, panes: 136, sessions: 136, windows: 136 },
-      "3.7b": { clients: 161, panes: 136, sessions: 136, windows: 136 },
+      "3.2a": { clients: 150, panes: 125, sessions: 125, windows: 125 },
+      "3.3": { clients: 152, panes: 127, sessions: 127, windows: 127 },
+      "3.4": { clients: 153, panes: 128, sessions: 128, windows: 128 },
+      "3.5": { clients: 154, panes: 129, sessions: 129, windows: 129 },
+      "3.6": { clients: 163, panes: 138, sessions: 138, windows: 138 },
+      "3.7": { clients: 174, panes: 149, sessions: 149, windows: 149 },
+      "3.7a": { clients: 174, panes: 149, sessions: 149, windows: 149 },
+      "3.7b": { clients: 174, panes: 149, sessions: 149, windows: 149 },
     };
 
     for (const [version, counts] of Object.entries(expectedCounts)) {
@@ -445,17 +485,17 @@ describe("format registry", () => {
       expect(Object.isFrozen(aliases)).toBe(true);
     }
     expect(Object.keys(WHERE_FIELDS_V1)).toEqual(["session", "window", "pane", "client"]);
-    expect(WHERE_FIELDS_V1.session).toHaveLength(23);
+    expect(WHERE_FIELDS_V1.session).toHaveLength(28);
     expect(WHERE_FIELDS_V1.window).toHaveLength(34);
-    expect(WHERE_FIELDS_V1.pane).toHaveLength(70);
+    expect(WHERE_FIELDS_V1.pane).toHaveLength(78);
     expect(createHash("sha256").update(JSON.stringify(WHERE_FIELDS_V1.session)).digest("hex")).toBe(
-      "4a84dc0ebf95f0a43a59261088528b0290833d83cc7cc5ff53ad9c43edc5236d",
+      "e4cc09b956442f3e81600673a633f7f61c1bf61c7ff6b9b30511214a3e922415",
     );
     expect(createHash("sha256").update(JSON.stringify(WHERE_FIELDS_V1.window)).digest("hex")).toBe(
       "062c24c5599790143ef876758440d264b688b89ac6155d78ee9bce2bec43a8ac",
     );
     expect(createHash("sha256").update(JSON.stringify(WHERE_FIELDS_V1.pane)).digest("hex")).toBe(
-      "f461048d337416d3c4f39400c3245f53671f4c7612ca58528210d0c9044e5f6d",
+      "f0cfa3c7df4b6746ddad6f1ae6630f1db2ee0db7d03c24284009b0d956bef828",
     );
     for (const [model, fields] of Object.entries(WHERE_FIELDS_V1)) {
       for (const field of fields) {
@@ -553,19 +593,25 @@ describe("format registry", () => {
 
   test("renders the activated parity rows without normalizing unrelated bytes", async () => {
     const canonical = await readFile(parityManifestUrl, "utf8");
+    // The oracle's fields, not the vocabulary's: the manifest states parity
+    // with Python, and the vocabulary now carries fields Python never had.
+    const parityFields = (await readFixture()).fields.map((field) => ({
+      ...field,
+      since: parseTmuxVersion(field.since),
+    })) as unknown as Parameters<typeof renderTask5ParityManifest>[1];
     const drifted = canonical.replace(
       '"./formats#value:FORMAT_SEPARATOR"',
       '"./formats#value:FORMAT_SEPARATOR_DRIFT"',
     );
     expect(drifted).not.toBe(canonical);
-    expect(renderTask5ParityManifest(drifted)).toBe(canonical);
-    expect(renderTask5ParityManifest(canonical)).toBe(canonical);
+    expect(renderTask5ParityManifest(drifted, parityFields)).toBe(canonical);
+    expect(renderTask5ParityManifest(canonical, parityFields)).toBe(canonical);
 
     const unrelatedWhitespace = canonical.replace(
       '"pythonVersion": "0.62.0",',
       '"pythonVersion": "0.62.0",   ',
     );
-    expect(renderTask5ParityManifest(unrelatedWhitespace)).toBe(unrelatedWhitespace);
+    expect(renderTask5ParityManifest(unrelatedWhitespace, parityFields)).toBe(unrelatedWhitespace);
   });
 
   test("check mode detects exact-byte drift without rewriting it", async () => {

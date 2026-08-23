@@ -253,13 +253,19 @@ describe("declared format value types", () => {
   }, 120_000);
 
   test("declares no field that this port does not carry", async () => {
-    const known = new Set(
+    // Both sources, because the vocabulary is both. The Python fixture is the
+    // parity oracle and the tmux fixture is what this port adds beyond it; a
+    // value type for a field in neither is a claim about nothing.
+    const read = async (name: string): Promise<readonly string[]> =>
       (
-        (await Bun.file(
-          new URL("../fixtures/python-0.62.0-format-fields.json", import.meta.url).pathname,
-        ).json()) as { fields: { token: string }[] }
-      ).fields.map(({ token }) => token),
-    );
+        (await Bun.file(new URL(`../fixtures/${name}`, import.meta.url).pathname).json()) as {
+          fields: { token: string }[];
+        }
+      ).fields.map(({ token }) => token);
+    const known = new Set([
+      ...(await read("python-0.62.0-format-fields.json")),
+      ...(await read("tmux-format-fields.json")),
+    ]);
     const strays = Object.keys(declared).filter((token) => !known.has(token));
     expect(strays).toEqual([]);
   });
