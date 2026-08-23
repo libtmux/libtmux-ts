@@ -33,8 +33,19 @@ interface WaitReport {
   readonly output: string;
 }
 
-/** How long an idle stream is left alone between liveness checks. */
-const LIVENESS_MS = 500;
+/** How long a quiet stream is left alone before the loop looks again. */
+const IDLE_WAKE_MS = 500;
+
+/**
+ * How often a wait that is hearing nothing checks that its pane still exists.
+ *
+ * A pane's death is not output, so nothing wakes the wait to announce it and
+ * the only way to hear about it is to ask. Asking on every idle wake would
+ * spend a snapshot twice a second — seven thousand of them across the hour a
+ * task wait may run — so a quiet wait asks on this interval instead, and a wait
+ * that is hearing output never asks at all.
+ */
+const LIVENESS_MS = 5_000;
 
 /**
  * Wait for a pane to print something matching, and report why the wait ended.
@@ -70,6 +81,7 @@ async function waitForOutput(
 
   const from = options.cursor;
   const deadline = Date.now() + options.timeoutMs;
+  let askedAlive = Date.now();
   for (;;) {
     const seen = tail.read(from);
     const hit = options.matches(seen.text);
@@ -108,7 +120,25 @@ async function waitForOutput(
       };
     }
     // eslint-disable-next-line no-await-in-loop -- each wait follows its read.
-    await tail.changed(Math.min(remaining, LIVENESS_MS), options.signal);
+    const woke = await tail.changed(Math.min(remaining, IDLE_WAKE_MS), options.signal);
+    if (woke || Date.now() - askedAlive < LIVENESS_MS) continue;
+
+    // Nothing arrived, and a pane that has died will never make anything
+    // arrive. Waiting out the rest of the deadline to say so is the wrong
+    // answer on the path this exists for: a task wait may run for an hour, and
+    // "your command died" an hour late is not a report, it is an epitaph.
+    askedAlive = Date.now();
+    // eslint-disable-next-line no-await-in-loop -- only a wait hearing nothing pays this.
+    if (!(await context.snapshot()).panes.exists({ id: pane.id })) {
+      const last = tail.read(from);
+      return {
+        cursor: last.cursor,
+        effectiveTimeoutMs: options.timeoutMs,
+        matched: null,
+        outcome: "pane_died",
+        output: last.text,
+      };
+    }
   }
 }
 

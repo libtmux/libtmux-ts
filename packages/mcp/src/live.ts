@@ -80,18 +80,23 @@ export class PaneTail {
    * Lets a reader wait on the stream itself rather than re-asking it, which is
    * what makes a wait cost nothing while nothing is happening. The signal is
    * what lets a caller that has gone away stop it early.
+   *
+   * Answers `true` when something woke it and `false` when the timeout simply
+   * elapsed. A caller that has to tell those apart — because what it is waiting
+   * for would never arrive as output — should ask rather than infer it from the
+   * cursor not having moved.
    */
-  changed(timeoutMs: number, signal?: AbortSignal): Promise<void> {
+  changed(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
     this.#touched = Date.now();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.#waiters = this.#waiters.filter((entry) => entry !== wake);
-        resolve();
+        resolve(false);
       }, timeoutMs);
       const wake = (): void => {
         clearTimeout(timer);
         signal?.removeEventListener("abort", wake);
-        resolve();
+        resolve(true);
       };
       signal?.addEventListener("abort", wake, { once: true });
       this.#waiters.push(wake);

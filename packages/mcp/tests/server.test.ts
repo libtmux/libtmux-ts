@@ -355,6 +355,43 @@ describe("waiting", () => {
     });
   }, 90_000);
 
+  test("reports a pane that died mid-wait rather than waiting out the deadline", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        // A second window keeps the session alive when the first pane's shell
+        // exits, so what the wait meets is a dead pane rather than a stream
+        // whose whole session went away — two different answers.
+        const built = structured<{ panes: { id: string }[] }>(
+          await client.callTool({
+            arguments: {
+              session: "dying-pane",
+              windows: [
+                { name: "shell", shellCommand: "sh" },
+                { name: "keep", shellCommand: "sleep 600" },
+              ],
+            },
+            name: "build_workspace",
+          }),
+        );
+        const paneId = built.panes[0]?.id ?? "";
+        await client.callTool({ arguments: { keys: "sleep 1; exit", paneId }, name: "send_keys" });
+
+        const started = Date.now();
+        const answer = await client.callTool({
+          arguments: { paneId, patterns: ["never-printed-anywhere"], timeoutMs: 30_000 },
+          name: "wait_for_text",
+        });
+        const elapsed = Date.now() - started;
+
+        expect(structured<{ outcome: string }>(answer).outcome).toBe("pane_died");
+        // The point is when, not what. A pane's death is not output, so nothing
+        // wakes the wait to announce it; asked only at the deadline, this same
+        // answer arrived thirty seconds late.
+        expect(elapsed).toBeLessThan(15_000);
+      });
+    });
+  }, 90_000);
+
   test("clamps an over-large timeout and reports the one it used", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
