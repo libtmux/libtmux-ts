@@ -315,10 +315,10 @@ export class Pane {
    * build is captured whole. Pass no command to stop one.
    *
    * ```ts
-   * await pane.pipeTo("cat >> /tmp/build.log", { onlyOutput: true });
+   * await pane.pipeTo("cat >> /tmp/build.log");
    * ```
    */
-  pipeTo(command?: string, options?: { readonly onlyOutput?: boolean }): Promise<void> {
+  pipeTo(command?: string, options?: { readonly toggle?: boolean }): Promise<void> {
     return pipePane(runtimeForHandle(this), this.id, command, options);
   }
 

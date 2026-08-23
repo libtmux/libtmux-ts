@@ -60,19 +60,24 @@ export async function clearHistory(runtime: RuntimeContext, paneId: string | nul
  * receives the pane's output on stdin, so a long build is captured whole
  * without holding a connection or spending an agent's context on it.
  *
- * Passing no command stops an open pipe. `onlyOutput` sends what the program
- * writes but not what is typed into it, which is what makes a captured log
- * readable rather than interleaved with its own echo.
+ * A pane's output goes to the command and nothing is written back into the
+ * pane: that is tmux's default when neither `-I` nor `-O` is given.
+ *
+ * Passing no command stops an open pipe. `toggle` is tmux's `-o`: it starts a
+ * pipe when none is open and stops one when there is, which is what makes it a
+ * single key binding. tmux destroys the existing pipe before honouring the
+ * flag, so it stops a capture rather than leaving it alone — the difference
+ * matters when another caller may already be piping this pane.
  */
 export async function pipePane(
   runtime: RuntimeContext,
   paneId: string,
   command?: string,
-  options: { readonly onlyOutput?: boolean } = {},
+  options: { readonly toggle?: boolean } = {},
 ): Promise<void> {
   await runCommand(runtime, [
     "pipe-pane",
-    ...(options.onlyOutput === true ? ["-o"] : []),
+    ...(options.toggle === true ? ["-o"] : []),
     "-t",
     paneId,
     ...(command === undefined ? [] : [command]),

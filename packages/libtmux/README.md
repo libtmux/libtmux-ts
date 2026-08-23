@@ -1026,7 +1026,7 @@ const opened = await live.subscribe().find((event) => event.kind === "window-add
 // A pane keeps history-limit lines and a stream reader keeps a bounded buffer,
 // so output larger than either is gone before anything asks. tmux can send it
 // somewhere durable instead, and write a buffer out without reading it back.
-await pane.pipeTo("cat >> /tmp/build.log", { onlyOutput: true });
+await pane.pipeTo("cat >> /tmp/build.log");
 await pane.pipeTo();
 await server.saveBuffer("captured", "/tmp/captured.txt");
 

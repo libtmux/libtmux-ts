@@ -277,12 +277,14 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         "something stops it. The command runs on the machine tmux runs on, and does " +
         "whatever it does — this server cannot tell.",
       inputSchema: {
-        onlyOutput: z
+        toggle: z
           .boolean()
           .optional()
           .describe(
-            "Send what the program writes but not what is typed in. Default false, " +
-              "which interleaves a log with its own echo.",
+            "Start a pipe when none is open, and stop one when there is. tmux " +
+              "closes the existing pipe before honouring this, so against a pane " +
+              "somebody else is capturing it stops their capture rather than " +
+              "leaving it alone.",
           ),
         paneId: z.string(),
         shellCommand: z
@@ -293,11 +295,11 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       outputSchema: { paneId: z.string(), piping: z.boolean() },
       title: "Pipe pane output",
     },
-    async ({ onlyOutput, paneId, shellCommand }) => {
+    async ({ paneId, shellCommand, toggle }) => {
       const snapshot = await context.snapshot();
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
-      await pane.pipeTo(shellCommand, onlyOutput === undefined ? {} : { onlyOutput });
+      await pane.pipeTo(shellCommand, toggle === undefined ? {} : { toggle });
       const piping = shellCommand !== undefined;
       return ok(
         { paneId, piping },

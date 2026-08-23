@@ -1776,7 +1776,7 @@ await pane.respawn("htop", { kill: true });
 #### `Pane.pipeTo`
 
 ```ts
-pipeTo(command?: string, options?: { readonly onlyOutput?: boolean }): Promise<void>
+pipeTo(command?: string, options?: { readonly toggle?: boolean }): Promise<void>
 ```
 
 Send everything this pane writes to a shell command as well as its screen.
@@ -1787,7 +1787,7 @@ The command runs for as long as the pipe is open, which is how a long
 build is captured whole. Pass no command to stop one.
 
 ```ts
-await pane.pipeTo("cat >> /tmp/build.log", { onlyOutput: true });
+await pane.pipeTo("cat >> /tmp/build.log");
 ```
 
 #### `Pane.breakOut`

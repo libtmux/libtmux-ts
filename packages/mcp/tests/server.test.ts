@@ -1,5 +1,6 @@
 // The library's real-tmux fixture harness reaches into its internals, so it is
 // unpublished and an in-repo consumer reaches across packages for it by path.
+import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1420,9 +1421,10 @@ describe("staying out of the way", () => {
         const log = join(await makeTestDirectory("ltx-pipe-"), "captured.log");
 
         await client.callTool({
-          arguments: { onlyOutput: true, paneId, shellCommand: `cat >> ${log}` },
+          arguments: { paneId, shellCommand: `cat >> ${log}` },
           name: "pipe_pane",
         });
+
         // More than a read-back path would keep, which is the case this exists
         // for: the earliest output is gone before anything asks for it.
         await client.callTool({
@@ -1439,6 +1441,23 @@ describe("staying out of the way", () => {
         const captured = await readFile(log, "utf8");
         expect(captured).toContain("piped-0");
         expect(captured).toContain("piped-2999");
+        // toggle is tmux's -o, and tmux destroys the open pipe before honouring
+        // it — so against a pane already being piped it stops the capture and
+        // opens nothing, rather than leaving the first pipe alone.
+        const other = join(await makeTestDirectory("ltx-pipe2-"), "second.log");
+        await client.callTool({
+          arguments: { paneId, shellCommand: `cat >> ${log}` },
+          name: "pipe_pane",
+        });
+        await client.callTool({
+          arguments: { paneId, shellCommand: `cat >> ${other}`, toggle: true },
+          name: "pipe_pane",
+        });
+        await client.callTool({
+          arguments: { command: "echo after-toggle", paneId, timeoutMs: 20_000 },
+          name: "run_command",
+        });
+        expect(existsSync(other)).toBe(false);
 
         // And a buffer goes to a file without coming back through the caller.
         const out = join(await makeTestDirectory("ltx-save-"), "buffer.txt");

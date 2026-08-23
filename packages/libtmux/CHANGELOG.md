@@ -23,7 +23,8 @@ governing it live here — `history-limit` and `default-shell` among them.
 `Pane.pipeTo` sends everything a pane writes to a shell command, for as long as
 the pipe is open. A pane keeps `history-limit` lines and a stream reader keeps a
 bounded buffer, so output larger than either is gone before anything asks for
-it. Passing no command stops an open pipe.
+it. Passing no command stops an open pipe; `toggle` stops one that is open and
+starts one when none is.
 
 `Server.saveBuffer` writes a paste buffer to a file. `showBuffer` returns the
 contents through the calling process; this leaves them with tmux.
