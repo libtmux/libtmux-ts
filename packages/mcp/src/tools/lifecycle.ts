@@ -56,7 +56,23 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .string()
           .optional()
           .describe("Run this instead of a shell. The session ends when it exits."),
+        height: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Rows. Default 24, because a detached session has no client to size it."),
         startDirectory: z.string().optional(),
+        width: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "Columns. Default 80, and a program that formats to its terminal width — ps, " +
+              "git log --graph, docker ps — truncates to that at the source, where no " +
+              "capture option can recover it.",
+          ),
         windowName: z.string().optional(),
       },
       outputSchema: {
@@ -66,11 +82,13 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       },
       title: "New session",
     },
-    async ({ name, shellCommand, startDirectory, windowName }) => {
+    async ({ height, name, shellCommand, startDirectory, width, windowName }) => {
       const session = await context.tmux.newSession({
         ...(name === undefined ? {} : { name }),
         ...(shellCommand === undefined ? {} : { shellCommand }),
         ...(startDirectory === undefined ? {} : { startDirectory }),
+        ...(width === undefined ? {} : { width }),
+        ...(height === undefined ? {} : { height }),
         ...(windowName === undefined ? {} : { windowName }),
       });
       const snapshot = await context.snapshot();

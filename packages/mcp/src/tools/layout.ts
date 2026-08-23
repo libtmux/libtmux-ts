@@ -19,7 +19,7 @@ import {
   type ToolContext,
 } from "../context.js";
 import { MUTATING, offers } from "../register.js";
-import { ok } from "../results.js";
+import { fail, ok } from "../results.js";
 import {
   paneLine,
   paneView,
@@ -224,6 +224,45 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       });
       const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
       context.topologyChanged();
+      return ok({ window: view }, windowLine(view));
+    },
+  );
+
+  mcp.registerTool(
+    "resize_window",
+    {
+      annotations: MUTATING,
+      description:
+        "Set a window's size in cells. A detached window is whatever size tmux " +
+        "guessed, and a program that formats to its terminal width truncates to " +
+        "that at the source — no capture option recovers those columns, because " +
+        "they were never printed. resize_pane only redistributes space inside a " +
+        "window and cannot grow one. A client attached to the window will " +
+        "overwrite this when it next changes; window-size manual makes a size of " +
+        "your own stick.",
+      inputSchema: {
+        height: z.number().int().positive().optional(),
+        width: z.number().int().positive().optional(),
+        windowId: z.string(),
+      },
+      outputSchema: { window: windowViewSchema },
+      title: "Resize window",
+    },
+    async ({ height, width, windowId }) => {
+      if (width === undefined && height === undefined) {
+        return fail({
+          hint: "Pass width, height, or both.",
+          reason: "resize_window needs a size to set.",
+        });
+      }
+      const snapshot = await context.snapshot();
+      const window = requireWindow(snapshot, windowId);
+      if (isFailure(window)) return window;
+      await window.resize({
+        ...(height === undefined ? {} : { height }),
+        ...(width === undefined ? {} : { width }),
+      });
+      const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
       return ok({ window: view }, windowLine(view));
     },
   );

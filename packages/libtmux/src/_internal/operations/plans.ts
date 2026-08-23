@@ -36,6 +36,11 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
     ...(options.name === undefined ? [] : ["-s", options.name]),
     ...(options.windowName === undefined ? [] : ["-n", options.windowName]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
+    // A detached session has no client to size it, so tmux picks 80x24 and
+    // every program in it formats to that. This is the only place the size can
+    // be chosen at creation.
+    ...(options.width === undefined ? [] : ["-x", String(options.width)]),
+    ...(options.height === undefined ? [] : ["-y", String(options.height)]),
     // tmux reads its trailing arguments as the command; `--` keeps one that
     // begins with a dash from being taken for a flag.
     ...(options.shellCommand === undefined ? [] : ["--", options.shellCommand]),

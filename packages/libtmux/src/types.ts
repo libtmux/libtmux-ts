@@ -24,6 +24,15 @@ export interface ServerSnapshot {
 }
 
 export interface NewSessionOptions extends CommandOptions {
+  /**
+   * Rows for the session's first window.
+   *
+   * A detached session has no client to take its size from, so tmux gives it
+   * 80x24 and every program in it formats to that. Nothing can widen it
+   * afterwards except `Window.resize`, and a width-aware program has already
+   * truncated its output by then rather than wrapped it.
+   */
+  readonly height?: number;
   readonly name?: string;
   /**
    * A command for tmux to run in place of the default shell.
@@ -34,6 +43,8 @@ export interface NewSessionOptions extends CommandOptions {
    */
   readonly shellCommand?: string;
   readonly startDirectory?: string;
+  /** Columns for the session's first window. See `height`. */
+  readonly width?: number;
   readonly windowName?: string;
 }
 
