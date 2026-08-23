@@ -167,6 +167,12 @@ events without polling and without a command per read.
 tmux sends a control client no pane output until it attaches, so this
 attaches to a session; a server with no sessions has nothing to watch.
 
+Name that session with `target` when reading pane output. Structural
+notifications reach the client wherever it attached, but output arrives
+only for the attached session, and an untargeted watch lands on whichever
+session tmux considers current. With two sessions on the server that is
+silence rather than an error.
+
 ```ts
 await using events = server.watch();
 for await (const event of events) {
@@ -604,8 +610,14 @@ sourceFile(path: string): Promise<void>
 
 Run a tmux config file against this server.
 
+tmux does not expand `~` here. `source-file` joins a path that is not
+absolute to the client's working directory and globs the result, so
+`"~/.tmux.conf"` looks for a directory literally named `~`. Typing it at a
+shell works because the shell expands it first; passing it as a string
+never does.
+
 ```ts
-await server.sourceFile("~/.tmux.conf");
+await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`);
 ```
 
 #### `Server.listCommands`

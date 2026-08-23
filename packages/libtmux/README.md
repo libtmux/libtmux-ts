@@ -197,6 +197,8 @@ Clients are queryable on the same terms — `ClientWhere` alongside
 its own, so it is identified by the terminal it occupies, and a control client
 occupies none:
 
+<!-- static: names a terminal device that exists only on the reader's machine -->
+
 ```ts
 snapshot.clients.where({ controlMode: "1" });
 snapshot.clients.where({ session: { is: { name: "work" } } });
@@ -430,14 +432,19 @@ await server.newSession({ name: "ci", shellCommand: "just watch" });
 Moving and linking windows between sessions:
 
 ```ts
-await window.move({ index: 2, session: "other" });
-await window.link({ session: "other" });
-await window.unlink();
 await window.swapWith(other);
+await other.move({ index: 2, session: "other" });
+await window.link({ session: "other" }); // one window, in two sessions
+await window.unlink(); // and back to one
 await pane.breakOut();
 await pane.joinTo("other:1");
 await pane.swapWith(otherPane);
 ```
+
+A handle names a placement rather than a window, because one window can sit in
+two sessions at once. Moving a window leaves the handle pointing at a placement
+that no longer exists, so read the moved window back from a fresh snapshot
+instead of reusing the handle that moved it.
 
 Pane input and contents:
 
@@ -447,15 +454,24 @@ await pane.sendKeys("q", { enter: false, literal: true });
 await pane.sendPrefix();
 const lines = await pane.capture({ start: -100 });
 await pane.clearHistory();
-await pane.respawn("htop");
+await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
-Copy mode and the interactive choosers, which need an attached client:
+Copy mode needs no client, so a detached pane enters and leaves it like any
+other:
 
 ```ts
 await pane.enterCopyMode();
 await pane.exitCopyMode();
+```
+
+The choosers and popups do need a client, and each stays up until someone
+dismisses it:
+
+<!-- static: each opens a chooser that stays on screen until a person dismisses it -->
+
+```ts
 await pane.displayPopup("less README.md");
 await pane.displayMenu("Pane", [{ command: "kill-pane", key: "k", name: "Kill" }]);
 await pane.chooseTree();
@@ -468,7 +484,7 @@ Server-wide commands and paste buffers:
 
 ```ts
 await server.hasSession("work");
-await server.sourceFile("~/.tmux.conf");
+await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`); // tmux does not expand `~`
 await server.listCommands();
 await server.runShell("echo hi");
 await server.ifShell("[ -d /srv ]", "display-message ok");
@@ -530,7 +546,7 @@ so reaching an unmodelled command never means building your own subprocess:
 ```ts
 await server.cmd("list-keys", ["-T", "copy-mode"]);
 await pane.cmd("clock-mode");
-await window.cmd("display-panes");
+await window.cmd("rotate-window");
 await server.cmd("display-message", ["-p", "#{version}"], { target: null });
 ```
 
@@ -596,8 +612,10 @@ already open.
 A snapshot answers what is true now. `server.watch()` answers what changed, over
 one persistent `tmux -C` connection rather than a command per read.
 
+<!-- static: reads every event until the process is interrupted -->
+
 ```ts
-await using events = server.watch();
+await using events = server.watch({ target: session.id });
 await events.ready(); // attached; changes from here on are announced
 
 for await (const event of events) {
@@ -663,6 +681,8 @@ const settled = await live.waitFor((server) => server.windows.exists({ name: "bu
 For a single event rather than a state, `find` takes the first one that matches
 and gives up on a deadline:
 
+<!-- static: waits for a window the reader opens -->
+
 ```ts
 const opened = await live.subscribe().find((event) => event.kind === "window-add");
 ```
@@ -675,6 +695,8 @@ Each `subscribe()` is an independent view with its own buffer, so a loop and a
 `watch()` opens a connection for notifications only. `connect()` returns a
 server whose commands travel over that connection too, so a snapshot costs four
 writes instead of four processes:
+
+<!-- static: reads every event until the process is interrupted -->
 
 ```ts
 await using live = await server.connect();
@@ -706,7 +728,7 @@ one. Subscribe first, then act, so a line printed while you were still
 connecting is not lost:
 
 ```ts
-await using events = server.watch();
+await using events = server.watch({ target: session.id });
 await events.ready();
 
 await pane.sendKeys("make build");
@@ -718,6 +740,13 @@ for await (const event of events) {
   if (seen.includes("BUILD OK")) break;
 }
 ```
+
+Name the session to watch when reading pane output. Structural notifications —
+a window opening, a session renaming — reach a control client wherever it is
+attached, but tmux sends pane output only for the session that client attached
+to, and an untargeted `watch()` lands on whichever session tmux considers
+current. On a server with one session that is the one you meant; on a server
+with two it is silence rather than an error.
 
 A pane echoes what is typed into it, so waiting for text that also appears in
 the keys you just sent matches the echo rather than the output. Wait for
@@ -823,7 +852,8 @@ const server = new Server({ timeoutMs: 10_000 });
 
 const controller = new AbortController();
 const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
-controller.abort(); // `lines` rejects
+controller.abort();
+await lines.catch(() => undefined); // rejects with the abort reason
 ```
 
 Every operation that takes options accepts both, so the rule you learn on one
