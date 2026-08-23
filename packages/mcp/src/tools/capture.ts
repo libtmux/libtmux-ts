@@ -272,8 +272,10 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         "history-limit lines and observe keeps a bounded buffer, so a long build " +
         "outruns both and the earliest output is gone before anyone asks. " +
         "'cat >> /tmp/build.log' captures it whole and costs nothing to leave " +
-        "running. Call with no command to stop. The command runs on the machine " +
-        "tmux runs on, and does whatever it does — this server cannot tell.",
+        "running. Call with no command to stop. The pipe attaches to the pane, not " +
+        "to the process in it, so it survives respawn_pane and keeps running until " +
+        "something stops it. The command runs on the machine tmux runs on, and does " +
+        "whatever it does — this server cannot tell.",
       inputSchema: {
         onlyOutput: z
           .boolean()

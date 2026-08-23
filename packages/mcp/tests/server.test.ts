@@ -1455,6 +1455,25 @@ describe("staying out of the way", () => {
     });
   }, 120_000);
 
+  test("names every tool it offers in the README", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          // Six tools reached a release undocumented, because nothing checked.
+          // A tool an agent cannot find is one the server may as well not
+          // offer, and the README is where a person looks before installing.
+          const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+          const missing = (await client.listTools()).tools
+            .map((tool) => tool.name)
+            .filter((name) => !readme.includes(`\`${name}\``));
+          expect(missing).toEqual([]);
+        },
+        { LIBTMUX_SAFETY: "destructive" },
+      );
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(
