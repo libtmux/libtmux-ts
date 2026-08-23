@@ -149,13 +149,13 @@ jobs:
   #
   # The library's suites only: the consumers are thin over it, so a tmux
   # difference they could hit is one its own suites hit first, and running them
-  # eight times buys a repeat rather than a reading.
+  # once per release buys a repeat rather than a reading.
   tmux:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        tmux-version: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b"]
+        tmux-version: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c"]
     steps:
       - uses: actions/checkout@v7
 
