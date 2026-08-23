@@ -77,3 +77,76 @@ export async function watchWithBackpressure(server: Server): Promise<readonly st
   }
   return seen;
 }
+
+/**
+ * Read a pane's output on a connection that has asked tmux to pace it.
+ *
+ * The pacing is invisible to this loop, which is the point: `pauseAfterSeconds`
+ * changes how much tmux will hold, not what a pane's output is called. Matching
+ * on `kind === "output"` keeps working, and `age` — the milliseconds tmux held
+ * the data before writing it — arrives alongside rather than instead, so a
+ * reader can notice it falling behind before tmux pauses the pane.
+ */
+export async function readOutputUnderBackpressure(
+  server: Server,
+  marker: string,
+): Promise<{ readonly reportedAge: boolean; readonly text: string }> {
+  const session = await server.newSession({ name: "paced-output" });
+
+  await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
+  const events = live.subscribe();
+  await events.ready();
+
+  const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+
+  let text = "";
+  let reportedAge = false;
+  const printed = (async () => {
+    for await (const event of events) {
+      if (event.kind !== "output" || event.paneId !== pane.id) continue;
+      if (event.age !== undefined) reportedAge = true;
+      text += event.data;
+      if (text.includes(marker)) return;
+    }
+  })();
+
+  await pane.sendKeys(`echo ${marker}`);
+  await printed;
+  await events.close();
+
+  return { reportedAge, text };
+}
+
+/**
+ * Stop waiting, without the wait becoming a failure.
+ *
+ * A wait ends three ways and they are not the same answer. Its deadline passing
+ * and somebody closing the connection both say the thing did not happen, and
+ * answer `undefined`. The connection ending underneath it says nothing about
+ * the thing at all, and raises — so a caller never reports "it never printed
+ * the marker" about a server that went away.
+ */
+export async function stopWaiting(server: Server): Promise<{
+  readonly onClose: string;
+  readonly onDeadline: string;
+}> {
+  const session = await server.newSession({ name: "cancelled" });
+
+  const live = await server.connect({ target: session.id });
+  const deadline = live.subscribe();
+  await deadline.ready();
+  const onDeadline = await deadline
+    .find(() => false, { timeoutMs: 250 })
+    .then((event) => (event === undefined ? "undefined" : "matched"));
+
+  const closing = live.subscribe();
+  await closing.ready();
+  // Settled before anything is awaited: a rejection nobody is holding yet is an
+  // unhandled rejection rather than an answer.
+  const armed = closing
+    .find(() => false, { timeoutMs: 30_000 })
+    .then((event) => (event === undefined ? "undefined" : "matched"));
+  await live.close();
+
+  return { onClose: await armed, onDeadline };
+}

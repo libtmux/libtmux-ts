@@ -9,7 +9,13 @@ import { quickstart } from "../quickstart.js";
 import { reportPanes } from "../fields.js";
 import { buildWorkspace, removeWorkspace } from "../workspace.js";
 import { buildAndSettle, runAndWait } from "../agent.js";
-import { collectPaneOutput, watchUntilWindowOpens, watchWithBackpressure } from "../watch.js";
+import {
+  collectPaneOutput,
+  readOutputUnderBackpressure,
+  stopWaiting,
+  watchUntilWindowOpens,
+  watchWithBackpressure,
+} from "../watch.js";
 import {
   buildWorkspace as buildMcpWorkspace,
   connectAgent,
@@ -143,6 +149,41 @@ describe("documented examples", () => {
       expect(flow.length).toBe(2);
       expect(flow[0]?.startsWith("pause %")).toBe(true);
       expect(flow[1]).toBe(flow[0]?.replace("pause", "continue"));
+    });
+  }, 60_000);
+
+  test("the paced example still reads a pane's output", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      // tmux writes a paced pane's output under a different notification name,
+      // and every recipe here matches on `kind === "output"`. Asserting the
+      // pause and the resume, and never the output they pace, is what let that
+      // difference go unnoticed.
+      const read = await readOutputUnderBackpressure(server, "paced-marker");
+
+      expect(read.text).toContain("paced-marker");
+      expect(read.reportedAge).toBe(true);
+    });
+  }, 60_000);
+
+  test("the cancellation example separates giving up from breaking", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      // Both are a caller deciding to stop, so both answer rather than raise.
+      const outcome = await stopWaiting(server);
+
+      expect(outcome.onDeadline).toBe("undefined");
+      expect(outcome.onClose).toBe("undefined");
     });
   }, 60_000);
 
