@@ -97,6 +97,7 @@ jobs:
           bun run typecheck:readme
           bun run typecheck:symbols
           bun run docs:api:check
+          bun run docs:criteria:check
           bun run generate:check
           bun run parity
           bun run build

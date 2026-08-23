@@ -120,6 +120,8 @@
     "typecheck:symbols": "bun scripts/check-symbol-examples.ts",
     "docs:api": "bun scripts/generate-api-docs.ts",
     "docs:api:check": "bun scripts/generate-api-docs.ts --check",
+    "docs:criteria": "bun scripts/generate-field-docs.ts",
+    "docs:criteria:check": "bun scripts/generate-field-docs.ts --check",
     "test:coverage": "bun run build && bun scripts/check-coverage.ts"
   },
   "devDependencies": {

@@ -229,6 +229,10 @@ selection.exists({ name: "work" });
 selection.count({ name: "work" });
 ```
 
+Every field each model accepts, and the operators that go with them, are in the
+[criteria reference](docs/criteria.md) — generated from the same table the
+compiler matches against, so it lists what `.where()` actually takes.
+
 ## Relations
 
 Relations are plain properties, because the data was already acquired. Reading
