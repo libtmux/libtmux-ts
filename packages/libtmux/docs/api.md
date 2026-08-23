@@ -400,14 +400,18 @@ await server.unsetGlobalOption("session", "history-limit");
 #### `Server.showHooks`
 
 ```ts
-showHooks(): Promise<ReadonlyMap<string, string>>
+showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
 ```
 
 Every global hook tmux currently reports.
 
+A hook is an array of commands, keyed by the name `setHook` takes, so
+what was set reads back under the name it was set with. tmux prints each
+element as `name[0]`, which composes with neither of the writers.
+
 ```ts
 const hooks = await server.showHooks();
-hooks.get("session-created");
+hooks.get("session-created")?.[0];
 ```
 
 #### `Server.setHook`
@@ -929,14 +933,18 @@ await session.unsetOption("status");
 #### `Session.showHooks`
 
 ```ts
-showHooks(): Promise<ReadonlyMap<string, string>>
+showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
 ```
 
 Every hook this session reports.
 
+A hook is an array of commands, keyed by the name `setHook` takes, so
+what was set reads back under the name it was set with. tmux prints each
+element as `name[0]`, which composes with neither of the writers.
+
 ```ts
 const hooks = await session.showHooks();
-hooks.get("window-linked");
+hooks.get("window-linked")?.[0];
 ```
 
 #### `Session.setHook`

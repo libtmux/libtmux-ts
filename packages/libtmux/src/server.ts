@@ -689,12 +689,16 @@ export class Server {
   /**
    * Every global hook tmux currently reports.
    *
+   * A hook is an array of commands, keyed by the name `setHook` takes, so
+   * what was set reads back under the name it was set with. tmux prints each
+   * element as `name[0]`, which composes with neither of the writers.
+   *
    * ```ts
    * const hooks = await server.showHooks();
-   * hooks.get("session-created");
+   * hooks.get("session-created")?.[0];
    * ```
    */
-  showHooks(): Promise<ReadonlyMap<string, string>> {
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
     return showHooks(runtimeForServer(this), "server");
   }
 

@@ -116,21 +116,41 @@ describe("option reads", () => {
       const server = serverFor(fixture);
       const session = (await server.snapshot()).sessions.one();
 
+      // Read back under the name it was set with: tmux prints the element as
+      // `after-new-window[0]`, and keyed by that nothing here composes.
       await session.setHook("after-new-window", "display-message hooked");
-      const sessionHooks = await session.showHooks();
-      expect([...sessionHooks.keys()].some((name) => name.startsWith("after-new-window"))).toBe(
-        true,
-      );
+      expect((await session.showHooks()).get("after-new-window")).toEqual([
+        "display-message hooked",
+      ]);
 
       await server.setHook("after-kill-pane", "display-message global");
-      const globalHooks = await server.showHooks();
-      expect([...globalHooks.keys()].some((name) => name.startsWith("after-kill-pane"))).toBe(true);
+      expect((await server.showHooks()).get("after-kill-pane")).toEqual(["display-message global"]);
 
       await session.unsetHook("after-new-window");
-      const afterUnset = await session.showHooks();
-      expect([...afterUnset.keys()].some((name) => name.startsWith("after-new-window"))).toBe(
-        false,
-      );
+      expect((await session.showHooks()).has("after-new-window")).toBe(false);
+    });
+  }, 30_000);
+
+  test("reports a hook tmux stores as several commands in its own order", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+
+      // tmux appends with `-a`, which the typed writer does not reach; a hook
+      // built that way is still one hook, and reading it must say so.
+      await session.setHook("after-new-window", "display-message first");
+      await server.cmd("set-hook", [
+        "-a",
+        "-t",
+        session.id,
+        "after-new-window",
+        "display-message second",
+      ]);
+
+      expect((await session.showHooks()).get("after-new-window")).toEqual([
+        "display-message first",
+        "display-message second",
+      ]);
     });
   }, 30_000);
 

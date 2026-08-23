@@ -119,12 +119,16 @@ export class Session {
   /**
    * Every hook this session reports.
    *
+   * A hook is an array of commands, keyed by the name `setHook` takes, so
+   * what was set reads back under the name it was set with. tmux prints each
+   * element as `name[0]`, which composes with neither of the writers.
+   *
    * ```ts
    * const hooks = await session.showHooks();
-   * hooks.get("window-linked");
+   * hooks.get("window-linked")?.[0];
    * ```
    */
-  showHooks(): Promise<ReadonlyMap<string, string>> {
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
     return showHooks(runtimeForHandle(this), "session", this.id);
   }
 
