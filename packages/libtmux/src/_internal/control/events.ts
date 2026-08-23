@@ -10,8 +10,29 @@ import type { TmuxEvent } from "../../types.js";
  * request with somebody else's reply.
  */
 export type ControlBlockBoundary =
-  | { readonly fromClient: boolean; readonly kind: "block-begin" }
-  | { readonly failed: boolean; readonly fromClient: boolean; readonly kind: "block-end" };
+  | { readonly fromClient: boolean; readonly guard: GuardIdentity; readonly kind: "block-begin" }
+  | {
+      readonly failed: boolean;
+      readonly fromClient: boolean;
+      readonly guard: GuardIdentity;
+      readonly kind: "block-end";
+    };
+
+/**
+ * What ties a guard to the command it fences.
+ *
+ * The command number is the only field naming which command a guard belongs to,
+ * and pairing on it is what stops a command's own output from closing its block
+ * — tmux writes that output through `server_client_print` with no escaping of a
+ * leading `%`, unlike a `%output` payload.
+ *
+ * Compared as text, never parsed: tmux prints the time as `%ld`, whose range
+ * this side cannot rely on, and equality is all a pairing needs.
+ */
+export interface GuardIdentity {
+  readonly number: string;
+  readonly time: string;
+}
 
 const BACKSLASH = 0x5c;
 const ZERO = 0x30;
@@ -87,9 +108,16 @@ export type OutputDecoder = (paneId: string, payload: Uint8Array) => string;
 
 const decodeWhole: OutputDecoder = (_paneId, payload) => decoder.decode(payload);
 
-/** A guard line is `<time> <command number> <flags>`; flags 1 means our command. */
-function guardFromClient(rest: string): boolean {
-  return rest.split(" ")[2] === "1";
+/**
+ * Read `<time> <command number> <flags>`; flags 1 means this client's command.
+ *
+ * Undefined for a line too short to be a guard, which makes it body rather than
+ * a boundary. Trailing fields are ignored so a later tmux may add one.
+ */
+function parseGuard(rest: string): { fromClient: boolean; guard: GuardIdentity } | undefined {
+  const [time, number, flags] = rest.split(" ");
+  if (time === undefined || number === undefined || flags === undefined) return undefined;
+  return { fromClient: flags === "1", guard: { number, time } };
 }
 
 function splitArguments(rest: string, limit: number): readonly string[] {
@@ -121,12 +149,22 @@ export function parseControlLine(
   const rest = space === -1 ? "" : decoder.decode(line.subarray(space + 1));
 
   switch (name) {
-    case "begin":
-      return { fromClient: guardFromClient(rest), kind: "block-begin" };
+    case "begin": {
+      const parsed = parseGuard(rest);
+      if (parsed === undefined) break;
+      return { fromClient: parsed.fromClient, guard: parsed.guard, kind: "block-begin" };
+    }
     case "end":
-      return { failed: false, fromClient: guardFromClient(rest), kind: "block-end" };
-    case "error":
-      return { failed: true, fromClient: guardFromClient(rest), kind: "block-end" };
+    case "error": {
+      const parsed = parseGuard(rest);
+      if (parsed === undefined) break;
+      return {
+        failed: name === "error",
+        fromClient: parsed.fromClient,
+        guard: parsed.guard,
+        kind: "block-end",
+      };
+    }
     case "output": {
       // The payload is raw bytes, so it is sliced before decoding.
       const payloadStart = line.indexOf(0x20, space + 1);

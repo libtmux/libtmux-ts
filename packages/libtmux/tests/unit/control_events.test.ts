@@ -25,15 +25,24 @@ describe("control-mode line parsing", () => {
   });
 
   test("reports the framing tmux wraps around a command response", () => {
-    expect(parse("%begin 1700000000 1 1")).toEqual({ fromClient: true, kind: "block-begin" });
+    // The command number is carried because it is what says which command a
+    // guard belongs to, and a printed guard cannot know it.
+    const guard = { number: "1", time: "1700000000" };
+    expect(parse("%begin 1700000000 1 1")).toEqual({
+      fromClient: true,
+      guard,
+      kind: "block-begin",
+    });
     expect(parse("%end 1700000000 1 1")).toEqual({
       failed: false,
       fromClient: true,
+      guard,
       kind: "block-end",
     });
     expect(parse("%error 1700000000 1 1")).toEqual({
       failed: true,
       fromClient: true,
+      guard,
       kind: "block-end",
     });
   });
@@ -41,12 +50,27 @@ describe("control-mode line parsing", () => {
   test("marks a block tmux raised for itself, which attaching emits", () => {
     // Binding one of these to a pending command answers the caller's first
     // request with the attach's empty reply.
-    expect(parse("%begin 1700000000 347 0")).toEqual({ fromClient: false, kind: "block-begin" });
+    const guard = { number: "347", time: "1700000000" };
+    expect(parse("%begin 1700000000 347 0")).toEqual({
+      fromClient: false,
+      guard,
+      kind: "block-begin",
+    });
     expect(parse("%end 1700000000 347 0")).toEqual({
       failed: false,
       fromClient: false,
+      guard,
       kind: "block-end",
     });
+  });
+
+  test("reads no boundary from a line too short to carry a guard", () => {
+    // A command whose output prints a bare `%end` has closed nothing: without
+    // the time and command number there is nothing to pair it against.
+    for (const line of ["%end", "%end 1700000000", "%begin 1700000000 1"]) {
+      const parsed = parse(line);
+      expect(parsed === undefined || parsed.kind === "unknown").toBe(true);
+    }
   });
 
   test("parses each notification into its own shape", () => {

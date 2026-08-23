@@ -19,6 +19,7 @@ const SUITES: readonly string[] = [
   "tests/integration/graph.test.ts",
   "tests/integration/contract.test.ts",
   "tests/integration/control_bounds.test.ts",
+  "tests/integration/control_forgery.test.ts",
   "tests/integration/acquire.test.ts",
   "tests/integration/snapshot.test.ts",
   "tests/integration/options.test.ts",
