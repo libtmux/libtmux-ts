@@ -14,17 +14,9 @@ import { fileURLToPath } from "node:url";
  * next: each snippet has to stand on its own, the way a reader will paste it.
  */
 
+import { workspaceDocuments } from "./workspace_documents.js";
+
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const readmes = [
-  "README.md",
-  "examples/README.md",
-  "packages/mcp/README.md",
-  "packages/workspace/README.md",
-  // Generated, and its examples were compiled by nothing: the package's own
-  // gate reads its README, and this one read everything above the package. A
-  // reference that teaches a call is as wrong as a README that does.
-  "packages/libtmux/docs/criteria.md",
-];
 
 interface Block {
   readonly code: string;
@@ -49,7 +41,7 @@ function fencedBlocks(markdown: string, file: string): readonly Block[] {
 }
 
 const sources = await Promise.all(
-  readmes.map(async (file) => ({
+  workspaceDocuments.map(async (file) => ({
     file,
     markdown: await Bun.file(join(repositoryRoot, file)).text(),
   })),
@@ -201,5 +193,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `README examples typecheck: ${String(blocks.length)} blocks across ${String(readmes.length)} files\n`,
+  `README examples typecheck: ${String(blocks.length)} blocks across ${String(workspaceDocuments.length)} files\n`,
 );

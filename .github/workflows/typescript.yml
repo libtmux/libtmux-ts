@@ -147,6 +147,14 @@ jobs:
         working-directory: packages/workspace
         run: bun run typecheck && bun run test && bun run test:package
 
+      # The recipes above the library package, which reach across it to the
+      # workspace builder and the MCP server. Compiled before now and never
+      # run, and they are the ones a reader meets first. After those gates
+      # because each runs from inside the package that owns its document, so
+      # what its imports mean is what a reader's would mean — including the
+      # emitted packages the two steps above just built.
+      - run: bun run test:docs
+
       # One step for all of them. Each example is a package of its own now, and
       # the umbrella typechecks and runs every sibling — so adding an example
       # does not mean remembering to add a step here.

@@ -133,8 +133,24 @@ export function fencedBlocks(text: string, origin: (line: number) => string): re
   const lines = text.split("\n");
   let open: { code: string[]; coverage?: Coverage; line: number } | undefined;
   let pending: Coverage | undefined;
+  // A fence that is not `ts` is somebody else's: shell transcripts, YAML, and
+  // — the one that bit — a block showing what a coverage marker looks like.
+  // Its contents are prose here, so nothing inside it is read as a marker or
+  // as the start of an example.
+  let skipping = false;
   for (const [index, line] of lines.entries()) {
+    if (skipping) {
+      if (line.trim() === "```") skipping = false;
+      continue;
+    }
     if (open === undefined) {
+      // Nothing is open, so a fence here opens one. Anything but `ts` belongs
+      // to somebody else — a shell transcript, YAML, or a block showing what a
+      // coverage marker looks like, whose contents are prose.
+      if (line.trim().startsWith("```") && line.trim() !== "```ts") {
+        skipping = true;
+        continue;
+      }
       const marked = /^<!--\s*(?<kind>runs|static):\s*(?<value>.+?)\s*-->$/u.exec(line.trim());
       if (marked !== null) {
         const value = marked.groups?.["value"] ?? "";
