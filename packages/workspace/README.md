@@ -70,18 +70,20 @@ await applyWorkspace(server, {
 
 Config is [tmuxp](https://tmuxp.git-pull.com/)-shaped, so the field names are
 the ones people already know — `session_name`, `windows`, `panes`,
-`shell_command`, `start_directory`, `layout`, `focus`, `options`.
+`shell_command`, `shell_command_before`, `start_directory`, `layout`, `focus`,
+`options`.
 
-| Field             | On                      | Effect                                        |
-| ----------------- | ----------------------- | --------------------------------------------- |
-| `session_name`    | workspace               | The session to build or converge              |
-| `start_directory` | workspace, window, pane | Working directory, inherited downward         |
-| `options`         | workspace, window       | tmux options set on that scope                |
-| `window_name`     | window                  | Renamed if it differs                         |
-| `layout`          | window                  | Applied once the pane count settles           |
-| `panes`           | window                  | A string is shorthand for `{ shell_command }` |
-| `shell_command`   | pane                    | One command or a list, sent in order          |
-| `focus`           | window, pane            | Selected last, so the final one wins          |
+| Field                  | On                      | Effect                                          |
+| ---------------------- | ----------------------- | ----------------------------------------------- |
+| `session_name`         | workspace               | The session to build or converge                |
+| `start_directory`      | workspace, window, pane | Working directory, inherited downward           |
+| `options`              | workspace, window       | tmux options set on that scope                  |
+| `window_name`          | window                  | Renamed if it differs                           |
+| `layout`               | window                  | Applied once the pane count settles             |
+| `panes`                | window                  | A string is shorthand for `{ shell_command }`   |
+| `shell_command`        | pane                    | One command or a list, sent in order            |
+| `shell_command_before` | window                  | Run in every pane of the window, before its own |
+| `focus`                | window, pane            | Selected last, so the final one wins            |
 
 Because the config is data, it can come from a YAML file, an HTTP request, or a
 literal. `parseWorkspace` validates one you already parsed; `parseWorkspaceYaml`
