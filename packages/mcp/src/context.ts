@@ -41,14 +41,25 @@ export interface ToolContext {
  * did, against a server that was running the whole time.
  */
 export function describeUnreachable(tmux: Server, reason: string): string {
-  const configured =
-    tmux.socketPath !== undefined
-      ? `LIBTMUX_SOCKET_PATH=${tmux.socketPath}`
-      : tmux.socketName !== undefined
-        ? `LIBTMUX_SOCKET_NAME=${tmux.socketName}`
-        : "no socket configured, so tmux's default was used";
+  // Name the knob that is actually wrong. A bad executable and a bad socket
+  // both surface as "cannot reach tmux", and sending an operator to check the
+  // socket when the binary is missing sends them to a healthy thing — this
+  // text exists because nobody but a human can fix a launch-time setting, so
+  // pointing at the wrong one wastes the only channel that could.
+  const configured = [
+    ...(tmux.tmuxBin === "tmux" ? [] : [`LIBTMUX_TMUX_BIN=${tmux.tmuxBin}`]),
+    ...(tmux.socketPath === undefined
+      ? tmux.socketName === undefined
+        ? []
+        : [`LIBTMUX_SOCKET_NAME=${tmux.socketName}`]
+      : [`LIBTMUX_SOCKET_PATH=${tmux.socketPath}`]),
+  ];
+  const launched =
+    configured.length === 0
+      ? "nothing configured, so tmux's own defaults were used"
+      : configured.join(" and ");
   return (
-    `${reason}\n\nThis server was launched with ${configured}. That is set by whoever ` +
+    `${reason}\n\nThis server was launched with ${launched}. That is set by whoever ` +
     `configured this MCP server, not by you — report it rather than retrying. ` +
     `Start a server there with new_session if creating one is what was wanted.`
   );
@@ -57,7 +68,14 @@ export function describeUnreachable(tmux: Server, reason: string): string {
 function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
   return work.catch((error: unknown) => {
     const reason = error instanceof Error ? error.message : String(error);
-    if (!reason.startsWith("cannot reach tmux")) throw error;
+    // A version probe that comes back with nothing is the same class of
+    // problem: something was configured that is not a usable tmux, and no
+    // amount of retrying by an agent will change it. It reached here without
+    // the guidance because it does not share the wording.
+    const unreachable =
+      reason.startsWith("cannot reach tmux") ||
+      reason.includes("version probe returned no version");
+    if (!unreachable) throw error;
     throw new Error(describeUnreachable(tmux, reason), { cause: error });
   });
 }

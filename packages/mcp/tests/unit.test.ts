@@ -225,9 +225,10 @@ describe("unreachable server", () => {
     expect(describeUnreachable(new Server({ socketName: "agent" }), "cannot reach tmux")).toContain(
       "LIBTMUX_SOCKET_NAME=agent",
     );
-    expect(describeUnreachable(new Server(), "cannot reach tmux")).toContain(
-      "no socket configured",
-    );
+    // Nothing set at all, so there is no knob to send anyone to. The wording
+    // covers the executable as well as the socket now, since a bad binary and
+    // a bad socket reach here identically.
+    expect(describeUnreachable(new Server(), "cannot reach tmux")).toContain("nothing configured");
   });
 });
 
@@ -420,5 +421,30 @@ describe("tail lifetime", () => {
 
     tail.read(undefined);
     expect(tail.idleMs(Date.now())).toBeLessThan(50);
+  });
+});
+
+describe("unreachable guidance", () => {
+  test("names the executable when that is what was configured", () => {
+    // A bad binary and a bad socket both surface as "cannot reach tmux". This
+    // text is the only channel to the human who can fix either, so naming the
+    // healthy one sends them to check something that is fine.
+    const said = describeUnreachable(
+      new Server({ socketName: "fine", tmuxBin: "/nonexistent/tmux" }),
+      "cannot reach tmux: could not run /nonexistent/tmux (ENOENT)",
+    );
+    expect(said).toContain("LIBTMUX_TMUX_BIN=/nonexistent/tmux");
+    expect(said).toContain("LIBTMUX_SOCKET_NAME=fine");
+  });
+
+  test("says nothing about an executable nobody chose", () => {
+    // The quiet half: naming a default nobody set is noise, and would make the
+    // line say something was configured when it was not.
+    const said = describeUnreachable(
+      new Server({ socketName: "fine" }),
+      "cannot reach tmux: error connecting to /tmp/tmux-1000/fine",
+    );
+    expect(said).not.toContain("LIBTMUX_TMUX_BIN");
+    expect(said).toContain("LIBTMUX_SOCKET_NAME=fine");
   });
 });
