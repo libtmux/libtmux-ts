@@ -102,11 +102,16 @@ function parseCapture(value: unknown): GraphCapture {
     return invalidNormalization("graph capture capability fingerprint must be a nonempty string");
   }
   const daemon = parseDaemon(readProperty(value, "daemon", "graph capture"));
+  const tmuxVersion = readProperty(value, "tmuxVersion", "graph capture");
+  if (tmuxVersion !== undefined && typeof tmuxVersion !== "string") {
+    return invalidNormalization("graph capture tmux version must be a string");
+  }
   return Object.freeze({
     connection,
     ...(daemon === undefined ? {} : { daemon }),
     epoch,
     capabilityFingerprint,
+    ...(tmuxVersion === undefined ? {} : { tmuxVersion }),
   });
 }
 

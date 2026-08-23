@@ -1204,6 +1204,10 @@ Every error extends `LibTmuxException`. A query that matches nothing raises
 still unmet raises `WaitTimeout`, which is worth catching by name: it says the
 state never arrived, where a `LibTmuxException` from the same call says only
 that the connection ended and nothing about the condition.
+A criterion naming a field newer than the tmux that answered raises
+`VersionTooLow` rather than matching nothing — the error names the field, the
+release that has it, and the release running, because "no pane has this" and
+"your tmux has never heard of this" are different answers.
 `ObjectDoesNotExist`, `MultipleObjectsReturned`, and `DeprecatedError` exist for
 compatibility with the Python library's names.
 

@@ -147,6 +147,7 @@ describe("package contract", () => {
       "TmuxCommandError",
       "TmuxServerRestarted",
       "TmuxTransportError",
+      "VersionTooLow",
       "WaitTimeout",
       "Window",
       "WindowDirection",

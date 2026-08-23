@@ -33,6 +33,14 @@ export interface GraphCapture {
   /** Which daemon answered, when it had anything to list. */
   readonly daemon?: DaemonIdentity;
   readonly epoch: DaemonEpoch;
+  /**
+   * The tmux that answered, so a query can be told a field is newer than it.
+   *
+   * Optional because a graph normalized from stored bytes predates this and
+   * cannot know — a query against one of those is answered the way it always
+   * was rather than refused on a guess.
+   */
+  readonly tmuxVersion?: string;
 }
 
 export interface CapturedRowSet {

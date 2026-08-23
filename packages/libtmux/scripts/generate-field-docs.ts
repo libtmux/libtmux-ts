@@ -36,8 +36,20 @@ const TITLES: Readonly<Record<WhereModel, string>> = {
 const SCALAR_OPERATORS: readonly string[] = [...scalarOperatorNames];
 
 function renderModel(model: WhereModel): readonly string[] {
+  // The release is shown only where it is not the floor, so the common case
+  // stays scannable and the exception is the thing that catches the eye.
+  const floor = WHERE_FIELDS_V1[model].reduce(
+    (lowest, field) => (field.since < lowest ? field.since : lowest),
+    WHERE_FIELDS_V1[model][0]?.since ?? "3.2a",
+  );
   const fields = WHERE_FIELDS_V1[model]
-    .map((field) => field.criteriaName)
+    .map((field) =>
+      // The release sits outside the code span: inside it, `name (3.7+)` reads
+      // as the key a caller should write.
+      field.since === floor
+        ? `\`${field.criteriaName}\``
+        : `\`${field.criteriaName}\` (${field.since}+)`,
+    )
     .toSorted((left, right) => (left < right ? -1 : 1));
   const relations = WHERE_RELATIONS_V1[model]
     .map(
@@ -49,7 +61,7 @@ function renderModel(model: WhereModel): readonly string[] {
     .toSorted((left, right) => (left < right ? -1 : 1));
 
   const lines = [`## ${TITLES[model]}`, ""];
-  lines.push(fields.map((name) => `\`${name}\``).join(" · "), "");
+  lines.push(fields.join(" · "), "");
   if (relations.length > 0) {
     lines.push("Relations:", "");
     lines.push(...relations.map((relation) => `- ${relation}`), "");
@@ -69,12 +81,13 @@ function render(): string {
     'snapshot.panes.where({ currentCommand: { startsWith: "v" } });',
     "```",
     "",
-    "The set is the one this library models, which tracks the Python libtmux it",
-    "ports rather than everything a given tmux can format. tmux gains formats",
-    "between releases and the library supports a range of them, so a field tmux",
-    "has may not be listed here — `cursor_shape` and `pane_unseen_changes` are",
-    "real formats in tmux 3.7 and are not criteria. Read one with",
-    "`displayMessage`, which expands any format tmux knows:",
+    "A field marked with a release arrived in that tmux. Filtering on one an",
+    "older server predates raises `VersionTooLow` naming the field, the release",
+    "that has it, and the release running — rather than matching nothing, which",
+    'reads as "no member has this" and is a different answer.',
+    "",
+    "For a tmux format this library does not model, `displayMessage` expands any",
+    "format tmux knows:",
     "",
     "```ts",
     'await snapshot.panes.one().displayMessage("#{cursor_shape}");',

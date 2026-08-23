@@ -8,12 +8,13 @@ value to match exactly or an object of operators.
 snapshot.panes.where({ currentCommand: { startsWith: "v" } });
 ```
 
-The set is the one this library models, which tracks the Python libtmux it
-ports rather than everything a given tmux can format. tmux gains formats
-between releases and the library supports a range of them, so a field tmux
-has may not be listed here — `cursor_shape` and `pane_unseen_changes` are
-real formats in tmux 3.7 and are not criteria. Read one with
-`displayMessage`, which expands any format tmux knows:
+A field marked with a release arrived in that tmux. Filtering on one an
+older server predates raises `VersionTooLow` naming the field, the release
+that has it, and the release running — rather than matching nothing, which
+reads as "no member has this" and is a different answer.
+
+For a tmux format this library does not model, `displayMessage` expands any
+format tmux knows:
 
 ```ts
 await snapshot.panes.one().displayMessage("#{cursor_shape}");
@@ -40,7 +41,7 @@ match.
 
 ## Session
 
-`activeWindowIndex` · `activity` · `alerts` · `attached` · `attachedList` · `created` · `format` · `group` · `groupAttached` · `groupAttachedList` · `groupList` · `groupManyAttached` · `groupSize` · `grouped` · `id` · `lastAttached` · `lastWindowIndex` · `manyAttached` · `marked` · `name` · `path` · `sessionWindows` · `stack`
+`activeWindowIndex` · `activity` · `alerts` · `attachedList` · `attached` · `created` · `format` · `groupAttachedList` · `groupAttached` · `groupList` · `groupManyAttached` · `groupSize` · `group` · `grouped` · `id` · `lastAttached` · `lastWindowIndex` · `manyAttached` · `marked` · `name` · `path` · `sessionWindows` · `stack`
 
 Relations:
 
@@ -51,7 +52,7 @@ Relations:
 
 ## Window
 
-`active` · `activeClients` · `activeClientsList` · `activeSessions` · `activeSessionsList` · `activity` · `activityFlag` · `bellFlag` · `bigger` · `cellHeight` · `cellWidth` · `endFlag` · `flags` · `format` · `height` · `id` · `index` · `lastFlag` · `layout` · `linked` · `linkedSessionsList` · `markedFlag` · `name` · `offsetX` · `offsetY` · `rawFlags` · `silenceFlag` · `stackIndex` · `startFlag` · `visibleLayout` · `width` · `windowLinkedSessions` · `windowPanes` · `zoomedFlag`
+`activeClientsList` · `activeClients` · `activeSessionsList` · `activeSessions` · `active` · `activityFlag` · `activity` · `bellFlag` · `bigger` · `cellHeight` · `cellWidth` · `endFlag` · `flags` · `format` · `height` · `id` · `index` · `lastFlag` · `layout` · `linkedSessionsList` · `linked` · `markedFlag` · `name` · `offsetX` · `offsetY` · `rawFlags` · `silenceFlag` · `stackIndex` · `startFlag` · `visibleLayout` · `width` · `windowLinkedSessions` · `windowPanes` · `zoomedFlag`
 
 Relations:
 
@@ -62,7 +63,7 @@ Relations:
 
 ## Pane
 
-`active` · `alternateSavedX` · `alternateSavedY` · `atBottom` · `atLeft` · `atRight` · `atTop` · `bg` · `bottom` · `bracketPasteFlag` · `currentCommand` · `currentPath` · `cursorCharacter` · `cursorFlag` · `cursorX` · `cursorY` · `dead` · `deadSignal` · `deadStatus` · `deadTime` · `fg` · `flags` · `floatingFlag` · `format` · `height` · `historyBytes` · `historyLimit` · `historySize` · `id` · `inMode` · `index` · `inputOff` · `insertFlag` · `keypadCursorFlag` · `keypadFlag` · `last` · `left` · `marked` · `markedSet` · `mode` · `mouseAllFlag` · `mouseAnyFlag` · `mouseButtonFlag` · `mouseSgrFlag` · `mouseStandardFlag` · `originFlag` · `path` · `pbProgress` · `pbState` · `pid` · `pipe` · `pipePid` · `right` · `scrollRegionLower` · `scrollRegionUpper` · `searchString` · `startCommand` · `startPath` · `synchronized` · `synchronizedOutputFlag` · `tabs` · `title` · `top` · `tty` · `width` · `wrapFlag` · `x` · `y` · `z` · `zoomedFlag`
+`active` · `alternateSavedX` · `alternateSavedY` · `atBottom` · `atLeft` · `atRight` · `atTop` · `bg` · `bottom` · `bracketPasteFlag` (3.7+) · `currentCommand` · `currentPath` · `cursorCharacter` · `cursorFlag` · `cursorX` · `cursorY` · `deadSignal` (3.3+) · `deadStatus` · `deadTime` (3.3+) · `dead` · `fg` · `flags` (3.7+) · `floatingFlag` (3.7+) · `format` · `height` · `historyBytes` · `historyLimit` · `historySize` · `id` · `inMode` · `index` · `inputOff` · `insertFlag` · `keypadCursorFlag` · `keypadFlag` · `last` · `left` · `markedSet` · `marked` · `mode` · `mouseAllFlag` · `mouseAnyFlag` · `mouseButtonFlag` · `mouseSgrFlag` · `mouseStandardFlag` · `originFlag` · `path` · `pbProgress` (3.7+) · `pbState` (3.7+) · `pid` · `pipePid` (3.7+) · `pipe` · `right` · `scrollRegionLower` · `scrollRegionUpper` · `searchString` · `startCommand` · `startPath` · `synchronizedOutputFlag` (3.7+) · `synchronized` · `tabs` · `title` · `top` · `tty` · `width` · `wrapFlag` · `x` (3.7+) · `y` (3.7+) · `z` (3.7+) · `zoomedFlag` (3.7+)
 
 Relations:
 

@@ -93,6 +93,7 @@ export async function acquireServerGraph(
       connection: capabilities.connectionAlias,
       ...(daemon === undefined ? {} : { daemon }),
       epoch: capabilities.daemonEpoch,
+      tmuxVersion: capabilities.rawVersion,
     },
     sources: [
       { listCommand: "list-sessions", rows: sessions, source: createGraphSourceId("sessions") },

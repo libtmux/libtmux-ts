@@ -82,6 +82,7 @@ export {
   TmuxServerRestarted,
   TmuxTransportError,
   type TmuxTransportErrorKind,
+  VersionTooLow,
   WaitTimeout,
 } from "./exc.js";
 export type { DeliveryStatus } from "./common.js";

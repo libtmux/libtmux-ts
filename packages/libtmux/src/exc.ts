@@ -275,7 +275,39 @@ export class TmuxObjectDoesNotExist extends ObjectDoesNotExist {
   }
 }
 
-export class VersionTooLow extends LibTmuxException {}
+/**
+ * A field the server is too old to have.
+ *
+ * Constructed bare for parity with the Python library, which has this name and
+ * throws it with no message. Constructed with its parts by this package, so a
+ * caller filtering on a field their tmux predates is told which field, which
+ * release has it, and which release answered — rather than being handed an
+ * empty result that reads as "no object has this".
+ */
+export class VersionTooLow extends LibTmuxException {
+  /** The criteria key the caller wrote, when this came from a query. */
+  readonly criteriaName?: string;
+  /** The tmux that answered, when this came from a query. */
+  readonly serverVersion?: string;
+  /** The first tmux that has the field, when this came from a query. */
+  readonly since?: string;
+
+  constructor(options?: {
+    readonly criteriaName: string;
+    readonly serverVersion: string;
+    readonly since: string;
+  }) {
+    super(
+      options === undefined
+        ? ""
+        : `${options.criteriaName} needs tmux ${options.since}; this server is ${options.serverVersion}`,
+    );
+    if (options === undefined) return;
+    this.criteriaName = options.criteriaName;
+    this.serverVersion = options.serverVersion;
+    this.since = options.since;
+  }
+}
 
 export class BadSessionName extends LibTmuxException {
   constructor(reason: string, session_name?: string) {

@@ -2302,6 +2302,13 @@ Criteria are data: equality, string operators, `AND`/`OR`/`NOT`, regular
 expressions expressed as `{ pattern, flags }`, and quantifiers over
 relations. Matching is case-sensitive unless a criterion says otherwise.
 
+@throws VersionTooLow when a criterion names a field newer than the tmux
+that answered. Such a field is not absent from the data, it is absent from
+that release, and matching it against nothing would answer "no member has
+this" — which is a different statement and the one a caller would act on.
+The error names the field, the release that has it, and the release
+running.
+
 ```ts
 snapshot.panes.where({ currentCommand: "vim" });
 snapshot.windows.where({ name: { startsWith: "log" } });

@@ -1,12 +1,22 @@
 import { types as nodeTypes } from "node:util";
 
 import { Client } from "../../client.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../exc.js";
+import {
+  MultipleMatchesError,
+  NoMatchError,
+  QueryValidationError,
+  VersionTooLow,
+} from "../../exc.js";
 import { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
 import { Session } from "../../session.js";
 import { Window } from "../../window.js";
-import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
+import {
+  WHERE_FIELDS_V1,
+  WHERE_RELATIONS_V1,
+  type WhereModel,
+} from "../../_generated/where_fields.js";
+import { compareTmuxVersions, parseTmuxVersion } from "../runtime/tmux_version.js";
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
 import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
@@ -385,7 +395,13 @@ class SelectionImpl<Model> implements Selection<Model> {
 
   #compile(criteria: unknown): CompiledWhere | null {
     if (criteria === undefined) return null;
-    return compileWhere(this.#state.kind, criteria);
+    const compiled = compileWhere(this.#state.kind, criteria);
+    refuseFieldsNewerThanServer(
+      compiled.model,
+      compiled.query,
+      this.#state.projection.capture.tmuxVersion,
+    );
+    return compiled;
   }
 
   #matchingEntries(criteria: unknown): readonly SelectionEntry<Model>[] {
@@ -436,6 +452,59 @@ class SelectionImpl<Model> implements Selection<Model> {
 
 Object.freeze(SelectionImpl.prototype);
 Object.freeze(SelectionImpl);
+
+/**
+ * Refuse a query naming a field the server is too old to have.
+ *
+ * tmux answers for the fields its release knows and says nothing about the
+ * rest, so a criterion on a newer field matched against an older server
+ * matches nothing — which is indistinguishable from "no object has this", and
+ * is a different statement. The typed row already draws that line: it answers
+ * `null` for a field the server does not have, and `false` for one it has and
+ * is off. This is the same line, drawn for queries.
+ *
+ * Checked once per query rather than once per candidate, and against the
+ * version the graph recorded when it was acquired — so a stored query replayed
+ * against an old server is answered the same way an inline one is.
+ */
+function refuseFieldsNewerThanServer(
+  model: WhereModel,
+  query: Readonly<Record<string, unknown>>,
+  serverVersion: string | undefined,
+): void {
+  // A graph normalized from stored bytes predates this and cannot say which
+  // tmux answered. Refusing on a guess would be worse than the silence.
+  if (serverVersion === undefined) return;
+  const actual = parseTmuxVersion(serverVersion);
+
+  const walk = (scope: WhereModel, node: Readonly<Record<string, unknown>>): void => {
+    const relations = WHERE_RELATIONS_V1[scope];
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "AND" || key === "OR" || key === "NOT") {
+        for (const branch of value as readonly Readonly<Record<string, unknown>>[]) {
+          walk(scope, branch);
+        }
+        continue;
+      }
+      const relation = relations.find((candidate) => candidate.name === key);
+      if (relation !== undefined) {
+        for (const quantified of Object.values(value as Readonly<Record<string, unknown>>)) {
+          walk(relation.targetModel, quantified as Readonly<Record<string, unknown>>);
+        }
+        continue;
+      }
+      const field = WHERE_FIELDS_V1[scope].find((candidate) => candidate.wireName === key);
+      if (field === undefined) continue;
+      if (compareTmuxVersions(actual, parseTmuxVersion(field.since)) >= 0) continue;
+      throw new VersionTooLow({
+        criteriaName: field.criteriaName,
+        serverVersion,
+        since: field.since,
+      });
+    }
+  };
+  walk(model, query);
+}
 
 export function createProjectedSelection<Kind extends ProjectedKind>(
   model: Kind,
