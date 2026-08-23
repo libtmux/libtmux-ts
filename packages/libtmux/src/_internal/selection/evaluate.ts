@@ -34,6 +34,45 @@ interface SelectionEntry<Model> {
   readonly value: Model;
 }
 
+/** Which scalar carries a model's own id, for the models that can share one. */
+const ID_SCALARS: Readonly<Partial<Record<string, string>>> = Object.freeze({
+  pane: "pane_id",
+  window: "window_id",
+});
+
+/**
+ * Name the sessions a shared id spans, when that is why several matched.
+ *
+ * Undefined for every other reason there can be more than one, so the ordinary
+ * message still describes those.
+ */
+function sharedPlacementHint<Model>(
+  kind: string,
+  entries: readonly SelectionEntry<Model>[],
+): string | undefined {
+  const scalar = ID_SCALARS[kind];
+  if (scalar === undefined || entries.length < 2) return undefined;
+  const ids = new Set<string>();
+  const sessions: string[] = [];
+  for (const entry of entries) {
+    const id = entry.record?.scalars[scalar];
+    // The winlink is the placement: which session holds this one.
+    const session = entry.record?.winlink?.sessionId;
+    if (typeof id !== "string" || session === undefined) return undefined;
+    ids.add(id);
+    const named = String(session);
+    if (!sessions.includes(named)) sessions.push(named);
+  }
+  if (ids.size !== 1 || sessions.length < 2) return undefined;
+  const [id] = [...ids];
+  return (
+    `${String(id)} names ${String(entries.length)} placements, in sessions ` +
+    `${sessions.join(", ")}. A ${kind} that linked or grouped sessions share has ` +
+    `one id and a placement in each, so add the session to say which: ` +
+    `{ id: "${String(id)}", session: { is: { id: "${sessions[0]!}" } } }`
+  );
+}
+
 interface ProjectedSelectionState {
   readonly kind: ProjectedKind;
   readonly projection: SelectionProjection;
@@ -305,14 +344,35 @@ class SelectionImpl<Model> implements Selection<Model> {
     // costs the same as one with two.
     const { entries, query } = this.#scan(criteria, 2);
     if (entries.length === 0) throw new NoMatchError({ query });
-    if (entries.length !== 1) throw new MultipleMatchesError({ count: entries.length, query });
+    if (entries.length !== 1) throw this.#tooMany(criteria, query);
     return entries[0]!.value;
   }
 
   oneOrUndefined(criteria?: WhereOf<Model>): Model | undefined {
     const { entries, query } = this.#scan(criteria, 2);
-    if (entries.length > 1) throw new MultipleMatchesError({ count: entries.length, query });
+    if (entries.length > 1) throw this.#tooMany(criteria, query);
     return entries[0]?.value;
+  }
+
+  /**
+   * Say how many matched, and where a shared id is the reason.
+   *
+   * A window linked into two sessions, or shared by two grouped sessions, has a
+   * placement in each and one id between them — so asking by id alone raises
+   * for an id that is perfectly good, and the fix is a criterion the caller has
+   * not thought to add. Naming the sessions turns the refusal into it.
+   *
+   * The whole set is only counted here, on the way to raising. The fast path
+   * still stops at two.
+   */
+  #tooMany(criteria: unknown, query: Readonly<Record<string, unknown>>): MultipleMatchesError {
+    const all = this.#matchingEntries(criteria);
+    const shared = sharedPlacementHint(this.#state.kind, all);
+    return new MultipleMatchesError({
+      count: all.length,
+      ...(shared === undefined ? {} : { message: shared }),
+      query,
+    });
   }
 
   exists(criteria?: WhereOf<Model>): boolean {

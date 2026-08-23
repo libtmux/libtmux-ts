@@ -11,6 +11,7 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
+import { MultipleMatchesError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
@@ -152,6 +153,51 @@ describe("window and pane topology", () => {
         .filter((candidate) => candidate.id === window.id)
         .one();
       expect(moved.index).toBe(7);
+    });
+  }, 40_000);
+
+  test("says which sessions a shared id spans, rather than only that it did", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const leader = await server.newSession({ name: "leader" });
+      await server.newSession({ groupWith: "leader", name: "follower" });
+
+      const snapshot = await server.snapshot();
+      const paneId = snapshot.sessions.one({ id: leader.id }).panes.one().id;
+
+      // The raise is true — there really are two placements — so the fix is a
+      // criterion the caller has not thought of, and the message is where they
+      // would find out.
+      const failure = (() => {
+        try {
+          snapshot.panes.one({ id: paneId });
+          return undefined;
+        } catch (error: unknown) {
+          return error as Error;
+        }
+      })();
+
+      expect(failure).toBeInstanceOf(MultipleMatchesError);
+      expect(failure?.message).toContain("2 placements");
+      expect(failure?.message).toContain(leader.id);
+      expect(failure?.message).toContain("session");
+      // Naming the session is what reaches one of them.
+      expect(snapshot.panes.one({ id: paneId, session: { is: { id: leader.id } } }).id).toBe(
+        paneId,
+      );
+    });
+  }, 40_000);
+
+  test("keeps the ordinary message when several matches are several objects", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const pane = (await server.snapshot()).panes.one();
+      await pane.split();
+
+      // Two panes that are two panes: nothing about ids explains this one.
+      const snapshot = await server.snapshot();
+      expect(() => snapshot.panes.one()).toThrow(MultipleMatchesError);
+      expect(() => snapshot.panes.one()).not.toThrow(/placements/u);
     });
   }, 40_000);
 
