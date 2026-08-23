@@ -85,6 +85,23 @@ function unwritableReason(argv: readonly string[]): string | undefined {
 }
 
 /**
+ * Say a broken pipe in this package's terms.
+ *
+ * Node reports one as its own `Error` — `EPIPE: broken pipe, send` — with no
+ * `delivery`, so a caller catching `LibTmuxException` misses the very case
+ * where a command may already have run. `indeterminate` is the honest answer:
+ * the bytes were written and tmux never said whether it acted on them.
+ */
+function transportFailure(failure: Error): TmuxTransportError {
+  if (failure instanceof TmuxTransportError) return failure;
+  const code = (failure as { readonly code?: string }).code;
+  return new TmuxTransportError(
+    `tmux control connection broke${code === undefined ? "" : ` (${code})`}`,
+    { cause: failure, delivery: "indeterminate", kind: "pipe" },
+  );
+}
+
+/**
  * A command list submitted together, so a failure can retire its remainder.
  *
  * tmux removes the rest of a list when one of its commands fails, and says so
@@ -397,10 +414,13 @@ export class ControlConnection implements CommandTransport {
       this.#fail(
         code === 0 || code === null || this.#closed
           ? undefined
-          : new Error(
+          : new TmuxTransportError(
               message === ""
                 ? `tmux control mode exited with ${String(code)}`
                 : `tmux control mode could not attach: ${message}`,
+              // The process is gone with commands still queued on it, and tmux
+              // never said which of them it ran.
+              { delivery: "indeterminate", kind: "pipe" },
             ),
       );
     });
@@ -645,7 +665,8 @@ export class ControlConnection implements CommandTransport {
     return true;
   }
 
-  #fail(failure: Error | undefined): void {
+  #fail(raw: Error | undefined): void {
+    const failure = raw === undefined ? undefined : transportFailure(raw);
     // Before deciding whether to reconnect: either way this connection is no
     // longer evidence that the daemon its ids came from is the one answering.
     // A deliberate close is not that — the runtime is going away with it.

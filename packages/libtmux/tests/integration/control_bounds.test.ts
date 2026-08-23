@@ -12,7 +12,7 @@ import { TestServer } from "../../src/_internal/test/test_server.js";
 import { Server } from "../../src/server.js";
 import { TmuxTransportError } from "../../src/exc.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -113,6 +113,43 @@ describe("control-mode resource bounds", () => {
       // not merely that the call resolved.
       expect((await live.showBuffer("payload")).join("")).toContain("from-stdin");
     });
+  }, 40_000);
+
+  test("names a connection that broke under a command in its own terms", async () => {
+    const directory = await makeTestDirectory("ltx-broken-");
+    const socketPath = join(directory, "s");
+    assertOwnedSocketPath(socketPath);
+    const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
+    try {
+      const session = await server.newSession({ name: "breaking" });
+      const live = await server.connect({ target: session.id });
+
+      // Armed on a condition that never comes true, so the connection breaking
+      // under it is what settles this — the other side of the same race as a
+      // command issued after the connection is known closed.
+      const armed = live.waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), {
+        timeoutMs: 30_000,
+      });
+      const killed = server.cmd("kill-server").catch(() => undefined);
+
+      const failure = await armed.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await killed;
+      await live.close().catch(() => undefined);
+
+      // Node reports a broken pipe as its own Error with no delivery, which a
+      // caller catching this package's errors would miss entirely.
+      expect(failure).toBeInstanceOf(TmuxTransportError);
+      const transport = failure as TmuxTransportError;
+      expect(transport.kind).toBe("pipe");
+      // Written, and never answered: tmux may have run it.
+      expect(transport.delivery).toBe("indeterminate");
+    } finally {
+      await server.cmd("kill-server").catch(() => undefined);
+      await rm(directory, { force: true, recursive: true });
+    }
   }, 40_000);
 
   test("carries run-shell output, which tmux writes after the block", async () => {
