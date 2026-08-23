@@ -40,102 +40,46 @@ import { sweepStrayTmux } from "./tmux_sweep.js";
 const SOURCE_LABEL = "TSDoc symbol examples";
 
 /**
- * Examples this shared world cannot run as written, and why.
- *
- * Small and specific on purpose, mirroring README.md's own
- * `<!-- static: why -->` marker — TSDoc doc comments have no equivalent
- * syntax, so the same judgment is recorded here instead of invented as a new
- * comment convention for a spike. Each entry was reached by running the
- * example and reading what actually happened, not by inspecting the code.
+ * Examples this shared world cannot run as written, and why. TSDoc has no
+ * equivalent of README.md's `<!-- static: why -->` marker, so the reason is
+ * recorded here instead.
  */
 const EXCUSED = new Map<string, string>([
-  // Keyed by symbol rather than by `file:line`. A line number is moved by any
-  // edit above it, and an excuse that quietly stops matching its example either
-  // fails a gate for no reason or excuses the wrong one.
+  // Keyed by symbol rather than by `file:line`. A line number moves with any
+  // edit above it, and an excuse that stops matching its example either fails
+  // the gate for nothing or excuses a different example than it names.
   [
     "Server.open",
-    // `Server.open({ transport: "control" })` with no explicit socket path
-    // attaches tmux's *default* socket under `$TMUX_TMPDIR` — not this
-    // world's own fixture, which deliberately lives on a uniquely named
-    // socket so a sweep can tell a doc example's server from a sibling
-    // port's. tmux's control mode does not create a server to attach to the
-    // way a spawning command does — "a server with no sessions has nothing
-    // to attach to", the doc comment's own words — so this fails in an
-    // isolated $TMUX_TMPDIR with nothing already listening on the default
-    // socket, by design rather than by accident.
     "targets tmux's default socket, which this isolated harness deliberately leaves with nothing listening",
   ],
   [
     "Server.watch",
-    // `Server.watch`: `for await (const event of events)` with no `break`.
-    // The README's near-identical recipe is marked
-    // `<!-- static: reads every event until the process is interrupted -->`;
-    // TSDoc has no equivalent marker, so the per-attempt timeout below
-    // reports it as a deliberate, permanent miss rather than a flake.
     "reads every event until the process is interrupted, like the README recipe it mirrors",
   ],
   [
     "Server.connect",
-    // `Server.connect`: the same shape, over `live.subscribe()` instead of
-    // `server.watch()`.
     "reads every event until the process is interrupted, like the README recipe it mirrors",
   ],
-  [
-    "Server.newSession",
-    // `Server.newSession`: the shared world's baseline session is itself
-    // named "work" (several other examples read `session`/`snapshot`
-    // expecting exactly that name), so this example's own
-    // `newSession({ name: "work" })` collides with it by construction. A
-    // reader pasting this alone hits no such session.
-    'collides with the shared world\'s own session, which several other examples require to be named "work"',
-  ],
+  ["Server.newSession", "creates the session named work that the shared world is built around"],
   [
     "Session.fromEnv",
-    // `Session.fromEnv()` reads `$TMUX`/`$TMUX_PANE` from the process
-    // environment. readme_world.ts sets those per block, from the socket
-    // path that block's own fixture just opened; this runner holds one
-    // world across many examples and never exposes that socket path to the
-    // caller, so it cannot set them without widening the shared World type
-    // for one example.
-    "needs $TMUX/$TMUX_PANE set to this world's own socket, which the shared World does not expose",
+    "needs $TMUX and $TMUX_PANE pointed at this world's own socket, which the shared world does not expose",
   ],
   [
     "Pane.pasteBuffer",
-    // `Pane.pasteBuffer("greeting")` depends on a buffer named "greeting"
-    // that `Server.setBuffer`'s own example creates — and that
-    // `Server.deleteBuffer`'s own example deletes, a few members later in
-    // the same file, before this file's examples ever run. Each TSDoc
-    // example is written and typechecked as an independent fragment; a
-    // shared, sequential world is what turns that unstated cross-example
-    // dependency into an observable failure.
-    'depends on a buffer named "greeting" that a later example in server.ts deletes before this one runs',
+    "depends on a buffer named greeting that a later example in server.ts deletes before this one runs",
   ],
   [
     "Pane.joinTo",
-    // `Pane.joinTo(window.id, ...)`: the shared world binds `window` to
-    // `pane`'s own window (`editor`), so this asks tmux to join a pane into
-    // the window it is already in, and tmux refuses. A reader's own
-    // `window` in scope would ordinarily be a different one — the ambient
-    // name is a placeholder in both harnesses, and only the shared world's
-    // reuse across many examples makes them alias the same object.
     "the shared world binds `window` to `pane`'s own window, so this joins a pane into the window it is already in",
   ],
   [
     "Pane.displayPopup",
-    // `Pane.displayPopup`: same shape as `displayMenu` below — a client is
-    // attached in this world, and the popup blocks on it.
-    "blocks waiting for interactive input with a client attached, unlike chooseTree/chooseBuffer's documented no-op",
+    "blocks waiting for a keypress once a client is attached, unlike chooseTree and chooseBuffer's documented no-op",
   ],
   [
     "Pane.displayMenu",
-    // `Pane.displayMenu`: unlike `chooseTree`/`chooseBuffer`, its doc
-    // comment does not say tmux draws nothing and reports success with no
-    // client attached — and empirically it does not: with the two live
-    // clients this world connects, it blocks waiting for a keypress.
-    // Recorded as a finding rather than fixed: whether that difference from
-    // its siblings is deliberate is a question for whoever owns the
-    // behavior, not a guess this spike should bake into the doc comment.
-    "blocks waiting for interactive input with a client attached, unlike chooseTree/chooseBuffer's documented no-op",
+    "blocks waiting for a keypress once a client is attached, unlike chooseTree and chooseBuffer's documented no-op",
   ],
 ]);
 
