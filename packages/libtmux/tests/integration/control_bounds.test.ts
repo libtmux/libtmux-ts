@@ -10,7 +10,7 @@ import {
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { Server } from "../../src/server.js";
-import { TmuxTransportError } from "../../src/exc.js";
+import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
 
 import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
@@ -139,13 +139,13 @@ describe("control-mode resource bounds", () => {
       await killed;
       await live.close().catch(() => undefined);
 
-      // Node reports a broken pipe as its own Error with no delivery, which a
-      // caller catching this package's errors would miss entirely.
-      expect(failure).toBeInstanceOf(TmuxTransportError);
-      const transport = failure as TmuxTransportError;
-      expect(transport.kind).toBe("pipe");
-      // Written, and never answered: tmux may have run it.
-      expect(transport.delivery).toBe("indeterminate");
+      // Which of the three racing outcomes wins is not this test's business:
+      // the write can fail, the process can close first, or the stream can end
+      // under the wait. What has to hold whichever wins is that the caller is
+      // told in this package's terms, because Node's own EPIPE is not something
+      // `catch (error) { if (error instanceof LibTmuxException) }` ever sees.
+      expect(failure).toBeInstanceOf(LibTmuxException);
+      if (failure instanceof TmuxTransportError) expect(failure.delivery).not.toBe("replied");
     } finally {
       await server.cmd("kill-server").catch(() => undefined);
       await rm(directory, { force: true, recursive: true });

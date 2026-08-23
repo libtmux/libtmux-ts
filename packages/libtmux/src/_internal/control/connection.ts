@@ -92,7 +92,7 @@ function unwritableReason(argv: readonly string[]): string | undefined {
  * where a command may already have run. `indeterminate` is the honest answer:
  * the bytes were written and tmux never said whether it acted on them.
  */
-function transportFailure(failure: Error): TmuxTransportError {
+export function transportFailure(failure: Error): TmuxTransportError {
   if (failure instanceof TmuxTransportError) return failure;
   const code = (failure as { readonly code?: string }).code;
   return new TmuxTransportError(

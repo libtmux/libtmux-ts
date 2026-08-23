@@ -22,6 +22,7 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import { LibTmuxException, WaitTimeout } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
 
@@ -402,14 +403,23 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("gives up on a state that never arrives", async () => {
+  test("gives up on a state that never arrives, saying it was the deadline", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
 
-      await expect(
-        live.waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), { timeoutMs: 750 }),
-      ).rejects.toThrow(/never arrived/u);
+      // A deadline says the condition did not come true; a connection ending
+      // says nothing about the condition at all. One error for both leaves a
+      // caller unable to tell which happened.
+      const failure = await live
+        .waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), { timeoutMs: 750 })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+
+      expect(failure).toBeInstanceOf(WaitTimeout);
+      expect(failure).toBeInstanceOf(LibTmuxException);
     });
   }, 60_000);
 

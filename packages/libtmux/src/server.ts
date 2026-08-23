@@ -30,7 +30,7 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 
 import type { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch } from "./common.js";
-import { LibTmuxException } from "./exc.js";
+import { LibTmuxException, WaitTimeout } from "./exc.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
@@ -457,7 +457,11 @@ export class Server {
           // and the subscription is never seen and the wait hangs on a
           // condition that is already true.
           const events = connection.subscribe();
-          const deadline = setTimeout(() => void events.close(), options.timeoutMs ?? 30_000);
+          let deadlinePassed = false;
+          const deadline = setTimeout(() => {
+            deadlinePassed = true;
+            void events.close();
+          }, options.timeoutMs ?? 30_000);
           try {
             let snapshot = await bound.snapshot();
             if (matches(snapshot)) return snapshot;
@@ -469,7 +473,11 @@ export class Server {
             clearTimeout(deadline);
             await events.close();
           }
-          throw new LibTmuxException("the awaited tmux state never arrived");
+          // Waiting out a deadline and losing the connection are different
+          // outcomes, and only one of them says anything about the condition.
+          throw deadlinePassed
+            ? new WaitTimeout("the awaited tmux state did not arrive before the deadline")
+            : new LibTmuxException("the tmux event stream ended before the awaited state arrived");
         },
       },
       // A chained line draws one response block per command from tmux, and this

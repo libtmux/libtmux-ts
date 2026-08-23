@@ -527,12 +527,17 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
   /** End the connection. Safe to call more than once. */
   close(): Promise<void>;
   /**
-   * Resolve with the first event `matches` accepts, or undefined if the stream
-   * ends or the deadline passes first.
+   * Resolve with the first event `matches` accepts, or undefined if the
+   * deadline passes first.
    *
    * This consumes the stream, which is what iterating it does anyway. It exists
    * because every caller otherwise writes the same loop, deadline, and cleanup,
    * and forgetting the deadline turns a missed event into a hang.
+   *
+   * @throws LibTmuxException when the stream ends before a match — the server
+   * went away, or something closed it. Undefined therefore means the deadline
+   * and nothing else, so a caller reporting "it never printed the marker" is
+   * only ever saying that about a workload that really did not print it.
    */
   find(
     matches: (event: TmuxEvent) => boolean,
@@ -579,6 +584,10 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    * ```ts
    * await live.waitFor((server) => server.windows.exists({ name: "build" }));
    * ```
+   *
+   * @throws WaitTimeout when the deadline passes with the condition unmet.
+   * @throws LibTmuxException when the connection ends first, which says nothing
+   * about the condition and so is not the same answer.
    */
   waitFor(
     matches: (snapshot: ServerSnapshot) => boolean,

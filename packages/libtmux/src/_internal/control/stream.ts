@@ -1,3 +1,4 @@
+import { LibTmuxException } from "../../exc.js";
 import type { TmuxEvent, TmuxEventStream as PublicEventStream } from "../../types.js";
 
 export const DEFAULT_BUFFER_SIZE = 1024;
@@ -81,12 +82,20 @@ class BufferedEventStream implements PublicEventStream {
     matches: (event: TmuxEvent) => boolean,
     options: { readonly timeoutMs?: number } = {},
   ): Promise<TmuxEvent | undefined> {
-    const deadline = setTimeout(() => void this.close(), options.timeoutMs ?? 30_000);
+    let deadlinePassed = false;
+    const deadline = setTimeout(() => {
+      deadlinePassed = true;
+      void this.close();
+    }, options.timeoutMs ?? 30_000);
     try {
       for await (const event of this) {
         if (matches(event)) return event;
       }
-      return undefined;
+      if (deadlinePassed) return undefined;
+      // The stream ended rather than the deadline passing: tmux went away, or
+      // something closed it. Answering undefined for both is how a caller comes
+      // to report that its command never printed a marker when the server died.
+      throw new LibTmuxException("the tmux event stream ended before a match");
     } finally {
       clearTimeout(deadline);
     }
