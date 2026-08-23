@@ -403,3 +403,22 @@ describe("framing ids", () => {
     }
   });
 });
+
+describe("tail lifetime", () => {
+  test("a tail reports going unread, and reading resets it", async () => {
+    // Reading is what keeps a tail alive. A pane writing into one nobody is
+    // watching is not a reason to hold its connection open — which is what
+    // used to happen, because nothing ever removed a tail and so the close
+    // path's own guard made it unreachable for any observed session.
+    const tail = new PaneTail("%1");
+    expect(tail.idleMs(Date.now())).toBeLessThan(50);
+    expect(tail.idleMs(Date.now() + 60_000)).toBeGreaterThanOrEqual(60_000);
+
+    tail.append("output nobody asked for");
+    // Still idle: the pane wrote, nothing read.
+    expect(tail.idleMs(Date.now() + 60_000)).toBeGreaterThanOrEqual(60_000);
+
+    tail.read(undefined);
+    expect(tail.idleMs(Date.now())).toBeLessThan(50);
+  });
+});

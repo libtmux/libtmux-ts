@@ -13,6 +13,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, test } from "bun:test";
 
+import { LiveHub } from "../src/live.js";
 import { createTmuxMcpServer } from "../src/server.js";
 import { paneContentUri } from "../src/uris.js";
 import {
@@ -1306,6 +1307,59 @@ describe("staying out of the way", () => {
         // A spawn creates rather than ends, and a host needs those apart.
         expect(byName.get("new_window")?.destructiveHint).toBe(false);
       });
+    });
+  }, 60_000);
+
+  test("lets go of a session's connection once nothing is reading it", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      const controlClients = async (): Promise<number> =>
+        (await tmux.cmd("list-clients", ["-F", "#{client_control_mode}"], { target: null })).filter(
+          (line) => line === "1",
+        ).length;
+
+      const hub = new LiveHub(tmux, { lingerMs: 200 });
+      try {
+        const snapshot = await tmux.snapshot();
+        const tail = await hub.tail(snapshot.sessions.one().id, snapshot.panes.one().id);
+        expect(tail).toBeDefined();
+        expect(await controlClients()).toBeGreaterThan(0);
+
+        // Nothing reads it from here. The close path used to refuse to run
+        // while the link held any tail, and nothing ever removed one — so for
+        // any session a tool had observed, this connection was held for the
+        // life of the process and tmux counted it the whole time.
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        expect(await controlClients()).toBe(0);
+      } finally {
+        await hub.close();
+      }
+    });
+  }, 60_000);
+
+  test("keeps a connection that something is still reading", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      const hub = new LiveHub(tmux, { lingerMs: 200 });
+      try {
+        const snapshot = await tmux.snapshot();
+        const tail = await hub.tail(snapshot.sessions.one().id, snapshot.panes.one().id);
+        expect(tail).toBeDefined();
+
+        // The quiet half: reading across the linger keeps it. A sweep that
+        // dropped a tail somebody was using would be worse than the leak.
+        for (let round = 0; round < 8; round += 1) {
+          // eslint-disable-next-line no-await-in-loop -- each read follows the last.
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          tail?.read(undefined);
+        }
+        const clients = (
+          await tmux.cmd("list-clients", ["-F", "#{client_control_mode}"], { target: null })
+        ).filter((line) => line === "1").length;
+        expect(clients).toBeGreaterThan(0);
+      } finally {
+        await hub.close();
+      }
     });
   }, 60_000);
 
