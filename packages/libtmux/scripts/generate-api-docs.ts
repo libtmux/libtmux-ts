@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { readApiSurface, type ApiClass } from "./api_surface.js";
+import { slugify } from "../../../scripts/markdown_anchors.js";
 import { packageRoot } from "./package_root.js";
 
 /**
@@ -19,7 +20,10 @@ import { packageRoot } from "./package_root.js";
 const OUTPUT = "docs/api.md";
 
 function anchorFor(className: string, member: string): string {
-  return `${className.toLowerCase()}${member.toLowerCase()}`;
+  // Slugified the way the heading itself will be, not approximated. A member
+  // whose name carries punctuation — `[Symbol.iterator]` — is why the two have
+  // to be the same function rather than two rules that happen to agree.
+  return slugify(`${className}.${member}`);
 }
 
 function renderClass(entry: ApiClass): string {

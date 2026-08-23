@@ -2190,7 +2190,7 @@ declarative criteria that are data — serializable, inspectable, sendable over
 a wire — and `filter` takes an ordinary predicate. Reach for `where` unless
 the question genuinely needs to run code.
 
-[`length`](#selectionlength) · [`[Symbol.iterator]`](#selection[symbol.iterator]) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
+[`length`](#selectionlength) · [`[Symbol.iterator]`](#selectionsymboliterator) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
 
 ### Properties
 
