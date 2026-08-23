@@ -60,6 +60,7 @@ driving your session.
 | ------------------------------------- | --------------------------------------------------------------------- |
 | [`quickstart/`](quickstart/README.md) | You want the whole API in one pass before choosing a part of it       |
 | [`fields/`](fields/README.md)         | You are asking tmux something rather than changing it                 |
+| [`capture/`](capture/README.md)       | You are moving text out of a pane, or into one                        |
 | [`watch/`](watch/README.md)           | Something else is driving tmux and you need to react to it            |
 | [`agent/`](agent/README.md)           | You are running something in a pane and need to know when it finished |
 | [`workspace/`](workspace/README.md)   | You want a session built from a layout you declared                   |

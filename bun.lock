@@ -31,6 +31,13 @@
         "libtmux": "workspace:*",
       },
     },
+    "examples/capture": {
+      "name": "@example/capture",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
     "examples/engine": {
       "name": "@example/engine",
       "version": "0.0.0",
@@ -136,6 +143,8 @@
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
     "@example/agent": ["@example/agent@workspace:examples/agent"],
+
+    "@example/capture": ["@example/capture@workspace:examples/capture"],
 
     "@example/engine": ["@example/engine@workspace:examples/engine"],
 
