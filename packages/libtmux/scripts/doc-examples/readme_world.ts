@@ -136,7 +136,11 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   const binary = join(home, "bin");
   await mkdir(binary, { recursive: true });
   await writeFile(join(binary, "make"), MAKE_STUB, { mode: 0o755 });
-  for (const name of ["npm", "just"]) {
+  // Every command the README names and the runner cannot count on having.
+  // `tail`, `git`, `ls` and `echo` are already everywhere; these are not, and a
+  // missing one takes its pane down at once — which the prose says will happen,
+  // and which then looks like the example failing.
+  for (const name of ["npm", "just", "nvim", "journalctl", "htop"]) {
     // eslint-disable-next-line no-await-in-loop -- two files, written in order.
     await writeFile(join(binary, name), STAYS_UP, { mode: 0o755 });
   }
@@ -161,14 +165,21 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   });
 
   const previousDirectory = process.cwd();
+  const previousHome = process.env["HOME"];
   const previousTmux = process.env["TMUX"];
   const previousPane = process.env["TMUX_PANE"];
   // `Bun.file("payload.bin")` is written as a reader would write it: relative
   // to wherever they are standing.
   process.chdir(home);
+  // The examples read `process.env.HOME` themselves, so pointing only the tmux
+  // server at the fixture's home leaves them reading the real one — which is
+  // how `sourceFile` passed here and failed on a machine with no `~/.tmux.conf`.
+  process.env["HOME"] = home;
 
   const restore = (): void => {
     process.chdir(previousDirectory);
+    if (previousHome === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = previousHome;
     if (previousTmux === undefined) delete process.env["TMUX"];
     else process.env["TMUX"] = previousTmux;
     if (previousPane === undefined) delete process.env["TMUX_PANE"];
