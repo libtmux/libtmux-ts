@@ -95,11 +95,23 @@ export async function refreshedHandle<Handle extends Child>(
   const graph = await acquireServerGraph(runtime);
   const snapshot = await buildSnapshotFromGraph(handle.server, graph);
   const winlink = winlinkRefForHandle(handle);
-  const found = candidatesFor(snapshot, handle).find(
+  const candidates = candidatesFor(snapshot, handle);
+  const found = candidates.find(
     (candidate) =>
       isSameSubject(candidate, handle) && sameWinlink(winlinkRefForHandle(candidate), winlink),
   );
   if (found === undefined) {
+    // A window that moved is still on the server, at a placement this handle
+    // does not name. Reporting that as gone sends the reader looking for a
+    // window they can see in front of them.
+    const elsewhere = candidates.find((candidate) => isSameSubject(candidate, handle));
+    if (elsewhere !== undefined) {
+      throw new LibTmuxException(
+        `${handle.toString()} is no longer at that placement; it is now ${elsewhere.toString()}. ` +
+          `A handle names a placement rather than a window, because one window can sit in two ` +
+          `sessions at once — read it back from a fresh snapshot.`,
+      );
+    }
     throw new LibTmuxException(`${handle.toString()} no longer exists on the server`);
   }
   return found as Handle;

@@ -10,7 +10,7 @@ import {
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import type { Pane } from "../../src/pane.js";
-import { TmuxCommandError } from "../../src/exc.js";
+import { LibTmuxException, TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
@@ -165,6 +165,29 @@ describe("lifecycle mutations", () => {
       // Refreshing resolves the placement it was created at, not the new one.
       expect(later.index).toBe(originalIndex);
       expect(later.sessionName).toBe(fixture.sessionName);
+    });
+  }, 40_000);
+
+  test("names the new placement when a window has moved rather than reporting it gone", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.newSession({ name: "other" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      await window.move({ index: 9, session: "other" });
+
+      const failure = await window
+        .refreshed()
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+
+      // The window is on the server and in plain sight; only the placement the
+      // handle names is gone. Saying it no longer exists sends the reader
+      // looking for something they can already see.
+      expect(failure).toBeInstanceOf(LibTmuxException);
+      expect((failure as LibTmuxException).message).toContain("no longer at that placement");
+      expect((failure as LibTmuxException).message).toContain("other");
     });
   }, 40_000);
 
