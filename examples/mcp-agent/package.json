@@ -1,8 +1,8 @@
 {
-  "name": "@example/libtmux",
+  "name": "@example/mcp-agent",
   "version": "0.0.0",
   "private": true,
-  "description": "Runnable examples. Never published.",
+  "description": "Drive the MCP server from an in-process client. Never published.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

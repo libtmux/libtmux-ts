@@ -1,16 +1,14 @@
 {
-  "name": "@example/libtmux",
+  "name": "@example/engine",
   "version": "0.0.0",
   "private": true,
-  "description": "Runnable examples. Never published.",
+  "description": "Drive tmux through a transport you supply. Never published.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test --no-orphans ."
   },
   "dependencies": {
-    "@libtmux/mcp": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.30.0",
     "libtmux": "workspace:*"
   }
 }

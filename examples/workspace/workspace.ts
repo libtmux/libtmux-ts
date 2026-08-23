@@ -5,11 +5,39 @@ import type { Server } from "libtmux/server";
 import type { Session } from "libtmux/session";
 
 /**
- * Build a development workspace and leave it running.
+ * Build the shape most people reach for tmux to get: one session, a window
+ * per concern, each pane already running the thing it is there for.
  *
- * The shape most people reach for tmux to get: one session, a window per
- * concern, each pane already running the thing it is there for. Everything the
- * layout needs is decided here rather than typed afterwards.
+ * `server.batch` plans several windows and creates them in one invocation, so
+ * this costs one tmux command and one snapshot rather than one round trip per
+ * window. `buildWorkspace`, below, is the same idea driven from a declared
+ * layout instead of code written by hand.
+ */
+export async function buildSimpleWorkspace(server: Server): Promise<Session> {
+  const built = await server.newSession({
+    name: "work",
+    shellCommand: "sleep 30",
+    windowName: "editor",
+  });
+
+  const [logs, shell] = await server.batch([
+    built.plan.newWindow({ name: "logs", shellCommand: "tail -f /dev/null" }),
+    built.plan.newWindow({ name: "shell" }),
+  ]);
+
+  await logs.selectLayout("even-horizontal");
+  void shell.name; // "shell"
+
+  return built;
+}
+
+/**
+ * Build a development workspace from a declared layout, and leave it running.
+ *
+ * The same shape as {@link buildSimpleWorkspace}, but decided as data rather
+ * than typed afterwards — the shape to reach for once one workspace is not
+ * enough and the windows and panes come from a config file instead of a
+ * function body.
  */
 export interface WorkspaceLayout {
   /** Variables every process in the session inherits. */

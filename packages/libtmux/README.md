@@ -324,10 +324,10 @@ snapshot.windows.where({ index: { contains: fromConfig } });
 ```
 
 Together, on a server with two windows. This is a literal excerpt of
-[`examples/fields.ts`](../../examples/fields.ts), which the integration suite
+[`examples/fields/fields.ts`](../../examples/fields/fields.ts), which the integration suite
 runs against a real tmux server:
 
-<!-- runs: examples/fields.ts -->
+<!-- runs: examples/fields/fields.ts -->
 
 ```ts
 const snapshot = await server.snapshot();
@@ -758,10 +758,10 @@ The loop an agent runs. `connect()` carries the commands and the notifications
 that say what they did, so reacting costs nothing per iteration — and
 subscribing before sending means a marker printed in between is still seen.
 
-This recipe is a literal excerpt of [`examples/agent.ts`](../../examples/agent.ts),
+This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
 which the integration suite runs against a real tmux server:
 
-<!-- runs: examples/agent.ts -->
+<!-- runs: examples/agent/agent.ts -->
 
 ```ts
 const session = await server.newSession({ name: "agent" });

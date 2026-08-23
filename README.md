@@ -77,10 +77,10 @@ console.log(editors.count(), editors.at(0)?.sessionName);
 ```
 
 Building something rather than reading it looks like this — and this block is a
-literal excerpt of [`examples/quickstart.ts`](examples/quickstart.ts), which the
+literal excerpt of [`examples/quickstart/quickstart.ts`](examples/quickstart/quickstart.ts), which the
 integration suite runs against a real tmux server:
 
-<!-- runs: examples/quickstart.ts -->
+<!-- runs: examples/quickstart/quickstart.ts -->
 
 ```ts
 const session = await server.newSession({ name: "quickstart" });
@@ -257,7 +257,7 @@ loop an agent needs, and building a workspace. Each is executed by the
 integration suite, so the code there is the code that runs.
 
 ```console
-$ bun test examples/tests
+$ bun test examples
 ```
 
 ## How commands travel

@@ -147,6 +147,9 @@ jobs:
         working-directory: packages/workspace
         run: bun run typecheck && bun run test && bun run test:package
 
+      # One step for all of them. Each example is a package of its own now, and
+      # the umbrella typechecks and runs every sibling — so adding an example
+      # does not mean remembering to add a step here.
       - name: Gate the examples
         working-directory: examples
         run: bun run typecheck && bun run test

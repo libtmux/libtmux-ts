@@ -134,7 +134,7 @@ await applyWorkspace(
 
 ## A worked example
 
-[`examples/workspace.ts`](../../examples/workspace.ts) builds a session from a
+[`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) builds a session from a
 declared layout — a window per concern, panes already running what they are
 for, an environment every process inherits, and a teardown that treats "already
 gone" as an answer. The integration suite runs it against a real tmux server.

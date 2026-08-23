@@ -338,10 +338,10 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 
 To drive it in-process — a test, or a host that is both ends — link a transport
 pair rather than spawning anything. This is a literal excerpt of
-[`examples/mcp-agent.ts`](../../examples/mcp-agent.ts), which the integration
+[`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts), which the integration
 suite runs against a real tmux server:
 
-<!-- runs: examples/mcp-agent.ts -->
+<!-- runs: examples/mcp-agent/mcp-agent.ts -->
 
 ```ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
