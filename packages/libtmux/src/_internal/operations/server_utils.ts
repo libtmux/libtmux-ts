@@ -65,6 +65,30 @@ export async function listBuffers(runtime: RuntimeContext): Promise<readonly str
   return runCommand(runtime, ["list-buffers", "-F", "#{buffer_name}"]);
 }
 
+/**
+ * Write a paste buffer to a file, rather than returning it as text.
+ *
+ * `showBuffer` brings the contents back through this process, which for a
+ * large buffer means holding it in memory and, for an agent, spending its
+ * context on bytes it only wants stored. tmux writes the file itself, so
+ * neither happens. The path is resolved by the tmux server, so it is on the
+ * machine tmux runs on rather than this one.
+ */
+export async function saveBuffer(
+  runtime: RuntimeContext,
+  name: string,
+  path: string,
+  options: { readonly append?: boolean } = {},
+): Promise<void> {
+  await runCommand(runtime, [
+    "save-buffer",
+    ...(options.append === true ? ["-a"] : []),
+    "-b",
+    name,
+    path,
+  ]);
+}
+
 /** Discard a named paste buffer. */
 export async function deleteBuffer(runtime: RuntimeContext, name: string): Promise<void> {
   await runCommand(runtime, ["delete-buffer", "-b", name]);

@@ -50,3 +50,31 @@ export async function capturePane(
 export async function clearHistory(runtime: RuntimeContext, paneId: string | null): Promise<void> {
   await runCommand(runtime, ["clear-history", ...(paneId == null ? [] : ["-t", paneId])]);
 }
+
+/**
+ * Send everything a pane writes to a shell command as well as to its screen.
+ *
+ * A pane keeps `history-limit` lines and a stream reader keeps a bounded
+ * buffer, so output larger than either is gone before anyone asks for it. This
+ * is tmux's own answer: the command runs for as long as the pipe is open and
+ * receives the pane's output on stdin, so a long build is captured whole
+ * without holding a connection or spending an agent's context on it.
+ *
+ * Passing no command stops an open pipe. `onlyOutput` sends what the program
+ * writes but not what is typed into it, which is what makes a captured log
+ * readable rather than interleaved with its own echo.
+ */
+export async function pipePane(
+  runtime: RuntimeContext,
+  paneId: string,
+  command?: string,
+  options: { readonly onlyOutput?: boolean } = {},
+): Promise<void> {
+  await runCommand(runtime, [
+    "pipe-pane",
+    ...(options.onlyOutput === true ? ["-o"] : []),
+    "-t",
+    paneId,
+    ...(command === undefined ? [] : [command]),
+  ]);
+}

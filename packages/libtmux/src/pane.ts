@@ -26,7 +26,7 @@ import {
 } from "./_internal/operations/interactive.js";
 import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
-import { capturePane, clearHistory, sendKeys } from "./_internal/operations/pane_io.js";
+import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
 import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
 import {
   breakPane,
@@ -304,6 +304,22 @@ export class Pane {
    */
   respawn(command?: string, options?: RespawnOptions): Promise<void> {
     return respawnPane(runtimeForHandle(this), this.id, command, options);
+  }
+
+  /**
+   * Send everything this pane writes to a shell command as well as its screen.
+   *
+   * A pane keeps `history-limit` lines and a stream reader keeps a bounded
+   * buffer, so output larger than either is gone before anything asks for it.
+   * The command runs for as long as the pipe is open, which is how a long
+   * build is captured whole. Pass no command to stop one.
+   *
+   * ```ts
+   * await pane.pipeTo("cat >> /tmp/build.log", { onlyOutput: true });
+   * ```
+   */
+  pipeTo(command?: string, options?: { readonly onlyOutput?: boolean }): Promise<void> {
+    return pipePane(runtimeForHandle(this), this.id, command, options);
   }
 
   /**

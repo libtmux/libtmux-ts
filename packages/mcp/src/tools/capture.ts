@@ -16,7 +16,7 @@ import {
   requireSession,
   type ToolContext,
 } from "../context.js";
-import { offers, READ_ONLY } from "../register.js";
+import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, resourceLink, tailLines } from "../results.js";
 import { paneContentUri } from "../uris.js";
 
@@ -258,6 +258,48 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           text: trimmed.lines.join("\n"),
         },
         `${body}${missed}`,
+      );
+    },
+  );
+
+  mcp.registerTool(
+    "pipe_pane",
+    {
+      annotations: OPEN_WORLD,
+      description:
+        "Send everything a pane writes to a shell command, for as long as the pipe " +
+        "is open. Use this for output too large to read back: a pane keeps only " +
+        "history-limit lines and observe keeps a bounded buffer, so a long build " +
+        "outruns both and the earliest output is gone before anyone asks. " +
+        "'cat >> /tmp/build.log' captures it whole and costs nothing to leave " +
+        "running. Call with no command to stop. The command runs on the machine " +
+        "tmux runs on, and does whatever it does — this server cannot tell.",
+      inputSchema: {
+        onlyOutput: z
+          .boolean()
+          .optional()
+          .describe(
+            "Send what the program writes but not what is typed in. Default false, " +
+              "which interleaves a log with its own echo.",
+          ),
+        paneId: z.string(),
+        shellCommand: z
+          .string()
+          .optional()
+          .describe("Omit to stop a pipe this pane already has open."),
+      },
+      outputSchema: { paneId: z.string(), piping: z.boolean() },
+      title: "Pipe pane output",
+    },
+    async ({ onlyOutput, paneId, shellCommand }) => {
+      const snapshot = await context.snapshot();
+      const pane = requirePane(snapshot, paneId);
+      if (isFailure(pane)) return pane;
+      await pane.pipeTo(shellCommand, onlyOutput === undefined ? {} : { onlyOutput });
+      const piping = shellCommand !== undefined;
+      return ok(
+        { paneId, piping },
+        piping ? `Piping ${paneId} into: ${shellCommand}` : `Stopped piping ${paneId}.`,
       );
     },
   );

@@ -1,6 +1,6 @@
 // The library's real-tmux fixture harness reaches into its internals, so it is
 // unpublished and an in-repo consumer reaches across packages for it by path.
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1412,6 +1412,48 @@ describe("staying out of the way", () => {
       });
     });
   }, 60_000);
+
+  test("captures a pane past what it keeps, and writes a buffer out", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        const log = join(await makeTestDirectory("ltx-pipe-"), "captured.log");
+
+        await client.callTool({
+          arguments: { onlyOutput: true, paneId, shellCommand: `cat >> ${log}` },
+          name: "pipe_pane",
+        });
+        // More than a read-back path would keep, which is the case this exists
+        // for: the earliest output is gone before anything asks for it.
+        await client.callTool({
+          arguments: {
+            command: "i=0; while [ $i -lt 3000 ]; do echo piped-$i; i=$((i+1)); done",
+            maxLines: 1,
+            paneId,
+            timeoutMs: 40_000,
+          },
+          name: "run_command",
+        });
+        await client.callTool({ arguments: { paneId }, name: "pipe_pane" });
+
+        const captured = await readFile(log, "utf8");
+        expect(captured).toContain("piped-0");
+        expect(captured).toContain("piped-2999");
+
+        // And a buffer goes to a file without coming back through the caller.
+        const out = join(await makeTestDirectory("ltx-save-"), "buffer.txt");
+        await client.callTool({
+          arguments: { name: "outgoing", text: "kept out of the reply" },
+          name: "load_buffer",
+        });
+        await client.callTool({
+          arguments: { name: "outgoing", path: out },
+          name: "save_buffer",
+        });
+        expect(await readFile(out, "utf8")).toContain("kept out of the reply");
+      });
+    });
+  }, 120_000);
 
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {

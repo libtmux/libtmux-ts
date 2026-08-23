@@ -47,6 +47,7 @@ import {
   listBuffers,
   listCommands,
   loadBuffer,
+  saveBuffer,
   setBuffer,
   showBuffer,
   sourceFile,
@@ -620,6 +621,21 @@ export class Server {
    */
   unsetOption(name: string): Promise<void> {
     return unsetOption(runtimeForServer(this), "server", null, name);
+  }
+
+  /**
+   * Write a paste buffer to a file instead of reading it back.
+   *
+   * `showBuffer` returns the contents through this process; for a large buffer
+   * that means holding it in memory to put it somewhere else. tmux writes the
+   * file itself, on the machine tmux is running on.
+   *
+   * ```ts
+   * await server.saveBuffer("captured", "/tmp/build.log");
+   * ```
+   */
+  saveBuffer(name: string, path: string, options?: { readonly append?: boolean }): Promise<void> {
+    return saveBuffer(runtimeForServer(this), name, path, options);
   }
 
   /**

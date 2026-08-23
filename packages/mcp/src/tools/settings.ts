@@ -18,7 +18,7 @@ import {
   requireWritablePane,
   type ToolContext,
 } from "../context.js";
-import { MUTATING, offers, READ_ONLY } from "../register.js";
+import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { fail, ok } from "../results.js";
 
 /**
@@ -392,6 +392,29 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       await pane.pasteBuffer(name);
       return ok({ name, paneId }, `Pasted buffer ${name} into ${paneId}.`);
+    },
+  );
+
+  mcp.registerTool(
+    "save_buffer",
+    {
+      annotations: OPEN_WORLD,
+      description:
+        "Write a buffer to a file instead of reading it back. show_buffer returns " +
+        "the contents, which for anything large means spending your context on " +
+        "bytes you only want stored. tmux writes the file itself, on the machine " +
+        "tmux runs on. An existing file is replaced unless append is set.",
+      inputSchema: {
+        append: z.boolean().optional().describe("Add to the file rather than replacing it."),
+        name: z.string(),
+        path: z.string().describe("Where tmux writes it, on tmux's own machine."),
+      },
+      outputSchema: { name: z.string(), path: z.string() },
+      title: "Save buffer to a file",
+    },
+    async ({ append, name, path }) => {
+      await context.tmux.saveBuffer(name, path, append === undefined ? {} : { append });
+      return ok({ name, path }, `Wrote buffer ${name} to ${path}.`);
     },
   );
 
