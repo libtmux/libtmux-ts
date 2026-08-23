@@ -384,6 +384,11 @@ export interface Selection<Model> extends Iterable<Model> {
    * "exactly one" is enforced rather than assumed — a `first` that silently
    * takes the head of two is how the wrong pane gets driven.
    *
+   * An id is not always one member. A window linked into two sessions, or
+   * shared by two grouped sessions, has a placement in each and both carry the
+   * same id, so `one({ id })` raises for a perfectly good id. Add the session
+   * to say which placement is meant.
+   *
    * ```ts
    * const only = snapshot.sessions.one({ name: "work" });
    * only.id;

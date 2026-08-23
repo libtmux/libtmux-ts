@@ -646,6 +646,8 @@ tmux's global defaults. `Server.showGlobalOptions`, `setGlobalOption` and
 `unsetGlobalOption` reach those, taking `"session"` or `"window"` for which
 table — `history-limit` and `default-shell` live in the first, `remain-on-exit`
 in the second, and none of the three is readable any other way.
+`showResolvedOptions` answers the other question: what governs this object,
+with its own values and everything it inherits resolved into one map.
 
 ## Commands this package does not model
 
@@ -1041,7 +1043,15 @@ await session.unsetOption("status-left");
 await server.setGlobalOption("window", "remain-on-exit", "on");
 await server.unsetGlobalOption("window", "remain-on-exit");
 
+// Or ask what governs one object, own and inherited resolved together.
+(await session.showResolvedOptions()).get("history-limit");
+(await window.showResolvedOptions()).get("main-pane-width");
+(await pane.showResolvedOptions()).get("allow-rename");
+(await server.showResolvedOptions()).get("message-limit");
+
+// A hook holds a list of commands; a write replaces it unless it appends.
 await server.setHook("after-new-window", "display-message created");
+await server.setHook("after-new-window", "display-message again", { append: true });
 await server.showHooks();
 await server.unsetHook("after-new-window");
 ```

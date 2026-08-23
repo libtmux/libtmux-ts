@@ -15,7 +15,18 @@ import type { Window } from "./window.js";
  * The dependency points inward: internals import these, not the reverse.
  */
 
-/** An immutable view of the server at one instant. */
+/**
+ * An immutable view of the server at one instant.
+ *
+ * `windows` and `panes` hold placements rather than distinct objects. A window
+ * linked into two sessions, or shared by two grouped sessions, is one window
+ * that appears once per session — so these count places a thing is, and an id
+ * matches every placement of it. Narrow with the session to reach one:
+ *
+ * ```ts
+ * snapshot.panes.one({ id: "%1", session: { is: { name: "work" } } });
+ * ```
+ */
 export interface ServerSnapshot {
   readonly clients: Selection<Client>;
   readonly panes: Selection<Pane>;
