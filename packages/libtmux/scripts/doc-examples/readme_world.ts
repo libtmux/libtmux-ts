@@ -1,5 +1,4 @@
-import { rm, writeFile } from "node:fs/promises";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { TestServer } from "../../src/_internal/test/test_server.js";
