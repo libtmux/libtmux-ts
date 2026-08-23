@@ -12,6 +12,8 @@ remember.
 
 ## Unreleased
 
+## 0.1.0-alpha.5
+
 ### `libtmux`
 
 `Server.showGlobalOptions`, `Server.setGlobalOption` and
