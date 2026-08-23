@@ -48,6 +48,8 @@ const expectedScripts = {
   generate: "bun scripts/generate-formats.ts --write",
   "docs:api": "bun scripts/generate-api-docs.ts",
   "docs:api:check": "bun scripts/generate-api-docs.ts --check",
+  "docs:criteria": "bun scripts/generate-field-docs.ts",
+  "docs:criteria:check": "bun scripts/generate-field-docs.ts --check",
   "generate:check": "bun scripts/generate-formats.ts --check",
   lint: "oxlint . --ignore-pattern tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun scripts/check-type-aware-lint.ts",
   "lint:unused": "knip",
