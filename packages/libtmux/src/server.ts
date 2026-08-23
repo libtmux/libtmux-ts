@@ -975,6 +975,11 @@ export class Server {
   /**
    * Put a string into a named paste buffer.
    *
+   * Empty data stores nothing. tmux exits zero for `set-buffer -b name ""` and
+   * creates no buffer at all, so the name a caller thinks they just wrote is
+   * absent — and they learn that from whatever reads it next, which points at
+   * the wrong call. Check before storing content that may be empty.
+   *
    * ```ts
    * await server.setBuffer("greeting", "hello");
    * ```

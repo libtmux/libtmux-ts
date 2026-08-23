@@ -367,6 +367,17 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       title: "Load buffer",
     },
     async ({ name, text }) => {
+      // tmux drops an empty `set-buffer` silently: it exits zero and creates
+      // nothing. Reporting "loaded 0 bytes into buffer x" would name a buffer
+      // that does not exist, and the caller finds out one call later when
+      // paste_buffer says there is no such buffer — pointing at the wrong
+      // call. This is the failure the content being dynamic produces.
+      if (text === "") {
+        return fail({
+          hint: "Write at least one byte, or skip the load when the content is empty.",
+          reason: `tmux stores no buffer for empty text, so ${name} was not created.`,
+        });
+      }
       await context.tmux.loadBuffer(name, text);
       const bytes = Buffer.byteLength(text, "utf8");
       return ok({ bytes, name }, `Loaded ${String(bytes)} bytes into buffer ${name}.`);
