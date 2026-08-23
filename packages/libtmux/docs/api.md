@@ -637,6 +637,11 @@ showBuffer(name: string): Promise<readonly string[]>
 
 Read a named paste buffer's contents.
 
+Over a control connection this stops at the first NUL byte: tmux writes a
+command's output to a control client as a C string. The buffer is unharmed
+— `saveBuffer` and a spawning server both read it whole — and a pane's own
+output is unaffected, being escaped before it is written.
+
 ```ts
 const lines = await server.showBuffer("greeting");
 lines[0]; // "hello"
@@ -1878,6 +1883,9 @@ chooseTree(options?: ChooseTreeOptions): Promise<void>
 
 Open the interactive session and window chooser in this pane.
 
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
+
 ```ts
 await pane.chooseTree({ sessionsOnly: true });
 ```
@@ -1889,6 +1897,9 @@ chooseBuffer(): Promise<void>
 ```
 
 Open the interactive buffer chooser in this pane.
+
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
 
 ```ts
 await pane.chooseBuffer();
@@ -1902,6 +1913,9 @@ findWindow(pattern: string): Promise<void>
 
 Search windows interactively from this pane.
 
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
+
 ```ts
 await pane.findWindow("editor");
 ```
@@ -1914,6 +1928,9 @@ sendPrefix(): Promise<void>
 
 Send the configured prefix key to this pane.
 
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
+
 ```ts
 await pane.sendPrefix();
 ```
@@ -1925,6 +1942,9 @@ customizeMode(): Promise<void>
 ```
 
 Open tmux's interactive option editor in this pane.
+
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
 
 ```ts
 await pane.customizeMode();

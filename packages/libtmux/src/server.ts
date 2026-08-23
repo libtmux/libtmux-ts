@@ -913,6 +913,11 @@ export class Server {
   /**
    * Read a named paste buffer's contents.
    *
+   * Over a control connection this stops at the first NUL byte: tmux writes a
+   * command's output to a control client as a C string. The buffer is unharmed
+   * — `saveBuffer` and a spawning server both read it whole — and a pane's own
+   * output is unaffected, being escaped before it is written.
+   *
    * ```ts
    * const lines = await server.showBuffer("greeting");
    * lines[0]; // "hello"

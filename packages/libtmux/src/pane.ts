@@ -391,6 +391,9 @@ export class Pane {
   /**
    * Open the interactive session and window chooser in this pane.
    *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
+   *
    * ```ts
    * await pane.chooseTree({ sessionsOnly: true });
    * ```
@@ -401,6 +404,9 @@ export class Pane {
 
   /**
    * Open the interactive buffer chooser in this pane.
+   *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
    *
    * ```ts
    * await pane.chooseBuffer();
@@ -413,6 +419,9 @@ export class Pane {
   /**
    * Search windows interactively from this pane.
    *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
+   *
    * ```ts
    * await pane.findWindow("editor");
    * ```
@@ -424,6 +433,9 @@ export class Pane {
   /**
    * Send the configured prefix key to this pane.
    *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
+   *
    * ```ts
    * await pane.sendPrefix();
    * ```
@@ -434,6 +446,9 @@ export class Pane {
 
   /**
    * Open tmux's interactive option editor in this pane.
+   *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
    *
    * ```ts
    * await pane.customizeMode();
