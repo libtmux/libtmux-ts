@@ -12,6 +12,156 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`Server.showGlobalOptions`, `Server.setGlobalOption` and
+`Server.unsetGlobalOption` reach the defaults every session or window inherits,
+taking `"session"` or `"window"` for which table. A handle reports only what was
+set on it, so a session that has set nothing reports nothing while the values
+governing it live here — `history-limit` and `default-shell` among them.
+
+`Pane.pipeTo` sends everything a pane writes to a shell command, for as long as
+the pipe is open. A pane keeps `history-limit` lines and a stream reader keeps a
+bounded buffer, so output larger than either is gone before anything asks for
+it. Passing no command stops an open pipe.
+
+`Server.saveBuffer` writes a paste buffer to a file. `showBuffer` returns the
+contents through the calling process; this leaves them with tmux.
+
+`NewSessionOptions` accepts `width` and `height`, passed as tmux's `-x` and
+`-y`. A detached session has no client to size it, so tmux gives it 80x24 and
+every program in it formats to that.
+
+### `@libtmux/mcp`
+
+#### Writing into a pane
+
+`paste_text`, `paste_buffer` and `respawn_pane` refuse the pane the server runs
+in, and take `force` to mean it anyway. Previously only `send_keys` and
+`run_command` checked.
+
+`respawn_pane` requires the `destructive` tier for `killFirst`, and refuses a
+pane somebody is watching. It ended a running process at the `mutating` tier,
+where `kill_pane` is hidden.
+
+`split_pane`, `respawn_pane`, `resize_pane`, `select_pane`, `swap_pane` and
+`set_pane_title` report `isAttended` and `isCallerPane` from the caller's
+identity. All six returned `false` for both, including for the server's own
+pane, while `get_pane` answered correctly about the same pane.
+
+Every tool that runs a `shellCommand` declares `openWorldHint`. `new_session`,
+`new_window`, `split_pane`, `respawn_pane` and `build_workspace` reported
+`false` while `send_keys` reported `true` for the same thing.
+
+#### `run_command`
+
+A multiline command no longer reaches the history file of a shell set to
+`HIST_IGNORE_SPACE` or `HISTCONTROL=ignorespace`. The leading space that
+suppresses it was skipped whenever the command contained a newline.
+
+Output no longer includes a second caller's echoed command or its output, and
+`foreignOutputSuspected` reports what cannot be attributed. `false` means no
+foreign marker was seen, not that the output is certainly this command's.
+
+A command that prints more than the pane's buffer holds still reports its exit
+status. The start marker is printed first and lost first, and requiring it meant
+a finished command ran to its deadline and reported as still running.
+`missedBytes` and `droppedLines` say when output is short of what was printed.
+
+A dead pane is refused, naming `respawn_pane`. `pane_died` is decided by
+liveness rather than by the pane still existing.
+
+The timeout hint names `wait_for_text`. It read "call again to keep waiting",
+which mints a fresh marker and is then refused by this tool's own shell guard.
+
+#### Watching output
+
+`observe` and `wait_for_text` refuse a cursor past the end of a pane's stream,
+naming where the stream is and how to reseed. Past the end it read as empty with
+nothing missed, so a pane that was printing looked quiet.
+
+`observe` seeds on an absent cursor rather than an absent tail, and honours
+`LIBTMUX_MCP_LIVE`.
+
+`wait_for_text_task` holds to the blocking ceiling for a client that declares no
+task capability. Such a client gets no handle and cannot cancel, and was charged
+the task ceiling for a trade it never received.
+
+#### Resources
+
+Every per-object URI reads back. Ids were escaped on the way out and not
+unescaped on the way in, so `tmux://sessions/%240` answered "No session %240"
+while the unadvertised raw form resolved. Lookups route through the same
+not-found errors the tools use.
+
+`notifications/resources/list_changed` is sent when this server adds, removes or
+renames anything, and when another client on the same tmux server does. It was
+advertised and never sent. `subscribe` is advertised only when a control
+connection is available.
+
+A session's control connection is released once nothing reads it. The close path
+refused to run while a link held any tail and nothing removed one, so the server
+held one control-mode client per observed session for the life of the process.
+
+#### Options
+
+Six scopes rather than three: `global-session`, `global-window` and `window`
+join `server`, `session` and `pane`. The global tables hold most of tmux's
+options, `history-limit` and `default-shell` among them.
+
+`unset_option` removes an option so it falls back to what it inherits.
+`set_option` had no inverse.
+
+`set_option` and `show_options` require a target for `session`, `window` and
+`pane` scope. `""` is a legal tmux session name and was the absent-target
+sentinel, so an untargeted call was a lookup that could succeed.
+
+#### Reporting
+
+`list_panes`, `list_windows` and `search_panes` resolve a session filter id
+first and exclusively, as `requireSession` and tmux do. They matched the id or
+the name, so a session named `$0` returned another session's panes. A filter
+naming no session is an error rather than an empty list.
+
+`server_info` reports the socket it is driving, resolved from tmux. It read a
+constructor argument, so a server on the default socket reported null.
+
+`display_message` names a field tmux does not know. tmux prints nothing for an
+unknown name and exits 0, so a typo and an empty field were one answer. Only
+`#{name}` forms are checked, and the table is consulted when nothing resolved or
+when more than one name could have contributed.
+
+`select_layout` says when a layout string was accepted and ignored. tmux exits 0
+for a layout describing a different set of panes and changes nothing.
+
+`show_hooks` lists the hooks that carry a command and counts the rest in
+`unset`, rather than returning tmux's whole table.
+
+A not-found error says when its list of alternatives is partial, and which tool
+lists the rest.
+
+`new_session`, `new_window` and `split_pane` say when a pane did not start in
+the directory asked for. tmux chdirs in the forked child and falls back
+silently. `split_pane` defaults to the directory of the pane being split.
+
+Recovery guidance names `LIBTMUX_TMUX_BIN` when one was set. A missing
+executable and an unreachable socket both arrive as "cannot reach tmux", and
+only the socket was named; a version probe returning nothing carried no guidance
+at all.
+
+#### Tools added
+
+`move_pane` joins a pane into another window, or breaks it out into one of its
+own when no destination is named. `swap_window` exchanges two windows.
+
+`resize_window` sets a window's size, and `new_session` takes `width` and
+`height`. `resize_pane` only redistributes space inside a window.
+
+`pipe_pane` sends a pane's output to a shell command, and `save_buffer` writes a
+buffer to a file.
+
+`unset_option` is listed under Options above.
+
 ## 0.1.0-alpha.4
 
 No change to the published code: `dist` is identical to `0.1.0-alpha.3`, and
