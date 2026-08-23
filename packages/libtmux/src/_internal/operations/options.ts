@@ -120,6 +120,39 @@ export async function showOptions(
   return options;
 }
 
+/**
+ * Read the option values that actually govern one object.
+ *
+ * `showOptions` answers what was set here, which for a fresh window or pane is
+ * nothing at all — the values it runs under live in the tables it inherits.
+ * This resolves the two, so `history-limit` and `default-shell` have an answer
+ * on any object rather than only on whichever scope happens to hold them.
+ *
+ * tmux marks an inherited entry by suffixing the name with `*`, which is
+ * stripped here: the name is the option's, and where it came from is answered
+ * by whether `showOptions` also reports it.
+ */
+export async function showResolvedOptions(
+  runtime: RuntimeContext,
+  scope: OptionScope,
+  target?: string | null,
+): Promise<ReadonlyMap<string, string>> {
+  const lines = await runCommand(runtime, [
+    "show-options",
+    "-A",
+    ...SCOPE_FLAGS[scope],
+    ...(target == null ? [] : ["-t", target]),
+  ]);
+
+  const options = new Map<string, string>();
+  for (const line of lines) {
+    const parsed = parseNameValueLine(line);
+    if (parsed === undefined) continue;
+    options.set(parsed[0].endsWith("*") ? parsed[0].slice(0, -1) : parsed[0], parsed[1]);
+  }
+  return options;
+}
+
 /** Set one option at a scope. `append` uses tmux's `-a` to extend a value. */
 export async function setOption(
   runtime: RuntimeContext,

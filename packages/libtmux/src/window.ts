@@ -16,7 +16,12 @@ import {
 } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
 import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import {
   linkWindow,
   cycleLayout,
@@ -154,6 +159,21 @@ export class Window {
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
     return showOptions(runtimeForHandle(this), "window", this.id);
+  }
+
+  /**
+   * The option values that govern this window, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh window is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await window.showResolvedOptions()).get("main-pane-width");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "window", this.id);
   }
 
   /**

@@ -38,7 +38,12 @@ import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killServer, newSession } from "./_internal/operations/mutations.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import { ifShell, runShell } from "./_internal/operations/shell.js";
 import {
   deleteBuffer,
@@ -608,6 +613,21 @@ export class Server {
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
     return showOptions(runtimeForServer(this), "server");
+  }
+
+  /**
+   * The option values that govern this server, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh server is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await server.showResolvedOptions()).get("message-limit");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForServer(this), "server", null);
   }
 
   /**

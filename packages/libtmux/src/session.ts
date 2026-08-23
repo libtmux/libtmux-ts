@@ -20,7 +20,12 @@ import { LibTmuxException } from "./exc.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killTarget, newWindow } from "./_internal/operations/mutations.js";
 import { planKill, planNewWindow } from "./_internal/operations/plans.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import { renameSession, selectWindowIn } from "./_internal/operations/session_nav.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
@@ -93,6 +98,21 @@ export class Session {
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
     return showOptions(runtimeForHandle(this), "session", this.id);
+  }
+
+  /**
+   * The option values that govern this session, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh session is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await session.showResolvedOptions()).get("history-limit");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "session", this.id);
   }
 
   /**

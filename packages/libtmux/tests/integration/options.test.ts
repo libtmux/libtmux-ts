@@ -210,6 +210,38 @@ describe("option reads", () => {
     });
   }, 60_000);
 
+  test("resolves the options that govern an object, not just its own", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+      await session.setOption("history-limit", "9999");
+      const window = (await server.snapshot()).windows.one();
+
+      const own = await window.showOptions();
+      const resolved = await window.showResolvedOptions();
+
+      // A window that has set nothing reports nothing, which is the answer to a
+      // different question from the one a caller usually has.
+      expect(own.size).toBe(0);
+      expect(resolved.size).toBeGreaterThan(0);
+      expect(resolved.get("main-pane-width")).toBeDefined();
+
+      // tmux marks an inherited entry by suffixing the name; the name is the
+      // option's, so a caller can look one up by the name they know.
+      expect([...resolved.keys()].filter((name) => name.includes("*"))).toEqual([]);
+
+      // What was set here wins over what would be inherited, and both readers
+      // agree about it.
+      const sessionOwn = await session.showOptions();
+      const sessionResolved = await session.showResolvedOptions();
+      expect(sessionOwn.get("history-limit")).toBe("9999");
+      expect(sessionResolved.get("history-limit")).toBe("9999");
+      // And an option the session never set still has an answer here.
+      expect(sessionOwn.has("default-shell")).toBe(false);
+      expect(sessionResolved.get("default-shell")).toBeDefined();
+    });
+  }, 30_000);
+
   test("rejects an unknown option with a tmux-sourced error", async () => {
     await withServer(async (fixture) => {
       await expect(serverFor(fixture).setOption("definitely-not-an-option", "1")).rejects.toThrow(

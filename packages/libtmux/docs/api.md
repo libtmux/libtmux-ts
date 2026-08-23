@@ -9,7 +9,7 @@ page is for looking one thing up.
 
 ## Server
 
-[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -312,6 +312,22 @@ Every server-scope option tmux currently reports.
 ```ts
 const options = await server.showOptions();
 options.get("escape-time");
+```
+
+#### `Server.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this server, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh server is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await server.showResolvedOptions()).get("message-limit");
 ```
 
 #### `Server.setOption`
@@ -808,7 +824,7 @@ const [editor, logs] = await server.batch([
 
 ## Session
 
-[`server`](#sessionserver) · [`windows`](#sessionwindows) · [`panes`](#sessionpanes) · [`showOptions`](#sessionshowoptions) · [`setOption`](#sessionsetoption) · [`unsetOption`](#sessionunsetoption) · [`showHooks`](#sessionshowhooks) · [`setHook`](#sessionsethook) · [`unsetHook`](#sessionunsethook) · [`showEnvironment`](#sessionshowenvironment) · [`getEnvironment`](#sessiongetenvironment) · [`setEnvironment`](#sessionsetenvironment) · [`unsetEnvironment`](#sessionunsetenvironment) · [`removeEnvironment`](#sessionremoveenvironment) · [`activeWindow`](#sessionactivewindow) · [`activePane`](#sessionactivepane) · [`newWindow`](#sessionnewwindow) · [`plan`](#sessionplan) · [`kill`](#sessionkill) · [`refreshed`](#sessionrefreshed) · [`rename`](#sessionrename) · [`selectWindow`](#sessionselectwindow) · [`fromEnv`](#sessionfromenv) · [`detach`](#sessiondetach) · [`cmd`](#sessioncmd) · [`sameTmuxIdAs`](#sessionsametmuxidas)
+[`server`](#sessionserver) · [`windows`](#sessionwindows) · [`panes`](#sessionpanes) · [`showOptions`](#sessionshowoptions) · [`showResolvedOptions`](#sessionshowresolvedoptions) · [`setOption`](#sessionsetoption) · [`unsetOption`](#sessionunsetoption) · [`showHooks`](#sessionshowhooks) · [`setHook`](#sessionsethook) · [`unsetHook`](#sessionunsethook) · [`showEnvironment`](#sessionshowenvironment) · [`getEnvironment`](#sessiongetenvironment) · [`setEnvironment`](#sessionsetenvironment) · [`unsetEnvironment`](#sessionunsetenvironment) · [`removeEnvironment`](#sessionremoveenvironment) · [`activeWindow`](#sessionactivewindow) · [`activePane`](#sessionactivepane) · [`newWindow`](#sessionnewwindow) · [`plan`](#sessionplan) · [`kill`](#sessionkill) · [`refreshed`](#sessionrefreshed) · [`rename`](#sessionrename) · [`selectWindow`](#sessionselectwindow) · [`fromEnv`](#sessionfromenv) · [`detach`](#sessiondetach) · [`cmd`](#sessioncmd) · [`sameTmuxIdAs`](#sessionsametmuxidas)
 
 ### Properties
 
@@ -913,6 +929,22 @@ Every option this session currently sees, including inherited values.
 ```ts
 const options = await session.showOptions();
 options.get("status");
+```
+
+#### `Session.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this session, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh session is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await session.showResolvedOptions()).get("history-limit");
 ```
 
 #### `Session.setOption`
@@ -1177,7 +1209,7 @@ session.sameTmuxIdAs(await session.refreshed()); // true
 
 ## Window
 
-[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showOptions`](#windowshowoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
+[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showOptions`](#windowshowoptions) · [`showResolvedOptions`](#windowshowresolvedoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
 
 ### Properties
 
@@ -1275,6 +1307,22 @@ Every option this window currently sees, including inherited values.
 ```ts
 const options = await window.showOptions();
 options.get("automatic-rename");
+```
+
+#### `Window.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this window, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh window is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await window.showResolvedOptions()).get("main-pane-width");
 ```
 
 #### `Window.setOption`
@@ -1540,7 +1588,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -1609,6 +1657,22 @@ Every option this pane currently sees, including inherited values.
 ```ts
 const options = await pane.showOptions();
 options.get("remain-on-exit");
+```
+
+#### `Pane.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this pane, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh pane is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await pane.showResolvedOptions()).get("allow-rename");
 ```
 
 #### `Pane.setOption`

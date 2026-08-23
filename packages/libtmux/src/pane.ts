@@ -27,7 +27,12 @@ import {
 import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import {
   breakPane,
   displayMessage,
@@ -109,6 +114,21 @@ export class Pane {
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
     return showOptions(runtimeForHandle(this), "pane", this.id);
+  }
+
+  /**
+   * The option values that govern this pane, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh pane is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await pane.showResolvedOptions()).get("allow-rename");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "pane", this.id);
   }
 
   /**
