@@ -19,7 +19,7 @@ import {
   requireWindow,
   type ToolContext,
 } from "../context.js";
-import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
+import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
   directoryNote,
@@ -46,7 +46,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "new_session",
     {
-      annotations: MUTATING,
+      annotations: MUTATING_OPEN_WORLD,
       description:
         "Create a detached session and return it with its first window and pane, " +
         "so you can start working without listing anything first.",
@@ -91,7 +91,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "new_window",
     {
-      annotations: MUTATING,
+      annotations: MUTATING_OPEN_WORLD,
       description: "Add a window to a session and return it with its pane.",
       inputSchema: {
         name: z.string().optional(),
@@ -126,7 +126,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "split_pane",
     {
-      annotations: MUTATING,
+      annotations: MUTATING_OPEN_WORLD,
       description:
         "Split a pane and return the new one. Direction is where the new pane goes " +
         "relative to the one you split.",
@@ -213,7 +213,9 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "respawn_pane",
     {
-      annotations: MUTATING,
+      annotations: offers(context.policy, "destructive")
+        ? { ...MUTATING_OPEN_WORLD, destructiveHint: true }
+        : MUTATING_OPEN_WORLD,
       description:
         "Restart a pane's command in place, keeping the pane and its id. Use to " +
         "recover a pane whose process died, rather than killing and re-splitting.",

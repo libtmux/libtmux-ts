@@ -74,6 +74,12 @@ function formatVariables(format: string): readonly string[] {
  * Enumerated against the same target the caller used: the set is
  * target-dependent, and a pane field checked at server scope would look
  * missing when it is only out of scope.
+ *
+ * Asking the running tmux rather than carrying a table is what makes this
+ * version-aware: 3.4 knows 120 variables against a pane and 3.7 knows 141, so
+ * a format written against a newer server is told exactly which field the
+ * older one lacks, and a field added in a future tmux needs no change here.
+ * A static list would be faster and would quietly lose all of that.
  */
 async function unknownFields(
   enumerate: () => Promise<readonly string[]>,

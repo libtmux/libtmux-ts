@@ -11,7 +11,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
-import { MUTATING, offers } from "../register.js";
+import { MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import { paneLine, paneView, paneViewSchema } from "../views.js";
 
@@ -30,7 +30,7 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "build_workspace",
     {
-      annotations: MUTATING,
+      annotations: MUTATING_OPEN_WORLD,
       description:
         "Create a session and all of its windows at once, and get back every pane " +
         "id. Use this instead of new_session followed by a new_window per window: " +

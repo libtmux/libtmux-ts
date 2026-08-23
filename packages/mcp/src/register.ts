@@ -36,6 +36,23 @@ export const DESTRUCTIVE: ToolAnnotations = {
 };
 
 /**
+ * Creates something, and may run a command whose effect is outside tmux.
+ *
+ * A spawn given a `shellCommand` does whatever that command does, which is as
+ * unknowable from here as what `send_keys` types — and `openWorldHint` is the
+ * only channel carrying that, since every one of these is legitimately
+ * `mutating` and the tier cannot separate them. It is not destructive: these
+ * create rather than end, and a host deciding what to approve needs the two
+ * answers apart.
+ */
+export const MUTATING_OPEN_WORLD: ToolAnnotations = {
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+  readOnlyHint: false,
+};
+
+/**
  * Runs something whose effect is outside tmux.
  *
  * `send_keys` types into a shell, so what it does is whatever that shell does —

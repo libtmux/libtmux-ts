@@ -1273,6 +1273,42 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("declares an open world wherever it runs a command", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const byName = new Map(
+          (await client.listTools()).tools.map((tool) => [tool.name, tool.annotations]),
+        );
+
+        // openWorldHint is one of the signals a host uses to decide what it may
+        // approve without asking, and the tier cannot separate these: all of
+        // them are legitimately mutating. Every tool taking a shellCommand does
+        // whatever that command does, which is as unknowable from here as what
+        // send_keys types.
+        for (const name of [
+          "send_keys",
+          "run_command",
+          "new_session",
+          "new_window",
+          "split_pane",
+          "respawn_pane",
+          "build_workspace",
+        ]) {
+          expect(byName.get(name)?.openWorldHint, `${name} hides an open world`).toBe(true);
+        }
+
+        // The quiet half: a tool that only rearranges tmux does not claim one,
+        // or the hint stops meaning anything.
+        for (const name of ["select_pane", "rename_window", "list_panes", "capture_pane"]) {
+          expect(byName.get(name)?.openWorldHint, `${name} claims an open world`).not.toBe(true);
+        }
+
+        // A spawn creates rather than ends, and a host needs those apart.
+        expect(byName.get("new_window")?.destructiveHint).toBe(false);
+      });
+    });
+  }, 60_000);
+
   test("offers only reading tools under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(
