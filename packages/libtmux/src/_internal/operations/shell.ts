@@ -185,9 +185,24 @@ export async function setCopyMode(
   }
 }
 
-/** Detach every client attached to a target, or one named client. */
-export async function detachClient(runtime: RuntimeContext, target: string | null): Promise<void> {
-  await runCommand(runtime, ["detach-client", ...(target == null ? [] : ["-t", target])]);
+/**
+ * What to detach: one named client, or every client attached to a session.
+ *
+ * tmux spells these as two different flags — `-t` names a client, `-s` names a
+ * session — and one string parameter cannot say which was meant. Passing a
+ * session id where a client name was expected is accepted by every type in
+ * sight and rejected by tmux as `can't find client: $0`.
+ */
+export type DetachTarget = { readonly client: string } | { readonly session: string };
+
+/** Detach every client attached to a session, one named client, or all. */
+export async function detachClient(
+  runtime: RuntimeContext,
+  target: DetachTarget | null,
+): Promise<void> {
+  const flags =
+    target === null ? [] : "client" in target ? ["-t", target.client] : ["-s", target.session];
+  await runCommand(runtime, ["detach-client", ...flags]);
 }
 
 /** Point a client at a different session. */

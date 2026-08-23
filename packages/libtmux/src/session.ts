@@ -384,7 +384,7 @@ export class Session {
    * ```
    */
   detach(): Promise<void> {
-    return detachClient(runtimeForHandle(this), this.id);
+    return detachClient(runtimeForHandle(this), { session: this.id });
   }
 
   /**

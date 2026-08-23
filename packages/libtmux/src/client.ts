@@ -83,7 +83,7 @@ export class Client {
    * ```
    */
   detach(): Promise<void> {
-    return detachClient(runtimeForHandle(this), this.name);
+    return detachClient(runtimeForHandle(this), { client: this.name });
   }
 
   /**
