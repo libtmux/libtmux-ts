@@ -374,18 +374,32 @@ export type QueryValidationErrorCode = "invalid-id" | "invalid-query";
 
 export class QueryValidationError extends LibTmuxException {
   readonly code: QueryValidationErrorCode;
+  /**
+   * Where in the criteria the problem is, as keys and array indices.
+   *
+   * `["windows", "some", "name", "startsWith"]` reads as
+   * `windows.some.name.startsWith`, which is what the message renders. Kept
+   * apart from the message so a caller that built the criteria from somewhere
+   * else — a form, a config file, an MCP client — can point at the right field
+   * rather than parse a sentence. Empty when the criteria themselves are not an
+   * object at all.
+   */
+  readonly path: readonly (string | number)[];
 
   constructor({
     cause,
     code,
     message,
+    path = [],
   }: {
     readonly cause?: unknown;
     readonly code: QueryValidationErrorCode;
     readonly message: string;
+    readonly path?: readonly (string | number)[];
   }) {
     super(message, { cause });
     this.code = code;
+    this.path = Object.freeze([...path]);
   }
 }
 

@@ -27,6 +27,80 @@ interface ParsedScalar {
 
 interface ParseState {
   readonly active: WeakSet<object>;
+  /** Where in the criteria the parser currently is, for naming a failure. */
+  readonly path: (string | number)[];
+}
+
+function newParseState(): ParseState {
+  return { active: new WeakSet(), path: [] };
+}
+
+/** Run `read` one step deeper, and leave the path as it was however it ends. */
+function at<Value>(state: ParseState, segment: string | number, read: () => Value): Value {
+  state.path.push(segment);
+  try {
+    return read();
+  } finally {
+    state.path.pop();
+  }
+}
+
+function renderPath(path: readonly (string | number)[]): string {
+  let rendered = "";
+  for (const segment of path) {
+    if (typeof segment === "number") rendered += `[${String(segment)}]`;
+    else rendered += rendered === "" ? segment : `.${segment}`;
+  }
+  return rendered;
+}
+
+const quoted = (name: string): string => JSON.stringify(name);
+
+function listed(names: readonly string[]): string {
+  return [...names].sort().map(quoted).join(", ");
+}
+
+/**
+ * How many single-character edits separate two names.
+ *
+ * Only ever asked whether the answer is small, so the table is the whole cost
+ * and the names it compares are criteria keys.
+ */
+function editDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        previous[column]! + 1,
+        current[column - 1]! + 1,
+        previous[column - 1]! + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length]!;
+}
+
+/**
+ * Name the closest few of a set too large to list.
+ *
+ * A model carries over a hundred criteria fields, so listing them buries the
+ * answer. Two edits covers a typo, a wrong case, and a missing plural.
+ */
+function nearest(name: string, known: readonly string[]): string {
+  const close = known
+    .map(
+      (candidate) =>
+        [editDistance(name.toLowerCase(), candidate.toLowerCase()), candidate] as const,
+    )
+    .filter(([distance]) => distance <= 2)
+    .sort(([left, leftName], [right, rightName]) =>
+      left === right ? (leftName < rightName ? -1 : 1) : left - right,
+    )
+    .slice(0, 3)
+    .map(([, candidate]) => quoted(candidate));
+  return close.length === 0 ? "" : `; did you mean ${close.join(", ")}?`;
 }
 
 export interface CompiledWhere {
@@ -36,6 +110,9 @@ export interface CompiledWhere {
 }
 
 const logicalNames = Object.freeze(["AND", "NOT", "OR"] as const);
+/** How a relation is quantified, by whether it holds one target or many. */
+const MANY_QUANTIFIERS: readonly string[] = Object.freeze(["every", "none", "some"]);
+const ONE_QUANTIFIERS: readonly string[] = Object.freeze(["is", "isNot"]);
 const scalarOperatorNames = Object.freeze([
   "contains",
   "endsWith",
@@ -47,15 +124,28 @@ const scalarOperatorNames = Object.freeze([
   "startsWith",
 ] as const);
 const regexFlags = new Set(["", "m", "s", "ms"]);
+/** Built from the vocabulary, so a new operator cannot go unmentioned. */
+const OPERATORS = listed([...scalarOperatorNames]);
 const escapedRegexLiterals = new Set("^$\\.*+?()[]{}|/-".split(""));
 const maximumWhereDepth = 64;
 const maximumCanonicalJsonDepth = maximumWhereDepth * 2 + 4;
 
-function invalidQuery(cause?: unknown): never {
+/**
+ * Refuse a query, naming where in it the problem is and what was expected.
+ *
+ * Criteria arrive as data — from an MCP client, a stored document, a form —
+ * where the type system cannot have caught the mistake, so the message is the
+ * only thing a caller has to go on. It names keys and expectations and never an
+ * operand: these travel to whoever sent the query, and a criterion's value can
+ * be a pane title or a path.
+ */
+function invalidQuery(state: ParseState, reason: string, cause?: unknown): never {
+  const where = state.path.length === 0 ? "" : ` at ${renderPath(state.path)}`;
   throw new QueryValidationError({
     ...(cause === undefined ? {} : { cause }),
     code: "invalid-query",
-    message: "Invalid selection query",
+    message: `Invalid selection query${where}: ${reason}`,
+    path: [...state.path],
   });
 }
 
@@ -64,7 +154,7 @@ function isObject(value: unknown): value is object {
 }
 
 function withActive<Value>(value: object, state: ParseState, read: () => Value): Value {
-  if (state.active.has(value)) return invalidQuery();
+  if (state.active.has(value)) return invalidQuery(state, "the criteria refer to themselves");
   state.active.add(value);
   try {
     return read();
@@ -73,35 +163,38 @@ function withActive<Value>(value: object, state: ParseState, read: () => Value):
   }
 }
 
-function snapshotObject(value: unknown): ReadonlyMap<string, unknown> {
-  if (!isObject(value) || typeof value === "function") return invalidQuery();
+function snapshotObject(value: unknown, state: ParseState): ReadonlyMap<string, unknown> {
+  const plain = "expected a plain object";
+  if (!isObject(value) || typeof value === "function") return invalidQuery(state, plain);
   try {
-    if (nodeTypes.isProxy(value) || Array.isArray(value)) return invalidQuery();
+    if (nodeTypes.isProxy(value) || Array.isArray(value)) return invalidQuery(state, plain);
     const prototype = Object.getPrototypeOf(value) as object | null;
-    if (prototype !== Object.prototype && prototype !== null) return invalidQuery();
+    if (prototype !== Object.prototype && prototype !== null) return invalidQuery(state, plain);
     const keys = Reflect.ownKeys(value);
-    if (keys.some((key) => typeof key !== "string")) return invalidQuery();
     const entries: Array<readonly [string, unknown]> = [];
     for (const key of keys) {
-      if (typeof key !== "string") return invalidQuery();
+      // A symbol key names nothing this vocabulary has, and a getter would run
+      // caller code while the query is being read.
+      if (typeof key !== "string") return invalidQuery(state, "expected only string keys");
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-        return invalidQuery();
+        return invalidQuery(state, `expected ${quoted(key)} to be a plain enumerable value`);
       }
       entries.push([key, descriptor.value]);
     }
     return new Map(entries);
   } catch (error) {
     if (error instanceof QueryValidationError) throw error;
-    return invalidQuery(error);
+    return invalidQuery(state, plain, error);
   }
 }
 
-function snapshotArray(value: unknown): readonly unknown[] {
-  if (!isObject(value) || typeof value === "function") return invalidQuery();
+function snapshotArray(value: unknown, state: ParseState): readonly unknown[] {
+  const plain = "expected an array";
+  if (!isObject(value) || typeof value === "function") return invalidQuery(state, plain);
   try {
-    if (nodeTypes.isProxy(value) || !Array.isArray(value)) return invalidQuery();
-    if (Object.getPrototypeOf(value) !== Array.prototype) return invalidQuery();
+    if (nodeTypes.isProxy(value) || !Array.isArray(value)) return invalidQuery(state, plain);
+    if (Object.getPrototypeOf(value) !== Array.prototype) return invalidQuery(state, plain);
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
     if (
       lengthDescriptor === undefined ||
@@ -111,25 +204,25 @@ function snapshotArray(value: unknown): readonly unknown[] {
       !Number.isSafeInteger(lengthDescriptor.value) ||
       lengthDescriptor.value < 0
     ) {
-      return invalidQuery();
+      return invalidQuery(state, plain);
     }
     const length = lengthDescriptor.value;
     const keys = Reflect.ownKeys(value);
-    if (keys.length !== length + 1 || !keys.includes("length")) return invalidQuery();
+    if (keys.length !== length + 1 || !keys.includes("length")) return invalidQuery(state, plain);
     const result: unknown[] = [];
     for (let index = 0; index < length; index += 1) {
       const key = String(index);
-      if (!keys.includes(key)) return invalidQuery();
+      if (!keys.includes(key)) return invalidQuery(state, plain);
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-        return invalidQuery();
+        return invalidQuery(state, plain);
       }
       result.push(descriptor.value);
     }
     return result;
   } catch (error) {
     if (error instanceof QueryValidationError) throw error;
-    return invalidQuery(error);
+    return invalidQuery(state, plain, error);
   }
 }
 
@@ -156,7 +249,12 @@ function relationFor(model: WhereModel, name: string): WhereRelation | undefined
  * tmux-stable wire names, so a stored document stays readable by the CLI, the
  * MCP surface, and a future Rust port even as the TypeScript surface evolves.
  */
-function criteriaFromWire(model: WhereModel, value: unknown, depth = 0): unknown {
+function criteriaFromWire(
+  model: WhereModel,
+  value: unknown,
+  state: ParseState,
+  depth = 0,
+): unknown {
   // Stop at the criteria depth budget and hand the original value on, so an
   // over-deep or cyclic document is rejected by the validator rather than here.
   if (depth > maximumWhereDepth || !isObject(value)) return value;
@@ -167,19 +265,19 @@ function criteriaFromWire(model: WhereModel, value: unknown, depth = 0): unknown
     WHERE_RELATIONS_V1[model].map((relation) => [relation.name as string, relation] as const),
   );
   const translated: Record<string, unknown> = {};
-  for (const [key, entry] of snapshotObject(value)) {
+  for (const [key, entry] of snapshotObject(value, state)) {
     const relation = relations.get(key);
     if (relation !== undefined && isObject(entry)) {
       const inner: Record<string, unknown> = {};
-      for (const [operator, nested] of snapshotObject(entry)) {
-        inner[operator] = criteriaFromWire(relation.targetModel, nested, depth + 1);
+      for (const [operator, nested] of snapshotObject(entry, state)) {
+        inner[operator] = criteriaFromWire(relation.targetModel, nested, state, depth + 1);
       }
       translated[key] = inner;
       continue;
     }
     if (key === "AND" || key === "OR" || key === "NOT") {
-      translated[key] = snapshotArray(entry).map((child) =>
-        criteriaFromWire(model, child, depth + 1),
+      translated[key] = snapshotArray(entry, state).map((child) =>
+        criteriaFromWire(model, child, state, depth + 1),
       );
       continue;
     }
@@ -204,7 +302,12 @@ const encodableListOperators = new Set(["in", "notIn"]);
  * `WhereDocumentV1` still holds strings, and `criteriaFromWire` still reads
  * one; only the shapes a caller may write in TypeScript grew.
  */
-function criteriaToWireValues(model: WhereModel, value: unknown, depth = 0): unknown {
+function criteriaToWireValues(
+  model: WhereModel,
+  value: unknown,
+  state: ParseState,
+  depth = 0,
+): unknown {
   // As in `criteriaFromWire`: hand an over-deep or cyclic document on unchanged
   // and let the validator reject it, rather than rejecting it here.
   if (depth > maximumWhereDepth || !isObject(value)) return value;
@@ -215,19 +318,19 @@ function criteriaToWireValues(model: WhereModel, value: unknown, depth = 0): unk
     WHERE_RELATIONS_V1[model].map((relation) => [relation.name as string, relation] as const),
   );
   const translated: Record<string, unknown> = {};
-  for (const [key, entry] of snapshotObject(value)) {
+  for (const [key, entry] of snapshotObject(value, state)) {
     const relation = relations.get(key);
     if (relation !== undefined && isObject(entry)) {
       const inner: Record<string, unknown> = {};
-      for (const [operator, nested] of snapshotObject(entry)) {
-        inner[operator] = criteriaToWireValues(relation.targetModel, nested, depth + 1);
+      for (const [operator, nested] of snapshotObject(entry, state)) {
+        inner[operator] = criteriaToWireValues(relation.targetModel, nested, state, depth + 1);
       }
       translated[key] = inner;
       continue;
     }
     if (key === "AND" || key === "OR" || key === "NOT") {
-      translated[key] = snapshotArray(entry).map((child) =>
-        criteriaToWireValues(model, child, depth + 1),
+      translated[key] = snapshotArray(entry, state).map((child) =>
+        criteriaToWireValues(model, child, state, depth + 1),
       );
       continue;
     }
@@ -241,7 +344,7 @@ function criteriaToWireValues(model: WhereModel, value: unknown, depth = 0): unk
       continue;
     }
     const operators: Record<string, unknown> = {};
-    for (const [operator, operand] of snapshotObject(entry)) {
+    for (const [operator, operand] of snapshotObject(entry, state)) {
       if (encodableOperators.has(operator)) {
         operators[operator] = encodeFormatValue(token, operand);
       } else if (encodableListOperators.has(operator) && Array.isArray(operand)) {
@@ -263,7 +366,17 @@ function scalarWireNamesFor(model: WhereModel): ReadonlyMap<string, string> {
   );
 }
 
-function validateRegexPattern(pattern: string): void {
+/**
+ * Accept only the regular expressions this package will run.
+ *
+ * The offsets are reported and the pattern is not: a criterion's operand can
+ * carry a pane title or a path, and these messages travel to whoever sent the
+ * query.
+ */
+function validateRegexPattern(pattern: string, state: ParseState): void {
+  const bad = (offset: number, reason: string): never =>
+    invalidQuery(state, `invalid regular expression at offset ${String(offset)}: ${reason}`);
+
   let groupDepth = 0;
   let inClass = false;
   let classContent = 0;
@@ -271,11 +384,14 @@ function validateRegexPattern(pattern: string): void {
 
   for (let index = 0; index < pattern.length; index += 1) {
     const character = pattern[index];
-    if (character === undefined) return invalidQuery();
+    if (character === undefined) return bad(index, "the pattern ended mid-character");
 
     if (character === "\\") {
       const escaped = pattern[index + 1];
-      if (escaped === undefined || !escapedRegexLiterals.has(escaped)) return invalidQuery();
+      if (escaped === undefined) return bad(index, "a trailing backslash escapes nothing");
+      if (!escapedRegexLiterals.has(escaped)) {
+        return bad(index, `only ${listed([...escapedRegexLiterals])} may be escaped`);
+      }
       index += 1;
       if (inClass) classContent += 1;
       canQuantify = true;
@@ -284,12 +400,15 @@ function validateRegexPattern(pattern: string): void {
 
     if (inClass) {
       const code = character.codePointAt(0);
-      if (code === undefined || code < 0x20 || code > 0x7e || character === "[") {
-        return invalidQuery();
+      if (code === undefined || code < 0x20 || code > 0x7e) {
+        return bad(index, "a character class takes printable ASCII only");
       }
-      if (classContent === 0 && character === "^") return invalidQuery();
+      if (character === "[") return bad(index, "a nested class is not accepted");
+      if (classContent === 0 && character === "^") {
+        return bad(index, "a negated class is not accepted");
+      }
       if (character === "]") {
-        if (classContent === 0) return invalidQuery();
+        if (classContent === 0) return bad(index, "an empty character class matches nothing");
         inClass = false;
         canQuantify = true;
         continue;
@@ -298,7 +417,7 @@ function validateRegexPattern(pattern: string): void {
         (character === "&" && pattern[index + 1] === "&") ||
         (character === "-" && pattern[index + 1] === "-")
       ) {
-        return invalidQuery();
+        return bad(index, "a class set operator is not accepted");
       }
       classContent += 1;
       continue;
@@ -310,10 +429,13 @@ function validateRegexPattern(pattern: string): void {
       canQuantify = false;
       continue;
     }
-    if (character === "]" || character === "}") return invalidQuery();
+    if (character === "]") return bad(index, "a class was closed that was never opened");
+    if (character === "}") return bad(index, "a quantifier was closed that was never opened");
     if (character === "(") {
       if (pattern[index + 1] === "?") {
-        if (pattern[index + 2] !== ":") return invalidQuery();
+        if (pattern[index + 2] !== ":") {
+          return bad(index, "only a non-capturing group `(?:` takes a `?` here");
+        }
         index += 2;
       }
       groupDepth += 1;
@@ -321,25 +443,27 @@ function validateRegexPattern(pattern: string): void {
       continue;
     }
     if (character === ")") {
-      if (groupDepth === 0) return invalidQuery();
+      if (groupDepth === 0) return bad(index, "a group was closed that was never opened");
       groupDepth -= 1;
       canQuantify = true;
       continue;
     }
     if (character === "{") {
-      if (!canQuantify) return invalidQuery();
-      const remainder = pattern.slice(index);
-      const match = /^\{\d+(?:,\d*)?\}/u.exec(remainder);
-      if (match === null) return invalidQuery();
+      if (!canQuantify) return bad(index, "a quantifier follows nothing to repeat");
+      const match = /^\{\d+(?:,\d*)?\}/u.exec(pattern.slice(index));
+      if (match === null) return bad(index, "a counted quantifier reads `{n}`, `{n,}` or `{n,m}`");
       const next = pattern[index + match[0].length];
-      if (next === "?" || next === "+") return invalidQuery();
+      if (next === "?" || next === "+") {
+        return bad(index, "a lazy or possessive quantifier is not accepted");
+      }
       index += match[0].length - 1;
       canQuantify = false;
       continue;
     }
     if (character === "*" || character === "+" || character === "?") {
-      if (!canQuantify || pattern[index + 1] === "?" || pattern[index + 1] === "+") {
-        return invalidQuery();
+      if (!canQuantify) return bad(index, "a quantifier follows nothing to repeat");
+      if (pattern[index + 1] === "?" || pattern[index + 1] === "+") {
+        return bad(index, "a lazy or possessive quantifier is not accepted");
       }
       canQuantify = false;
       continue;
@@ -353,28 +477,35 @@ function validateRegexPattern(pattern: string): void {
       continue;
     }
     if (character.codePointAt(0) !== undefined && character.codePointAt(0)! < 0x20) {
-      return invalidQuery();
+      return bad(index, "a control character is not accepted");
     }
     canQuantify = true;
   }
 
-  if (inClass || groupDepth !== 0) return invalidQuery();
+  if (inClass) return bad(pattern.length, "a character class was never closed");
+  if (groupDepth !== 0) return bad(pattern.length, "a group was never closed");
 }
 
-function compileRegex(pattern: string, flags: string, insensitive: boolean): RegExp {
-  validateRegexPattern(pattern);
+function compileRegex(
+  pattern: string,
+  flags: string,
+  insensitive: boolean,
+  state: ParseState,
+): RegExp {
+  validateRegexPattern(pattern, state);
   try {
     return new RegExp(pattern, `${flags}${insensitive ? "iu" : "u"}`);
   } catch (error) {
-    return invalidQuery(error);
+    return invalidQuery(state, "the regular expression did not compile", error);
   }
 }
 
 function parseStringArray(value: unknown, state: ParseState): readonly string[] {
-  if (!isObject(value)) return invalidQuery();
+  if (!isObject(value)) return invalidQuery(state, "expected an array of strings");
   return withActive(value, state, () => {
-    const values = snapshotArray(value);
-    if (!values.every((entry) => typeof entry === "string")) return invalidQuery();
+    const values = snapshotArray(value, state);
+    const wrong = values.findIndex((entry) => typeof entry !== "string");
+    if (wrong !== -1) return at(state, wrong, () => invalidQuery(state, "expected a string"));
     return Object.freeze([...values]) as readonly string[];
   });
 }
@@ -384,23 +515,30 @@ function parseRegex(
   insensitive: boolean,
   state: ParseState,
 ): { readonly query: Readonly<Record<string, unknown>>; readonly regex: RegExp } {
-  if (!isObject(value)) return invalidQuery();
+  if (!isObject(value)) {
+    return invalidQuery(state, "expected an object with a pattern and flags, not a bare string");
+  }
   return withActive(value, state, () => {
-    const record = snapshotObject(value);
+    const record = snapshotObject(value, state);
     if (record.size !== 2 || !record.has("flags") || !record.has("pattern")) {
-      return invalidQuery();
+      return invalidQuery(state, 'expected exactly the keys "pattern" and "flags"');
     }
     const flags = record.get("flags");
     const pattern = record.get("pattern");
-    if (typeof flags !== "string" || !regexFlags.has(flags) || typeof pattern !== "string") {
-      return invalidQuery();
+    if (typeof pattern !== "string") {
+      return at(state, "pattern", () => invalidQuery(state, "expected a string"));
+    }
+    if (typeof flags !== "string" || !regexFlags.has(flags)) {
+      return at(state, "flags", () =>
+        invalidQuery(state, `expected one of ${listed([...regexFlags].map((flag) => flag))}`),
+      );
     }
     return {
       query: frozenRecord([
         ["flags", flags],
         ["pattern", pattern],
       ]),
-      regex: compileRegex(pattern, flags, insensitive),
+      regex: compileRegex(pattern, flags, insensitive, state),
     };
   });
 }
@@ -409,19 +547,32 @@ function parseScalar(value: unknown, state: ParseState): ParsedScalar {
   if (typeof value === "string" || value === null) {
     return { query: value, test: (candidate) => candidate === value };
   }
-  if (!isObject(value)) return invalidQuery();
+  if (!isObject(value)) {
+    return invalidQuery(state, `expected a string, null, or an object of ${OPERATORS}`);
+  }
 
   return withActive(value, state, () => {
-    const record = snapshotObject(value);
-    if (
-      record.size === 0 ||
-      [...record.keys()].some((key) => !scalarOperatorNames.includes(key as never))
-    ) {
-      return invalidQuery();
+    const record = snapshotObject(value, state);
+    if (record.size === 0) return invalidQuery(state, `expected one of ${OPERATORS}`);
+    for (const key of record.keys()) {
+      if (scalarOperatorNames.includes(key as never)) continue;
+      return at(state, key, () =>
+        invalidQuery(
+          state,
+          `unknown operator; expected one of ${OPERATORS}${nearest(key, scalarOperatorNames)}`,
+        ),
+      );
     }
     const mode = record.get("mode");
-    if (record.has("mode") && mode !== "insensitive") return invalidQuery();
-    if ([...record.keys()].every((key) => key === "mode")) return invalidQuery();
+    if (record.has("mode") && mode !== "insensitive") {
+      return at(state, "mode", () => invalidQuery(state, `expected "insensitive"`));
+    }
+    if ([...record.keys()].every((key) => key === "mode")) {
+      return invalidQuery(
+        state,
+        `"mode" folds case for another operator and matches nothing alone`,
+      );
+    }
     const insensitive = mode === "insensitive";
     const queryEntries: Array<readonly [string, unknown]> = [];
     const operations: Array<(candidate: string | null) => boolean> = [];
@@ -432,7 +583,9 @@ function parseScalar(value: unknown, state: ParseState): ParsedScalar {
         continue;
       }
       if (name === "equals") {
-        if (typeof operand !== "string" && operand !== null) return invalidQuery();
+        if (typeof operand !== "string" && operand !== null) {
+          return at(state, name, () => invalidQuery(state, "expected a string or null"));
+        }
         queryEntries.push([name, operand]);
         operations.push((candidate) => {
           if (candidate === null || operand === null) return candidate === operand;
@@ -443,7 +596,9 @@ function parseScalar(value: unknown, state: ParseState): ParsedScalar {
         continue;
       }
       if (name === "contains" || name === "startsWith" || name === "endsWith") {
-        if (typeof operand !== "string") return invalidQuery();
+        if (typeof operand !== "string") {
+          return at(state, name, () => invalidQuery(state, "expected a string"));
+        }
         queryEntries.push([name, operand]);
         operations.push((candidate) => {
           if (candidate === null) return false;
@@ -456,7 +611,7 @@ function parseScalar(value: unknown, state: ParseState): ParsedScalar {
         continue;
       }
       if (name === "in" || name === "notIn") {
-        const values = parseStringArray(operand, state);
+        const values = at(state, name, () => parseStringArray(operand, state));
         queryEntries.push([name, values]);
         const comparable = insensitive ? values.map((entry) => entry.toLowerCase()) : values;
         operations.push((candidate) => {
@@ -467,12 +622,12 @@ function parseScalar(value: unknown, state: ParseState): ParsedScalar {
         continue;
       }
       if (name === "regex") {
-        const parsed = parseRegex(operand, insensitive, state);
+        const parsed = at(state, name, () => parseRegex(operand, insensitive, state));
         queryEntries.push([name, parsed.query]);
         operations.push((candidate) => candidate !== null && parsed.regex.test(candidate));
         continue;
       }
-      return invalidQuery();
+      return at(state, name, () => invalidQuery(state, `expected one of ${OPERATORS}`));
     }
 
     return {
@@ -497,14 +652,19 @@ function parseManyRelation(
   state: ParseState,
   depth: number,
 ): { readonly query: Readonly<Record<string, unknown>>; readonly test: RecordPredicate } {
-  if (!isObject(value)) return invalidQuery();
+  const quantifiers = `${listed(MANY_QUANTIFIERS)} over its ${relation.targetModel}s`;
+  if (!isObject(value)) return invalidQuery(state, `expected an object of ${quantifiers}`);
   return withActive(value, state, () => {
-    const record = snapshotObject(value);
-    if (
-      record.size === 0 ||
-      [...record.keys()].some((key) => key !== "some" && key !== "every" && key !== "none")
-    ) {
-      return invalidQuery();
+    const record = snapshotObject(value, state);
+    if (record.size === 0) return invalidQuery(state, `expected one of ${quantifiers}`);
+    for (const key of record.keys()) {
+      if (MANY_QUANTIFIERS.includes(key)) continue;
+      return at(state, key, () =>
+        invalidQuery(
+          state,
+          `unknown quantifier; ${relation.name} holds many, so expected one of ${quantifiers}${nearest(key, MANY_QUANTIFIERS)}`,
+        ),
+      );
     }
     const entries: Array<readonly [string, unknown]> = [];
     const operations: Array<{
@@ -512,7 +672,9 @@ function parseManyRelation(
       readonly parsed: ParsedCriteria;
     }> = [];
     for (const [name, child] of record) {
-      const parsed = parseCriteria(relation.targetModel, child, state, depth + 1);
+      const parsed = at(state, name, () =>
+        parseCriteria(relation.targetModel, child, state, depth + 1),
+      );
       entries.push([name, parsed.query]);
       operations.push({ name, parsed });
     }
@@ -541,11 +703,19 @@ function parseOneRelation(
   state: ParseState,
   depth: number,
 ): { readonly query: Readonly<Record<string, unknown>>; readonly test: RecordPredicate } {
-  if (!isObject(value)) return invalidQuery();
+  const quantifiers = `${listed(ONE_QUANTIFIERS)} over its ${relation.targetModel}`;
+  if (!isObject(value)) return invalidQuery(state, `expected an object of ${quantifiers}`);
   return withActive(value, state, () => {
-    const record = snapshotObject(value);
-    if (record.size === 0 || [...record.keys()].some((key) => key !== "is" && key !== "isNot")) {
-      return invalidQuery();
+    const record = snapshotObject(value, state);
+    if (record.size === 0) return invalidQuery(state, `expected one of ${quantifiers}`);
+    for (const key of record.keys()) {
+      if (ONE_QUANTIFIERS.includes(key)) continue;
+      return at(state, key, () =>
+        invalidQuery(
+          state,
+          `unknown quantifier; ${relation.name} holds one, so expected ${quantifiers}${nearest(key, ONE_QUANTIFIERS)}`,
+        ),
+      );
     }
     const entries: Array<readonly [string, unknown]> = [];
     const operations: Array<{
@@ -554,7 +724,9 @@ function parseOneRelation(
     }> = [];
     for (const [name, child] of record) {
       const parsed =
-        child === null ? null : parseCriteria(relation.targetModel, child, state, depth + 1);
+        child === null
+          ? null
+          : at(state, name, () => parseCriteria(relation.targetModel, child, state, depth + 1));
       entries.push([name, parsed?.query ?? null]);
       operations.push({ name, parsed });
     }
@@ -581,9 +753,12 @@ function parseCriteria(
   state: ParseState,
   depth = 0,
 ): ParsedCriteria {
-  if (depth > maximumWhereDepth || !isObject(value)) return invalidQuery();
+  if (depth > maximumWhereDepth) {
+    return invalidQuery(state, `the criteria nest deeper than ${String(maximumWhereDepth)}`);
+  }
+  if (!isObject(value)) return invalidQuery(state, `expected an object of ${model} criteria`);
   return withActive(value, state, () => {
-    const record = snapshotObject(value);
+    const record = snapshotObject(value, state);
     const scalarWireNames = scalarWireNamesFor(model);
     const entries: Array<readonly [string, unknown]> = [];
     const predicates: RecordPredicate[] = [];
@@ -591,15 +766,21 @@ function parseCriteria(
     for (const [name, criterion] of record) {
       const wireName = scalarWireNames.get(name);
       if (wireName !== undefined) {
-        const parsed = parseScalar(criterion, state);
+        const parsed = at(state, name, () => parseScalar(criterion, state));
         entries.push([wireName, parsed.query]);
         predicates.push((source) => parsed.test(source.scalars[wireName] ?? null));
         continue;
       }
       if (logicalNames.includes(name as never)) {
-        if (!isObject(criterion)) return invalidQuery();
-        const children = withActive(criterion, state, () =>
-          snapshotArray(criterion).map((child) => parseCriteria(model, child, state, depth + 1)),
+        if (!isObject(criterion)) {
+          return at(state, name, () => invalidQuery(state, "expected an array of criteria"));
+        }
+        const children = at(state, name, () =>
+          withActive(criterion, state, () =>
+            snapshotArray(criterion, state).map((child, index) =>
+              at(state, index, () => parseCriteria(model, child, state, depth + 1)),
+            ),
+          ),
         );
         entries.push([name, frozenArray(children.map(({ query }) => query))]);
         if (name === "AND") {
@@ -614,11 +795,23 @@ function parseCriteria(
         continue;
       }
       const relation = relationFor(model, name);
-      if (relation === undefined) return invalidQuery();
-      const parsed =
+      if (relation === undefined) {
+        // Both vocabularies, because a caller reaching for one may have wanted
+        // the other: `windows` is a relation and `windowName` a field.
+        const known = [
+          ...scalarWireNames.keys(),
+          ...WHERE_RELATIONS_V1[model].map((candidate) => candidate.name),
+          ...logicalNames,
+        ];
+        return at(state, name, () =>
+          invalidQuery(state, `no ${model} criterion of that name${nearest(name, known)}`),
+        );
+      }
+      const parsed = at(state, name, () =>
         relation.cardinality === "many"
           ? parseManyRelation(relation, criterion, state, depth)
-          : parseOneRelation(relation, criterion, state, depth);
+          : parseOneRelation(relation, criterion, state, depth),
+      );
       entries.push([name, parsed.query]);
       predicates.push(parsed.test);
     }
@@ -630,9 +823,12 @@ function parseCriteria(
   });
 }
 
-function parseModel(value: unknown): WhereModel {
+function parseModel(value: unknown, state: ParseState): WhereModel {
   if (value !== "session" && value !== "window" && value !== "pane" && value !== "client") {
-    return invalidQuery();
+    return invalidQuery(
+      state,
+      `expected one of ${listed(["client", "pane", "session", "window"])}`,
+    );
   }
   return value;
 }
@@ -640,17 +836,18 @@ function parseModel(value: unknown): WhereModel {
 function canonicalizeWhere(
   model: WhereModel,
   criteria: unknown,
+  state: ParseState = newParseState(),
 ): Readonly<Record<string, unknown>> {
-  const parsedModel = parseModel(model);
-  return parseCriteria(parsedModel, criteriaToWireValues(parsedModel, criteria), {
-    active: new WeakSet(),
-  }).query;
+  const parsedModel = parseModel(model, state);
+  return parseCriteria(parsedModel, criteriaToWireValues(parsedModel, criteria, state), state)
+    .query;
 }
 
 export function compileWhere(model: WhereModel, criteria: unknown): CompiledWhere {
-  const parsedModel = parseModel(model);
-  const spelled = criteriaToWireValues(parsedModel, criteria);
-  const parsed = parseCriteria(parsedModel, spelled, { active: new WeakSet() });
+  const state = newParseState();
+  const parsedModel = parseModel(model, state);
+  const spelled = criteriaToWireValues(parsedModel, criteria, state);
+  const parsed = parseCriteria(parsedModel, spelled, state);
   return Object.freeze({
     model: parsedModel,
     query: parsed.query,
@@ -661,48 +858,67 @@ export function compileWhere(model: WhereModel, criteria: unknown): CompiledWher
 }
 
 export function canonicalizeWhereDocument(input: unknown): WhereDocumentV1 {
-  const envelope = snapshotObject(input);
+  const state = newParseState();
+  const envelope = snapshotObject(input, state);
   if (
     envelope.size !== 3 ||
     !envelope.has("model") ||
     !envelope.has("version") ||
-    !envelope.has("where") ||
-    envelope.get("version") !== 1
+    !envelope.has("where")
   ) {
-    return invalidQuery();
+    return invalidQuery(
+      state,
+      `expected exactly the keys ${listed(["model", "version", "where"])}`,
+    );
   }
-  const model = parseModel(envelope.get("model"));
+  if (envelope.get("version") !== 1) {
+    return at(state, "version", () => invalidQuery(state, "expected 1"));
+  }
+  const model = at(state, "model", () => parseModel(envelope.get("model"), state));
   // A stored document is written in wire names; criteria are written in the
   // idiomatic ones. Translate before compiling so a document round-trips
   // without the criteria surface having to accept tmux spellings.
-  const where = canonicalizeWhere(model, criteriaFromWire(model, envelope.get("where")));
+  const where = at(state, "where", () =>
+    canonicalizeWhere(model, criteriaFromWire(model, envelope.get("where"), state), state),
+  );
   return Object.freeze({ model, version: 1, where }) as WhereDocumentV1;
 }
 
-function jsonString(value: string): string {
+/**
+ * Serializing a query that has already been validated.
+ *
+ * Reached only through {@link canonicalJson}, whose input is a parser's own
+ * output, so these refusals describe a value this module built. They carry no
+ * path because there is no caller's document to point into.
+ */
+const NOT_SERIALIZABLE = "the canonical query holds a value that cannot be written";
+
+function jsonString(value: string, state: ParseState): string {
   const encoded = JSON.stringify(value);
-  return encoded === undefined ? invalidQuery() : encoded;
+  return encoded === undefined ? invalidQuery(state, NOT_SERIALIZABLE) : encoded;
 }
 
-function canonicalJsonValue(value: unknown, depth: number): string {
+function canonicalJsonValue(value: unknown, depth: number, state: ParseState): string {
   if (value === null) return "null";
-  if (typeof value === "string") return jsonString(value);
+  if (typeof value === "string") return jsonString(value, state);
   if (typeof value === "boolean") return String(value);
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "null";
   if (depth > maximumCanonicalJsonDepth || !isObject(value) || typeof value === "function") {
-    return invalidQuery();
+    return invalidQuery(state, NOT_SERIALIZABLE);
   }
   if (Array.isArray(value)) {
-    return `[${snapshotArray(value)
-      .map((entry) => canonicalJsonValue(entry, depth + 1))
+    return `[${snapshotArray(value, state)
+      .map((entry) => canonicalJsonValue(entry, depth + 1, state))
       .join(",")}]`;
   }
-  return `{${[...snapshotObject(value)]
+  return `{${[...snapshotObject(value, state)]
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-    .map(([key, entry]) => `${jsonString(key)}:${canonicalJsonValue(entry, depth + 1)}`)
+    .map(
+      ([key, entry]) => `${jsonString(key, state)}:${canonicalJsonValue(entry, depth + 1, state)}`,
+    )
     .join(",")}}`;
 }
 
 export function canonicalJson(value: Readonly<Record<string, unknown>>): string {
-  return canonicalJsonValue(value, 0);
+  return canonicalJsonValue(value, 0, newParseState());
 }
