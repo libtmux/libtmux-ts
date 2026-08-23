@@ -106,11 +106,14 @@ async function settleShell(pane: {
   sendKeys: (keys: string) => Promise<void>;
 }): Promise<void> {
   for (let attempt = 0; attempt < 6; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop -- each attempt observes whether the last one landed.
     await pane.sendKeys(`echo RE""ADY`);
     const until = Date.now() + 1_000;
     while (Date.now() < until) {
+      // eslint-disable-next-line no-await-in-loop -- polling is the point: read, then wait, then read again.
       const lines = await pane.capture();
       if (lines.some((line) => line.includes("READY"))) return;
+      // eslint-disable-next-line no-await-in-loop -- the pause between reads is what makes it a poll.
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
@@ -134,6 +137,7 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   await mkdir(binary, { recursive: true });
   await writeFile(join(binary, "make"), MAKE_STUB, { mode: 0o755 });
   for (const name of ["npm", "just"]) {
+    // eslint-disable-next-line no-await-in-loop -- two files, written in order.
     await writeFile(join(binary, name), STAYS_UP, { mode: 0o755 });
   }
   // `tail -f log/development.log` reads a path relative to the pane's cwd.
@@ -174,7 +178,10 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   const closers: (() => Promise<void>)[] = [];
   const dispose = async (): Promise<void> => {
     restore();
-    for (const close of closers.reverse()) await close().catch(() => undefined);
+    for (const close of closers.reverse()) {
+      // eslint-disable-next-line no-await-in-loop -- connections close in the reverse of the order they opened.
+      await close().catch(() => undefined);
+    }
     // A block is free to kill its own server, so a failing teardown here is
     // not news. The gate's real check is the single reap at the end, which
     // sees every fixture this run created.

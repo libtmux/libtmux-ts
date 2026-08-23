@@ -99,7 +99,7 @@ if (blocks.length === 0) throw new Error(`no \`\`\`ts blocks found in ${OUTPUT}`
 // A block that builds its own `new Server()` reaches tmux's default socket.
 // Pointing TMUX_TMPDIR somewhere disposable is what keeps it off the server the
 // person running this is sitting in.
-const isolated = await mkdtemp(join(tmpdir(), "libtmux-readme-runs-"));
+const isolated = await mkdtemp(join(tmpdir(), "ltx-readme-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;
 
 const directory = join(packageRoot, "node_modules", ".examples-runs");
@@ -152,9 +152,11 @@ try {
 
     // A block that declares its own server builds its own world; one that uses
     // the ambient names is handed the world the prose describes.
+    // eslint-disable-next-line no-await-in-loop -- one block at a time: they share a working directory and a process environment.
     const world = await buildWorld({ code: block.code, index, runRoot, scratch });
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      // eslint-disable-next-line no-await-in-loop -- a block runs against its own world, not beside another block.
       const outcome = await Promise.race([
         run(world.bindings).then(
           () => undefined,
@@ -177,6 +179,7 @@ try {
       }
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      // eslint-disable-next-line no-await-in-loop -- this world is gone before the next one is built.
       await disposeWorld(world);
     }
   }
