@@ -343,7 +343,7 @@ export class LiveHub {
    * replaced tail is now refused with an explanation rather than answered with
    * a silent "nothing new".
    */
-  #scheduleClose(sessionId: string, link: SessionLink): void {
+  #scheduleClose(sessionId: string, link: SessionLink, delayMs = this.#lingerMs): void {
     if (link.listeners.size > 0) return;
     if (link.closeTimer !== undefined) return;
     link.closeTimer = setTimeout(() => {
@@ -353,14 +353,19 @@ export class LiveHub {
         if (tail.idleMs(now) >= this.#lingerMs) link.tails.delete(paneId);
       }
       if (link.tails.size > 0 || link.listeners.size > 0) {
-        // Something is still being read. Come back rather than holding the
-        // connection unconditionally, which is the bug this replaces.
-        this.#scheduleClose(sessionId, link);
+        // Come back when the tail used most recently becomes eligible, rather
+        // than a whole linger from now. The timer is armed when a tail is
+        // created and a tail is read just after that, so it is always a little
+        // short of the threshold on the first sweep — and waiting another full
+        // linger each time doubled how long a connection nobody was reading
+        // stayed open.
+        const remaining = [...link.tails.values()].map((tail) => this.#lingerMs - tail.idleMs(now));
+        this.#scheduleClose(sessionId, link, Math.max(1, Math.max(...remaining)));
         return;
       }
       if (this.#links.get(sessionId) === link) this.#links.delete(sessionId);
       void link.connected.close().catch(() => undefined);
-    }, this.#lingerMs);
+    }, delayMs);
     // A lingering connection must not be what keeps the process alive.
     link.closeTimer.unref?.();
   }

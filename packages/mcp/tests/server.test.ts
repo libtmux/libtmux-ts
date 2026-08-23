@@ -1318,19 +1318,43 @@ describe("staying out of the way", () => {
           (line) => line === "1",
         ).length;
 
-      const hub = new LiveHub(tmux, { lingerMs: 200 });
+      const hub = new LiveHub(tmux, { lingerMs: 2_000 });
       try {
         const snapshot = await tmux.snapshot();
         const tail = await hub.tail(snapshot.sessions.one().id, snapshot.panes.one().id);
         expect(tail).toBeDefined();
         expect(await controlClients()).toBeGreaterThan(0);
 
+        // Read early in the linger rather than at its start. The sweep is armed
+        // when the tail is created, so this read leaves it short of the
+        // threshold on the first pass — which is the case the reschedule has to
+        // get right, and the one a read taken at the same instant hides,
+        // because timer overshoot alone carries that past the threshold.
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        tail?.read(undefined);
+
         // Nothing reads it from here. The close path used to refuse to run
         // while the link held any tail, and nothing ever removed one — so for
         // any session a tool had observed, this connection was held for the
         // life of the process and tmux counted it the whole time.
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
-        expect(await controlClients()).toBe(0);
+        //
+        const started = Date.now();
+        let remaining = 1;
+        while (Date.now() - started < 8_000 && remaining > 0) {
+          // eslint-disable-next-line no-await-in-loop -- each check follows the last.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          // eslint-disable-next-line no-await-in-loop -- and reads after waiting.
+          remaining = await controlClients();
+        }
+        expect(remaining).toBe(0);
+
+        // And promptly. The sweep is armed when the tail is created and the
+        // tail is read just after, so it is always a little short of the
+        // threshold on the first pass — coming back a whole linger later each
+        // time took twice as long to release as it should.
+        // Roughly one linger after the last read. Coming back a whole linger
+        // from the sweep instead of from the read made it two.
+        expect(Date.now() - started).toBeLessThan(3_000);
       } finally {
         await hub.close();
       }
