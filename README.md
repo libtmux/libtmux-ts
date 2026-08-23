@@ -14,7 +14,7 @@
 [![npm](https://img.shields.io/npm/v/libtmux?label=libtmux&color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7b-1bb91f)](.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7c-1bb91f)](.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](packages/libtmux/tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -77,10 +77,10 @@ console.log(editors.count(), editors.at(0)?.sessionName);
 ```
 
 Building something rather than reading it looks like this — and this block is a
-literal excerpt of [`examples/quickstart.ts`](examples/quickstart.ts), which the
+literal excerpt of [`examples/quickstart/quickstart.ts`](examples/quickstart/quickstart.ts), which the
 integration suite runs against a real tmux server:
 
-<!-- runs: examples/quickstart.ts -->
+<!-- runs: examples/quickstart/quickstart.ts -->
 
 ```ts
 const session = await server.newSession({ name: "quickstart" });
@@ -257,7 +257,7 @@ loop an agent needs, and building a workspace. Each is executed by the
 integration suite, so the code there is the code that runs.
 
 ```console
-$ bun test examples/tests
+$ bun test examples
 ```
 
 ## How commands travel

@@ -11,6 +11,7 @@ updates:
       - "/"
       - "/packages/*"
       - "/examples"
+      - "/examples/*"
     schedule:
       interval: "weekly"
     # Every bump is to the toolchain, and one pull request runs the gates once

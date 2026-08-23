@@ -1,0 +1,14 @@
+{
+  "name": "@example/quickstart",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A runnable tour of the API. Never published.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test --no-orphans ."
+  },
+  "dependencies": {
+    "libtmux": "workspace:*"
+  }
+}

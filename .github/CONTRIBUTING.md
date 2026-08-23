@@ -16,6 +16,12 @@ every change is held to, and the map of what is where, are in
 Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.2a
 or newer.
 
+One suite wants the exact Bun `package.json` pins rather than a newer one. The
+three-runtime regex corpus is evidence that Bun, Node and Python agree on a
+pattern, and it records which engines produced each answer, so running it on a
+different Bun is asking a question the recorded answers do not cover. It says so
+when that happens.
+
 ```console
 $ bun install
 ```
@@ -51,19 +57,19 @@ $ bun run typecheck:tooling
 
 Documentation is a gate, not a courtesy. Every public method, getter, and
 readonly field carries a compiled example; `docs/api.md` is generated from the
-doc comments that implement it and is never edited by hand. The prose around
+doc comments that implement it, and `docs/criteria.md` from the table the query
+compiler matches against. Neither is edited by hand. The prose around
 the snippets is checked too — `docs:links` resolves every relative link and
 `#anchor` in every tracked Markdown file, `docs:claims` holds the ` ```console `
 blocks to paths and packages that exist and pins any tmux badge to the CI
 matrix, and `docs:runnable` requires a block marked
 
 ```
-<!-- runs: examples/agent.ts -->
+<!-- runs: examples/agent/agent.ts -->
 ```
 
 to be drawn line for line from that example, which the integration suite runs
-against a real server. Compiling a snippet proves it typechecks; only that
-marker proves it works.
+against a real server.
 
 ```console
 $ bun run typecheck:readme
@@ -81,6 +87,31 @@ $ bun run docs:claims
 $ bun run docs:runnable
 ```
 
+Then every snippet runs. Compiling one proves it typechecks; running it proves
+the target exists and the recipe terminates. `test:readme` executes the blocks
+in the library's own documents, and `test:symbols` the example on every public
+symbol.
+
+```console
+$ bun run --cwd packages/libtmux test:readme
+```
+
+```console
+$ bun run --cwd packages/libtmux test:symbols
+```
+
+`test:docs` executes the blocks in the documents above the library package,
+each from inside the package that owns it, so an import means what a reader's
+would mean. It runs after the consumers are built, because it imports what they
+emit.
+
+```console
+$ bun run test:docs
+```
+
+All three start real tmux servers, and each fails on a server that outlives the
+block or example that made it.
+
 ### Writing an example a gate can see
 
 The fence decides whether a block is compiled. Only ` ```ts ` is collected; a
@@ -89,7 +120,7 @@ and fails nothing. Reach for `typescript` only where a fragment is meant not to
 compile — the comment samples in [WRITING.md](WRITING.md#source-comments) are
 that case.
 
-Four checks read those blocks, and not from the same files. `typecheck:readme`
+The checks read those blocks from different files. `typecheck:readme`
 at the root compiles the READMEs that span packages — `README.md`,
 `examples/README.md`, `packages/mcp/README.md`, and
 `packages/workspace/README.md` — each in the directory it lives in, so a bare
@@ -129,12 +160,15 @@ $ bun run ci:config
 
 Then, from `packages/libtmux`, the library's own gates — `lint:unused`,
 `typecheck`, `typecheck:readme`, `typecheck:symbols`, `docs:api:check`,
-`generate:check`, `parity`, and `build`. Everything after the build needs the
-emitted declarations it produced: `typecheck:ambient-free`, `test:package`, and
-`test:install`. Then `test:types`, `test:node`, and `test:coverage`.
+`docs:criteria:check`, `generate:check`, `parity`, and `build`. Everything after
+the build needs the emitted declarations it produced: `typecheck:ambient-free`,
+`typecheck:tooling`, `test:package`, and `test:install`. Then `test:types`,
+`test:node`, and `test:coverage`.
 
-The consumers in `packages/mcp`, `packages/workspace`, and `examples` each run
-`typecheck` and `test`.
+`packages/mcp` and `packages/workspace` each run `typecheck`, `test` and
+`test:package`. `examples` runs `typecheck` and `test`: every example is a
+package of its own, and the umbrella runs each sibling, so adding one adds no
+step here.
 
 ## Tests
 

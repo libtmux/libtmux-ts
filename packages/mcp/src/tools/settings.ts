@@ -163,7 +163,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
     },
     async ({ session }) => {
       const snapshot = await context.snapshot();
-      let read: ReadonlyMap<string, string>;
+      let read: ReadonlyMap<string, readonly string[]>;
       if (session === undefined) {
         read = await context.tmux.showHooks();
       } else {
@@ -174,7 +174,11 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       // tmux reports its whole hook table, roughly a hundred names, nearly all
       // carrying nothing. The question a caller is asking is which hooks run,
       // and a wall of empty strings buries the handful that do.
-      const hooks = Object.fromEntries([...read].filter(([, command]) => command !== ""));
+      const hooks = Object.fromEntries(
+        [...read]
+          .filter(([, commands]) => commands.some((command) => command !== ""))
+          .map(([name, commands]) => [name, commands.join("\n")] as const),
+      );
       const unset = read.size - Object.keys(hooks).length;
       return ok(
         { hooks, unset },
@@ -363,6 +367,15 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       title: "Load buffer",
     },
     async ({ name, text }) => {
+      // tmux drops an empty `set-buffer` silently: it exits zero and creates
+      // nothing. Reporting a load would name a buffer that does not exist, and
+      // the caller would find out one call later against `paste_buffer`.
+      if (text === "") {
+        return fail({
+          hint: "Write at least one byte, or skip the load when the content is empty.",
+          reason: `tmux stores no buffer for empty text, so ${name} was not created.`,
+        });
+      }
       await context.tmux.loadBuffer(name, text);
       const bytes = Buffer.byteLength(text, "utf8");
       return ok({ bytes, name }, `Loaded ${String(bytes)} bytes into buffer ${name}.`);

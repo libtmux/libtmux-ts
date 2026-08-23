@@ -22,6 +22,7 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import { LibTmuxException, WaitTimeout } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
 
@@ -402,14 +403,73 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("gives up on a state that never arrives", async () => {
+  /**
+   * Closing the connection, rather than the stream on top of it.
+   *
+   * A stream fixture cannot reach this: the connection fans its ending out to
+   * every subscriber, and telling a deliberate close from a dropped connection
+   * is a distinction only the connection can make. `withConnection` and
+   * `await using` on a connected server both end this way, so "connect, race a
+   * wait, close on the way out" is the ordinary shape, not an exotic one.
+   */
+  test("answers a waiting find when the connection is closed on purpose", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const live = await server.connect();
+      const events = live.subscribe();
+      await events.ready();
+
+      const armed = events.find(() => false, { timeoutMs: 60_000 });
+      await live.close();
+
+      // Raising here would reject a promise the caller has already stopped
+      // holding — an unhandled rejection rather than a diagnosis.
+      expect(await armed).toBeUndefined();
+    });
+  }, 60_000);
+
+  test("raises a waiting find when the server goes away under it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const live = await server.connect();
+      const events = live.subscribe();
+      await events.ready();
+
+      // Armed before anything is awaited: the connection dies during the kill,
+      // and a rejection with no handler yet attached is the hazard this
+      // behaviour exists to keep out of a caller's code.
+      const armed = events
+        .find(() => false, { timeoutMs: 30_000 })
+        .then(
+          () => "resolved",
+          (error: unknown) => (error as Error).message,
+        );
+      await server.cmd("kill-server").catch(() => undefined);
+
+      // The other half of the same decision: this one says nothing about the
+      // condition, so answering undefined would blame the workload.
+      expect(await armed).toMatch(/ended before a match/u);
+      await live.close().catch(() => undefined);
+    });
+  }, 60_000);
+
+  test("gives up on a state that never arrives, saying it was the deadline", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
 
-      await expect(
-        live.waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), { timeoutMs: 750 }),
-      ).rejects.toThrow(/never arrived/u);
+      // A deadline says the condition did not come true; a connection ending
+      // says nothing about the condition at all. One error for both leaves a
+      // caller unable to tell which happened.
+      const failure = await live
+        .waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), { timeoutMs: 750 })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+
+      expect(failure).toBeInstanceOf(WaitTimeout);
+      expect(failure).toBeInstanceOf(LibTmuxException);
     });
   }, 60_000);
 
@@ -1011,4 +1071,45 @@ describe("Server.watch", () => {
       }
     });
   }, 60_000);
+  test("closing on purpose leaves an abandoned wait handled", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const unhandled: unknown[] = [];
+      const record = (reason: unknown): void => {
+        unhandled.push(reason);
+      };
+      process.on("unhandledRejection", record);
+      try {
+        const live = await server.connect();
+        // Abandoned on purpose: a race whose other side won, or a scope that
+        // ended. Nobody holds this promise any more, so the rejection the close
+        // causes is one the caller has no way left to catch.
+        void live.waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), {
+          timeoutMs: 30_000,
+        });
+        await live.close();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+
+        const ours = unhandled.filter(
+          (reason) => reason instanceof LibTmuxException || reason instanceof WaitTimeout,
+        );
+        expect(ours).toEqual([]);
+      } finally {
+        process.off("unhandledRejection", record);
+      }
+    });
+  }, 40_000);
+
+  test("a wait somebody is holding still learns the connection closed under it", async () => {
+    await withServer(async (fixture) => {
+      const live = await serverFor(fixture).connect();
+      // Guarding the abandoned case must not swallow this one: attaching a
+      // handler marks a promise handled, it does not consume the rejection.
+      const armed = live.waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), {
+        timeoutMs: 30_000,
+      });
+      await live.close();
+      await expect(armed).rejects.toThrow(LibTmuxException);
+    });
+  }, 40_000);
 });

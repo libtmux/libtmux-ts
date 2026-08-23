@@ -1,0 +1,42 @@
+{
+  "note": [
+    "Format fields tmux has that the Python library this package ports does not,",
+    "so the criteria vocabulary tracks tmux rather than being capped by parity.",
+    "",
+    "Kept beside the Python fixture and never inside it. That one is an oracle:",
+    "its field tokens are hashed against Python 0.62.0, and adding to it would",
+    "recompute the digest and destroy the only thing proving parity. The",
+    "generator digests that file alone and unions this one in afterwards.",
+    "",
+    "Derivation, all of it re-run rather than taken from a list:",
+    "- Presence and `since` come from enumerating `display-message -p -t <pane> -a`",
+    "  on every tmux the package supports (3.2a, 3.3a, 3.4, 3.5, 3.6, 3.7, 3.7a,",
+    "  3.7b, 3.7c), each with a client attached, since some fields answer only",
+    "  with one. `since` is the first build that reports the token.",
+    "- `scope` follows the vocabulary's own convention, which is the token's",
+    "  subject: cursor_* and history_* describe a pane, session_* a session.",
+    "  Reading tmux's callbacks instead gives the wrong answer for two of these,",
+    "  because format_cb_session_activity_flag iterates ft->s->windows and then",
+    "  reads ft->wl->flags rather than the loop variable — a tmux bug that makes",
+    "  a session field look window-scoped.",
+    "",
+    "sixel_support is deliberately absent. Its callback takes an __unused format",
+    "tree and returns ENABLE_SIXEL, so it is a build flag with the same value for",
+    "every pane on a server — filtering by it says nothing about any object."
+  ],
+  "fields": [
+    { "scope": "pane", "since": "3.2a", "token": "alternate_on" },
+    { "scope": "pane", "since": "3.2a", "token": "history_all_bytes" },
+    { "scope": "pane", "since": "3.4", "token": "pane_unseen_changes" },
+    { "scope": "pane", "since": "3.5", "token": "pane_key_mode" },
+    { "scope": "pane", "since": "3.6", "token": "cursor_blinking" },
+    { "scope": "pane", "since": "3.6", "token": "cursor_colour" },
+    { "scope": "pane", "since": "3.6", "token": "cursor_shape" },
+    { "scope": "pane", "since": "3.6", "token": "cursor_very_visible" },
+    { "scope": "session", "since": "3.6", "token": "session_active" },
+    { "scope": "session", "since": "3.6", "token": "session_activity_flag" },
+    { "scope": "session", "since": "3.6", "token": "session_alert" },
+    { "scope": "session", "since": "3.6", "token": "session_bell_flag" },
+    { "scope": "session", "since": "3.6", "token": "session_silence_flag" }
+  ]
+}

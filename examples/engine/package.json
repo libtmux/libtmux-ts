@@ -1,0 +1,14 @@
+{
+  "name": "@example/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Drive tmux through a transport you supply. Never published.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test --no-orphans ."
+  },
+  "dependencies": {
+    "libtmux": "workspace:*"
+  }
+}

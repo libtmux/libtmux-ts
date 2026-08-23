@@ -1,0 +1,15 @@
+{
+  // One base for every example package. Each of them typechecks the same way
+  // against the library's own source, so the settings belong here rather than
+  // copied into each — a copy is what drifts when one of them needs changing.
+  "extends": "../packages/libtmux/tsconfig.tooling.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "skipLibCheck": true,
+    "paths": {
+      "libtmux": ["../packages/libtmux/src/index.ts"],
+      "libtmux/*": ["../packages/libtmux/src/*.ts"]
+    }
+  }
+}

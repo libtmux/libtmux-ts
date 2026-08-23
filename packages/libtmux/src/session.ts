@@ -8,6 +8,7 @@ import {
 import type { EnvironmentValue, PlannedOperation, SetEnvironmentOptions } from "./types.js";
 import type { CmdOptions } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
+import type { SetHookOptions } from "./types.js";
 import type { SetOptionOptions } from "./types.js";
 import type { NewWindowOptions, WindowTarget } from "./types.js";
 import { SESSION_ALIASES, type SessionAliasMap } from "./_generated/field_aliases.js";
@@ -19,7 +20,12 @@ import { LibTmuxException } from "./exc.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killTarget, newWindow } from "./_internal/operations/mutations.js";
 import { planKill, planNewWindow } from "./_internal/operations/plans.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import { renameSession, selectWindowIn } from "./_internal/operations/session_nav.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
@@ -83,7 +89,11 @@ export class Session {
   }
 
   /**
-   * Every option this session currently sees, including inherited values.
+   * Every option set on this session itself, not the ones it inherits.
+   *
+   * A fresh session usually has none, so an empty map here means nothing was
+   * set on this session — not that the option has no value. `showResolvedOptions`
+   * answers what actually governs it.
    *
    * ```ts
    * const options = await session.showOptions();
@@ -92,6 +102,21 @@ export class Session {
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
     return showOptions(runtimeForHandle(this), "session", this.id);
+  }
+
+  /**
+   * The option values that govern this session, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh session is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await session.showResolvedOptions()).get("history-limit");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "session", this.id);
   }
 
   /**
@@ -119,24 +144,32 @@ export class Session {
   /**
    * Every hook this session reports.
    *
+   * A hook is an array of commands, keyed by the name `setHook` takes, so
+   * what was set reads back under the name it was set with. tmux prints each
+   * element as `name[0]`, which composes with neither of the writers.
+   *
    * ```ts
    * const hooks = await session.showHooks();
-   * hooks.get("window-linked");
+   * hooks.get("window-linked")?.[0];
    * ```
    */
-  showHooks(): Promise<ReadonlyMap<string, string>> {
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
     return showHooks(runtimeForHandle(this), "session", this.id);
   }
 
   /**
    * Bind a tmux command to a hook on this session.
    *
+   * A hook holds a list of commands. Without `append` this writes the whole
+   * list, so it replaces whatever the hook already ran.
+   *
    * ```ts
    * await session.setHook("window-linked", "display-message 'linked'");
+   * await session.setHook("window-linked", "display-message 'twice'", { append: true });
    * ```
    */
-  setHook(name: string, command: string): Promise<void> {
-    return setHook(runtimeForHandle(this), "session", this.id, name, command);
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForHandle(this), "session", this.id, name, command, options);
   }
 
   /**
@@ -355,7 +388,7 @@ export class Session {
    * ```
    */
   detach(): Promise<void> {
-    return detachClient(runtimeForHandle(this), this.id);
+    return detachClient(runtimeForHandle(this), { session: this.id });
   }
 
   /**

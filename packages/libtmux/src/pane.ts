@@ -27,7 +27,12 @@ import {
 import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import {
   breakPane,
   displayMessage,
@@ -100,7 +105,11 @@ export class Pane {
   }
 
   /**
-   * Every option this pane currently sees, including inherited values.
+   * Every option set on this pane itself, not the ones it inherits.
+   *
+   * A fresh pane usually has none, so an empty map here means nothing was
+   * set on this pane — not that the option has no value. `showResolvedOptions`
+   * answers what actually governs it.
    *
    * ```ts
    * const options = await pane.showOptions();
@@ -109,6 +118,21 @@ export class Pane {
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
     return showOptions(runtimeForHandle(this), "pane", this.id);
+  }
+
+  /**
+   * The option values that govern this pane, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh pane is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await pane.showResolvedOptions()).get("allow-rename");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "pane", this.id);
   }
 
   /**
@@ -323,14 +347,17 @@ export class Pane {
   }
 
   /**
-   * Move this pane out into a window of its own.
+   * Move this pane out into a window of its own, in the session it is in.
+   *
+   * tmux places a break with no destination in whichever session is current,
+   * which is the attached one rather than this pane's.
    *
    * ```ts
    * await pane.breakOut("extracted");
    * ```
    */
   breakOut(windowName?: string): Promise<void> {
-    return breakPane(runtimeForHandle(this), this.id, windowName);
+    return breakPane(runtimeForHandle(this), this.id, windowName, this.sessionId);
   }
 
   /**
@@ -391,6 +418,9 @@ export class Pane {
   /**
    * Open the interactive session and window chooser in this pane.
    *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
+   *
    * ```ts
    * await pane.chooseTree({ sessionsOnly: true });
    * ```
@@ -401,6 +431,9 @@ export class Pane {
 
   /**
    * Open the interactive buffer chooser in this pane.
+   *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
    *
    * ```ts
    * await pane.chooseBuffer();
@@ -413,6 +446,9 @@ export class Pane {
   /**
    * Search windows interactively from this pane.
    *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
+   *
    * ```ts
    * await pane.findWindow("editor");
    * ```
@@ -424,6 +460,9 @@ export class Pane {
   /**
    * Send the configured prefix key to this pane.
    *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
+   *
    * ```ts
    * await pane.sendPrefix();
    * ```
@@ -434,6 +473,9 @@ export class Pane {
 
   /**
    * Open tmux's interactive option editor in this pane.
+   *
+   * tmux needs a client attached to the session to draw this. With none, it
+   * does nothing and reports success, so a headless run is told it worked.
    *
    * ```ts
    * await pane.customizeMode();

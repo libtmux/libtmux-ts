@@ -10,7 +10,7 @@ import {
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import type { Pane } from "../../src/pane.js";
-import { TmuxCommandError } from "../../src/exc.js";
+import { LibTmuxException, TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
@@ -168,6 +168,29 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
+  test("names the new placement when a window has moved rather than reporting it gone", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.newSession({ name: "other" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      await window.move({ index: 9, session: "other" });
+
+      const failure = await window
+        .refreshed()
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+
+      // The window is on the server and in plain sight; only the placement the
+      // handle names is gone. Saying it no longer exists sends the reader
+      // looking for something they can already see.
+      expect(failure).toBeInstanceOf(LibTmuxException);
+      expect((failure as LibTmuxException).message).toContain("no longer at that placement");
+      expect((failure as LibTmuxException).message).toContain("other");
+    });
+  }, 40_000);
+
   test("refreshing a killed object reports it rather than going quiet", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -225,6 +248,92 @@ describe("lifecycle mutations", () => {
         captured.some((line) => line.includes("session-command-ran")),
       );
       expect(lines.some((line) => line.trim() === "session-command-ran")).toBe(true);
+    });
+  }, 40_000);
+
+  test("gives each created process its own environment", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      // Session scope is the only alternative, and it reaches every later pane
+      // too — which is the wrong answer for a variable meant for one process.
+      const session = await server.newSession({
+        environment: { LIBTMUX_SCOPE: "session=value=with=equals" },
+        name: "scoped",
+        shellCommand: "echo scope-$LIBTMUX_SCOPE; sleep 30",
+      });
+      const first = await captureUntil(session.panes.one(), (captured) =>
+        captured.some((line) => line.includes("scope-")),
+      );
+      expect(first.some((line) => line.trim() === "scope-session=value=with=equals")).toBe(true);
+
+      const window = await session.newWindow({
+        environment: { LIBTMUX_SCOPE: "window" },
+        name: "scoped-window",
+        shellCommand: "echo scope-$LIBTMUX_SCOPE; sleep 30",
+      });
+      const inWindow = (await server.snapshot()).windows.one({ id: window.id }).panes.one();
+      expect(
+        (
+          await captureUntil(inWindow, (captured) =>
+            captured.some((line) => line.includes("scope-")),
+          )
+        ).some((line) => line.trim() === "scope-window"),
+      ).toBe(true);
+
+      const split = await inWindow.split({
+        environment: { LIBTMUX_SCOPE: "split" },
+        shellCommand: "echo scope-$LIBTMUX_SCOPE; sleep 30",
+      });
+      expect(
+        (
+          await captureUntil(split, (captured) => captured.some((line) => line.includes("scope-")))
+        ).some((line) => line.trim() === "scope-split"),
+      ).toBe(true);
+    });
+  }, 60_000);
+
+  test("groups a session with another, sharing one window list", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const first = await server.newSession({ name: "leader", windowName: "shared" });
+      const joined = await server.newSession({ groupWith: "leader", name: "follower" });
+
+      let snapshot = await server.snapshot();
+      // tmux names the group after the session grouped with, when it had none.
+      expect(snapshot.sessions.one({ id: first.id }).group).toBe("leader");
+      expect(snapshot.sessions.one({ id: joined.id }).group).toBe("leader");
+      expect(snapshot.sessions.count({ group: "leader" })).toBe(2);
+
+      // The list is shared, not copied: a window made in one is in both.
+      await snapshot.sessions.one({ id: first.id }).newWindow({ name: "added" });
+      snapshot = await server.snapshot();
+      for (const session of [first.id, joined.id]) {
+        expect(
+          snapshot.windows
+            .filter((window) => window.sessionId === session)
+            .map((window) => window.name),
+        ).toEqual(["shared", "added"]);
+      }
+    });
+  }, 40_000);
+
+  test("sizes a split rather than halving the pane", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ height: 40, name: "sized", width: 120 });
+      const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
+
+      // Measured rather than assumed: tmux 3.2 ignores a detached session's
+      // requested size, so the window this divides is not the same everywhere.
+      const height = (await server.snapshot()).windows.one({ id: pane.windowId }).height ?? 0;
+      expect(height).toBeGreaterThan(8);
+
+      const split = await pane.split({ size: "25%" });
+      const placed = (await server.snapshot()).panes.one({ id: split.id });
+
+      // A quarter of the window, rather than the half a default split gives.
+      expect(placed.height).toBe(Math.floor(height / 4));
     });
   }, 40_000);
 

@@ -16,7 +16,12 @@ import {
 } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
 import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import {
   linkWindow,
   cycleLayout,
@@ -47,6 +52,36 @@ import type { Server } from "./server.js";
 export interface WindowPlans {
   readonly kill: () => PlannedOperation<void>;
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
+}
+
+/**
+ * This placement, as tmux addresses one.
+ *
+ * A window linked into two sessions is one window with two placements sharing
+ * an id, and a bare `@id` leaves tmux to choose between them — which it does
+ * consistently, and consistently without regard for which placement the handle
+ * came from. Qualifying with the session is what makes an operation act on the
+ * placement it was reached through.
+ *
+ * Only the operations that address a placement take this. `kill`, `rename`,
+ * `selectLayout` and `resize` act on the window itself, wherever it is linked,
+ * and naming a session there would suggest a choice that does not exist.
+ */
+/**
+ * Fill in the destination session the caller left out.
+ *
+ * tmux reads a destination of `:3` as index 3 of the *current* session, which
+ * is whichever one it happens to consider current — not this window's. Naming
+ * the window's own is what makes "the window stays in its own session when
+ * omitted" true, and it is the only reading under which omitting the session is
+ * a smaller request rather than a different one.
+ */
+function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOptions {
+  return { ...options, session: options.session ?? window.sessionId };
+}
+
+function placementTarget(window: Window): string {
+  return `${window.sessionId}:${window.id}`;
 }
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
@@ -115,7 +150,11 @@ export class Window {
   }
 
   /**
-   * Every option this window currently sees, including inherited values.
+   * Every option set on this window itself, not the ones it inherits.
+   *
+   * A fresh window usually has none, so an empty map here means nothing was
+   * set on this window — not that the option has no value. `showResolvedOptions`
+   * answers what actually governs it.
    *
    * ```ts
    * const options = await window.showOptions();
@@ -124,6 +163,21 @@ export class Window {
    */
   showOptions(): Promise<ReadonlyMap<string, string>> {
     return showOptions(runtimeForHandle(this), "window", this.id);
+  }
+
+  /**
+   * The option values that govern this window, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh window is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await window.showResolvedOptions()).get("main-pane-width");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "window", this.id);
   }
 
   /**
@@ -271,34 +325,43 @@ export class Window {
   /**
    * Move this window to another session or index without selecting it.
    *
+   * Moves this placement. Sessions that are grouped share one window list, so
+   * moving a window they share moves it in all of them; sessions that merely
+   * link the same window keep their own lists, and only this one moves.
+   *
    * ```ts
    * await window.move({ index: 3 });
    * ```
    */
-  move(options?: MoveWindowOptions): Promise<void> {
-    return moveWindow(runtimeForHandle(this), this.id, options);
+  move(options: MoveWindowOptions = {}): Promise<void> {
+    return moveWindow(runtimeForHandle(this), placementTarget(this), inThisSession(this, options));
   }
 
   /**
    * Link this window into another session, giving it a second placement.
    *
    * ```ts
-   * await window.link({ session: "other-session" });
+   * await window.link({ session: "other" });
    * ```
    */
   link(options: MoveWindowOptions): Promise<void> {
-    return linkWindow(runtimeForHandle(this), this.id, options);
+    return linkWindow(runtimeForHandle(this), this.id, inThisSession(this, options));
   }
 
   /**
    * Remove this placement, leaving the window's other placements intact.
+   *
+   * For a window linked into several sessions. A window shared because its
+   * sessions are grouped is not linked, and tmux refuses with "window only
+   * linked to one session" — a group member leaves by being killed, not by
+   * unlinking.
    *
    * ```ts
    * await window.unlink();
    * ```
    */
   unlink(): Promise<void> {
-    return unlinkWindow(runtimeForHandle(this), this.id);
+    return unlinkWindow(runtimeForHandle(this), placementTarget(this));
   }
 
   /**
@@ -309,7 +372,7 @@ export class Window {
    * ```
    */
   swapWith(other: Window): Promise<void> {
-    return swapWindows(runtimeForHandle(this), this.id, other.id);
+    return swapWindows(runtimeForHandle(this), placementTarget(this), placementTarget(other));
   }
 
   /**
@@ -331,7 +394,7 @@ export class Window {
    * ```
    */
   select(): Promise<void> {
-    return selectTarget(runtimeForHandle(this), "select-window", this.id);
+    return selectTarget(runtimeForHandle(this), "select-window", placementTarget(this));
   }
 
   /**

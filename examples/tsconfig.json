@@ -10,5 +10,5 @@
       "libtmux/*": ["../packages/libtmux/src/*.ts"]
     }
   },
-  "include": ["*.ts", "tests/**/*.ts"]
+  "include": ["*/*.ts"]
 }

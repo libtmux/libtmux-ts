@@ -1,5 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+
+import { packageRoot } from "../package_root.js";
 import { join } from "node:path";
 
 /**
@@ -12,11 +14,69 @@ import { join } from "node:path";
  * this working tree rather than a published release.
  */
 
-export const tsRoot = fileURLToPath(new URL("..", import.meta.url));
-const typeScriptExecutable = fileURLToPath(new URL("../node_modules/.bin/tsc", import.meta.url));
+const typeScriptExecutable = fileURLToPath(new URL("../../node_modules/.bin/tsc", import.meta.url));
+
+/**
+ * Names an example may use without introducing them.
+ *
+ * One list, two readers: the typecheck path declares them so a fragment
+ * compiles, and the execution path binds them so the same fragment runs. A name
+ * that exists for only one of those is a fragment that compiles and cannot run.
+ */
+const BINDINGS: readonly string[] = Object.freeze([
+  "server",
+  "session",
+  "window",
+  "editor",
+  "pane",
+  "client",
+  "snapshot",
+  "selection",
+  "live",
+  "other",
+  "otherPane",
+  "command",
+  "marker",
+]);
+
+/**
+ * Whether a block introduces `name` itself.
+ *
+ * A self-contained example declares its own `server`. TypeScript lets that
+ * shadow an ambient declaration; a runtime binding in the same scope is a
+ * redeclaration, so the execution path has to leave those alone.
+ *
+ * SPIKE finding: the plain form missed `const [editor, logs] = await
+ * server.batch([...])` — a destructured `editor` never matches
+ * `const\s+editor`, so the execution path bound an ambient `editor` in the
+ * same scope the example redeclares, which only reads as a real "already
+ * declared" error once a block is actually run rather than typechecked
+ * (TypeScript happily lets a function body shadow a module-level `declare
+ * const`). Two symbol examples hit this. The array and object forms below are
+ * not a full destructuring parser — a name nested inside a further pattern
+ * would still be missed — but they cover what this repository's examples use.
+ */
+function declaresOwn(body: string, name: string): boolean {
+  if (new RegExp(`\\b(?:const|let|var|using|function|class)\\s+${name}\\b`, "u").test(body)) {
+    return true;
+  }
+  if (
+    new RegExp(`\\b(?:const|let|var)\\s*\\[[^\\]]*\\b${name}\\b[^\\]]*\\]\\s*=`, "u").test(body)
+  ) {
+    return true;
+  }
+  return new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*=`, "u").test(body);
+}
+
+/** The bindings a block refers to and does not introduce itself. */
+export function bindingsFor(body: string): readonly string[] {
+  return BINDINGS.filter(
+    (name) => new RegExp(`\\b${name}\\b`, "u").test(body) && !declaresOwn(body, name),
+  );
+}
 
 /** Names an example may use without introducing them, and what they are. */
-export const PREAMBLE = `
+const PREAMBLE = `
 import { Server, Session } from "../../src/index.js";
 import type {
   Client as ClientHandle,
@@ -47,24 +107,80 @@ declare const command: string;
 declare const marker: string;
 `;
 
+/**
+ * How a block is covered, when it is not run here.
+ *
+ * Two markers, both already the repository's: `<!-- runs: examples/x.ts -->`
+ * ties the block to a file the integration suite executes, and every line the
+ * block shows must appear there; `<!-- static: why -->` says the block's effect
+ * cannot be observed at all. Running a block proves it does not throw, which is
+ * worth having and is all it proves, so a block that cannot be run says which
+ * of the two it is rather than sitting silently uncovered.
+ */
+type Coverage =
+  | { readonly kind: "runs"; readonly source: string }
+  | { readonly kind: "static"; readonly reason: string };
+
 export interface Example {
   readonly code: string;
+  readonly coverage?: Coverage;
   /** Where a reader would go to edit it, as `file:line`. */
   readonly origin: string;
 }
 
-/** Collect the ```ts blocks out of a markdown-ish body. */
 export function fencedBlocks(text: string, origin: (line: number) => string): readonly Example[] {
   const blocks: Example[] = [];
   const lines = text.split("\n");
-  let open: { code: string[]; line: number } | undefined;
+  let open: { code: string[]; coverage?: Coverage; line: number } | undefined;
+  let pending: Coverage | undefined;
+  // A fence that is not `ts` is somebody else's: shell transcripts, YAML, and a
+  // block showing what a coverage marker looks like. Its contents are prose, so
+  // nothing inside is read as a marker or as the start of an example.
+  let skipping = false;
   for (const [index, line] of lines.entries()) {
+    if (skipping) {
+      if (line.trim() === "```") skipping = false;
+      continue;
+    }
     if (open === undefined) {
-      if (line.trim() === "```ts") open = { code: [], line: index + 2 };
+      // Nothing is open, so a fence here opens one. Anything but `ts` belongs
+      // to somebody else — a shell transcript, YAML, or a block showing what a
+      // coverage marker looks like, whose contents are prose.
+      if (line.trim().startsWith("```") && line.trim() !== "```ts") {
+        skipping = true;
+        continue;
+      }
+      const marked = /^<!--\s*(?<kind>runs|static):\s*(?<value>.+?)\s*-->$/u.exec(line.trim());
+      if (marked !== null) {
+        const value = marked.groups?.["value"] ?? "";
+        pending =
+          marked.groups?.["kind"] === "runs"
+            ? { kind: "runs", source: value }
+            : { kind: "static", reason: value };
+        continue;
+      }
+      if (line.trim() === "```ts") {
+        open = {
+          code: [],
+          line: index + 2,
+          ...(pending === undefined ? {} : { coverage: pending }),
+        };
+        pending = undefined;
+        continue;
+      }
+      // A marker binds to the fence below it, so anything else in between is a
+      // marker on nothing — which would silently excuse a block it never named.
+      if (pending !== undefined && line.trim() !== "") {
+        throw new Error(`a coverage marker at line ${String(index)} is not above a \`\`\`ts block`);
+      }
       continue;
     }
     if (line.trim() === "```") {
-      blocks.push({ code: open.code.join("\n"), origin: origin(open.line) });
+      blocks.push({
+        code: open.code.join("\n"),
+        origin: origin(open.line),
+        ...(open.coverage === undefined ? {} : { coverage: open.coverage }),
+      });
       open = undefined;
       continue;
     }
@@ -72,6 +188,46 @@ export function fencedBlocks(text: string, origin: (line: number) => string): re
   }
   if (open !== undefined) throw new Error("an example block was never closed");
   return blocks;
+}
+
+/**
+ * Separate an example's imports from its body, pointing them at this tree.
+ *
+ * Shared by every executor — README blocks and TSDoc symbol examples alike —
+ * because both make the same bargain: a reader's `"libtmux"` is this working
+ * tree, so a block runs against the source rather than against whatever
+ * release happens to be installed. `taken` carries import specifiers seen
+ * across earlier blocks in the same generated module, so two examples naming
+ * the same import do not collide as a duplicate declaration.
+ */
+export function splitForExecution(
+  code: string,
+  taken: Map<string, string>,
+): { body: string; imports: string } {
+  const imports: string[] = [];
+  const body: string[] = [];
+  for (const line of code.split("\n")) {
+    if (!/^import\s/u.test(line)) {
+      body.push(line);
+      continue;
+    }
+    const rewritten = line
+      .replace(/"libtmux"/u, '"../../src/index.js"')
+      .replace(/"libtmux\/([\w-]+)"/u, '"../../src/$1.js"');
+    const named = /^import \{([^}]*)\} from (.*)$/u.exec(rewritten);
+    if (named === null) {
+      imports.push(rewritten);
+      continue;
+    }
+    const from = named[2] ?? "";
+    const kept = (named[1] ?? "")
+      .split(",")
+      .map((specifier) => specifier.trim())
+      .filter((specifier) => specifier !== "" && taken.get(specifier) !== from);
+    for (const specifier of kept) taken.set(specifier, from);
+    if (kept.length > 0) imports.push(`import { ${kept.join(", ")} } from ${from}`);
+  }
+  return { body: body.join("\n"), imports: imports.join("\n") };
 }
 
 /**
@@ -159,7 +315,7 @@ export async function typecheckExamples(
   const generated = `${PREAMBLE}\n${imports.join("\n")}\n\n${bodies.join("\n")}`;
   // Generated inside the repository so `../../src` resolves and the examples
   // are judged against this working tree rather than a published release.
-  const directory = join(tsRoot, "node_modules", `.examples-${label}`);
+  const directory = join(packageRoot, "node_modules", `.examples-${label}`);
   await mkdir(directory, { recursive: true });
   const modulePath = join(directory, "examples.ts");
   try {
@@ -186,7 +342,7 @@ export async function typecheckExamples(
 
     const result = Bun.spawnSync(
       [typeScriptExecutable, "-p", join(directory, "tsconfig.json"), "--pretty", "false"],
-      { cwd: tsRoot, stderr: "pipe", stdout: "pipe" },
+      { cwd: packageRoot, stderr: "pipe", stdout: "pipe" },
     );
     const output = `${result.stdout.toString()}${result.stderr.toString()}`.trim();
     if (result.exitCode !== 0 || output !== "") {

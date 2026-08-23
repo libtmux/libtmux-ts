@@ -111,11 +111,12 @@ export async function respawnWindow(
   );
 }
 
-/** Move a pane out into a window of its own. */
+/** Move a pane out into a window of its own, in the session it is already in. */
 export async function breakPane(
   runtime: RuntimeContext,
   paneId: string | null,
   windowName: string | undefined,
+  sessionId: string | null,
 ): Promise<void> {
   // tmux 3.7 accepts `-n` and ignores it: the window arrives under an
   // automatic name while the command still reports success, so a caller's name
@@ -125,10 +126,15 @@ export async function breakPane(
   // whether or not the break named a source pane.
   const renames =
     windowName === undefined ? false : (await runtime.capabilities.bind()).quirks.breakPane37;
+  // tmux takes the destination session from `-t`, and resolves an absent one to
+  // whichever session is current — so a break with no target lands in the
+  // attached session rather than the pane's own. An empty index after the colon
+  // is the next free one there.
   const printed = await runCommand(runtime, [
     "break-pane",
     "-d",
     ...(paneId == null ? [] : ["-s", paneId]),
+    ...(sessionId == null ? [] : ["-t", `${sessionId}:`]),
     ...(windowName === undefined ? [] : ["-n", windowName]),
     ...(renames ? ["-P", "-F", "#{window_id}"] : []),
   ]);
@@ -185,9 +191,24 @@ export async function setCopyMode(
   }
 }
 
-/** Detach every client attached to a target, or one named client. */
-export async function detachClient(runtime: RuntimeContext, target: string | null): Promise<void> {
-  await runCommand(runtime, ["detach-client", ...(target == null ? [] : ["-t", target])]);
+/**
+ * What to detach: one named client, or every client attached to a session.
+ *
+ * tmux spells these as two different flags — `-t` names a client, `-s` names a
+ * session — and one string parameter cannot say which was meant. Passing a
+ * session id where a client name was expected is accepted by every type in
+ * sight and rejected by tmux as `can't find client: $0`.
+ */
+export type DetachTarget = { readonly client: string } | { readonly session: string };
+
+/** Detach every client attached to a session, one named client, or all. */
+export async function detachClient(
+  runtime: RuntimeContext,
+  target: DetachTarget | null,
+): Promise<void> {
+  const flags =
+    target === null ? [] : "client" in target ? ["-t", target.client] : ["-s", target.session];
+  await runCommand(runtime, ["detach-client", ...flags]);
 }
 
 /** Point a client at a different session. */

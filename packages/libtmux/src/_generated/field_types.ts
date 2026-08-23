@@ -15,6 +15,7 @@ export type FormatValueType = "boolean" | "number" | "time";
  */
 interface FormatValueTypes {
   readonly active_window_index: "number";
+  readonly alternate_on: "boolean";
   readonly alternate_saved_x: "number";
   readonly alternate_saved_y: "number";
   readonly bracket_paste_flag: "boolean";
@@ -35,7 +36,9 @@ interface FormatValueTypes {
   readonly client_written: "number";
   readonly copy_cursor_x: "number";
   readonly copy_cursor_y: "number";
+  readonly cursor_blinking: "boolean";
   readonly cursor_flag: "boolean";
+  readonly cursor_very_visible: "boolean";
   readonly cursor_x: "number";
   readonly cursor_y: "number";
   readonly history_bytes: "number";
@@ -78,6 +81,7 @@ interface FormatValueTypes {
   readonly pane_right: "number";
   readonly pane_synchronized: "boolean";
   readonly pane_top: "number";
+  readonly pane_unseen_changes: "boolean";
   readonly pane_width: "number";
   readonly pane_x: "number";
   readonly pane_y: "number";
@@ -91,8 +95,11 @@ interface FormatValueTypes {
   readonly selection_end_y: "number";
   readonly selection_start_x: "number";
   readonly selection_start_y: "number";
+  readonly session_active: "boolean";
   readonly session_activity: "time";
+  readonly session_activity_flag: "boolean";
   readonly session_attached: "number";
+  readonly session_bell_flag: "boolean";
   readonly session_created: "time";
   readonly session_format: "boolean";
   readonly session_group_attached: "number";
@@ -102,6 +109,7 @@ interface FormatValueTypes {
   readonly session_last_attached: "time";
   readonly session_many_attached: "boolean";
   readonly session_marked: "boolean";
+  readonly session_silence_flag: "boolean";
   readonly session_windows: "number";
   readonly start_time: "time";
   readonly synchronized_output_flag: "boolean";
@@ -145,6 +153,7 @@ export type DecodedFormatValue<Token extends FormatFieldName> = Token extends ke
 
 export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Object.freeze({
   active_window_index: "number",
+  alternate_on: "boolean",
   alternate_saved_x: "number",
   alternate_saved_y: "number",
   bracket_paste_flag: "boolean",
@@ -165,7 +174,9 @@ export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Obj
   client_written: "number",
   copy_cursor_x: "number",
   copy_cursor_y: "number",
+  cursor_blinking: "boolean",
   cursor_flag: "boolean",
+  cursor_very_visible: "boolean",
   cursor_x: "number",
   cursor_y: "number",
   history_bytes: "number",
@@ -208,6 +219,7 @@ export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Obj
   pane_right: "number",
   pane_synchronized: "boolean",
   pane_top: "number",
+  pane_unseen_changes: "boolean",
   pane_width: "number",
   pane_x: "number",
   pane_y: "number",
@@ -221,8 +233,11 @@ export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Obj
   selection_end_y: "number",
   selection_start_x: "number",
   selection_start_y: "number",
+  session_active: "boolean",
   session_activity: "time",
+  session_activity_flag: "boolean",
   session_attached: "number",
+  session_bell_flag: "boolean",
   session_created: "time",
   session_format: "boolean",
   session_group_attached: "number",
@@ -232,6 +247,7 @@ export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Obj
   session_last_attached: "time",
   session_many_attached: "boolean",
   session_marked: "boolean",
+  session_silence_flag: "boolean",
   session_windows: "number",
   start_time: "time",
   synchronized_output_flag: "boolean",

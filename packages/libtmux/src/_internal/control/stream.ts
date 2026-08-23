@@ -1,3 +1,4 @@
+import { LibTmuxException } from "../../exc.js";
 import type { TmuxEvent, TmuxEventStream as PublicEventStream } from "../../types.js";
 
 export const DEFAULT_BUFFER_SIZE = 1024;
@@ -15,6 +16,14 @@ class BufferedEventStream implements PublicEventStream {
   readonly #onClose: () => Promise<void>;
   readonly #onReady: () => Promise<void>;
   #closed = false;
+  /**
+   * Why iteration stopped, once it has.
+   *
+   * `closed` is a decision — a deadline, a caller cancelling, a scope ending —
+   * and answers the wait. `finished` is the connection behind this going away,
+   * which answers nothing about what was being waited for.
+   */
+  #ended: "closed" | "finished" | undefined;
   #dropped = 0;
   #failure: Error | undefined;
   #iterated = false;
@@ -45,8 +54,23 @@ class BufferedEventStream implements PublicEventStream {
     this.#wake();
   }
 
+  /**
+   * End iteration the way a caller closing this would, and no further.
+   *
+   * The connection calls this on its subscribers when it is closed on purpose,
+   * where `finish` would say the source went away and turn somebody's own
+   * cancellation into a raised error. It runs no close hook: the connection is
+   * already closing, and re-entering it here would be circular.
+   */
+  cancel(): void {
+    this.#ended ??= "closed";
+    this.#closed = true;
+    this.#wake();
+  }
+
   finish(failure: Error | undefined): void {
     this.#failure ??= failure;
+    this.#ended ??= "finished";
     this.#closed = true;
     this.#wake();
   }
@@ -86,6 +110,12 @@ class BufferedEventStream implements PublicEventStream {
       for await (const event of this) {
         if (matches(event)) return event;
       }
+      // Undefined is an answer about the wait: the deadline passed, or somebody
+      // stopped waiting. The connection going away is not an answer about the
+      // wait at all, and reported as one it sends a reader to their workload.
+      if (this.#ended === "finished") {
+        throw new LibTmuxException("the tmux event stream ended before a match");
+      }
       return undefined;
     } finally {
       clearTimeout(deadline);
@@ -93,6 +123,7 @@ class BufferedEventStream implements PublicEventStream {
   }
 
   async close(): Promise<void> {
+    this.#ended ??= "closed";
     this.#closed = true;
     this.#wake();
     await this.#onClose();
@@ -105,6 +136,9 @@ class BufferedEventStream implements PublicEventStream {
 
 /** A stream, paired with the calls a control connection uses to feed it. */
 export interface EventSink {
+  /** End it deliberately: a caller closed the connection, nothing went wrong. */
+  cancel: () => void;
+  /** End it because the source went away, with the reason when there was one. */
   finish: (failure: Error | undefined) => void;
   push: (event: TmuxEvent) => void;
   readonly stream: PublicEventStream;
@@ -120,6 +154,9 @@ export function createEventStream(
   }
   const stream = new BufferedEventStream(bufferSize, onClose, onReady);
   return {
+    cancel: () => {
+      stream.cancel();
+    },
     finish: (failure) => {
       stream.finish(failure);
     },

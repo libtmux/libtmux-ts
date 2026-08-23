@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { tsRoot } from "./example_harness.js";
+import { packageRoot } from "./package_root.js";
 
 /**
  * Read the public surface of the handle classes out of their source.
@@ -100,12 +100,11 @@ function signatureAt(lines: readonly string[], index: number): string {
     .trim();
 }
 
-// The generic may itself contain a `>` — `batch<const T extends Planned<X>[]>` —
-// so the parameter list is bounded by the `(` that follows it rather than by the
-// first `>`. Getting that wrong silently drops the member from both the
-// reference and the check that every member is documented.
+// A generic may contain a `>` — `batch<const T extends Planned<X>[]>` — so the
+// parameter list ends at the `(` after it. The name alternation carries
+// `[Symbol.iterator]`, which a plain-identifier group drops from the reference.
 const MEMBER =
-  /^ {2}(?:declare )?(?:static )?(?:readonly )?(?:async )?(?:(get|set) )?([a-zA-Z][a-zA-Z0-9_]*)(<[^(]*>)?\s*([(:])/u;
+  /^ {2}(?:declare )?(?:static )?(?:readonly )?(?:async )?(?:(get|set) )?([a-zA-Z][a-zA-Z0-9_]*|\[[^\]]+\])(<[^(]*>)?\s*([(:])/u;
 
 /** Every documented public member of every exported class in `source`. */
 export function classesOf(source: string, file: string): readonly ApiClass[] {
@@ -180,7 +179,10 @@ export function classesOf(source: string, file: string): readonly ApiClass[] {
 /** The whole documented surface, in the order a reader meets it. */
 export async function readApiSurface(): Promise<readonly ApiClass[]> {
   const sources = await Promise.all(
-    SOURCES.map(async (file) => ({ file, source: await readFile(join(tsRoot, file), "utf8") })),
+    SOURCES.map(async (file) => ({
+      file,
+      source: await readFile(join(packageRoot, file), "utf8"),
+    })),
   );
   return sources.flatMap(({ file, source }) => classesOf(source, file));
 }

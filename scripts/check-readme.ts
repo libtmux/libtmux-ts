@@ -14,13 +14,9 @@ import { fileURLToPath } from "node:url";
  * next: each snippet has to stand on its own, the way a reader will paste it.
  */
 
+import { workspaceDocuments } from "./workspace_documents.js";
+
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const readmes = [
-  "README.md",
-  "examples/README.md",
-  "packages/mcp/README.md",
-  "packages/workspace/README.md",
-];
 
 interface Block {
   readonly code: string;
@@ -45,7 +41,7 @@ function fencedBlocks(markdown: string, file: string): readonly Block[] {
 }
 
 const sources = await Promise.all(
-  readmes.map(async (file) => ({
+  workspaceDocuments.map(async (file) => ({
     file,
     markdown: await Bun.file(join(repositoryRoot, file)).text(),
   })),
@@ -197,5 +193,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `README examples typecheck: ${String(blocks.length)} blocks across ${String(readmes.length)} files\n`,
+  `README examples typecheck: ${String(blocks.length)} blocks across ${String(workspaceDocuments.length)} files\n`,
 );

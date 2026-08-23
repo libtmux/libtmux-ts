@@ -144,11 +144,15 @@ type SessionScalarKeys = Exclude<keyof SessionWhere, LogicalKeys | SessionRelati
 type WindowScalarKeys = Exclude<keyof WindowWhere, LogicalKeys | WindowRelationKeys>;
 type PaneScalarKeys = Exclude<keyof PaneWhere, LogicalKeys | PaneRelationKeys>;
 type ExpectedSessionScalarKeys =
+  | "active"
   | "activeWindowIndex"
   | "activity"
+  | "activityFlag"
+  | "alert"
   | "alerts"
   | "attached"
   | "attachedList"
+  | "bellFlag"
   | "created"
   | "format"
   | "group"
@@ -166,6 +170,7 @@ type ExpectedSessionScalarKeys =
   | "name"
   | "path"
   | "sessionWindows"
+  | "silenceFlag"
   | "stack";
 type ExpectedWindowScalarKeys =
   | "active"
@@ -204,6 +209,7 @@ type ExpectedWindowScalarKeys =
   | "zoomedFlag";
 type ExpectedPaneScalarKeys =
   | "active"
+  | "alternateOn"
   | "alternateSavedX"
   | "alternateSavedY"
   | "atBottom"
@@ -215,8 +221,12 @@ type ExpectedPaneScalarKeys =
   | "bracketPasteFlag"
   | "currentCommand"
   | "currentPath"
+  | "cursorBlinking"
   | "cursorCharacter"
+  | "cursorColour"
   | "cursorFlag"
+  | "cursorShape"
+  | "cursorVeryVisible"
   | "cursorX"
   | "cursorY"
   | "dead"
@@ -228,6 +238,7 @@ type ExpectedPaneScalarKeys =
   | "floatingFlag"
   | "format"
   | "height"
+  | "historyAllBytes"
   | "historyBytes"
   | "historyLimit"
   | "historySize"
@@ -236,6 +247,7 @@ type ExpectedPaneScalarKeys =
   | "index"
   | "inputOff"
   | "insertFlag"
+  | "keyMode"
   | "keypadCursorFlag"
   | "keypadFlag"
   | "last"
@@ -267,6 +279,7 @@ type ExpectedPaneScalarKeys =
   | "title"
   | "top"
   | "tty"
+  | "unseenChanges"
   | "width"
   | "wrapFlag"
   | "x"

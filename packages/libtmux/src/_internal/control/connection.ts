@@ -6,6 +6,7 @@ import type { TmuxConnection } from "../runtime/connection.js";
 import { subcommandOf } from "../transport/group.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
+import { BlockTracker } from "./blocks.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
 import { LineFramer } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
@@ -40,6 +41,64 @@ const TERMINATION_GRACE_MS = 2_000;
  */
 function quoteArgument(argument: string): string {
   return `'${argument.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * Whether an argument is one control mode has no way to write.
+ *
+ * tmux reads a control client's input a line at a time and parses each line as
+ * a command list (`control_read_callback`, splitting on LF alone), so a newline
+ * inside an argument ends the command and everything after it is parsed as more
+ * commands — `run-shell` among them. Quoting cannot help: no quote survives the
+ * line split, and control mode has no continuation. An empty line detaches the
+ * client outright, which a value holding two newlines produces.
+ *
+ * A carriage return is carried, because tmux does not end a line on one.
+ */
+function carriesNewline(argv: readonly string[]): boolean {
+  return argv.some((argument) => argument.includes("\n"));
+}
+
+/**
+ * Whether tmux answers this command outside the block it opened for it.
+ *
+ * `run-shell` starts a job and returns `CMD_RETURN_WAIT`, but the closing guard
+ * is written when the command returns rather than when the job finishes. The
+ * block is therefore empty and the output follows it as bare lines belonging to
+ * no command, which a control client has no way to attribute and this one drops
+ * — so `runShell` answers nothing at all over a connection.
+ *
+ * Every form goes, including `-b`, which prints to a pane and would not have
+ * needed to: telling them apart means parsing `run-shell`'s flags, and reading
+ * them wrong reintroduces the silence this exists to remove. The command forks
+ * a shell either way, so a tmux process beside it is not what makes it costly.
+ */
+function answersOutsideItsBlock(argv: readonly string[]): boolean {
+  return argv[0] === "run-shell" || argv[0] === "run";
+}
+
+/** Why control mode cannot carry this command, named for the caller. */
+function unwritableReason(argv: readonly string[]): string | undefined {
+  if (carriesNewline(argv)) return "a newline in an argument";
+  if (answersOutsideItsBlock(argv)) return "run-shell output, which tmux writes after the block";
+  return undefined;
+}
+
+/**
+ * Say a broken pipe in this package's terms.
+ *
+ * Node reports one as its own `Error` — `EPIPE: broken pipe, send` — with no
+ * `delivery`, so a caller catching `LibTmuxException` misses the very case
+ * where a command may already have run. `indeterminate` is the honest answer:
+ * the bytes were written and tmux never said whether it acted on them.
+ */
+export function transportFailure(failure: Error): TmuxTransportError {
+  if (failure instanceof TmuxTransportError) return failure;
+  const code = (failure as { readonly code?: string }).code;
+  return new TmuxTransportError(
+    `tmux control connection broke${code === undefined ? "" : ` (${code})`}`,
+    { cause: failure, delivery: "indeterminate", kind: "pipe" },
+  );
 }
 
 /**
@@ -136,7 +195,7 @@ export class ControlConnection implements CommandTransport {
    */
   readonly #partial = new Map<string, Uint8Array>();
   #block: PendingCommand | undefined;
-  #inBlock = false;
+  readonly #blocks = new BlockTracker();
   #diagnostic: string[] = [];
   #reason: string | undefined;
   #attached: { resolve: () => void; reject: (error: Error) => void } | undefined;
@@ -189,13 +248,13 @@ export class ControlConnection implements CommandTransport {
   /**
    * A transport for the commands this connection cannot carry.
    *
-   * tmux's control protocol has no channel for a command's stdin, so
-   * `load-buffer` and friends have nowhere to put their payload. Handing them
-   * to a spawning transport keeps the promise the two modes are built on —
-   * that choosing one never edits the caller — instead of making a connected
-   * server a server with a hole in it.
+   * Some commands cannot travel over a connection at all: control mode has no
+   * channel for stdin, no way to write a newline inside an argument, and no way
+   * to frame `run-shell`'s output. Handing those to a spawning transport keeps
+   * the promise the two modes are built on — that choosing one never edits the
+   * caller — instead of making a connected server a server with holes in it.
    */
-  readonly #stdinFallback: CommandTransport | undefined;
+  readonly #spawnFallback: CommandTransport | undefined;
 
   /**
    * Told when this connection stops being proof of one daemon.
@@ -214,7 +273,7 @@ export class ControlConnection implements CommandTransport {
     streamEndsConnection = true,
     stdinFallback?: CommandTransport,
   ) {
-    this.#stdinFallback = stdinFallback;
+    this.#spawnFallback = stdinFallback;
     const bufferSize = options.bufferSize ?? DEFAULT_BUFFER_SIZE;
     // Validated before the spawn, so a rejected size cannot leak a process.
     if (!Number.isInteger(bufferSize) || bufferSize < 1) {
@@ -355,10 +414,13 @@ export class ControlConnection implements CommandTransport {
       this.#fail(
         code === 0 || code === null || this.#closed
           ? undefined
-          : new Error(
+          : new TmuxTransportError(
               message === ""
                 ? `tmux control mode exited with ${String(code)}`
                 : `tmux control mode could not attach: ${message}`,
+              // The process is gone with commands still queued on it, and tmux
+              // never said which of them it ran.
+              { delivery: "indeterminate", kind: "pipe" },
             ),
       );
     });
@@ -444,118 +506,128 @@ export class ControlConnection implements CommandTransport {
 
   #route(line: Uint8Array): void {
     const parsed = parseControlLine(line, this.#decodeOutput);
-    if (parsed?.kind === "block-begin") {
-      this.#inBlock = true;
-      if (parsed.fromClient) this.#block = this.#pending.shift();
-      return;
-    }
-    if (parsed?.kind !== "block-end") {
-      // Inside a block every line is the command's output, whatever it starts
-      // with. A pane id is `%1`, which is indistinguishable from a
-      // notification by its first character, so position decides and not shape.
-      if (this.#inBlock) {
-        const text = new TextDecoder().decode(line);
-        // tmux appends notifications to whatever block is open, so a pane that
-        // backs up during a command has its `%pause` land in that command's
-        // output. Swallowed there, the pane is never asked back.
-        //
-        // Matched whole: a pane id is `%1`, indistinguishable from a
-        // notification by its first character.
-        if (FLOW_CONTROL_LINE.test(text)) {
-          const flow = parseControlLine(line);
-          if (flow?.kind === "pause" || flow?.kind === "continue") {
-            this.#routeFlowControl(flow);
-            return;
-          }
-        }
-        const block = this.#block;
-        if (block === undefined) {
-          // Nobody is waiting for this: it is tmux explaining an attach. Keep
-          // enough to report the reason and no more.
-          if (this.#diagnostic.length < 64) this.#diagnostic.push(text);
+    const position = this.#blocks.position(parsed);
+    switch (position.kind) {
+      case "begin":
+        if (position.fromClient) this.#block = this.#pending.shift();
+        return;
+      case "body":
+        this.#routeBlockBody(line);
+        return;
+      case "end":
+        this.#closeBlock(position.fromClient, position.failed);
+        return;
+      case "notification":
+        if (position.event.kind === "pause" || position.event.kind === "continue") {
+          this.#routeFlowControl(position.event);
           return;
         }
-        // Past the bound the block is still consumed — the queue's alignment
-        // depends on it — but its contents stop being kept.
-        block.bytes += line.length + 1;
-        if (block.bytes > this.#maxCommandBytes) {
-          block.overflowed = true;
-          block.lines.length = 0;
-          return;
-        }
-        block.lines.push(text);
+        for (const sink of this.#sinks) sink.push(position.event);
+        return;
+      default:
+        return;
+    }
+  }
+
+  /**
+   * Take one line of a command's response.
+   *
+   * Inside a block every line is the command's output, whatever it starts with.
+   * A pane id is `%1`, which is indistinguishable from a notification by its
+   * first character, so position decides and not shape.
+   */
+  #routeBlockBody(line: Uint8Array): void {
+    const text = new TextDecoder().decode(line);
+    // tmux appends notifications to whatever block is open, so a pane that
+    // backs up during a command has its `%pause` land in that command's
+    // output. Swallowed there, the pane is never asked back.
+    //
+    // Matched whole: a pane id is `%1`, indistinguishable from a
+    // notification by its first character.
+    if (FLOW_CONTROL_LINE.test(text)) {
+      const flow = parseControlLine(line);
+      if (flow?.kind === "pause" || flow?.kind === "continue") {
+        this.#routeFlowControl(flow);
         return;
       }
-      if (parsed === undefined) return;
-      if (parsed.kind === "pause" || parsed.kind === "continue") {
-        this.#routeFlowControl(parsed);
-        return;
-      }
-      for (const sink of this.#sinks) sink.push(parsed);
+    }
+    const block = this.#block;
+    if (block === undefined) {
+      // Nobody is waiting for this: it is tmux explaining an attach. Keep
+      // enough to report the reason and no more.
+      if (this.#diagnostic.length < 64) this.#diagnostic.push(text);
       return;
     }
-    {
-      this.#inBlock = false;
-      if (!parsed.fromClient) {
-        if (!parsed.failed) {
-          // A reconnect re-attaches, and the first outcome is the one callers
-          // were told: once attached, this connection has been usable, and a
-          // later outage is reported through the commands and the stream.
-          this.#attachOutcome ??= { kind: "attached" };
-          this.#attached?.resolve();
-          this.#reopening = false;
-          // The flag lives on the tmux client, so a reconnect needs it again.
-          this.#requestPauseAfter();
-          // The outage ends here, not when the replacement process started:
-          // until tmux accepts the attach, the new client is carrying nothing.
-          const recovered = this.#reconnectingAttempt;
-          if (recovered !== undefined) {
-            this.#reconnectingAttempt = undefined;
-            for (const sink of this.#sinks) sink.push({ attempts: recovered, kind: "reconnected" });
-          }
-          // tmux acknowledging the attach is what says the outage is over, so
-          // the budget is per outage rather than a total for the connection's
-          // life — otherwise a watcher that reconnects once a day simply stops
-          // recovering after `attempts` days, and says nothing.
-          this.#attempt = 0;
-        }
-        // tmux explains a refused attach in a block of its own — "no sessions"
-        // on an empty server, "can't find session" for a bad target. Keeping
-        // it turns the exit code into the reason.
-        if (parsed.failed && this.#diagnostic.length > 0) {
-          this.#reason = this.#diagnostic.join("; ");
-        }
-        this.#diagnostic = [];
-        return;
-      }
-      const block = this.#block;
-      this.#block = undefined;
-      if (block === undefined) return;
-      // tmux removes the rest of a command list at the first failure, so the
-      // blocks those commands would have sent never arrive.
-      if (parsed.failed && block.group !== undefined) this.#abandonGroup(block.group);
-      // Its caller was answered when it was cancelled; the block still had to
-      // be consumed to keep the queue aligned, and its output is discarded.
-      if (!settle(block)) return;
-      if (block.overflowed) {
-        block.reject(
-          new TmuxTransportError(
-            `tmux control response exceeded ${String(this.#maxCommandBytes)} bytes`,
-            // tmux ran it: the response is what could not be held.
-            { delivery: "replied", kind: "protocol" },
-          ),
-        );
-        return;
-      }
-      const body = block.lines.length === 0 ? "" : `${block.lines.join("\n")}\n`;
-      block.resolve({
-        cmd: block.argv,
-        returncode: parsed.failed ? 1 : 0,
-        signal: null,
-        stderr: parsed.failed ? encoder.encode(body) : new Uint8Array(),
-        stdout: parsed.failed ? new Uint8Array() : encoder.encode(body),
-      });
+    // Past the bound the block is still consumed — the queue's alignment
+    // depends on it — but its contents stop being kept.
+    block.bytes += line.length + 1;
+    if (block.bytes > this.#maxCommandBytes) {
+      block.overflowed = true;
+      block.lines.length = 0;
+      return;
     }
+    block.lines.push(text);
+  }
+
+  #closeBlock(fromClient: boolean, failed: boolean): void {
+    if (!fromClient) {
+      if (!failed) {
+        // A reconnect re-attaches, and the first outcome is the one callers
+        // were told: once attached, this connection has been usable, and a
+        // later outage is reported through the commands and the stream.
+        this.#attachOutcome ??= { kind: "attached" };
+        this.#attached?.resolve();
+        this.#reopening = false;
+        // The flag lives on the tmux client, so a reconnect needs it again.
+        this.#requestPauseAfter();
+        // The outage ends here, not when the replacement process started:
+        // until tmux accepts the attach, the new client is carrying nothing.
+        const recovered = this.#reconnectingAttempt;
+        if (recovered !== undefined) {
+          this.#reconnectingAttempt = undefined;
+          for (const sink of this.#sinks) sink.push({ attempts: recovered, kind: "reconnected" });
+        }
+        // tmux acknowledging the attach is what says the outage is over, so the
+        // budget is per outage: a total for the connection's life would stop a
+        // daily reconnector from recovering after `attempts` days.
+        this.#attempt = 0;
+      }
+      // tmux explains a refused attach in a block of its own — "no sessions"
+      // on an empty server, "can't find session" for a bad target. Keeping
+      // it turns the exit code into the reason.
+      if (failed && this.#diagnostic.length > 0) {
+        this.#reason = this.#diagnostic.join("; ");
+      }
+      this.#diagnostic = [];
+      return;
+    }
+    const block = this.#block;
+    this.#block = undefined;
+    if (block === undefined) return;
+    // tmux removes the rest of a command list at the first failure, so the
+    // blocks those commands would have sent never arrive.
+    if (failed && block.group !== undefined) this.#abandonGroup(block.group);
+    // Its caller was answered when it was cancelled; the block still had to
+    // be consumed to keep the queue aligned, and its output is discarded.
+    if (!settle(block)) return;
+    if (block.overflowed) {
+      block.reject(
+        new TmuxTransportError(
+          `tmux control response exceeded ${String(this.#maxCommandBytes)} bytes`,
+          // tmux ran it: the response is what could not be held.
+          { delivery: "replied", kind: "protocol" },
+        ),
+      );
+      return;
+    }
+    const body = block.lines.length === 0 ? "" : `${block.lines.join("\n")}\n`;
+    block.resolve({
+      cmd: block.argv,
+      returncode: failed ? 1 : 0,
+      signal: null,
+      stderr: failed ? encoder.encode(body) : new Uint8Array(),
+      stdout: failed ? new Uint8Array() : encoder.encode(body),
+    });
   }
 
   /**
@@ -579,7 +651,7 @@ export class ControlConnection implements CommandTransport {
         this.#framer.reset();
         this.#partial.clear();
         this.#block = undefined;
-        this.#inBlock = false;
+        this.#blocks.reset();
         this.#stderr.length = 0;
         this.#stderrBytes = 0;
         this.#writeQueue.length = 0;
@@ -592,7 +664,8 @@ export class ControlConnection implements CommandTransport {
     return true;
   }
 
-  #fail(failure: Error | undefined): void {
+  #fail(raw: Error | undefined): void {
+    const failure = raw === undefined ? undefined : transportFailure(raw);
     // Before deciding whether to reconnect: either way this connection is no
     // longer evidence that the daemon its ids came from is the one answering.
     // A deliberate close is not that — the runtime is going away with it.
@@ -684,7 +757,7 @@ export class ControlConnection implements CommandTransport {
     if (request.stdin !== undefined) {
       // The request still carries this connection's socket flags, so the
       // spawned command reaches the same server this one is attached to.
-      const fallback = this.#stdinFallback;
+      const fallback = this.#spawnFallback;
       if (fallback !== undefined) return fallback.execute(request);
       return Promise.reject(
         new TmuxTransportError("control mode cannot carry command stdin", {
@@ -698,6 +771,20 @@ export class ControlConnection implements CommandTransport {
     if (argv.length === 0) {
       return Promise.reject(
         new TmuxTransportError("control mode request carries no subcommand", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
+    const unwritable = unwritableReason(argv);
+    if (unwritable !== undefined) {
+      // A spawned tmux hands argv to execve and reads the whole reply from a
+      // pipe, so both of these are ordinary there. Which answer tmux gives is
+      // still tmux's to give — this only has to let the command reach it.
+      const fallback = this.#spawnFallback;
+      if (fallback !== undefined) return fallback.execute(request);
+      return Promise.reject(
+        new TmuxTransportError(`control mode cannot carry ${unwritable}`, {
           delivery: "not_started",
           kind: "protocol",
         }),
@@ -754,6 +841,19 @@ export class ControlConnection implements CommandTransport {
     if (argvs.some((argv) => argv.length === 0)) {
       return Promise.reject(
         new TmuxTransportError("control mode request carries no subcommand", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
+    const unwritable = argvs.map(unwritableReason).find((reason) => reason !== undefined);
+    if (unwritable !== undefined) {
+      // The whole list goes, not the one command: splitting it would cost the
+      // single instant that is the reason a list is written as one line.
+      const fallback = this.#spawnFallback;
+      if (fallback !== undefined) return fallback.executeGroup(requests);
+      return Promise.reject(
+        new TmuxTransportError(`control mode cannot carry ${unwritable}`, {
           delivery: "not_started",
           kind: "protocol",
         }),
@@ -851,6 +951,10 @@ export class ControlConnection implements CommandTransport {
     }
     if (this.#closed) return;
     this.#closed = true;
+    for (const sink of this.#sinks) sink.cancel();
+    // Said before #fail, which cannot tell this from the connection dropping:
+    // a subscriber ending because its caller closed is an answer to a wait, not
+    // a failure of one.
     this.#fail(undefined);
     // Ask, then insist. Waiting on `close` alone leaves closing unbounded: a
     // tmux that never leaves, or one whose descendants hold the inherited pipes

@@ -11,6 +11,7 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
+import { MultipleMatchesError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
@@ -91,14 +92,53 @@ describe("window and pane topology", () => {
       );
       expect(linked.length).toBe(2);
 
-      // Unlinking the second placement leaves the original intact.
-      const placement = linked.filter((candidate) => candidate.sessionId === other.id).one();
-      await placement.unlink();
+      // Unlinking through the original placement leaves the linked one, which
+      // is the harder direction: tmux resolves a bare window id to the later
+      // placement, so a count alone cannot tell the two apart.
+      const original = linked.filter((candidate) => candidate.sessionId !== other.id).one();
+      await original.unlink();
 
       const afterUnlink = (await server.snapshot()).windows.filter(
         (candidate) => candidate.id === window.id,
       );
       expect(afterUnlink.length).toBe(1);
+      expect(afterUnlink.one().sessionId).toBe(other.id);
+    });
+  }, 40_000);
+
+  test("selects a linked window in the session it was reached through", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const other = await server.newSession({ name: "elsewhere", windowName: "kept" });
+      const shared = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      // A second window in the origin session, made active, so that selecting
+      // the shared one there is a change rather than already true.
+      const origin = (await server.snapshot()).sessions.one({ name: fixture.sessionName });
+      const sibling = await origin.newWindow({ name: "sibling" });
+      await sibling.select();
+      await shared.link({ session: "elsewhere" });
+      expect((await server.snapshot()).sessions.one({ id: origin.id }).activeWindow?.id).toBe(
+        sibling.id,
+      );
+
+      const linked = (await server.snapshot()).windows.filter(
+        (candidate) => candidate.id === shared.id,
+      );
+      const here = linked.filter((candidate) => candidate.sessionId !== other.id).one();
+      const there = linked.filter((candidate) => candidate.sessionId === other.id).one();
+
+      await there.select();
+      let snapshot = await server.snapshot();
+      expect(snapshot.sessions.one({ id: other.id }).activeWindow?.id).toBe(shared.id);
+
+      // The same window through the other placement: this one has to move the
+      // origin session's active window, and leave the other session's alone.
+      await here.select();
+      snapshot = await server.snapshot();
+      expect(snapshot.sessions.one({ id: here.sessionId }).activeWindow?.id).toBe(shared.id);
+      expect(snapshot.sessions.one({ id: other.id }).activeWindow?.id).toBe(shared.id);
     });
   }, 40_000);
 
@@ -113,6 +153,141 @@ describe("window and pane topology", () => {
         .filter((candidate) => candidate.id === window.id)
         .one();
       expect(moved.index).toBe(7);
+    });
+  }, 40_000);
+
+  test("says which sessions a shared id spans, rather than only that it did", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const leader = await server.newSession({ name: "leader" });
+      await server.newSession({ groupWith: "leader", name: "follower" });
+
+      const snapshot = await server.snapshot();
+      const paneId = snapshot.sessions.one({ id: leader.id }).panes.one().id;
+
+      // The raise is true — there really are two placements — so the fix is a
+      // criterion the caller has not thought of, and the message is where they
+      // would find out.
+      const failure = (() => {
+        try {
+          snapshot.panes.one({ id: paneId });
+          return undefined;
+        } catch (error: unknown) {
+          return error as Error;
+        }
+      })();
+
+      expect(failure).toBeInstanceOf(MultipleMatchesError);
+      expect(failure?.message).toContain("2 placements");
+      expect(failure?.message).toContain(leader.id);
+      expect(failure?.message).toContain("session");
+      // Naming the session is what reaches one of them.
+      expect(snapshot.panes.one({ id: paneId, session: { is: { id: leader.id } } }).id).toBe(
+        paneId,
+      );
+    });
+  }, 40_000);
+
+  test("keeps the ordinary message when several matches are several objects", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const pane = (await server.snapshot()).panes.one();
+      await pane.split();
+
+      // Two panes that are two panes: nothing about ids explains this one.
+      const snapshot = await server.snapshot();
+      expect(() => snapshot.panes.one()).toThrow(MultipleMatchesError);
+      expect(() => snapshot.panes.one()).not.toThrow(/placements/u);
+    });
+  }, 40_000);
+
+  test("links a second placement into its own session when none is named", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // Created later, so it is the session tmux considers current.
+      await server.newSession({ name: "newer" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      const origin = window.sessionId;
+
+      // A window can hold two placements in one session, at two indexes; that
+      // is what an omitted destination session asks for here.
+      await window.link({ index: 4 });
+
+      const placements = (await server.snapshot()).windows.filter(
+        (candidate) => candidate.id === window.id,
+      );
+      expect(placements.length).toBe(2);
+      expect(placements.map((candidate) => candidate.sessionId)).toEqual([origin, origin]);
+    });
+  }, 40_000);
+
+  test("keeps a moved window in its own session when none is named", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // A second session, created later, is what tmux considers current — so
+      // an unnamed destination goes there rather than staying put.
+      await server.newSession({ name: "newer" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      const origin = window.sessionId;
+
+      await window.move({ index: 7 });
+
+      const moved = (await server.snapshot()).windows
+        .filter((candidate) => candidate.id === window.id)
+        .one();
+      expect(moved.index).toBe(7);
+      expect(moved.sessionId).toBe(origin);
+    });
+  }, 40_000);
+
+  test("keeps a moved window in its own session over a connection too", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.newSession({ name: "newer" });
+      // The same guarantee through a control connection, the path a served
+      // client takes. tmux reads a destination of `:7` as index 7 of whichever
+      // session it considers current, so an index-only move lands elsewhere.
+      await using live = await server.connect();
+      const window = (await live.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      const origin = window.sessionId;
+
+      await window.move({ index: 7 });
+
+      const moved = (await server.snapshot()).windows
+        .filter((candidate) => candidate.id === window.id)
+        .one();
+      expect(moved.index).toBe(7);
+      expect(moved.sessionId).toBe(origin);
+    });
+  }, 40_000);
+
+  test("breaks a pane out into its own session, not the current one", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // A session created later is what tmux considers current, and a break
+      // with no destination takes its session from there.
+      await server.newSession({ name: "newer" });
+      const window = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      const origin = window.sessionId;
+      await window.split();
+      const pane = (await server.snapshot()).panes
+        .filter((candidate) => candidate.windowId === window.id)
+        .toArray()
+        .at(-1);
+      if (pane === undefined) throw new Error("expected a pane to break out");
+
+      await pane.breakOut("broken-out");
+
+      const broken = (await server.snapshot()).windows.one({ name: "broken-out" });
+      expect(broken.sessionId).toBe(origin);
     });
   }, 40_000);
 

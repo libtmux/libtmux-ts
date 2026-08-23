@@ -24,6 +24,64 @@
         "libtmux": "workspace:*",
       },
     },
+    "examples/agent": {
+      "name": "@example/agent",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
+    "examples/capture": {
+      "name": "@example/capture",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
+    "examples/engine": {
+      "name": "@example/engine",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
+    "examples/fields": {
+      "name": "@example/fields",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
+    "examples/mcp-agent": {
+      "name": "@example/mcp-agent",
+      "version": "0.0.0",
+      "dependencies": {
+        "@libtmux/mcp": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.30.0",
+        "libtmux": "workspace:*",
+      },
+    },
+    "examples/quickstart": {
+      "name": "@example/quickstart",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
+    "examples/watch": {
+      "name": "@example/watch",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
+    "examples/workspace": {
+      "name": "@example/workspace",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
     "packages/libtmux": {
       "name": "libtmux",
       "version": "0.1.0-alpha.5",
@@ -46,7 +104,7 @@
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
-        "libtmux": "0.1.0-alpha.3",
+        "libtmux": "0.1.0-alpha.5",
         "zod": "4.4.3",
       },
     },
@@ -84,7 +142,23 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
+    "@example/agent": ["@example/agent@workspace:examples/agent"],
+
+    "@example/capture": ["@example/capture@workspace:examples/capture"],
+
+    "@example/engine": ["@example/engine@workspace:examples/engine"],
+
+    "@example/fields": ["@example/fields@workspace:examples/fields"],
+
     "@example/libtmux": ["@example/libtmux@workspace:examples"],
+
+    "@example/mcp-agent": ["@example/mcp-agent@workspace:examples/mcp-agent"],
+
+    "@example/quickstart": ["@example/quickstart@workspace:examples/quickstart"],
+
+    "@example/watch": ["@example/watch@workspace:examples/watch"],
+
+    "@example/workspace": ["@example/workspace@workspace:examples/workspace"],
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 

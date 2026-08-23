@@ -212,14 +212,15 @@ function snapshotDescriptor(model: WhereModel, value: unknown): ProjectionDescri
   for (const value of snapshotDataArray(descriptor.fields, `${model} descriptor fields`)) {
     const field = readStrictDataRecord(
       value,
-      ["criteriaName", "domain", "token", "wireName"],
+      ["criteriaName", "domain", "since", "token", "wireName"],
       `${model} field`,
     );
     if (
       field.domain !== "string" ||
       typeof field.token !== "string" ||
       typeof field.wireName !== "string" ||
-      typeof field.criteriaName !== "string"
+      typeof field.criteriaName !== "string" ||
+      typeof field.since !== "string"
     ) {
       return invalidProjection(`${model} field is invalid`);
     }
@@ -230,11 +231,12 @@ function snapshotDescriptor(model: WhereModel, value: unknown): ProjectionDescri
       return invalidProjection(`${model} descriptor has a duplicate field wire name`);
     }
     const canonical = WHERE_FIELDS_V1[model].find(
-      ({ criteriaName, domain, token, wireName }) =>
+      ({ criteriaName, domain, since, token, wireName }) =>
         domain === field.domain &&
         token === field.token &&
         wireName === field.wireName &&
-        criteriaName === field.criteriaName,
+        criteriaName === field.criteriaName &&
+        since === field.since,
     );
     if (canonical === undefined) {
       return invalidProjection(`${model} field does not belong to the generated descriptor`);
@@ -245,6 +247,7 @@ function snapshotDescriptor(model: WhereModel, value: unknown): ProjectionDescri
       Object.freeze({
         criteriaName: canonical.criteriaName,
         domain: canonical.domain,
+        since: canonical.since,
         token: canonical.token,
         wireName: canonical.wireName,
       }),
@@ -706,6 +709,11 @@ export class SelectionProjectionBuilder {
       connection: this.graph.capture.connection,
       epoch: this.graph.capture.epoch,
       capabilityFingerprint: this.graph.capture.capabilityFingerprint,
+      // Carried so a query can be told a field is newer than the server that
+      // answered. Rebuilding the capture field by field is why it was lost.
+      ...(this.graph.capture.tmuxVersion === undefined
+        ? {}
+        : { tmuxVersion: this.graph.capture.tmuxVersion }),
     });
     const projection = Object.freeze({
       capture,

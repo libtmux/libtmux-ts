@@ -15,7 +15,18 @@ import type { Window } from "./window.js";
  * The dependency points inward: internals import these, not the reverse.
  */
 
-/** An immutable view of the server at one instant. */
+/**
+ * An immutable view of the server at one instant.
+ *
+ * `windows` and `panes` hold placements rather than distinct objects. A window
+ * linked into two sessions, or shared by two grouped sessions, is one window
+ * that appears once per session — so these count places a thing is, and an id
+ * matches every placement of it. Narrow with the session to reach one:
+ *
+ * ```ts
+ * snapshot.panes.one({ id: "%1", session: { is: { name: "work" } } });
+ * ```
+ */
 export interface ServerSnapshot {
   readonly clients: Selection<Client>;
   readonly panes: Selection<Pane>;
@@ -25,12 +36,37 @@ export interface ServerSnapshot {
 
 export interface NewSessionOptions extends CommandOptions {
   /**
+   * Share another session's windows, tmux's `-t`.
+   *
+   * Names a session to group with, not a group: tmux puts the new session in
+   * that session's group, or starts one named for it. Members share one window
+   * list, so a window created in either appears in both and a window moved in
+   * either moves in both — unlike a linked window, where each session keeps its
+   * own list and its own index for it.
+   *
+   * The group a session ended up in is `Session.group`. `windowName`,
+   * `shellCommand` and `startDirectory` describe a first window, and a grouped
+   * session does not make one, so tmux ignores them here.
+   */
+  readonly groupWith?: string;
+  /**
+   * Variables to set in the process this starts, tmux's `-e`.
+   *
+   * Each pair goes as its own flag, so a value holding `=` arrives whole. This
+   * is the only scope that fits one process: `setEnvironment` writes the
+   * session's, which every later pane in it inherits too.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
+  /**
    * Rows for the session's first window.
    *
    * A detached session has no client to take its size from, so tmux gives it
    * 80x24 and every program in it formats to that. Nothing can widen it
    * afterwards except `Window.resize`, and a width-aware program has already
    * truncated its output by then rather than wrapped it.
+   *
+   * tmux 3.2 ignores both for a detached session and gives 80x24 anyway;
+   * 3.3 is the first release that honours them.
    */
   readonly height?: number;
   readonly name?: string;
@@ -49,6 +85,14 @@ export interface NewSessionOptions extends CommandOptions {
 }
 
 export interface NewWindowOptions extends CommandOptions {
+  /**
+   * Variables to set in the process this starts, tmux's `-e`.
+   *
+   * Each pair goes as its own flag, so a value holding `=` arrives whole. This
+   * is the only scope that fits one process: `setEnvironment` writes the
+   * session's, which every later pane in it inherits too.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
   /**
    * Place the window before or after the session's current window.
    *
@@ -70,6 +114,21 @@ export interface NewWindowOptions extends CommandOptions {
 }
 
 export interface SplitOptions extends CommandOptions {
+  /**
+   * Variables to set in the process this starts, tmux's `-e`.
+   *
+   * Each pair goes as its own flag, so a value holding `=` arrives whole. This
+   * is the only scope that fits one process: `setEnvironment` writes the
+   * session's, which every later pane in it inherits too.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
+  /**
+   * How big the new pane is, tmux's `-l`.
+   *
+   * A number is cells along the split's own axis; a `"30%"` string is that
+   * share of the pane being divided. Without it tmux halves the pane.
+   */
+  readonly size?: number | `${number}%`;
   /**
    * Which side of this pane the new one takes.
    *
@@ -121,18 +180,58 @@ export interface SetOptionOptions extends CommandOptions {
 }
 
 export interface CaptureOptions extends CommandOptions {
+  /**
+   * Capture the screen saved underneath a full-screen program, tmux's `-a`.
+   *
+   * Not what that program is displaying — an ordinary capture already reads
+   * that, because the program's display is the pane's visible grid. tmux saves
+   * the *normal* screen when a program switches to the alternate one
+   * (`screen_alternate_on` copies the grid into `saved_grid`, which is what
+   * `-a` reads), so this answers with what an editor or a pager is covering
+   * up, not with the editor or the pager.
+   *
+   * It exists only while such a program is running: tmux frees the saved grid
+   * when the program leaves the alternate screen, and fails with "no alternate
+   * screen" whenever there is nothing on it.
+   */
+  readonly alternateScreen?: boolean;
   /** Last line to capture; negative counts back from the visible bottom. */
   readonly end?: number;
+  /**
+   * Keep the escape sequences that colour and style the text, tmux's `-e`.
+   *
+   * Off by default, which reads the characters alone. On, the result is what a
+   * terminal would render rather than what a person would read, so it is for
+   * reproducing a display rather than for matching against.
+   */
+  readonly escapeSequences?: boolean;
   /** Join wrapped lines, matching tmux's `-J`. */
   readonly joinWrapped?: boolean;
   /** First line to capture; negative reaches into scrollback history. */
   readonly start?: number;
 }
 
+export interface SetHookOptions extends CommandOptions {
+  /**
+   * Add to the commands this hook already holds, tmux's `-a`.
+   *
+   * A hook is a list, and without this each write replaces the whole list. It
+   * is what builds the several commands `showHooks` reports, and the reason a
+   * hook read back can hold more than was last written to it.
+   */
+  readonly append?: boolean;
+}
+
 export interface MoveWindowOptions extends CommandOptions {
   /** Destination index; tmux picks the next free one when omitted. */
   readonly index?: number;
-  /** Destination session; the window stays in its own session when omitted. */
+  /**
+   * Destination session; the window stays in its own session when omitted.
+   *
+   * Omitted means this window's session, not tmux's current one — tmux reads a
+   * destination of `:3` as index 3 of whichever session it happens to consider
+   * current, which is rarely the one a caller holding this window means.
+   */
   readonly session?: string;
 }
 
@@ -273,23 +372,25 @@ export type WindowTarget = "last" | "next" | "previous" | (string & Record<never
  * `format` draws: tmux's vocabulary for tmux's data, ours for our shape.
  */
 
-/** A pane produced output. */
+/**
+ * A pane produced output.
+ *
+ * One kind whichever way tmux wrote it. Under {@link WatchOptions.pauseAfterSeconds}
+ * tmux writes `%extended-output` rather than `%output` for every pane, and a
+ * caller that had to rename its own event on enabling a safety knob would find
+ * out by receiving nothing at the moment backpressure began.
+ */
 export interface TmuxOutputEvent {
+  /**
+   * Milliseconds tmux held this data before writing it, where it reported one.
+   *
+   * Present only under {@link WatchOptions.pauseAfterSeconds}, which is what
+   * asks tmux to report it, and rising is how a consumer notices it is falling
+   * behind before tmux pauses the pane.
+   */
+  readonly age?: number;
   readonly data: string;
   readonly kind: "output";
-  readonly paneId: string;
-}
-
-/**
- * A pane produced output on a connection that asked for age reporting.
- *
- * `age` is milliseconds between tmux buffering the data and writing it, which
- * is how a consumer notices it is falling behind.
- */
-export interface TmuxExtendedOutputEvent {
-  readonly age: number;
-  readonly data: string;
-  readonly kind: "extended-output";
   readonly paneId: string;
 }
 
@@ -426,7 +527,6 @@ export type TmuxEvent =
   | TmuxClientDetachedEvent
   | TmuxClientSessionChangedEvent
   | TmuxExitEvent
-  | TmuxExtendedOutputEvent
   | TmuxLayoutChangeEvent
   | TmuxMessageEvent
   | TmuxOutputEvent
@@ -526,12 +626,19 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
   /** End the connection. Safe to call more than once. */
   close(): Promise<void>;
   /**
-   * Resolve with the first event `matches` accepts, or undefined if the stream
-   * ends or the deadline passes first.
+   * Resolve with the first event `matches` accepts, or undefined if the
+   * deadline passes or the stream is closed first.
    *
    * This consumes the stream, which is what iterating it does anyway. It exists
    * because every caller otherwise writes the same loop, deadline, and cleanup,
    * and forgetting the deadline turns a missed event into a hang.
+   *
+   * @throws LibTmuxException when the stream ends under the wait — the server
+   * went away, or the connection dropped. Closing it on purpose is not that: a
+   * caller cancelling, or a scope ending, answers undefined, because deciding
+   * to stop waiting is not a failure anyone should have to catch. Undefined
+   * therefore means the deadline passed or the wait was called off, and only
+   * the deadline says the workload really did not print what was waited for.
    */
   find(
     matches: (event: TmuxEvent) => boolean,
@@ -578,6 +685,10 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    * ```ts
    * await live.waitFor((server) => server.windows.exists({ name: "build" }));
    * ```
+   *
+   * @throws WaitTimeout when the deadline passes with the condition unmet.
+   * @throws LibTmuxException when the connection ends first, which says nothing
+   * about the condition and so is not the same answer.
    */
   waitFor(
     matches: (snapshot: ServerSnapshot) => boolean,

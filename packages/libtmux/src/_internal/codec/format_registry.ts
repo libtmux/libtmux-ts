@@ -347,6 +347,8 @@ export interface GeneratedWhereField {
   readonly criteriaName: string;
   /** What a caller may write beside the text, from the same table as the accessors. */
   readonly domain: FormatValueType | "string";
+  /** The first tmux that has this field, so a query can say so rather than match nothing. */
+  readonly since: string;
   readonly token: FormatFieldName;
   readonly wireName: string;
 }
@@ -385,6 +387,7 @@ function generatedWhereFields(
             {
               criteriaName: criteriaName(field.token, model, taken),
               domain: FORMAT_VALUE_TYPES[field.token] ?? ("string" as const),
+              since: field.since.raw,
               token: field.token,
               wireName,
             },
@@ -406,6 +409,14 @@ function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string
     "  /** The camelCase key a caller writes in criteria. */",
     "  readonly criteriaName: string;",
     '  readonly domain: "string";',
+    "  /**",
+    "   * The first tmux release that has this field.",
+    "   *",
+    "   * A server older than this does not answer for it at all, so a query naming",
+    '   * it is refused rather than matched against nothing — which reads as "no',
+    '   * object has this" and is a different statement.',
+    "   */",
+    "  readonly since: string;",
     "  readonly token: FormatFieldName;",
     "  /** The stable serialized name, unchanged across releases. */",
     "  readonly wireName: string;",
@@ -415,13 +426,14 @@ function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string
   for (const model of criteriaModels) {
     lines.push(`const ${model}Fields: readonly WhereField[] = Object.freeze([`);
     for (const field of generatedWhereFields(registry, model)) {
-      const oneLine = `  Object.freeze({ criteriaName: ${JSON.stringify(field.criteriaName)}, domain: "string", token: ${JSON.stringify(field.token)}, wireName: ${JSON.stringify(field.wireName)} }),`;
+      const oneLine = `  Object.freeze({ criteriaName: ${JSON.stringify(field.criteriaName)}, domain: "string", since: ${JSON.stringify(field.since)}, token: ${JSON.stringify(field.token)}, wireName: ${JSON.stringify(field.wireName)} }),`;
       if (oneLine.length <= 100) lines.push(oneLine);
       else {
         lines.push(
           "  Object.freeze({",
           `    criteriaName: ${JSON.stringify(field.criteriaName)},`,
           '    domain: "string",',
+          `    since: ${JSON.stringify(field.since)},`,
           `    token: ${JSON.stringify(field.token)},`,
           `    wireName: ${JSON.stringify(field.wireName)},`,
           "  }),",

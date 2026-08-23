@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7c-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Part of [libtmux for Bun and TypeScript](../../README.md). Built on
@@ -338,10 +338,10 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 
 To drive it in-process — a test, or a host that is both ends — link a transport
 pair rather than spawning anything. This is a literal excerpt of
-[`examples/mcp-agent.ts`](../../examples/mcp-agent.ts), which the integration
+[`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts), which the integration
 suite runs against a real tmux server:
 
-<!-- runs: examples/mcp-agent.ts -->
+<!-- runs: examples/mcp-agent/mcp-agent.ts -->
 
 ```ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

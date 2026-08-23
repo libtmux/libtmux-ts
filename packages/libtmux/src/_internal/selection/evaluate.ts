@@ -1,12 +1,22 @@
 import { types as nodeTypes } from "node:util";
 
 import { Client } from "../../client.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../exc.js";
+import {
+  MultipleMatchesError,
+  NoMatchError,
+  QueryValidationError,
+  VersionTooLow,
+} from "../../exc.js";
 import { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
 import { Session } from "../../session.js";
 import { Window } from "../../window.js";
-import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
+import {
+  WHERE_FIELDS_V1,
+  WHERE_RELATIONS_V1,
+  type WhereModel,
+} from "../../_generated/where_fields.js";
+import { compareTmuxVersions, parseTmuxVersion } from "../runtime/tmux_version.js";
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
 import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
@@ -32,6 +42,45 @@ type ProjectedModel = Client | Pane | Session | Window;
 interface SelectionEntry<Model> {
   readonly record: ProjectionRecord | null;
   readonly value: Model;
+}
+
+/** Which scalar carries a model's own id, for the models that can share one. */
+const ID_SCALARS: Readonly<Partial<Record<string, string>>> = Object.freeze({
+  pane: "pane_id",
+  window: "window_id",
+});
+
+/**
+ * Name the sessions a shared id spans, when that is why several matched.
+ *
+ * Undefined for every other reason there can be more than one, so the ordinary
+ * message still describes those.
+ */
+function sharedPlacementHint<Model>(
+  kind: string,
+  entries: readonly SelectionEntry<Model>[],
+): string | undefined {
+  const scalar = ID_SCALARS[kind];
+  if (scalar === undefined || entries.length < 2) return undefined;
+  const ids = new Set<string>();
+  const sessions: string[] = [];
+  for (const entry of entries) {
+    const id = entry.record?.scalars[scalar];
+    // The winlink is the placement: which session holds this one.
+    const session = entry.record?.winlink?.sessionId;
+    if (typeof id !== "string" || session === undefined) return undefined;
+    ids.add(id);
+    const named = String(session);
+    if (!sessions.includes(named)) sessions.push(named);
+  }
+  if (ids.size !== 1 || sessions.length < 2) return undefined;
+  const [id] = [...ids];
+  return (
+    `${String(id)} names ${String(entries.length)} placements, in sessions ` +
+    `${sessions.join(", ")}. A ${kind} that linked or grouped sessions share has ` +
+    `one id and a placement in each, so add the session to say which: ` +
+    `{ id: "${String(id)}", session: { is: { id: "${sessions[0]!}" } } }`
+  );
 }
 
 interface ProjectedSelectionState {
@@ -305,14 +354,35 @@ class SelectionImpl<Model> implements Selection<Model> {
     // costs the same as one with two.
     const { entries, query } = this.#scan(criteria, 2);
     if (entries.length === 0) throw new NoMatchError({ query });
-    if (entries.length !== 1) throw new MultipleMatchesError({ count: entries.length, query });
+    if (entries.length !== 1) throw this.#tooMany(criteria, query);
     return entries[0]!.value;
   }
 
   oneOrUndefined(criteria?: WhereOf<Model>): Model | undefined {
     const { entries, query } = this.#scan(criteria, 2);
-    if (entries.length > 1) throw new MultipleMatchesError({ count: entries.length, query });
+    if (entries.length > 1) throw this.#tooMany(criteria, query);
     return entries[0]?.value;
+  }
+
+  /**
+   * Say how many matched, and where a shared id is the reason.
+   *
+   * A window linked into two sessions, or shared by two grouped sessions, has a
+   * placement in each and one id between them — so asking by id alone raises
+   * for an id that is perfectly good, and the fix is a criterion the caller has
+   * not thought to add. Naming the sessions turns the refusal into it.
+   *
+   * The whole set is only counted here, on the way to raising. The fast path
+   * still stops at two.
+   */
+  #tooMany(criteria: unknown, query: Readonly<Record<string, unknown>>): MultipleMatchesError {
+    const all = this.#matchingEntries(criteria);
+    const shared = sharedPlacementHint(this.#state.kind, all);
+    return new MultipleMatchesError({
+      count: all.length,
+      ...(shared === undefined ? {} : { message: shared }),
+      query,
+    });
   }
 
   exists(criteria?: WhereOf<Model>): boolean {
@@ -325,7 +395,13 @@ class SelectionImpl<Model> implements Selection<Model> {
 
   #compile(criteria: unknown): CompiledWhere | null {
     if (criteria === undefined) return null;
-    return compileWhere(this.#state.kind, criteria);
+    const compiled = compileWhere(this.#state.kind, criteria);
+    refuseFieldsNewerThanServer(
+      compiled.model,
+      compiled.query,
+      this.#state.projection.capture.tmuxVersion,
+    );
+    return compiled;
   }
 
   #matchingEntries(criteria: unknown): readonly SelectionEntry<Model>[] {
@@ -376,6 +452,59 @@ class SelectionImpl<Model> implements Selection<Model> {
 
 Object.freeze(SelectionImpl.prototype);
 Object.freeze(SelectionImpl);
+
+/**
+ * Refuse a query naming a field the server is too old to have.
+ *
+ * tmux answers for the fields its release knows and says nothing about the
+ * rest, so a criterion on a newer field matched against an older server
+ * matches nothing — which is indistinguishable from "no object has this", and
+ * is a different statement. The typed row already draws that line: it answers
+ * `null` for a field the server does not have, and `false` for one it has and
+ * is off. This is the same line, drawn for queries.
+ *
+ * Checked once per query rather than once per candidate, and against the
+ * version the graph recorded when it was acquired — so a stored query replayed
+ * against an old server is answered the same way an inline one is.
+ */
+function refuseFieldsNewerThanServer(
+  model: WhereModel,
+  query: Readonly<Record<string, unknown>>,
+  serverVersion: string | undefined,
+): void {
+  // A graph normalized from stored bytes predates this and cannot say which
+  // tmux answered. Refusing on a guess would be worse than the silence.
+  if (serverVersion === undefined) return;
+  const actual = parseTmuxVersion(serverVersion);
+
+  const walk = (scope: WhereModel, node: Readonly<Record<string, unknown>>): void => {
+    const relations = WHERE_RELATIONS_V1[scope];
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "AND" || key === "OR" || key === "NOT") {
+        for (const branch of value as readonly Readonly<Record<string, unknown>>[]) {
+          walk(scope, branch);
+        }
+        continue;
+      }
+      const relation = relations.find((candidate) => candidate.name === key);
+      if (relation !== undefined) {
+        for (const quantified of Object.values(value as Readonly<Record<string, unknown>>)) {
+          walk(relation.targetModel, quantified as Readonly<Record<string, unknown>>);
+        }
+        continue;
+      }
+      const field = WHERE_FIELDS_V1[scope].find((candidate) => candidate.wireName === key);
+      if (field === undefined) continue;
+      if (compareTmuxVersions(actual, parseTmuxVersion(field.since)) >= 0) continue;
+      throw new VersionTooLow({
+        criteriaName: field.criteriaName,
+        serverVersion,
+        since: field.since,
+      });
+    }
+  };
+  walk(model, query);
+}
 
 export function createProjectedSelection<Kind extends ProjectedKind>(
   model: Kind,

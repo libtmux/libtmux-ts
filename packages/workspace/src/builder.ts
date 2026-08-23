@@ -22,6 +22,20 @@ import { claimSession, mayPrune, ownedByWorkspace, type PrunePolicy } from "./ow
  * `always` is the literal reading — every pane, every apply — and is right only
  * when the commands are known to be safe to repeat.
  */
+/**
+ * The session this workspace names, on a server that may not be running yet.
+ *
+ * Acquisition raises on an unreachable server rather than reading as empty,
+ * which is the answer a caller asking what is there needs. Building from
+ * nothing is the ordinary starting point here, though, and a socket with no
+ * daemon behind it is holding this session in the way an empty server is: not
+ * at all.
+ */
+async function runningSession(server: Server, name: string): Promise<Session | undefined> {
+  if (!(await server.isAlive())) return undefined;
+  return (await server.snapshot()).sessions.oneOrUndefined({ name });
+}
+
 export type CommandPolicy = "always" | "create-only";
 
 /** How {@link applyWorkspace} should treat a workspace that is already running. */
@@ -87,8 +101,7 @@ export async function applyWorkspace(
 ): Promise<Session> {
   const commands = options.commands ?? "create-only";
   const prune = options.prune ?? "owned";
-  const snapshot = await server.snapshot();
-  const existing = snapshot.sessions.oneOrUndefined({ name: workspace.session_name });
+  const existing = await runningSession(server, workspace.session_name);
   const created = existing ?? (await createSession(server, workspace));
   // Stamped on the session this apply created, and read back on every later
   // one. A name is a lookup, not a claim: without the mark, converging a
@@ -158,8 +171,7 @@ export async function planWorkspace(
   workspace: Workspace,
   options: ApplyWorkspaceOptions = {},
 ): Promise<WorkspacePlan> {
-  const snapshot = await server.snapshot();
-  const existing = snapshot.sessions.oneOrUndefined({ name: workspace.session_name });
+  const existing = await runningSession(server, workspace.session_name);
   if (existing === undefined) {
     return Object.freeze({
       createsPanes: new Map(

@@ -86,6 +86,7 @@ import { decodeBackslashReplace } from ${moduleUrl("dist/_internal/codec/backsla
 import { FormatProtocolError, GuardCodec } from ${moduleUrl("dist/_internal/codec/guard_codec.js")};
 import { adaptRawResult, executeBatch, prepareCommandRequest } from ${moduleUrl("dist/_internal/operations/request.js")};
 import { deriveTmuxCapabilities } from ${moduleUrl("dist/_internal/runtime/capabilities.js")};
+import { FORMAT_FIELD_TOKENS } from ${moduleUrl("dist/_generated/format_fields.js")};
 import { TmuxConnection } from ${moduleUrl("dist/_internal/runtime/connection.js")};
 import { ControlMode } from ${controlModeModule};
 import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_spawn_transport.js")};
@@ -139,7 +140,9 @@ const baselineFrame = new TextEncoder().encode(
 const publicRows = baselineCodec.decode(baselineRequest, baselineFrame);
 assert.equal(publicRows.length, 1);
 assert.ok(publicRows[0] instanceof ParsedFormatRow);
-assert.equal(Object.keys(publicRows[0]).length, 178);
+// Derived: a decoded row carries every field the registry knows, and the
+// vocabulary grows when tmux does.
+assert.equal(Object.keys(publicRows[0]).length, FORMAT_FIELD_TOKENS.length);
 assert.equal(publicRows[0].session_group, "");
 assert.equal(publicRows[0].pane_x, null);
 assert.equal(Object.isFrozen(publicRows), true);

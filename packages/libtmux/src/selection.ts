@@ -79,11 +79,15 @@ export interface SessionWhere {
   readonly AND?: readonly SessionWhere[];
   readonly OR?: readonly SessionWhere[];
   readonly NOT?: readonly SessionWhere[];
+  readonly active?: ScalarCriteria<boolean, RawFlag>;
   readonly activeWindowIndex?: ScalarCriteria<number, RawNumber>;
   readonly activity?: ScalarCriteria<Date, RawNumber>;
+  readonly activityFlag?: ScalarCriteria<boolean, RawFlag>;
+  readonly alert?: ScalarCriteria;
   readonly alerts?: ScalarCriteria;
   readonly attached?: ScalarCriteria<number, RawNumber>;
   readonly attachedList?: ScalarCriteria;
+  readonly bellFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly created?: ScalarCriteria<Date, RawNumber>;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
   readonly group?: ScalarCriteria;
@@ -101,6 +105,7 @@ export interface SessionWhere {
   readonly name?: ScalarCriteria;
   readonly path?: ScalarCriteria;
   readonly sessionWindows?: ScalarCriteria<number, RawNumber>;
+  readonly silenceFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly stack?: ScalarCriteria;
   readonly windows?: ManyRelation<WindowWhere>;
   readonly panes?: ManyRelation<PaneWhere>;
@@ -157,6 +162,7 @@ export interface PaneWhere {
   readonly OR?: readonly PaneWhere[];
   readonly NOT?: readonly PaneWhere[];
   readonly active?: ScalarCriteria<boolean, RawFlag>;
+  readonly alternateOn?: ScalarCriteria<boolean, RawFlag>;
   readonly alternateSavedX?: ScalarCriteria<number, RawNumber>;
   readonly alternateSavedY?: ScalarCriteria<number, RawNumber>;
   readonly atBottom?: ScalarCriteria<boolean, RawFlag>;
@@ -168,8 +174,12 @@ export interface PaneWhere {
   readonly bracketPasteFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly currentCommand?: ScalarCriteria;
   readonly currentPath?: ScalarCriteria;
+  readonly cursorBlinking?: ScalarCriteria<boolean, RawFlag>;
   readonly cursorCharacter?: ScalarCriteria;
+  readonly cursorColour?: ScalarCriteria;
   readonly cursorFlag?: ScalarCriteria<boolean, RawFlag>;
+  readonly cursorShape?: ScalarCriteria;
+  readonly cursorVeryVisible?: ScalarCriteria<boolean, RawFlag>;
   readonly cursorX?: ScalarCriteria<number, RawNumber>;
   readonly cursorY?: ScalarCriteria<number, RawNumber>;
   readonly dead?: ScalarCriteria<boolean, RawFlag>;
@@ -181,6 +191,7 @@ export interface PaneWhere {
   readonly floatingFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
   readonly height?: ScalarCriteria<number, RawNumber>;
+  readonly historyAllBytes?: ScalarCriteria;
   readonly historyBytes?: ScalarCriteria<number, RawNumber>;
   readonly historyLimit?: ScalarCriteria<number, RawNumber>;
   readonly historySize?: ScalarCriteria<number, RawNumber>;
@@ -189,6 +200,7 @@ export interface PaneWhere {
   readonly index?: ScalarCriteria<number, RawNumber>;
   readonly inputOff?: ScalarCriteria<boolean, RawFlag>;
   readonly insertFlag?: ScalarCriteria<boolean, RawFlag>;
+  readonly keyMode?: ScalarCriteria;
   readonly keypadCursorFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly keypadFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly last?: ScalarCriteria<boolean, RawFlag>;
@@ -220,6 +232,7 @@ export interface PaneWhere {
   readonly title?: ScalarCriteria;
   readonly top?: ScalarCriteria<number, RawNumber>;
   readonly tty?: ScalarCriteria;
+  readonly unseenChanges?: ScalarCriteria<boolean, RawFlag>;
   readonly width?: ScalarCriteria<number, RawNumber>;
   readonly wrapFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly x?: ScalarCriteria<number, RawNumber>;
@@ -301,7 +314,18 @@ export interface Selection<Model> extends Iterable<Model> {
    * ```
    */
   readonly length: number;
-  /** Iterate in tmux's own order. Each call is a fresh iterator. */
+  /**
+   * Iterate in tmux's own order.
+   *
+   * Each call returns a fresh iterator, so a selection can be walked more than
+   * once: spread it and then loop it, and the second pass is not empty. This is
+   * what `for...of`, spread and destructuring all go through.
+   *
+   * ```ts
+   * for (const window of snapshot.windows) window.name;
+   * [...snapshot.windows].length === snapshot.windows.length;
+   * ```
+   */
   [Symbol.iterator](): IterableIterator<Model>;
   /**
    * The member at `index`, or undefined when the index is out of range.
@@ -364,6 +388,13 @@ export interface Selection<Model> extends Iterable<Model> {
    * snapshot.panes.where({ currentCommand: "vim" });
    * snapshot.windows.where({ name: { startsWith: "log" } });
    * ```
+   *
+   * @throws VersionTooLow when a criterion names a field newer than the tmux
+   * that answered. Such a field is not absent from the data, it is absent from
+   * that release, and matching it against nothing would answer "no member has
+   * this" — which is a different statement and the one a caller would act on.
+   * The error names the field, the release that has it, and the release
+   * running.
    */
   where(criteria: WhereOf<Model>): Selection<Model>;
   /**
@@ -383,6 +414,11 @@ export interface Selection<Model> extends Iterable<Model> {
    * Throws `NoMatchError` for none and `MultipleMatchesError` for several, so
    * "exactly one" is enforced rather than assumed — a `first` that silently
    * takes the head of two is how the wrong pane gets driven.
+   *
+   * An id is not always one member. A window linked into two sessions, or
+   * shared by two grouped sessions, has a placement in each and both carry the
+   * same id, so `one({ id })` raises for a perfectly good id. Add the session
+   * to say which placement is meant.
    *
    * ```ts
    * const only = snapshot.sessions.one({ name: "work" });

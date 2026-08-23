@@ -9,7 +9,7 @@ page is for looking one thing up.
 
 ## Server
 
-[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -167,6 +167,12 @@ events without polling and without a command per read.
 tmux sends a control client no pane output until it attaches, so this
 attaches to a session; a server with no sessions has nothing to watch.
 
+Name that session with `target` when reading pane output. Structural
+notifications reach the client wherever it attached, but output arrives
+only for the attached session, and an untargeted watch lands on whichever
+session tmux considers current. With two sessions on the server that is
+silence rather than an error.
+
 ```ts
 await using events = server.watch();
 for await (const event of events) {
@@ -314,6 +320,22 @@ const options = await server.showOptions();
 options.get("escape-time");
 ```
 
+#### `Server.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this server, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh server is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await server.showResolvedOptions()).get("message-limit");
+```
+
 #### `Server.setOption`
 
 ```ts
@@ -400,26 +422,34 @@ await server.unsetGlobalOption("session", "history-limit");
 #### `Server.showHooks`
 
 ```ts
-showHooks(): Promise<ReadonlyMap<string, string>>
+showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
 ```
 
 Every global hook tmux currently reports.
 
+A hook is an array of commands, keyed by the name `setHook` takes, so
+what was set reads back under the name it was set with. tmux prints each
+element as `name[0]`, which composes with neither of the writers.
+
 ```ts
 const hooks = await server.showHooks();
-hooks.get("session-created");
+hooks.get("session-created")?.[0];
 ```
 
 #### `Server.setHook`
 
 ```ts
-setHook(name: string, command: string): Promise<void>
+setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
 ```
 
 Bind a tmux command to a global hook.
 
+A hook holds a list of commands. Without `append` this writes the whole
+list, so it replaces whatever the hook already ran.
+
 ```ts
 await server.setHook("session-created", "display-message 'hello'");
+await server.setHook("session-created", "display-message 'and this'", { append: true });
 ```
 
 #### `Server.unsetHook`
@@ -580,8 +610,14 @@ sourceFile(path: string): Promise<void>
 
 Run a tmux config file against this server.
 
+tmux does not expand `~` here. `source-file` joins a path that is not
+absolute to the client's working directory and globs the result, so
+`"~/.tmux.conf"` looks for a directory literally named `~`. Typing it at a
+shell works because the shell expands it first; passing it as a string
+never does.
+
 ```ts
-await server.sourceFile("~/.tmux.conf");
+await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`);
 ```
 
 #### `Server.listCommands`
@@ -621,6 +657,11 @@ setBuffer(name: string, data: string): Promise<void>
 
 Put a string into a named paste buffer.
 
+Empty data stores nothing. tmux exits zero for `set-buffer -b name ""` and
+creates no buffer at all, so the name a caller thinks they just wrote is
+absent — and they learn that from whatever reads it next, which points at
+the wrong call. Check before storing content that may be empty.
+
 ```ts
 await server.setBuffer("greeting", "hello");
 ```
@@ -632,6 +673,11 @@ showBuffer(name: string): Promise<readonly string[]>
 ```
 
 Read a named paste buffer's contents.
+
+Over a control connection this stops at the first NUL byte: tmux writes a
+command's output to a control client as a C string. The buffer is unharmed
+— `saveBuffer` and a spawning server both read it whole — and a pane's own
+output is unaffected, being escaped before it is written.
 
 ```ts
 const lines = await server.showBuffer("greeting");
@@ -795,7 +841,7 @@ const [editor, logs] = await server.batch([
 
 ## Session
 
-[`server`](#sessionserver) · [`windows`](#sessionwindows) · [`panes`](#sessionpanes) · [`showOptions`](#sessionshowoptions) · [`setOption`](#sessionsetoption) · [`unsetOption`](#sessionunsetoption) · [`showHooks`](#sessionshowhooks) · [`setHook`](#sessionsethook) · [`unsetHook`](#sessionunsethook) · [`showEnvironment`](#sessionshowenvironment) · [`getEnvironment`](#sessiongetenvironment) · [`setEnvironment`](#sessionsetenvironment) · [`unsetEnvironment`](#sessionunsetenvironment) · [`removeEnvironment`](#sessionremoveenvironment) · [`activeWindow`](#sessionactivewindow) · [`activePane`](#sessionactivepane) · [`newWindow`](#sessionnewwindow) · [`plan`](#sessionplan) · [`kill`](#sessionkill) · [`refreshed`](#sessionrefreshed) · [`rename`](#sessionrename) · [`selectWindow`](#sessionselectwindow) · [`fromEnv`](#sessionfromenv) · [`detach`](#sessiondetach) · [`cmd`](#sessioncmd) · [`sameTmuxIdAs`](#sessionsametmuxidas)
+[`server`](#sessionserver) · [`windows`](#sessionwindows) · [`panes`](#sessionpanes) · [`showOptions`](#sessionshowoptions) · [`showResolvedOptions`](#sessionshowresolvedoptions) · [`setOption`](#sessionsetoption) · [`unsetOption`](#sessionunsetoption) · [`showHooks`](#sessionshowhooks) · [`setHook`](#sessionsethook) · [`unsetHook`](#sessionunsethook) · [`showEnvironment`](#sessionshowenvironment) · [`getEnvironment`](#sessiongetenvironment) · [`setEnvironment`](#sessionsetenvironment) · [`unsetEnvironment`](#sessionunsetenvironment) · [`removeEnvironment`](#sessionremoveenvironment) · [`activeWindow`](#sessionactivewindow) · [`activePane`](#sessionactivepane) · [`newWindow`](#sessionnewwindow) · [`plan`](#sessionplan) · [`kill`](#sessionkill) · [`refreshed`](#sessionrefreshed) · [`rename`](#sessionrename) · [`selectWindow`](#sessionselectwindow) · [`fromEnv`](#sessionfromenv) · [`detach`](#sessiondetach) · [`cmd`](#sessioncmd) · [`sameTmuxIdAs`](#sessionsametmuxidas)
 
 ### Properties
 
@@ -895,11 +941,31 @@ const [editor, logs] = await server.batch([
 showOptions(): Promise<ReadonlyMap<string, string>>
 ```
 
-Every option this session currently sees, including inherited values.
+Every option set on this session itself, not the ones it inherits.
+
+A fresh session usually has none, so an empty map here means nothing was
+set on this session — not that the option has no value. `showResolvedOptions`
+answers what actually governs it.
 
 ```ts
 const options = await session.showOptions();
 options.get("status");
+```
+
+#### `Session.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this session, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh session is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await session.showResolvedOptions()).get("history-limit");
 ```
 
 #### `Session.setOption`
@@ -929,26 +995,34 @@ await session.unsetOption("status");
 #### `Session.showHooks`
 
 ```ts
-showHooks(): Promise<ReadonlyMap<string, string>>
+showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
 ```
 
 Every hook this session reports.
 
+A hook is an array of commands, keyed by the name `setHook` takes, so
+what was set reads back under the name it was set with. tmux prints each
+element as `name[0]`, which composes with neither of the writers.
+
 ```ts
 const hooks = await session.showHooks();
-hooks.get("window-linked");
+hooks.get("window-linked")?.[0];
 ```
 
 #### `Session.setHook`
 
 ```ts
-setHook(name: string, command: string): Promise<void>
+setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
 ```
 
 Bind a tmux command to a hook on this session.
 
+A hook holds a list of commands. Without `append` this writes the whole
+list, so it replaces whatever the hook already ran.
+
 ```ts
 await session.setHook("window-linked", "display-message 'linked'");
+await session.setHook("window-linked", "display-message 'twice'", { append: true });
 ```
 
 #### `Session.unsetHook`
@@ -1156,7 +1230,7 @@ session.sameTmuxIdAs(await session.refreshed()); // true
 
 ## Window
 
-[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showOptions`](#windowshowoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
+[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showOptions`](#windowshowoptions) · [`showResolvedOptions`](#windowshowresolvedoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
 
 ### Properties
 
@@ -1249,11 +1323,31 @@ created.id;
 showOptions(): Promise<ReadonlyMap<string, string>>
 ```
 
-Every option this window currently sees, including inherited values.
+Every option set on this window itself, not the ones it inherits.
+
+A fresh window usually has none, so an empty map here means nothing was
+set on this window — not that the option has no value. `showResolvedOptions`
+answers what actually governs it.
 
 ```ts
 const options = await window.showOptions();
 options.get("automatic-rename");
+```
+
+#### `Window.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this window, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh window is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await window.showResolvedOptions()).get("main-pane-width");
 ```
 
 #### `Window.setOption`
@@ -1393,10 +1487,14 @@ await window.rename("editor");
 #### `Window.move`
 
 ```ts
-move(options?: MoveWindowOptions): Promise<void>
+move(options: MoveWindowOptions = {}): Promise<void>
 ```
 
 Move this window to another session or index without selecting it.
+
+Moves this placement. Sessions that are grouped share one window list, so
+moving a window they share moves it in all of them; sessions that merely
+link the same window keep their own lists, and only this one moves.
 
 ```ts
 await window.move({ index: 3 });
@@ -1411,7 +1509,7 @@ link(options: MoveWindowOptions): Promise<void>
 Link this window into another session, giving it a second placement.
 
 ```ts
-await window.link({ session: "other-session" });
+await window.link({ session: "other" });
 ```
 
 #### `Window.unlink`
@@ -1421,6 +1519,11 @@ unlink(): Promise<void>
 ```
 
 Remove this placement, leaving the window's other placements intact.
+
+For a window linked into several sessions. A window shared because its
+sessions are grouped is not linked, and tmux refuses with "window only
+linked to one session" — a group member leaves by being killed, not by
+unlinking.
 
 ```ts
 await window.unlink();
@@ -1510,7 +1613,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -1574,11 +1677,31 @@ created.id;
 showOptions(): Promise<ReadonlyMap<string, string>>
 ```
 
-Every option this pane currently sees, including inherited values.
+Every option set on this pane itself, not the ones it inherits.
+
+A fresh pane usually has none, so an empty map here means nothing was
+set on this pane — not that the option has no value. `showResolvedOptions`
+answers what actually governs it.
 
 ```ts
 const options = await pane.showOptions();
 options.get("remain-on-exit");
+```
+
+#### `Pane.showResolvedOptions`
+
+```ts
+showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+```
+
+The option values that govern this pane, own and inherited together.
+
+`showOptions` reports only what was set here, which for a fresh pane is
+often nothing. This resolves what it inherits as well, so an option has an
+answer wherever it was actually set.
+
+```ts
+(await pane.showResolvedOptions()).get("allow-rename");
 ```
 
 #### `Pane.setOption`
@@ -1796,7 +1919,10 @@ await pane.pipeTo("cat >> /tmp/build.log");
 breakOut(windowName?: string): Promise<void>
 ```
 
-Move this pane out into a window of its own.
+Move this pane out into a window of its own, in the session it is in.
+
+tmux places a break with no destination in whichever session is current,
+which is the attached one rather than this pane's.
 
 ```ts
 await pane.breakOut("extracted");
@@ -1870,6 +1996,9 @@ chooseTree(options?: ChooseTreeOptions): Promise<void>
 
 Open the interactive session and window chooser in this pane.
 
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
+
 ```ts
 await pane.chooseTree({ sessionsOnly: true });
 ```
@@ -1881,6 +2010,9 @@ chooseBuffer(): Promise<void>
 ```
 
 Open the interactive buffer chooser in this pane.
+
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
 
 ```ts
 await pane.chooseBuffer();
@@ -1894,6 +2026,9 @@ findWindow(pattern: string): Promise<void>
 
 Search windows interactively from this pane.
 
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
+
 ```ts
 await pane.findWindow("editor");
 ```
@@ -1906,6 +2041,9 @@ sendPrefix(): Promise<void>
 
 Send the configured prefix key to this pane.
 
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
+
 ```ts
 await pane.sendPrefix();
 ```
@@ -1917,6 +2055,9 @@ customizeMode(): Promise<void>
 ```
 
 Open tmux's interactive option editor in this pane.
+
+tmux needs a client attached to the session to draw this. With none, it
+does nothing and reports success, so a headless run is told it worked.
 
 ```ts
 await pane.customizeMode();
@@ -2057,7 +2198,7 @@ declarative criteria that are data — serializable, inspectable, sendable over
 a wire — and `filter` takes an ordinary predicate. Reach for `where` unless
 the question genuinely needs to run code.
 
-[`length`](#selectionlength) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
+[`length`](#selectionlength) · [`[Symbol.iterator]`](#selectionsymboliterator) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
 
 ### Properties
 
@@ -2074,6 +2215,23 @@ snapshot.windows.length;
 ```
 
 ### Methods
+
+#### `Selection.[Symbol.iterator]`
+
+```ts
+[Symbol.iterator](): IterableIterator<Model>
+```
+
+Iterate in tmux's own order.
+
+Each call returns a fresh iterator, so a selection can be walked more than
+once: spread it and then loop it, and the second pass is not empty. This is
+what `for...of`, spread and destructuring all go through.
+
+```ts
+for (const window of snapshot.windows) window.name;
+[...snapshot.windows].length === snapshot.windows.length;
+```
 
 #### `Selection.at`
 
@@ -2147,6 +2305,13 @@ Criteria are data: equality, string operators, `AND`/`OR`/`NOT`, regular
 expressions expressed as `{ pattern, flags }`, and quantifiers over
 relations. Matching is case-sensitive unless a criterion says otherwise.
 
+@throws VersionTooLow when a criterion names a field newer than the tmux
+that answered. Such a field is not absent from the data, it is absent from
+that release, and matching it against nothing would answer "no member has
+this" — which is a different statement and the one a caller would act on.
+The error names the field, the release that has it, and the release
+running.
+
 ```ts
 snapshot.panes.where({ currentCommand: "vim" });
 snapshot.windows.where({ name: { startsWith: "log" } });
@@ -2178,6 +2343,11 @@ The single member, or the single one matching `criteria`.
 Throws `NoMatchError` for none and `MultipleMatchesError` for several, so
 "exactly one" is enforced rather than assumed — a `first` that silently
 takes the head of two is how the wrong pane gets driven.
+
+An id is not always one member. A window linked into two sessions, or
+shared by two grouped sessions, has a placement in each and both carry the
+same id, so `one({ id })` raises for a perfectly good id. Add the session
+to say which placement is meant.
 
 ```ts
 const only = snapshot.sessions.one({ name: "work" });

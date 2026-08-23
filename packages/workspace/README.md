@@ -6,7 +6,7 @@ than duplicating.**
 [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7b-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7c-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Part of [libtmux for Bun and TypeScript](../../README.md). Built on
@@ -70,18 +70,20 @@ await applyWorkspace(server, {
 
 Config is [tmuxp](https://tmuxp.git-pull.com/)-shaped, so the field names are
 the ones people already know — `session_name`, `windows`, `panes`,
-`shell_command`, `start_directory`, `layout`, `focus`, `options`.
+`shell_command`, `shell_command_before`, `start_directory`, `layout`, `focus`,
+`options`.
 
-| Field             | On                      | Effect                                        |
-| ----------------- | ----------------------- | --------------------------------------------- |
-| `session_name`    | workspace               | The session to build or converge              |
-| `start_directory` | workspace, window, pane | Working directory, inherited downward         |
-| `options`         | workspace, window       | tmux options set on that scope                |
-| `window_name`     | window                  | Renamed if it differs                         |
-| `layout`          | window                  | Applied once the pane count settles           |
-| `panes`           | window                  | A string is shorthand for `{ shell_command }` |
-| `shell_command`   | pane                    | One command or a list, sent in order          |
-| `focus`           | window, pane            | Selected last, so the final one wins          |
+| Field                  | On                      | Effect                                          |
+| ---------------------- | ----------------------- | ----------------------------------------------- |
+| `session_name`         | workspace               | The session to build or converge                |
+| `start_directory`      | workspace, window, pane | Working directory, inherited downward           |
+| `options`              | workspace, window       | tmux options set on that scope                  |
+| `window_name`          | window                  | Renamed if it differs                           |
+| `layout`               | window                  | Applied once the pane count settles             |
+| `panes`                | window                  | A string is shorthand for `{ shell_command }`   |
+| `shell_command`        | pane                    | One command or a list, sent in order            |
+| `shell_command_before` | window                  | Run in every pane of the window, before its own |
+| `focus`                | window, pane            | Selected last, so the final one wins            |
 
 Because the config is data, it can come from a YAML file, an HTTP request, or a
 literal. `parseWorkspace` validates one you already parsed; `parseWorkspaceYaml`
@@ -132,7 +134,7 @@ await applyWorkspace(
 
 ## A worked example
 
-[`examples/workspace.ts`](../../examples/workspace.ts) builds a session from a
+[`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) builds a session from a
 declared layout — a window per concern, panes already running what they are
 for, an environment every process inherits, and a teardown that treats "already
 gone" as an answer. The integration suite runs it against a real tmux server.

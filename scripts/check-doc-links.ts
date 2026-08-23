@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
  * ignore it.
  */
 
+import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
+
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
 interface Reference {
@@ -23,22 +25,6 @@ interface Reference {
   readonly line: number;
   readonly path: string | undefined;
   readonly raw: string;
-}
-
-/**
- * GitHub's heading slug: lowercase, drop everything that is not a word
- * character, hyphen or space, then hyphenate. Backticks and dots go, which is
- * why `` `Server.colors` `` is reachable as `#servercolors`.
- */
-function slugify(heading: string): string {
-  return heading
-    .trim()
-    .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1")
-    .toLowerCase()
-    .replaceAll("`", "")
-    .replace(/[^\w\- ]/gu, "")
-    .replaceAll(" ", "-");
 }
 
 /**

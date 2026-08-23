@@ -14,7 +14,13 @@ $ bun install
 ```
 
 ```console
-$ bun test examples/tests
+$ bun test examples
+```
+
+Or one at a time, each being a package of its own:
+
+```console
+$ bun test examples/watch
 ```
 
 Every example exports a function taking a `Server` rather than constructing
@@ -50,14 +56,21 @@ driving your session.
 
 ## What each one shows
 
-| File                             | What it demonstrates                                                                                                            |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| [`quickstart.ts`](quickstart.ts) | Acquisition, filtering, relations, pane input, and error handling in one pass                                                   |
-| [`watch.ts`](watch.ts)           | Reacting over control mode: waiting for a window to open, and following a pane until a marker arrives                           |
-| [`agent.ts`](agent.ts)           | Act and wait on one connection: run a command until its output arrives, then wait for the server to reach a shape               |
-| [`workspace.ts`](workspace.ts)   | Building a session from a declared layout, with an inherited environment and a teardown that treats "already gone" as an answer |
-| [`fields.ts`](fields.ts)         | Reading decoded values: geometry as arithmetic, flags as booleans, timestamps as `Date`, and the raw row beside them            |
-| [`mcp-agent.ts`](mcp-agent.ts)   | Driving tmux over the Model Context Protocol rather than the API, on linked in-memory transports                                |
+| Example                               | Reach for it when                                                     |
+| ------------------------------------- | --------------------------------------------------------------------- |
+| [`quickstart/`](quickstart/README.md) | You want the whole API in one pass before choosing a part of it       |
+| [`fields/`](fields/README.md)         | You are asking tmux something rather than changing it                 |
+| [`capture/`](capture/README.md)       | You are moving text out of a pane, or into one                        |
+| [`watch/`](watch/README.md)           | Something else is driving tmux and you need to react to it            |
+| [`agent/`](agent/README.md)           | You are running something in a pane and need to know when it finished |
+| [`workspace/`](workspace/README.md)   | You want a session built from a layout you declared                   |
+| [`mcp-agent/`](mcp-agent/README.md)   | The thing driving tmux is a model, over the Model Context Protocol    |
+| [`engine/`](engine/README.md)         | tmux is not where the library assumes — ssh, a container, a daemon    |
+
+Each is a package of its own: a `README.md` saying what it shows and when to
+reach for it, the code beside it, and a test that runs the code against a real
+tmux server. Start with the README, read the code when the README has earned
+it.
 
 ## Quoting an example in a README
 
@@ -65,7 +78,7 @@ A recipe in a README can be tied to the example that runs it. Name the file it
 comes from, immediately above the block:
 
 ```
-<!-- runs: examples/agent.ts -->
+<!-- runs: examples/agent/agent.ts -->
 ```
 
 [`check-doc-runnable.ts`](../scripts/check-doc-runnable.ts) then requires every

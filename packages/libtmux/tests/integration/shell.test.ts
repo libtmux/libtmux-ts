@@ -189,4 +189,24 @@ describe("shell execution and pane movement", () => {
       expect((failure as TmuxCommandError).target).toBe(pane.id);
     });
   }, 40_000);
+
+  test("detaches every client attached to a session, which tmux spells with -s", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const live = await server.connect();
+      try {
+        expect((await server.snapshot()).clients.count()).toBeGreaterThan(0);
+
+        // tmux reads `-t` as a client name and `-s` as a session, so a session
+        // id passed as `-t` is not a subtly wrong target — it is no target at
+        // all, and tmux answers `can't find client: $0`.
+        const session = (await server.snapshot()).sessions.one({ name: "shell" });
+        await session.detach();
+
+        expect((await server.snapshot()).clients.count()).toBe(0);
+      } finally {
+        await live.close().catch(() => undefined);
+      }
+    });
+  }, 40_000);
 });

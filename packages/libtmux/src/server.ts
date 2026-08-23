@@ -13,12 +13,13 @@ import type { EnvironmentValue, SetEnvironmentOptions } from "./types.js";
 import type {
   CmdOptions,
   ConnectedServer,
-  ManagedServer,
-  PlannedOperation,
   IfShellOptions,
+  ManagedServer,
   NewSessionOptions,
+  PlannedOperation,
   RunShellOptions,
   ServerSnapshot,
+  SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
   TransportMode,
@@ -30,14 +31,19 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 
 import type { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch } from "./common.js";
-import { LibTmuxException } from "./exc.js";
+import { LibTmuxException, WaitTimeout } from "./exc.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killServer, newSession } from "./_internal/operations/mutations.js";
-import { setOption, showOptions, unsetOption } from "./_internal/operations/options.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
 import { ifShell, runShell } from "./_internal/operations/shell.js";
 import {
   deleteBuffer,
@@ -388,6 +394,12 @@ export class Server {
    *
    * tmux sends a control client no pane output until it attaches, so this
    * attaches to a session; a server with no sessions has nothing to watch.
+   *
+   * Name that session with `target` when reading pane output. Structural
+   * notifications reach the client wherever it attached, but output arrives
+   * only for the attached session, and an untargeted watch lands on whichever
+   * session tmux considers current. With two sessions on the server that is
+   * silence rather than an error.
    */
   watch(options?: WatchOptions): TmuxEventStream {
     const runtime = runtimeForServer(this);
@@ -445,31 +457,74 @@ export class Server {
       invalidateRuntimeEpoch(boundRuntime);
     });
     const bound = createServerWithRuntime(boundRuntime) as ConnectedServer;
+
+    /**
+     * The waits this connection has outstanding, so closing it can answer them.
+     *
+     * Closing on purpose — a caller cancelling, a scope ending — rejects every
+     * wait in flight, and a wait nobody is holding any more becomes an
+     * unhandled rejection the caller cannot even catch. Marking each one
+     * handled first silences exactly those, and only those: a daemon that dies
+     * never comes through here, so a real failure stays as loud as it was, and
+     * so does a wait somebody forgot to await that later times out.
+     *
+     * Held as records rather than as the promises themselves. Attaching
+     * `.finally` to a promise to clean up after it marks that promise handled
+     * at the moment it is created, which would silence every wait always and
+     * leave this looking like it worked.
+     */
+    const waiting = new Set<{ promise?: Promise<ServerSnapshot> }>();
+    const closeWaits = (): Promise<void> => {
+      for (const entry of waiting) entry.promise?.catch(() => undefined);
+      return connection.close();
+    };
+
     Object.defineProperties(bound, {
-      close: { value: () => connection.close() },
+      close: { value: closeWaits },
       subscribe: { value: () => connection.subscribe() },
       waitFor: {
-        value: async (
+        value: (
           matches: (snapshot: ServerSnapshot) => boolean,
           options: { readonly timeoutMs?: number } = {},
         ): Promise<ServerSnapshot> => {
-          // Subscribe before reading, or a change that lands between the read
-          // and the subscription is never seen and the wait hangs on a
-          // condition that is already true.
-          const events = connection.subscribe();
-          const deadline = setTimeout(() => void events.close(), options.timeoutMs ?? 30_000);
-          try {
-            let snapshot = await bound.snapshot();
-            if (matches(snapshot)) return snapshot;
-            for await (const _event of events) {
-              snapshot = await bound.snapshot();
+          const entry: { promise?: Promise<ServerSnapshot> } = {};
+          const run = async (): Promise<ServerSnapshot> => {
+            // Subscribe before reading, or a change that lands between the read
+            // and the subscription is never seen and the wait hangs on a
+            // condition that is already true.
+            const events = connection.subscribe();
+            let deadlinePassed = false;
+            const deadline = setTimeout(() => {
+              deadlinePassed = true;
+              void events.close();
+            }, options.timeoutMs ?? 30_000);
+            try {
+              let snapshot = await bound.snapshot();
               if (matches(snapshot)) return snapshot;
+              for await (const _event of events) {
+                snapshot = await bound.snapshot();
+                if (matches(snapshot)) return snapshot;
+              }
+            } finally {
+              clearTimeout(deadline);
+              await events.close();
+              // Inside the body on purpose: cleaning up from outside attaches
+              // a handler, which marks the promise handled the moment it exists
+              // and silences every wait rather than the closed ones.
+              waiting.delete(entry);
             }
-          } finally {
-            clearTimeout(deadline);
-            await events.close();
-          }
-          throw new LibTmuxException("the awaited tmux state never arrived");
+            // Waiting out a deadline and losing the connection are different
+            // outcomes, and only one of them says anything about the condition.
+            throw deadlinePassed
+              ? new WaitTimeout("the awaited tmux state did not arrive before the deadline")
+              : new LibTmuxException(
+                  "the tmux event stream ended before the awaited state arrived",
+                );
+          };
+          const promise = run();
+          entry.promise = promise;
+          waiting.add(entry);
+          return promise;
         },
       },
       // A chained line draws one response block per command from tmux, and this
@@ -483,7 +538,7 @@ export class Server {
         ): Promise<readonly (readonly string[])[]> =>
           runPipelineSequentially(boundRuntime, commands, options),
       },
-      [Symbol.asyncDispose]: { value: () => connection.close() },
+      [Symbol.asyncDispose]: { value: closeWaits },
     });
     return bound;
   }
@@ -602,6 +657,21 @@ export class Server {
   }
 
   /**
+   * The option values that govern this server, own and inherited together.
+   *
+   * `showOptions` reports only what was set here, which for a fresh server is
+   * often nothing. This resolves what it inherits as well, so an option has an
+   * answer wherever it was actually set.
+   *
+   * ```ts
+   * (await server.showResolvedOptions()).get("message-limit");
+   * ```
+   */
+  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForServer(this), "server", null);
+  }
+
+  /**
    * Set a server-scope option.
    *
    * ```ts
@@ -689,24 +759,32 @@ export class Server {
   /**
    * Every global hook tmux currently reports.
    *
+   * A hook is an array of commands, keyed by the name `setHook` takes, so
+   * what was set reads back under the name it was set with. tmux prints each
+   * element as `name[0]`, which composes with neither of the writers.
+   *
    * ```ts
    * const hooks = await server.showHooks();
-   * hooks.get("session-created");
+   * hooks.get("session-created")?.[0];
    * ```
    */
-  showHooks(): Promise<ReadonlyMap<string, string>> {
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
     return showHooks(runtimeForServer(this), "server");
   }
 
   /**
    * Bind a tmux command to a global hook.
    *
+   * A hook holds a list of commands. Without `append` this writes the whole
+   * list, so it replaces whatever the hook already ran.
+   *
    * ```ts
    * await server.setHook("session-created", "display-message 'hello'");
+   * await server.setHook("session-created", "display-message 'and this'", { append: true });
    * ```
    */
-  setHook(name: string, command: string): Promise<void> {
-    return setHook(runtimeForServer(this), "server", null, name, command);
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForServer(this), "server", null, name, command, options);
   }
 
   /**
@@ -851,8 +929,14 @@ export class Server {
   /**
    * Run a tmux config file against this server.
    *
+   * tmux does not expand `~` here. `source-file` joins a path that is not
+   * absolute to the client's working directory and globs the result, so
+   * `"~/.tmux.conf"` looks for a directory literally named `~`. Typing it at a
+   * shell works because the shell expands it first; passing it as a string
+   * never does.
+   *
    * ```ts
-   * await server.sourceFile("~/.tmux.conf");
+   * await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`);
    * ```
    */
   sourceFile(path: string): Promise<void> {
@@ -890,6 +974,11 @@ export class Server {
   /**
    * Put a string into a named paste buffer.
    *
+   * Empty data stores nothing. tmux exits zero for `set-buffer -b name ""` and
+   * creates no buffer at all, so the name a caller thinks they just wrote is
+   * absent — and they learn that from whatever reads it next, which points at
+   * the wrong call. Check before storing content that may be empty.
+   *
    * ```ts
    * await server.setBuffer("greeting", "hello");
    * ```
@@ -900,6 +989,11 @@ export class Server {
 
   /**
    * Read a named paste buffer's contents.
+   *
+   * Over a control connection this stops at the first NUL byte: tmux writes a
+   * command's output to a control client as a C string. The buffer is unharmed
+   * — `saveBuffer` and a spawning server both read it whole — and a pane's own
+   * output is unaffected, being escaped before it is written.
    *
    * ```ts
    * const lines = await server.showBuffer("greeting");

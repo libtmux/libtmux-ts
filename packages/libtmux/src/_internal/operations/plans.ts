@@ -34,8 +34,13 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
     "-F",
     "#{session_id}",
     ...(options.name === undefined ? [] : ["-s", options.name]),
+    ...(options.groupWith === undefined ? [] : ["-t", options.groupWith]),
     ...(options.windowName === undefined ? [] : ["-n", options.windowName]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
+    ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
+      "-e",
+      `${name}=${value}`,
+    ]),
     // A detached session has no client to size it, so tmux picks 80x24 and
     // every program in it formats to that. This is the only place the size can
     // be chosen at creation.
@@ -58,6 +63,10 @@ function newWindowArgs(sessionId: string | null, options: NewWindowOptions): rea
     ...(options.name === undefined ? [] : ["-n", options.name]),
     ...(options.direction === undefined ? [] : [WINDOW_DIRECTION_FLAG_MAP[options.direction]]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
+    ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
+      "-e",
+      `${name}=${value}`,
+    ]),
     ...(options.shellCommand === undefined ? [] : ["--", options.shellCommand]),
   ];
 }
@@ -78,7 +87,12 @@ function splitWindowArgs(target: string | null, options: SplitOptions): readonly
         : []
       : PANE_DIRECTION_FLAG_MAP[options.direction]),
     ...(target == null ? [] : ["-t", target]),
+    ...(options.size === undefined ? [] : ["-l", String(options.size)]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
+    ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
+      "-e",
+      `${name}=${value}`,
+    ]),
     ...(options.shellCommand === undefined ? [] : ["--", options.shellCommand]),
   ];
 }

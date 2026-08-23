@@ -33,6 +33,14 @@ export interface TestServerRequestSnapshot {
 }
 
 export interface TestServerOptions {
+  /**
+   * The environment the server is launched with, replacing `process.env`
+   * rather than extending it.
+   *
+   * Spread `process.env` to change one variable. Passing the variable alone
+   * launches tmux with no `PATH`, which fails as a malformed launch frame
+   * rather than as a missing `PATH`.
+   */
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly faultInjection?:
     | "after-identity-record"

@@ -10,9 +10,9 @@ import {
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { Server } from "../../src/server.js";
-import { TmuxTransportError } from "../../src/exc.js";
+import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -115,6 +115,62 @@ describe("control-mode resource bounds", () => {
     });
   }, 40_000);
 
+  test("names a connection that broke under a command in its own terms", async () => {
+    const directory = await makeTestDirectory("ltx-broken-");
+    const socketPath = join(directory, "s");
+    assertOwnedSocketPath(socketPath);
+    const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
+    try {
+      const session = await server.newSession({ name: "breaking" });
+      const live = await server.connect({ target: session.id });
+
+      // Armed on a condition that never comes true, so the connection breaking
+      // under it is what settles this — the other side of the same race as a
+      // command issued after the connection is known closed.
+      const armed = live.waitFor((snapshot) => snapshot.windows.exists({ name: "never" }), {
+        timeoutMs: 30_000,
+      });
+      const killed = server.cmd("kill-server").catch(() => undefined);
+
+      const failure = await armed.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await killed;
+      await live.close().catch(() => undefined);
+
+      // Which of the three racing outcomes wins is not this test's business.
+      // What has to hold is that the caller is told in this package's terms:
+      // Node's own EPIPE is not something a `LibTmuxException` handler sees.
+      expect(failure).toBeInstanceOf(LibTmuxException);
+      if (failure instanceof TmuxTransportError) expect(failure.delivery).not.toBe("replied");
+    } finally {
+      await server.cmd("kill-server").catch(() => undefined);
+      await rm(directory, { force: true, recursive: true });
+    }
+  }, 40_000);
+
+  test("carries run-shell output, which tmux writes after the block", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+
+      // tmux writes `run-shell`'s closing guard when the command returns, not
+      // when the job finishes, so its output arrives as bare lines belonging to
+      // no command.
+      const command = "echo first; echo second";
+      // A newline would reach the same fallback for the other reason.
+      expect(command.includes("\n")).toBe(false);
+
+      const spawned = await server.runShell(command);
+      expect(await live.runShell(command)).toEqual(spawned);
+      // 3.3a and 3.4 suppress a clientless run-shell's output entirely, which
+      // is the difference LIBTMUX_TMUX_BUILDS exists to surface. Where this
+      // tmux answers at all, both transports have to answer with the output.
+      if (spawned.length > 0) expect(await live.runShell(command)).toEqual(["first", "second"]);
+    });
+  }, 40_000);
+
   test("rejects a bound that is not a positive integer, before spawning", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -137,6 +193,32 @@ describe("control-mode resource bounds", () => {
       // tmux reports the flags it holds for this client.
       const flags = await live.cmd("display-message", ["-p", "#{client_flags}"]);
       expect(flags.join("")).toContain("pause-after=1");
+    });
+  }, 40_000);
+
+  test("reports a pane's output as output with pause-after enabled", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "aged" });
+      await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
+      const events = live.subscribe();
+      await events.ready();
+
+      const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+      const printed = events.find(
+        (event) => event.kind === "output" && event.data.includes("aged-marker"),
+        { timeoutMs: 20_000 },
+      );
+      await pane.sendKeys("echo aged-marker-here");
+      const event = await printed;
+      await events.close();
+
+      // tmux writes `%extended-output` for every pane once pause-after is set,
+      // so a consumer filtering on "output" would stop seeing anything at the
+      // moment backpressure began — which is when it most needs to see it.
+      expect(event?.kind).toBe("output");
+      // The age tmux reported comes with it rather than instead of it.
+      expect(typeof (event as { readonly age?: number }).age).toBe("number");
     });
   }, 40_000);
 

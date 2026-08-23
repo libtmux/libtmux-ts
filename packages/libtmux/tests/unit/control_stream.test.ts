@@ -69,4 +69,73 @@ describe("event stream lifetime", () => {
       })(),
     ).rejects.toThrow(/only be iterated once/u);
   });
+
+  /**
+   * Waiting out a deadline and losing the stream are different outcomes.
+   *
+   * Answering undefined for both is how a caller comes to report that its
+   * command never printed a marker when what actually happened is that the
+   * tmux server went away underneath it — a diagnosis that sends someone to
+   * read their own workload for a transport failure.
+   */
+  test("answers undefined when the deadline passes", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    expect(await sink.stream.find(() => false, { timeoutMs: 10 })).toBeUndefined();
+  });
+
+  test("raises when the stream ends before a match", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+    sink.finish(undefined);
+    await expect(armed).rejects.toThrow(/ended before a match/u);
+  });
+
+  test("raises the stream's own failure rather than one of its own", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+    sink.finish(new Error("tmux control connection broke (EPIPE)"));
+    await expect(armed).rejects.toThrow(/EPIPE/u);
+  });
+
+  test("answers the match when one arrives before either", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find((event) => event.kind === "output", { timeoutMs: 30_000 });
+    sink.push({ data: "hello", kind: "output", paneId: "%0" });
+    expect(await armed).toEqual({ data: "hello", kind: "output", paneId: "%0" });
+  });
+
+  test("answers undefined when a caller stops waiting", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+
+    // Closing is a decision, the way the deadline is. Raising here would make
+    // the loser of a `Promise.race` reject after nobody is holding it, which
+    // is an unhandled rejection rather than a diagnosis.
+    await sink.stream.close();
+
+    expect(await armed).toBeUndefined();
+  });
+
+  test("keeps a deliberate close deliberate when the connection then ends", async () => {
+    // Closing a stream is what makes the connection behind it let go, so the
+    // teardown that follows arrives as `finish`. Read as the source going away,
+    // it would turn the caller's own cancellation into a raised error.
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+
+    await sink.stream.close();
+    sink.finish(undefined);
+
+    expect(await armed).toBeUndefined();
+  });
+
+  test("answers undefined when the scope holding the stream ends", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+
+    // `await using` disposes rather than closing, and the two must agree.
+    await sink.stream[Symbol.asyncDispose]();
+
+    expect(await armed).toBeUndefined();
+  });
 });

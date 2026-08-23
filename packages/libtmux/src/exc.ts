@@ -275,7 +275,39 @@ export class TmuxObjectDoesNotExist extends ObjectDoesNotExist {
   }
 }
 
-export class VersionTooLow extends LibTmuxException {}
+/**
+ * A field the server is too old to have.
+ *
+ * Constructed bare for parity with the Python library, which has this name and
+ * throws it with no message. Constructed with its parts by this package, so a
+ * caller filtering on a field their tmux predates is told which field, which
+ * release has it, and which release answered — rather than being handed an
+ * empty result that reads as "no object has this".
+ */
+export class VersionTooLow extends LibTmuxException {
+  /** The criteria key the caller wrote, when this came from a query. */
+  readonly criteriaName?: string;
+  /** The tmux that answered, when this came from a query. */
+  readonly serverVersion?: string;
+  /** The first tmux that has the field, when this came from a query. */
+  readonly since?: string;
+
+  constructor(options?: {
+    readonly criteriaName: string;
+    readonly serverVersion: string;
+    readonly since: string;
+  }) {
+    super(
+      options === undefined
+        ? ""
+        : `${options.criteriaName} needs tmux ${options.since}; this server is ${options.serverVersion}`,
+    );
+    if (options === undefined) return;
+    this.criteriaName = options.criteriaName;
+    this.serverVersion = options.serverVersion;
+    this.since = options.since;
+  }
+}
 
 export class BadSessionName extends LibTmuxException {
   constructor(reason: string, session_name?: string) {
@@ -374,18 +406,32 @@ export type QueryValidationErrorCode = "invalid-id" | "invalid-query";
 
 export class QueryValidationError extends LibTmuxException {
   readonly code: QueryValidationErrorCode;
+  /**
+   * Where in the criteria the problem is, as keys and array indices.
+   *
+   * `["windows", "some", "name", "startsWith"]` reads as
+   * `windows.some.name.startsWith`, which is what the message renders. Kept
+   * apart from the message so a caller that built the criteria from somewhere
+   * else — a form, a config file, an MCP client — can point at the right field
+   * rather than parse a sentence. Empty when the criteria themselves are not an
+   * object at all.
+   */
+  readonly path: readonly (string | number)[];
 
   constructor({
     cause,
     code,
     message,
+    path = [],
   }: {
     readonly cause?: unknown;
     readonly code: QueryValidationErrorCode;
     readonly message: string;
+    readonly path?: readonly (string | number)[];
   }) {
     super(message, { cause });
     this.code = code;
+    this.path = Object.freeze([...path]);
   }
 }
 

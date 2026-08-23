@@ -24,9 +24,7 @@ export async function narrowsOnKind(): Promise<string> {
   for await (const event of server.watch()) {
     switch (event.kind) {
       case "output":
-        return `${event.paneId}${event.data}`;
-      case "extended-output":
-        return `${event.paneId}${String(event.age)}`;
+        return `${event.paneId}${event.data}${String(event.age ?? "")}`;
       case "window-add":
       case "window-close":
       case "unlinked-window-add":

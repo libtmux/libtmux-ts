@@ -116,21 +116,129 @@ describe("option reads", () => {
       const server = serverFor(fixture);
       const session = (await server.snapshot()).sessions.one();
 
+      // Read back under the name it was set with: tmux prints the element as
+      // `after-new-window[0]`, and keyed by that nothing here composes.
       await session.setHook("after-new-window", "display-message hooked");
-      const sessionHooks = await session.showHooks();
-      expect([...sessionHooks.keys()].some((name) => name.startsWith("after-new-window"))).toBe(
-        true,
-      );
+      expect((await session.showHooks()).get("after-new-window")).toEqual([
+        "display-message hooked",
+      ]);
 
       await server.setHook("after-kill-pane", "display-message global");
-      const globalHooks = await server.showHooks();
-      expect([...globalHooks.keys()].some((name) => name.startsWith("after-kill-pane"))).toBe(true);
+      expect((await server.showHooks()).get("after-kill-pane")).toEqual(["display-message global"]);
 
       await session.unsetHook("after-new-window");
-      const afterUnset = await session.showHooks();
-      expect([...afterUnset.keys()].some((name) => name.startsWith("after-new-window"))).toBe(
-        false,
-      );
+      expect((await session.showHooks()).has("after-new-window")).toBe(false);
+    });
+  }, 30_000);
+
+  test("reports a hook tmux stores as several commands in its own order", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+
+      await session.setHook("after-new-window", "display-message first");
+      await session.setHook("after-new-window", "display-message second", { append: true });
+
+      expect((await session.showHooks()).get("after-new-window")).toEqual([
+        "display-message first",
+        "display-message second",
+      ]);
+    });
+  }, 30_000);
+
+  test("replaces a hook's commands when appending is not asked for", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+
+      await session.setHook("after-new-window", "display-message first");
+      await session.setHook("after-new-window", "display-message second", { append: true });
+      // A hook is a list, and a write without `append` is a write of the list.
+      await session.setHook("after-new-window", "display-message only");
+
+      expect((await session.showHooks()).get("after-new-window")).toEqual(["display-message only"]);
+      void server;
+    });
+  }, 30_000);
+
+  /**
+   * What this package reads back, against what tmux says the value is.
+   *
+   * `show-options -v` prints the value with no quoting of its own, so it is
+   * tmux's own answer to the question the escaped form is asking. Comparing
+   * against it rather than against the value that was set keeps the test true
+   * on a tmux that stores something else -- 3.4 keeps the backslash from a `$`,
+   * which later versions do not.
+   */
+  test("reads an option value back the way tmux itself reports it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const values: readonly string[] = [
+        "plain",
+        "",
+        `he said "hi"`,
+        "$HOME/x",
+        "a; b; c",
+        "a #{b} c",
+        "{ x }",
+        "percent%pct",
+        "'single'",
+        "space in it",
+        "trailing ",
+        "#hash",
+        "back\\slash",
+        "tab\there",
+        "~tilde",
+        `"`,
+        "$",
+        "'",
+        `a"b`,
+        "#{?pane_in_mode,COPY,}",
+        "#[fg=red]$USER@#H",
+      ];
+
+      for (const [index, value] of values.entries()) {
+        const name = `@round-trip-${String(index)}`;
+        // eslint-disable-next-line no-await-in-loop -- one option at a time is the test.
+        await server.setOption(name, value);
+        // eslint-disable-next-line no-await-in-loop -- same.
+        const reported = (await server.cmd("show-options", ["-s", "-v", name])).join("\n");
+        // eslint-disable-next-line no-await-in-loop -- same.
+        const decoded = (await server.showOptions()).get(name);
+        expect(decoded).toBe(reported);
+      }
+    });
+  }, 60_000);
+
+  test("resolves the options that govern an object, not just its own", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+      await session.setOption("history-limit", "9999");
+      const window = (await server.snapshot()).windows.one();
+
+      const own = await window.showOptions();
+      const resolved = await window.showResolvedOptions();
+
+      // A window that has set nothing reports nothing, which is the answer to a
+      // different question from the one a caller usually has.
+      expect(own.size).toBe(0);
+      expect(resolved.size).toBeGreaterThan(0);
+      expect(resolved.get("main-pane-width")).toBeDefined();
+
+      // tmux marks an inherited entry by suffixing the name; the name is the
+      // option's, so a caller can look one up by the name they know.
+      expect([...resolved.keys()].filter((name) => name.includes("*"))).toEqual([]);
+
+      // What was set here wins over what would be inherited, and both readers
+      // agree about it.
+      const sessionOwn = await session.showOptions();
+      const sessionResolved = await session.showResolvedOptions();
+      expect(sessionOwn.get("history-limit")).toBe("9999");
+      expect(sessionResolved.get("history-limit")).toBe("9999");
+      // And an option the session never set still has an answer here.
+      expect(sessionOwn.has("default-shell")).toBe(false);
+      expect(sessionResolved.get("default-shell")).toBeDefined();
     });
   }, 30_000);
 

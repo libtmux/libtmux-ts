@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 
 import {
   FormatProtocolError,
@@ -170,7 +171,10 @@ describe("guarded format codec", () => {
     expect(rows[0]?.session_group).toBe("");
     expect(rows[0]?.pane_x).toBeNull();
     expect(rows[0]?.client_name).toBeNull();
-    expect(Object.keys(rows[0] ?? {})).toHaveLength(178);
+    // Every field the registry knows, derived rather than pinned: the
+    // vocabulary grows when tmux does, and a literal here would have to be
+    // edited each time without saying why.
+    expect(Object.keys(rows[0] ?? {})).toHaveLength(FORMAT_FIELD_TOKENS.length);
   });
 
   test("decodes multiple complete frames without splitting data on newline", () => {

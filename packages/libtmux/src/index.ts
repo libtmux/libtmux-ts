@@ -42,13 +42,13 @@ export type {
   SendKeysOptions,
   ServerSnapshot,
   SetEnvironmentOptions,
+  SetHookOptions,
   SplitOptions,
   TmuxClientDetachedEvent,
   TmuxClientSessionChangedEvent,
   TmuxEvent,
   TmuxEventStream,
   TmuxExitEvent,
-  TmuxExtendedOutputEvent,
   TmuxLayoutChangeEvent,
   TmuxMessageEvent,
   TmuxOutputEvent,
@@ -82,6 +82,8 @@ export {
   TmuxServerRestarted,
   TmuxTransportError,
   type TmuxTransportErrorKind,
+  VersionTooLow,
+  WaitTimeout,
 } from "./exc.js";
 export type { DeliveryStatus } from "./common.js";
 export { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";
