@@ -136,21 +136,28 @@ describe("option reads", () => {
       const server = serverFor(fixture);
       const session = (await server.snapshot()).sessions.one();
 
-      // tmux appends with `-a`, which the typed writer does not reach; a hook
-      // built that way is still one hook, and reading it must say so.
       await session.setHook("after-new-window", "display-message first");
-      await server.cmd("set-hook", [
-        "-a",
-        "-t",
-        session.id,
-        "after-new-window",
-        "display-message second",
-      ]);
+      await session.setHook("after-new-window", "display-message second", { append: true });
 
       expect((await session.showHooks()).get("after-new-window")).toEqual([
         "display-message first",
         "display-message second",
       ]);
+    });
+  }, 30_000);
+
+  test("replaces a hook's commands when appending is not asked for", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+
+      await session.setHook("after-new-window", "display-message first");
+      await session.setHook("after-new-window", "display-message second", { append: true });
+      // A hook is a list, and a write without `append` is a write of the list.
+      await session.setHook("after-new-window", "display-message only");
+
+      expect((await session.showHooks()).get("after-new-window")).toEqual(["display-message only"]);
+      void server;
     });
   }, 30_000);
 

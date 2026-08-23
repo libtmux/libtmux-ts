@@ -180,6 +180,17 @@ export interface CaptureOptions extends CommandOptions {
   readonly start?: number;
 }
 
+export interface SetHookOptions extends CommandOptions {
+  /**
+   * Add to the commands this hook already holds, tmux's `-a`.
+   *
+   * A hook is a list, and without this each write replaces the whole list. It
+   * is what builds the several commands `showHooks` reports, and the reason a
+   * hook read back can hold more than was last written to it.
+   */
+  readonly append?: boolean;
+}
+
 export interface MoveWindowOptions extends CommandOptions {
   /** Destination index; tmux picks the next free one when omitted. */
   readonly index?: number;

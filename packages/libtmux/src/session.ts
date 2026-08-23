@@ -8,6 +8,7 @@ import {
 import type { EnvironmentValue, PlannedOperation, SetEnvironmentOptions } from "./types.js";
 import type { CmdOptions } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
+import type { SetHookOptions } from "./types.js";
 import type { SetOptionOptions } from "./types.js";
 import type { NewWindowOptions, WindowTarget } from "./types.js";
 import { SESSION_ALIASES, type SessionAliasMap } from "./_generated/field_aliases.js";
@@ -135,12 +136,16 @@ export class Session {
   /**
    * Bind a tmux command to a hook on this session.
    *
+   * A hook holds a list of commands. Without `append` this writes the whole
+   * list, so it replaces whatever the hook already ran.
+   *
    * ```ts
    * await session.setHook("window-linked", "display-message 'linked'");
+   * await session.setHook("window-linked", "display-message 'twice'", { append: true });
    * ```
    */
-  setHook(name: string, command: string): Promise<void> {
-    return setHook(runtimeForHandle(this), "session", this.id, name, command);
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForHandle(this), "session", this.id, name, command, options);
   }
 
   /**

@@ -417,13 +417,17 @@ hooks.get("session-created")?.[0];
 #### `Server.setHook`
 
 ```ts
-setHook(name: string, command: string): Promise<void>
+setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
 ```
 
 Bind a tmux command to a global hook.
 
+A hook holds a list of commands. Without `append` this writes the whole
+list, so it replaces whatever the hook already ran.
+
 ```ts
 await server.setHook("session-created", "display-message 'hello'");
+await server.setHook("session-created", "display-message 'and this'", { append: true });
 ```
 
 #### `Server.unsetHook`
@@ -955,13 +959,17 @@ hooks.get("window-linked")?.[0];
 #### `Session.setHook`
 
 ```ts
-setHook(name: string, command: string): Promise<void>
+setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
 ```
 
 Bind a tmux command to a hook on this session.
 
+A hook holds a list of commands. Without `append` this writes the whole
+list, so it replaces whatever the hook already ran.
+
 ```ts
 await session.setHook("window-linked", "display-message 'linked'");
+await session.setHook("window-linked", "display-message 'twice'", { append: true });
 ```
 
 #### `Session.unsetHook`

@@ -1,4 +1,4 @@
-import type { HookScope } from "../../types.js";
+import type { HookScope, SetHookOptions } from "../../types.js";
 import { parseNameValueLine } from "./options.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
@@ -51,15 +51,28 @@ export async function showHooks(
   return hooks;
 }
 
-/** Bind a tmux command to a hook name at one scope. */
+/**
+ * Bind a tmux command to a hook name at one scope.
+ *
+ * `append` adds to the commands the hook already holds rather than replacing
+ * them, which is the only way to build the several a hook can run — and so the
+ * only way to produce what {@link showHooks} reports.
+ */
 export async function setHook(
   runtime: RuntimeContext,
   scope: HookScope,
   target: string | null | undefined,
   name: string,
   command: string,
+  options: SetHookOptions = {},
 ): Promise<void> {
-  await runCommand(runtime, ["set-hook", ...scopeArguments(scope, target), name, command]);
+  await runCommand(runtime, [
+    "set-hook",
+    ...(options.append === true ? ["-a"] : []),
+    ...scopeArguments(scope, target),
+    name,
+    command,
+  ]);
 }
 
 /** Remove every command bound to a hook name at one scope. */

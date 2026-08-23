@@ -13,12 +13,13 @@ import type { EnvironmentValue, SetEnvironmentOptions } from "./types.js";
 import type {
   CmdOptions,
   ConnectedServer,
-  ManagedServer,
-  PlannedOperation,
   IfShellOptions,
+  ManagedServer,
   NewSessionOptions,
+  PlannedOperation,
   RunShellOptions,
   ServerSnapshot,
+  SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
   TransportMode,
@@ -713,12 +714,16 @@ export class Server {
   /**
    * Bind a tmux command to a global hook.
    *
+   * A hook holds a list of commands. Without `append` this writes the whole
+   * list, so it replaces whatever the hook already ran.
+   *
    * ```ts
    * await server.setHook("session-created", "display-message 'hello'");
+   * await server.setHook("session-created", "display-message 'and this'", { append: true });
    * ```
    */
-  setHook(name: string, command: string): Promise<void> {
-    return setHook(runtimeForServer(this), "server", null, name, command);
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForServer(this), "server", null, name, command, options);
   }
 
   /**

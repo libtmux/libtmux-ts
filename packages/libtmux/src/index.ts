@@ -42,6 +42,7 @@ export type {
   SendKeysOptions,
   ServerSnapshot,
   SetEnvironmentOptions,
+  SetHookOptions,
   SplitOptions,
   TmuxClientDetachedEvent,
   TmuxClientSessionChangedEvent,
