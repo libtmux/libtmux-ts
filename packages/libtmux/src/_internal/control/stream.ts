@@ -16,6 +16,14 @@ class BufferedEventStream implements PublicEventStream {
   readonly #onClose: () => Promise<void>;
   readonly #onReady: () => Promise<void>;
   #closed = false;
+  /**
+   * Why iteration stopped, once it has.
+   *
+   * `closed` is a decision — a deadline, a caller cancelling, a scope ending —
+   * and answers the wait. `finished` is the connection behind this going away,
+   * which answers nothing about what was being waited for.
+   */
+  #ended: "closed" | "finished" | undefined;
   #dropped = 0;
   #failure: Error | undefined;
   #iterated = false;
@@ -48,6 +56,7 @@ class BufferedEventStream implements PublicEventStream {
 
   finish(failure: Error | undefined): void {
     this.#failure ??= failure;
+    this.#ended ??= "finished";
     this.#closed = true;
     this.#wake();
   }
@@ -82,26 +91,26 @@ class BufferedEventStream implements PublicEventStream {
     matches: (event: TmuxEvent) => boolean,
     options: { readonly timeoutMs?: number } = {},
   ): Promise<TmuxEvent | undefined> {
-    let deadlinePassed = false;
-    const deadline = setTimeout(() => {
-      deadlinePassed = true;
-      void this.close();
-    }, options.timeoutMs ?? 30_000);
+    const deadline = setTimeout(() => void this.close(), options.timeoutMs ?? 30_000);
     try {
       for await (const event of this) {
         if (matches(event)) return event;
       }
-      if (deadlinePassed) return undefined;
-      // The stream ended rather than the deadline passing: tmux went away, or
-      // something closed it. Answering undefined for both is how a caller comes
-      // to report that its command never printed a marker when the server died.
-      throw new LibTmuxException("the tmux event stream ended before a match");
+      // Undefined is an answer about the wait: the deadline passed, or somebody
+      // stopped waiting. The connection going away is not an answer about the
+      // wait at all, and reported as one it becomes "your command never printed
+      // its marker" — which sends a reader to their own workload.
+      if (this.#ended === "finished") {
+        throw new LibTmuxException("the tmux event stream ended before a match");
+      }
+      return undefined;
     } finally {
       clearTimeout(deadline);
     }
   }
 
   async close(): Promise<void> {
+    this.#ended ??= "closed";
     this.#closed = true;
     this.#wake();
     await this.#onClose();

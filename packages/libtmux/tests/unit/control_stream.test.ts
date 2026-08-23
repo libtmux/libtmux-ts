@@ -103,4 +103,39 @@ describe("event stream lifetime", () => {
     sink.push({ data: "hello", kind: "output", paneId: "%0" });
     expect(await armed).toEqual({ data: "hello", kind: "output", paneId: "%0" });
   });
+
+  test("answers undefined when a caller stops waiting", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+
+    // Closing is a decision, the way the deadline is. Raising here would make
+    // the loser of a `Promise.race` reject after nobody is holding it, which
+    // is an unhandled rejection rather than a diagnosis.
+    await sink.stream.close();
+
+    expect(await armed).toBeUndefined();
+  });
+
+  test("keeps a deliberate close deliberate when the connection then ends", async () => {
+    // Closing a stream is what makes the connection behind it let go, so the
+    // teardown that follows arrives as `finish`. Read as the source going away,
+    // it would turn the caller's own cancellation into a raised error.
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+
+    await sink.stream.close();
+    sink.finish(undefined);
+
+    expect(await armed).toBeUndefined();
+  });
+
+  test("answers undefined when the scope holding the stream ends", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+    const armed = sink.stream.find(() => false, { timeoutMs: 30_000 });
+
+    // `await using` disposes rather than closing, and the two must agree.
+    await sink.stream[Symbol.asyncDispose]();
+
+    expect(await armed).toBeUndefined();
+  });
 });
