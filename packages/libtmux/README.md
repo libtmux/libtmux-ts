@@ -68,6 +68,10 @@ each one uses the last:
 A snapshot answers _what is true now_; a watch answers _what changed_. Most
 programs need the first, and reach for the second when they have to react.
 
+Those five are the page, in the order it is written. What follows them —
+deadlines, choosing a transport, options, environments, errors — is depth for
+when a program needs it, and nothing above depends on any of it.
+
 <details>
 <summary><b>Everything on this page</b></summary>
 
@@ -162,142 +166,6 @@ await window.rename("build");
 window.name; // "editor" — the instant this was read at
 (await window.refreshed()).name; // "build"
 ```
-
-## Dependencies
-
-None. The package installs a tmux client and nothing else — no third-party code
-to audit, pin, or deduplicate, and no transitive tree at all.
-
-Validation of tmux's own output is real work, so it did not go away: it lives in
-a small internal validator with a Zod-shaped surface. Its failures carry the
-value that failed, which Zod reports only by type.
-
-## Deadlines and cancellation
-
-A command with no deadline waits as long as tmux takes, which for a daemon that
-stops answering is forever. Set one for the whole server, and override or cancel
-a single call:
-
-```ts
-const server = new Server({ timeoutMs: 10_000 });
-
-const controller = new AbortController();
-const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
-controller.abort(); // `lines` rejects
-```
-
-Every operation that takes options accepts both, so the rule you learn on one
-method holds on the next. The default applies to every command the server runs,
-including the version probe it makes first and the four listings behind
-`snapshot()`. `signal` is
-typed structurally, so a real `AbortSignal` satisfies it without the published
-types requiring a DOM or Node library.
-
-## Watching
-
-A snapshot answers what is true now. `server.watch()` answers what changed, over
-one persistent `tmux -C` connection rather than a command per read.
-
-```ts
-await using events = server.watch();
-await events.ready(); // attached; changes from here on are announced
-
-for await (const event of events) {
-  if (event.kind === "window-add") console.log("opened", event.windowId);
-  if (event.kind === "output") process.stdout.write(event.data);
-}
-```
-
-Events are a discriminated union, so `event.kind` narrows the rest of the shape
-with no cast. Names are tmux's own, without the leading `%`, and a notification
-this version does not model arrives as `{ kind: "unknown", name, args }` rather
-than being dropped.
-
-The stream is an `AsyncDisposable`, so `await using` ends the tmux process when
-the scope exits, including on a thrown error. A consumer that falls behind gets
-its oldest events dropped rather than an unbounded buffer; `events.dropped`
-counts them and `bufferSize` sets the bound.
-
-That bound is this side's. tmux keeps its own, and its remedy for a client that
-lets a pane's output back up is to kill it — five minutes behind and the whole
-connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause
-the one pane instead:
-
-```ts
-await using paced = await server.connect({ pauseAfterSeconds: 5 });
-```
-
-tmux then reports `pause` for the pane it stopped, the connection asks it back
-at once, and `continue` follows. The pair is a record of what was missed, not
-something to act on.
-
-A connection attaches, so it needs a session to attach to. Connecting to a
-server with none fails at `connect()` with tmux's own words rather than through
-whichever command runs first:
-
-```ts
-await server.connect(); // LibTmuxException: ... could not attach: no sessions
-```
-
-tmux sends a control client no pane output until it attaches, so watching
-attaches to a session. A server with no sessions has nothing to watch, and a
-client hears about the session it attached to — name the one you care about
-with `target` rather than relying on whichever tmux considers most recent.
-
-`await using` needs `Symbol.asyncDispose`, so a consumer's `lib` includes
-`ESNext.Disposable` alongside its ECMAScript target. `events.close()` is the
-same operation for a project that cannot add it.
-
-### Waiting for something to happen
-
-Most work is "do this, then wait until that". `waitFor` is the join between a
-snapshot and the stream, and it subscribes before it reads — so a change that
-lands in between is still seen, rather than leaving you waiting on a condition
-that already came true:
-
-```ts
-await using live = await server.connect();
-
-await session.newWindow({ name: "build" });
-const settled = await live.waitFor((server) => server.windows.exists({ name: "build" }));
-```
-
-For a single event rather than a state, `find` takes the first one that matches
-and gives up on a deadline:
-
-```ts
-const opened = await live.subscribe().find((event) => event.kind === "window-add");
-```
-
-Each `subscribe()` is an independent view with its own buffer, so a loop and a
-`waitFor` can run side by side without taking each other's events.
-
-### Commands on the same connection
-
-`watch()` opens a connection for notifications only. `connect()` returns a
-server whose commands travel over that connection too, so a snapshot costs four
-writes instead of four processes:
-
-```ts
-await using live = await server.connect();
-
-for await (const event of live.subscribe()) {
-  if (event.kind !== "window-add") continue;
-  const snapshot = await live.snapshot(); // no process spawned
-  console.log(snapshot.windows.count());
-}
-```
-
-A connection can reopen itself after a drop with
-`watch({ reconnect: { attempts: 3 } })`, which reports a `reconnected` event so
-the gap is visible. The count bounds one outage rather than the connection's
-whole life, so a watcher that recovers today still recovers next week. It is off by default, and commands in flight when a
-connection drops are failed rather than replayed — tmux cannot say whether it
-already ran one, and re-sending a mutation would apply it twice.
-
-The API is the same `Server`; only the transport differs. Commands that feed
-tmux a stdin — `loadBuffer` — still need the spawning server, because control
-mode has no channel for one.
 
 ## Querying
 
@@ -719,6 +587,248 @@ chained line with one response block per command while the connection pairs one
 block with one request, and separate sends cost the same on a socket that is
 already open.
 
+## Watching
+
+A snapshot answers what is true now. `server.watch()` answers what changed, over
+one persistent `tmux -C` connection rather than a command per read.
+
+```ts
+await using events = server.watch();
+await events.ready(); // attached; changes from here on are announced
+
+for await (const event of events) {
+  if (event.kind === "window-add") console.log("opened", event.windowId);
+  if (event.kind === "output") process.stdout.write(event.data);
+}
+```
+
+Events are a discriminated union, so `event.kind` narrows the rest of the shape
+with no cast. Names are tmux's own, without the leading `%`, and a notification
+this version does not model arrives as `{ kind: "unknown", name, args }` rather
+than being dropped.
+
+The stream is an `AsyncDisposable`, so `await using` ends the tmux process when
+the scope exits, including on a thrown error. A consumer that falls behind gets
+its oldest events dropped rather than an unbounded buffer; `events.dropped`
+counts them and `bufferSize` sets the bound.
+
+That bound is this side's. tmux keeps its own, and its remedy for a client that
+lets a pane's output back up is to kill it — five minutes behind and the whole
+connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause
+the one pane instead:
+
+```ts
+await using paced = await server.connect({ pauseAfterSeconds: 5 });
+```
+
+tmux then reports `pause` for the pane it stopped, the connection asks it back
+at once, and `continue` follows. The pair is a record of what was missed, not
+something to act on.
+
+A connection attaches, so it needs a session to attach to. Connecting to a
+server with none fails at `connect()` with tmux's own words rather than through
+whichever command runs first:
+
+```ts
+await server.connect(); // LibTmuxException: ... could not attach: no sessions
+```
+
+tmux sends a control client no pane output until it attaches, so watching
+attaches to a session. A server with no sessions has nothing to watch, and a
+client hears about the session it attached to — name the one you care about
+with `target` rather than relying on whichever tmux considers most recent.
+
+`await using` needs `Symbol.asyncDispose`, so a consumer's `lib` includes
+`ESNext.Disposable` alongside its ECMAScript target. `events.close()` is the
+same operation for a project that cannot add it.
+
+### Waiting for something to happen
+
+Most work is "do this, then wait until that". `waitFor` is the join between a
+snapshot and the stream, and it subscribes before it reads — so a change that
+lands in between is still seen, rather than leaving you waiting on a condition
+that already came true:
+
+```ts
+await using live = await server.connect();
+
+await session.newWindow({ name: "build" });
+const settled = await live.waitFor((server) => server.windows.exists({ name: "build" }));
+```
+
+For a single event rather than a state, `find` takes the first one that matches
+and gives up on a deadline:
+
+```ts
+const opened = await live.subscribe().find((event) => event.kind === "window-add");
+```
+
+Each `subscribe()` is an independent view with its own buffer, so a loop and a
+`waitFor` can run side by side without taking each other's events.
+
+### Commands on the same connection
+
+`watch()` opens a connection for notifications only. `connect()` returns a
+server whose commands travel over that connection too, so a snapshot costs four
+writes instead of four processes:
+
+```ts
+await using live = await server.connect();
+
+for await (const event of live.subscribe()) {
+  if (event.kind !== "window-add") continue;
+  const snapshot = await live.snapshot(); // no process spawned
+  console.log(snapshot.windows.count());
+}
+```
+
+A connection can reopen itself after a drop with
+`watch({ reconnect: { attempts: 3 } })`, which reports a `reconnected` event so
+the gap is visible. The count bounds one outage rather than the connection's
+whole life, so a watcher that recovers today still recovers next week. It is off by default, and commands in flight when a
+connection drops are failed rather than replayed — tmux cannot say whether it
+already ran one, and re-sending a mutation would apply it twice.
+
+The API is the same `Server`; only the transport differs. Commands that feed
+tmux a stdin — `loadBuffer` — still need the spawning server, because control
+mode has no channel for one.
+
+## Recipes
+
+### Wait for a pane to print something
+
+Polling a pane either misses output between reads or spends a command on each
+one. Subscribe first, then act, so a line printed while you were still
+connecting is not lost:
+
+```ts
+await using events = server.watch();
+await events.ready();
+
+await pane.sendKeys("make build");
+
+let seen = "";
+for await (const event of events) {
+  if (event.kind !== "output" || event.paneId !== pane.id) continue;
+  seen += event.data;
+  if (seen.includes("BUILD OK")) break;
+}
+```
+
+A pane echoes what is typed into it, so waiting for text that also appears in
+the keys you just sent matches the echo rather than the output. Wait for
+something the command prints.
+
+### Act, then wait, on one connection
+
+The loop an agent runs. `connect()` carries the commands and the notifications
+that say what they did, so reacting costs nothing per iteration — and
+subscribing before sending means a marker printed in between is still seen.
+
+This recipe is a literal excerpt of [`examples/agent.ts`](../../examples/agent.ts),
+which the integration suite runs against a real tmux server:
+
+<!-- runs: examples/agent.ts -->
+
+```ts
+const session = await server.newSession({ name: "agent" });
+
+await using live = await server.connect({ target: session.id });
+
+const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+
+const printed = live
+  .subscribe()
+  .find(
+    (event) => event.kind === "output" && event.paneId === pane.id && event.data.includes(marker),
+    { timeoutMs: 30_000 },
+  );
+
+await pane.sendKeys(command);
+
+const event = await printed;
+```
+
+### Build a workspace
+
+One session, a window per concern, each pane already running its process. The
+first window is named as the session is created, so the workspace does not open
+with a stray shell nobody asked for:
+
+```ts
+const built = await server.newSession({
+  name: "work",
+  shellCommand: "nvim",
+  windowName: "editor",
+});
+
+const [logs, shell] = await server.batch([
+  built.plan.newWindow({ name: "logs", shellCommand: "journalctl -f" }),
+  built.plan.newWindow({ name: "shell" }),
+]);
+
+await logs.selectLayout("even-horizontal");
+shell.name; // "shell"
+```
+
+### Drive a pane and read what it said
+
+```ts
+await pane.sendKeys("git status --short");
+
+const lines = await pane.capture();
+const changed = lines.filter((line) => line.trim() !== "").length;
+```
+
+`capture()` reads the visible pane; pass `start` to reach into the scrollback.
+`sendKeys` presses Enter unless you say otherwise, and takes keys literally with
+`{ literal: true }` when the text could be read as a tmux key name.
+
+### Watch for a change and react to it
+
+`waitFor` subscribes before it reads, so a change landing between the two is
+still seen rather than leaving you waiting on something that already happened:
+
+```ts
+await using connected = await server.connect();
+
+await session.newWindow({ name: "build" });
+const settled = await connected.waitFor((current) => current.windows.exists({ name: "build" }));
+
+settled.windows.count({ name: "build" }); // 1
+```
+
+For a single event rather than a state, `find` takes the first match and answers
+`undefined` on its deadline. It raises instead when the connection ends, so the
+`undefined` a caller reports on is only ever the thing not happening:
+
+```ts
+const opened = await live.subscribe().find((event) => event.kind === "window-add", {
+  timeoutMs: 5_000,
+});
+```
+
+## Deadlines and cancellation
+
+A command with no deadline waits as long as tmux takes, which for a daemon that
+stops answering is forever. Set one for the whole server, and override or cancel
+a single call:
+
+```ts
+const server = new Server({ timeoutMs: 10_000 });
+
+const controller = new AbortController();
+const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
+controller.abort(); // `lines` rejects
+```
+
+Every operation that takes options accepts both, so the rule you learn on one
+method holds on the next. The default applies to every command the server runs,
+including the version probe it makes first and the four listings behind
+`snapshot()`. `signal` is
+typed structurally, so a real `AbortSignal` satisfies it without the published
+types requiring a DOM or Node library.
+
 ## Choosing how commands travel
 
 Three choices are independent and compose: how a command travels, whether it is
@@ -908,121 +1018,6 @@ than one that always does. Over a connection the order survives, because one
 socket writes them in the order they were submitted. If order matters and you
 want the speed, batch instead.
 
-## Recipes
-
-### Wait for a pane to print something
-
-Polling a pane either misses output between reads or spends a command on each
-one. Subscribe first, then act, so a line printed while you were still
-connecting is not lost:
-
-```ts
-await using events = server.watch();
-await events.ready();
-
-await pane.sendKeys("make build");
-
-let seen = "";
-for await (const event of events) {
-  if (event.kind !== "output" || event.paneId !== pane.id) continue;
-  seen += event.data;
-  if (seen.includes("BUILD OK")) break;
-}
-```
-
-A pane echoes what is typed into it, so waiting for text that also appears in
-the keys you just sent matches the echo rather than the output. Wait for
-something the command prints.
-
-### Act, then wait, on one connection
-
-The loop an agent runs. `connect()` carries the commands and the notifications
-that say what they did, so reacting costs nothing per iteration — and
-subscribing before sending means a marker printed in between is still seen.
-
-This recipe is a literal excerpt of [`examples/agent.ts`](../../examples/agent.ts),
-which the integration suite runs against a real tmux server:
-
-<!-- runs: examples/agent.ts -->
-
-```ts
-const session = await server.newSession({ name: "agent" });
-
-await using live = await server.connect({ target: session.id });
-
-const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
-
-const printed = live
-  .subscribe()
-  .find(
-    (event) => event.kind === "output" && event.paneId === pane.id && event.data.includes(marker),
-    { timeoutMs: 30_000 },
-  );
-
-await pane.sendKeys(command);
-
-const event = await printed;
-```
-
-### Build a workspace
-
-One session, a window per concern, each pane already running its process. The
-first window is named as the session is created, so the workspace does not open
-with a stray shell nobody asked for:
-
-```ts
-const built = await server.newSession({
-  name: "work",
-  shellCommand: "nvim",
-  windowName: "editor",
-});
-
-const [logs, shell] = await server.batch([
-  built.plan.newWindow({ name: "logs", shellCommand: "journalctl -f" }),
-  built.plan.newWindow({ name: "shell" }),
-]);
-
-await logs.selectLayout("even-horizontal");
-shell.name; // "shell"
-```
-
-### Drive a pane and read what it said
-
-```ts
-await pane.sendKeys("git status --short");
-
-const lines = await pane.capture();
-const changed = lines.filter((line) => line.trim() !== "").length;
-```
-
-`capture()` reads the visible pane; pass `start` to reach into the scrollback.
-`sendKeys` presses Enter unless you say otherwise, and takes keys literally with
-`{ literal: true }` when the text could be read as a tmux key name.
-
-### Watch for a change and react to it
-
-`waitFor` subscribes before it reads, so a change landing between the two is
-still seen rather than leaving you waiting on something that already happened:
-
-```ts
-await using connected = await server.connect();
-
-await session.newWindow({ name: "build" });
-const settled = await connected.waitFor((current) => current.windows.exists({ name: "build" }));
-
-settled.windows.count({ name: "build" }); // 1
-```
-
-For a single event rather than a state, `find` takes the first match and answers
-`undefined` on its deadline. It raises instead when the connection ends, so the
-`undefined` a caller reports on is only ever the thing not happening:
-
-```ts
-const opened = await live.subscribe().find((event) => event.kind === "window-add", {
-  timeoutMs: 5_000,
-});
-```
-
 ## Options and hooks
 
 ```ts
@@ -1185,6 +1180,15 @@ const session = await Session.fromEnv();
 
 The pane is authoritative: `$TMUX` carries a session id that goes stale when a
 pane moves, so the session is resolved through `$TMUX_PANE`.
+
+## Dependencies
+
+None. The package installs a tmux client and nothing else — no third-party code
+to audit, pin, or deduplicate, and no transitive tree at all.
+
+Validation of tmux's own output is real work, so it did not go away: it lives in
+a small internal validator with a Zod-shaped surface. Its failures carry the
+value that failed, which Zod reports only by type.
 
 ## Consumers
 
