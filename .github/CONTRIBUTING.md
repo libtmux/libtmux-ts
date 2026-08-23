@@ -16,6 +16,12 @@ every change is held to, and the map of what is where, are in
 Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.2a
 or newer.
 
+One suite wants the exact Bun `package.json` pins rather than a newer one. The
+three-runtime regex corpus is evidence that Bun, Node and Python agree on a
+pattern, and it records which engines produced each answer, so running it on a
+different Bun is asking a question the recorded answers do not cover. It says so
+when that happens.
+
 ```console
 $ bun install
 ```

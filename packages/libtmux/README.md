@@ -512,7 +512,7 @@ Sessions, windows, and panes:
 ```ts
 const session = await server.newSession({ name: "work" });
 const window = await session.newWindow({ name: "editor" });
-const pane = await window.split({ startDirectory: "/srv" });
+const pane = await window.split({ size: "30%", startDirectory: "/srv" });
 
 const active = session.activePane; // the active window's active pane
 const focused = window.activePane;
@@ -1011,8 +1011,9 @@ const settled = await connected.waitFor((current) => current.windows.exists({ na
 settled.windows.count({ name: "build" }); // 1
 ```
 
-For a single event rather than a state, `find` takes the first match and gives
-up on a deadline:
+For a single event rather than a state, `find` takes the first match and answers
+`undefined` on its deadline. It raises instead when the connection ends, so the
+`undefined` a caller reports on is only ever the thing not happening:
 
 ```ts
 const opened = await live.subscribe().find((event) => event.kind === "window-add", {

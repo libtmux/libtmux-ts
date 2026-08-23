@@ -559,7 +559,13 @@ describe("regex criteria", () => {
 
     expect(corpus.protocol).toBe("libtmux-where-regex-v1");
     expect(corpus.runtimes).toEqual({ bun: "1.3.14", node: "22", python: "3" });
-    expect(process.versions.bun).toBe("1.3.14");
+    // Read off the corpus rather than repeated: this asserts that the engine
+    // about to run the cases is the one whose answers were recorded, and the
+    // corpus is where that is written down.
+    expect(
+      process.versions.bun,
+      `the regex corpus records Bun ${corpus.runtimes.bun}; this is Bun ${process.versions.bun}. Run the suite on the Bun package.json pins, or regenerate the corpus.`,
+    ).toBe(corpus.runtimes.bun);
     expect(corpus.cases).toHaveLength(19);
     expect(new Set(corpus.cases.map(({ session_id }) => session_id)).size).toBe(
       corpus.cases.length,

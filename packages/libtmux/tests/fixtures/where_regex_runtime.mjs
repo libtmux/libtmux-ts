@@ -17,16 +17,23 @@ import { createProjectedSelection } from "../../dist/_internal/selection/evaluat
 const protocol = "libtmux-where-regex-v1";
 const implementation = process.argv[2];
 assert.ok(implementation === "bun" || implementation === "node");
-if (implementation === "bun") {
-  assert.equal(process.versions.bun, "1.3.14");
-} else {
-  assert.equal(process.versions.bun, undefined);
-  assert.equal(process.versions.node.split(".")[0], "22");
-}
 
 const fixture = JSON.parse(await readFile(new URL("./where_regex.json", import.meta.url), "utf8"));
 assert.equal(fixture.protocol, protocol);
 assert.deepEqual(fixture.runtimes, { bun: "1.3.14", node: "22", python: "3" });
+
+// Checked against the corpus rather than a repeated literal: what makes this
+// evidence is that the engine running the cases is the one that recorded them.
+if (implementation === "bun") {
+  assert.equal(
+    process.versions.bun,
+    fixture.runtimes.bun,
+    `the regex corpus records Bun ${fixture.runtimes.bun}; this is Bun ${process.versions.bun}. Run the suite on the Bun package.json pins, or regenerate the corpus.`,
+  );
+} else {
+  assert.equal(process.versions.bun, undefined);
+  assert.equal(process.versions.node.split(".")[0], fixture.runtimes.node);
+}
 const requiredSharedAdaptations = {
   "native-multiline-line-feed":
     "All three pinned native engines recognize LF as a multiline anchor boundary.",
