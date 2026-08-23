@@ -306,6 +306,10 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
     },
     async ({ paneId, shellCommand, toggle }) => {
       const snapshot = await context.snapshot();
+      // A read: tmux sends the pane's output to the command and writes nothing
+      // back, which is its default when neither -I nor -O is given. Adding -I
+      // would reverse that — the command's output would reach the pane as
+      // input — and this would then need requireWritablePane, not requirePane.
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       await pane.pipeTo(shellCommand, toggle === undefined ? {} : { toggle });
