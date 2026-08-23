@@ -507,4 +507,52 @@ describe("workspace builder", () => {
       expect((await server_window.showOptions()).get("main-pane-width")).toBe("80");
     });
   }, 60_000);
+
+  /**
+   * Building from nothing, which every other test here starts past.
+   *
+   * `TestServer.create` starts a server *and* a session, so an apply in this
+   * file always runs against a live one. A socket with no daemon behind it is
+   * the state a first run is actually in, and reading it raises.
+   */
+  test("applies to a server that is not running yet", async () => {
+    const parent = await makeTestDirectory("ltx-workspace-cold-");
+    const socketPath = join(parent, "s");
+    assertOwnedSocketPath(socketPath);
+    const server = new Server({ socketPath });
+    try {
+      const session = await applyWorkspace(server, {
+        session_name: "cold",
+        windows: [
+          { panes: [], window_name: "editor" },
+          { panes: [], window_name: "logs" },
+        ],
+      });
+
+      expect(session.name).toBe("cold");
+      expect((await server.snapshot()).windows.map((window) => window.name)).toEqual([
+        "editor",
+        "logs",
+      ]);
+    } finally {
+      await server.kill().catch(() => undefined);
+      await rm(parent, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  test("plans against a server that is not running yet", async () => {
+    const parent = await makeTestDirectory("ltx-workspace-cold-");
+    const server = new Server({ socketPath: join(parent, "s") });
+    try {
+      const plan = await planWorkspace(server, {
+        session_name: "cold",
+        windows: [{ panes: [], window_name: "editor" }],
+      });
+
+      expect(plan.createsSession).toBe(true);
+      expect(plan.createsWindows).toEqual([0]);
+    } finally {
+      await rm(parent, { force: true, recursive: true });
+    }
+  }, 60_000);
 });
