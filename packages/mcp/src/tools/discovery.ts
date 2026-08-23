@@ -71,17 +71,23 @@ function formatVariables(format: string): readonly string[] {
  * hand-written format is most likely. `display-message -a` enumerates the
  * table, so the two can be told apart.
  *
- * Only consulted when the value came back empty, so a format that resolved
- * costs nothing. Enumerated against the same target the caller used: the set
- * is target-dependent, and a pane field checked at server scope would look
+ * Enumerated against the same target the caller used: the set is
+ * target-dependent, and a pane field checked at server scope would look
  * missing when it is only out of scope.
  */
 async function unknownFields(
   enumerate: () => Promise<readonly string[]>,
-  format: string,
+  asked: readonly string[],
+  value: string,
 ): Promise<readonly string[]> {
-  const asked = formatVariables(format);
+  // Extracting the names is pure string work, so it happens first and for
+  // free. The table is consulted when nothing resolved, and also when more
+  // than one name could have contributed — a format mixing a known field with
+  // an unknown one produces something that reads like a value, so partial
+  // resolution is invisible in a way a wholly empty result is not. One name
+  // that resolved is the common case and still costs nothing.
   if (asked.length === 0) return [];
+  if (value !== "" && asked.length < 2) return [];
   const known = new Set(
     (await enumerate().catch(() => [])).map((line) => line.slice(0, line.indexOf("="))),
   );
@@ -330,24 +336,20 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         const value = lines.join("\n");
         // displayMessage takes a format, not flags, so the enumeration goes
         // through the command with the same pane as its target.
-        const unknown =
-          value === ""
-            ? await unknownFields(
-                () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
-                format,
-              )
-            : [];
+        const unknown = await unknownFields(
+          () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
+          formatVariables(format),
+          value,
+        );
         return ok({ value }, value + emptyNote(unknown));
       }
       const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
       const value = lines.join("\n");
-      const unknown =
-        value === ""
-          ? await unknownFields(
-              () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
-              format,
-            )
-          : [];
+      const unknown = await unknownFields(
+        () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
+        formatVariables(format),
+        value,
+      );
       return ok({ value }, value + emptyNote(unknown));
     },
   );

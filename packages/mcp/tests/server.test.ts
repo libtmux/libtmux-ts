@@ -1189,6 +1189,22 @@ describe("staying out of the way", () => {
           name: "display_message",
         });
         expect(toolText(expression)).not.toContain("has no field");
+
+        // A bad name beside a good one resolves to something that reads like a
+        // value — "%0-" looks like an answer rather than a mistake — so a
+        // result being non-empty is not evidence that all of it resolved.
+        const partial = await client.callTool({
+          arguments: { format: "#{pane_id}-#{nonexistent_field_xyz}", target: paneId },
+          name: "display_message",
+        });
+        expect(toolText(partial)).toContain("nonexistent_field_xyz");
+
+        // And the quiet half of that: two names that both resolve say nothing.
+        const both = await client.callTool({
+          arguments: { format: "#{pane_id}-#{pane_index}", target: paneId },
+          name: "display_message",
+        });
+        expect(toolText(both)).not.toContain("has no field");
       });
     });
   }, 60_000);
