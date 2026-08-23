@@ -50,6 +50,23 @@ export interface WindowPlans {
 }
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
+/**
+ * This placement, as tmux addresses one.
+ *
+ * A window linked into two sessions is one window with two placements sharing
+ * an id, and a bare `@id` leaves tmux to choose between them — which it does
+ * consistently, and consistently without regard for which placement the handle
+ * came from. Qualifying with the session is what makes an operation act on the
+ * placement it was reached through.
+ *
+ * Only the operations that address a placement take this. `kill`, `rename`,
+ * `selectLayout` and `resize` act on the window itself, wherever it is linked,
+ * and naming a session there would suggest a choice that does not exist.
+ */
+function placementTarget(window: Window): string {
+  return `${window.sessionId}:${window.id}`;
+}
+
 export class Window {
   declare private readonly windowBrand: undefined;
   /**
@@ -276,7 +293,7 @@ export class Window {
    * ```
    */
   move(options?: MoveWindowOptions): Promise<void> {
-    return moveWindow(runtimeForHandle(this), this.id, options);
+    return moveWindow(runtimeForHandle(this), placementTarget(this), options);
   }
 
   /**
@@ -298,7 +315,7 @@ export class Window {
    * ```
    */
   unlink(): Promise<void> {
-    return unlinkWindow(runtimeForHandle(this), this.id);
+    return unlinkWindow(runtimeForHandle(this), placementTarget(this));
   }
 
   /**
@@ -309,7 +326,7 @@ export class Window {
    * ```
    */
   swapWith(other: Window): Promise<void> {
-    return swapWindows(runtimeForHandle(this), this.id, other.id);
+    return swapWindows(runtimeForHandle(this), placementTarget(this), placementTarget(other));
   }
 
   /**
@@ -331,7 +348,7 @@ export class Window {
    * ```
    */
   select(): Promise<void> {
-    return selectTarget(runtimeForHandle(this), "select-window", this.id);
+    return selectTarget(runtimeForHandle(this), "select-window", placementTarget(this));
   }
 
   /**

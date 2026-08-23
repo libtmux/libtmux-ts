@@ -91,14 +91,53 @@ describe("window and pane topology", () => {
       );
       expect(linked.length).toBe(2);
 
-      // Unlinking the second placement leaves the original intact.
-      const placement = linked.filter((candidate) => candidate.sessionId === other.id).one();
-      await placement.unlink();
+      // Unlinking through the original placement leaves the linked one, which
+      // is the harder direction: tmux resolves a bare window id to the later
+      // placement, so a count alone cannot tell the two apart.
+      const original = linked.filter((candidate) => candidate.sessionId !== other.id).one();
+      await original.unlink();
 
       const afterUnlink = (await server.snapshot()).windows.filter(
         (candidate) => candidate.id === window.id,
       );
       expect(afterUnlink.length).toBe(1);
+      expect(afterUnlink.one().sessionId).toBe(other.id);
+    });
+  }, 40_000);
+
+  test("selects a linked window in the session it was reached through", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const other = await server.newSession({ name: "elsewhere", windowName: "kept" });
+      const shared = (await server.snapshot()).windows
+        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .one();
+      // A second window in the origin session, made active, so that selecting
+      // the shared one there is a change rather than already true.
+      const origin = (await server.snapshot()).sessions.one({ name: fixture.sessionName });
+      const sibling = await origin.newWindow({ name: "sibling" });
+      await sibling.select();
+      await shared.link({ session: "elsewhere" });
+      expect((await server.snapshot()).sessions.one({ id: origin.id }).activeWindow?.id).toBe(
+        sibling.id,
+      );
+
+      const linked = (await server.snapshot()).windows.filter(
+        (candidate) => candidate.id === shared.id,
+      );
+      const here = linked.filter((candidate) => candidate.sessionId !== other.id).one();
+      const there = linked.filter((candidate) => candidate.sessionId === other.id).one();
+
+      await there.select();
+      let snapshot = await server.snapshot();
+      expect(snapshot.sessions.one({ id: other.id }).activeWindow?.id).toBe(shared.id);
+
+      // The same window through the other placement: this one has to move the
+      // origin session's active window, and leave the other session's alone.
+      await here.select();
+      snapshot = await server.snapshot();
+      expect(snapshot.sessions.one({ id: here.sessionId }).activeWindow?.id).toBe(shared.id);
+      expect(snapshot.sessions.one({ id: other.id }).activeWindow?.id).toBe(shared.id);
     });
   }, 40_000);
 
