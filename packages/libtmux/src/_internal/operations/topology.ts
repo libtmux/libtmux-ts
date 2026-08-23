@@ -56,17 +56,23 @@ export async function unlinkWindow(
   await runCommand(runtime, ["unlink-window", ...target(windowId)]);
 }
 
-/** Exchange the positions of two windows. */
+/**
+ * Exchange the positions of two windows.
+ *
+ * The destination is required: tmux resolves an absent `-t` to the current
+ * window, which is never what a caller naming a source means.
+ */
 export async function swapWindows(
   runtime: RuntimeContext,
   source: string | null,
-  destinationWindow: string | null,
+  destinationWindow: string,
 ): Promise<void> {
   await runCommand(runtime, [
     "swap-window",
     "-d",
     ...(source == null ? [] : ["-s", source]),
-    ...(destinationWindow == null ? [] : ["-t", destinationWindow]),
+    "-t",
+    destinationWindow,
   ]);
 }
 
@@ -140,17 +146,22 @@ export async function resizeWindow(
   );
 }
 
-/** Exchange the positions of two panes. */
+/**
+ * Exchange the positions of two panes.
+ *
+ * The destination is required, for the reason `swapWindows` gives.
+ */
 export async function swapPanes(
   runtime: RuntimeContext,
   source: string | null,
-  destinationPane: string | null,
+  destinationPane: string,
 ): Promise<void> {
   await runCommand(runtime, [
     "swap-pane",
     "-d",
     ...(source == null ? [] : ["-s", source]),
-    ...(destinationPane == null ? [] : ["-t", destinationPane]),
+    "-t",
+    destinationPane,
   ]);
 }
 
