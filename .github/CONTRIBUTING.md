@@ -89,8 +89,8 @@ $ bun run docs:runnable
 
 Then every snippet runs. Compiling one proves it typechecks; running it proves
 the target exists and the recipe terminates. `test:readme` executes the blocks
-in the library's own documents and `test:symbols` the example on every public
-symbol, both against a real server, and both fail if they leave one behind.
+in the library's own documents, and `test:symbols` the example on every public
+symbol.
 
 ```console
 $ bun run --cwd packages/libtmux test:readme
@@ -108,6 +108,9 @@ emit.
 ```console
 $ bun run test:docs
 ```
+
+All three start real tmux servers, and each fails on a server that outlives the
+block or example that made it.
 
 ### Writing an example a gate can see
 

@@ -217,6 +217,10 @@ try {
       }
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      // The block's own server, not the next `freshServer`'s problem: the last
+      // block has no next one, and its daemon outlives the run.
+      // eslint-disable-next-line no-await-in-loop -- one block's teardown, in order.
+      await server.kill().catch(() => undefined);
     }
   }
 } finally {
@@ -240,9 +244,15 @@ if (failed.length > 0) {
   );
   process.exit(1);
 }
+if (strays.length > 0) {
+  process.stderr.write(`${strays.join("\n")}\n`);
+  process.stderr.write(
+    "\nDocuments above the library package left tmux servers behind: a block built its own `new Server()` or `Server.open()` and nothing closed it. Killed above; the run is not clean.\n",
+  );
+  process.exit(1);
+}
 process.stdout.write(
-  `Documents above the library: ${String(ran.length)} executed, ${String(covered.length)} covered by a runnable twin, ${String(excused.length)} excused` +
-    `${strays.length === 0 ? "" : `, ${String(strays.length)} stray servers swept`}\n`,
+  `Documents above the library: ${String(ran.length)} executed, ${String(covered.length)} covered by a runnable twin, ${String(excused.length)} excused\n`,
 );
 for (const outcome of excused) {
   process.stdout.write(`  excused ${outcome.origin}: ${outcome.detail ?? ""}\n`);
