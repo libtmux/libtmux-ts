@@ -12,6 +12,256 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+#### Control mode
+
+A command whose output holds a line beginning `%begin`, `%end` or `%error` now
+returns that output. tmux writes command output to a control client without
+escaping a leading `%`, so a pane, a buffer or a log carrying one closed or
+reopened the block it was inside — truncating a capture, failing a command that
+succeeded, or leaving the connection unable to answer. A closing guard now has
+to carry the command number of the one that opened the block.
+
+An argument holding a newline no longer becomes a tmux command. Control mode
+reads one line as one command list and has no continuation, so everything after
+a newline was parsed as further commands, `run-shell` among them. Such a command
+now travels over a spawned process, which passes the argument to `execve` whole.
+
+Closing a connection on purpose no longer leaves an abandoned `waitFor` as an
+unhandled rejection. A close rejects every wait in flight, and one nobody holds
+any more — the losing side of a race, or one caught by a scope ending — rejected
+with nothing left to catch it. Only those are silenced: a wait somebody still
+holds raises as before, and a daemon that dies does not come through `close` at
+all.
+
+`Server.runShell` returns the command's output over a control connection. tmux
+writes `run-shell`'s closing guard before the job it started produces anything,
+so the output followed the block belonging to no command.
+
+A connection that breaks under a command in flight fails it with a
+`TmuxTransportError` carrying `delivery: "indeterminate"`, rather than with
+Node's `EPIPE`, which no `LibTmuxException` handler could catch.
+
+`TmuxOutputEvent` carries a pane's output whichever way tmux wrote it, and
+`TmuxExtendedOutputEvent` is gone. `pauseAfterSeconds` switches tmux to
+`%extended-output` for every pane, so a consumer matching on `"output"` stopped
+seeing anything at the moment backpressure began.
+
+Before:
+
+    if (event.kind === "output" || event.kind === "extended-output") read(event.data);
+
+After:
+
+    if (event.kind === "output") read(event.data);
+
+The age tmux reports arrives as `event.age`, set only where tmux reported one.
+
+`TmuxEventStream.find` answers `undefined` for its deadline and for a stream or
+connection somebody closed, and raises when the connection ends under it.
+Answering `undefined` for all three left a caller unable to tell a condition
+that never came true from a server that went away.
+
+`WaitTimeout` is exported from `libtmux`, so a deadline can be caught by type.
+`ConnectedServer.waitFor` raises `WaitTimeout` for its deadline and a
+`LibTmuxException` naming the ended stream otherwise. Both were one message.
+
+#### Options and hooks
+
+`showOptions`, `showGlobalOptions` and `showHooks` return the value that was
+set. tmux prints a value through `args_escape`, so `status-left` holding
+`#S $USER` read back as `#S \$USER`, and an option set to the empty string read
+back as `''`.
+
+`showHooks` is keyed by the name `setHook` and `unsetHook` take, and its values
+are the commands tmux holds for that hook, in tmux's order. tmux prints one
+element per line as `after-new-window[0]`, which composed with neither writer.
+
+Before:
+
+    (await session.showHooks()).get("after-new-window[0]")
+
+After:
+
+    (await session.showHooks()).get("after-new-window")?.[0]
+
+`Server.setHook` and `Session.setHook` accept `append`, tmux's `-a`, which adds
+to the commands a hook already holds. A write without it replaces the list, so
+this is the only way to build the several commands `showHooks` reports.
+`SetHookOptions` is exported from `libtmux`, so those options can be held as a
+typed value.
+
+`Server`, `Session`, `Window` and `Pane` gain `showResolvedOptions`, the values
+that govern the object rather than the values set on it. A window that has set
+nothing reports nothing from `showOptions`, while `history-limit` and
+`default-shell` govern it from the tables it inherits.
+
+#### Sessions, windows and panes
+
+`Window.select`, `Window.unlink`, `Window.move` and `Window.swapWith` act on the
+placement the handle was reached through. A window that linked or grouped
+sessions share has one id and a placement in each, and these addressed it by
+that id alone, so `select` made the window active in the other session and
+`unlink` removed the other placement.
+
+`Window.move` and `Window.link` keep a window in its own session when no
+destination session is named, which is what `MoveWindowOptions.session`
+documents. tmux reads a destination of `:3` as index 3 of whichever session it
+considers current.
+
+`Pane.breakOut` puts the new window in the session the pane is in. tmux takes
+the destination session from `-t` and resolves an absent one to whichever
+session is current, so a pane broken out of a detached session arrived in the
+attached one — a window in somebody's workspace, from a call that named neither.
+
+`NewSessionOptions` accepts `groupWith`, tmux's `-t`, naming a session to share
+windows with. Members of a group hold one window list, so a window created or
+moved in either happens in both — which two sessions merely linking a window do
+not do.
+
+`NewSessionOptions`, `NewWindowOptions` and `SplitOptions` accept
+`environment`, tmux's `-e`, giving a created process its own variables.
+`setEnvironment` writes the session's, which every pane made in it afterwards
+inherits too.
+
+`SplitOptions` accepts `size`, tmux's `-l`: a number of cells, or a `"30%"`
+share of the pane being divided.
+
+`CaptureOptions` accepts `escapeSequences` and `alternateScreen`, tmux's `-e`
+and `-a`. The first keeps the sequences that colour and style the text; the
+second reads the normal screen saved underneath a full-screen program, which
+exists only while such a program is running.
+
+`Session.detach()` detaches the session's clients. It sent tmux's `-t`, which
+names a client rather than a session, so tmux answered `can't find client: $0`
+and the documented method never worked. The operation now takes `{ client }` or
+`{ session }` and picks the flag, because one opaque target parameter is what
+let the two meanings look alike at the call site.
+
+Refreshing a handle whose window has moved to another session says where the
+window is now, rather than that it no longer exists. A handle names a
+placement — one window can sit in two sessions at once — so only the placement
+was gone, and reporting the window as absent sent a reader looking for
+something in plain sight.
+
+#### Queries
+
+`.where()` accepts the fields tmux has rather than only those the Python
+library this package ports carries. Panes gained `alternateOn`,
+`historyAllBytes`, `unseenChanges`, `keyMode`, `cursorShape`, `cursorColour`,
+`cursorBlinking` and `cursorVeryVisible`; sessions gained `active`,
+`activityFlag`, `alert`, `bellFlag` and `silenceFlag`. Each carries the release
+that has it, so a criterion an older server predates is refused by name rather
+than matched against nothing.
+
+A criterion naming a field newer than the tmux that answered raises
+`VersionTooLow` instead of matching nothing. tmux says nothing about a field its
+release lacks, so filtering on `bracketPasteFlag` against 3.2a returned an empty
+selection — the same answer as "no pane has it", and a different statement. The
+error names the field, the release that has it and the release running, and
+carries the three as `criteriaName`, `since` and `serverVersion`.
+
+`QueryValidationError` names where in the criteria the problem is and what was
+expected there, and carries the same location as `path` — keys and array
+indices, as in `["OR", 1, "nmae"]`. Every refusal read `Invalid selection
+query`, which named neither the field, the reason, nor the vocabulary that would
+have worked.
+
+    Invalid selection query at windows.any: unknown quantifier; windows holds
+    many, so expected one of "every", "none", "some" over its windows
+
+A near miss gets a suggestion and the closed vocabularies are listed in full;
+no operand is quoted back, because a criterion's value can be a pane title or a
+path.
+
+`Selection.one` and `oneOrUndefined` name the sessions a shared id spans, and
+the criterion that reaches one of them. A window or pane that linked or grouped
+sessions share raises for an id that is perfectly good.
+
+`ServerSnapshot.windows` and `panes` document that they hold placements rather
+than distinct objects, so an id matches every placement of one.
+
+`docs/criteria.md` lists every field each model accepts and the operators that
+go with them, generated from the table the compiler matches against. What
+`.where()` takes was answerable from editor completion or from generated
+source, which leaves a caller writing criteria as data with nothing to read.
+
+#### Documentation
+
+`Server.sourceFile` documents that tmux does not expand `~`. `source-file`
+globs a path that is not absolute against the client's working directory, so
+`sourceFile("~/.tmux.conf")` looked for a directory named `~` — the shell
+expands the tilde when it is typed, and nothing does when it is passed as a
+string.
+
+`Server.loadBuffer` documents that empty data stores nothing. tmux exits zero
+for `set-buffer -b name ""` and creates no buffer, so the name a caller believes
+they wrote is absent, and they learn that from whatever reads it next.
+
+`Server.showBuffer` documents that a control connection stops at the first NUL,
+because tmux writes a command's output as a C string. `saveBuffer` and a
+spawning server both read the value whole.
+
+`Session.showOptions`, `Window.showOptions` and `Pane.showOptions` describe
+their own view rather than an inherited one. They read tmux's `show-options`
+without `-A`, so a fresh object answers with an empty map;
+`showResolvedOptions` is the reader that resolves what an object inherits.
+
+`Window.move` and `Window.unlink` document how a group differs from a link: a
+move is shared by every member of a group, and tmux refuses to unlink a window a
+group shares.
+
+`NewSessionOptions.width` and `height` document that tmux 3.2 ignores them for a
+detached session. 3.3 is the first release that honours them.
+
+`Pane.chooseTree`, `chooseBuffer`, `findWindow`, `sendPrefix` and
+`customizeMode` document that they need a client attached to draw anything, and
+do nothing while reporting success without one.
+
+`Pane.enterCopyMode` and `Pane.exitCopyMode` no longer document a client
+requirement. Copy mode works on a pane whether or not a client is attached.
+
+`Selection`'s iterator is in the API reference, carrying the example every
+public member carries. The reader that builds that reference matched plain
+names only, so the member `for...of`, spread and destructuring all go through
+was undocumented and exempt from the gate that requires an example.
+
+The README's `Pane.respawn` recipe passes `kill: true`. tmux refuses to
+respawn a pane that is still running, which is the only kind a caller holds.
+
+`Server.watch` documents that pane output arrives only for the session the
+control client attached to. Without a `target` on a server with more than one
+session, a watch reads no output and reports no error.
+
+`Selection.where`'s recipe for moving windows runs in an order that composes. A
+handle names a placement, so moving a window first left every later line
+addressing a placement that no longer existed.
+
+The abort example awaits the promise it aborts, which rejects with the abort
+reason rather than being left unhandled.
+
+### `@libtmux/workspace`
+
+`applyWorkspace` and `planWorkspace` build against a server that is not running
+yet, which is what a first run starts from. Both opened by reading the server,
+and reading one raises where no daemon is listening, so the branch that creates
+the session was never reached.
+
+### `@libtmux/mcp`
+
+`show_hooks` reports a hook under the name that sets it, with every command it
+holds. `show_options` and `show_hooks` report values as they were set, rather
+than carrying tmux's own escaping.
+
+`load_buffer` refuses text with no bytes, naming the buffer it did not create.
+tmux exits zero for `set-buffer -b name ""` and stores nothing, so a load
+reported as done was followed by `paste_buffer` saying there is no such buffer.
+
+`wait_for_text` reports `pane_died` when the pane dies under it, rather than
+waiting out the rest of the deadline. Nothing more arrives from a dead pane, and
+a wait run as a task can be holding an hour.
+
 ## 0.1.0-alpha.5
 
 ### `libtmux`
