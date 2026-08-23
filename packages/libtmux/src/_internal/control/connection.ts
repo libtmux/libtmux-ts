@@ -952,6 +952,10 @@ export class ControlConnection implements CommandTransport {
     }
     if (this.#closed) return;
     this.#closed = true;
+    for (const sink of this.#sinks) sink.cancel();
+    // Said before #fail, which cannot tell this from the connection dropping:
+    // a subscriber ending because its caller closed is an answer to a wait, not
+    // a failure of one.
     this.#fail(undefined);
     // Ask, then insist. Waiting on `close` alone leaves closing unbounded: a
     // tmux that never leaves, or one whose descendants hold the inherited pipes

@@ -54,6 +54,20 @@ class BufferedEventStream implements PublicEventStream {
     this.#wake();
   }
 
+  /**
+   * End iteration the way a caller closing this would, and no further.
+   *
+   * The connection calls this on its subscribers when it is closed on purpose,
+   * where `finish` would say the source went away and turn somebody's own
+   * cancellation into a raised error. It runs no close hook: the connection is
+   * already closing, and re-entering it here would be circular.
+   */
+  cancel(): void {
+    this.#ended ??= "closed";
+    this.#closed = true;
+    this.#wake();
+  }
+
   finish(failure: Error | undefined): void {
     this.#failure ??= failure;
     this.#ended ??= "finished";
@@ -123,6 +137,9 @@ class BufferedEventStream implements PublicEventStream {
 
 /** A stream, paired with the calls a control connection uses to feed it. */
 export interface EventSink {
+  /** End it deliberately: a caller closed the connection, nothing went wrong. */
+  cancel: () => void;
+  /** End it because the source went away, with the reason when there was one. */
   finish: (failure: Error | undefined) => void;
   push: (event: TmuxEvent) => void;
   readonly stream: PublicEventStream;
@@ -138,6 +155,9 @@ export function createEventStream(
   }
   const stream = new BufferedEventStream(bufferSize, onClose, onReady);
   return {
+    cancel: () => {
+      stream.cancel();
+    },
     finish: (failure) => {
       stream.finish(failure);
     },

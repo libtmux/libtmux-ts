@@ -403,6 +403,48 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
+  /**
+   * Closing the connection, rather than the stream on top of it.
+   *
+   * A stream fixture cannot reach this: the connection fans its ending out to
+   * every subscriber, and telling a deliberate close from a dropped connection
+   * is a distinction only the connection can make. `withConnection` and
+   * `await using` on a connected server both end this way, so "connect, race a
+   * wait, close on the way out" is the ordinary shape, not an exotic one.
+   */
+  test("answers a waiting find when the connection is closed on purpose", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const live = await server.connect();
+      const events = live.subscribe();
+      await events.ready();
+
+      const armed = events.find(() => false, { timeoutMs: 60_000 });
+      await live.close();
+
+      // Raising here would reject a promise the caller has already stopped
+      // holding — an unhandled rejection rather than a diagnosis.
+      expect(await armed).toBeUndefined();
+    });
+  }, 60_000);
+
+  test("raises a waiting find when the server goes away under it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const live = await server.connect();
+      const events = live.subscribe();
+      await events.ready();
+
+      const armed = events.find(() => false, { timeoutMs: 60_000 });
+      await server.cmd("kill-server").catch(() => undefined);
+
+      // The other half of the same decision: this one says nothing about the
+      // condition, so answering undefined would blame the workload.
+      await expect(armed).rejects.toThrow(/ended before a match/u);
+      await live.close().catch(() => undefined);
+    });
+  }, 60_000);
+
   test("gives up on a state that never arrives, saying it was the deadline", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
