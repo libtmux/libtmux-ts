@@ -435,12 +435,21 @@ describe("Server.watch", () => {
       const events = live.subscribe();
       await events.ready();
 
-      const armed = events.find(() => false, { timeoutMs: 60_000 });
+      // Settled synchronously, before anything is awaited: the connection dies
+      // during the kill, and a rejection with no handler yet attached is an
+      // unhandled rejection rather than a result — the same hazard this
+      // behaviour exists to keep out of a caller's code.
+      const armed = events
+        .find(() => false, { timeoutMs: 30_000 })
+        .then(
+          () => "resolved",
+          (error: unknown) => (error as Error).message,
+        );
       await server.cmd("kill-server").catch(() => undefined);
 
       // The other half of the same decision: this one says nothing about the
       // condition, so answering undefined would blame the workload.
-      await expect(armed).rejects.toThrow(/ended before a match/u);
+      expect(await armed).toMatch(/ended before a match/u);
       await live.close().catch(() => undefined);
     });
   }, 60_000);
