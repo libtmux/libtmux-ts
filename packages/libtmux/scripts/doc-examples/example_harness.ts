@@ -133,10 +133,9 @@ export function fencedBlocks(text: string, origin: (line: number) => string): re
   const lines = text.split("\n");
   let open: { code: string[]; coverage?: Coverage; line: number } | undefined;
   let pending: Coverage | undefined;
-  // A fence that is not `ts` is somebody else's: shell transcripts, YAML, and
-  // — the one that bit — a block showing what a coverage marker looks like.
-  // Its contents are prose here, so nothing inside it is read as a marker or
-  // as the start of an example.
+  // A fence that is not `ts` is somebody else's: shell transcripts, YAML, and a
+  // block showing what a coverage marker looks like. Its contents are prose, so
+  // nothing inside is read as a marker or as the start of an example.
   let skipping = false;
   for (const [index, line] of lines.entries()) {
     if (skipping) {

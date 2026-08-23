@@ -124,9 +124,8 @@ async function waitForOutput(
     if (woke || Date.now() - askedAlive < LIVENESS_MS) continue;
 
     // Nothing arrived, and a pane that has died will never make anything
-    // arrive. Waiting out the rest of the deadline to say so is the wrong
-    // answer on the path this exists for: a task wait may run for an hour, and
-    // "your command died" an hour late is not a report, it is an epitaph.
+    // arrive. A task wait may run for an hour, so waiting out the deadline
+    // reports the death long after it mattered.
     askedAlive = Date.now();
     // eslint-disable-next-line no-await-in-loop -- only a wait hearing nothing pays this.
     if (!(await context.snapshot()).panes.exists({ id: pane.id })) {

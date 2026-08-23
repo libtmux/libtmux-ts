@@ -314,9 +314,8 @@ describe("format registry", () => {
     );
     expect(resolved).not.toContain(undefined);
     // By token rather than by position: the registry carries the tmux fields
-    // too, sorted in among these, so an oracle field's index in the fixture is
-    // no longer its index in the registry. What must hold is that looking one
-    // up yields the registry's own frozen record, not a copy of it.
+    // sorted in among these, so an oracle field's index in the fixture is no
+    // longer its index in the registry.
     const byToken = new Map(FORMAT_REGISTRY.map((field) => [field.token, field]));
     for (const [index, { token }] of fixture.fields.entries()) {
       expect(resolved[index], token).toBeDefined();

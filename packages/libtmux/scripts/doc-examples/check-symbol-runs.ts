@@ -133,13 +133,8 @@ interface Outcome {
 }
 
 function generate(examples: readonly Example[]): string {
-  // A TSDoc one-liner assumes a reader already imported `Server`/`Session` —
-  // it is a fragment, checked by the compile-only gate against a preamble
-  // that declares them, never against a module that has to import them
-  // itself. Six examples reference the classes directly (`new Server(...)`,
-  // `Server.open(...)`, `Session.fromEnv()`) rather than the ambient
-  // `server`/`session` instances, so the generated module needs the same
-  // import the compile preamble supplies.
+  // A TSDoc one-liner is a fragment: the compile-only gate declares `Server`
+  // and `Session` in a preamble, so a generated module has to import them.
   const imports: string[] = ['import { Server, Session } from "../../src/index.js";'];
   const bodies: string[] = [];
   const taken = new Map<string, string>([
@@ -210,11 +205,8 @@ try {
   // describes; every rebuild pays this once, not once per example.
   const rebuild = async (): Promise<void> => {
     if (world !== undefined) await disposeWorld(world).catch(() => undefined);
-    // A run root per world, not one for all of them. Reaping a fixture walks
-    // the root it lives in, and a fixture reserving its place there while the
-    // one before it is being reaped is a race whose symptom is a socket that
-    // was alive a moment ago — reported against whichever example happened to
-    // be holding it, which is never the one that caused it.
+    // A run root per world. Reaping a fixture walks the root it lives in, so a
+    // shared root races the reap of the world before it.
     const worldRoot = join(parent, `run-${String(worldIndex)}`);
     await prepareRunRoot(worldRoot);
     roots.push(worldRoot);
@@ -259,12 +251,9 @@ try {
     ]);
     if (!ids.every((id) => known.has(id))) return false;
 
-    // The connection, too. `session.detach()` detaches every client, which
-    // ends this world's control connection without touching a session, window
-    // or pane id — so everything above still resolves and the next example to
-    // read through `live` or `client` fails against a connection that is gone.
-    // A world is intact when what it handed out still works, not when the ids
-    // it handed out still exist.
+    // The connection, too. `session.detach()` ends this world's control
+    // connection without touching an id, so every id above still resolves while
+    // the next example reading through `live` meets a connection that is gone.
     const live = candidate.bindings["live"] as { snapshot: () => Promise<unknown> } | undefined;
     if (live === undefined) return true;
     try {
@@ -283,12 +272,9 @@ try {
       continue;
     }
 
-    // Checked before every example, not only when the example before it looked
-    // like it might have done damage. Predicting damage from the shape of the
-    // code kept being wrong in ways that surfaced against a later example — a
-    // socket that answered a moment ago and does not now, reported against
-    // whichever example was holding it. One snapshot is a few milliseconds; a
-    // wrong prediction costs a failure nobody can trace back.
+    // Checked before every example rather than only after one that looks
+    // destructive: a wrong prediction surfaces as a failure against whichever
+    // later example was holding the socket.
     const destructive = DESTRUCTIVE.test(example.code);
     {
       // A destructive example gets a world nobody else has a handle into, so
@@ -313,10 +299,9 @@ try {
       continue;
     }
 
-    // Read at call time, not captured. A retry rebuilds the world first, and
-    // bindings taken before that point are handles into the server the rebuild
-    // just disposed — so the retry reported "no such file or directory" against
-    // a socket this harness had removed itself, and blamed the example.
+    // Read at call time, not captured. A retry rebuilds the world first, so
+    // bindings taken before that point are handles into a server the rebuild
+    // already disposed.
     const attempt = async (): Promise<Error | undefined> => {
       const bindings = world?.bindings ?? {};
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -342,10 +327,9 @@ try {
     let outcome = await attempt();
     let retried = false;
     if (outcome !== undefined) {
-      // Rebuild and try once more: the safety net for damage the liveness
-      // check could not see, such as a connection that ended without any
-      // session, window or pane going missing. The retry reads the rebuilt
-      // world's bindings, not the ones captured before it.
+      // Rebuild and try once more, for damage the liveness check cannot see —
+      // a connection that ended with every id intact. The retry reads the
+      // rebuilt world's bindings, not the ones captured before it.
       retried = true;
       retryCount += 1;
       // eslint-disable-next-line no-await-in-loop -- as above.

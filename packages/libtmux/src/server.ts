@@ -508,10 +508,9 @@ export class Server {
             } finally {
               clearTimeout(deadline);
               await events.close();
-              // Inside the body on purpose: cleaning up from outside means
-              // attaching a handler to the promise, which marks it handled the
-              // moment it exists and silences every wait rather than the closed
-              // ones.
+              // Inside the body on purpose: cleaning up from outside attaches
+              // a handler, which marks the promise handled the moment it exists
+              // and silences every wait rather than the closed ones.
               waiting.delete(entry);
             }
             // Waiting out a deadline and losing the connection are different

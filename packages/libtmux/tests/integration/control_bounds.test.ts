@@ -139,11 +139,9 @@ describe("control-mode resource bounds", () => {
       await killed;
       await live.close().catch(() => undefined);
 
-      // Which of the three racing outcomes wins is not this test's business:
-      // the write can fail, the process can close first, or the stream can end
-      // under the wait. What has to hold whichever wins is that the caller is
-      // told in this package's terms, because Node's own EPIPE is not something
-      // `catch (error) { if (error instanceof LibTmuxException) }` ever sees.
+      // Which of the three racing outcomes wins is not this test's business.
+      // What has to hold is that the caller is told in this package's terms:
+      // Node's own EPIPE is not something a `LibTmuxException` handler sees.
       expect(failure).toBeInstanceOf(LibTmuxException);
       if (failure instanceof TmuxTransportError) expect(failure.delivery).not.toBe("replied");
     } finally {
@@ -159,10 +157,9 @@ describe("control-mode resource bounds", () => {
 
       // tmux writes `run-shell`'s closing guard when the command returns, not
       // when the job finishes, so its output arrives as bare lines belonging to
-      // no command. Answering nothing is what a connection would otherwise do.
-      // No newline in the command itself: one would route it to the same
-      // fallback for the other reason, and the test would prove nothing.
+      // no command.
       const command = "echo first; echo second";
+      // A newline would reach the same fallback for the other reason.
       expect(command.includes("\n")).toBe(false);
 
       const spawned = await server.runShell(command);

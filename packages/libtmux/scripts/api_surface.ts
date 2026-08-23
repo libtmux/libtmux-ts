@@ -100,13 +100,9 @@ function signatureAt(lines: readonly string[], index: number): string {
     .trim();
 }
 
-// The generic may itself contain a `>` — `batch<const T extends Planned<X>[]>` —
-// so the parameter list is bounded by the `(` that follows it rather than by the
-// first `>`. Getting that wrong silently drops the member from both the
-// reference and the check that every member is documented — which is what a
-// name group of `[a-zA-Z][a-zA-Z0-9_]*` did to `[Symbol.iterator]`, leaving
-// the one member of `Selection` that `for...of` and spread go through
-// undocumented, exempt from needing an example, and never run.
+// A generic may contain a `>` — `batch<const T extends Planned<X>[]>` — so the
+// parameter list ends at the `(` after it. The name alternation carries
+// `[Symbol.iterator]`, which a plain-identifier group drops from the reference.
 const MEMBER =
   /^ {2}(?:declare )?(?:static )?(?:readonly )?(?:async )?(?:(get|set) )?([a-zA-Z][a-zA-Z0-9_]*|\[[^\]]+\])(<[^(]*>)?\s*([(:])/u;
 

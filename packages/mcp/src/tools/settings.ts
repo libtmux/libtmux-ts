@@ -368,10 +368,8 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
     },
     async ({ name, text }) => {
       // tmux drops an empty `set-buffer` silently: it exits zero and creates
-      // nothing. Reporting "loaded 0 bytes into buffer x" would name a buffer
-      // that does not exist, and the caller finds out one call later when
-      // paste_buffer says there is no such buffer — pointing at the wrong
-      // call. This is the failure the content being dynamic produces.
+      // nothing. Reporting a load would name a buffer that does not exist, and
+      // the caller would find out one call later against `paste_buffer`.
       if (text === "") {
         return fail({
           hint: "Write at least one byte, or skip the load when the content is empty.",

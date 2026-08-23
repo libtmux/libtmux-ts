@@ -587,10 +587,9 @@ export class ControlConnection implements CommandTransport {
           this.#reconnectingAttempt = undefined;
           for (const sink of this.#sinks) sink.push({ attempts: recovered, kind: "reconnected" });
         }
-        // tmux acknowledging the attach is what says the outage is over, so
-        // the budget is per outage rather than a total for the connection's
-        // life — otherwise a watcher that reconnects once a day simply stops
-        // recovering after `attempts` days, and says nothing.
+        // tmux acknowledging the attach is what says the outage is over, so the
+        // budget is per outage: a total for the connection's life would stop a
+        // daily reconnector from recovering after `attempts` days.
         this.#attempt = 0;
       }
       // tmux explains a refused attach in a block of its own — "no sessions"

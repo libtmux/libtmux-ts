@@ -435,9 +435,8 @@ describe("Server.watch", () => {
       const events = live.subscribe();
       await events.ready();
 
-      // Settled synchronously, before anything is awaited: the connection dies
-      // during the kill, and a rejection with no handler yet attached is an
-      // unhandled rejection rather than a result — the same hazard this
+      // Armed before anything is awaited: the connection dies during the kill,
+      // and a rejection with no handler yet attached is the hazard this
       // behaviour exists to keep out of a caller's code.
       const armed = events
         .find(() => false, { timeoutMs: 30_000 })

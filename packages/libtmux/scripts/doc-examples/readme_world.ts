@@ -148,20 +148,17 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   const home = join(request.scratch, `home-${String(request.index)}`);
   await mkdir(home, { recursive: true });
   await writeFile(join(home, ".tmux.conf"), TMUX_CONF);
-  // SPIKE finding: on a machine whose login shell is zsh with no `.zshrc` at
-  // all, zsh opens its interactive first-run "newuser install" prompt instead
-  // of a shell, and a block that sends keys types into that menu rather than
-  // a command — `sendKeys("make build")` never runs `make`, and the block
-  // hangs until the deadline. An empty `.zshrc` is enough to skip the prompt.
+  // zsh with no `.zshrc` opens its first-run "newuser install" prompt instead
+  // of a shell, so a block that sends keys types into a menu and hangs until
+  // its deadline. An empty file skips the prompt.
   await writeFile(join(home, ".zshrc"), "");
   await writeFile(join(home, "payload.bin"), new Uint8Array([0, 1, 2, 3]));
   const binary = join(home, "bin");
   await mkdir(binary, { recursive: true });
   await writeFile(join(binary, "make"), MAKE_STUB, { mode: 0o755 });
-  // Every command the README names and the runner cannot count on having.
-  // `tail`, `git`, `ls` and `echo` are already everywhere; these are not, and a
-  // missing one takes its pane down at once — which the prose says will happen,
-  // and which then looks like the example failing.
+  // Every command the README names that the runner cannot count on having.
+  // `tail`, `git`, `ls` and `echo` are everywhere; these are not, and a missing
+  // one takes its pane down at once.
   for (const name of STAYS_UP_COMMANDS) {
     // eslint-disable-next-line no-await-in-loop -- two files, written in order.
     await writeFile(join(binary, name), STAYS_UP, { mode: 0o755 });
@@ -219,14 +216,9 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
     // not news. The gate's real check is the single reap at the end, which
     // sees every fixture this run created.
     await fixture.dispose().catch(() => undefined);
-    // SPIKE finding: this fixture is not the only server a block can start.
     // `new Server()` and `Server.open()` reach tmux's default socket under
-    // `TMUX_TMPDIR` rather than this fixture's own, and nothing above closes
-    // that — README.md's own quickstart does exactly this and leaves the
-    // daemon running. Swept per block, matching this file's own promise that
-    // "a block that kills a session — or the server — costs the next one
-    // nothing": the next `new Server()` should find silence, not whatever
-    // the block before it left running.
+    // `TMUX_TMPDIR` rather than this fixture's own, so a block can leave a
+    // daemon nothing above closes. Swept per block.
     const tmpdir = process.env["TMUX_TMPDIR"];
     if (tmpdir !== undefined) await sweepStrayTmux(tmpdir).catch(() => []);
     await rm(home, { force: true, recursive: true });
@@ -273,9 +265,8 @@ async function furnish(input: FurnishRequest): Promise<World> {
   const spare = await server.connect({ target: work.id });
   closers.push(() => spare.close());
 
-  // Read through the ordinary server rather than the connection: the prose
-  // introduces `server` and `pane` as plain handles, and `session.detach()`
-  // detaches every client — the connection included — so handles born from it
+  // Read through the ordinary server rather than the connection: `detach()`
+  // detaches every client, the connection included, so handles born from it
   // would die halfway through the example that shows exactly that.
   const snapshot = await server.snapshot();
   const session = snapshot.sessions.one({ name: sessionName });

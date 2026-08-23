@@ -112,8 +112,7 @@ class BufferedEventStream implements PublicEventStream {
       }
       // Undefined is an answer about the wait: the deadline passed, or somebody
       // stopped waiting. The connection going away is not an answer about the
-      // wait at all, and reported as one it becomes "your command never printed
-      // its marker" — which sends a reader to their own workload.
+      // wait at all, and reported as one it sends a reader to their workload.
       if (this.#ended === "finished") {
         throw new LibTmuxException("the tmux event stream ended before a match");
       }

@@ -248,12 +248,9 @@ describe("window and pane topology", () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await server.newSession({ name: "newer" });
-      // The same guarantee, read through a control connection, because that is
-      // the path a served client takes and the one an index-only move was
-      // reported leaking on. tmux reads a destination of `:7` as index 7 of
-      // whichever session it considers current, so a window moved by index
-      // alone lands in somebody else's session — in the report that meant a
-      // real workspace, not a fixture.
+      // The same guarantee through a control connection, the path a served
+      // client takes. tmux reads a destination of `:7` as index 7 of whichever
+      // session it considers current, so an index-only move lands elsewhere.
       await using live = await server.connect();
       const window = (await live.snapshot()).windows
         .filter((candidate) => candidate.sessionName === fixture.sessionName)

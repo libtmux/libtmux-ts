@@ -74,8 +74,7 @@ describe("watch", () => {
 
       // tmux writes a paced pane's output under a different notification name,
       // and every recipe here matches on `kind === "output"`. Asserting the
-      // pause and the resume, and never the output they pace, is what let that
-      // difference go unnoticed.
+      // pause and the resume without the output they pace would not see that.
       const read = await readOutputUnderBackpressure(server, "paced-marker");
 
       expect(read.text).toContain("paced-marker");

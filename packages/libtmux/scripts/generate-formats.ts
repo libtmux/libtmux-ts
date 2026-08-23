@@ -771,11 +771,9 @@ function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
 
 export async function generateFormats(options: GenerateFormatsOptions): Promise<void> {
   const fixture = await readFixture();
-  // Two sources, and only one of them is an oracle. `readFixture` digests the
-  // Python fixture's tokens to prove it is Python 0.62.0; these are unioned in
-  // afterwards, so the vocabulary tracks tmux while the proof of parity stays
-  // exactly what it was. The parity manifest below is rendered from the oracle
-  // alone, for the same reason.
+  // Two sources, one oracle. `readFixture` digests the Python fixture's tokens
+  // to prove it is 0.62.0; the tmux-only fields are unioned in afterwards, and
+  // the parity manifest below is rendered from the oracle alone.
   const tmuxOnly = await readTmuxFields(fixture.fields);
   const vocabulary = Object.freeze(
     [...fixture.fields, ...tmuxOnly].toSorted((left, right) =>

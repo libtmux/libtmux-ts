@@ -136,10 +136,9 @@ await mkdir(directory, { recursive: true });
 const modulePath = join(directory, "examples.ts");
 const outcomes: Outcome[] = [];
 
-// One run root for every block, so one reap at the end can account for every
+// One run root for every block, so one reap at the end accounts for every
 // server this gate started. A block that leaves one behind is a leak whether or
-// not its own example passed, and a gate that starts real servers has to say so
-// rather than leaving them for whoever runs it next.
+// not its own example passed.
 const parent = await makeTestDirectory("ltx-readme-");
 const runRoot = join(parent, "run, root");
 await prepareRunRoot(runRoot);

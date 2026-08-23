@@ -85,9 +85,9 @@ jobs:
       # target exists and the recipe terminates. This starts real tmux servers,
       # so it also has to leave none behind, and it says so if it does.
       - run: bun run --cwd packages/libtmux test:readme
-      # The 158 examples on public symbols. Compiling them proved they typecheck
-      # and never once ran them; a one-liner that reads a property is still a
-      # claim about what that property answers.
+      # Compiling the example on every public symbol proved it typechecks and
+      # never once ran it; a one-liner that reads a property is still a claim
+      # about what that property answers.
       - run: bun run --cwd packages/libtmux test:symbols
       # Every temporary directory the suites create is named for this
       # package, so a sweep can never reap another libtmux port's servers.
@@ -147,12 +147,10 @@ jobs:
         working-directory: packages/workspace
         run: bun run typecheck && bun run test && bun run test:package
 
-      # The recipes above the library package, which reach across it to the
-      # workspace builder and the MCP server. Compiled before now and never
-      # run, and they are the ones a reader meets first. After those gates
-      # because each runs from inside the package that owns its document, so
-      # what its imports mean is what a reader's would mean — including the
-      # emitted packages the two steps above just built.
+      # The recipes above the library package, reaching across it to the
+      # workspace builder and the MCP server. After those gates because each
+      # runs from inside the package that owns its document, so an import means
+      # what a reader's would — including what those steps just emitted.
       - run: bun run test:docs
 
       # One step for all of them. Each example is a package of its own now, and
