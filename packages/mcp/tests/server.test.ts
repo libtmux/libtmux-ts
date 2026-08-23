@@ -1445,14 +1445,22 @@ describe("staying out of the way", () => {
         // it — so against a pane already being piped it stops the capture and
         // opens nothing, rather than leaving the first pipe alone.
         const other = join(await makeTestDirectory("ltx-pipe2-"), "second.log");
-        await client.callTool({
-          arguments: { paneId, shellCommand: `cat >> ${log}` },
-          name: "pipe_pane",
-        });
-        await client.callTool({
-          arguments: { paneId, shellCommand: `cat >> ${other}`, toggle: true },
-          name: "pipe_pane",
-        });
+        const started = structured<{ piping: boolean }>(
+          await client.callTool({
+            arguments: { paneId, shellCommand: `cat >> ${log}` },
+            name: "pipe_pane",
+          }),
+        );
+        expect(started.piping).toBe(true);
+        const toggled = structured<{ piping: boolean }>(
+          await client.callTool({
+            arguments: { paneId, shellCommand: `cat >> ${other}`, toggle: true },
+            name: "pipe_pane",
+          }),
+        );
+        // The caller that stopped somebody's capture is the one that most needs
+        // to know it did. Reporting the request back said piping either way.
+        expect(toggled.piping).toBe(false);
         await client.callTool({
           arguments: { command: "echo after-toggle", paneId, timeoutMs: 20_000 },
           name: "run_command",

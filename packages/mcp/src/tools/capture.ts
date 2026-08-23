@@ -292,7 +292,16 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("Omit to stop a pipe this pane already has open."),
       },
-      outputSchema: { paneId: z.string(), piping: z.boolean() },
+      outputSchema: {
+        paneId: z.string(),
+        piping: z
+          .boolean()
+          .describe(
+            "Whether the pane is piped now, read back from tmux. A toggle against " +
+              "a pane already being piped closes that pipe and opens none, so this " +
+              "is false even though a command was given.",
+          ),
+      },
       title: "Pipe pane output",
     },
     async ({ paneId, shellCommand, toggle }) => {
@@ -300,10 +309,19 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       await pane.pipeTo(shellCommand, toggle === undefined ? {} : { toggle });
-      const piping = shellCommand !== undefined;
+      // Ask the pane rather than restating the request. tmux destroys an open
+      // pipe before deciding whether to open a new one, so supplying a command
+      // is not the same as having a pipe afterwards — and reporting the request
+      // back made a toggle that stopped somebody else's capture look identical
+      // to one that started yours.
+      const piping = (await pane.displayMessage("#{pane_pipe}"))[0] === "1";
+      const stopped =
+        shellCommand === undefined
+          ? `Stopped piping ${paneId}.`
+          : `Stopped piping ${paneId}: toggle closed the pipe that was open and started none.`;
       return ok(
         { paneId, piping },
-        piping ? `Piping ${paneId} into: ${shellCommand}` : `Stopped piping ${paneId}.`,
+        piping ? `Piping ${paneId} into: ${String(shellCommand)}` : stopped,
       );
     },
   );

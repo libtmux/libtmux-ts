@@ -26,6 +26,12 @@ bounded buffer, so output larger than either is gone before anything asks for
 it. Passing no command stops an open pipe; `toggle` stops one that is open and
 starts one when none is.
 
+`pipe_pane` reports whether the pane is piped now, read back from tmux rather
+than inferred from the request. A `toggle` against a pane already being piped
+closes that pipe and opens none, so a command supplied is not a pipe opened —
+and the caller that stopped somebody else's capture is the one that most needs
+to be told.
+
 `Server.saveBuffer` writes a paste buffer to a file. `showBuffer` returns the
 contents through the calling process; this leaves them with tmux.
 
