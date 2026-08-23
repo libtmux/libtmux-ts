@@ -8,6 +8,10 @@
  * `#selection[symbol.iterator]` while the heading it pointed at slugified to
  * `#selectionsymboliterator`, and the reference shipped a link to nowhere.
  *
+ * It lives beside the generator rather than beside the checker because the
+ * package's tooling typecheck cannot reach outside the package, while the
+ * repository's can reach in.
+ *
  * Lowercase, drop everything that is not a word character, hyphen or space,
  * then hyphenate. Backticks and dots go, which is why `` `Server.colors` `` is
  * reachable as `#servercolors`.

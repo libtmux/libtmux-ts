@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
  * ignore it.
  */
 
-import { slugify } from "./markdown_anchors.js";
+import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 

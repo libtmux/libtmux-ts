@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { readApiSurface, type ApiClass } from "./api_surface.js";
-import { slugify } from "../../../scripts/markdown_anchors.js";
+import { slugify } from "./markdown_anchors.js";
 import { packageRoot } from "./package_root.js";
 
 /**
