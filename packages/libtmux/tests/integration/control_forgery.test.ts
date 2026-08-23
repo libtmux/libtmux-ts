@@ -1,10 +1,12 @@
 /**
- * What a pane may say about the connection carrying it.
+ * Text that is not protocol, on a connection that could read it as protocol.
  *
- * tmux writes a command's output to a control client unescaped, so text a
- * program printed reaches the parser looking exactly like a guard. These read
- * the same buffer over both transports: the answers have to agree, because the
- * transport is meant not to be observable.
+ * Control mode is lines in both directions, and neither direction escapes them.
+ * tmux writes a command's output to a control client unescaped, so what a pane
+ * printed arrives looking like a guard; a caller's argument is written onto the
+ * line tmux parses as a command, so a newline in one ends the command. These
+ * read and write the same values over both transports, because the answers have
+ * to agree — the transport is meant not to be observable.
  */
 
 import { rm } from "node:fs/promises";
@@ -102,6 +104,61 @@ describe("a command's output cannot reframe the connection", () => {
       const first = await live.cmd("display-message", ["-p", "first"]);
       const second = await live.cmd("display-message", ["-p", "second"]);
       expect([first, second]).toEqual([["first"], ["second"]]);
+    });
+  }, 60_000);
+});
+
+describe("an argument cannot become a command", () => {
+  test("carries a newline in a value, and injects nothing", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+
+      // tmux reads a control client's input one line at a time and parses each
+      // as a command list, so this value's second line would be `new-session`.
+      const value = `line1\nnew-session -d -s injected\nline3`;
+      await server.setBuffer("spawned", value);
+      await live.setBuffer("connected", value);
+
+      expect(await live.showBuffer("connected")).toEqual(await server.showBuffer("spawned"));
+      expect((await server.snapshot()).sessions.exists({ name: "injected" })).toBe(false);
+    });
+  }, 60_000);
+
+  test("answers a value tmux refuses the same way over both transports", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+
+      // tmux validates a window name and refuses this one. Which answer it
+      // gives is tmux's to decide; both transports have to carry the same one.
+      const spawned = await server.cmd("new-window", ["-d", "-n", "a\nb"]).then(
+        () => "resolved",
+        (error: unknown) => (error as Error).message,
+      );
+      const connected = await live.cmd("new-window", ["-d", "-n", "a\nb"]).then(
+        () => "resolved",
+        (error: unknown) => (error as Error).message,
+      );
+
+      expect(connected).toBe(spawned);
+      expect(connected).not.toBe("resolved");
+    });
+  }, 60_000);
+
+  test("keeps a command list one instant when a value in it holds a newline", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+
+      const results = await live.pipeline([
+        ["set-buffer", "-b", "one", "a\nnew-session -d -s injected"],
+        ["set-buffer", "-b", "two", "plain"],
+        ["show-buffer", "-b", "one"],
+      ]);
+
+      expect(results[2]).toEqual(["a", "new-session -d -s injected"]);
+      expect((await server.snapshot()).sessions.exists({ name: "injected" })).toBe(false);
     });
   }, 60_000);
 });

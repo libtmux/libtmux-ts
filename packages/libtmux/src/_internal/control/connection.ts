@@ -44,6 +44,22 @@ function quoteArgument(argument: string): string {
 }
 
 /**
+ * Whether an argument is one control mode has no way to write.
+ *
+ * tmux reads a control client's input a line at a time and parses each line as
+ * a command list (`control_read_callback`, splitting on LF alone), so a newline
+ * inside an argument ends the command and everything after it is parsed as more
+ * commands — `run-shell` among them. Quoting cannot help: no quote survives the
+ * line split, and control mode has no continuation. An empty line detaches the
+ * client outright, which a value holding two newlines produces.
+ *
+ * A carriage return is carried, because tmux does not end a line on one.
+ */
+function carriesNewline(argv: readonly string[]): boolean {
+  return argv.some((argument) => argument.includes("\n"));
+}
+
+/**
  * A command list submitted together, so a failure can retire its remainder.
  *
  * tmux removes the rest of a list when one of its commands fails, and says so
@@ -715,6 +731,19 @@ export class ControlConnection implements CommandTransport {
         }),
       );
     }
+    if (carriesNewline(argv)) {
+      // Spawning hands argv to execve, where a newline is one more byte of one
+      // argument. tmux accepts it in a buffer and refuses it in a window name,
+      // and either answer is its to give — this one only has to reach it.
+      const fallback = this.#stdinFallback;
+      if (fallback !== undefined) return fallback.execute(request);
+      return Promise.reject(
+        new TmuxTransportError("control mode cannot carry a newline in an argument", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
     if (request.signal?.aborted === true) {
       return Promise.reject(
         new TmuxTransportError("command cancelled before it was written", {
@@ -766,6 +795,18 @@ export class ControlConnection implements CommandTransport {
     if (argvs.some((argv) => argv.length === 0)) {
       return Promise.reject(
         new TmuxTransportError("control mode request carries no subcommand", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
+    if (argvs.some(carriesNewline)) {
+      // The whole list goes, not the one command: splitting it would cost the
+      // single instant that is the reason a list is written as one line.
+      const fallback = this.#stdinFallback;
+      if (fallback !== undefined) return fallback.executeGroup(requests);
+      return Promise.reject(
+        new TmuxTransportError("control mode cannot carry a newline in an argument", {
           delivery: "not_started",
           kind: "protocol",
         }),
