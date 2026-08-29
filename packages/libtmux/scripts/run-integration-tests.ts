@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { runSupervisor } from "../src/_internal/test/testkit.js";
-import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
+import { LINUX_HARNESS, NODE22, preflight, testParallelism } from "./preflight.js";
 
 /**
  * The suites this runner is responsible for, checked before it starts.
@@ -70,7 +70,7 @@ process.exitCode = await runSupervisor({
   command: [
     "bun",
     "test",
-    "--parallel=4",
+    `--parallel=${String(testParallelism())}`,
     "--no-orphans",
     // Bun's default bound is sized for a unit test, not for one that starts a
     // tmux server, waits for a shell, and reaps it again. A liveness bound for

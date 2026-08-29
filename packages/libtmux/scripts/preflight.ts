@@ -41,6 +41,21 @@ export const NODE22: PreflightRequirement = {
   name: "a Node 22 for the emitted-package lanes",
 };
 
+/** Resolve Bun's suite parallelism before a runner starts child processes. */
+export function testParallelism(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const raw = environment.LIBTMUX_TEST_PARALLEL ?? "4";
+  if (!/^[1-9]\d*$/u.test(raw)) {
+    throw new Error("LIBTMUX_TEST_PARALLEL must be a positive integer");
+  }
+  const parallelism = Number(raw);
+  if (!Number.isSafeInteger(parallelism)) {
+    throw new Error("LIBTMUX_TEST_PARALLEL must be a positive integer");
+  }
+  return parallelism;
+}
+
 /** Report every unmet requirement at once, so one run names all of them. */
 export async function preflight(requirements: readonly PreflightRequirement[]): Promise<void> {
   const failures: string[] = [];

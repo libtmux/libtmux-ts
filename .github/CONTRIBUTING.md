@@ -190,6 +190,13 @@ a soak:
 $ LIBTMUX_FUZZ_ITERATIONS=200000 bun test tests/unit/control_fuzz.test.ts
 ```
 
+The library's unit and real-tmux runners use four Bun workers by default. On a
+constrained machine, lower both with one setting:
+
+```console
+$ LIBTMUX_TEST_PARALLEL=2 bun run --cwd packages/libtmux test:unit
+```
+
 A target that has never caught anything proves only that the generator is
 narrow. Break each parser it covers once, and confirm the target goes red for
 that break specifically.
