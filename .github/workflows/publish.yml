@@ -32,6 +32,15 @@ jobs:
         with:
           bun-version: 1.4.0
 
+      # Install canaries execute the tarballs on the supported Node floor.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Record the Node 22 install-canary path
+        run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
+
       # Publishing is npm's, not Bun's: trusted publishing needs npm CLI
       # 11.5.1 or later, which detects the OIDC environment on its own.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -70,7 +79,7 @@ jobs:
       - name: Build and check every package
         run: |
           for package in libtmux mcp workspace; do
-            ( cd "packages/$package" && bun run test:package )
+            ( cd "packages/$package" && bun run test:package && bun run test:install )
           done
 
       - name: Refuse a tarball with no build output

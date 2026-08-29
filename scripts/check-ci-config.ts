@@ -42,6 +42,13 @@ interface UpdateEntry {
   readonly schedule?: unknown;
 }
 
+interface WorkflowStep {
+  readonly name?: unknown;
+  readonly run?: unknown;
+  readonly uses?: unknown;
+  readonly with?: Readonly<Record<string, unknown>>;
+}
+
 const failures: string[] = [];
 
 /** Directories a `directories` entry names, with `*` expanded against the tree. */
@@ -188,6 +195,48 @@ for (const workflow of workflows) {
       );
     }
   }
+}
+
+const publishPath = join(repositoryRoot, ".github/workflows/publish.yml");
+const publishSource = await Bun.file(publishPath).text();
+const publishDocument = Bun.YAML.parse(publishSource) as {
+  readonly jobs?: { readonly publish?: { readonly steps?: unknown } };
+};
+const rawPublishSteps = publishDocument.jobs?.publish?.steps;
+const publishSteps: readonly WorkflowStep[] = Array.isArray(rawPublishSteps)
+  ? (rawPublishSteps as WorkflowStep[])
+  : [];
+
+const setupNodeStep = (step: WorkflowStep, version: string): boolean =>
+  typeof step.uses === "string" &&
+  step.uses.startsWith("actions/setup-node@") &&
+  step.with?.["node-version"] === version;
+const node22 = publishSteps.findIndex((step) => setupNodeStep(step, "22"));
+const node22Path = publishSteps.findIndex(
+  (step) => typeof step.run === "string" && step.run.includes("LIBTMUX_NODE22=$(which node)"),
+);
+const node24 = publishSteps.findIndex(
+  (step) =>
+    setupNodeStep(step, "24") && step.with?.["registry-url"] === "https://registry.npmjs.org",
+);
+if (node22 < 0 || node22Path <= node22 || node24 <= node22Path) {
+  failures.push(
+    ".github/workflows/publish.yml: must capture an authenticated Node 22 path before configuring Node 24 for npm trusted publishing",
+  );
+}
+
+const packageCheck = publishSteps.find(
+  (step) => step.name === "Build and check every package",
+)?.run;
+if (
+  typeof packageCheck !== "string" ||
+  !/for package in libtmux mcp workspace; do[\s\S]*?\(\s*cd "packages\/\$package"\s*&&\s*bun run test:package\s*&&\s*bun run test:install\s*\)[\s\S]*?done/u.test(
+    packageCheck,
+  )
+) {
+  failures.push(
+    ".github/workflows/publish.yml: must run test:install after test:package for libtmux, mcp, and workspace",
+  );
 }
 
 if (failures.length > 0) {
