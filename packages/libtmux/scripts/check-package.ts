@@ -7,8 +7,10 @@
  */
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { declarationClosureErrors, packageDeclarationExports } from "./declaration-closure.js";
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -75,15 +77,45 @@ for (const [prefix, reason] of forbiddenEntries) {
 if (!entries.includes("dist/index.js")) fail("the packed tarball has no root entrypoint");
 if (!entries.includes("dist/index.d.ts")) fail("the packed tarball has no root declaration");
 
+const shipped = JSON.parse(await readFile(join(tsRoot, "package.json"), "utf8")) as {
+  exports: unknown;
+  name: string;
+  version: string;
+};
+const declarationEntries = entries.filter((entry) => entry.endsWith(".d.ts"));
+const exportedDeclarations = packageDeclarationExports(shipped.exports);
+const resolvedOutput = await run([
+  resolveBinary("tsc"),
+  "--ignoreConfig",
+  "--noEmit",
+  "--listFilesOnly",
+  "--module",
+  "NodeNext",
+  "--moduleResolution",
+  "NodeNext",
+  "--skipLibCheck",
+  ...exportedDeclarations.map((entry) => join(tsRoot, entry)),
+]);
+const resolvedDeclarations = resolvedOutput
+  .split("\n")
+  .map((path) => relative(tsRoot, path.trim()).replaceAll("\\", "/"))
+  .filter((path) => path.startsWith("dist/") && path.endsWith(".d.ts"));
+const declarationErrors = declarationClosureErrors(
+  declarationEntries,
+  exportedDeclarations,
+  resolvedDeclarations,
+);
+if (declarationErrors.length > 0) {
+  fail(
+    `published declarations are not closed over package exports:\n${declarationErrors.join("\n")}`,
+  );
+}
+
 await run([resolveBinary("publint")]);
 await run([resolveBinary("attw"), "--pack", ".", "--profile", "esm-only"]);
 
 // Named from the manifest: a hardcoded version leaves the packed tarball
 // behind the moment it is bumped.
-const shipped = JSON.parse(await readFile(join(tsRoot, "package.json"), "utf8")) as {
-  name: string;
-  version: string;
-};
 await rm(join(tsRoot, `${shipped.name}-${shipped.version}.tgz`), { force: true });
 
 process.stdout.write(
