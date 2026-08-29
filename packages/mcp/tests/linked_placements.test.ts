@@ -118,7 +118,7 @@ async function makeSharedTopology(fixture: TestServer): Promise<SharedTopology> 
   const origin = initial.sessions.one({ name: fixture.sessionName });
   const shared = origin.windows.one();
   const firstPane = shared.panes.one();
-  const secondPane = await firstPane.split({ shellCommand: "exec cat" });
+  const secondPane = await firstPane.split({ shellCommand: "sh" });
   const other = await tmux.newSession({ name: "other", windowName: "other-only" });
   const otherWindow = (await tmux.snapshot()).windows.one({
     session: { is: { id: other.id } },
@@ -395,6 +395,21 @@ describe("linked and grouped placements", () => {
         expect(after.sessions.exists({ id: topology.groupedSessionId })).toBe(false);
         expect(after.windows.exists({ id: topology.sharedWindowId })).toBe(true);
         expect(after.panes.exists({ id: topology.sharedPaneId })).toBe(true);
+      });
+    });
+  }, 60_000);
+
+  test("checks a timed-out command through duplicate pane placements", async () => {
+    await withServer(async (fixture) => {
+      const topology = await makeSharedTopology(fixture);
+      await withClient(fixture, async (client) => {
+        const answer = await client.callTool({
+          arguments: { command: "sleep 2", paneId: topology.sharedPaneId, timeoutMs: 1_000 },
+          name: "run_command",
+        });
+
+        expect(answer.isError ?? false, toolText(answer)).toBe(false);
+        expect(structured<{ outcome: string }>(answer).outcome).toBe("timed_out");
       });
     });
   }, 60_000);

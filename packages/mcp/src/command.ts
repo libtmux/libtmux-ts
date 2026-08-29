@@ -368,7 +368,7 @@ export async function runFramedCommand(
 
   // Present is not alive: a pane kept by remain-on-exit still exists, and
   // reporting timed_out for it says the command may yet finish.
-  const after = (await context.snapshot()).panes.oneOrUndefined({ id: pane.id });
+  const after = (await context.snapshot()).panes.first({ id: pane.id });
   const alive = after !== undefined && after.dead !== true;
   return {
     effectiveTimeoutMs: budget,
