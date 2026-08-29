@@ -54,6 +54,17 @@ interface ControlConnectionOptions extends ConnectionOptions {
 
 type ControlChildSpawner = () => ControlChild;
 
+interface PendingAttachment {
+  readonly kind: "pending";
+  promise?: Promise<void>;
+  settle?: { readonly reject: (error: Error) => void; readonly resolve: () => void };
+}
+
+type AttachmentState =
+  | PendingAttachment
+  | { readonly kind: "attached" }
+  | { readonly error: Error; readonly kind: "failed" };
+
 /** One successfully attached control client generation. */
 export interface ControlObserverBinding {
   readonly clientPid: number;
@@ -97,18 +108,8 @@ export class ControlConnection {
   #diagnostic: string[] = [];
   #diagnosticBytes = 0;
   #reason: string | undefined;
-  #attached: { resolve: () => void; reject: (error: Error) => void } | undefined;
-  #attachment: Promise<void> | undefined;
-  /**
-   * How the attach turned out, once it has.
-   *
-   * Kept rather than only signalled. `ready()` builds its promise when it is
-   * first called, so an attach settling before anyone asks has nothing to
-   * settle, and every later caller would then wait on an event that already
-   * happened. Recording the outcome makes the question answerable whenever it
-   * is asked instead of only while it is still open.
-   */
-  #attachOutcome: { kind: "attached" } | { kind: "failed"; error: Error } | undefined;
+  /** Initial retries share an attachment; each post-attach reconnect creates a new one. */
+  #attachment: AttachmentState = { kind: "pending" };
   #closed = false;
   #closePromise: Promise<void> | undefined;
   #onAbort: (() => void) | undefined;
@@ -214,7 +215,7 @@ export class ControlConnection {
   }
 
   /**
-   * Resolve once tmux has accepted the attach, or reject with its reason.
+   * Resolve once tmux has accepted the current attach, or reject with its reason.
    *
    * tmux answers an attach with a block of its own: empty on success, and
    * carrying its explanation on failure — "no sessions" for an empty server,
@@ -223,19 +224,19 @@ export class ControlConnection {
    * finding out through whichever command happens to run first.
    */
   ready(): Promise<void> {
-    if (this.#attachOutcome !== undefined) {
-      return this.#attachOutcome.kind === "attached"
-        ? Promise.resolve()
-        : Promise.reject(this.#attachOutcome.error);
+    const attachment = this.#attachment;
+    if (attachment.kind === "attached") return Promise.resolve();
+    if (attachment.kind === "failed") return Promise.reject(attachment.error);
+    if (attachment.promise === undefined) {
+      attachment.promise = new Promise<void>((resolve, reject) => {
+        if (this.#closed) {
+          reject(new Error(this.#reason ?? "tmux control connection is closed"));
+          return;
+        }
+        attachment.settle = { reject, resolve };
+      });
     }
-    this.#attachment ??= new Promise<void>((resolve, reject) => {
-      if (this.#closed) {
-        reject(new Error(this.#reason ?? "tmux control connection is closed"));
-        return;
-      }
-      this.#attached = { reject, resolve };
-    });
-    return this.#attachment;
+    return attachment.promise;
   }
 
   /**
@@ -427,8 +428,11 @@ export class ControlConnection {
     // A reconnect is usable only after tmux accepts the attach and restores
     // the observer's flow-control flag on the replacement client.
     this.#observerBinding = Object.freeze({ clientPid: child.pid });
-    this.#attachOutcome ??= { kind: "attached" };
-    this.#attached?.resolve();
+    const attachment = this.#attachment;
+    if (attachment.kind === "pending") {
+      this.#attachment = { kind: "attached" };
+      attachment.settle?.resolve();
+    }
     this.#reopening = false;
     const recovered = this.#reconnectingAttempt;
     if (recovered !== undefined) {
@@ -451,6 +455,7 @@ export class ControlConnection {
     if (this.#attempt >= policy.attempts) return false;
     this.#attempt += 1;
     const attempt = this.#attempt;
+    if (this.#attachment.kind === "attached") this.#attachment = { kind: "pending" };
     this.#reconnectingAttempt = attempt;
     for (const sink of this.#sinks) sink.push({ attempts: attempt, kind: "reconnecting" });
     this.#reconnectTimer = setTimeout(
@@ -488,8 +493,11 @@ export class ControlConnection {
     this.#closed = true;
     this.#releaseAbort();
     const reason = failure ?? new Error("tmux control connection closed");
-    this.#attachOutcome ??= { error: reason, kind: "failed" };
-    this.#attached?.reject(reason);
+    const attachment = this.#attachment;
+    if (attachment.kind !== "failed") {
+      this.#attachment = { error: reason, kind: "failed" };
+      if (attachment.kind === "pending") attachment.settle?.reject(reason);
+    }
     for (const sink of this.#sinks) sink.finish(failure);
   }
 

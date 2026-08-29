@@ -740,12 +740,13 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
     options?: { readonly timeoutMs?: number },
   ): Promise<TmuxEvent | undefined>;
   /**
-   * Resolve once tmux has accepted the attach, or reject with its reason.
+   * Resolve once tmux has accepted the current attach, or reject with its reason.
    *
    * A control client is told nothing that happened before it attached, so a
    * change made between opening the stream and that moment is never announced
    * to it. Await this before making the change you intend to observe, or the
-   * wait for it can outlive the event.
+   * wait for it can outlive the event. During reconnect this waits for the
+   * replacement client, and rejects if the connection cannot recover.
    */
   ready(): Promise<void>;
   /** Events discarded because the consumer fell behind. */

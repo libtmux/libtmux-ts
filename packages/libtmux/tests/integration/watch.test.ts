@@ -331,21 +331,48 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("reopens a dropped connection and says so, when asked to", async () => {
+  test("gates readiness on the replacement after a dropped connection", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one({ name: "watch" });
+      const before = new Set(await clientNames(server));
       const events = server.watch({ reconnect: { attempts: 3, delayMs: 25 } });
+      const reconnecting = Promise.withResolvers<void>();
+      let reconnectedAttempts: number | undefined;
+      let sawWindowAdd = false;
+      const drain = (async () => {
+        for await (const event of events) {
+          if (event.kind === "reconnecting") reconnecting.resolve();
+          if (event.kind === "reconnected") reconnectedAttempts = event.attempts;
+          if (event.kind === "window-add") sawWindowAdd = true;
+        }
+      })();
+      try {
+        await events.ready();
+        await detachOwn(server, before);
+        await reconnecting.promise;
 
-      const reconnected = until(events, (event) => event.kind === "reconnected");
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      // Detach the control client rather than killing the session: this is the
-      // drop a long-lived process actually survives, and it leaves the fixture
-      // server intact for the harness that owns it.
-      await fixture.executeText(["detach-client", "-s", "watch"]).catch(() => undefined);
+        // A change made after the retired generation reports ready is lost.
+        // The replacement generation must attach before this barrier answers.
+        const replacementReady = events.ready();
+        let readySettled = false;
+        void replacementReady.then(
+          () => {
+            readySettled = true;
+          },
+          () => undefined,
+        );
+        await Promise.resolve();
+        expect(readySettled).toBe(false);
+        await replacementReady;
+        await session.newWindow({ name: "after-reconnect-ready" });
 
-      const event = await reconnected;
-      if (event.kind !== "reconnected") throw new Error("expected reconnected");
-      expect(event.attempts).toBeGreaterThanOrEqual(1);
+        await waitUntil(() => sawWindowAdd, "the replacement client to announce the window", 5_000);
+        expect(reconnectedAttempts).toBeGreaterThanOrEqual(1);
+      } finally {
+        await events.close();
+        await drain.catch(() => undefined);
+      }
     });
   }, 60_000);
 

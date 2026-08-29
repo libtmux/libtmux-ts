@@ -115,7 +115,7 @@ function reconnectingFixture(firstPid: number) {
 }
 
 describe("ControlConnection child ownership", () => {
-  test("keeps readiness resolved while a replacement is not attached", async () => {
+  test("waits for a replacement attach during reconnect", async () => {
     const { control, first, replacement, replacementOpened } = reconnectingFixture(98);
     const events = control.subscribe();
     const iterator = events[Symbol.asyncIterator]();
@@ -127,9 +127,9 @@ describe("ControlConnection child ownership", () => {
     expect((await reconnecting).value).toEqual({ attempts: 1, kind: "reconnecting" });
 
     const readiness = control.ready();
-    expect(await promiseState(readiness)).toBe("resolved");
+    expect(await promiseState(readiness)).toBe("pending");
     await replacementOpened;
-    expect(await promiseState(readiness)).toBe("resolved");
+    expect(await promiseState(readiness)).toBe("pending");
 
     const reconnected = iterator.next();
     attach(replacement);
@@ -164,7 +164,7 @@ describe("ControlConnection child ownership", () => {
     await control.close();
   });
 
-  test("keeps readiness resolved after reconnect attempts are exhausted", async () => {
+  test("rejects readiness when reconnect attempts are exhausted", async () => {
     const { control, first, replacement, replacementOpened } = reconnectingFixture(94);
     const events = control.subscribe();
     const iterator = events[Symbol.asyncIterator]();
@@ -175,14 +175,14 @@ describe("ControlConnection child ownership", () => {
     first.emit("close", 1);
     expect((await reconnecting).value).toEqual({ attempts: 1, kind: "reconnecting" });
     const duringOutage = control.ready();
-    expect(await promiseState(duringOutage)).toBe("resolved");
+    expect(await promiseState(duringOutage)).toBe("pending");
     await replacementOpened;
     const ended = iterator.next();
     replacement.stderr.write("terminal replacement failed");
     replacement.emit("close", 1);
 
-    expect(await promiseState(duringOutage)).toBe("resolved");
-    expect(await promiseState(control.ready())).toBe("resolved");
+    await expect(duringOutage).rejects.toThrow("terminal replacement failed");
+    await expect(control.ready()).rejects.toThrow("terminal replacement failed");
     await expect(ended).rejects.toThrow("terminal replacement failed");
     await control.close();
   });
