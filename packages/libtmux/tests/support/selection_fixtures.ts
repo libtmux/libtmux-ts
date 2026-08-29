@@ -262,9 +262,21 @@ export function createIncompleteSessionProjection(
 function richSources(): readonly CapturedRowSet[] {
   return [
     source("sessions-rich", "list-sessions", [
-      completeFormatRow({ session_id: "$1", session_name: "one" }),
-      completeFormatRow({ session_id: "$2", session_name: "two" }),
-      completeFormatRow({ session_id: "$3", session_name: "empty" }),
+      completeFormatRow({
+        session_id: "$1",
+        session_last_attached: "0",
+        session_name: "one",
+      }),
+      completeFormatRow({
+        session_id: "$2",
+        session_last_attached: "",
+        session_name: "two",
+      }),
+      completeFormatRow({
+        session_id: "$3",
+        session_last_attached: "1",
+        session_name: "empty",
+      }),
     ]),
     source("windows-rich", "list-windows", [
       completeFormatRow({

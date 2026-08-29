@@ -141,11 +141,11 @@ function occurrenceCount(source: string, needle: string): number {
 const criteriaTypeForDomain: Readonly<Record<string, string>> = {
   boolean: "ScalarCriteria<boolean, RawFlag>",
   number: "ScalarCriteria<number, RawNumber>",
-  "pane-id": "ScalarCriteria",
-  "session-id": "ScalarCriteria",
+  "pane-id": "ScalarCriteria<PaneIdInput, never>",
+  "session-id": "ScalarCriteria<SessionIdInput, never>",
   string: "ScalarCriteria",
   time: "ScalarCriteria<Date, RawNumber>",
-  "window-id": "ScalarCriteria",
+  "window-id": "ScalarCriteria<WindowIdInput, never>",
 };
 
 function generatedWhereFieldEntries(

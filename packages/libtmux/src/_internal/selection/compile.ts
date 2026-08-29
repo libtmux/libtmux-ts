@@ -8,7 +8,12 @@ import {
 } from "../../_generated/where_fields.js";
 import { QueryValidationError } from "../../exc.js";
 import type { WhereDocumentV1 } from "../../selection.js";
-import { encodeFormatValue } from "../codec/format_values.js";
+import {
+  decodeFormatValue,
+  encodeFormatValue,
+  formatCriterionExpectation,
+  isFormatCriterionValue,
+} from "../codec/format_values.js";
 import type { GraphRecordRef } from "../graph/model.js";
 import type { ProjectionRecord } from "../graph/selection_projection.js";
 
@@ -268,36 +273,95 @@ function criteriaFromWire(
   // over-deep or cyclic document is rejected by the validator rather than here.
   if (depth > maximumWhereDepth || !isObject(value)) return value;
   const byWire = new Map(
-    WHERE_FIELDS_V1[model].map(({ criteriaName, wireName }) => [wireName, criteriaName]),
+    WHERE_FIELDS_V1[model].map(({ criteriaName, token, wireName }) => [
+      wireName,
+      { criteriaName, token },
+    ]),
   );
   const relations = new Map(
     WHERE_RELATIONS_V1[model].map((relation) => [relation.name as string, relation] as const),
   );
-  const translated: Record<string, unknown> = {};
+  const translated: Array<readonly [string, unknown]> = [];
+  const seen = new Set<string>();
   for (const [key, entry] of snapshotObject(value, state)) {
-    const relation = relations.get(key);
-    if (relation !== undefined && isObject(entry)) {
-      const inner: Record<string, unknown> = {};
-      for (const [operator, nested] of snapshotObject(entry, state)) {
-        inner[operator] = criteriaFromWire(relation.targetModel, nested, state, depth + 1);
-      }
-      translated[key] = inner;
-      continue;
-    }
-    if (key === "AND" || key === "OR" || key === "NOT") {
-      translated[key] = snapshotArray(entry, state).map((child) =>
-        criteriaFromWire(model, child, state, depth + 1),
+    const field = byWire.get(key);
+    const translatedKey = field?.criteriaName ?? key;
+    if (seen.has(translatedKey)) {
+      return at(state, key, () =>
+        invalidQuery(state, "the field is already present under its other spelling"),
       );
-      continue;
     }
-    translated[byWire.get(key) ?? key] = entry;
+    seen.add(translatedKey);
+    translated.push([
+      translatedKey,
+      at(state, key, () => {
+        const relation = relations.get(key);
+        if (relation !== undefined && isObject(entry)) {
+          const inner: Array<readonly [string, unknown]> = [];
+          for (const [operator, nested] of snapshotObject(entry, state)) {
+            inner.push([
+              operator,
+              at(state, operator, () =>
+                criteriaFromWire(relation.targetModel, nested, state, depth + 1),
+              ),
+            ]);
+          }
+          return frozenRecord(inner);
+        }
+        if (key === "AND" || key === "OR" || key === "NOT") {
+          return frozenArray(
+            snapshotArray(entry, state).map((child, index) =>
+              at(state, index, () => criteriaFromWire(model, child, state, depth + 1)),
+            ),
+          );
+        }
+        if (field !== undefined) {
+          return parseScalar(field.token, scalarCriterionToWire(field.token, entry, state), state)
+            .query;
+        }
+        return entry;
+      }),
+    ]);
   }
-  return translated;
+  return frozenRecord(translated);
 }
 
-/** Operators whose operand is a value tmux will compare, rather than a modifier. */
-const encodableOperators = new Set(["contains", "endsWith", "equals", "startsWith"]);
+/** Operators whose operand is a field value rather than text to search. */
+const valueOperators = new Set(["equals"]);
 const encodableListOperators = new Set(["in", "notIn"]);
+
+function encodeCriterionValue(token: string, value: unknown, state: ParseState): unknown {
+  if (!isFormatCriterionValue(token, value)) {
+    return invalidQuery(state, formatCriterionExpectation(token));
+  }
+  return encodeFormatValue(token, value);
+}
+
+function scalarCriterionToWire(token: string, entry: unknown, state: ParseState): unknown {
+  if (!isObject(entry) || nodeTypes.isDate(entry)) {
+    return encodeCriterionValue(token, entry, state);
+  }
+  const operators: Array<readonly [string, unknown]> = [];
+  for (const [operator, operand] of snapshotObject(entry, state)) {
+    operators.push([
+      operator,
+      at(state, operator, () => {
+        if (valueOperators.has(operator)) return encodeCriterionValue(token, operand, state);
+        if (encodableListOperators.has(operator)) {
+          return frozenArray(
+            snapshotArray(operand, state).map((item, index) =>
+              at(state, index, () => encodeCriterionValue(token, item, state)),
+            ),
+          );
+        }
+        // `mode` selects case folding; string operators and regex carry text
+        // to search rather than a value in this field's decoded domain.
+        return operand;
+      }),
+    ]);
+  }
+  return frozenRecord(operators);
+}
 
 /**
  * Spell a typed criteria value the way the row it will be compared against does.
@@ -326,52 +390,46 @@ function criteriaToWireValues(
   const relations = new Map(
     WHERE_RELATIONS_V1[model].map((relation) => [relation.name as string, relation] as const),
   );
-  const translated: Record<string, unknown> = {};
+  const translated: Array<readonly [string, unknown]> = [];
   for (const [key, entry] of snapshotObject(value, state)) {
-    const relation = relations.get(key);
-    if (relation !== undefined && isObject(entry)) {
-      const inner: Record<string, unknown> = {};
-      for (const [operator, nested] of snapshotObject(entry, state)) {
-        inner[operator] = criteriaToWireValues(relation.targetModel, nested, state, depth + 1);
-      }
-      translated[key] = inner;
-      continue;
-    }
-    if (key === "AND" || key === "OR" || key === "NOT") {
-      translated[key] = snapshotArray(entry, state).map((child) =>
-        criteriaToWireValues(model, child, state, depth + 1),
-      );
-      continue;
-    }
-    const token = tokens.get(key);
-    if (token === undefined) {
-      translated[key] = entry;
-      continue;
-    }
-    if (!isObject(entry)) {
-      translated[key] = encodeFormatValue(token, entry);
-      continue;
-    }
-    const operators: Record<string, unknown> = {};
-    for (const [operator, operand] of snapshotObject(entry, state)) {
-      if (encodableOperators.has(operator)) {
-        operators[operator] = encodeFormatValue(token, operand);
-      } else if (encodableListOperators.has(operator) && Array.isArray(operand)) {
-        operators[operator] = operand.map((item) => encodeFormatValue(token, item));
-      } else {
-        // `mode` selects case folding and `regex` carries a pattern; neither is
-        // a value tmux holds, so neither is spelled out.
-        operators[operator] = operand;
-      }
-    }
-    translated[key] = operators;
+    translated.push([
+      key,
+      at(state, key, () => {
+        const relation = relations.get(key);
+        if (relation !== undefined && isObject(entry)) {
+          const inner: Array<readonly [string, unknown]> = [];
+          for (const [operator, nested] of snapshotObject(entry, state)) {
+            inner.push([
+              operator,
+              at(state, operator, () =>
+                criteriaToWireValues(relation.targetModel, nested, state, depth + 1),
+              ),
+            ]);
+          }
+          return frozenRecord(inner);
+        }
+        if (key === "AND" || key === "OR" || key === "NOT") {
+          return snapshotArray(entry, state).map((child, index) =>
+            at(state, index, () => criteriaToWireValues(model, child, state, depth + 1)),
+          );
+        }
+        const token = tokens.get(key);
+        if (token === undefined) return entry;
+        return scalarCriterionToWire(token, entry, state);
+      }),
+    ]);
   }
-  return translated;
+  return frozenRecord(translated);
 }
 
-function scalarWireNamesFor(model: WhereModel): ReadonlyMap<string, string> {
+function scalarFieldsFor(
+  model: WhereModel,
+): ReadonlyMap<string, { readonly token: string; readonly wireName: string }> {
   return new Map(
-    WHERE_FIELDS_V1[model].map(({ criteriaName, wireName }) => [criteriaName, wireName]),
+    WHERE_FIELDS_V1[model].map(({ criteriaName, token, wireName }) => [
+      criteriaName,
+      { token, wireName },
+    ]),
   );
 }
 
@@ -552,9 +610,13 @@ function parseRegex(
   });
 }
 
-function parseScalar(value: unknown, state: ParseState): ParsedScalar {
+function parseScalar(token: string, value: unknown, state: ParseState): ParsedScalar {
   if (typeof value === "string" || value === null) {
-    return { query: value, test: (candidate) => candidate === value };
+    return {
+      query: value,
+      test: (candidate) =>
+        value === null ? decodeFormatValue(token, candidate) === null : candidate === value,
+    };
   }
   if (!isObject(value)) {
     return invalidQuery(state, `expected a string, null, or an object of ${OPERATORS}`);
@@ -597,7 +659,8 @@ function parseScalar(value: unknown, state: ParseState): ParsedScalar {
         }
         queryEntries.push([name, operand]);
         operations.push((candidate) => {
-          if (candidate === null || operand === null) return candidate === operand;
+          if (operand === null) return decodeFormatValue(token, candidate) === null;
+          if (candidate === null) return false;
           return insensitive
             ? candidate.toLowerCase() === operand.toLowerCase()
             : candidate === operand;
@@ -768,16 +831,16 @@ function parseCriteria(
   if (!isObject(value)) return invalidQuery(state, `expected an object of ${model} criteria`);
   return withActive(value, state, () => {
     const record = snapshotObject(value, state);
-    const scalarWireNames = scalarWireNamesFor(model);
+    const scalarFields = scalarFieldsFor(model);
     const entries: Array<readonly [string, unknown]> = [];
     const predicates: RecordPredicate[] = [];
 
     for (const [name, criterion] of record) {
-      const wireName = scalarWireNames.get(name);
-      if (wireName !== undefined) {
-        const parsed = at(state, name, () => parseScalar(criterion, state));
-        entries.push([wireName, parsed.query]);
-        predicates.push((source) => parsed.test(source.scalars[wireName] ?? null));
+      const field = scalarFields.get(name);
+      if (field !== undefined) {
+        const parsed = at(state, name, () => parseScalar(field.token, criterion, state));
+        entries.push([field.wireName, parsed.query]);
+        predicates.push((source) => parsed.test(source.scalars[field.wireName] ?? null));
         continue;
       }
       if (logicalNames.includes(name as never)) {
@@ -808,7 +871,7 @@ function parseCriteria(
         // Both vocabularies, because a caller reaching for one may have wanted
         // the other: `windows` is a relation and `windowName` a field.
         const known = [
-          ...scalarWireNames.keys(),
+          ...scalarFields.keys(),
           ...WHERE_RELATIONS_V1[model].map((candidate) => candidate.name),
           ...logicalNames,
         ];
@@ -866,8 +929,16 @@ export function compileWhere(model: WhereModel, criteria: unknown): CompiledWher
   });
 }
 
-export function canonicalizeWhereDocument(input: unknown): WhereDocumentV1 {
-  const state = newParseState();
+interface CanonicalWireDocument {
+  readonly model: WhereModel;
+  readonly version: 1;
+  readonly where: Readonly<Record<string, unknown>>;
+}
+
+function canonicalizeWhereDocumentForWire(
+  input: unknown,
+  state: ParseState,
+): CanonicalWireDocument {
   const envelope = snapshotObject(input, state);
   if (
     envelope.size !== 3 ||
@@ -890,7 +961,20 @@ export function canonicalizeWhereDocument(input: unknown): WhereDocumentV1 {
   const where = at(state, "where", () =>
     canonicalizeWhere(model, criteriaFromWire(model, envelope.get("where"), state), state),
   );
-  return Object.freeze({ model, version: 1, where }) as WhereDocumentV1;
+  return Object.freeze({ model, version: 1, where });
+}
+
+/** Validate authored or serialized criteria and return the stable wire form. */
+export function canonicalizeWhereDocumentWire(input: unknown): CanonicalWireDocument {
+  return canonicalizeWhereDocumentForWire(input, newParseState());
+}
+
+/** Validate a document and return criteria with the public camelCase keys. */
+export function canonicalizeWhereDocument(input: unknown): WhereDocumentV1 {
+  const state = newParseState();
+  const wire = canonicalizeWhereDocumentForWire(input, state);
+  const where = at(state, "where", () => criteriaFromWire(wire.model, wire.where, state));
+  return Object.freeze({ model: wire.model, version: 1, where }) as WhereDocumentV1;
 }
 
 /**
@@ -928,6 +1012,6 @@ function canonicalJsonValue(value: unknown, depth: number, state: ParseState): s
     .join(",")}}`;
 }
 
-export function canonicalJson(value: Readonly<Record<string, unknown>>): string {
+export function canonicalJson(value: object): string {
   return canonicalJsonValue(value, 0, newParseState());
 }

@@ -55,6 +55,15 @@ function invokeMethod(receiver: object, key: PropertyKey, arguments_: readonly u
   return Reflect.apply(callable, receiver, arguments_);
 }
 
+function scalarForms(field: string, value: unknown): readonly Record<string, unknown>[] {
+  return [
+    { [field]: value },
+    { [field]: { equals: value } },
+    { [field]: { in: [value] } },
+    { [field]: { notIn: [value] } },
+  ];
+}
+
 function assertDeepFrozenData(value: unknown, seen = new Set<object>()): void {
   if (typeof value !== "object" || value === null || seen.has(value)) return;
   seen.add(value);
@@ -712,6 +721,18 @@ describe("regex criteria", () => {
 });
 
 describe("plain-data validation", () => {
+  test("rejects object-prototype keys at every recursive criteria position", () => {
+    for (const key of ["__proto__", "constructor", "prototype"]) {
+      const criterion = JSON.parse(`{${JSON.stringify(key)}:null}`) as unknown;
+      for (const criteria of [criterion, { AND: [criterion] }, { windows: { some: criterion } }]) {
+        expectInvalidQuery(() => compileWhere("session", criteria));
+      }
+      expectInvalidQuery(() =>
+        decodeWhereDocument({ model: "session", version: 1, where: criterion }),
+      );
+    }
+  });
+
   describe("criteria nesting budget", () => {
     test("accepts depth 64 across compilation, evaluation, and wire round trips", async () => {
       const harness = await createSessionHarness(["alpha"]);
@@ -1163,6 +1184,52 @@ describe("WhereDocumentV1 serialization", () => {
     });
   });
 
+  test("keeps intrinsic Date operations after callers patch globals", () => {
+    const script = String.raw`
+      import { decodeFormatValue } from "./src/_internal/codec/format_values.js";
+      import { compileWhere } from "./src/_internal/selection/compile.js";
+
+      const IntrinsicDate = Date;
+      const originalGetTime = Date.prototype.getTime;
+      let calls = 0;
+
+      Date.prototype.getTime = function () {
+        calls += 1;
+        throw new Error("patched getTime ran");
+      };
+      globalThis.Date = class extends IntrinsicDate {
+        constructor(...args) {
+          calls += 1;
+          super(...args);
+        }
+      };
+
+      try {
+        const query = compileWhere("session", { created: new IntrinsicDate(1_000) }).query;
+        const decoded = decodeFormatValue("session_created", "1");
+        process.stdout.write(JSON.stringify({
+          calls,
+          decodedByIntrinsicDate: decoded instanceof IntrinsicDate,
+          query,
+        }));
+      } finally {
+        IntrinsicDate.prototype.getTime = originalGetTime;
+        globalThis.Date = IntrinsicDate;
+      }
+    `;
+    const result = Bun.spawnSync(["bun", "--eval", script], {
+      cwd: tsRootPath,
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+    expect(JSON.parse(result.stdout.toString()) as unknown).toEqual({
+      calls: 0,
+      decodedByIntrinsicDate: true,
+      query: { session_created: "1" },
+    });
+  });
+
   test("round-trips canonical JSON through Zod and freezes the decoded clone", () => {
     const document: WhereDocumentV1 = {
       version: 1,
@@ -1368,6 +1435,74 @@ describe("WhereDocumentV1 serialization", () => {
     expect(encodeWhereDocument(nullDecoded)).toBe(nullBytes);
   });
 
+  test("decodes wire fields to the public criteria keys", () => {
+    const encoded = encodeWhereDocument({
+      model: "pane",
+      version: 1,
+      where: {
+        active: true,
+        currentCommand: "zsh",
+        pid: 42,
+        title: "shell",
+        window: { is: { index: 1 } },
+      },
+    });
+
+    expect(encoded).toBe(
+      '{"model":"pane","version":1,"where":{"pane_active":"1","pane_current_command":"zsh","pane_pid":"42","pane_title":"shell","window":{"is":{"window_index":"1"}}}}',
+    );
+    expect(decodeWhereDocument(JSON.parse(encoded) as unknown)).toEqual({
+      model: "pane",
+      version: 1,
+      where: {
+        active: "1",
+        currentCommand: "zsh",
+        pid: "42",
+        title: "shell",
+        window: { is: { index: "1" } },
+      },
+    });
+  });
+
+  test("rejects duplicate camelCase and wire spellings", () => {
+    for (const where of [
+      { title: "first", pane_title: "second" },
+      { pane_title: "first", title: "second" },
+      { window: { is: { index: "1", window_index: "2" } } },
+    ]) {
+      expectInvalidQuery(() => decodeWhereDocument({ model: "pane", version: 1, where }));
+      expectInvalidQuery(() => encodeWhereDocument({ model: "pane", version: 1, where } as never));
+    }
+  });
+
+  test("reports structural scalar failures under their wire keys", () => {
+    for (const [where, path] of [
+      [{ pane_pid: { wat: "1" } }, ["where", "pane_pid", "wat"]],
+      [{ pane_pid: { contains: 1 } }, ["where", "pane_pid", "contains"]],
+      [
+        { pane_title: { regex: { flags: "i", pattern: "shell" } } },
+        ["where", "pane_title", "regex", "flags"],
+      ],
+      [{ pane_pid: { in: "1" } }, ["where", "pane_pid", "in"]],
+    ] as const) {
+      expect(
+        expectInvalidQuery(() => decodeWhereDocument({ model: "pane", version: 1, where })),
+      ).toMatchObject({ path });
+    }
+  });
+
+  test("round-trips client documents admitted by the public union", () => {
+    const document: WhereDocumentV1 = {
+      model: "client",
+      version: 1,
+      where: { name: "terminal" },
+    };
+    const encoded = encodeWhereDocument(document);
+
+    expect(encoded).toBe('{"model":"client","version":1,"where":{"client_name":"terminal"}}');
+    expect(decodeWhereDocument(JSON.parse(encoded) as unknown)).toEqual(document);
+  });
+
   test("rejects non-plain document shapes in both wire entrypoints", () => {
     let hookCalls = 0;
     const customPrototype = Object.create({
@@ -1400,7 +1535,6 @@ describe("WhereDocumentV1 serialization", () => {
   test("rejects unknown versions, models, aliases, fields, operators, and values", () => {
     for (const document of [
       { version: 2, model: "session", where: {} },
-      { version: 1, model: "client", where: {} },
       { version: 1, model: "session", where: {}, extra: true },
       { version: 1, model: "session", where: { session_name: "main" } },
       { version: 1, model: "session", where: { pane_id: "%1" } },
@@ -1588,6 +1722,147 @@ describe("WhereDocumentV1 serialization", () => {
 });
 
 describe("typed criteria values", () => {
+  test("makes null criteria equivalent to decoded typed absence", async () => {
+    const harness = await createRichProjectedHarness();
+    const sessions = createProjectedSelection(
+      "session",
+      harness.sessions.values,
+      harness.sessions.projection,
+    );
+    const decodedNullIds = harness.sessions.values
+      .filter((session) => session.lastAttached === null)
+      .map((session) => session.id);
+
+    expect(decodedNullIds).toEqual(["$1", "$2"]);
+    expect(
+      sessions
+        .where({ lastAttached: null })
+        .toArray()
+        .map((session) => session.id),
+    ).toEqual(decodedNullIds);
+    expect(
+      sessions
+        .where({ lastAttached: { equals: null } })
+        .toArray()
+        .map((session) => session.id),
+    ).toEqual(decodedNullIds);
+    expect(
+      sessions
+        .where({ lastAttached: "0" })
+        .toArray()
+        .map((session) => session.id),
+    ).toEqual(["$1"]);
+  });
+
+  test("validates equality and membership against every field domain", () => {
+    const cases = [
+      { field: "name", invalid: 1, model: "session", valid: "main" },
+      { field: "active", invalid: 1, model: "pane", valid: true },
+      { field: "pid", invalid: true, model: "pane", valid: 4321 },
+      { field: "created", invalid: true, model: "session", valid: new Date(1_000) },
+      { field: "id", invalid: "@1", model: "pane", valid: "%1" },
+      { field: "id", invalid: "%1", model: "session", valid: "$1" },
+      { field: "id", invalid: "$1", model: "window", valid: "@1" },
+    ] as const;
+
+    for (const { field, invalid, model, valid } of cases) {
+      for (const criteria of scalarForms(field, valid)) {
+        expect(() => compileWhere(model, criteria)).not.toThrow();
+      }
+      for (const criteria of scalarForms(field, invalid)) {
+        expectInvalidQuery(() => compileWhere(model, criteria));
+      }
+    }
+  });
+
+  test("refuses integer text the encoder cannot produce", () => {
+    for (const value of [
+      "01",
+      "-0",
+      "0x1",
+      "0o1",
+      "0b1",
+      "9007199254740992",
+      "-9007199254740992",
+    ]) {
+      for (const field of ["pid", "deadTime"]) {
+        for (const criteria of scalarForms(field, value)) {
+          expectInvalidQuery(() => compileWhere("pane", criteria));
+        }
+      }
+    }
+    for (const value of ["8640000000001", "-8640000000001"]) {
+      for (const criteria of scalarForms("deadTime", value)) {
+        expectInvalidQuery(() => compileWhere("pane", criteria));
+      }
+    }
+    expect(
+      expectInvalidQuery(() => compileWhere("pane", { deadTime: "8640000000001" })).message,
+    ).toContain("canonical epoch seconds in Date range");
+  });
+
+  test("reads dates without invoking caller-controlled code", () => {
+    const sentinel = new Error("date code escaped");
+    let calls = 0;
+    class UntrustedDate extends Date {
+      override getTime(): number {
+        calls += 1;
+        throw sentinel;
+      }
+    }
+
+    expect(compileWhere("session", { created: new UntrustedDate(1_000) }).query).toMatchObject({
+      session_created: "1",
+    });
+    expect(calls).toBe(0);
+
+    const proxied = new Proxy(new Date(1_000), {
+      get() {
+        throw sentinel;
+      },
+      getPrototypeOf() {
+        throw sentinel;
+      },
+    });
+    expectInvalidQuery(() => compileWhere("session", { created: proxied }), sentinel);
+    expectInvalidQuery(() => compileWhere("session", { created: new Date(Number.NaN) }));
+  });
+
+  test("keeps early domain failures on their complete nested path", () => {
+    const criteria = {
+      AND: [
+        {
+          windows: {
+            some: { panes: { every: { pid: { in: [true] } } } },
+          },
+        },
+      ],
+    };
+    expect(expectInvalidQuery(() => compileWhere("session", criteria))).toMatchObject({
+      path: ["AND", 0, "windows", "some", "panes", "every", "pid", "in", 0],
+    });
+
+    expect(
+      expectInvalidQuery(() =>
+        decodeWhereDocument({
+          model: "session",
+          version: 1,
+          where: {
+            AND: [
+              {
+                windows: {
+                  some: { panes: { every: { pane_pid: { in: [true] } } } },
+                },
+              },
+            ],
+          },
+        }),
+      ),
+    ).toMatchObject({
+      path: ["where", "AND", 0, "windows", "some", "panes", "every", "pane_pid", "in", 0],
+    });
+  });
+
   test("matches a boolean field written as a boolean", async () => {
     const harness = await createRichProjectedHarness();
     const panes = createProjectedSelection("pane", harness.panes.values, harness.panes.projection);

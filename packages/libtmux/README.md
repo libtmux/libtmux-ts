@@ -306,11 +306,12 @@ pane.format.pane_pid; // "2334787"
 pane.format.pane_active; // "1"
 ```
 
-Criteria take the decoded shape as well as the text, and mean the same thing
-either way. The text side is there because the wire is: a serialized query
-carries tmux's text, and `WhereDocumentV1` types both what you write and what
-comes back — so it is exactly what this library's encoder can emit for that
-field, and nothing else.
+Criteria take decoded values as well as wire text. A non-null decoded value
+lowers to its exact wire spelling. A `null` criterion instead matches every
+value that field's decoder treats as absent or invalid, including an empty
+typed field and a time reported as `0`. Serialized bytes use stable tmux field
+names and text values; a decoded `WhereDocumentV1` restores camelCase criteria
+names. The same type therefore covers what you write and what comes back.
 
 ```ts
 snapshot.panes.where({ active: true });

@@ -2,9 +2,13 @@ import { v, ValidationFailure } from "../validate.js";
 
 import { QueryValidationError } from "../../exc.js";
 import type { WhereDocumentV1 } from "../../selection.js";
-import { canonicalizeWhereDocument, canonicalJson } from "./compile.js";
+import {
+  canonicalizeWhereDocument,
+  canonicalizeWhereDocumentWire,
+  canonicalJson,
+} from "./compile.js";
 
-const documentFor = (model: "pane" | "session" | "window") =>
+const documentFor = (model: "client" | "pane" | "session" | "window") =>
   v.strictObject({
     model: v.literal(model),
     version: v.literal(1),
@@ -13,8 +17,8 @@ const documentFor = (model: "pane" | "session" | "window") =>
 
 const whereDocumentSchema = v.discriminatedUnion(
   "model",
-  [documentFor("session"), documentFor("window"), documentFor("pane")],
-  ["session", "window", "pane"],
+  [documentFor("client"), documentFor("session"), documentFor("window"), documentFor("pane")],
+  ["client", "session", "window", "pane"],
 );
 
 function invalidDocument(cause?: unknown): never {
@@ -33,7 +37,8 @@ function validatedDocument(input: unknown): WhereDocumentV1 {
 }
 
 export function encodeWhereDocument(document: WhereDocumentV1): string {
-  return canonicalJson(validatedDocument(document) as Readonly<Record<string, unknown>>);
+  const validated = validatedDocument(document);
+  return canonicalJson(canonicalizeWhereDocumentWire(validated));
 }
 
 export function decodeWhereDocument(input: unknown): WhereDocumentV1 {

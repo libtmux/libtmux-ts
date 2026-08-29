@@ -1,4 +1,5 @@
 import { Client } from "../../src/client.js";
+import type { PaneId, WindowId } from "../../src/common.js";
 import type { SelectionProjection } from "../../src/_internal/graph/selection_projection.js";
 import type { ModelForKind } from "../../src/_internal/runtime/model_kind.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
@@ -117,6 +118,9 @@ declare const sessions: Selection<Session>;
 declare const windows: Selection<Window>;
 declare const mixed: Selection<Session | Window>;
 declare const session: Session;
+declare const dynamicPaneId: string;
+declare const paneId: PaneId;
+declare const windowId: WindowId;
 
 void sessions.length;
 void sessions.at(-1);
@@ -130,6 +134,14 @@ void sessions.oneOrUndefined();
 void sessions.exists();
 void sessions.count();
 void panes.where({ id: "%1" });
+void panes.where({ id: dynamicPaneId });
+void panes.where({ id: paneId });
+// @ts-expect-error A branded window id cannot cross into a pane criterion.
+void panes.where({ id: windowId });
+// @ts-expect-error Equality preserves the id brand.
+void panes.where({ id: { equals: windowId } });
+// @ts-expect-error Membership preserves the id brand.
+void panes.where({ id: { in: [windowId] } });
 void windows.where({ name: "editor" });
 void clients.first();
 void clients.one();

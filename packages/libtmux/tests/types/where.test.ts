@@ -1,4 +1,5 @@
 import { Client } from "../../src/client.js";
+import type { PaneId, PaneIdInput, SessionId, WindowId } from "../../src/common.js";
 import { WHERE_RELATIONS_V1 } from "../../src/_generated/where_fields.js";
 import { Pane } from "../../src/pane.js";
 import { Session } from "../../src/session.js";
@@ -72,6 +73,12 @@ type ExpectedScalarCriteria<Value = never, Raw extends string = string> =
   | ExpectedStringFilter<Value, Raw>
   | undefined;
 
+type ExpectedNonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+type ExpectedRawNumber =
+  | "0"
+  | (`${bigint}` & `${ExpectedNonZeroDigit}${string}`)
+  | (`${bigint}` & `-${ExpectedNonZeroDigit}${string}`);
+
 /**
  * Every scalar criteria still accepts the text tmux sends for that field.
  *
@@ -103,6 +110,10 @@ type _DecodeDocument = Expect<
 type _EncodeDocument = Expect<
   Equal<typeof encodeWhereDocument, (document: WhereDocumentV1) => string>
 >;
+declare const decodedPaneDocument: Extract<WhereDocumentV1, { readonly model: "pane" }>;
+void decodedPaneDocument.where.title;
+// @ts-expect-error Decoded documents expose criteria names, not wire names.
+void decodedPaneDocument.where.pane_title;
 type _Regex = Expect<
   Equal<RegexCriteriaData, { readonly flags: "" | "m" | "s" | "ms"; readonly pattern: string }>
 >;
@@ -306,10 +317,10 @@ type _BooleanDomain = Expect<
   MutuallyAssignable<PaneWhere["active"], ExpectedScalarCriteria<boolean, "0" | "1">>
 >;
 type _NumberDomain = Expect<
-  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number, `${bigint}`>>
+  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number, ExpectedRawNumber>>
 >;
 type _TimeDomain = Expect<
-  MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date, `${bigint}`>>
+  MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date, ExpectedRawNumber>>
 >;
 
 // The narrowing is the point: text that could never be this field's value is
@@ -324,12 +335,32 @@ type _NumberRefusesExponentText = Expect<
   Equal<"1e+21" extends PaneWhere["pid"] ? true : false, false>
 >;
 type _NumberRefusesNaNText = Expect<Equal<"NaN" extends PaneWhere["pid"] ? true : false, false>>;
+type _NumberRefusesLeadingZero = Expect<Equal<"01" extends PaneWhere["pid"] ? true : false, false>>;
+type _NumberRefusesHex = Expect<Equal<"0x1" extends PaneWhere["pid"] ? true : false, false>>;
+type _NumberRefusesOctal = Expect<Equal<"0o1" extends PaneWhere["pid"] ? true : false, false>>;
+type _NumberRefusesBinary = Expect<Equal<"0b1" extends PaneWhere["pid"] ? true : false, false>>;
+type _NumberRefusesNegativeZero = Expect<
+  Equal<"-0" extends PaneWhere["pid"] ? true : false, false>
+>;
+type _NumberTakesZero = Expect<Equal<"0" extends PaneWhere["pid"] ? true : false, true>>;
+type _NumberTakesPositive = Expect<Equal<"42" extends PaneWhere["pid"] ? true : false, true>>;
+type _NumberTakesNegative = Expect<Equal<"-42" extends PaneWhere["pid"] ? true : false, true>>;
 type _FlagTakesItsText = Expect<Equal<"1" extends PaneWhere["active"] ? true : false, true>>;
 // A field tmux answers with text takes any of it, including text that looks
 // numeric — `%1` is an id, not a number.
-type _TextTakesAnything = Expect<Equal<"banana" extends PaneWhere["id"] ? true : false, true>>;
-// An identity keeps its sigil, so it stays text however numeric it looks.
-type _IdentityDomain = Expect<MutuallyAssignable<PaneWhere["id"], ExpectedScalarCriteria>>;
+// An input accepts raw text for runtime authentication while preserving a
+// brand carried by an already-authenticated id.
+type _IdentityDomain = Expect<
+  MutuallyAssignable<PaneWhere["id"], ExpectedScalarCriteria<PaneIdInput, never>>
+>;
+type _IdentityTakesRawText = Expect<Equal<string extends PaneWhere["id"] ? true : false, true>>;
+type _IdentityTakesItsBrand = Expect<Equal<PaneId extends PaneWhere["id"] ? true : false, true>>;
+type _IdentityRefusesSessionBrand = Expect<
+  Equal<SessionId extends PaneWhere["id"] ? true : false, false>
+>;
+type _IdentityRefusesWindowBrand = Expect<
+  Equal<WindowId extends PaneWhere["id"] ? true : false, false>
+>;
 
 type ActualStringFilter = Exclude<SessionWhere["name"], null | string | undefined>;
 type _StringFilterShape = Expect<MutuallyAssignable<ActualStringFilter, ExpectedStringFilter>>;

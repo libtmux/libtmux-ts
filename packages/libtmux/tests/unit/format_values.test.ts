@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { decodeFormatValue, encodeFormatValue } from "../../src/_internal/codec/format_values.js";
+import {
+  decodeFormatValue,
+  encodeFormatValue,
+  isFormatCriterionValue,
+} from "../../src/_internal/codec/format_values.js";
 import { FORMAT_VALUE_TYPES } from "../../src/_generated/field_types.js";
 
 describe("decoding what tmux sends", () => {
@@ -48,6 +52,24 @@ describe("decoding what tmux sends", () => {
     expect(decodeFormatValue("pane_pid", "9007199254740993")).toBeNull();
   });
 
+  test("refuses noncanonical integer text for numbers and times", () => {
+    for (const value of ["01", "-0"]) {
+      expect(decodeFormatValue("pane_pid", value)).toBeNull();
+      expect(decodeFormatValue("session_created", value)).toBeNull();
+    }
+  });
+
+  test("refuses a timestamp outside the Date range", () => {
+    expect(decodeFormatValue("session_created", "8640000000000")).toEqual(
+      new Date(8_640_000_000_000_000),
+    );
+    expect(decodeFormatValue("session_created", "8640000000001")).toBeNull();
+    expect(isFormatCriterionValue("session_created", "8640000000000")).toBe(true);
+    expect(isFormatCriterionValue("session_created", "-8640000000000")).toBe(true);
+    expect(isFormatCriterionValue("session_created", "8640000000001")).toBe(false);
+    expect(isFormatCriterionValue("session_created", "-8640000000001")).toBe(false);
+  });
+
   test("passes through a field it has no declaration for", () => {
     expect(decodeFormatValue("not_a_tmux_field", "whatever")).toBe("whatever");
   });
@@ -76,12 +98,12 @@ describe("encoding what a caller writes", () => {
   /**
    * The `where` types promise a text domain; this is what makes it a fact.
    *
-   * `ScalarCriteria`'s text side is not a taste — it is exactly what this
-   * function can emit for that kind of field, which is what lets a serialized
-   * query decode back into the same type it was authored in. If the encoder
-   * ever emits something outside it, the types start describing documents this
-   * library does not produce, and that has to fail here rather than in a
-   * consumer's editor.
+   * `ScalarCriteria`'s text side is not a taste — it is the lexical shape this
+   * function can emit for that kind of field. Safe-integer range and canonical
+   * spelling are runtime properties because TypeScript cannot express either.
+   * If the encoder emits something outside the lexical type, the declarations
+   * start describing documents this library does not produce, and that has to
+   * fail here rather than in a consumer's editor.
    */
   test("emits only the text the where types admit, for every declared field", () => {
     const flag = /^[01]$/u;

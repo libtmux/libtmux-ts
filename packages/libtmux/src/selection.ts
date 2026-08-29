@@ -1,5 +1,6 @@
 import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/legacy.js";
 import type { Client } from "./client.js";
+import type { PaneIdInput, SessionIdInput, WindowIdInput } from "./common.js";
 import type { Pane } from "./pane.js";
 import type { Server } from "./server.js";
 import type { Session } from "./session.js";
@@ -21,6 +22,8 @@ type ModelKindOf<Model> = Model extends Client
  * A field's criteria accept its decoded shape as well as the text tmux sends:
  * `where({ active: true })` and `where({ active: "1" })` are the same query,
  * and serialize identically.
+ * A `null` criterion matches any wire value that the field decoder treats as
+ * absent or invalid, rather than one particular wire spelling.
  *
  * The text side exists because the wire does. `encodeFormatValue` lowers every
  * criterion to tmux's text before a query is serialized, and
@@ -30,15 +33,12 @@ type ModelKindOf<Model> = Model extends Client
  * difference from an ORM, whose query AST never round-trips through a type the
  * caller also authors.
  *
- * `Raw` is therefore not a taste. It is **exactly the encoder's output
- * domain**: `"0" | "1"` for a flag because that is what `encodeFormatValue`
- * emits for a boolean, `${bigint}` for a number and a time because that is
- * integer text. Text outside it is text this library could never
- * have written, which is why `where({ index: "banana" })` is refused and why
- * there is no escape hatch admitting it — one would break the round trip the
- * text side exists for. `format_values.test.ts` holds the two in step.
- * TypeScript has no integer primitive, so numeric values remain `number` and
- * the query validator refuses non-safe integers at runtime.
+ * `Raw` is therefore not a taste. `"0" | "1"` is the exact wire domain for a
+ * flag, while an integer uses `${bigint}` intersected with a decimal prefix.
+ * That rules out fractions, exponents, radix prefixes, leading zeroes, `-0`,
+ * `NaN`, and prose. TypeScript cannot bound an integer's magnitude, so the
+ * query validator also requires safe range at runtime. `format_values.test.ts`
+ * holds the layers in step.
  *
  * The substring operations stay `string` deliberately: `contains` asks about
  * the characters tmux sent, and a numeric field's text has characters like any
@@ -66,8 +66,13 @@ type StringFilter<Value = never, Raw extends string = string> = StringFilterFiel
     | { readonly startsWith: string }
   );
 
-/** The text tmux sends for a field it reports as a number, or as a timestamp. */
-type RawNumber = `${bigint}`;
+type NonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+
+/** The decimal text tmux sends for a field it reports as a number or timestamp. */
+type RawNumber =
+  | "0"
+  | (`${bigint}` & `${NonZeroDigit}${string}`)
+  | (`${bigint}` & `-${NonZeroDigit}${string}`);
 
 /** The text tmux sends for a flag: it writes these two and nothing else. */
 type RawFlag = "0" | "1";
@@ -115,7 +120,7 @@ export interface SessionWhere {
   readonly groupManyAttached?: ScalarCriteria<boolean, RawFlag>;
   readonly groupSize?: ScalarCriteria<number, RawNumber>;
   readonly grouped?: ScalarCriteria<boolean, RawFlag>;
-  readonly id?: ScalarCriteria;
+  readonly id?: ScalarCriteria<SessionIdInput, never>;
   readonly lastAttached?: ScalarCriteria<Date, RawNumber>;
   readonly lastWindowIndex?: ScalarCriteria<number, RawNumber>;
   readonly manyAttached?: ScalarCriteria<boolean, RawFlag>;
@@ -150,7 +155,7 @@ export interface WindowWhere {
   readonly flags?: ScalarCriteria;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
   readonly height?: ScalarCriteria<number, RawNumber>;
-  readonly id?: ScalarCriteria;
+  readonly id?: ScalarCriteria<WindowIdInput, never>;
   readonly index?: ScalarCriteria<number, RawNumber>;
   readonly lastFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly layout?: ScalarCriteria;
@@ -213,7 +218,7 @@ export interface PaneWhere {
   readonly historyBytes?: ScalarCriteria<number, RawNumber>;
   readonly historyLimit?: ScalarCriteria<number, RawNumber>;
   readonly historySize?: ScalarCriteria<number, RawNumber>;
-  readonly id?: ScalarCriteria;
+  readonly id?: ScalarCriteria<PaneIdInput, never>;
   readonly inMode?: ScalarCriteria<number, RawNumber>;
   readonly index?: ScalarCriteria<number, RawNumber>;
   readonly inputOff?: ScalarCriteria<boolean, RawFlag>;
