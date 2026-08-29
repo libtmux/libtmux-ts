@@ -8,6 +8,7 @@ import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { PaneTail } from "../src/live.js";
 import { registerResources } from "../src/resources.js";
 import { registerCapture } from "../src/tools/capture.js";
+import { registerDiscovery } from "../src/tools/discovery.js";
 import { registerInput } from "../src/tools/input.js";
 import { registerSettings } from "../src/tools/settings.js";
 import { registerWait } from "../src/tools/wait.js";
@@ -134,6 +135,29 @@ describe("bounded result policy", () => {
     expect(resolvePolicy({ LIBTMUX_MCP_MAX_RESULT_LINES: "999999999" }).maxResultLines).toBe(
       10_000,
     );
+  });
+
+  test("keeps display diagnostics inside a one-line result", async () => {
+    const context = fakeContext([], {
+      environment: { LIBTMUX_SAFETY: "mutating" },
+      maxResultLines: 1,
+      tmux: {
+        cmd: async (_command: string, args: readonly string[]) =>
+          args.includes("-a") ? ["known=value"] : ["one", "two"],
+      },
+    });
+
+    await withTools(context, registerDiscovery, async (client) => {
+      const answer = await client.callTool({
+        arguments: { format: "#{known}#{missing}" },
+        name: "display_message",
+      });
+      const result = structured<{ complete: boolean; droppedLines: number; value: string }>(answer);
+
+      expect(result.value).toBe("");
+      expect(result.droppedLines).toBe(2);
+      expect(result.complete).toBe(false);
+    });
   });
 });
 
