@@ -226,6 +226,62 @@ describe("Server.snapshot", () => {
     });
   }, 30_000);
 
+  test("keeps client relations on the shown linked-window placement", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const originSessionId = parseSessionId(fixture.sessionId);
+      const other = await server.newSession({ name: "other" });
+      const origin = (await server.snapshot()).sessions.one({ id: originSessionId });
+      const shared = await origin.newWindow({ name: "shared" });
+      await shared.link({ index: 9, session: other.id });
+      const placements = (await server.snapshot()).windows.where({ id: shared.id });
+      await placements.one({ session: { is: { id: originSessionId } } }).select();
+      await placements.one({ session: { is: { id: other.id } } }).select();
+
+      await ControlMode.run(
+        { server: fixture, targetSession: originSessionId },
+        async (originControl) => {
+          await ControlMode.run(
+            { server: fixture, targetSession: other.id },
+            async (linkedControl) => {
+              const snapshot = await server.snapshot();
+              const originClient = snapshot.clients.one({ name: originControl.clientName });
+              const linkedClient = snapshot.clients.one({ name: linkedControl.clientName });
+
+              expect({
+                linkedPane: linkedClient.pane?.session?.id,
+                linkedPaneMatches: snapshot.clients.count({
+                  pane: { is: { session: { is: { id: other.id } } } },
+                }),
+                linkedWindow: linkedClient.window?.session?.id,
+                linkedWindowMatches: snapshot.clients.count({
+                  window: { is: { session: { is: { id: other.id } } } },
+                }),
+                originPane: originClient.pane?.session?.id,
+                originPaneMatches: snapshot.clients.count({
+                  pane: { is: { session: { is: { id: originSessionId } } } },
+                }),
+                originWindow: originClient.window?.session?.id,
+                originWindowMatches: snapshot.clients.count({
+                  window: { is: { session: { is: { id: originSessionId } } } },
+                }),
+              }).toEqual({
+                linkedPane: other.id,
+                linkedPaneMatches: 1,
+                linkedWindow: other.id,
+                linkedWindowMatches: 1,
+                originPane: originSessionId,
+                originPaneMatches: 1,
+                originWindow: originSessionId,
+                originWindowMatches: 1,
+              });
+            },
+          );
+        },
+      );
+    });
+  }, 30_000);
+
   test("keeps relation criteria resolvable for a window linked into two sessions", async () => {
     await withServer(async (fixture) => {
       await fixture.executeText(["new-session", "-d", "-s", "other"]);

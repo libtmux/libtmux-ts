@@ -34,14 +34,16 @@ const DESCRIPTORS: Readonly<Record<WhereModel, ProjectionDescriptor>> = Object.f
 
 type Winlink = NonNullable<GraphRecord["winlink"]>;
 
+const placementKey = (sessionId: string, windowId: string, windowIndex: string): string =>
+  `${sessionId}\0${windowId}\0${windowIndex}`;
+
 const winlinkKey = (winlink: Winlink): string =>
-  `${String(winlink.sessionId)}\0${String(winlink.windowId)}\0${String(winlink.windowIndex)}`;
+  placementKey(winlink.sessionId, winlink.windowId, winlink.windowIndex);
 
 const isActive = (record: GraphRecord, field: "pane_active" | "window_active"): boolean =>
   record.scalars[field] === "1";
 
 interface Index {
-  readonly paneByEntity: ReadonlyMap<string, GraphRecord>;
   readonly panesByWinlink: ReadonlyMap<string, readonly GraphRecord[]>;
   readonly panesBySession: ReadonlyMap<string, readonly GraphRecord[]>;
   readonly sessionByEntity: ReadonlyMap<string, GraphRecord>;
@@ -57,7 +59,6 @@ function push<Key>(map: Map<Key, GraphRecord[]>, key: Key, record: GraphRecord):
 }
 
 function indexGraph(graph: NormalizedGraph): Index {
-  const paneByEntity = new Map<string, GraphRecord>();
   const panesByWinlink = new Map<string, GraphRecord[]>();
   const panesBySession = new Map<string, GraphRecord[]>();
   const sessionByEntity = new Map<string, GraphRecord>();
@@ -79,7 +80,6 @@ function indexGraph(graph: NormalizedGraph): Index {
         break;
       case "pane":
         if (winlink === null) continue;
-        paneByEntity.set(String(record.entity.id), record);
         push(panesByWinlink, winlinkKey(winlink), record);
         push(panesBySession, String(winlink.sessionId), record);
         break;
@@ -89,7 +89,6 @@ function indexGraph(graph: NormalizedGraph): Index {
   }
 
   return {
-    paneByEntity,
     panesBySession,
     panesByWinlink,
     sessionByEntity,
@@ -201,9 +200,17 @@ export function hydrateProjection(
         const shownWindow =
           sessionId === null || windowId === null || windowIndex === null
             ? undefined
-            : index.windowByWinlink.get(`${sessionId} ${windowId} ${windowIndex}`);
+            : index.windowByWinlink.get(placementKey(sessionId, windowId, windowIndex));
+        const shownPanes =
+          sessionId === null || windowId === null || windowIndex === null
+            ? []
+            : (index.panesByWinlink.get(placementKey(sessionId, windowId, windowIndex)) ?? []);
         const activePane =
-          scalars.pane_id === null ? undefined : index.paneByEntity.get(scalars.pane_id);
+          scalars.pane_id === null
+            ? undefined
+            : shownPanes.find(
+                (candidate) => String(candidate.entity.id) === String(scalars.pane_id),
+              );
         builder.materializeOne(record.ref, "session", owningSession?.ref ?? null);
         builder.materializeOne(record.ref, "window", shownWindow?.ref ?? null);
         builder.materializeOne(record.ref, "pane", activePane?.ref ?? null);

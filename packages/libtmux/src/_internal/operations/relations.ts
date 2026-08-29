@@ -66,9 +66,9 @@ export function windowOfPlacement(
     .first();
 }
 
-export function paneById(graph: NormalizedGraph, paneId: string | null): Pane | undefined {
+export function paneOfPlacement(graph: NormalizedGraph, placement: Placement): Pane | undefined {
   return settledSelectionOfModel(graph, "pane")
-    .filter((pane) => pane.id === paneId)
+    .filter((pane) => pane.id === placement.format.pane_id && samePlacement(pane, placement))
     .first();
 }
 
