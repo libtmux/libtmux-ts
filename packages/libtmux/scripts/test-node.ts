@@ -109,9 +109,11 @@ function request(args, options = {}) {
   return { commands: [args], executable, globalArgs: [], ...options };
 }
 assert.equal(FORMAT_SEPARATOR, "NODE_FORMAT_SEPARATOR");
+const codecDaemon = { pid: "101", startTime: "202" };
 const nodeFormatCodec = new GuardCodec({
   capabilities: deriveTmuxCapabilities({
     connectionAlias: "node-format-scenario",
+    daemon: codecDaemon,
     daemonEpoch: 1,
     rawVersion: "3.7b",
   }),
@@ -122,6 +124,7 @@ assert.equal(nodeFormatRequest.format.includes(FORMAT_SEPARATOR), false);
 const baselineCodec = new GuardCodec({
   capabilities: deriveTmuxCapabilities({
     connectionAlias: "node-baseline-scenario",
+    daemon: codecDaemon,
     daemonEpoch: 1,
     rawVersion: "3.2a",
   }),
