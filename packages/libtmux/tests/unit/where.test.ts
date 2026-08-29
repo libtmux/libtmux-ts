@@ -264,6 +264,16 @@ describe("scalar and logical criteria", () => {
     ]);
   });
 
+  test("keeps membership arrays canonical after indexing them", () => {
+    const values = ["beta", "Alpha", "beta"];
+    const compiled = compileWhere("session", { name: { in: values } });
+
+    values[0] = "mutated";
+    values.push("later");
+    expect(compiled.query).toEqual({ name: { in: ["beta", "Alpha", "beta"] } });
+    assertDeepFrozenData(compiled.query);
+  });
+
   test("eagerly clones mutable nested criteria before returning a Selection", async () => {
     const harness = await createSessionHarness(["alpha", "beta", "alpha", "echo"]);
     const selection = createProjectedSelection("session", harness.values, harness.projection);

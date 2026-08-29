@@ -221,12 +221,12 @@ function snapshotArray(value: unknown, state: ParseState): readonly unknown[] {
       return invalidQuery(state, plain);
     }
     const length = lengthDescriptor.value;
-    const keys = Reflect.ownKeys(value);
-    if (keys.length !== length + 1 || !keys.includes("length")) return invalidQuery(state, plain);
+    const keys = new Set(Reflect.ownKeys(value));
+    if (keys.size !== length + 1 || !keys.delete("length")) return invalidQuery(state, plain);
     const result: unknown[] = [];
     for (let index = 0; index < length; index += 1) {
       const key = String(index);
-      if (!keys.includes(key)) return invalidQuery(state, plain);
+      if (!keys.delete(key)) return invalidQuery(state, plain);
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
         return invalidQuery(state, plain);
@@ -683,10 +683,12 @@ function parseScalar(token: string, value: unknown, state: ParseState): ParsedSc
       if (name === "in" || name === "notIn") {
         const values = at(state, name, () => parseStringArray(operand, state));
         queryEntries.push([name, values]);
-        const comparable = insensitive ? values.map((entry) => entry.toLowerCase()) : values;
+        const comparable = new Set(
+          insensitive ? values.map((entry) => entry.toLowerCase()) : values,
+        );
         operations.push((candidate) => {
           if (candidate === null) return false;
-          const present = comparable.includes(insensitive ? candidate.toLowerCase() : candidate);
+          const present = comparable.has(insensitive ? candidate.toLowerCase() : candidate);
           return name === "in" ? present : !present;
         });
         continue;
