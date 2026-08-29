@@ -115,24 +115,6 @@ const recordKey = (reference: GraphRecordRef): string =>
 const present = (...references: readonly (GraphRecordRef | null | undefined)[]): GraphRecordRef[] =>
   references.filter((reference): reference is GraphRecordRef => reference != null);
 
-/**
- * Build a projection whose members come from `source`.
- *
- * Every record the projection can reach is hydrated, not only the members,
- * because Selection validates each reachable record against its own model's
- * full relation set. Relations follow winlinks rather than window identity, so
- * a window linked into two sessions contributes each placement separately and
- * a pane belongs to the placement it was listed under.
- */
-export function hydrateProjection(
-  graph: NormalizedGraph,
-  source: GraphSourceId,
-): SelectionProjection {
-  const builder = SelectionProjectionBuilder.create({ descriptors: DESCRIPTORS, graph, source });
-  hydrateBuilder(graph, builder, graph.sources.find(({ id }) => id === source)?.records ?? []);
-  return builder.seal();
-}
-
 /** Build one shared immutable record corpus and one member view per source. */
 export function hydrateProjectionViews(
   graph: NormalizedGraph,
