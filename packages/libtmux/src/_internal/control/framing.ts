@@ -12,12 +12,20 @@ const PAGE_BYTES = 64 * 1024;
 export const MAX_CARRY_BYTES: number = 16 * 1024 * 1024;
 
 export class LineFramer {
+  readonly #maxCarryBytes: number;
   readonly #pages: Uint8Array[] = [];
   #length = 0;
 
+  constructor(maxCarryBytes: number = MAX_CARRY_BYTES) {
+    if (!Number.isInteger(maxCarryBytes) || maxCarryBytes < 1) {
+      throw new TypeError("maxCarryBytes must be a positive integer");
+    }
+    this.#maxCarryBytes = maxCarryBytes;
+  }
+
   #append(bytes: Uint8Array): boolean {
     const length = this.#length + bytes.length;
-    if (length > MAX_CARRY_BYTES) {
+    if (length > this.#maxCarryBytes) {
       this.reset();
       return false;
     }

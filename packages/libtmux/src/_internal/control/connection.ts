@@ -17,7 +17,7 @@ import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
 import { ControlChildLifecycle, type ControlChild } from "./child.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
-import { LineFramer } from "./framing.js";
+import { LineFramer, MAX_CARRY_BYTES } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
 
 const encoder = new TextEncoder();
@@ -201,7 +201,7 @@ export class ControlConnection implements CommandTransport {
   readonly #pending: PendingCommand[] = [];
   readonly #sinks = new Set<EventSink>();
   readonly #bufferSize: number;
-  readonly #framer = new LineFramer();
+  readonly #framer: LineFramer;
   /**
    * The tail of a character split across two `%output` notifications, per pane.
    *
@@ -312,6 +312,7 @@ export class ControlConnection implements CommandTransport {
     }
     this.#maxPendingCommands = maxPendingCommands;
     this.#maxCommandBytes = maxCommandBytes;
+    this.#framer = new LineFramer(Math.max(MAX_CARRY_BYTES, maxCommandBytes));
     this.#pauseAfterSeconds = pauseAfterSeconds;
     const globals = connectionArguments(connection);
     this.#commandPrefix = Object.freeze([...globals]);

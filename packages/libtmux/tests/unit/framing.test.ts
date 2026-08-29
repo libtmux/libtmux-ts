@@ -58,6 +58,17 @@ describe("framing tmux's byte stream into lines", () => {
     expect(framer.pending).toBe(0);
   });
 
+  test("honors a validated caller-specific carry bound", () => {
+    const framer = new LineFramer(4);
+    expect(framer.push(new Uint8Array(4))).toEqual([]);
+    expect(framer.push(new Uint8Array(1))).toBeUndefined();
+    expect(framer.pending).toBe(0);
+
+    for (const invalid of [0, 1.5, Number.NaN]) {
+      expect(() => new LineFramer(invalid)).toThrow("maxCarryBytes must be a positive integer");
+    }
+  });
+
   test("holds a fragmented long line without quadratic copying", () => {
     const framer = new LineFramer();
     const chunk = new Uint8Array(4 * 1024);
