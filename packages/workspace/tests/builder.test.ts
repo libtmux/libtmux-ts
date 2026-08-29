@@ -363,9 +363,7 @@ windows:
       expect(session.name).toBe("project");
 
       const snapshot = await server.snapshot();
-      const windows = snapshot.windows.filter(
-        (window) => window.format.session_id === session.id,
-      );
+      const windows = snapshot.windows.filter((window) => window.format.session_id === session.id);
 
       // Exactly the two described windows: the first was adopted, not created.
       expect(windows.length).toBe(2);
