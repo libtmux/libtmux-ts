@@ -1878,98 +1878,98 @@
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.AdjustmentDirectionRequiresAdjustment",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "AdjustmentDirectionRequiresAdjustment",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:AdjustmentDirectionRequiresAdjustment"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.AmbiguousOption",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "AmbiguousOption",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:AmbiguousOption"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.BadSessionName",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "BadSessionName",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:BadSessionName"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.DeprecatedError",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "DeprecatedError",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:DeprecatedError"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.InvalidOption",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "InvalidOption",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:InvalidOption"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
@@ -1992,22 +1992,22 @@
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.MultipleActiveWindows",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "MultipleActiveWindows",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:MultipleActiveWindows"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
@@ -2030,60 +2030,60 @@
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.NoActiveWindow",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "NoActiveWindow",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:NoActiveWindow"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.NotInsideTmux",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "NotInsideTmux",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:NotInsideTmux"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.NoWindowsExist",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "NoWindowsExist",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:NoWindowsExist"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
@@ -2106,117 +2106,117 @@
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.OptionError",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "OptionError",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:OptionError"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.PaneAdjustmentDirectionRequiresAdjustment",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "PaneAdjustmentDirectionRequiresAdjustment",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:PaneAdjustmentDirectionRequiresAdjustment"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.PaneError",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "PaneError",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:PaneError"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.PaneNotFound",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "PaneNotFound",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:PaneNotFound"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.RequiresDigitOrPercentage",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "RequiresDigitOrPercentage",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:RequiresDigitOrPercentage"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.TmuxCommandNotFound",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "TmuxCommandNotFound",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:TmuxCommandNotFound"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
@@ -2239,79 +2239,79 @@
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.TmuxSessionExists",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "TmuxSessionExists",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:TmuxSessionExists"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.UnknownColorOption",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "UnknownColorOption",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:UnknownColorOption"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.UnknownOption",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "UnknownOption",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:UnknownOption"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.VariableUnpackingError",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "VariableUnpackingError",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:VariableUnpackingError"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
@@ -2353,41 +2353,41 @@
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.WindowAdjustmentDirectionRequiresAdjustment",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "WindowAdjustmentDirectionRequiresAdjustment",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:WindowAdjustmentDirectionRequiresAdjustment"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
-      "declarationTest": "tests/types/common.test.ts",
+      "declarationTest": null,
       "kind": "exception",
       "owner": "libtmux.exc",
       "python": "libtmux.exc.WindowError",
       "realTmuxScenario": null,
-      "reason": null,
+      "reason": "TypeScript raises command, transport, query, and validation errors instead of unused Python compatibility classes",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
-      "status": "implemented",
-      "typescript": "WindowError",
-      "unitTest": "tests/unit/exc.test.ts",
+      "status": "unsupported",
+      "typescript": null,
+      "unitTest": null,
       "evidenceApplicability": {
-        "declarationTest": "required",
-        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
-        "unitTest": "required"
+        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
+        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
       },
-      "typescriptSymbols": ["./exc#value:WindowError"]
+      "typescriptSymbols": []
     },
     {
       "adaptation": null,
@@ -10995,7 +10995,7 @@
       "typescriptSymbols": ["./server#value:Server"]
     },
     {
-      "adaptation": "JavaScript subscription syntax is not overloadable; direct snapshot access replaces it and the deprecated Python behavior remains mapped to DeprecatedError",
+      "adaptation": "JavaScript subscription syntax is not overloadable; direct snapshot access replaces it and the deprecated Python behavior is unsupported",
       "declarationTest": "tests/types/handles.test.ts",
       "id": "subscription.pane",
       "owners": ["libtmux.pane.Pane"],
@@ -11015,7 +11015,7 @@
       "typescriptSymbols": ["./pane#value:Pane"]
     },
     {
-      "adaptation": "JavaScript subscription syntax is not overloadable; direct snapshot access replaces it and the deprecated Python behavior remains mapped to DeprecatedError",
+      "adaptation": "JavaScript subscription syntax is not overloadable; direct snapshot access replaces it and the deprecated Python behavior is unsupported",
       "declarationTest": "tests/types/handles.test.ts",
       "id": "subscription.session",
       "owners": ["libtmux.session.Session"],
@@ -11035,7 +11035,7 @@
       "typescriptSymbols": ["./session#value:Session"]
     },
     {
-      "adaptation": "JavaScript subscription syntax is not overloadable; direct snapshot access replaces it and the deprecated Python behavior remains mapped to DeprecatedError",
+      "adaptation": "JavaScript subscription syntax is not overloadable; direct snapshot access replaces it and the deprecated Python behavior is unsupported",
       "declarationTest": "tests/types/handles.test.ts",
       "id": "subscription.window",
       "owners": ["libtmux.window.Window"],

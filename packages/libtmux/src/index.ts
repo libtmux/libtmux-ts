@@ -78,7 +78,6 @@ export type {
 export { isSplitSize, splitSize } from "./types.js";
 
 export {
-  DeprecatedError,
   LibTmuxException,
   MultipleMatchesError,
   MultipleObjectsReturned,

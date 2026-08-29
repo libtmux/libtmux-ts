@@ -133,7 +133,6 @@ describe("package contract", () => {
     // The root entrypoint is the surface a consumer actually imports.
     expect(Object.keys(await import("../../src/index.js")).toSorted()).toEqual([
       "Client",
-      "DeprecatedError",
       "LibTmuxException",
       "MultipleMatchesError",
       "MultipleObjectsReturned",

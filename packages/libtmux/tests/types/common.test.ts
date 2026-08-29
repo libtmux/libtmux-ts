@@ -23,12 +23,7 @@ import type {
 import { isSafeInteger, safeInteger } from "../../src/common.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
 import * as exception from "../../src/exc.js";
-import {
-  AdjustmentDirectionRequiresAdjustment,
-  MultipleMatchesError,
-  NoMatchError,
-  QueryValidationError,
-} from "../../src/exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
 import {
   OptionScope,
   DEFAULT_OPTION_SCOPE,
@@ -142,10 +137,21 @@ const invalidQuery = new QueryValidationError({
 void noMatch.query;
 void multipleMatches.count;
 void invalidQuery.code;
-type _NoPublicAdjustmentInstanceHook = Expect<
+type _ExceptionNamespace = Expect<
   Equal<
-    Extract<keyof typeof AdjustmentDirectionRequiresAdjustment, typeof Symbol.hasInstance>,
-    never
+    keyof typeof exception,
+    | "LibTmuxException"
+    | "MultipleMatchesError"
+    | "MultipleObjectsReturned"
+    | "NoMatchError"
+    | "ObjectDoesNotExist"
+    | "QueryValidationError"
+    | "TmuxCommandError"
+    | "TmuxObjectDoesNotExist"
+    | "TmuxServerRestarted"
+    | "TmuxTransportError"
+    | "VersionTooLow"
+    | "WaitTimeout"
   >
 >;
 void OptionScope.Server;
@@ -159,62 +165,6 @@ void WINDOW_DIRECTION_FLAG_MAP;
 void PANE_DIRECTION_FLAG_MAP;
 void OPTION_SCOPE_FLAG_MAP;
 void HOOK_SCOPE_FLAG_MAP;
-
-const allExceptions = [
-  new exception.AdjustmentDirectionRequiresAdjustment({
-    cause: exceptionCause,
-    subcommand: "resize-pane",
-  }),
-  new exception.AmbiguousOption("ambiguous", { cause: exceptionCause, subcommand: "show-options" }),
-  new exception.BadSessionName("reason", "session-name"),
-  new exception.DeprecatedError({ deprecated: "old", replacement: "new", version: "0" }),
-  new exception.InvalidOption("invalid", { cause: exceptionCause }),
-  new exception.LibTmuxException("base", { cause: exceptionCause, subcommand: "list-sessions" }),
-  new exception.MultipleActiveWindows(2),
-  new exception.MultipleObjectsReturned({
-    cause: exceptionCause,
-    count: 2,
-    message: "Multiple objects",
-    query: { pane_id: "%3" },
-    subcommand: "list-panes",
-  }),
-  new exception.NoActiveWindow(),
-  new exception.NotInsideTmux("TMUX_PANE", { reason: "not a pane id" }),
-  new exception.NoWindowsExist(),
-  new exception.ObjectDoesNotExist({
-    cause: exceptionCause,
-    message: "No objects",
-    query: { window_id: "@2" },
-    subcommand: "list-windows",
-  }),
-  new exception.OptionError("option", { subcommand: "show-options" }),
-  new exception.PaneAdjustmentDirectionRequiresAdjustment({
-    cause: exceptionCause,
-    subcommand: "resize-pane",
-  }),
-  new exception.PaneError(),
-  new exception.PaneNotFound("%3"),
-  new exception.RequiresDigitOrPercentage(),
-  new exception.TmuxCommandNotFound("missing", { cause: exceptionCause }),
-  new exception.TmuxObjectDoesNotExist({
-    list_cmd: "list-panes",
-    list_extra_args: ["-t", "%3"],
-    obj_id: "%3",
-    obj_key: "pane_id",
-  }),
-  new exception.TmuxSessionExists("exists", { subcommand: "new-session" }),
-  new exception.UnknownColorOption(),
-  new exception.UnknownOption("unknown", { cause: exceptionCause }),
-  new exception.VariableUnpackingError("value"),
-  new exception.VersionTooLow(),
-  new exception.WaitTimeout(),
-  new exception.WindowAdjustmentDirectionRequiresAdjustment({
-    cause: exceptionCause,
-    subcommand: "resize-window",
-  }),
-  new exception.WindowError(),
-];
-void allExceptions;
 
 type _DeliveryStatus = Expect<
   Equal<DeliveryStatus, "not_started" | "written" | "replied" | "indeterminate">
@@ -342,8 +292,8 @@ type _RootSplitSizeProof = Expect<Equal<typeof rootSplitSize, typeof splitSize>>
 export type {
   _CommandOutcomeKeys,
   _DeliveryStatus,
+  _ExceptionNamespace,
   _HookScope,
-  _NoPublicAdjustmentInstanceHook,
   _OperationStatus,
   _OptionScope,
   _PaneFlags,
