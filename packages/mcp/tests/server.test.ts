@@ -1180,16 +1180,21 @@ describe("staying out of the way", () => {
         // both namespaces at once.
         await client.callTool({ arguments: { name: first.id }, name: "new_session" });
 
-        const panes = structured<{ panes: { sessionId: string }[] }>(
+        const panes = structured<{ panes: { placements: { sessionId: string }[] }[] }>(
           await client.callTool({ arguments: { session: first.id }, name: "list_panes" }),
         ).panes;
         expect(panes.length).toBeGreaterThan(0);
-        expect([...new Set(panes.map((pane) => pane.sessionId))]).toEqual([first.id]);
+        expect(panes.every((pane) => pane.placements.some(({ sessionId }) => sessionId === first.id)))
+          .toBe(true);
 
-        const windows = structured<{ windows: { sessionId: string }[] }>(
+        const windows = structured<{ windows: { placements: { sessionId: string }[] }[] }>(
           await client.callTool({ arguments: { session: first.id }, name: "list_windows" }),
         ).windows;
-        expect([...new Set(windows.map((window) => window.sessionId))]).toEqual([first.id]);
+        expect(
+          windows.every((window) =>
+            window.placements.some(({ sessionId }) => sessionId === first.id),
+          ),
+        ).toBe(true);
 
         // A session that does not exist is an error naming what does, not an
         // empty list an agent reads as "this session has no panes".
