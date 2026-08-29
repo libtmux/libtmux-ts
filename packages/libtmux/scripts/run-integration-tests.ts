@@ -14,7 +14,11 @@ import { LINUX_HARNESS, NODE22, preflight, testParallelism } from "./preflight.j
  * loaded.
  */
 const SUITES: readonly string[] = [
-  "tests/integration/test_server.test.ts",
+  "tests/integration/test_server_bootstrap.test.ts",
+  "tests/integration/test_server_controller_identity.test.ts",
+  "tests/integration/test_server_recovery.test.ts",
+  "tests/integration/test_server_cleanup.test.ts",
+  "tests/integration/control_mode.test.ts",
   "tests/integration/supervisor_cleanup.test.ts",
   "tests/integration/graph.test.ts",
   "tests/integration/contract.test.ts",

@@ -6,6 +6,16 @@ export interface LaunchFrame {
   readonly wrapperPid: number;
 }
 
+/** Decode a NUL-delimited argv log, rejecting a partial final frame. */
+export function parseNullFrames(bytes: Uint8Array): readonly string[] {
+  if (bytes.length === 0 || bytes.at(-1) !== 0) {
+    throw new Error("missing terminal NUL frame");
+  }
+  const frames = new TextDecoder("utf-8", { fatal: true }).decode(bytes).split("\0");
+  frames.pop();
+  return frames;
+}
+
 /**
  * The launch frame, once it is whole rather than merely present.
  *
