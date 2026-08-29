@@ -233,6 +233,7 @@ session_name: scalar-options
 options:
   "@number": 42
   "@boolean": true
+  status: false
 windows:
   - options:
       "@window-number": 7
@@ -240,7 +241,7 @@ windows:
     window_name: main
 `);
 
-    expect(workspace.options).toEqual({ "@boolean": true, "@number": 42 });
+    expect(workspace.options).toEqual({ "@boolean": true, "@number": 42, status: false });
     expect(workspace.windows[0]?.options).toEqual({
       "@window-boolean": false,
       "@window-number": 7,
@@ -259,14 +260,15 @@ windows:
       const server = serverFor(fixture);
       const session = await applyWorkspace(server, workspace);
       expect((await session.showOptions()).get("@number")).toBe("42");
-      expect((await session.showOptions()).get("@boolean")).toBe("true");
+      expect((await session.showOptions()).get("@boolean")).toBe("on");
+      expect((await session.showOptions()).get("status")).toBe("off");
 
       const window = (await server.snapshot()).windows.one({
         name: "main",
         session: { is: { name: "scalar-options" } },
       });
       expect((await window.showOptions()).get("@window-number")).toBe("7");
-      expect((await window.showOptions()).get("@window-boolean")).toBe("false");
+      expect((await window.showOptions()).get("@window-boolean")).toBe("off");
     });
   });
 

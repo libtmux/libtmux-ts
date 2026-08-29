@@ -129,5 +129,6 @@ export function initialPaneStartDirectory(workspace: Workspace): string | undefi
 
 /** Convert a YAML scalar to the string tmux accepts for an option value. */
 export function optionValue(value: WorkspaceOptionValue): string {
+  if (typeof value === "boolean") return value ? "on" : "off";
   return String(value);
 }
