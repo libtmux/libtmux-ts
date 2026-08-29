@@ -697,6 +697,14 @@ export interface ConnectOptions extends ConnectionOptions {
   readonly maxPendingCommands?: number;
 }
 
+/** Timing for a whole-server state wait. */
+export interface WaitForOptions {
+  /** Maximum time to wait. A positive timer-safe integer; defaults to 30 seconds. */
+  readonly timeoutMs?: number;
+  /** Poll interval for unannounced changes. A positive timer-safe integer; defaults to 250 ms. */
+  readonly pollIntervalMs?: number;
+}
+
 /** Options for {@link Server.watch}, a notification-only observer. */
 export interface WatchOptions extends ConnectionOptions {
   /**
@@ -782,7 +790,9 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    * This is the join between a snapshot and the stream: it subscribes first,
    * then reads, so a change landing between those two steps is still seen.
    * Doing it the other way round — read, then subscribe — waits forever on a
-   * condition that already came true.
+   * condition that already came true. Notifications trigger immediate reads;
+   * bounded polling covers state changes tmux does not announce. An unannounced
+   * transition must persist until a sample to be observable.
    *
    * ```ts
    * await live.waitFor((server) => server.windows.exists({ name: "build" }));
@@ -794,7 +804,7 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    */
   waitFor(
     matches: (snapshot: ServerSnapshot) => boolean,
-    options?: { readonly timeoutMs?: number },
+    options?: WaitForOptions,
   ): Promise<ServerSnapshot>;
   [Symbol.asyncDispose](): Promise<void>;
 }

@@ -24,6 +24,7 @@ import type {
   SetOptionOptions,
   TmuxEventStream,
   TransportMode,
+  WaitForOptions,
   WatchOptions,
 } from "./types.js";
 import { randomUUID } from "node:crypto";
@@ -33,7 +34,7 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 import type { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch } from "./common.js";
 import type { DaemonGuard, TmuxEngine } from "./engine.js";
-import { LibTmuxException, WaitTimeout } from "./exc.js";
+import { LibTmuxException } from "./exc.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
@@ -75,6 +76,7 @@ import {
 import { TmuxConnection } from "./_internal/runtime/connection.js";
 
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
+import { waitForSnapshot } from "./_internal/control/wait_for.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 
 /**
@@ -505,41 +507,23 @@ export class Server {
       waitFor: {
         value: (
           matches: (snapshot: ServerSnapshot) => boolean,
-          options: { readonly timeoutMs?: number } = {},
+          options: WaitForOptions = {},
         ): Promise<ServerSnapshot> => {
           const entry: { promise?: Promise<ServerSnapshot> } = {};
           const run = async (): Promise<ServerSnapshot> => {
-            // Subscribe before reading, or a change that lands between the read
-            // and the subscription is never seen and the wait hangs on a
-            // condition that is already true.
-            const events = connection.subscribe();
-            let deadlinePassed = false;
-            const deadline = setTimeout(() => {
-              deadlinePassed = true;
-              void events.close();
-            }, options.timeoutMs ?? 30_000);
             try {
-              let snapshot = await bound.snapshot();
-              if (matches(snapshot)) return snapshot;
-              for await (const _event of events) {
-                snapshot = await bound.snapshot();
-                if (matches(snapshot)) return snapshot;
-              }
+              return await waitForSnapshot({
+                matches,
+                options,
+                snapshot: () => bound.snapshot(),
+                subscribe: () => connection.subscribe(),
+              });
             } finally {
-              clearTimeout(deadline);
-              await events.close();
               // Inside the body on purpose: cleaning up from outside attaches
               // a handler, which marks the promise handled the moment it exists
               // and silences every wait rather than the closed ones.
               waiting.delete(entry);
             }
-            // Waiting out a deadline and losing the connection are different
-            // outcomes, and only one of them says anything about the condition.
-            throw deadlinePassed
-              ? new WaitTimeout("the awaited tmux state did not arrive before the deadline")
-              : new LibTmuxException(
-                  "the tmux event stream ended before the awaited state arrived",
-                );
           };
           const promise = run();
           entry.promise = promise;

@@ -391,6 +391,31 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
+  test("polls for whole-server state with no notification", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const remote = await server.newSession({ name: "quiet", shellCommand: "sleep 60" });
+      const pane = remote.panes.one();
+      await using live = await server.connect({ target: "watch" });
+      let arm!: () => void;
+      const armed = new Promise<void>((resolve) => {
+        arm = resolve;
+      });
+
+      const arriving = live.waitFor(
+        (snapshot) => {
+          arm();
+          return snapshot.panes.exists({ id: pane.id, title: "arrived" });
+        },
+        { pollIntervalMs: 50, timeoutMs: 1_500 },
+      );
+      await armed;
+      await fixture.executeText(["select-pane", "-t", pane.id, "-T", "arrived"]);
+
+      expect((await arriving).panes.one({ id: pane.id }).title).toBe("arrived");
+    });
+  }, 60_000);
+
   test("returns at once when the state is already true", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
