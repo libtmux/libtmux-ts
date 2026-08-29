@@ -351,7 +351,7 @@ describe("package contract", () => {
     expect(build.compilerOptions).toMatchObject({
       declaration: true,
       declarationMap: true,
-      inlineSources: true,
+      inlineSources: false,
       noEmit: false,
       outDir: "dist",
       sourceMap: true,

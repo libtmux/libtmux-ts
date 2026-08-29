@@ -6,7 +6,7 @@
     "noEmit": false,
     "declaration": true,
     "declarationMap": true,
-    "inlineSources": true,
+    "inlineSources": false,
     "lib": ["ES2024", "ESNext.Disposable", "DOM"],
     "sourceMap": true,
     "isolatedDeclarations": false,

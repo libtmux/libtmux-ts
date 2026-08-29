@@ -14,17 +14,13 @@ const declarationMap = `${JSON.stringify({
   names: [],
   sourceRoot: "",
   sources: ["../src/declaration.ts"],
-  sourcesContent: [source],
   version: 3,
 })}\n`;
 
 interface FixtureOptions {
-  readonly corruption?:
-    | "absolute-source"
-    | "mismatched-content"
-    | "nonempty-source-root"
-    | "outside-source";
+  readonly corruption?: "absolute-source" | "nonempty-source-root" | "outside-source";
   readonly declarationMap: boolean;
+  readonly embeddedSources?: boolean;
   readonly shipDeclarationSource: boolean;
   readonly shipMaps: boolean;
 }
@@ -47,7 +43,7 @@ async function runGate(options: FixtureOptions): Promise<{
             ? "../../outside.ts"
             : "../src/index.ts",
       ],
-      sourcesContent: [options.corruption === "mismatched-content" ? `${source}changed\n` : source],
+      ...(options.embeddedSources ? { sourcesContent: [source] } : {}),
       version: 3,
     })}\n`;
     await Promise.all([mkdir(join(root, "dist")), mkdir(join(root, "src"))]);
@@ -129,12 +125,23 @@ test("rejects a map omitted from the tarball", async () => {
   expect(result.stderr).toContain("index.d.ts references dist/index.d.ts.map, which is not packed");
 });
 
-test("rejects unsafe and dishonest map contents", async () => {
+test("rejects source text duplicated in a packed map", async () => {
+  const result = await runGate({
+    declarationMap: true,
+    embeddedSources: true,
+    shipDeclarationSource: true,
+    shipMaps: true,
+  });
+
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("duplicates its packed source");
+});
+
+test("rejects unsafe map paths", async () => {
   for (const [corruption, message] of [
     ["absolute-source", "absolute source path"],
     ["outside-source", "source outside the package"],
     ["nonempty-source-root", "must set an empty sourceRoot"],
-    ["mismatched-content", "does not embed the exact source"],
   ] as const) {
     // eslint-disable-next-line no-await-in-loop -- each fixture proves one independent refusal.
     const result = await runGate({

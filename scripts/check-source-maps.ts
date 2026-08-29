@@ -44,7 +44,7 @@ const packed = new Set(
 );
 if (packed.size === 0) fail("packing produced no entries");
 
-async function validateMap(artifactPath: string, requireEmbeddedSources: boolean): Promise<void> {
+async function validateMap(artifactPath: string): Promise<void> {
   const absoluteArtifactPath = join(distRoot, artifactPath);
   const mapPath = `${absoluteArtifactPath}.map`;
   const expectedReference = `//# sourceMappingURL=${basename(mapPath)}`;
@@ -68,18 +68,8 @@ async function validateMap(artifactPath: string, requireEmbeddedSources: boolean
   if (!Array.isArray(map.sources) || map.sources.some((entry) => typeof entry !== "string")) {
     fail(`${artifactPath}.map has invalid sources`);
   }
-  let sourcesContent: string[] | undefined;
-  if (map.sourcesContent === undefined) {
-    if (requireEmbeddedSources) fail(`${artifactPath}.map has incomplete sourcesContent`);
-  } else {
-    if (
-      !Array.isArray(map.sourcesContent) ||
-      map.sourcesContent.length !== map.sources.length ||
-      map.sourcesContent.some((entry) => typeof entry !== "string")
-    ) {
-      fail(`${artifactPath}.map has incomplete sourcesContent`);
-    }
-    sourcesContent = map.sourcesContent as string[];
+  if (map.sourcesContent !== undefined) {
+    fail(`${artifactPath}.map duplicates its packed source`);
   }
 
   const sources = map.sources as string[];
@@ -90,17 +80,11 @@ async function validateMap(artifactPath: string, requireEmbeddedSources: boolean
     fail(`${artifactPath} references ${packageMapPath}, which is not packed`);
   }
   await Promise.all(
-    sources.map(async (entry, index) => {
+    sources.map(async (entry) => {
       if (isAbsolute(entry)) fail(`${artifactPath}.map contains an absolute source path`);
       const sourcePath = resolve(dirname(mapPath), entry);
       if (!contained(packageRoot, sourcePath)) {
         fail(`${artifactPath}.map contains a source outside the package`);
-      }
-      if (
-        sourcesContent !== undefined &&
-        sourcesContent[index] !== (await readFile(sourcePath, "utf8"))
-      ) {
-        fail(`${artifactPath}.map does not embed the exact source`);
       }
       const packageSourcePath = relative(packageRoot, sourcePath).replaceAll("\\", "/");
       if (mapIsPacked && !packed.has(packageSourcePath)) {
@@ -110,10 +94,7 @@ async function validateMap(artifactPath: string, requireEmbeddedSources: boolean
   );
 }
 
-await Promise.all([
-  ...javascript.map((path) => validateMap(path, true)),
-  ...declarations.map((path) => validateMap(path, false)),
-]);
+await Promise.all([...javascript.map(validateMap), ...declarations.map(validateMap)]);
 await rm(packDirectory, { force: true, recursive: true });
 packDirectory = undefined;
 
