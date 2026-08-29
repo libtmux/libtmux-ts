@@ -105,6 +105,9 @@ const echoFixture = fileURLToPath(${echoFixture});
 const ignoreFixture = fileURLToPath(${ignoreFixture});
 const malformedFixture = fileURLToPath(${malformedFixture});
 const transport = new NodeSpawnTransport({ terminationGraceMs: 30 });
+function request(args, options = {}) {
+  return { commands: [args], executable, globalArgs: [], ...options };
+}
 assert.equal(FORMAT_SEPARATOR, "NODE_FORMAT_SEPARATOR");
 const nodeFormatCodec = new GuardCodec({
   capabilities: deriveTmuxCapabilities({
@@ -252,20 +255,21 @@ async function settleWithin(promise, milliseconds) {
   }
 }
 const values = ["with space", "-leading", 'a"quote', "a\\\\backslash", "雪", ";"];
-const literal = await transport.execute({ executable, args: [echoFixture, ...values] });
-assert.deepEqual(JSON.parse(decodeBackslashReplace(literal.stdout)), values);
+const literal = await transport.execute(request([echoFixture, ...values]));
+assert.deepEqual(
+  JSON.parse(decodeBackslashReplace(literal.stdout)),
+  [...values.slice(0, -1), "\\\\;"],
+);
 
 const stdin = Uint8Array.of(0x61, 0x62);
-const immutableInput = transport.execute({
-  executable,
-  args: [echoFixture, "--echo-stdin"],
-  stdin,
-});
+const immutableInput = transport.execute(
+  request([echoFixture, "--echo-stdin"], { stdin }),
+);
 stdin[0] = 0x7a;
 assert.deepEqual([...((await immutableInput).stdout)], [0x61, 0x62]);
 
 const submittedArgs = [echoFixture, "submitted"];
-const correlatedExecution = transport.execute({ executable, args: submittedArgs });
+const correlatedExecution = transport.execute(request(submittedArgs));
 submittedArgs[1] = "mutated-after-spawn";
 const correlated = await correlatedExecution;
 assert.deepEqual(JSON.parse(decodeBackslashReplace(correlated.stdout)), ["submitted"]);
@@ -280,18 +284,17 @@ prepared.stdin[0] = 0x7a;
 await Promise.resolve();
 assert.deepEqual([...prepared.stdin], [0x61, 0x62]);
 
-const nonzero = await transport.execute({ executable, args: [echoFixture, "--exit-code=7"] });
+const nonzero = await transport.execute(request([echoFixture, "--exit-code=7"]));
 assert.equal(nonzero.returncode, 7);
 assert.ok(nonzero.stdout instanceof Uint8Array);
 assert.ok(nonzero.stderr instanceof Uint8Array);
 
-const malformed = await transport.execute({ executable, args: [malformedFixture] });
+const malformed = await transport.execute(request([malformedFixture]));
 assert.deepEqual(adaptRawResult(malformed).stdout, ["valid:€", "bad:\\\\xff\\\\xc3("]);
 
-const requests = [0, 5, 0].map((code, index) => ({
-  executable,
-  args: [echoFixture, \`--exit-code=\${code}\`, \`node-request-\${index}\`],
-}));
+const requests = [0, 5, 0].map((code, index) =>
+  request([echoFixture, \`--exit-code=\${code}\`, \`node-request-\${index}\`]),
+);
 const batch = await executeBatch(transport, requests);
 assert.deepEqual(batch.map(({ delivery, index, status }) => ({ delivery, index, status })), [
   { delivery: "replied", index: 0, status: "complete" },
@@ -302,9 +305,9 @@ assert.deepEqual(batch.map(({ delivery, index, status }) => ({ delivery, index, 
 const laterArgs = [echoFixture, "second-original"];
 const laterStdin = Uint8Array.of(0x61, 0x62);
 const mutableBatchExecution = executeBatch(transport, [
-  { executable, args: [echoFixture, "first"] },
-  { executable, args: laterArgs },
-  { executable, args: [echoFixture, "--echo-stdin"], stdin: laterStdin },
+  request([echoFixture, "first"]),
+  request(laterArgs),
+  request([echoFixture, "--echo-stdin"], { stdin: laterStdin }),
 ]);
 laterArgs[1] = "second-mutated";
 laterStdin[0] = 0x7a;
@@ -317,12 +320,12 @@ assert.deepEqual([...immutableBatch[2].rawResult.stdout], [0x61, 0x62]);
 
 const controller = new AbortController();
 const markerPath = fileURLToPath(new URL("./sigterm-ready", import.meta.url));
-const cancelled = transport.execute({
-  executable,
-  args: [ignoreFixture, markerPath],
-  signal: controller.signal,
-  stdin: new Uint8Array(8 * 1024 * 1024),
-});
+const cancelled = transport.execute(
+  request([ignoreFixture, markerPath], {
+    signal: controller.signal,
+    stdin: new Uint8Array(8 * 1024 * 1024),
+  }),
+);
 await waitForFile(markerPath);
 controller.abort();
 await assert.rejects(cancelled, (error) => {
@@ -333,11 +336,9 @@ await assert.rejects(cancelled, (error) => {
   return true;
 });
 
-const timedOut = transport.execute({
-  executable,
-  args: [ignoreFixture, "--exit-after=2000"],
-  timeoutMs: 500,
-});
+const timedOut = transport.execute(
+  request([ignoreFixture, "--exit-after=2000"], { timeoutMs: 500 }),
+);
 await assert.rejects(timedOut, (error) => {
   assert.ok(error instanceof TmuxTransportError);
   assert.equal(error.delivery, "indeterminate");
@@ -348,11 +349,11 @@ await assert.rejects(timedOut, (error) => {
 
 const partialPipeMarker = fileURLToPath(new URL("./partial-pipe-holder", import.meta.url));
 const partialController = new AbortController();
-const partialExecution = transport.execute({
-  executable,
-  args: [ignoreFixture, "--inherit-pipes=" + partialPipeMarker],
-  signal: partialController.signal,
-});
+const partialExecution = transport.execute(
+  request([ignoreFixture, "--inherit-pipes=" + partialPipeMarker], {
+    signal: partialController.signal,
+  }),
+);
 await waitForFile(partialPipeMarker);
 const partialHolder = await readHolderIdentity(partialPipeMarker);
 partialController.abort();
@@ -373,14 +374,14 @@ try {
 }
 
 const timeoutPipeMarker = fileURLToPath(new URL("./timeout-pipe-holder", import.meta.url));
-const heldPipeTimeout = transport.execute({
-  executable,
-  args: [ignoreFixture, "--inherit-pipes=" + timeoutPipeMarker],
-  // The deadline has to outlast a loaded machine's node startup: one that beats
-  // the spawn times out a process that never held a pipe, which is a different
-  // scenario.
-  timeoutMs: 4_000,
-});
+const heldPipeTimeout = transport.execute(
+  request([ignoreFixture, "--inherit-pipes=" + timeoutPipeMarker], {
+    // The deadline has to outlast a loaded machine's node startup: one that beats
+    // the spawn times out a process that never held a pipe, which is a different
+    // scenario.
+    timeoutMs: 4_000,
+  }),
+);
 // Given an outcome the moment it exists. Nothing below may be the first thing
 // to await it: a rejection landing while this waits on the marker is unhandled
 // and takes the whole run down instead of failing the assertion it belongs to.
@@ -403,11 +404,11 @@ try {
 
 const exitCancelController = new AbortController();
 const exitCancelMarker = fileURLToPath(new URL("./exit-cancel", import.meta.url));
-const exitCancelled = transport.execute({
-  executable,
-  args: [echoFixture, "--exit-with-inherited-pipe", exitCancelMarker, "1500"],
-  signal: exitCancelController.signal,
-});
+const exitCancelled = transport.execute(
+  request([echoFixture, "--exit-with-inherited-pipe", exitCancelMarker, "1500"], {
+    signal: exitCancelController.signal,
+  }),
+);
 // Given an outcome the moment it exists. Nothing below may be the first thing
 // to await it: if the cancel lands before the exit is delivered this rejects,
 // and a rejection with no handler yet takes the whole run down instead of
@@ -446,14 +447,14 @@ try {
 
 const exitTimeoutMarker = fileURLToPath(new URL("./exit-timeout", import.meta.url));
 const exitTimeoutAt = performance.now();
-const exitTimed = transport.execute({
-  executable,
-  // The deadline has to land after the child exits and before the holder lets
-  // the pipe go, with room on both sides: on a loaded machine a tight first half
-  // becomes a real timeout, which is a different scenario.
-  args: [echoFixture, "--exit-with-inherited-pipe", exitTimeoutMarker, "8000"],
-  timeoutMs: 2_000,
-});
+const exitTimed = transport.execute(
+  request([echoFixture, "--exit-with-inherited-pipe", exitTimeoutMarker, "8000"], {
+    // The deadline has to land after the child exits and before the holder lets
+    // the pipe go, with room on both sides: on a loaded machine a tight first half
+    // becomes a real timeout, which is a different scenario.
+    timeoutMs: 2_000,
+  }),
+);
 // Given an outcome the moment it exists: nothing below may be the first to
 // await it, or a rejection landing while this waits on the marker is unhandled
 // and takes the whole run down instead of failing its own assertion.
