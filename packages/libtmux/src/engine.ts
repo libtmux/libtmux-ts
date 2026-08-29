@@ -164,8 +164,9 @@ export const MAX_PACKED_ARGV_BYTES: 16_364 = MAX_PACKED_ARGV_BYTES_INTERNAL;
  * How many arguments of one command a tmux client may hand the server.
  *
  * The other half of the same refusal, and reachable well inside the byte
- * bound: a thousand short arguments are a few kilobytes. tmux parses 1000 and
- * refuses 1001.
+ * bound: a thousand short arguments are a few kilobytes. tmux 3.7 and later
+ * parse 1000 and refuse 1001; older supported releases carry no such check.
+ * This package enforces it everywhere, so one invocation means one thing.
  */
 export const MAX_PACKED_ARGV_COUNT: 1000 = MAX_PACKED_ARGV_COUNT_INTERNAL;
 

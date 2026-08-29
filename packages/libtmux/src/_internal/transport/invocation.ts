@@ -19,8 +19,13 @@ export const MAX_PACKED_ARGV_BYTES = 16_364;
  * The most arguments tmux will pack into one client message.
  *
  * A separate bound from the byte one, and reachable well inside it: 999
- * arguments spelling short commands are about 6KB. Measured — tmux parses 1000
- * packed arguments and refuses 1001 as `command too long`.
+ * arguments spelling short commands are about 6KB.
+ *
+ * Measured: tmux 3.7 and later parse 1000 packed arguments and refuse 1001 as
+ * `command too long`. Releases 3.2a through 3.6 carry no such check and
+ * accepted 1599. Enforced on every supported server regardless, because a
+ * command the newest tmux refuses is not one this package should build — the
+ * cost is refusing a large batch that an older server would have run.
  */
 export const MAX_PACKED_ARGV_COUNT = 1000;
 
