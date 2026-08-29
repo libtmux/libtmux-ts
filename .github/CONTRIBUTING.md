@@ -293,14 +293,19 @@ letting a checkout discover it as ENOENT from a file nobody mentioned.
 A release is a tag, and the tag is refused unless every manifest agrees with
 it. A stable release uses `latest`. A prerelease uses `latest` until a stable
 version has held that tag; later prereleases use their first identifier, such
-as `alpha` in `1.1.0-alpha.1`. Manual workflow runs are dry-run only.
+as `alpha` in `1.1.0-alpha.1`. The credentialed workflow accepts only `v*` tag
+pushes and waits for that commit to pass the full Bun, Node, tmux, and package
+matrix. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
+locally to use its dry-run mode without an npm identity.
 
-The release coordinator builds all three npm tarballs and reads every package,
-target version, integrity digest, and dist-tag before publishing any of them.
-It publishes those exact tarballs, then checks all three registry artifacts and
-tags again. A partial rerun skips an existing version only when its integrity
-and intended tag match. A different artifact, a missing established package,
-or any registry error other than a target-version 404 stops the release.
+The release coordinator first requires every package version and internal
+`libtmux` dependency to agree. It then builds all three npm tarballs and reads
+every package, target version, integrity digest, and dist-tag before publishing
+any of them. It publishes those exact tarballs, then checks all three registry
+artifacts and tags again. A partial rerun skips an existing version only when
+its integrity and intended tag match. A different artifact, a missing
+established package, or any registry error other than a target-version 404
+stops the release.
 
 npm cannot publish three packages as one transaction. A failure can therefore
 leave a prefix published for the next run to verify and resume. Trusted

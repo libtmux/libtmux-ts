@@ -43,10 +43,25 @@ interface UpdateEntry {
 }
 
 interface WorkflowStep {
+  readonly "continue-on-error"?: unknown;
+  readonly if?: unknown;
   readonly name?: unknown;
   readonly run?: unknown;
   readonly uses?: unknown;
   readonly with?: Readonly<Record<string, unknown>>;
+}
+
+interface WorkflowJob {
+  readonly "continue-on-error"?: unknown;
+  readonly if?: unknown;
+  readonly needs?: unknown;
+  readonly permissions?: unknown;
+  readonly steps?: unknown;
+  readonly uses?: unknown;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const failures: string[] = [];
@@ -205,13 +220,63 @@ const publishDocument = Bun.YAML.parse(publishSource) as {
     readonly group?: unknown;
     readonly queue?: unknown;
   };
-  readonly on?: { readonly workflow_dispatch?: unknown };
-  readonly jobs?: { readonly publish?: { readonly steps?: unknown } };
+  readonly on?: {
+    readonly push?: { readonly tags?: unknown };
+    readonly workflow_dispatch?: unknown;
+  };
+  readonly permissions?: unknown;
+  readonly jobs?: Readonly<Record<string, WorkflowJob>>;
 };
-const rawPublishSteps = publishDocument.jobs?.publish?.steps;
+const publishJobs = publishDocument.jobs ?? {};
+const publishJob = publishJobs.publish;
+const rawPublishSteps = publishJob?.steps;
 const publishSteps: readonly WorkflowStep[] = Array.isArray(rawPublishSteps)
   ? (rawPublishSteps as WorkflowStep[])
   : [];
+if (publishSteps.some((step) => step.if !== undefined || step["continue-on-error"] !== undefined)) {
+  failures.push(".github/workflows/publish.yml: every publication step must run and fail closed");
+}
+
+const verifyJob = publishJobs.verify;
+if (
+  verifyJob?.uses !== "./.github/workflows/typescript.yml" ||
+  verifyJob["continue-on-error"] !== undefined ||
+  publishJob?.needs !== "verify" ||
+  publishJob.if !== undefined ||
+  publishJob["continue-on-error"] !== undefined
+) {
+  failures.push(
+    ".github/workflows/publish.yml: publication must need the full reusable workflow and fail on any error",
+  );
+}
+const rootPermissions = publishDocument.permissions;
+const publishPermissions = publishJob?.permissions;
+if (
+  !isRecord(rootPermissions) ||
+  Object.keys(rootPermissions).length !== 1 ||
+  rootPermissions.contents !== "read" ||
+  Object.entries(publishJobs).some(
+    ([name, job]) => name !== "publish" && job.permissions !== undefined,
+  ) ||
+  !isRecord(publishPermissions) ||
+  Object.keys(publishPermissions).length !== 2 ||
+  publishPermissions.contents !== "read" ||
+  publishPermissions["id-token"] !== "write"
+) {
+  failures.push(
+    ".github/workflows/publish.yml: only the publication job may mint an npm OIDC token",
+  );
+}
+
+const typescriptPath = join(repositoryRoot, ".github/workflows/typescript.yml");
+const typescriptDocument = Bun.YAML.parse(await Bun.file(typescriptPath).text()) as {
+  readonly on?: Readonly<Record<string, unknown>>;
+};
+if (!Object.hasOwn(typescriptDocument.on ?? {}, "workflow_call")) {
+  failures.push(
+    ".github/workflows/typescript.yml: the full workflow must accept calls from the publish workflow",
+  );
+}
 
 const setupNodeStep = (step: WorkflowStep, version: string): boolean =>
   typeof step.uses === "string" &&
@@ -234,33 +299,33 @@ if (node22 < 0 || node22Path <= node22 || node24 <= node22Path) {
 const packageCheck = publishSteps.find(
   (step) => step.name === "Build and check every package",
 )?.run;
-if (
-  typeof packageCheck !== "string" ||
-  !/for package in libtmux mcp workspace; do[\s\S]*?\(\s*cd "packages\/\$package"\s*&&\s*bun run test:package\s*&&\s*bun run test:install\s*\)[\s\S]*?done/u.test(
-    packageCheck,
-  )
-) {
+const expectedPackageCheck = `for package in libtmux mcp workspace; do
+  ( cd "packages/$package" && bun run test:package && bun run test:install )
+done
+`;
+if (packageCheck !== expectedPackageCheck) {
   failures.push(
     ".github/workflows/publish.yml: must run test:install after test:package for libtmux, mcp, and workspace",
   );
 }
 
-const dispatch = publishDocument.on?.workflow_dispatch;
+const publishTriggers = publishDocument.on ?? {};
+const tagPatterns = publishTriggers.push?.tags;
 if (
-  typeof dispatch === "object" &&
-  dispatch !== null &&
-  "inputs" in dispatch &&
-  Object.keys((dispatch as { readonly inputs?: unknown }).inputs ?? {}).length > 0
+  Object.keys(publishTriggers).length !== 1 ||
+  !Array.isArray(tagPatterns) ||
+  tagPatterns.length !== 1 ||
+  tagPatterns[0] !== "v*"
 ) {
   failures.push(
-    ".github/workflows/publish.yml: workflow_dispatch must not expose a live-publish input",
+    ".github/workflows/publish.yml: the credentialed workflow must run only for v* tag pushes",
   );
 }
 
 const releaseCoordinator = publishSteps.find((step) => step.name === "Coordinate release")?.run;
 if (releaseCoordinator !== "bun scripts/publish-release.ts") {
   failures.push(
-    ".github/workflows/publish.yml: must delegate dry-run and tag publishing to scripts/publish-release.ts",
+    ".github/workflows/publish.yml: must delegate tag publishing to scripts/publish-release.ts",
   );
 }
 

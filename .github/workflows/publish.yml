@@ -5,20 +5,27 @@ name: publish
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
-  # Trusted publishing: npm mints its credential from this token, so no
-  # NODE_AUTH_TOKEN exists to leak or rotate.
-  id-token: write
 
 concurrency:
   group: publish
   queue: max
 
 jobs:
+  # A same-repository workflow call resolves from this run's commit. Publishing
+  # cannot start until that exact tree passes every supported Bun and tmux lane.
+  verify:
+    uses: ./.github/workflows/typescript.yml
+
   publish:
+    needs: verify
+    permissions:
+      contents: read
+      # Trusted publishing: npm mints its credential from this token, so no
+      # NODE_AUTH_TOKEN exists to leak or rotate.
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

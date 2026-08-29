@@ -10,12 +10,12 @@ import {
   coordinateRelease,
   createNpmCommandRunner,
   createReleaseIO,
-  selectDistTag,
   type NpmCommandRunner,
   type RegistryPackageState,
   type RegistryVersionState,
   type ReleaseIO,
 } from "../../../../scripts/publish-release.js";
+import { selectDistTag } from "../../../../scripts/release_policy.js";
 
 const packages = [
   ["libtmux", "libtmux"],
@@ -48,7 +48,19 @@ async function makeReleaseFixture(version: string): Promise<{
     packages.map(async ([directory, name]) => {
       const packageRoot = join(root, "packages", directory);
       await mkdir(packageRoot, { recursive: true });
-      await writeFile(join(packageRoot, "package.json"), `${JSON.stringify({ name, version })}\n`);
+      const internalVersions =
+        directory === "mcp"
+          ? { dependencies: { libtmux: version } }
+          : directory === "workspace"
+            ? {
+                devDependencies: { libtmux: version },
+                peerDependencies: { libtmux: version },
+              }
+            : {};
+      await writeFile(
+        join(packageRoot, "package.json"),
+        `${JSON.stringify({ name, version, ...internalVersions })}\n`,
+      );
     }),
   );
   const artifacts = join(root, "artifacts");
@@ -242,6 +254,39 @@ describe("coordinated release", () => {
       expect(report.published).toEqual([]);
       expect(report.skipped).toEqual(packages.map(([, name]) => name));
       expect(publishes).toEqual([]);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  test("resumes a partially published first stable release", async () => {
+    const fixture = await makeReleaseFixture("1.0.0");
+    const registry = makeRegistry();
+    const publishedPrefix = registry.get("libtmux");
+    if (publishedPrefix === undefined) throw new Error("missing libtmux registry fixture");
+    publishedPrefix.distTags.latest = "1.0.0";
+    publishedPrefix.versions.set("1.0.0", localIntegrity("libtmux"));
+    const { io, publishes } = makeReleaseIO(registry);
+    try {
+      const report = await coordinateRelease(
+        {
+          artifactDirectory: fixture.artifacts,
+          dryRun: false,
+          eventName: "push",
+          refName: "v1.0.0",
+          repositoryRoot: fixture.root,
+        },
+        io,
+      );
+
+      expect(report).toEqual({
+        distTag: "latest",
+        dryRun: false,
+        published: ["@libtmux/mcp", "@libtmux/workspace"],
+        skipped: ["libtmux"],
+        version: "1.0.0",
+      });
+      expect(publishes.map(({ name }) => name)).toEqual(["@libtmux/mcp", "@libtmux/workspace"]);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -471,6 +516,36 @@ describe("coordinated release", () => {
           io,
         ),
       ).rejects.toThrow("release package versions are not lockstep");
+      expect(packed).toEqual([]);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  test.each([
+    ["mcp", "dependencies"],
+    ["workspace", "peerDependencies"],
+    ["workspace", "devDependencies"],
+  ] as const)("rejects a stale %s %s libtmux edge before packing", async (directory, field) => {
+    const fixture = await makeReleaseFixture("1.0.0");
+    const manifestPath = join(fixture.root, "packages", directory, "package.json");
+    const manifest = (await Bun.file(manifestPath).json()) as Record<string, unknown>;
+    manifest[field] = { libtmux: "0.9.0" };
+    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+    const { io, packed } = makeReleaseIO(makeRegistry());
+    try {
+      await expect(
+        coordinateRelease(
+          {
+            artifactDirectory: fixture.artifacts,
+            dryRun: false,
+            eventName: "push",
+            refName: "v1.0.0",
+            repositoryRoot: fixture.root,
+          },
+          io,
+        ),
+      ).rejects.toThrow(`${field}.libtmux must be 1.0.0, not "0.9.0"`);
       expect(packed).toEqual([]);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
