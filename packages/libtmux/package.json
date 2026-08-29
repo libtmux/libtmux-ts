@@ -108,7 +108,7 @@
     "test:integration": "bun scripts/run-integration-tests.ts",
     "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
     "test:compat": "bun scripts/check-tmux-compat.ts",
-    "test:package": "bun run build && bun scripts/check-package.ts",
+    "test:package": "bun run build && bun ../../scripts/check-source-maps.ts && bun scripts/check-package.ts",
     "test:readme": "bun scripts/doc-examples/check-readme-runs.ts",
     "test:symbols": "bun scripts/doc-examples/check-symbol-runs.ts",
     "test:install": "bun run build && bun scripts/check-install.ts",

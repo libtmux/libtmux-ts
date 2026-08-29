@@ -5,6 +5,9 @@
     "outDir": "dist",
     "noEmit": false,
     "declaration": true,
+    "declarationMap": false,
+    "inlineSources": true,
+    "sourceMap": true,
     "isolatedDeclarations": false,
     "skipLibCheck": true,
     "types": ["node"]
