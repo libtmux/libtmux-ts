@@ -33,7 +33,13 @@ await sweepStaleRunRoots();
 // publishes one run root for every fixture here instead of one per test,
 // forwards SIGINT and SIGTERM to the child, and reaps what it owns afterwards.
 // Without it a Ctrl-C left the servers running and nothing to collect them.
+// Arguments naming files replace the default target rather than adding to it.
+// Appending them ran the whole suite and then the named file again, so asking
+// for one test cost every test — three minutes to answer a five-second question.
+const forwarded = Bun.argv.slice(2);
+const selectsFiles = forwarded[0] !== undefined && !forwarded[0].startsWith("-");
+
 process.exitCode = await runSupervisor({
-  command: ["bun", "test", "--no-orphans", "tests", ...Bun.argv.slice(2)],
+  command: ["bun", "test", "--no-orphans", ...(selectsFiles ? forwarded : ["tests", ...forwarded])],
   cwd: new URL("..", import.meta.url).pathname,
 });
