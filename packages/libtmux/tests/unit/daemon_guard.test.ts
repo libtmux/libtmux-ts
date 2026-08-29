@@ -18,6 +18,7 @@ describe("daemon guard", () => {
     expect(carriesTmuxId(["kill-pane", "-t", "%3"])).toBe(true);
     expect(carriesTmuxId(["kill-window", "-t", "@7"])).toBe(true);
     expect(carriesTmuxId(["kill-session", "-t", "$0"])).toBe(true);
+    expect(carriesTmuxId(["unlink-window", "-t", "$0:7"])).toBe(true);
     // Sources carry ids too, and a guard reading only `-t` would miss them.
     expect(carriesTmuxId(["swap-pane", "-s", "%1", "-t", "%2"])).toBe(true);
     expect(carriesTmuxId(["link-window", "-s", "@4", "-t", "other:9"])).toBe(true);

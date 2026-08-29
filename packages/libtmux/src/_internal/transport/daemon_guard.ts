@@ -16,8 +16,8 @@ export type { DaemonGuard } from "../../engine.js";
 const RESTART_MARKER = "libtmux-daemon-restarted";
 const ELSE_BRANCH: readonly string[] = Object.freeze(["list-windows", "-t", RESTART_MARKER]);
 
-/** A raw tmux id: the thing a restart reissues to something else. */
-const TMUX_ID = /^[%@$]\d+$/u;
+/** A raw tmux id, alone or as the session part of an exact placement. */
+const TMUX_ID = /^[%@$]\d+(?::.*)?$/u;
 
 /** Whether an argv addresses an object by an id only its own daemon can resolve. */
 export function carriesTmuxId(args: readonly string[]): boolean {
