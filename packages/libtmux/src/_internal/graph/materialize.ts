@@ -9,7 +9,7 @@ import { runtimePrototype } from "../runtime/constructors.js";
 import { initializeLiveHandle } from "../runtime/live_handle.js";
 import {
   graphRecordForRef,
-  graphRecordRefsEqual,
+  isGraphRecordRef,
   isNormalizedGraph,
   type GraphRecord,
   type GraphRecordRef,
@@ -53,7 +53,7 @@ function requireProjectionGraph(
 }
 
 function resolveGraphRecord(graph: NormalizedGraph, ref: GraphRecordRef): GraphRecord {
-  if (!graphRecordRefsEqual(ref, ref)) {
+  if (!isGraphRecordRef(ref)) {
     return invalidMaterialization("graph record reference is not authentic");
   }
   const record = graphRecordForRef(graph, ref);

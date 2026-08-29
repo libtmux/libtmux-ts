@@ -141,10 +141,15 @@ export function createGraphRecordRef(source: GraphSourceId, ordinal: number): Gr
   return ref;
 }
 
+/** Whether this ref was minted by {@link createGraphRecordRef}. */
+export function isGraphRecordRef(value: unknown): value is GraphRecordRef {
+  return typeof value === "object" && value !== null && authenticatedGraphRecordRefs.has(value);
+}
+
 export function graphRecordRefsEqual(left: GraphRecordRef, right: GraphRecordRef): boolean {
   return (
-    authenticatedGraphRecordRefs.has(left) &&
-    authenticatedGraphRecordRefs.has(right) &&
+    isGraphRecordRef(left) &&
+    isGraphRecordRef(right) &&
     left.source === right.source &&
     left.ordinal === right.ordinal
   );
@@ -164,7 +169,7 @@ export function createNormalizedGraph(data: NormalizedGraphData): NormalizedGrap
   authenticatedNormalizedGraphs.add(graph);
   const bySource = new Map<string, Map<number, GraphRecord>>();
   for (const record of data.records) {
-    if (!graphRecordRefsEqual(record.ref, record.ref)) continue;
+    if (!isGraphRecordRef(record.ref)) continue;
     let byOrdinal = bySource.get(record.ref.source);
     if (byOrdinal === undefined) {
       byOrdinal = new Map<number, GraphRecord>();
@@ -181,6 +186,6 @@ export function isNormalizedGraph(value: unknown): value is NormalizedGraph {
 }
 
 export function graphRecordForRef(graph: unknown, ref: GraphRecordRef): GraphRecord | undefined {
-  if (!isNormalizedGraph(graph) || !graphRecordRefsEqual(ref, ref)) return undefined;
+  if (!isNormalizedGraph(graph) || !isGraphRecordRef(ref)) return undefined;
   return normalizedGraphRecordIndexes.get(graph)?.get(ref.source)?.get(ref.ordinal);
 }

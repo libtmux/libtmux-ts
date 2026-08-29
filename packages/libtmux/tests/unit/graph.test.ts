@@ -9,6 +9,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
+  graphRecordForRef,
   type CapturedRowSet,
   type GraphCapture,
   type GraphRecordRef,
@@ -156,6 +157,21 @@ function linkedWindowRows(): readonly MutableCompleteFormatRow[] {
 }
 
 describe("normalized entity and winlink graph", () => {
+  test("refuses a forged record ref that copies a real one's source and ordinal", () => {
+    const graph = normalizeGraph({
+      capture: capture(),
+      sources: [source("windows", "list-windows", linkedWindowRows())],
+    });
+    const authentic = graph.records[0]!.ref;
+    const forged = Object.freeze({
+      ordinal: authentic.ordinal,
+      source: authentic.source,
+    }) as unknown as GraphRecordRef;
+
+    expect(graphRecordForRef(graph, authentic)).toBeDefined();
+    expect(graphRecordForRef(graph, forged)).toBeUndefined();
+  });
+
   test("normalizes one linked window into one entity and ordered contextual edges", () => {
     const graph = normalizeGraph({
       capture: capture(),

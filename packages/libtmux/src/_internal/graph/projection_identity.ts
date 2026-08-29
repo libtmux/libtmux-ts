@@ -1,6 +1,6 @@
 import type { WhereModel } from "../../_generated/where_fields.js";
 import {
-  graphRecordRefsEqual,
+  isGraphRecordRef,
   type GraphCapture,
   type GraphEntity,
   type GraphEntityRef,
@@ -85,7 +85,7 @@ function invalidIdentity(message: string): never {
 function createProjectionRecordIndex(records: readonly ProjectionRecord[]): ProjectionRecordIndex {
   const bySource = new Map<string, Map<number, ProjectionRecord>>();
   for (const record of records) {
-    if (!graphRecordRefsEqual(record.ref, record.ref)) {
+    if (!isGraphRecordRef(record.ref)) {
       return invalidIdentity("selection projection record reference is not authentic");
     }
     let byOrdinal = bySource.get(record.ref.source);
@@ -151,7 +151,7 @@ export function createSelectionProjectionView(
   selectionProjectionOrigins.set(projection, graph);
   selectionProjectionCorpora.set(projection, corpus);
   selectionProjectionRecordResolvers.set(projection, (reference) => {
-    if (!graphRecordRefsEqual(reference, reference)) return undefined;
+    if (!isGraphRecordRef(reference)) return undefined;
     return index.get(reference.source)?.get(reference.ordinal);
   });
   return projection;

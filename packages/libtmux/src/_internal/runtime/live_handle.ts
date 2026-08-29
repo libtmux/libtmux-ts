@@ -11,8 +11,6 @@ import { decodeFormatValue } from "../codec/format_values.js";
 import type { CompleteFormatRow } from "../codec/schemas.js";
 import {
   graphRecordForRef,
-  graphRecordRefsEqual,
-  isNormalizedGraph,
   type GraphEntityRef,
   type GraphModel,
   type GraphRecordRef,
@@ -53,11 +51,7 @@ function requireState(value: unknown): LiveHandleState {
 }
 
 function requireAuthenticProvenance(graph: NormalizedGraph, record: GraphRecordRef): void {
-  if (
-    !isNormalizedGraph(graph) ||
-    !graphRecordRefsEqual(record, record) ||
-    graphRecordForRef(graph, record) === undefined
-  ) {
+  if (graphRecordForRef(graph, record) === undefined) {
     throw new LibTmuxException("handle provenance is not authentic");
   }
 }

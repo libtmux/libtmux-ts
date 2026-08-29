@@ -2,7 +2,7 @@ import type { WhereModel } from "../../_generated/where_fields.js";
 import {
   createGraphRecordRef,
   graphRecordForRef,
-  graphRecordRefsEqual,
+  isGraphRecordRef,
   isNormalizedGraph,
   type GraphEntity,
   type GraphEntityRef,
@@ -471,7 +471,7 @@ export class SelectionProjectionBuilder {
   }
 
   private resolveRecord(ref: GraphRecordRef): GraphRecord {
-    if (!graphRecordRefsEqual(ref, ref)) {
+    if (!isGraphRecordRef(ref)) {
       return invalidProjection("projection record reference is not authentic");
     }
     const record = graphRecordForRef(this.graph, ref);
