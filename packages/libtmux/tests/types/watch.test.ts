@@ -1,4 +1,5 @@
-import type { Server, TmuxEvent, TmuxEventStream } from "../../src/index.js";
+import type { Server, TmuxEvent, TmuxEventStream, TmuxOutputEvent } from "../../src/index.js";
+import type { Equal, Expect } from "./assert.js";
 
 /**
  * The disposal and narrowing guarantees `watch()` advertises, checked by tsc.
@@ -76,6 +77,27 @@ export function exhaustive(event: TmuxEvent): never | void {
 
 declare const stream: TmuxEventStream;
 export const isIterable: AsyncIterable<TmuxEvent> = stream;
+
+export async function findNarrowsWithTypePredicate(): Promise<void> {
+  const event = await stream.find(
+    (candidate): candidate is TmuxOutputEvent => candidate.kind === "output",
+  );
+  type _FindNarrows = Expect<Equal<typeof event, TmuxOutputEvent | undefined>>;
+
+  if (event !== undefined) {
+    void event.data;
+    // @ts-expect-error output events have no window id.
+    void event.windowId;
+  }
+}
+
+export async function findWithTruthyPredicate(): Promise<void> {
+  const matchesOutput = (candidate: TmuxEvent): string =>
+    candidate.kind === "output" ? "yes" : "";
+  const event = await stream.find(matchesOutput);
+  type _FindRemainsBroad = Expect<Equal<typeof event, TmuxEvent | undefined>>;
+  void event;
+}
 
 /**
  * `signal` is typed structurally so the declarations need no DOM library; a

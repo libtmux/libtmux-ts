@@ -647,8 +647,12 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
    * therefore means the deadline passed or the wait was called off, and only
    * the deadline says the workload really did not print what was waited for.
    */
+  find<Match extends TmuxEvent>(
+    matches: (event: TmuxEvent) => event is Match,
+    options?: { readonly timeoutMs?: number },
+  ): Promise<Match | undefined>;
   find(
-    matches: (event: TmuxEvent) => boolean,
+    matches: (event: TmuxEvent) => unknown,
     options?: { readonly timeoutMs?: number },
   ): Promise<TmuxEvent | undefined>;
   /**

@@ -101,8 +101,16 @@ class BufferedEventStream implements PublicEventStream {
     }
   }
 
+  find<Match extends TmuxEvent>(
+    matches: (event: TmuxEvent) => event is Match,
+    options?: { readonly timeoutMs?: number },
+  ): Promise<Match | undefined>;
+  find(
+    matches: (event: TmuxEvent) => unknown,
+    options?: { readonly timeoutMs?: number },
+  ): Promise<TmuxEvent | undefined>;
   async find(
-    matches: (event: TmuxEvent) => boolean,
+    matches: (event: TmuxEvent) => unknown,
     options: { readonly timeoutMs?: number } = {},
   ): Promise<TmuxEvent | undefined> {
     const deadline = setTimeout(() => void this.close(), options.timeoutMs ?? 30_000);

@@ -6,6 +6,8 @@ import type {
   Session,
   SetOptionOptions,
   TmuxEvent,
+  TmuxEventStream,
+  TmuxOutputEvent,
 } from "libtmux";
 
 /**
@@ -28,6 +30,7 @@ declare const session: Session;
 declare const commandOptions: CommandOptions;
 declare const joinOptions: JoinOptions;
 declare const setOptionOptions: SetOptionOptions;
+declare const stream: TmuxEventStream;
 
 // @ts-expect-error a criteria key that does not exist
 snapshot.panes.where({ currentCommnd: "vim" });
@@ -55,11 +58,23 @@ if (event.kind === "output") {
   void paneId;
 }
 
+async function findOutput(): Promise<void> {
+  const output = await stream.find(
+    (candidate): candidate is TmuxOutputEvent => candidate.kind === "output",
+  );
+  if (output !== undefined) {
+    void output.data;
+    // @ts-expect-error output events have no window id.
+    void output.windowId;
+  }
+}
+
 // The ordinary surface resolves with no ambient types in scope.
 void session.activePane;
 void commandOptions.stdin;
 void joinOptions.vertical;
 void setOptionOptions.append;
+void findOutput;
 void pane.toString();
 void snapshot.panes.where({ currentCommand: "vim" }).one();
 void snapshot.sessions.filter((candidate) => candidate.name !== null);
