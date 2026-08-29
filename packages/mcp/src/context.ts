@@ -223,8 +223,10 @@ export function requireLiveCursor(
 }
 
 export function requireSession(snapshot: ServerSnapshot, target: string): CallToolResult | Session {
-  const byId = snapshot.sessions.oneOrUndefined({ id: target });
-  if (byId !== undefined) return byId;
+  if (/^\$\d+$/u.test(target)) {
+    const byId = snapshot.sessions.oneOrUndefined({ id: target });
+    if (byId !== undefined) return byId;
+  }
   const byName = snapshot.sessions.oneOrUndefined({ name: target });
   if (byName !== undefined) return byName;
   const available = snapshot.sessions
