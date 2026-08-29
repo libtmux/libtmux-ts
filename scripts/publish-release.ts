@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runBoundedCommand } from "./bounded_process.js";
 import { npmPack } from "./npm_pack.js";
 
 interface SemanticVersion {
@@ -71,36 +72,17 @@ export function createNpmCommandRunner(
     throw new Error("npm command timeout must be a positive integer");
   }
   return async (arguments_) => {
-    const child = Bun.spawn([...command, ...arguments_], {
+    const result = await runBoundedCommand([...command, ...arguments_], {
       env: { ...process.env, NPM_CONFIG_AUDIT: "false", NPM_CONFIG_FUND: "false" },
-      stderr: "pipe",
-      stdout: "pipe",
+      timeoutMilliseconds,
     });
-    let expired = false;
-    const deadline = setTimeout(() => {
-      expired = true;
-      child.kill("SIGTERM");
-    }, timeoutMilliseconds);
-    const hardDeadline = setTimeout(() => child.kill("SIGKILL"), timeoutMilliseconds + 5_000);
-    deadline.unref?.();
-    hardDeadline.unref?.();
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-      ]);
-      return {
-        exitCode: expired && exitCode === 0 ? 1 : exitCode,
-        stderr: expired
-          ? `${stderr}${stderr.endsWith("\n") || stderr === "" ? "" : "\n"}npm command exceeded ${String(timeoutMilliseconds)}ms\n`
-          : stderr,
-        stdout,
-      };
-    } finally {
-      clearTimeout(deadline);
-      clearTimeout(hardDeadline);
-    }
+    return {
+      exitCode: result.timedOut && result.exitCode === 0 ? 1 : result.exitCode,
+      stderr: result.timedOut
+        ? `${result.stderr}${result.stderr.endsWith("\n") || result.stderr === "" ? "" : "\n"}npm command exceeded ${String(timeoutMilliseconds)}ms\n`
+        : result.stderr,
+      stdout: result.stdout,
+    };
   };
 }
 

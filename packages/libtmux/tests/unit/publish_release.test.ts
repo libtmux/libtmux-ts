@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
+import { killIfRunning, processExists, waitForProcessExit } from "../support/converge.js";
 import {
   RegistryPackageNotFound,
   coordinateRelease,
@@ -690,6 +691,38 @@ describe("coordinated release", () => {
     const result = await runner([]);
 
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("npm command exceeded 20ms");
+    expect(result.stderr).toBe("npm command exceeded 20ms\n");
   });
+
+  test.skipIf(process.platform === "win32")(
+    "bounds a descendant that inherits npm command output",
+    async () => {
+      const descendantScript = 'process.on("SIGTERM", () => {}); await Bun.sleep(2_000);';
+      const parentScript = `
+        const descendant = Bun.spawn(${JSON.stringify([
+          process.execPath,
+          "-e",
+          descendantScript,
+        ])}, { stderr: "inherit", stdout: "inherit" });
+        console.log(descendant.pid);
+        await Bun.sleep(60_000);
+      `;
+      const runner = createNpmCommandRunner([process.execPath, "-e", parentScript], 250);
+      const startedAt = performance.now();
+      const result = await runner([]);
+      const descendantPid = Number(result.stdout.trim());
+
+      try {
+        expect(Number.isSafeInteger(descendantPid)).toBe(true);
+        await waitForProcessExit(descendantPid);
+        expect(performance.now() - startedAt).toBeLessThan(1_000);
+        expect(processExists(descendantPid)).toBe(false);
+        expect(result.stderr).toContain("npm command exceeded 250ms");
+      } finally {
+        if (Number.isSafeInteger(descendantPid) && descendantPid > 0) {
+          killIfRunning(descendantPid);
+        }
+      }
+    },
+  );
 });
