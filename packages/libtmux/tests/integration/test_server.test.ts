@@ -31,10 +31,12 @@ import { processExists, waitForPathAbsent, waitForProcessExit } from "../support
 
 import { ControlMode } from "../../src/_internal/test/control_mode.js";
 import {
-  prepareRunRoot,
   readDaemonIdentity,
-  readFixtureRecord,
   readProcessIdentity,
+} from "../../src/_internal/test/process_identity.js";
+import {
+  prepareRunRoot,
+  readFixtureRecord,
   reapOwnedRunRoot,
   runWithCleanup,
   type FixtureRecord,

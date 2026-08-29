@@ -74,6 +74,7 @@ function scenarioSource(tsRoot: string, executable: string): string {
   const echoFixture = moduleUrl("tests/fixtures/echo_argv.mjs");
   const ignoreFixture = moduleUrl("tests/fixtures/ignore_sigterm.mjs");
   const malformedFixture = moduleUrl("tests/fixtures/malformed_utf8.mjs");
+  const processIdentityModule = moduleUrl("dist/_internal/test/process_identity.js");
   const runRootModule = moduleUrl("dist/_internal/test/run_root.js");
   const controlModeModule = moduleUrl("dist/_internal/test/control_mode.js");
 
@@ -95,7 +96,8 @@ import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_sp
 // timed-out mutation is safe to retry has to be able to name this type, so the
 // emitted lane proves it is reachable the way a consumer reaches it.
 import { TmuxTransportError } from ${moduleUrl("dist/index.js")};
-import { prepareRunRoot, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup } from ${runRootModule};
+import { readProcessIdentity } from ${processIdentityModule};
+import { prepareRunRoot, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup } from ${runRootModule};
 import { TestServer } from ${moduleUrl("dist/_internal/test/test_server.js")};
 import { FORMAT_SEPARATOR } from ${moduleUrl("dist/formats.js")};
 import { ParsedFormatRow } from ${moduleUrl("dist/_internal/codec/format_types.js")};

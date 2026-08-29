@@ -7,22 +7,24 @@ import { flattenInvocation, tmuxCommand } from "../transport/invocation.js";
 import { TmuxTransportError, type RawCommandResult } from "../transport/types.js";
 import {
   assertControllerCurrent as assertPersistedControllerCurrent,
+  readDaemonIdentity,
+  resolveControllerIdentity,
+  type ControllerIdentity,
+  type ProcessIdentity,
+} from "./process_identity.js";
+import {
   beginFixtureLaunch,
   promoteFixtureLaunch,
-  readDaemonIdentity,
   readFixtureRecord,
   reapFixture,
   reportSecondaryCleanupFailure,
   reserveFixture,
-  resolveControllerIdentity,
   rollbackFixtureLaunchNotStarted,
   runWithCleanup,
-  type ControllerIdentity,
   type FixtureControllerRequest,
   type FixtureRecord,
   type LaunchAttemptCapability,
   type LaunchGeneration,
-  type ProcessIdentity,
   type ReservationCapability,
 } from "./run_root.js";
 

@@ -29,13 +29,15 @@ import { readLaunchFrame } from "../support/launch_frame.js";
 
 import { resolveNode22 } from "../../src/_internal/test/node22.js";
 import {
+  parseProcStatStartTime,
+  readDaemonIdentity,
+  readProcessIdentity,
+} from "../../src/_internal/test/process_identity.js";
+import {
   beginFixtureLaunch,
   OWNER_RECORD_NAME,
-  parseProcStatStartTime,
   prepareRunRoot,
-  readDaemonIdentity,
   readFixtureRecord,
-  readProcessIdentity,
   promoteFixtureLaunch,
   reapFixture,
   reapOwnedRunRoot,

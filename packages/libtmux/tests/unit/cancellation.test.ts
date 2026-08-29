@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { readProcessIdentity, type ProcessIdentity } from "../../src/_internal/test/run_root.js";
+import {
+  readProcessIdentity,
+  type ProcessIdentity,
+} from "../../src/_internal/test/process_identity.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import { TmuxTransportError } from "../../src/_internal/transport/types.js";
 

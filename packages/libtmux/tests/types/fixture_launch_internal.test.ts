@@ -2,15 +2,17 @@ import {
   beginFixtureLaunch,
   promoteFixtureLaunch,
   rollbackFixtureLaunchNotStarted,
-  type ControllerIdentity,
-  type DaemonIdentity,
   type FixtureRecord,
   type LaunchAttemptCapability,
   type LaunchGeneration,
-  type ProcessIdentity,
   type ReservationCapability,
   type SocketIdentity,
 } from "../../src/_internal/test/run_root.js";
+import type {
+  ControllerIdentity,
+  DaemonIdentity,
+  ProcessIdentity,
+} from "../../src/_internal/test/process_identity.js";
 import type {
   TestServerOptions,
   TestServerRequestSnapshot,
