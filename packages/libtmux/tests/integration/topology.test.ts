@@ -226,6 +226,22 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("selects one of two placements of a window in one session", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.link({ index: 4 });
+      const placement = (await server.snapshot()).windows
+        .filter((candidate) => candidate.id === window.id && candidate.index === 4)
+        .one();
+
+      await placement.select();
+
+      const session = (await server.snapshot()).sessions.one({ id: window.format.session_id });
+      expect(session.activeWindow?.index).toBe(4);
+    });
+  }, 40_000);
+
   test("keeps a moved window in its own session when none is named", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

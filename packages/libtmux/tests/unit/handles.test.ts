@@ -1165,6 +1165,36 @@ describe("authenticated handle materialization", () => {
     expect(secondWinlink.windowIndex).toBe("4");
   });
 
+  test("addresses placement mutations by captured window index", async () => {
+    const fixture = runtimeFixture();
+    const graph = await graphFor(fixture.runtime, [
+      source("windows", "list-windows", [
+        completeFormatRow({ session_id: "$1", window_id: "@9", window_index: "4" }),
+        completeFormatRow({ session_id: "$1", window_id: "@8", window_index: "6" }),
+      ]),
+    ]);
+    const projection = projectionFor(graph, "windows");
+    const windows = (await materializeProjectionMembers(fixture.server, projection, graph)).filter(
+      (candidate): candidate is Window => candidate instanceof Window,
+    );
+    const target = windows.find((candidate) => candidate.id === "@9");
+    const other = windows.find((candidate) => candidate.id === "@8");
+    if (target === undefined || other === undefined) throw new Error("expected two windows");
+    fixture.transport.requests.length = 0;
+
+    await target.select();
+    await target.move({ index: 7 });
+    await target.unlink();
+    await target.swapWith(other);
+
+    expect(fixture.transport.requests.map(({ args }) => args)).toEqual([
+      ["-Lhandles", "select-window", "-t", "$1:4"],
+      ["-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
+      ["-Lhandles", "unlink-window", "-t", "$1:4"],
+      ["-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
+    ]);
+  });
+
   test("materializes an authenticated reachable non-root relation record", async () => {
     const fixture = runtimeFixture({ alias: "reachable-relation" });
     const windowRow = completeFormatRow({

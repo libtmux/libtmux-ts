@@ -81,7 +81,7 @@ function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOp
 }
 
 function placementTarget(window: Window): string {
-  return `${window.format.session_id}:${window.id}`;
+  return `${window.format.session_id}:${window.format.window_index}`;
 }
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
