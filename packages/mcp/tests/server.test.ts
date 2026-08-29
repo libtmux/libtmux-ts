@@ -1040,13 +1040,13 @@ describe("staying out of the way", () => {
       await withClient(fixture, async (client) => {
         const paneId = await shellPaneId(client);
         await client.callTool({
-          arguments: { command: "echo ready-now", paneId },
-          name: "run_command",
+          arguments: { keys: "(sleep 1; printf 'ready-now\\n') &", paneId },
+          name: "send_keys",
         });
 
-        // Matches at once, so this asserts which ceiling was chosen rather
-        // than spending it. This client declares no task capability, so the
-        // SDK runs the tool and polls on its behalf: the call blocks and
+        // The delayed output makes the wait observe a new write without
+        // spending the ceiling. This client declares no task capability, so
+        // the SDK runs the tool and polls on its behalf: the call blocks and
         // cannot be cancelled, which is what the task ceiling is traded for.
         const result = structured<{ effectiveTimeoutMs: number; outcome: string }>(
           await client.callTool({
