@@ -11,6 +11,8 @@ import { z } from "zod";
 
 import {
   isFailure,
+  paneEntities,
+  panePlacements,
   requireLiveCursor,
   requirePane,
   requireSession,
@@ -31,6 +33,7 @@ import {
 } from "../results.js";
 import { paneCursorSchema, paneIdSchema } from "../schemas.js";
 import { paneContentUri } from "../uris.js";
+import { panePlacementView, placementViewSchema, type PlacementView } from "../views.js";
 
 /** How much of a first observation is seeded from the pane's visible screen. */
 const SEED_LINES = 100;
@@ -442,7 +445,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           z.object({
             lineNumber: z.number().int(),
             paneId: paneIdSchema,
-            sessionName: z.string(),
+            placements: z.array(placementViewSchema),
             text: z.string(),
             windowName: z.string(),
           }),
@@ -459,14 +462,11 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
-      const panes = [
-        ...new Map(
-          snapshot.panes
-            .toArray()
-            .filter((pane) => target === undefined || pane.format.session_id === target.id)
-            .map((pane) => [pane.id, pane]),
-        ).values(),
-      ];
+      const panes = paneEntities(
+        snapshot.panes
+          .toArray()
+          .filter((pane) => target === undefined || pane.format.session_id === target.id),
+      );
       const perPane = effectiveResultLines(context.policy, maxMatchesPerPane ?? 5);
       const resultLimit = effectiveResultLines(context.policy, undefined);
       const requestedScrollback = scrollbackLines ?? 0;
@@ -477,14 +477,15 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       const matches: {
         lineNumber: number;
         paneId: string;
-        sessionName: string;
+        placements: readonly PlacementView[];
         text: string;
         windowName: string;
       }[] = [];
       let capturesByteClamped = false;
       let matchesTruncated = false;
       let panesSearched = 0;
-      let resultBytes = 0;
+      let structuredBytes = 2;
+      let textBytes = 0;
       searchLoop: for (let offset = 0; offset < panes.length; offset += SEARCH_CONCURRENCY) {
         const batch = panes.slice(offset, offset + SEARCH_CONCURRENCY);
         // eslint-disable-next-line no-await-in-loop -- each bounded batch is released before the next.
@@ -514,11 +515,12 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
                     })
                     .catch(() => []),
             pane,
+            placements: panePlacements(snapshot, pane.id).map(panePlacementView),
           };
         });
         panesSearched += captures.length;
 
-        for (const { byteClamped, lines, pane } of captures) {
+        for (const { byteClamped, lines, pane, placements } of captures) {
           capturesByteClamped ||= byteClamped;
           let foundForPane = 0;
           for (const [index, line] of lines.entries()) {
@@ -531,21 +533,36 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
               matchesTruncated = true;
               break searchLoop;
             }
-            const prefix = `${pane.id} ${pane.session?.name ?? ""}:${pane.window?.name ?? ""}:${String(index + 1)}  `;
-            const nextBytes = Buffer.byteLength(`${prefix}${line}\n`, "utf8");
-            if (resultBytes + nextBytes > MAX_RESULT_BYTES) {
+            const placementNames = placements
+              .map(
+                ({ index: placementIndex, sessionName }) =>
+                  `${sessionName}:${String(placementIndex)}`,
+              )
+              .join(",");
+            const prefix = `${pane.id} ${placementNames} ${pane.window?.name ?? ""}:${String(index + 1)}  `;
+            const match = {
+              lineNumber: index + 1,
+              paneId: pane.id,
+              placements,
+              text: line,
+              windowName: pane.window?.name ?? "",
+            };
+            const nextStructured =
+              structuredBytes +
+              Buffer.byteLength(JSON.stringify(match), "utf8") +
+              (matches.length === 0 ? 0 : 1);
+            const nextText =
+              textBytes +
+              Buffer.byteLength(`${prefix}${line}`, "utf8") +
+              (matches.length === 0 ? 0 : 1);
+            if (nextStructured > MAX_RESULT_BYTES || nextText > MAX_RESULT_BYTES) {
               matchesTruncated = true;
               break searchLoop;
             }
-            matches.push({
-              lineNumber: index + 1,
-              paneId: pane.id,
-              sessionName: pane.session?.name ?? "",
-              text: line,
-              windowName: pane.window?.name ?? "",
-            });
+            matches.push(match);
             foundForPane += 1;
-            resultBytes += nextBytes;
+            structuredBytes = nextStructured;
+            textBytes = nextText;
           }
         }
       }
@@ -556,10 +573,12 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             ? `Matches for ${pattern} were omitted because no complete result fit the byte ceiling.`
             : `No pane of ${String(panesSearched)} searched is showing ${pattern}. Try scrollbackLines to look above the visible screen.`
           : matches
-              .map(
-                (match) =>
-                  `${match.paneId} ${match.sessionName}:${match.windowName}:${String(match.lineNumber)}  ${match.text}`,
-              )
+              .map((match) => {
+                const placements = match.placements
+                  .map(({ index, sessionName }) => `${sessionName}:${String(index)}`)
+                  .join(",");
+                return `${match.paneId} ${placements} ${match.windowName}:${String(match.lineNumber)}  ${match.text}`;
+              })
               .join("\n");
       const notices = [
         ...(scrollbackClamped

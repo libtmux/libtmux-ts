@@ -480,6 +480,28 @@ describe("search_panes", () => {
       expect(result.matchesTruncated).toBe(true);
     });
   });
+
+  test("bounds linked placement metadata before returning a match", async () => {
+    const panes = Array.from({ length: 6_000 }, (_, index) =>
+      fakePane({ capture: async () => ["needle"], id: "%1", sessionId: `$${String(index + 1)}` }),
+    );
+    await withTools(fakeContext(panes), registerCapture, async (client) => {
+      const result = structured<{
+        readonly matches: readonly unknown[];
+        readonly matchesTruncated: boolean;
+      }>(
+        await client.callTool({
+          arguments: { pattern: "needle" },
+          name: "search_panes",
+        }),
+      );
+
+      expect(Buffer.byteLength(JSON.stringify(result.matches), "utf8")).toBeLessThanOrEqual(
+        MAX_RESULT_BYTES,
+      );
+      expect(result.matchesTruncated).toBe(true);
+    });
+  });
 });
 
 describe("show_buffer", () => {

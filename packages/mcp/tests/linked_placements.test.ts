@@ -287,6 +287,40 @@ describe("linked and grouped placements", () => {
     });
   }, 60_000);
 
+  test("searches a linked pane once and returns every placement", async () => {
+    await withServer(async (fixture) => {
+      const topology = await makeSharedTopology(fixture);
+      await withClient(fixture, async (client) => {
+        const written = await client.callTool({
+          arguments: { command: "printf 'linked-search-needle\\n'", paneId: topology.sharedPaneId },
+          name: "run_command",
+        });
+        expect(written.isError ?? false, toolText(written)).toBe(false);
+
+        const search = structured<{
+          readonly matches: readonly {
+            readonly paneId: string;
+            readonly placements: readonly Placement[];
+          }[];
+          readonly panesSearched: number;
+        }>(
+          await client.callTool({
+            arguments: { pattern: "linked-search-needle" },
+            name: "search_panes",
+          }),
+        );
+        const matches = search.matches.filter(({ paneId }) => paneId === topology.sharedPaneId);
+
+        expect(search.panesSearched).toBe(3);
+        expect(matches.length).toBeGreaterThan(0);
+        for (const match of matches) {
+          expect(placementKeys(match.placements)).toEqual(expectedSharedPlacements(topology));
+          expect(match).not.toHaveProperty("sessionName");
+        }
+      });
+    });
+  }, 60_000);
+
   test("honors explicit sources for select, move, swap, and break", async () => {
     await withServer(async (fixture) => {
       const topology = await makeSharedTopology(fixture);

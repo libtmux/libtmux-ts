@@ -86,6 +86,14 @@ function no<T>(value: T | null | undefined, fallback: T): T {
   return value ?? fallback;
 }
 
+export function panePlacementView(pane: ReadablePane): PlacementView {
+  return {
+    index: panePlacementIndex(pane),
+    sessionId: pane.format.session_id,
+    sessionName: no(pane.session?.name, ""),
+  };
+}
+
 /**
  * Project a pane, including whether anybody is watching it.
  *
@@ -109,11 +117,7 @@ export function paneView(
     index: no(pane.index, safeInteger(0)),
     isAttended: isAttended(identity, pane.id),
     isCallerPane: isCallerPane(identity, pane.id),
-    placements: placements.map((placement) => ({
-      index: panePlacementIndex(placement),
-      sessionId: placement.format.session_id,
-      sessionName: no(placement.session?.name, ""),
-    })),
+    placements: placements.map(panePlacementView),
     title: no(pane.title, ""),
     width: no(pane.width, safeInteger(0)),
     windowId: pane.format.window_id,
