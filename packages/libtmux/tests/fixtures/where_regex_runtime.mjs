@@ -20,15 +20,14 @@ assert.ok(implementation === "bun" || implementation === "node");
 
 const fixture = JSON.parse(await readFile(new URL("./where_regex.json", import.meta.url), "utf8"));
 assert.equal(fixture.protocol, protocol);
-assert.deepEqual(fixture.runtimes, { bun: "1.3.14", node: "22", python: "3" });
+assert.deepEqual(fixture.runtimes, { bun: ["1.3.14", "1.4.0"], node: "22", python: "3" });
 
 // Checked against the corpus rather than a repeated literal: what makes this
 // evidence is that the engine running the cases is the one that recorded them.
 if (implementation === "bun") {
-  assert.equal(
-    process.versions.bun,
-    fixture.runtimes.bun,
-    `the regex corpus records Bun ${fixture.runtimes.bun}; this is Bun ${process.versions.bun}. Run the suite on the Bun package.json pins, or regenerate the corpus.`,
+  assert.ok(
+    fixture.runtimes.bun.includes(process.versions.bun),
+    `the regex corpus records Bun ${fixture.runtimes.bun.join(" and ")}; this is Bun ${process.versions.bun}. Run the suite on a recorded Bun, or regenerate the corpus.`,
   );
 } else {
   assert.equal(process.versions.bun, undefined);

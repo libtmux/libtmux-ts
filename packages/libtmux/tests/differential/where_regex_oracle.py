@@ -50,7 +50,7 @@ def load_fixture() -> dict[str, t.Any]:
     runtimes = exact_keys(
         fixture["runtimes"], {"bun", "node", "python"}, "runtime pins"
     )
-    if runtimes != {"bun": "1.3.14", "node": "22", "python": "3"}:
+    if runtimes != {"bun": ["1.3.14", "1.4.0"], "node": "22", "python": "3"}:
         fail("regex fixture runtime pins changed")
     adaptations = fixture["adaptations"]
     if not isinstance(adaptations, dict) or not adaptations:

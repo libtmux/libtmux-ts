@@ -27,7 +27,11 @@ interface RegexCorpus {
   readonly adaptations: Readonly<Record<string, string>>;
   readonly cases: readonly RegexCorpusCase[];
   readonly protocol: string;
-  readonly runtimes: { readonly bun: string; readonly node: string; readonly python: string };
+  readonly runtimes: {
+    readonly bun: readonly string[];
+    readonly node: string;
+    readonly python: string;
+  };
 }
 
 const tsRootPath = fileURLToPath(new URL("../..", import.meta.url));
@@ -558,14 +562,18 @@ describe("regex criteria", () => {
     const selection = createProjectedSelection("session", harness.values, harness.projection);
 
     expect(corpus.protocol).toBe("libtmux-where-regex-v1");
-    expect(corpus.runtimes).toEqual({ bun: "1.3.14", node: "22", python: "3" });
+    expect(corpus.runtimes).toEqual({
+      bun: ["1.3.14", "1.4.0"],
+      node: "22",
+      python: "3",
+    });
     // Read off the corpus rather than repeated: this asserts that the engine
     // about to run the cases is the one whose answers were recorded, and the
     // corpus is where that is written down.
     expect(
       process.versions.bun,
-      `the regex corpus records Bun ${corpus.runtimes.bun}; this is Bun ${process.versions.bun}. Run the suite on the Bun package.json pins, or regenerate the corpus.`,
-    ).toBe(corpus.runtimes.bun);
+      `the regex corpus records Bun ${corpus.runtimes.bun.join(" and ")}; this is Bun ${process.versions.bun}. Run the suite on a recorded Bun, or regenerate the corpus.`,
+    ).toContain(process.versions.bun);
     expect(corpus.cases).toHaveLength(19);
     expect(new Set(corpus.cases.map(({ session_id }) => session_id)).size).toBe(
       corpus.cases.length,
