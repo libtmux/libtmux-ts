@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
+  sweepStaleRunRoots,
   runWithCleanup,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
@@ -183,6 +184,11 @@ examples.push(
   })),
 );
 if (examples.length === 0) throw new Error("no symbol examples were found to run");
+
+// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
+// tmux daemon behind under a name no later run revisits; this is where one
+// still can. Once per suite process, before anything creates a root of its own.
+await sweepStaleRunRoots();
 
 const isolated = await mkdtemp(join(tmpdir(), "ltx-symbol-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;

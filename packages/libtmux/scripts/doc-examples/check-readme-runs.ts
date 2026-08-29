@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
+  sweepStaleRunRoots,
   runWithCleanup,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
@@ -128,6 +129,11 @@ if (unsupplied.length > 0) {
   );
   process.exit(1);
 }
+
+// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
+// tmux daemon behind under a name no later run revisits; this is where one
+// still can. Once per suite process, before anything creates a root of its own.
+await sweepStaleRunRoots();
 
 const isolated = await mkdtemp(join(tmpdir(), "ltx-readme-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;

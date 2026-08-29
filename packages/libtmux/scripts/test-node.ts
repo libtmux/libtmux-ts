@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   resolveNode22,
   reapStaleRunRoot,
+  sweepStaleRunRoots,
   makeTestDirectory,
 } from "../src/_internal/test/testkit.js";
 
@@ -807,6 +808,11 @@ const args = parseArguments(process.argv.slice(2));
 const executable = await resolveNode(args.nodeArgument);
 const version = queryMajor(executable, args.expectMajor);
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
+// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
+// tmux daemon behind under a name no later run revisits; this is where one
+// still can. Once per suite process, before anything creates a root of its own.
+await sweepStaleRunRoots();
+
 const temporaryRoot = await makeTestDirectory("ltx-node-scenarios-");
 const scenarioRunRoot =
   process.env.LIBTMUX_TEST_RUN_ROOT ?? join(temporaryRoot, "node, task4 root");
