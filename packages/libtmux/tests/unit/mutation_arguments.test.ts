@@ -9,6 +9,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
+import { planSplitWindow } from "../../src/_internal/operations/plans.js";
 
 /**
  * The tmux command line the lifecycle mutations build.
@@ -153,5 +154,14 @@ describe("lifecycle command arguments", () => {
       splitWindow({} as never, runtimeFor(transport), "%0", {}),
     );
     expect(halved).not.toContain("-l");
+  });
+
+  test("refuses split sizes tmux cannot interpret as an integer geometry", () => {
+    for (const size of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
+      expect(() => planSplitWindow("%0", { size })).toThrow(/size/u);
+    }
+    for (const size of ["1.5%", "101%", "NaN%"] as const) {
+      expect(() => planSplitWindow("%0", { size: size as never })).toThrow(/size/u);
+    }
   });
 });

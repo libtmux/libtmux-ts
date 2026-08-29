@@ -125,10 +125,10 @@ export interface SplitOptions extends CommandOptions {
   /**
    * How big the new pane is, tmux's `-l`.
    *
-   * A number is cells along the split's own axis; a `"30%"` string is that
-   * share of the pane being divided. Without it tmux halves the pane.
+   * An integer is cells along the split's own axis; an integer `"30%"` string
+   * is that share of the pane being divided. Without it tmux halves the pane.
    */
-  readonly size?: number | `${number}%`;
+  readonly size?: number | `${bigint}%`;
   /**
    * Which side of this pane the new one takes.
    *

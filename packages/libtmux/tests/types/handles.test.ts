@@ -52,7 +52,7 @@ import type {
 import { Client } from "../../src/client.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
-import type { TransportMode } from "../../src/types.js";
+import type { SplitOptions, TransportMode } from "../../src/types.js";
 import { Session } from "../../src/session.js";
 import { Window } from "../../src/window.js";
 import type { CommandTransport } from "../../src/_internal/transport/types.js";
@@ -103,6 +103,7 @@ type _ServerOptions = Expect<Equal<ServerOptions, ExpectedServerOptions>>;
 type _ServerConstructor = Expect<
   Equal<ConstructorParameters<typeof Server>, [options?: ServerOptions]>
 >;
+type _SplitSize = Expect<Equal<SplitOptions["size"], number | `${bigint}%` | undefined>>;
 type _ServerFields = Expect<
   Equal<
     Pick<Server, "colors" | "configFile" | "socketName" | "socketPath" | "tmuxBin">,

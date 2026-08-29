@@ -1625,6 +1625,19 @@ describe("typed criteria values", () => {
     expect(windows.where({ index: 99 }).count()).toBe(0);
   });
 
+  test("refuses numbers that cannot be tmux integer text", async () => {
+    const harness = await createRichProjectedHarness();
+    const windows = createProjectedSelection(
+      "window",
+      harness.windows.values,
+      harness.windows.projection,
+    );
+
+    for (const index of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
+      expectInvalidQuery(() => windows.where({ index }));
+    }
+  });
+
   test("spells a typed operand inside an operator", async () => {
     const harness = await createRichProjectedHarness();
     const panes = createProjectedSelection("pane", harness.panes.values, harness.panes.projection);

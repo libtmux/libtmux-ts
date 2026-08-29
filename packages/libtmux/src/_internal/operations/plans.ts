@@ -71,6 +71,21 @@ function newWindowArgs(sessionId: string | null, options: NewWindowOptions): rea
   ];
 }
 
+const maximumTmuxSize = 2_147_483_647;
+
+function splitSize(value: NonNullable<SplitOptions["size"]>): string {
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || value < 0 || value > maximumTmuxSize) {
+      throw new TypeError(`size must be an integer from 0 to ${String(maximumTmuxSize)} cells`);
+    }
+    return String(value);
+  }
+  if (!/^(?:0|[1-9]\d*)%$/u.test(value) || Number(value.slice(0, -1)) > 100) {
+    throw new TypeError("size must be an integer percentage from 0% to 100%");
+  }
+  return value;
+}
+
 function splitWindowArgs(target: string | null, options: SplitOptions): readonly string[] {
   return [
     "split-window",
@@ -87,7 +102,7 @@ function splitWindowArgs(target: string | null, options: SplitOptions): readonly
         : []
       : PANE_DIRECTION_FLAG_MAP[options.direction]),
     ...(target == null ? [] : ["-t", target]),
-    ...(options.size === undefined ? [] : ["-l", String(options.size)]),
+    ...(options.size === undefined ? [] : ["-l", splitSize(options.size)]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
       "-e",

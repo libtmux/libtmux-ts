@@ -306,10 +306,10 @@ type _BooleanDomain = Expect<
   MutuallyAssignable<PaneWhere["active"], ExpectedScalarCriteria<boolean, "0" | "1">>
 >;
 type _NumberDomain = Expect<
-  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number, `${number}`>>
+  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number, `${bigint}`>>
 >;
 type _TimeDomain = Expect<
-  MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date, `${number}`>>
+  MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date, `${bigint}`>>
 >;
 
 // The narrowing is the point: text that could never be this field's value is
@@ -317,6 +317,13 @@ type _TimeDomain = Expect<
 type _NumberRefusesProse = Expect<Equal<"banana" extends PaneWhere["pid"] ? true : false, false>>;
 type _FlagRefusesProse = Expect<Equal<"yes" extends PaneWhere["active"] ? true : false, false>>;
 type _NumberTakesItsText = Expect<Equal<"4321" extends PaneWhere["pid"] ? true : false, true>>;
+type _NumberRefusesFractionText = Expect<
+  Equal<"1.5" extends PaneWhere["pid"] ? true : false, false>
+>;
+type _NumberRefusesExponentText = Expect<
+  Equal<"1e+21" extends PaneWhere["pid"] ? true : false, false>
+>;
+type _NumberRefusesNaNText = Expect<Equal<"NaN" extends PaneWhere["pid"] ? true : false, false>>;
 type _FlagTakesItsText = Expect<Equal<"1" extends PaneWhere["active"] ? true : false, true>>;
 // A field tmux answers with text takes any of it, including text that looks
 // numeric — `%1` is an id, not a number.

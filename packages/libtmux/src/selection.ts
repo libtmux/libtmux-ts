@@ -16,11 +16,13 @@ import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/lega
  *
  * `Raw` is therefore not a taste. It is **exactly the encoder's output
  * domain**: `"0" | "1"` for a flag because that is what `encodeFormatValue`
- * emits for a boolean, `${number}` for a number and a time because that is
- * `String` of a safe integer. Text outside it is text this library could never
+ * emits for a boolean, `${bigint}` for a number and a time because that is
+ * integer text. Text outside it is text this library could never
  * have written, which is why `where({ index: "banana" })` is refused and why
  * there is no escape hatch admitting it — one would break the round trip the
  * text side exists for. `format_values.test.ts` holds the two in step.
+ * TypeScript has no integer primitive, so numeric values remain `number` and
+ * the query validator refuses non-safe integers at runtime.
  *
  * The substring operations stay `string` deliberately: `contains` asks about
  * the characters tmux sent, and a numeric field's text has characters like any
@@ -49,7 +51,7 @@ type StringFilter<Value = never, Raw extends string = string> = StringFilterFiel
   );
 
 /** The text tmux sends for a field it reports as a number, or as a timestamp. */
-type RawNumber = `${number}`;
+type RawNumber = `${bigint}`;
 
 /** The text tmux sends for a flag: it writes these two and nothing else. */
 type RawFlag = "0" | "1";

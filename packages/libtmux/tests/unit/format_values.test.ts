@@ -82,8 +82,8 @@ describe("encoding what a caller writes", () => {
    */
   test("emits only the text the where types admit, for every declared field", () => {
     const flag = /^[01]$/u;
-    // What `${number}` accepts: TypeScript's numeric literal grammar, which is
-    // what `String` of a safe integer produces.
+    // What `${bigint}` accepts: signed integer text, which is what `String` of
+    // a safe integer produces.
     const numeric = /^-?\d+$/u;
 
     const offenders: string[] = [];
