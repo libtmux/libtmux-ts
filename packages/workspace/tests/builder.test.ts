@@ -258,6 +258,61 @@ windows:
     });
   });
 
+  test("rejects the reserved ownership option while parsing", () => {
+    expect(() =>
+      parseWorkspaceYaml(`
+session_name: reserved
+options:
+  "${OWNERSHIP_OPTION}": another-workspace
+windows:
+  - window_name: main
+`),
+    ).toThrow(`${OWNERSHIP_OPTION} is reserved for workspace ownership`);
+  });
+
+  test("treats option names as literals before ownership matching", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await applyWorkspace(
+        server,
+        parseWorkspaceYaml(`
+session_name: workspace
+options:
+  "@libtmux-#{session_name}": literal
+windows:
+  - window_name: main
+    options:
+      "@literal-#{window_name}": literal
+`),
+      );
+      const sessionOptions = await session.showOptions();
+
+      expect(sessionOptions.get(OWNERSHIP_OPTION)).toBe("workspace");
+      expect(sessionOptions.get("@libtmux-#{session_name}")).toBe("literal");
+      expect((await session.windows.one().showOptions()).get("@literal-#{window_name}")).toBe(
+        "literal",
+      );
+    });
+  });
+
+  test("snapshots a workspace before the first server await", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const options: Record<string, string> = {};
+      const workspace = {
+        options,
+        session_name: "captured",
+        windows: [{ panes: [], window_name: "main" }],
+      };
+
+      const applying = applyWorkspace(server, workspace);
+      options[OWNERSHIP_OPTION] = "forged";
+
+      const session = await applying;
+      expect((await session.showOptions()).get(OWNERSHIP_OPTION)).toBe("captured");
+    });
+  });
+
   test("reports completed milestones and the stage that failed", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

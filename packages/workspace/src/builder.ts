@@ -7,11 +7,19 @@ import {
   paneCommands,
   paneStartDirectory,
   paneWantsFocus,
+  parseWorkspace,
   windowStartDirectory,
   type Workspace,
   type WorkspaceWindow,
 } from "./config.js";
-import { claimSession, mayPrune, ownedByWorkspace, type PrunePolicy } from "./ownership.js";
+import {
+  normalizeApplyWorkspaceOptions,
+  normalizePlanWorkspaceOptions,
+  type ApplyWorkspaceOptions,
+  type CommandPolicy,
+  type PlanWorkspaceOptions,
+} from "./operation_options.js";
+import { claimSession, mayPrune, ownedByWorkspace } from "./ownership.js";
 import {
   planWorkspace as createWorkspacePlan,
   runningSession,
@@ -29,34 +37,11 @@ export type {
   WorkspaceWindowRemoval,
   WorkspaceWindowRename,
 } from "./planning.js";
-
-/**
- * When a pane's `shell_command` entries are sent to it.
- *
- * `create-only` sends them to panes this apply created, and to no others. It is
- * the default because the alternative is not idempotent in any useful sense: a
- * pane that is already running `bun run dev` does not want that typed into it a
- * second time, and tmux has no way to tell the difference between a command and
- * a keystroke.
- *
- * `always` is the literal reading — every pane, every apply — and is right only
- * when the commands are known to be safe to repeat.
- */
-export type CommandPolicy = "always" | "create-only";
-
-/** How {@link applyWorkspace} should treat a workspace that is already running. */
-export interface ApplyWorkspaceOptions {
-  readonly commands?: CommandPolicy;
-  /**
-   * What to do with windows and panes the workspace does not describe.
-   *
-   * `owned` — the default — removes them from a session this workspace created
-   * and never from one it merely found by name. `never` never removes anything.
-   * `always` removes them wherever the session came from, which is the answer
-   * for a session somebody else made and you have decided this file owns.
-   */
-  readonly prune?: PrunePolicy;
-}
+export type {
+  ApplyWorkspaceOptions,
+  CommandPolicy,
+  PlanWorkspaceOptions,
+} from "./operation_options.js";
 
 /** A high-level apply operation that finished before a later one failed. */
 export type WorkspaceApplyMilestone =
@@ -81,9 +66,9 @@ export type WorkspaceApplyStage =
  * Applying stopped after tmux may already have changed.
  *
  * `completed` records whole high-level milestones. The failed stage itself may
- * be partial because tmux command lists are not transactions, so callers must
- * acquire a fresh plan rather than infer the remaining topology from either
- * list.
+ * be partial because mutations are not transactions and transport failure may
+ * leave delivery indeterminate. `requiresReplan` asks callers to rediscover
+ * session, window, and pane structure; it says nothing about command effects.
  */
 export class WorkspaceApplyError extends Error {
   readonly completed: readonly WorkspaceApplyMilestone[];
@@ -119,17 +104,21 @@ export class WorkspaceApplyError extends Error {
  * a process supervisor — see {@link CommandPolicy} — and it does not unset
  * options a previous version of the file had set, because tmux cannot say which
  * of an option's current values this file is responsible for.
+ *
+ * @throws ZodError when the workspace does not satisfy the strict config schema.
+ * @throws TypeError when the operation options are invalid.
+ * @throws WorkspaceApplyError when tmux fails after applying may have started.
  */
 export async function applyWorkspace(
   server: Server,
-  workspace: Workspace,
+  workspaceInput: Workspace,
   options: ApplyWorkspaceOptions = {},
 ): Promise<Session> {
+  const workspace = parseWorkspace(workspaceInput);
+  const { commands, prune } = normalizeApplyWorkspaceOptions(options);
   const completed: WorkspaceApplyMilestone[] = [];
   let failed: WorkspaceApplyStage = { action: "lookup", kind: "session" };
   try {
-    const commands = options.commands ?? "create-only";
-    const prune = options.prune ?? "owned";
     const existing = await runningSession(server, workspace.session_name);
     failed = { action: "create", kind: "session" };
     const created = existing ?? (await createSession(server, workspace));
@@ -154,7 +143,7 @@ export async function applyWorkspace(
     for (const [option, value] of Object.entries(workspace.options ?? {})) {
       failed = { kind: "workspace-option", name: option };
       // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
-      await session.setOption(option, optionValue(value));
+      await session.setOption(literalOptionName(option), optionValue(value));
       completed.push({ kind: "workspace-option", name: option });
     }
 
@@ -191,24 +180,34 @@ export async function applyWorkspace(
 }
 
 /**
- * What {@link applyWorkspace} would do, without doing any of it.
+ * Plan session, window, and pane membership without changing tmux.
  *
  * Reads the server once and answers from that capture, so it costs one snapshot
- * and changes nothing. What it is for is the question a converging tool cannot
- * answer after the fact: how much of what is running does this file not
- * describe, and is it about to go.
+ * and changes nothing. It reports structural creation, removal, retention, and
+ * window renames. It does not predict options, layouts, focus, or pane command
+ * effects.
  *
  * ```ts
  * const plan = await planWorkspace(server, workspace);
  * if (plan.removesWindows.length > 0) console.log("would remove", plan.removesWindows);
  * ```
+ *
+ * @throws ZodError when the workspace does not satisfy the strict config schema.
+ * @throws TypeError when planning options are invalid.
  */
 export async function planWorkspace(
   server: Server,
-  workspace: Workspace,
-  options: ApplyWorkspaceOptions = {},
+  workspaceInput: Workspace,
+  options: PlanWorkspaceOptions = {},
 ): Promise<WorkspacePlan> {
-  return createWorkspacePlan(server, workspace, options);
+  const workspace = parseWorkspace(workspaceInput);
+  const prune = normalizePlanWorkspaceOptions(options);
+  return createWorkspacePlan(server, workspace, prune);
+}
+
+// Workspace keys are data; core option names retain tmux's format-capable surface.
+function literalOptionName(name: string): string {
+  return name.replaceAll("#", "##");
 }
 
 async function createSession(server: Server, workspace: Workspace): Promise<Session> {
@@ -270,7 +269,7 @@ async function applyWindow(
 ): Promise<void> {
   for (const [option, value] of Object.entries(desired.options ?? {})) {
     // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
-    await window.setOption(option, optionValue(value));
+    await window.setOption(literalOptionName(option), optionValue(value));
   }
 
   const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;

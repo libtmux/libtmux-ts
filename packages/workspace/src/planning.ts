@@ -59,7 +59,7 @@ export type WorkspaceRetention =
       readonly window: WorkspaceWindowPlacement;
     };
 
-/** What an apply would do, without doing it. */
+/** Session, window, and pane membership changes an apply would make. */
 export interface WorkspacePlan {
   /** Windows the apply would create, by the position they would take. */
   readonly createsWindows: readonly WorkspaceWindowCreation[];
@@ -86,10 +86,6 @@ export interface WorkspacePlan {
   readonly retains: readonly WorkspaceRetention[];
 }
 
-interface PlanWorkspaceOptions {
-  readonly prune?: PrunePolicy;
-}
-
 /**
  * The session this workspace names, on a server that may not be running yet.
  *
@@ -107,7 +103,7 @@ export async function runningSession(server: Server, name: string): Promise<Sess
 export async function planWorkspace(
   server: Server,
   workspace: Workspace,
-  options: PlanWorkspaceOptions = {},
+  prune: PrunePolicy,
 ): Promise<WorkspacePlan> {
   const existing = await runningSession(server, workspace.session_name);
   if (existing === undefined) {
@@ -134,7 +130,7 @@ export async function planWorkspace(
   }
 
   const owned = await ownedByWorkspace(existing, workspace.session_name);
-  const pruning = mayPrune(options.prune ?? "owned", owned);
+  const pruning = mayPrune(prune, owned);
   const current = existing.windows.toArray();
   const createsWindows: WorkspaceWindowCreation[] = [];
   const createsPanes: WorkspacePaneCreation[] = [];

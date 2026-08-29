@@ -77,7 +77,9 @@ package converges tmux topology; it does not monitor or restart processes.
 
 Options named in the workspace are set on every apply. Removing an option from
 the file does not unset it because tmux does not record which current value the
-workspace owns.
+workspace owns. `@libtmux-workspace` is reserved for ownership bookkeeping and
+is rejected in workspace options. Option names are literal; tmux format syntax
+in a key is not expanded.
 
 If tmux rejects a later operation, `applyWorkspace` throws
 `WorkspaceApplyError`. Its frozen `completed` milestones name the high-level
@@ -150,8 +152,10 @@ plan.retains; // surplus plus the policy or sharing reason
 ```
 
 Plan entries are frozen data carrying tmux IDs, indexes, positions, and names.
-The plan is advisory: acquire a fresh one after any delay or failed apply
-because tmux topology may have changed.
+The plan covers session, window, and pane membership, not options, layouts,
+focus, or pane commands. It is advisory: acquire a fresh one after any delay or
+failed apply because tmux structure may have changed.
+Planning accepts `prune`; command policy is apply-only.
 
 `prune` decides the rest. `"owned"` is the default above; `"never"` never
 removes anything; `"always"` is how you say a session somebody else made is now

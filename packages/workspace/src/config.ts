@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { OWNERSHIP_OPTION } from "./ownership.js";
+
 /**
  * A tmuxp-shaped workspace description.
  *
@@ -27,6 +29,12 @@ const paneSchema = z.union([
 
 const optionValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
 
+const workspaceOptionsSchema = z
+  .record(z.string(), optionValueSchema)
+  .refine((options) => !Object.hasOwn(options, OWNERSHIP_OPTION), {
+    message: `${OWNERSHIP_OPTION} is reserved for workspace ownership`,
+  });
+
 const windowSchema = z.strictObject({
   focus: z.boolean().optional(),
   layout: z.string().optional(),
@@ -38,7 +46,7 @@ const windowSchema = z.strictObject({
 });
 
 export const workspaceSchema = z.strictObject({
-  options: z.record(z.string(), optionValueSchema).optional(),
+  options: workspaceOptionsSchema.optional(),
   session_name: z.string().min(1),
   start_directory: z.string().optional(),
   // A session always has at least one window, so a workspace with none does not
