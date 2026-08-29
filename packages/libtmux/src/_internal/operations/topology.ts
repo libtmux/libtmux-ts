@@ -2,6 +2,7 @@ import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";
+import { planRemoveWindowPlacement } from "./plans.js";
 
 function destination(options: MoveWindowOptions): readonly string[] {
   if (options.session === undefined && options.index === undefined) return [];
@@ -54,6 +55,14 @@ export async function unlinkWindow(
   windowId: string | null,
 ): Promise<void> {
   await runCommand(runtime, ["unlink-window", ...target(windowId)]);
+}
+
+/** Unlink one placement or destroy its last ungrouped window. */
+export async function removeWindowPlacement(
+  runtime: RuntimeContext,
+  windowId: string,
+): Promise<void> {
+  await runCommand(runtime, planRemoveWindowPlacement(windowId).argv);
 }
 
 /**

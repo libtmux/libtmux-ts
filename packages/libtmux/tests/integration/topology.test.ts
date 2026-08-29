@@ -106,6 +106,39 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("removes an ungrouped placement without widening its target", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const other = await server.newSession({ name: "remove-other" });
+      const source = (await server.snapshot()).windows
+        .filter((window) => window.session?.name === fixture.sessionName)
+        .one();
+      await source.link({ session: other.id });
+
+      const linked = (await server.snapshot()).windows.where({ id: source.id });
+      await linked.one({ session: { is: { name: fixture.sessionName } } }).removePlacement();
+
+      const survivor = (await server.snapshot()).windows.where({ id: source.id }).one();
+      expect(survivor.session?.id).toBe(other.id);
+      await survivor.removePlacement();
+      expect((await server.snapshot()).windows.exists({ id: source.id })).toBe(false);
+    });
+  }, 40_000);
+
+  test("refuses to remove one placement from a session group", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const source = (await server.snapshot()).windows.one();
+      await server.newSession({ groupWith: fixture.sessionName, name: "remove-grouped" });
+      const grouped = (await server.snapshot()).windows
+        .filter((window) => window.id === source.id && window.session?.name === fixture.sessionName)
+        .one();
+
+      await expect(grouped.removePlacement()).rejects.toThrow(/libtmux-grouped-session/u);
+      expect((await server.snapshot()).windows.count({ id: source.id })).toBe(2);
+    });
+  }, 40_000);
+
   test("selects a linked window in the session it was reached through", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

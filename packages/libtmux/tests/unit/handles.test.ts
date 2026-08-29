@@ -1185,12 +1185,33 @@ describe("authenticated handle materialization", () => {
     await target.select();
     await target.move({ index: 7 });
     await target.unlink();
+    await target.removePlacement();
     await target.swapWith(other);
+
+    expect(target.plan.removePlacement().argv).toEqual([
+      "if-shell",
+      "-F",
+      "-t",
+      "$1:4",
+      "#{==:#{session_grouped},0}",
+      "'unlink-window' '-k' '-t' '$1:4'",
+      "'list-windows' '-t' 'libtmux-grouped-session'",
+    ]);
 
     expect(fixture.transport.requests.map(({ args }) => args)).toEqual([
       ["-Lhandles", "select-window", "-t", "$1:4"],
       ["-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
       ["-Lhandles", "unlink-window", "-t", "$1:4"],
+      [
+        "-Lhandles",
+        "if-shell",
+        "-F",
+        "-t",
+        "$1:4",
+        "#{==:#{session_grouped},0}",
+        "'unlink-window' '-k' '-t' '$1:4'",
+        "'list-windows' '-t' 'libtmux-grouped-session'",
+      ],
       ["-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
     ]);
   });

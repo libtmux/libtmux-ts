@@ -9,6 +9,7 @@ import type {
 import type { Pane } from "../../pane.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
+import { quoteCommand } from "../transport/lexer.js";
 
 function requireIdentity(lines: readonly string[], command: string): string {
   const identity = lines[0];
@@ -162,6 +163,22 @@ export function planKill(
 ): PlannedOperation<void> {
   return {
     argv: [command, ...(target == null ? [] : ["-t", target])],
+    resolve: () => undefined,
+  };
+}
+
+/** Remove one ungrouped placement, destroying the window only when it is last. */
+export function planRemoveWindowPlacement(target: string): PlannedOperation<void> {
+  return {
+    argv: [
+      "if-shell",
+      "-F",
+      "-t",
+      target,
+      "#{==:#{session_grouped},0}",
+      quoteCommand(["unlink-window", "-k", "-t", target]),
+      quoteCommand(["list-windows", "-t", "libtmux-grouped-session"]),
+    ],
     resolve: () => undefined,
   };
 }

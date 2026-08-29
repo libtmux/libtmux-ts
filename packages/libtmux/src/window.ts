@@ -15,7 +15,11 @@ import {
   sessionOf,
 } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
-import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
+import {
+  planKill,
+  planRemoveWindowPlacement,
+  planSplitWindow,
+} from "./_internal/operations/plans.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import {
   setOption,
@@ -29,6 +33,7 @@ import {
   moveWindow,
   renameWindow,
   resizeWindow,
+  removeWindowPlacement,
   rotateWindow,
   selectLayout,
   selectTarget,
@@ -52,6 +57,7 @@ import type { Server } from "./server.js";
 /** What {@link Window.plan} offers, one entry per mutation it can describe. */
 export interface WindowPlans {
   readonly kill: () => PlannedOperation<void>;
+  readonly removePlacement: () => PlannedOperation<void>;
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
@@ -244,6 +250,7 @@ export class Window {
   get plan(): WindowPlans {
     return {
       kill: () => planKill("kill-window", this.id),
+      removePlacement: () => planRemoveWindowPlacement(placementTarget(this)),
       split: (options?: SplitOptions) => planSplitWindow(this.id, options),
     };
   }
@@ -378,6 +385,17 @@ export class Window {
    */
   unlink(): Promise<void> {
     return unlinkWindow(runtimeForHandle(this), placementTarget(this));
+  }
+
+  /**
+   * Remove this placement, destroying an unshared window but refusing a group.
+   *
+   * ```ts
+   * await window.removePlacement();
+   * ```
+   */
+  removePlacement(): Promise<void> {
+    return removeWindowPlacement(runtimeForHandle(this), placementTarget(this));
   }
 
   /**
