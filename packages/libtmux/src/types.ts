@@ -1,4 +1,9 @@
-import type { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";
+import type {
+  OptionScope as OptionScopeValue,
+  PaneDirection,
+  ResizeAdjustmentDirection,
+  WindowDirection,
+} from "./constants.js";
 import type { Client } from "./client.js";
 import type { CommandOptions, PaneId, SessionId, WindowId } from "./common.js";
 import type { Server } from "./server.js";
@@ -321,8 +326,8 @@ export interface ChooseTreeOptions extends CommandOptions {
 
 export type { OptionScope } from "./constants.js";
 
-/** Hooks live at server or session scope. */
-export type HookScope = "server" | "session";
+/** The server, session, window, or pane table that holds a hook. */
+export type HookScope = OptionScopeValue;
 
 /**
  * The tmux version a server is running.

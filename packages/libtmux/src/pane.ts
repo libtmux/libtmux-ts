@@ -9,6 +9,7 @@ import type {
   ResizeOptions,
   RespawnOptions,
   SendKeysOptions,
+  SetHookOptions,
   SetOptionOptions,
   PlannedOperation,
   SplitOptions,
@@ -26,6 +27,7 @@ import {
 } from "./_internal/operations/interactive.js";
 import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
+import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
 import {
   setOption,
@@ -102,6 +104,21 @@ export class Pane {
    */
   get session(): Session | undefined {
     return sessionOf(originGraphForHandle(this), this.format.session_id);
+  }
+
+  /** Read hooks set on this pane itself. */
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
+    return showHooks(runtimeForHandle(this), "pane", this.id);
+  }
+
+  /** Bind a tmux command to a pane-scoped hook. */
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForHandle(this), "pane", this.id, name, command, options);
+  }
+
+  /** Remove every command bound to a pane-scoped hook. */
+  unsetHook(name: string): Promise<void> {
+    return unsetHook(runtimeForHandle(this), "pane", this.id, name);
   }
 
   /**

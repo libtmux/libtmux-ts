@@ -1,6 +1,6 @@
 import type { CmdOptions, PlannedOperation } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
-import type { SetOptionOptions } from "./types.js";
+import type { SetHookOptions, SetOptionOptions } from "./types.js";
 import type {
   MoveWindowOptions,
   ResizeWindowOptions,
@@ -16,6 +16,7 @@ import {
 } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
 import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
+import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import {
   setOption,
   showOptions,
@@ -147,6 +148,21 @@ export class Window {
    */
   get linkedSessions(): Selection<Session> {
     return linkedSessionsOfWindow(originGraphForHandle(this), this.id);
+  }
+
+  /** Read hooks set on this window itself. */
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
+    return showHooks(runtimeForHandle(this), "window", this.id);
+  }
+
+  /** Bind a tmux command to a window-scoped hook. */
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForHandle(this), "window", this.id, name, command, options);
+  }
+
+  /** Remove every command bound to a window-scoped hook. */
+  unsetHook(name: string): Promise<void> {
+    return unsetHook(runtimeForHandle(this), "window", this.id, name);
   }
 
   /**

@@ -1,11 +1,12 @@
 import type { HookScope, SetHookOptions } from "../../types.js";
+import { HOOK_SCOPE_FLAG_MAP } from "../../constants.js";
 import { parseNameValueLine } from "./options.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 function scopeArguments(scope: HookScope, target: string | null | undefined): readonly string[] {
-  if (scope === "server") return ["-g"];
-  return target == null ? [] : ["-t", target];
+  const flag = HOOK_SCOPE_FLAG_MAP[scope];
+  return [...(flag === "" ? [] : [flag]), ...(target == null ? [] : ["-t", target])];
 }
 
 /** `after-new-window[1]`, which is how tmux names one element of a hook. */

@@ -42,6 +42,7 @@ import {
 import { OptionScope as RootOptionScope } from "../../src/index.js";
 import type {
   CommandOptions as RootCommandOptions,
+  HookScope,
   JoinOptions as RootJoinOptions,
   OptionScope as RootOptionScopeType,
   SetOptionOptions as RootSetOptionOptions,
@@ -300,6 +301,7 @@ type _OptionFlags = Expect<
   Equal<typeof OPTION_SCOPE_FLAG_MAP, Readonly<Record<OptionScope, string>>>
 >;
 type _HookFlags = Expect<Equal<typeof HOOK_SCOPE_FLAG_MAP, Readonly<Record<OptionScope, string>>>>;
+type _HookScope = Expect<Equal<HookScope, OptionScope>>;
 type _OptionScope = Expect<Equal<OptionScope, "pane" | "server" | "session" | "window">>;
 type _RootCommandOptions = Expect<Equal<RootCommandOptions, CommandOptions>>;
 type _RootJoinOptions = Expect<Equal<RootJoinOptions, JoinOptions>>;
@@ -309,6 +311,7 @@ type _RootSetOptionOptions = Expect<Equal<RootSetOptionOptions, SetOptionOptions
 export type {
   _CommandOutcomeKeys,
   _DeliveryStatus,
+  _HookScope,
   _NoPublicAdjustmentInstanceHook,
   _OperationStatus,
   _OptionScope,

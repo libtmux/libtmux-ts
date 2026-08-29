@@ -111,10 +111,13 @@ describe("option reads", () => {
     });
   }, 30_000);
 
-  test("sets and unsets hooks at session and server scope", async () => {
+  test("sets and unsets hooks at every tmux scope", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const session = (await server.snapshot()).sessions.one();
+      const snapshot = await server.snapshot();
+      const session = snapshot.sessions.one();
+      const window = snapshot.windows.one();
+      const pane = snapshot.panes.one();
 
       // Read back under the name it was set with: tmux prints the element as
       // `after-new-window[0]`, and keyed by that nothing here composes.
@@ -126,8 +129,18 @@ describe("option reads", () => {
       await server.setHook("after-kill-pane", "display-message global");
       expect((await server.showHooks()).get("after-kill-pane")).toEqual(["display-message global"]);
 
+      await window.setHook("window-renamed", "display-message window");
+      expect((await window.showHooks()).get("window-renamed")).toEqual(["display-message window"]);
+
+      await pane.setHook("pane-title-changed", "display-message pane");
+      expect((await pane.showHooks()).get("pane-title-changed")).toEqual(["display-message pane"]);
+
       await session.unsetHook("after-new-window");
       expect((await session.showHooks()).has("after-new-window")).toBe(false);
+      await window.unsetHook("window-renamed");
+      expect((await window.showHooks()).has("window-renamed")).toBe(false);
+      await pane.unsetHook("pane-title-changed");
+      expect((await pane.showHooks()).has("pane-title-changed")).toBe(false);
     });
   }, 30_000);
 
