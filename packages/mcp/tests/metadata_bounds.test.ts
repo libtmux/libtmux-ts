@@ -11,6 +11,7 @@ import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { registerResources } from "../src/resources.js";
 import { registerDiscovery } from "../src/tools/discovery.js";
 import { registerLayout } from "../src/tools/layout.js";
+import { registerLifecycle } from "../src/tools/lifecycle.js";
 import { registerSettings } from "../src/tools/settings.js";
 import { CLIENTS_URI, PANES_URI, SESSIONS_URI, WINDOWS_URI } from "../src/uris.js";
 
@@ -49,6 +50,11 @@ function selection<T extends { readonly id: string }>(items: readonly T[]): unkn
           ).length;
     },
     oneOrUndefined: pick,
+    one: (where: { readonly id?: string; readonly name?: string }) => {
+      const found = pick(where);
+      if (found === undefined) throw new Error("no fixture entity matched");
+      return found;
+    },
     toArray: () => [...items],
   };
 }
@@ -65,7 +71,8 @@ function topology(count: number): {
         attached: 0,
         id: `$${String(index)}`,
         name: `session-${String(index)}-${LARGE}`,
-      }) as Session,
+        rename: async () => undefined,
+      }) as unknown as Session,
   );
   const windows = Array.from({ length: count }, (_, index) => {
     const session = sessions[0] as Session;
@@ -396,6 +403,34 @@ describe("metadata tool bounds", () => {
     );
   });
 
+  test("bounds one session returned by a mutation", async () => {
+    const snapshot = linkedSnapshot(1);
+    const session = snapshot.sessions.toArray()[0];
+    if (session === undefined) throw new Error("fixture has no session");
+    Object.assign(session, { name: HUGE, rename: async () => undefined });
+    await withMcp(
+      [registerLifecycle],
+      async (client) => {
+        const result = await client.callTool({
+          arguments: { name: "renamed", session: "$0" },
+          name: "rename_session",
+        });
+        const value = structured<{
+          readonly session: {
+            readonly metadataComplete: boolean;
+            readonly omittedMetadataBytes: number;
+          };
+        }>(result);
+        expect(value.session.metadataComplete).toBe(false);
+        expect(value.session.omittedMetadataBytes).toBeGreaterThan(0);
+        expect(Buffer.byteLength(JSON.stringify(value), "utf8")).toBeLessThanOrEqual(
+          MAX_RESULT_BYTES,
+        );
+      },
+      fakeContext({ snapshot }),
+    );
+  });
+
   test("bounds whoami clients and attended pane ids with omission counts", async () => {
     const clients = Array.from(
       { length: 32 },
@@ -457,6 +492,32 @@ describe("metadata tool bounds", () => {
 });
 
 describe("metadata resource bounds", () => {
+  test("keeps oversized resource descriptors listable", async () => {
+    const snapshot = linkedSnapshot(1);
+    const session = snapshot.sessions.toArray()[0];
+    if (session === undefined) throw new Error("fixture has no session");
+    Object.assign(session, { name: HUGE });
+    await withMcp(
+      [registerResources],
+      async (client) => {
+        const uris: string[] = [];
+        let cursor: string | undefined;
+        do {
+          // eslint-disable-next-line no-await-in-loop -- each page supplies the next cursor.
+          const page = await client.listResources(cursor === undefined ? undefined : { cursor });
+          expect(Buffer.byteLength(JSON.stringify(page), "utf8")).toBeLessThanOrEqual(
+            MAX_RESULT_BYTES,
+          );
+          uris.push(...page.resources.map((resource) => resource.uri));
+          cursor = page.nextCursor;
+        } while (cursor !== undefined);
+        expect(uris).toContain("tmux://sessions/%240");
+        expect(uris).toContain("tmux://windows/%401");
+      },
+      fakeContext({ snapshot }),
+    );
+  });
+
   test("completes only bounded session ids", async () => {
     const count = 150;
     await withMcp(
@@ -480,7 +541,7 @@ describe("metadata resource bounds", () => {
   });
 
   test("paginates one-snapshot resource listings without loss", async () => {
-    const count = 32;
+    const count = 100;
     let snapshots = 0;
     const context = fakeContext({
       count,
@@ -537,8 +598,8 @@ describe("metadata resource bounds", () => {
   });
 
   test("rejects a cursor after resource descriptors change", async () => {
-    const first = fakeSnapshot();
-    const second = fakeSnapshot();
+    const first = fakeSnapshot(100);
+    const second = fakeSnapshot(100);
     const changed = second.sessions.toArray()[0];
     if (changed === undefined) throw new Error("fixture has no session");
     Object.assign(changed, { name: "changed-between-pages" });

@@ -64,7 +64,13 @@ export type PaneView = z.infer<typeof paneViewSchema>;
 export const sessionViewSchema = z.object({
   attachedClients: z.number().int().describe("How many clients are attached; 0 means detached."),
   id: sessionIdSchema,
+  metadataComplete: z.boolean().describe("Whether the session name is complete."),
   name: z.string(),
+  omittedMetadataBytes: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("UTF-8 bytes omitted from the session name."),
   windows: z.number().int().describe("How many windows it holds."),
 });
 export type SessionView = z.infer<typeof sessionViewSchema>;
@@ -165,7 +171,7 @@ function no<T>(value: T | null | undefined, fallback: T): T {
   return value ?? fallback;
 }
 
-function boundedStrings(
+export function boundedStrings(
   values: readonly string[],
   budget: number = PROJECTED_STRING_BYTES,
 ): { readonly omittedBytes: number; readonly values: readonly string[] } {
@@ -273,10 +279,13 @@ export function paneView(
 }
 
 export function sessionView(session: Session, windows: number): SessionView {
+  const metadata = boundedStrings([no(session.name, "")]);
   return {
     attachedClients: no(session.attached, safeInteger(0)),
     id: session.id,
-    name: no(session.name, ""),
+    metadataComplete: metadata.omittedBytes === 0,
+    name: metadata.values[0] ?? "",
+    omittedMetadataBytes: metadata.omittedBytes,
     windows,
   };
 }
@@ -347,7 +356,11 @@ export function paneLine(view: PaneView): string {
 
 export function sessionLine(view: SessionView): string {
   const attached = view.attachedClients === 0 ? "" : ` [attached x${String(view.attachedClients)}]`;
-  return `${view.id}  ${view.name}  ${String(view.windows)} windows${attached}`;
+  const metadata =
+    view.omittedMetadataBytes === 0
+      ? ""
+      : ` [${String(view.omittedMetadataBytes)} name bytes omitted]`;
+  return `${view.id}  ${view.name}  ${String(view.windows)} windows${attached}${metadata}`;
 }
 
 export function windowLine(view: WindowView): string {

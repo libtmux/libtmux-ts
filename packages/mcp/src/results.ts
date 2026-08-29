@@ -9,15 +9,24 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { MAX_RESULT_BYTES } from "./policy.js";
+
 /** What a failed call gives back so the next call can be a better one. */
 export interface ToolFailure {
   readonly hint?: string;
   readonly reason: string;
 }
 
+function resultText(text: string): string {
+  const bounded = tailBytes(text, MAX_RESULT_BYTES);
+  return bounded.droppedBytes === 0
+    ? text
+    : `[${String(bounded.droppedBytes)} earlier bytes omitted by the result ceiling]\n${bounded.text}`;
+}
+
 export function ok<T extends Record<string, unknown>>(structured: T, text: string): CallToolResult {
   return {
-    content: [{ text, type: "text" }],
+    content: [{ text: resultText(text), type: "text" }],
     structuredContent: structured,
   };
 }
@@ -38,7 +47,7 @@ export function ok<T extends Record<string, unknown>>(structured: T, text: strin
 export function fail(failure: ToolFailure): CallToolResult {
   const text = failure.hint === undefined ? failure.reason : `${failure.reason}\n\n${failure.hint}`;
   return {
-    content: [{ text, type: "text" }],
+    content: [{ text: resultText(text), type: "text" }],
     isError: true,
   };
 }

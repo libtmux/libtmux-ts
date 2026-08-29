@@ -17,7 +17,16 @@ import { effectiveResultLines } from "../policy.js";
 import { MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import { sessionIdSchema } from "../schemas.js";
-import { limitViews, paneLine, paneView, paneViewSchema, renderViews } from "../views.js";
+import {
+  boundedStrings,
+  limitViews,
+  paneLine,
+  paneView,
+  paneViewSchema,
+  renderViews,
+} from "../views.js";
+
+const FAILURE_METADATA_BYTES = 8 * 1_024;
 
 const windowSpec = z.object({
   name: z.string().describe("Window name."),
@@ -37,6 +46,8 @@ function directoryOption(
 }
 
 interface WorkspaceFailure {
+  readonly metadataComplete: boolean;
+  readonly omittedMetadataBytes: number;
   readonly reason: string;
   readonly windowIndex: number | null;
   readonly windowName: string | null;
@@ -58,10 +69,15 @@ function failedWindow(
       : [];
   const plannedIndex = matchingPlans.length === 1 ? matchingPlans[0]! : -1;
   const windowIndex = plannedIndex === -1 ? null : plannedIndex + 1;
+  const reason = error instanceof Error ? error.message : String(error);
+  const windowName = windowIndex === null ? null : (windows[windowIndex]?.name ?? null);
+  const metadata = boundedStrings([reason, windowName ?? ""], FAILURE_METADATA_BYTES);
   return {
-    reason: error instanceof Error ? error.message : String(error),
+    metadataComplete: metadata.omittedBytes === 0,
+    omittedMetadataBytes: metadata.omittedBytes,
+    reason: metadata.values[0] ?? "",
     windowIndex,
-    windowName: windowIndex === null ? null : (windows[windowIndex]?.name ?? null),
+    windowName: windowName === null ? null : (metadata.values[1] ?? ""),
   };
 }
 
@@ -88,6 +104,8 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
         complete: z.boolean().describe("Whether every requested window was created."),
         failure: z
           .object({
+            metadataComplete: z.boolean(),
+            omittedMetadataBytes: z.number().int().nonnegative(),
             reason: z.string(),
             windowIndex: z.number().int().nonnegative().nullable(),
             windowName: z.string().nullable(),

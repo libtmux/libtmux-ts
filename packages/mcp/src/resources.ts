@@ -40,7 +40,7 @@ import {
 import { captureGridBounded } from "./grid_capture.js";
 import type { LiveListener } from "./live.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "./policy.js";
-import { boundText, renderBoundedText } from "./results.js";
+import { boundText, renderBoundedText, tailBytes } from "./results.js";
 import {
   paneContentUri,
   paneUri,
@@ -67,6 +67,11 @@ const RESOURCE_LIST_PREFIX_BYTES = Buffer.byteLength(RESOURCE_LIST_PREFIX, "utf8
 interface ResourceCursor {
   readonly after: string;
   readonly fingerprint: string;
+}
+
+function descriptorText(value: string): string {
+  const bounded = tailBytes(value, 4 * 1_024);
+  return `${bounded.droppedBytes === 0 ? "" : "…"}${bounded.text}`;
 }
 
 /**
@@ -171,19 +176,19 @@ function resourceDescriptors(snapshot: ServerSnapshot): Resource[] {
     ...snapshot.sessions.toArray().map((session) => ({
       description: "One session with its windows.",
       mimeType: JSON_MIME,
-      name: session.name ?? session.id,
+      name: descriptorText(session.name ?? session.id),
       title: "Session",
       uri: sessionUri(session.id),
     })),
     ...windowEntities(snapshot.windows.toArray()).map((window) => ({
       description: "One window with its panes.",
       mimeType: JSON_MIME,
-      name: window.name ?? window.id,
+      name: descriptorText(window.name ?? window.id),
       title: "Window",
       uri: windowUri(window.id),
     })),
     ...paneEntities(snapshot.panes.toArray()).map((pane) => ({
-      description: `One pane running ${pane.currentCommand ?? "an unknown command"}.`,
+      description: `One pane running ${descriptorText(pane.currentCommand ?? "an unknown command")}.`,
       mimeType: JSON_MIME,
       name: pane.id,
       title: "Pane",

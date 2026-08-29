@@ -5,7 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TmuxCommandError } from "libtmux";
 
 import type { ToolContext } from "../src/context.js";
-import { resolvePolicy } from "../src/policy.js";
+import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { registerWorkspace } from "../src/tools/workspace.js";
 
 interface WindowSpec {
@@ -197,4 +197,65 @@ test("reports the workspace that survived a post-creation batch failure", async 
   });
   expect(snapshots).toBe(2);
   expect(topologyChanges).toBe(1);
+});
+
+test("bounds partial-workspace failure metadata", async () => {
+  const handlers = new Map<string, WorkspaceHandler>();
+  const mcp = {
+    registerTool(name: string, _configuration: unknown, handler: WorkspaceHandler): object {
+      handlers.set(name, handler);
+      return {};
+    },
+  } as unknown as McpServer;
+  const huge = "x".repeat(MAX_RESULT_BYTES + 8 * 1024);
+  const before = {
+    panes: { toArray: () => [] },
+    sessions: { exists: () => false },
+    windows: { toArray: () => [] },
+  };
+  const after = {
+    panes: { toArray: () => [] },
+    sessions: { exists: () => true },
+    windows: { toArray: () => [] },
+  };
+  let snapshots = 0;
+  const context = {
+    identity: async () => ({}),
+    policy: resolvePolicy({ LIBTMUX_SAFETY: "mutating" }),
+    snapshot: async () => (snapshots++ === 0 ? before : after),
+    tmux: {
+      batch: async () => {
+        throw new Error(huge);
+      },
+      newSession: async () => ({
+        id: "$1",
+        plan: { newWindow: () => ({ argv: ["new-window", "-n", huge] }) },
+      }),
+    },
+    topologyChanged: () => undefined,
+  } as unknown as ToolContext;
+  registerWorkspace(mcp, context);
+  const buildWorkspace = handlers.get("build_workspace");
+  if (buildWorkspace === undefined) throw new Error("build_workspace was not registered");
+
+  const answer = (await buildWorkspace({
+    session: huge,
+    windows: [{ name: "first" }, { name: huge }],
+  })) as {
+    readonly content: readonly { readonly text: string }[];
+    readonly structuredContent: {
+      readonly failure: {
+        readonly metadataComplete: boolean;
+        readonly omittedMetadataBytes: number;
+      };
+    };
+  };
+  expect(answer.structuredContent.failure.metadataComplete).toBe(false);
+  expect(answer.structuredContent.failure.omittedMetadataBytes).toBeGreaterThan(0);
+  expect(Buffer.byteLength(JSON.stringify(answer.structuredContent), "utf8")).toBeLessThanOrEqual(
+    MAX_RESULT_BYTES,
+  );
+  expect(Buffer.byteLength(answer.content[0]?.text ?? "", "utf8")).toBeLessThanOrEqual(
+    MAX_RESULT_BYTES + 256,
+  );
 });

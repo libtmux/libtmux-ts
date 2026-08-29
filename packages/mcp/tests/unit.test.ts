@@ -11,7 +11,7 @@ import { describeUnreachable } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
 import { frame, randomId, withoutForeignFraming } from "../src/command.js";
 import { LiveHub, PaneTail } from "../src/live.js";
-import { effectiveWaitMs, resolvePolicy, tierAllows } from "../src/policy.js";
+import { effectiveWaitMs, MAX_RESULT_BYTES, resolvePolicy, tierAllows } from "../src/policy.js";
 import { describeStartup } from "../src/startup.js";
 import { fail, ok, renderOutput, tailLines } from "../src/results.js";
 import { TextFilter } from "../src/text.js";
@@ -545,6 +545,16 @@ describe("results", () => {
     const result = ok({ value: 1 }, "one");
     expect(result.structuredContent).toEqual({ value: 1 });
     expect(result.content[0]).toMatchObject({ text: "one" });
+  });
+
+  test("bounds every success and failure text envelope", () => {
+    const oversized = "x".repeat(MAX_RESULT_BYTES + 1_000);
+    for (const result of [ok({ value: 1 }, oversized), fail({ reason: oversized })]) {
+      const content = result.content[0];
+      if (content?.type !== "text") throw new Error("expected text content");
+      expect(Buffer.byteLength(content.text, "utf8")).toBeLessThanOrEqual(MAX_RESULT_BYTES + 256);
+      expect(content.text).toContain("bytes omitted by the result ceiling");
+    }
   });
 });
 
