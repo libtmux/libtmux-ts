@@ -124,6 +124,11 @@ function structured<T>(result: unknown): T {
   return (result as { readonly structuredContent: T }).structuredContent;
 }
 
+function text(result: unknown): string {
+  const content = (result as { readonly content: readonly { readonly text?: string }[] }).content;
+  return content.map((entry) => entry.text ?? "").join("\n");
+}
+
 describe("bounded result policy", () => {
   test("hard-clamps an operator line ceiling", () => {
     expect(resolvePolicy({ LIBTMUX_MCP_MAX_RESULT_LINES: "999999999" }).maxResultLines).toBe(
@@ -532,6 +537,7 @@ describe("show_buffer", () => {
         totalBytes: 300_000,
         truncated: true,
       });
+      expect(text(answer)).toContain("save_buffer requires the mutating tier");
     });
   });
 
@@ -557,6 +563,7 @@ describe("show_buffer", () => {
         }>(answer);
 
         expect(result).toMatchObject({ droppedLines: 1, text: "two\nthree", truncated: true });
+        expect(text(answer)).toContain("save_buffer requires the mutating tier");
       },
     );
   });

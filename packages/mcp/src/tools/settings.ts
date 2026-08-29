@@ -404,7 +404,8 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       annotations: READ_ONLY,
       description:
         "Read one paste buffer by name. Large buffers return their size without " +
-        "reading the contents; use save_buffer to keep those outside the response.",
+        "reading the contents; save_buffer requires the mutating tier and keeps " +
+        "those outside the response.",
       inputSchema: {
         maxLines: z.number().int().positive().optional(),
         name: z.string(),
@@ -434,7 +435,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
               totalBytes: staged.totalBytes,
               truncated: true,
             },
-            `Buffer ${name} is ${String(staged.totalBytes)} bytes; no content was read because the result ceiling is ${String(MAX_RESULT_BYTES)} bytes. Use save_buffer to write it outside the response.`,
+            `Buffer ${name} is ${String(staged.totalBytes)} bytes; no content was read because the result ceiling is ${String(MAX_RESULT_BYTES)} bytes. Use save_buffer to write it outside the response; save_buffer requires the mutating tier.`,
           );
         }
 
@@ -448,7 +449,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
           0,
         );
         const truncated = trimmed.droppedLines > 0 || omittedBytes > 0;
-        const recovery = "raise maxLines within the server limit or use save_buffer for all of it";
+        const recovery =
+          "raise maxLines within the server limit or use save_buffer for all of it; " +
+          "save_buffer requires the mutating tier";
         const lineNotice =
           trimmed.droppedLines === 0
             ? ""

@@ -135,7 +135,9 @@ used.
 `LIBTMUX_SAFETY` decides which tools are **listed**, not which are refused. A
 tool an agent cannot see is one it cannot spend a turn being denied.
 
-- `readonly` — reading, watching, and waiting. Nothing writes.
+- `readonly` — reading, watching, and waiting. It sends no pane input and leaves
+  no tmux state behind. `show_buffer` may stage a temporary file; it reads at
+  most the result ceiling and removes the file before returning.
 - `mutating` — the above, plus typing, splitting, creating, and renaming.
 - `destructive` — the above, plus `kill_pane`, `kill_window`, `kill_session`.
 
@@ -252,9 +254,10 @@ the global tables — `history-limit`, which decides how far `capture_pane` reac
 back, and `default-shell`, which decides what a new pane runs, both live there.
 `unset_option` puts an option back to what it inherits.
 
-`show_buffer` returns a buffer's contents; `save_buffer` writes it to a file on
-tmux's own machine instead, which is the one to reach for when the point is to
-store it rather than read it.
+`show_buffer` may stage a temporary file to measure the buffer and cap what it
+reads into the response; it removes that file before returning. `save_buffer`
+requires the `mutating` tier and writes the buffer to a file on tmux's own
+machine when the point is to store it rather than read it.
 
 Hooks are readable but not writable. A hook outlives the process that sets it,
 so an agent that sets one leaves behaviour behind in somebody's tmux that
