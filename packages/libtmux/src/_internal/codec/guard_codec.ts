@@ -294,7 +294,7 @@ function withTmuxStderr<Error extends LibTmuxException>(error: Error, stderr: st
 }
 
 function commandFailure(
-  listCommand: ListCommand,
+  listCommand: ListCommand | undefined,
   result: RawCommandResult,
 ): LibTmuxException | undefined {
   const stderr = decodedStderr(result.stderr);
@@ -305,7 +305,10 @@ function commandFailure(
       : result.signal === null
         ? `tmux command failed with status ${result.returncode}`
         : `tmux command failed with signal ${result.signal}`;
-  return withTmuxStderr(new LibTmuxException(message, { subcommand: listCommand }), stderr);
+  return withTmuxStderr(
+    new LibTmuxException(message, listCommand === undefined ? {} : { subcommand: listCommand }),
+    stderr,
+  );
 }
 
 /**
@@ -315,7 +318,10 @@ function commandFailure(
  * different observable type depending on which command hit it, and cost the
  * caller the `delivery` that says whether a retry is safe.
  */
-function transportFailure(listCommand: ListCommand, error: TmuxTransportError): TmuxTransportError {
+function transportFailure(
+  listCommand: ListCommand | undefined,
+  error: TmuxTransportError,
+): TmuxTransportError {
   const stderr = decodedStderr(error.stderr);
   return withTmuxStderr(
     new TmuxTransportError(stderr === "" ? error.message : stderr, {
@@ -325,7 +331,7 @@ function transportFailure(listCommand: ListCommand, error: TmuxTransportError): 
       ...(error.signal === undefined ? {} : { signal: error.signal }),
       stderr: error.stderr,
       stdout: error.stdout,
-      subcommand: listCommand,
+      ...(listCommand === undefined ? {} : { subcommand: listCommand }),
     }),
     stderr,
   );
@@ -550,10 +556,10 @@ export async function executeGuardedListGroup(
     );
   } catch (error) {
     if (!(error instanceof TmuxTransportError)) throw error;
-    throw transportFailure(prepared[0]?.listCommand ?? "list-sessions", error);
+    throw transportFailure(undefined, error);
   }
 
-  const failure = commandFailure(prepared[0]!.listCommand, result);
+  const failure = commandFailure(undefined, result);
   if (failure !== undefined) throw failure;
   const sections = demultiplexGuardedOutput(
     prepared.map(({ request }) => request),

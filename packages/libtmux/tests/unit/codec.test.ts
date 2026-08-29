@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 
 import {
+  executeGuardedListGroup,
   FormatProtocolError,
   GuardCodec,
   type FormatGuards,
   type GuardedFormatRequest,
 } from "../../src/_internal/codec/guard_codec.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
+import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxException } from "../../src/exc.js";
 
@@ -73,6 +75,39 @@ function replaceMarkerWithBytes(
 }
 
 describe("guarded format codec", () => {
+  test("does not invent a failing subcommand for one aggregate result", async () => {
+    const capabilities = deriveTmuxCapabilities({
+      connectionAlias: "codec-test" as ConnectionAlias,
+      daemonEpoch: 1 as DaemonEpoch,
+      rawVersion: "3.7b",
+    });
+
+    try {
+      await executeGuardedListGroup({
+        capabilities: { bind: () => Promise.resolve(capabilities) },
+        connection: new TmuxConnection({ executable: "tmux" }),
+        listings: [{ listCommand: "list-sessions" }, { listCommand: "list-windows" }],
+        transport: {
+          async execute() {
+            return {
+              cmd: ["tmux", "list-sessions", ";", "list-windows"],
+              returncode: 1,
+              signal: null,
+              stderr: encoder.encode("one command failed\n"),
+              stdout: new Uint8Array(),
+            };
+          },
+        },
+      });
+      throw new Error("expected the command list to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(LibTmuxException);
+      if (!(error instanceof LibTmuxException)) throw error;
+      expect(error.message).toBe("one command failed");
+      expect(error.subcommand).toBeUndefined();
+    }
+  });
+
   test("prepares one request-bound format without a fixed separator or newline boundary", () => {
     const request = codecFor("list-sessions").prepare();
 
