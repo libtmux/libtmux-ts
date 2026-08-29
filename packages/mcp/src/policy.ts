@@ -20,10 +20,12 @@ export const MAX_RESULT_BYTES = 256 * 1024;
 export const MAX_REQUEST_BYTES = MAX_RESULT_BYTES;
 
 /** Largest quoted request text within one tmux invocation. */
-export const MAX_INLINE_REQUEST_BYTES = MAX_PACKED_ARGV_BYTES / 2;
+export const MAX_INLINE_REQUEST_BYTES = Math.floor(MAX_PACKED_ARGV_BYTES / 2);
 
+// A share of what tmux carries, floored: these are byte counts, and the
+// argv budget is not a multiple of eight.
 /** Largest command before its five-byte-per-byte shell framing. */
-export const MAX_FRAMED_COMMAND_BYTES = MAX_PACKED_ARGV_BYTES / 8;
+export const MAX_FRAMED_COMMAND_BYTES = Math.floor(MAX_PACKED_ARGV_BYTES / 8);
 
 /** Most repeated operations one request may schedule. */
 export const MAX_REQUEST_ITEMS = 64;

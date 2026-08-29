@@ -201,13 +201,17 @@ describe("bounded request policy", () => {
     expect(
       inlineRequestText("text").safeParse("x".repeat(MAX_INLINE_REQUEST_BYTES - 1)).success,
     ).toBe(false);
-    expect(
-      framedCommandText("command").safeParse("é".repeat(MAX_FRAMED_COMMAND_BYTES / 2)).success,
-    ).toBe(true);
-    expect(
-      framedCommandText("command").safeParse(`${"é".repeat(MAX_FRAMED_COMMAND_BYTES / 2)}x`)
-        .success,
-    ).toBe(false);
+    // A byte budget derived from a share of the argv budget has to stay whole:
+    // a fractional one reaches the caller in the refusal message.
+    expect(Number.isSafeInteger(MAX_INLINE_REQUEST_BYTES)).toBe(true);
+    expect(Number.isSafeInteger(MAX_FRAMED_COMMAND_BYTES)).toBe(true);
+    // Two-byte characters cannot land on an odd limit alone, and the limit is a
+    // share of the argv budget rather than a round number, so pad the last byte.
+    const atFramedLimit =
+      "é".repeat(Math.floor(MAX_FRAMED_COMMAND_BYTES / 2)) +
+      (MAX_FRAMED_COMMAND_BYTES % 2 === 0 ? "" : "x");
+    expect(framedCommandText("command").safeParse(atFramedLimit).success).toBe(true);
+    expect(framedCommandText("command").safeParse(`${atFramedLimit}x`).success).toBe(false);
     expect(requestText("text").safeParse("é".repeat(MAX_REQUEST_BYTES / 2)).success).toBe(true);
     expect(requestText("text").safeParse(`${"é".repeat(MAX_REQUEST_BYTES / 2)}x`).success).toBe(
       false,
@@ -226,27 +230,72 @@ describe("bounded request policy", () => {
     const framed = `${secret}${"é".repeat(1_024)}`;
     const staged = `${secret}${"é".repeat(131_066)}`;
     const attempts = [
-      [registerInput, "send_keys", { keys: inline, paneId: "%1" }, "8192 bytes"],
-      [registerInput, "paste_text", { paneId: "%1", text: inline }, "8192 bytes"],
-      [registerInput, "run_command", { command: framed, paneId: "%1" }, "2048 UTF-8 bytes"],
+      [
+        registerInput,
+        "send_keys",
+        { keys: inline, paneId: "%1" },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerInput,
+        "paste_text",
+        { paneId: "%1", text: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerInput,
+        "run_command",
+        { command: framed, paneId: "%1" },
+        `${String(MAX_FRAMED_COMMAND_BYTES)} UTF-8 bytes`,
+      ],
       [registerBuffers, "load_buffer", { name: "probe", text: staged }, "262144 UTF-8 bytes"],
       [
         registerLifecycle,
         "new_session",
         { name: composite, shellCommand: composite },
-        "combined limit is 8192 bytes",
+        `combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
       ],
-      [registerSettings, "set_option", { name: "history-limit", value: inline }, "8192 bytes"],
-      [registerSettings, "set_environment", { name: "EDITOR", value: inline }, "8192 bytes"],
-      [registerBuffers, "save_buffer", { name: "probe", path: inline }, "8192 bytes"],
-      [registerCapture, "pipe_pane", { paneId: "%1", shellCommand: inline }, "8192 bytes"],
-      [registerDiscovery, "display_message", { format: inline }, "8192 bytes"],
-      [registerLayout, "select_layout", { layout: inline, windowId: "@1" }, "8192 bytes"],
+      [
+        registerSettings,
+        "set_option",
+        { name: "history-limit", value: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerSettings,
+        "set_environment",
+        { name: "EDITOR", value: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerBuffers,
+        "save_buffer",
+        { name: "probe", path: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerCapture,
+        "pipe_pane",
+        { paneId: "%1", shellCommand: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerDiscovery,
+        "display_message",
+        { format: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerLayout,
+        "select_layout",
+        { layout: inline, windowId: "@1" },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
       [
         registerWorkspace,
         "build_workspace",
         { session: "probe", windows: [{ name: "first", shellCommand: inline }] },
-        "8192 bytes",
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
       ],
     ] as const;
 
