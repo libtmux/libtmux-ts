@@ -496,7 +496,9 @@ function refuseFieldsNewerThanServer(
       const relation = relations.find((candidate) => candidate.name === key);
       if (relation !== undefined) {
         for (const quantified of Object.values(value as Readonly<Record<string, unknown>>)) {
-          walk(relation.targetModel, quantified as Readonly<Record<string, unknown>>);
+          if (quantified !== null) {
+            walk(relation.targetModel, quantified as Readonly<Record<string, unknown>>);
+          }
         }
         continue;
       }

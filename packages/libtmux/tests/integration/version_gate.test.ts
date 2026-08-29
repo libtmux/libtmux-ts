@@ -100,6 +100,7 @@ describe("querying a field the server predates", () => {
       // vacuous, so the halves are asserted before they are used.
       expect(available.length).toBeGreaterThan(0);
       expect(available.length + tooNew.length).toBe(WHERE_FIELDS_V1.pane.length);
+      expect(() => snapshot.sessions.where({ activeWindow: { is: null } }).count()).not.toThrow();
 
       for (const field of available) {
         expect(() =>
