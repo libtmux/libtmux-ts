@@ -960,17 +960,22 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
-  test("uses the server option environment for caller identity", async () => {
+  test("keeps caller identity separate from policy overrides", async () => {
     await withServer(async (fixture) => {
       const tmux = serverFor(fixture);
       const paneId = (await tmux.snapshot()).panes.one().id;
       const serverPid = String((await tmux.daemonIdentity())?.pid ?? "");
-      const mcp = createTmuxMcpServer(tmux, {
-        environment: {
-          TMUX: `${fixture.socketPath},${serverPid},0`,
-          TMUX_PANE: paneId,
-        },
-      });
+      const callerEnvironment = {
+        TMUX: `${fixture.socketPath},${serverPid},0`,
+        TMUX_PANE: paneId,
+      };
+      const options = {
+        callerEnvironment,
+        environment: { LIBTMUX_SAFETY: "mutating" },
+      };
+      const mcp = createTmuxMcpServer(tmux, options);
+      callerEnvironment.TMUX = "";
+      callerEnvironment.TMUX_PANE = "";
       const client = new Client({ name: "embedded-identity", version: "0.0.0" });
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 
@@ -983,6 +988,13 @@ describe("staying out of the way", () => {
           }>(await client.callTool({ arguments: {}, name: "whoami" }));
           expect(identity.callerPaneId).toBe(paneId);
           expect(identity.callerPaneIsOnThisServer).toBe(true);
+
+          const refused = await client.callTool({
+            arguments: { enter: false, keys: "", paneId },
+            name: "send_keys",
+          });
+          expect((refused as { isError?: boolean }).isError).toBe(true);
+          expect(toolText(refused)).toContain("own terminal");
         },
         () => client.close(),
       );
