@@ -56,7 +56,15 @@ import type {
 import { Client } from "../../src/client.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
-import type { SplitOptions, TransportMode } from "../../src/types.js";
+import {
+  isSplitSize,
+  splitSize,
+  type SplitCellSize,
+  type SplitOptions,
+  type SplitPercentage,
+  type SplitSize,
+  type TransportMode,
+} from "../../src/types.js";
 import { Session } from "../../src/session.js";
 import { Window } from "../../src/window.js";
 import type { CommandTransport } from "../../src/_internal/transport/types.js";
@@ -102,15 +110,27 @@ type ExpectedRuntimeContext = {
 
 type Child = Client | Pane | Session | Window;
 type ProjectedChild = Client | Pane | Session | Window;
-type ExpectedNonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
-type ExpectedNonNegativeInteger = "0" | (`${bigint}` & `${ExpectedNonZeroDigit}${string}`);
-
 type _ServerOptions = Expect<Equal<ServerOptions, ExpectedServerOptions>>;
 type _ServerConstructor = Expect<
   Equal<ConstructorParameters<typeof Server>, [options?: ServerOptions]>
 >;
-type _SplitSize = Expect<
-  Equal<SplitOptions["size"], number | `${ExpectedNonNegativeInteger}%` | undefined>
+const cells = splitSize(20);
+const percentage = splitSize("30%");
+// @ts-expect-error authenticate dynamic text with isSplitSize first.
+splitSize("banana");
+
+type _SplitSize = Expect<Equal<SplitOptions["size"], SplitSize | undefined>>;
+type _SplitCellProof = Expect<Equal<typeof cells, SplitCellSize>>;
+type _SplitPercentageProof = Expect<Equal<typeof percentage, SplitPercentage>>;
+type _SplitSizeGuard = Expect<Equal<typeof isSplitSize, (value: unknown) => value is SplitSize>>;
+type _SplitSizeRefusesBareNumber = Expect<
+  Equal<number extends SplitOptions["size"] ? true : false, false>
+>;
+type _SplitSizeTakesBoundaries = Expect<
+  Equal<"0%" | "9%" | "10%" | "99%" | "100%" extends SplitOptions["size"] ? true : false, true>
+>;
+type _SplitSizeRefusesOverflow = Expect<
+  Equal<"101%" extends SplitOptions["size"] ? true : false, false>
 >;
 type _SplitSizeRefusesHex = Expect<
   Equal<"0x1%" extends SplitOptions["size"] ? true : false, false>

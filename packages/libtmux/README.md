@@ -410,9 +410,12 @@ those that create something return a handle to it.
 Sessions, windows, and panes:
 
 ```ts
+import { splitSize } from "libtmux";
+
 const session = await server.newSession({ name: "work" });
 const window = await session.newWindow({ name: "editor" });
 const pane = await window.split({ size: "30%", startDirectory: "/srv" });
+await pane.split({ size: splitSize(20) });
 
 const active = session.activePane; // the active window's active pane
 const focused = window.activePane;

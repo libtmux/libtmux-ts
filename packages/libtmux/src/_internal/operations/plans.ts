@@ -1,10 +1,11 @@
 import { PANE_DIRECTION_FLAG_MAP, WINDOW_DIRECTION_FLAG_MAP } from "../../constants.js";
 import { LibTmuxException } from "../../exc.js";
-import type {
-  NewSessionOptions,
-  NewWindowOptions,
-  PlannedOperation,
-  SplitOptions,
+import {
+  splitSize as authenticateSplitSize,
+  type NewSessionOptions,
+  type NewWindowOptions,
+  type PlannedOperation,
+  type SplitOptions,
 } from "../../types.js";
 import type { Pane } from "../../pane.js";
 import type { Session } from "../../session.js";
@@ -72,19 +73,8 @@ function newWindowArgs(sessionId: string | null, options: NewWindowOptions): rea
   ];
 }
 
-const maximumTmuxSize = 2_147_483_647;
-
-function splitSize(value: NonNullable<SplitOptions["size"]>): string {
-  if (typeof value === "number") {
-    if (!Number.isInteger(value) || value < 0 || value > maximumTmuxSize) {
-      throw new TypeError(`size must be an integer from 0 to ${String(maximumTmuxSize)} cells`);
-    }
-    return String(value);
-  }
-  if (!/^(?:0|[1-9]\d*)%$/u.test(value) || Number(value.slice(0, -1)) > 100) {
-    throw new TypeError("size must be an integer percentage from 0% to 100%");
-  }
-  return value;
+function renderSplitSize(value: NonNullable<SplitOptions["size"]>): string {
+  return String(authenticateSplitSize(value));
 }
 
 function splitWindowArgs(target: string | null, options: SplitOptions): readonly string[] {
@@ -103,7 +93,7 @@ function splitWindowArgs(target: string | null, options: SplitOptions): readonly
         : []
       : PANE_DIRECTION_FLAG_MAP[options.direction]),
     ...(target == null ? [] : ["-t", target]),
-    ...(options.size === undefined ? [] : ["-l", splitSize(options.size)]),
+    ...(options.size === undefined ? [] : ["-l", renderSplitSize(options.size)]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
       "-e",

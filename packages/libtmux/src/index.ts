@@ -46,7 +46,10 @@ export type {
   SetEnvironmentOptions,
   SetHookOptions,
   SetOptionOptions,
+  SplitCellSize,
   SplitOptions,
+  SplitPercentage,
+  SplitSize,
   TmuxClientDetachedEvent,
   TmuxClientSessionChangedEvent,
   TmuxEvent,
@@ -72,6 +75,7 @@ export type {
   WatchOptions,
   WindowTarget,
 } from "./types.js";
+export { isSplitSize, splitSize } from "./types.js";
 
 export {
   DeprecatedError,

@@ -10,6 +10,7 @@ import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
 import { planKillPaneIfUnshared, planSplitWindow } from "../../src/_internal/operations/plans.js";
+import { splitSize } from "../../src/types.js";
 
 /**
  * The tmux command line the lifecycle mutations build.
@@ -152,7 +153,7 @@ describe("lifecycle command arguments", () => {
 
   test("sizes a split in cells or in a share of the pane", async () => {
     const cells = await argumentsFor((transport) =>
-      splitWindow({} as never, runtimeFor(transport), "%0", { size: 20 }),
+      splitWindow({} as never, runtimeFor(transport), "%0", { size: splitSize(20) }),
     );
     expect(cells.slice(cells.indexOf("-l"), cells.indexOf("-l") + 2)).toEqual(["-l", "20"]);
 
@@ -179,7 +180,8 @@ describe("lifecycle command arguments", () => {
 
   test("refuses split sizes tmux cannot interpret as an integer geometry", () => {
     for (const size of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
-      expect(() => planSplitWindow("%0", { size })).toThrow(/size/u);
+      expect(() => splitSize(size)).toThrow(/size/u);
+      expect(() => planSplitWindow("%0", { size: size as never })).toThrow(/size/u);
     }
     for (const size of [
       "01%",
@@ -192,6 +194,7 @@ describe("lifecycle command arguments", () => {
       "101%",
       "NaN%",
     ] as const) {
+      expect(() => splitSize(size as never)).toThrow(/size/u);
       expect(() => planSplitWindow("%0", { size: size as never })).toThrow(/size/u);
     }
   });

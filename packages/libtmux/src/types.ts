@@ -5,7 +5,14 @@ import type {
   WindowDirection,
 } from "./constants.js";
 import type { Client } from "./client.js";
-import type { CommandOptions, PaneId, SessionId, WindowId } from "./common.js";
+import {
+  isSafeInteger,
+  type CommandOptions,
+  type PaneId,
+  type SafeInteger,
+  type SessionId,
+  type WindowId,
+} from "./common.js";
 import type { Server } from "./server.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
@@ -118,8 +125,42 @@ export interface NewWindowOptions extends CommandOptions {
   readonly startDirectory?: string;
 }
 
-type NonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
-type NonNegativeIntegerText = "0" | (`${bigint}` & `${NonZeroDigit}${string}`);
+declare const splitCellSizeBrand: unique symbol;
+
+type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+type NonZeroDigit = Exclude<Digit, "0">;
+type ZeroToNinetyNine = "0" | NonZeroDigit | `${NonZeroDigit}${Digit}`;
+
+/** A cell count authenticated for tmux split geometry. */
+export type SplitCellSize = SafeInteger & {
+  readonly [splitCellSizeBrand]: "split-cell-size";
+};
+
+/** A canonical whole percentage from `0%` through `100%`. */
+export type SplitPercentage = `${ZeroToNinetyNine}%` | "100%";
+
+/** An authenticated cell count or canonical percentage for a pane split. */
+export type SplitSize = SplitCellSize | SplitPercentage;
+
+/** Test whether a value is valid tmux split geometry. */
+export function isSplitSize(value: unknown): value is SplitSize {
+  if (typeof value === "number") {
+    return isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
+  }
+  return typeof value === "string" && (value === "100%" || /^(?:0|[1-9]\d?)%$/u.test(value));
+}
+
+/** Authenticate tmux split geometry or throw. */
+export function splitSize(value: number): SplitCellSize;
+export function splitSize(value: SplitPercentage): SplitPercentage;
+export function splitSize(value: SplitSize): SplitSize;
+export function splitSize(value: number | string): SplitSize {
+  if (isSplitSize(value)) return value;
+  if (typeof value === "number") {
+    throw new TypeError("size must be an integer from 0 to 2147483647 cells");
+  }
+  throw new TypeError("size must be an integer percentage from 0% to 100%");
+}
 
 export interface SplitOptions extends CommandOptions {
   /**
@@ -133,10 +174,10 @@ export interface SplitOptions extends CommandOptions {
   /**
    * How big the new pane is, tmux's `-l`.
    *
-   * An integer is cells along the split's own axis; an integer `"30%"` string
-   * is that share of the pane being divided. Without it tmux halves the pane.
+   * `splitSize(20)` authenticates cells along the split's own axis; an exact
+   * `"30%"` literal is that share of the pane. Without it tmux halves the pane.
    */
-  readonly size?: number | `${NonNegativeIntegerText}%`;
+  readonly size?: SplitSize;
   /**
    * Which side of this pane the new one takes.
    *

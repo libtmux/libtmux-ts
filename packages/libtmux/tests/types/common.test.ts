@@ -43,8 +43,10 @@ import {
 } from "../../src/constants.js";
 import {
   isSafeInteger as rootIsSafeInteger,
+  isSplitSize as rootIsSplitSize,
   OptionScope as RootOptionScope,
   safeInteger as rootSafeInteger,
+  splitSize as rootSplitSize,
 } from "../../src/index.js";
 import type {
   CommandOptions as RootCommandOptions,
@@ -53,8 +55,18 @@ import type {
   OptionScope as RootOptionScopeType,
   SetOptionOptions as RootSetOptionOptions,
   SafeInteger as RootSafeInteger,
+  SplitCellSize as RootSplitCellSize,
+  SplitPercentage as RootSplitPercentage,
+  SplitSize as RootSplitSize,
 } from "../../src/index.js";
-import type { JoinOptions, SetOptionOptions } from "../../src/types.js";
+import { isSplitSize, splitSize } from "../../src/types.js";
+import type {
+  JoinOptions,
+  SetOptionOptions,
+  SplitCellSize,
+  SplitPercentage,
+  SplitSize,
+} from "../../src/types.js";
 
 import type { Equal, Expect } from "./assert.js";
 
@@ -321,6 +333,11 @@ type _SafeIntegerProof = Expect<Equal<typeof safeInteger, (value: number) => Saf
 type _RootSafeInteger = Expect<Equal<RootSafeInteger, SafeInteger>>;
 type _RootSafeIntegerGuard = Expect<Equal<typeof rootIsSafeInteger, typeof isSafeInteger>>;
 type _RootSafeIntegerProof = Expect<Equal<typeof rootSafeInteger, typeof safeInteger>>;
+type _RootSplitCellSize = Expect<Equal<RootSplitCellSize, SplitCellSize>>;
+type _RootSplitPercentage = Expect<Equal<RootSplitPercentage, SplitPercentage>>;
+type _RootSplitSize = Expect<Equal<RootSplitSize, SplitSize>>;
+type _RootSplitSizeGuard = Expect<Equal<typeof rootIsSplitSize, typeof isSplitSize>>;
+type _RootSplitSizeProof = Expect<Equal<typeof rootSplitSize, typeof splitSize>>;
 
 export type {
   _CommandOutcomeKeys,
@@ -339,6 +356,11 @@ export type {
   _RootSafeInteger,
   _RootSafeIntegerGuard,
   _RootSafeIntegerProof,
+  _RootSplitCellSize,
+  _RootSplitPercentage,
+  _RootSplitSize,
+  _RootSplitSizeGuard,
+  _RootSplitSizeProof,
   _SafeIntegerGuard,
   _SafeIntegerProof,
   _SessionRef,
