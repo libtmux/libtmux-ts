@@ -10,6 +10,7 @@ import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { registerResources } from "../src/resources.js";
 import { registerDiscovery } from "../src/tools/discovery.js";
 import { registerSettings } from "../src/tools/settings.js";
+import { CLIENTS_URI, PANES_URI, SESSIONS_URI, WINDOWS_URI } from "../src/uris.js";
 
 const LARGE = "x".repeat(16 * 1024);
 
@@ -112,14 +113,17 @@ function fakeSnapshot(count = 32): ServerSnapshot {
   } as ServerSnapshot;
 }
 
-function fakeContext(): ToolContext {
+function fakeContext(options?: {
+  readonly count?: number;
+  readonly onSnapshot?: () => void;
+}): ToolContext {
   const repeated = Array.from(
     { length: 32 },
     (_, index) => [`entry-${String(index)}`, LARGE] as const,
   );
-  const snapshot = fakeSnapshot();
+  const snapshot = fakeSnapshot(options?.count);
   return {
-    hub: {},
+    hub: { anchor: async () => undefined },
     identity: async () => ({
       attendedPaneIds: [],
       callerPaneId: undefined,
@@ -128,7 +132,10 @@ function fakeContext(): ToolContext {
       serverPid: undefined,
     }),
     policy: resolvePolicy({ LIBTMUX_SAFETY: "mutating" }),
-    snapshot: async () => snapshot,
+    snapshot: async () => {
+      options?.onSnapshot?.();
+      return snapshot;
+    },
     tmux: {
       cmd: async (_command: string, arguments_: readonly string[]) =>
         arguments_.includes("-a") ? ["session_name=value"] : [LARGE.repeat(20)],
@@ -144,8 +151,8 @@ function fakeContext(): ToolContext {
 async function withMcp(
   registrations: readonly ((mcp: McpServer, context: ToolContext) => void)[],
   body: (client: Client) => Promise<void>,
+  context = fakeContext(),
 ): Promise<void> {
-  const context = fakeContext();
   const mcp = new McpServer({ name: "metadata-bounds-test", version: "0" });
   for (const register of registrations) register(mcp, context);
   const client = new Client({ name: "metadata-bounds-test", version: "0" });
@@ -232,6 +239,88 @@ describe("metadata tool bounds", () => {
 });
 
 describe("metadata resource bounds", () => {
+  test("paginates one-snapshot resource listings without loss", async () => {
+    const count = 32;
+    let snapshots = 0;
+    const context = fakeContext({
+      count,
+      onSnapshot: () => {
+        snapshots += 1;
+      },
+    });
+
+    await withMcp(
+      [registerResources],
+      async (client) => {
+        const uris: string[] = [];
+        let cursor: string | undefined;
+        let pages = 0;
+        do {
+          // eslint-disable-next-line no-await-in-loop -- each cursor comes from the preceding page.
+          const page = await client.listResources(cursor === undefined ? undefined : { cursor });
+          expect(Buffer.byteLength(JSON.stringify(page), "utf8")).toBeLessThanOrEqual(
+            MAX_RESULT_BYTES,
+          );
+          expect(page.resources.length).toBeGreaterThan(0);
+          uris.push(...page.resources.map((resource) => resource.uri));
+          cursor = page.nextCursor;
+          pages += 1;
+          expect(pages).toBeLessThan(100);
+        } while (cursor !== undefined);
+
+        const expected = [SESSIONS_URI, WINDOWS_URI, PANES_URI, CLIENTS_URI];
+        for (let index = 0; index < count; index += 1) {
+          expected.push(
+            `tmux://sessions/${encodeURIComponent(`$${String(index)}`)}`,
+            `tmux://windows/${encodeURIComponent(`@${String(index)}`)}`,
+            `tmux://panes/${encodeURIComponent(`%${String(index)}`)}`,
+            `tmux://panes/${encodeURIComponent(`%${String(index)}`)}/content`,
+          );
+        }
+        expected.sort();
+
+        expect(pages).toBeGreaterThan(1);
+        expect(new Set(uris).size).toBe(uris.length);
+        expect(uris).toEqual(expected);
+        expect(snapshots).toBe(pages);
+      },
+      context,
+    );
+  });
+
+  test("rejects a malformed resource-list cursor", async () => {
+    await withMcp([registerResources], async (client) => {
+      await expect(client.listResources({ cursor: "not-a-libtmux-cursor" })).rejects.toThrow(
+        /cursor/iu,
+      );
+    });
+  });
+
+  test("rejects a cursor after resource descriptors change", async () => {
+    const first = fakeSnapshot();
+    const second = fakeSnapshot();
+    const changed = second.sessions.toArray()[0];
+    if (changed === undefined) throw new Error("fixture has no session");
+    Object.assign(changed, { name: "changed-between-pages" });
+    let calls = 0;
+    const context = {
+      ...fakeContext(),
+      snapshot: async () => (calls++ === 0 ? first : second),
+    } as ToolContext;
+
+    await withMcp(
+      [registerResources],
+      async (client) => {
+        const firstPage = await client.listResources();
+        expect(firstPage.nextCursor).toBeDefined();
+        await expect(client.listResources({ cursor: firstPage.nextCursor ?? "" })).rejects.toThrow(
+          /cursor/iu,
+        );
+      },
+      context,
+    );
+  });
+
   test("bounds collection and nested JSON resource bodies", async () => {
     await withMcp([registerResources], async (client) => {
       for (const uri of ["tmux://sessions", "tmux://sessions/%240"]) {
