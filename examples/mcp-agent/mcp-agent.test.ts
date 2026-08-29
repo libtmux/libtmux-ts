@@ -30,13 +30,13 @@ describe("mcp-agent", () => {
           expect(ran.exitStatus).toBe(0);
           expect(ran.output).toBe("hello");
 
-          const failed = await runAndCheck(client, paneId, "exit 3");
-          expect(failed.exitStatus).toBe(3);
-
           // A wait that misses is still an answer, not an empty hand.
           const missed = await waitFor(client, paneId, "never-printed-here", 1_500);
           expect(missed.outcome).toBe("timed_out");
           expect(missed.screen).toContain("hello");
+
+          const failed = await runAndCheck(client, paneId, "exit 3");
+          expect(failed.exitStatus).toBe(3);
 
           // And a repeated read is charged only for what is new.
           const next = await watchPane(client, paneId);
