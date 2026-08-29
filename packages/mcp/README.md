@@ -358,7 +358,9 @@ import { createTmuxMcpServer } from "@libtmux/mcp";
 const client = new Client({ name: "example", version: "0.0.0" });
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 await Promise.all([
-  createTmuxMcpServer(server, { environment: {} }).connect(serverSide),
+  createTmuxMcpServer(server, {
+    environment: { LIBTMUX_SAFETY: "mutating" },
+  }).connect(serverSide),
   client.connect(clientSide),
 ]);
 ```

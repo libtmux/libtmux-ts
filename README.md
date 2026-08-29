@@ -73,7 +73,7 @@ const snapshot = await server.snapshot();
 
 // No further tmux calls: everything below resolves against the snapshot.
 const editors = snapshot.panes.where({ currentCommand: "vim" });
-console.log(editors.count(), editors.at(0)?.sessionName);
+console.log(editors.count(), editors.at(0)?.session?.name);
 ```
 
 Building something rather than reading it looks like this — and this block is a
