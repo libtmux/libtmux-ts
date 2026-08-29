@@ -41,6 +41,8 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 const BLOCKING_WAIT_FLOOR_MS = 1_000;
 const BLOCKING_WAIT_LIMIT_MS = 120_000;
+/** Largest delay accepted by libtmux's timer-backed command deadline. */
+const COMMAND_TIMEOUT_LIMIT_MS = 2_147_483_647;
 const MAX_RESULT_LINES_LIMIT = 10_000;
 
 /**
@@ -136,9 +138,9 @@ export function resolvePolicy(
       BLOCKING_WAIT_FLOOR_MS,
       BLOCKING_WAIT_LIMIT_MS,
     ),
-    commandTimeoutMs: readInteger(
-      environment.LIBTMUX_MCP_COMMAND_TIMEOUT_MS,
-      DEFAULT_COMMAND_TIMEOUT_MS,
+    commandTimeoutMs: Math.min(
+      readInteger(environment.LIBTMUX_MCP_COMMAND_TIMEOUT_MS, DEFAULT_COMMAND_TIMEOUT_MS),
+      COMMAND_TIMEOUT_LIMIT_MS,
     ),
     liveEnabled: environment.LIBTMUX_MCP_LIVE !== "0",
     maxResultLines: clamp(

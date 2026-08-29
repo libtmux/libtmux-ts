@@ -118,21 +118,22 @@ agent's cleanup can reap the session you are working in.
 
 ### Tune what it will do
 
-| Variable                       | Default  | Effect                                             |
-| ------------------------------ | -------- | -------------------------------------------------- |
-| `LIBTMUX_SAFETY`               | readonly | `readonly`, `mutating`, or `destructive`           |
-| `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller           |
-| `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links |
-| `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections      |
-| `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool allowlist; blank offers none  |
+| Variable                         | Default  | Effect                                             |
+| -------------------------------- | -------- | -------------------------------------------------- |
+| `LIBTMUX_SAFETY`                 | readonly | `readonly`, `mutating`, or `destructive`           |
+| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000    | Ceiling on a wait that blocks the caller           |
+| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000    | Deadline for each internal tmux request            |
+| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200      | Lines a result may carry before it trims and links |
+| `LIBTMUX_MCP_LIVE`               | on       | Set to `0` to forbid control-mode connections      |
+| `LIBTMUX_MCP_TOOLS`              | all      | Comma-separated tool allowlist; blank offers none  |
 
 With live connections disabled, `wait_for_text`, streaming prompts, and resource
 subscriptions are omitted; `observe` returns a bounded capture with
 `streaming: false`.
 
-Cancelling a request stops its wait. An over-large timeout is never an error:
-it is clamped, and every result reports the `effectiveTimeoutMs` it actually
-used.
+Cancelling a request stops its wait. An over-large tool timeout is never an
+error: it is clamped, and every result reports the `effectiveTimeoutMs` it
+actually used. The command timeout is capped at JavaScript's timer range.
 
 ### Safety tiers
 

@@ -405,13 +405,17 @@ describe("policy", () => {
     expect(resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "42" }).commandTimeoutMs).toBe(42);
   });
 
-  test("passes a timer-unsafe command deadline into server construction", () => {
+  test("caps positive command deadlines at JavaScript's timer range", () => {
     const environment = { LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "2147483648" };
 
-    expect(resolvePolicy(environment).commandTimeoutMs).toBe(2_147_483_648);
-    expect(() => serverFromEnvironment(environment)).toThrow(
-      "timeoutMs must be a positive timer-safe integer",
+    expect(resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "2147483647" }).commandTimeoutMs).toBe(
+      2_147_483_647,
     );
+    expect(resolvePolicy(environment).commandTimeoutMs).toBe(2_147_483_647);
+    expect(
+      resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "9007199254740991" }).commandTimeoutMs,
+    ).toBe(2_147_483_647);
+    expect(() => serverFromEnvironment(environment)).not.toThrow();
   });
 
   test("offers the default tier when nobody chose one", () => {
