@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runBoundedCommand } from "./bounded_process.js";
 import { npmPack } from "./npm_pack.js";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -16,28 +17,16 @@ function binary(name: string): string {
 }
 
 async function run(command: readonly string[]): Promise<void> {
-  const child = Bun.spawn([...command], { cwd: packageRoot, stderr: "pipe", stdout: "pipe" });
-  let expired = false;
-  const deadline = setTimeout(() => {
-    expired = true;
-    child.kill("SIGTERM");
-  }, 60_000);
-  const hardDeadline = setTimeout(() => child.kill("SIGKILL"), 65_000);
-  deadline.unref?.();
-  hardDeadline.unref?.();
-  try {
-    const [exitCode, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
-    if (expired) throw new Error(`${command[0] ?? "analyzer"} exceeded 60000ms`);
-    if (exitCode !== 0) {
-      throw new Error(`${command.join(" ")} exited ${String(exitCode)}\n${stdout}${stderr}`);
-    }
-  } finally {
-    clearTimeout(deadline);
-    clearTimeout(hardDeadline);
+  const result = await runBoundedCommand(command, {
+    cwd: packageRoot,
+    env: { ...process.env },
+    timeoutMilliseconds: 60_000,
+  });
+  if (result.timedOut) throw new Error(`${command[0] ?? "analyzer"} exceeded 60000ms`);
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `${command.join(" ")} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`,
+    );
   }
 }
 
