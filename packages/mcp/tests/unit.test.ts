@@ -354,6 +354,12 @@ describe("policy", () => {
     expect(effectiveWaitMs(policy, 300_000, false)).toBe(policy.blockingWaitMaxMs);
   });
 
+  test("defaults each wait form to its own ceiling", () => {
+    const policy = resolvePolicy({});
+    expect(effectiveWaitMs(policy, undefined, false)).toBe(policy.blockingWaitMaxMs);
+    expect(effectiveWaitMs(policy, undefined, true)).toBe(policy.taskWaitMaxMs);
+  });
+
   test("keeps an operator override inside bounds that leave it a ceiling", () => {
     expect(resolvePolicy({ LIBTMUX_MCP_WAIT_MAX_MS: "1" }).blockingWaitMaxMs).toBe(1_000);
     expect(resolvePolicy({ LIBTMUX_MCP_WAIT_MAX_MS: "99999999" }).blockingWaitMaxMs).toBe(120_000);

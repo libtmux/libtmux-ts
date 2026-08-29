@@ -195,7 +195,8 @@ export function effectiveWaitMs(
   asTask: boolean,
 ): number {
   const ceiling = asTask ? policy.taskWaitMaxMs : policy.blockingWaitMaxMs;
+  const defaultWait = asTask ? DEFAULT_TASK_WAIT_MS : DEFAULT_BLOCKING_WAIT_MS;
   return requested === undefined
-    ? Math.min(DEFAULT_BLOCKING_WAIT_MS, ceiling)
+    ? Math.min(defaultWait, ceiling)
     : Math.min(requested, ceiling);
 }
