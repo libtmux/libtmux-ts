@@ -67,7 +67,8 @@ export interface BoundedText {
  * that printed ten thousand lines is being asked about the last twenty of them.
  */
 export function tailLines(lines: readonly string[], limit: number): Trimmed {
-  if (limit <= 0 || lines.length <= limit) return { droppedLines: 0, lines };
+  if (limit <= 0) return { droppedLines: lines.length, lines: [] };
+  if (lines.length <= limit) return { droppedLines: 0, lines };
   return { droppedLines: lines.length - limit, lines: lines.slice(lines.length - limit) };
 }
 

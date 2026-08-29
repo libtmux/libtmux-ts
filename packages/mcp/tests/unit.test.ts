@@ -518,6 +518,10 @@ describe("results", () => {
     expect(renderOutput(trimmed)).toContain("2 earlier lines omitted");
   });
 
+  test("returns no lines when none fit the budget", () => {
+    expect(tailLines(["a", "b"], 0)).toEqual({ droppedLines: 2, lines: [] });
+  });
+
   test("carries no structuredContent on failure", () => {
     // A client validates structuredContent against the tool's outputSchema even
     // for an error, so a failure that carried its own shape would be rejected
