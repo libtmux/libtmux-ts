@@ -216,7 +216,7 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
     // not news. The gate's real check is the single reap at the end, which
     // sees every fixture this run created.
     await fixture.dispose().catch(() => undefined);
-    // `new Server()` and `Server.open()` reach tmux's default socket under
+    // `new Server()` reaches tmux's default socket under
     // `TMUX_TMPDIR` rather than this fixture's own, so a block can leave a
     // daemon nothing above closes. Swept per block.
     const tmpdir = process.env["TMUX_TMPDIR"];

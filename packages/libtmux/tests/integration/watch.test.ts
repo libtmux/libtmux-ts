@@ -913,45 +913,6 @@ describe("Server.watch", () => {
     }
   }, 30_000);
 
-  test("selects the transport by option, by environment, and by default", async () => {
-    await withServer(async (fixture) => {
-      const base = {
-        environment: fixture.controllerEnvironment,
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
-      };
-
-      // Whichever way the mode was chosen, the caller holds the same type and
-      // makes the same calls — which is the whole point of choosing it by
-      // configuration rather than by editing the code that uses it.
-      const byOption = await Server.open({ ...base, transport: "control" });
-      const byEnvironment = await Server.open({
-        ...base,
-        environment: { ...fixture.controllerEnvironment, LIBTMUX_TRANSPORT: "control" },
-      });
-      const spawning = await Server.open(base);
-      try {
-        expect((await byOption.snapshot()).sessions.count()).toBeGreaterThan(0);
-        expect((await byEnvironment.snapshot()).sessions.count()).toBeGreaterThan(0);
-        expect((await spawning.snapshot()).sessions.count()).toBeGreaterThan(0);
-      } finally {
-        // Valid on all three, and a no-op on the one holding nothing.
-        await byOption.close();
-        await byEnvironment.close();
-        await spawning.close();
-      }
-
-      // An unreadable value is refused where it is written, rather than
-      // silently spawning and leaving a caller wondering why nothing changed.
-      await expect(
-        Server.open({
-          ...base,
-          environment: { ...fixture.controllerEnvironment, LIBTMUX_TRANSPORT: "carrier-pigeon" },
-        }),
-      ).rejects.toThrow(TypeError);
-    });
-  }, 60_000);
-
   test("closes the connection a scope opened, even when the body throws", async () => {
     await withServer(async (fixture) => {
       const { server, transport } = countingServerFor(fixture);

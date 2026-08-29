@@ -54,10 +54,6 @@ const EXCUSED = new Map<string, string>([
   // edit above it, and an excuse that stops matching its example either fails
   // the gate for nothing or excuses a different example than it names.
   [
-    "Server.open",
-    "targets tmux's default socket, which this isolated harness deliberately leaves with nothing listening",
-  ],
-  [
     "Server.watch",
     "reads every event until the process is interrupted, like the README recipe it mirrors",
   ],

@@ -247,7 +247,7 @@ if (failed.length > 0) {
 if (strays.length > 0) {
   process.stderr.write(`${strays.join("\n")}\n`);
   process.stderr.write(
-    "\nDocuments above the library package left tmux servers behind: a block built its own `new Server()` or `Server.open()` and nothing closed it. Killed above; the run is not clean.\n",
+    "\nDocuments above the library package left tmux servers behind: a block built its own `new Server()` and nothing killed it. Killed above; the run is not clean.\n",
   );
   process.exit(1);
 }

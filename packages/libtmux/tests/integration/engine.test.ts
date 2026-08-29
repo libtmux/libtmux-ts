@@ -182,22 +182,6 @@ describe("a supplied engine", () => {
     });
   }, 60_000);
 
-  test("echoes the engine back, the way it echoes every other option", async () => {
-    await withServer(async (fixture) => {
-      const engine = shellEngine(() => undefined);
-      const shared = {
-        environment: fixture.controllerEnvironment,
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
-      };
-
-      // What a caller downstream needs to know before reaching for a call
-      // that only a local tmux can answer.
-      expect(new Server({ ...shared, engine }).engine).toBe(engine);
-      expect(new Server(shared).engine).toBeUndefined();
-    });
-  }, 60_000);
-
   test("refuses the two calls that can only drive a local tmux", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
@@ -214,31 +198,6 @@ describe("a supplied engine", () => {
       expect(() => server.watch()).toThrow(/engine/u);
       await expect(server.connect()).rejects.toThrow(/engine/u);
     });
-  }, 60_000);
-
-  test("keeps an engine when the environment asks for control mode", async () => {
-    await withServer(async (fixture) => {
-      const invocations: (readonly string[])[] = [];
-      // Set by whoever started the process, not by the caller who supplied the
-      // engine. The engine is the more specific instruction, so it wins.
-      await using opened = await Server.open({
-        engine: shellEngine((argv) => invocations.push(argv)),
-        environment: { ...fixture.controllerEnvironment, LIBTMUX_TRANSPORT: "control" },
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
-      });
-
-      expect((await opened.snapshot()).sessions.count()).toBeGreaterThan(0);
-      expect(invocations).not.toBeEmpty();
-    });
-  }, 60_000);
-
-  test("refuses a control transport asked for in the same breath as an engine", async () => {
-    // Ambient configuration is ignored; a contradiction the caller wrote on
-    // purpose is refused, the way socketName and socketPath are.
-    await expect(
-      Server.open({ engine: shellEngine(() => undefined), transport: "control" }),
-    ).rejects.toThrow(TypeError);
   }, 60_000);
 
   test("tells two engines apart when they say where they reach", async () => {

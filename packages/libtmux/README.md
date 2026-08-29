@@ -94,7 +94,6 @@ when a program needs it, and nothing above depends on any of it.
 
 **Getting the cost right** ·
 [Choosing how commands travel](#choosing-how-commands-travel) ·
-[Choosing the transport from outside](#choosing-the-transport-from-outside) ·
 [Deadlines and cancellation](#deadlines-and-cancellation)
 
 **Recipes** ·
@@ -1015,44 +1014,7 @@ request's `daemonGuard` with `guardRequest`, or bind the engine to one daemon.
 `watch()` and `connect()` are the two calls an engine does not carry. Both hold
 a local `tmux -C attach` process open, which is the thing an engine exists to
 avoid needing, so they refuse rather than attaching to whichever tmux this
-machine happens to be running. `LIBTMUX_TRANSPORT` is ignored for the same
-reason, and naming `transport: "control"` alongside an engine is refused
-outright.
-
-### Choosing the transport from outside
-
-A test forcing a mode and a service configured by its deployment both need the
-transport chosen without editing the code that uses it. Three places can name
-it, and the more specific one wins:
-
-1. **The call.** `server.connect()` and `server.watch()` open a connection
-   whatever the other two say.
-2. **Construction.** `Server.open({ transport })` takes the mode directly.
-3. **The environment.** `Server.open()` reads `LIBTMUX_TRANSPORT` when the
-   option is absent.
-
-With none of them, commands spawn.
-
-<!-- static: attaches tmux's default socket, which a reader already has a server on and this isolated harness deliberately does not -->
-
-```ts
-await using managed = await Server.open({ transport: "control" });
-const counted = (await managed.snapshot()).sessions.count();
-```
-
-```console
-$ LIBTMUX_TRANSPORT=control bun run ./script.ts
-```
-
-`new Server()` reads neither the option nor the variable and always spawns.
-Attaching is asynchronous and can fail, so a constructor appearing to honour
-them would either hide the wait or defer the failure to whichever command
-happened to run first — `Server.open()` is asynchronous for exactly that reason.
-
-`close()` is valid on what `open()` returns whichever mode it picked, and does
-nothing on a spawning server — so switching modes never means changing the
-caller. An unreadable value is refused where it is written rather than quietly
-spawning.
+machine happens to be running.
 
 For a connection scoped to one block, `withConnection` closes it on the way out
 whether the body returns or throws — useful where `await using` is not

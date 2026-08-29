@@ -15,7 +15,6 @@ import type {
   ConnectOptions,
   ConnectedServer,
   IfShellOptions,
-  ManagedServer,
   NewSessionOptions,
   PlannedOperation,
   RunShellOptions,
@@ -23,7 +22,6 @@ import type {
   SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
-  TransportMode,
   WaitForOptions,
   WatchOptions,
 } from "./types.js";
@@ -115,46 +113,16 @@ export interface ServerOptions {
   readonly timeoutMs?: number;
   readonly tmuxBin?: string;
   /**
-   * Which way commands reach tmux, for {@link Server.open}.
-   *
-   * Read from `LIBTMUX_TRANSPORT` when this is not set, so a script that hard-codes
-   * nothing can still be pointed at a connection from the outside. `new Server()`
-   * ignores it: attaching is asynchronous and can fail, and a constructor that
-   * appeared to honour it would either hide the wait or defer the failure to
-   * whichever command happened to run first.
-   */
-  readonly transport?: TransportMode;
-  /**
    * Run this server's commands somewhere other than a local `tmux`.
    *
    * The built-in engine spawns a process per command; supplying one moves every
    * layer above it — snapshots, queries, handles — to a tmux reached however
    * you reach it. See `libtmux/engine` for what an engine owes its caller.
    *
-   * `LIBTMUX_TRANSPORT` is ignored when this is given: the variable comes from
-   * whoever started the process and would move every command to *this*
-   * machine's tmux. Naming `transport: "control"` here as well is refused
-   * instead, because control mode is a process this one spawns and an engine
-   * says tmux is not somewhere it can. {@link Server.watch} and
-   * {@link Server.connect} refuse for the same reason.
+   * {@link Server.watch} and {@link Server.connect} refuse when an engine is
+   * present because their observer is a local tmux process.
    */
   readonly engine?: TmuxEngine;
-}
-
-/** What `LIBTMUX_TRANSPORT` may say, and what it selects. */
-function transportFrom(
-  options: ServerOptions | undefined,
-  environment: Readonly<Record<string, string | undefined>>,
-): TransportMode {
-  if (options?.transport !== undefined) return options.transport;
-  const named = environment.LIBTMUX_TRANSPORT;
-  if (named === undefined || named === "") return "spawn";
-  if (named !== "control" && named !== "spawn") {
-    throw new TypeError(
-      `LIBTMUX_TRANSPORT must be "control" or "spawn", not ${JSON.stringify(named)}`,
-    );
-  }
-  return named;
 }
 
 /**
@@ -230,48 +198,6 @@ export class Server {
       transport: options?.engine ?? new NodeSpawnTransport(),
     });
     registerServerRuntime(this, runtime);
-  }
-
-  /**
-   * Build a server with its transport already chosen.
-   *
-   * The same API either way: what changes is whether a command spawns a process
-   * or travels over a connection this holds open. The mode comes from
-   * `transport`, or from `LIBTMUX_TRANSPORT` when that is not set — so a script
-   * can be pointed at a connection without editing it, and a test can force
-   * either mode around code that names neither.
-   *
-   * Asynchronous because attaching is: a control connection has to reach tmux
-   * before it can carry anything, and a server with no sessions has nothing to
-   * attach to. `close` is safe on both, and does nothing on a spawning server.
-   *
-   * ```ts
-   * await using managed = await Server.open({ transport: "control" });
-   * (await managed.snapshot()).sessions.count();
-   * ```
-   */
-  static async open(options?: ServerOptions): Promise<ManagedServer> {
-    const environment = options?.environment ?? process.env;
-    // Named together, these contradict: control mode is a process this one
-    // spawns, and an engine says tmux is not somewhere this process spawns.
-    // Refused rather than resolved, the way socketName and socketPath are.
-    if (options?.engine !== undefined && options.transport === "control") {
-      throw new TypeError('transport: "control" and engine are mutually exclusive');
-    }
-    const server = new Server(options);
-    // An engine ignores `LIBTMUX_TRANSPORT` rather than obeying it. The
-    // variable is set by whoever started the process; the engine is written by
-    // the caller, about where their tmux is. Obeying the variable would move
-    // every command to this machine's tmux, and report success.
-    if (options?.engine === undefined && transportFrom(options, environment) === "control") {
-      return server.connect();
-    }
-    // Nothing is held, so releasing it is a no-op — but the call has to exist,
-    // or switching modes by configuration would mean editing the caller.
-    return Object.defineProperties(server, {
-      close: { value: async (): Promise<void> => undefined },
-      [Symbol.asyncDispose]: { value: async (): Promise<void> => undefined },
-    }) as ManagedServer;
   }
 
   /**
@@ -356,22 +282,6 @@ export class Server {
    */
   get socketPath(): string | undefined {
     return runtimeForServerValue(this)?.connection.socketPath;
-  }
-
-  /**
-   * The engine this server was built with, if it was given one.
-   *
-   * `undefined` means tmux is a process this one can spawn, which is what
-   * {@link Server.watch} and {@link Server.connect} need and what a caller
-   * choosing between a connection and a command per read has to know.
-   *
-   * ```ts
-   * const reader = server.engine === undefined ? await server.connect() : server;
-   * (await reader.snapshot()).windows.count();
-   * ```
-   */
-  get engine(): TmuxEngine | undefined {
-    return runtimeForServerValue(this)?.engine;
   }
 
   /**

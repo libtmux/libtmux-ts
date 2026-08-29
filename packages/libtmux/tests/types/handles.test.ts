@@ -63,7 +63,6 @@ import {
   type SplitOptions,
   type SplitPercentage,
   type SplitSize,
-  type TransportMode,
 } from "../../src/types.js";
 import { Session } from "../../src/session.js";
 import { Window } from "../../src/window.js";
@@ -82,7 +81,6 @@ type ExpectedServerOptions = {
   readonly socketPath?: string;
   readonly timeoutMs?: number;
   readonly tmuxBin?: string;
-  readonly transport?: TransportMode;
 };
 
 type ExpectedRuntimeContextOptions = {
@@ -113,6 +111,12 @@ type ProjectedChild = Client | Pane | Session | Window;
 type _ServerOptions = Expect<Equal<ServerOptions, ExpectedServerOptions>>;
 type _ServerConstructor = Expect<
   Equal<ConstructorParameters<typeof Server>, [options?: ServerOptions]>
+>;
+type _ServerHasNoOpenSelector = Expect<
+  Equal<"open" extends keyof typeof Server ? true : false, false>
+>;
+type _ServerHasNoEngineAccessor = Expect<
+  Equal<"engine" extends keyof Server ? true : false, false>
 >;
 const cells = splitSize(20);
 const percentage = splitSize("30%");

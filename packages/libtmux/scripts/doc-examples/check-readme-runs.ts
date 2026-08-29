@@ -244,7 +244,7 @@ if (leaks.length > 0) {
 if (strayServers.length > 0) {
   process.stderr.write(`${strayServers.join("\n")}\n`);
   process.stderr.write(
-    `\n${OUTPUT} examples left tmux servers behind that this package's own fixtures do not track — a block built its own \`new Server()\` or \`Server.open()\` and nothing closed it. Killed above; the run is not clean.\n`,
+    `\n${OUTPUT} examples left tmux servers behind that this package's own fixtures do not track — a block built its own \`new Server()\` and nothing killed it. Killed above; the run is not clean.\n`,
   );
   process.exit(1);
 }

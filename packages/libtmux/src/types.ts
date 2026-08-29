@@ -810,26 +810,3 @@ export interface PlannedOperation<T> {
   /** What `argv` produced, read out of a snapshot taken after it ran. */
   readonly resolve: (snapshot: ServerSnapshot, lines: readonly string[]) => T;
 }
-
-/**
- * Which way a server's commands reach tmux.
- *
- * `spawn` runs a `tmux` process per command and holds nothing open. `control`
- * keeps one connection and writes to it, which costs no processes at all but
- * has to attach first, and so can fail where spawning would not.
- */
-export type TransportMode = "control" | "spawn";
-
-/**
- * A server whose transport was chosen for it, and which knows how to let go.
- *
- * {@link Server.open} returns this whichever transport it selected, so the
- * choice does not change the type a caller holds. `close` releases whatever the
- * server is holding, which for a spawning server is nothing — the same call is
- * correct either way, which is what lets the mode be switched by configuration
- * rather than by editing the code that uses it.
- */
-export interface ManagedServer extends Server, AsyncDisposable {
-  /** Release the connection, if there is one. Safe to call more than once. */
-  close(): Promise<void>;
-}
