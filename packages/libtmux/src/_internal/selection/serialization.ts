@@ -4,7 +4,8 @@ import {
   type WhereModel,
 } from "../../_generated/where_fields.js";
 import type { WhereDocumentV1 } from "../../selection.js";
-import { canonicalizeScalarCriterion, canonicalizeWhere, parseModel } from "./compile.js";
+import { canonicalizeWhere, parseModel } from "./compile.js";
+import { canonicalizeScalarCriterion } from "./scalar.js";
 import {
   at,
   frozenArray,

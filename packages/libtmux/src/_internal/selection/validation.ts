@@ -40,6 +40,38 @@ export function listed(names: readonly string[]): string {
   return [...names].sort().map(quoted).join(", ");
 }
 
+function editDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        previous[column]! + 1,
+        current[column - 1]! + 1,
+        previous[column - 1]! + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length]!;
+}
+
+/** Suggest nearby query keys instead of listing the complete vocabulary. */
+export function nearest(name: string, known: readonly string[]): string {
+  const close = known
+    .map(
+      (candidate) =>
+        [editDistance(name.toLowerCase(), candidate.toLowerCase()), candidate] as const,
+    )
+    .filter(([distance]) => distance <= 2)
+    .sort(([left, leftName], [right, rightName]) =>
+      left === right ? (leftName < rightName ? -1 : 1) : left - right,
+    )
+    .slice(0, 3)
+    .map(([, candidate]) => quoted(candidate));
+  return close.length === 0 ? "" : `; did you mean ${close.join(", ")}?`;
+}
+
 /**
  * Refuse a query, naming where in it the problem is and what was expected.
  *
