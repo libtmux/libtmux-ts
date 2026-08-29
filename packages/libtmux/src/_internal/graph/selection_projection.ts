@@ -5,6 +5,7 @@ import {
 } from "../../_generated/where_fields.js";
 import {
   createGraphRecordRef,
+  graphRecordForRef,
   graphRecordRefsEqual,
   isNormalizedGraph,
   type GraphCapture,
@@ -86,11 +87,12 @@ interface RelationSlot {
 }
 
 type DescriptorSnapshots = Readonly<Record<WhereModel, ProjectionDescriptor>>;
-type RecordIndex = ReadonlyMap<string, ReadonlyMap<number, GraphRecord>>;
+type ProjectionRecordIndex = ReadonlyMap<string, ReadonlyMap<number, ProjectionRecord>>;
 
 const authenticatedSelectionProjections = new WeakSet<object>();
 const selectionProjectionOrigins = new WeakMap<object, NormalizedGraph>();
 const selectionProjectionRecordOwners = new WeakMap<object, SelectionProjection>();
+const selectionProjectionRecordIndexes = new WeakMap<object, ProjectionRecordIndex>();
 
 function invalidProjection(message: string, cause?: unknown): never {
   throw cause === undefined ? new Error(message) : new Error(message, { cause });
@@ -318,16 +320,13 @@ function rootModel(source: GraphSource): WhereModel {
   }
 }
 
-function createRecordIndex(graph: NormalizedGraph): RecordIndex {
-  const bySource = new Map<string, Map<number, GraphRecord>>();
-  for (const record of graph.records) {
+function createProjectionRecordIndex(records: readonly ProjectionRecord[]): ProjectionRecordIndex {
+  const bySource = new Map<string, Map<number, ProjectionRecord>>();
+  for (const record of records) {
     let byOrdinal = bySource.get(record.ref.source);
     if (byOrdinal === undefined) {
-      byOrdinal = new Map<number, GraphRecord>();
+      byOrdinal = new Map<number, ProjectionRecord>();
       bySource.set(record.ref.source, byOrdinal);
-    }
-    if (byOrdinal.has(record.ref.ordinal)) {
-      return invalidProjection("normalized graph has a duplicate record reference");
     }
     byOrdinal.set(record.ref.ordinal, record);
   }
@@ -421,7 +420,6 @@ export class SelectionProjectionBuilder {
   private readonly graph: NormalizedGraph;
   private readonly reachableRecords: GraphRecord[] = [];
   private readonly reachableSet: Set<GraphRecord> = new Set<GraphRecord>();
-  private readonly recordIndex: RecordIndex;
   private readonly rootRecords: readonly GraphRecord[];
   private readonly slots: Map<GraphRecord, Map<string, RelationSlot>> = new Map<
     GraphRecord,
@@ -439,7 +437,6 @@ export class SelectionProjectionBuilder {
   ) {
     this.descriptors = descriptors;
     this.graph = graph;
-    this.recordIndex = createRecordIndex(graph);
     const roots: GraphRecord[] = [];
     for (const ref of rootSource.records) {
       const record = this.resolveRecord(ref);
@@ -724,6 +721,7 @@ export class SelectionProjectionBuilder {
     }) as unknown as SelectionProjection;
     authenticatedSelectionProjections.add(projection);
     selectionProjectionOrigins.set(projection, this.graph);
+    selectionProjectionRecordIndexes.set(projection, createProjectionRecordIndex(records));
     for (const record of records) selectionProjectionRecordOwners.set(record, projection);
     return projection;
   }
@@ -751,7 +749,7 @@ export class SelectionProjectionBuilder {
     if (!graphRecordRefsEqual(ref, ref)) {
       return invalidProjection("projection record reference is not authentic");
     }
-    const record = this.recordIndex.get(ref.source)?.get(ref.ordinal);
+    const record = graphRecordForRef(this.graph, ref);
     if (record === undefined) {
       return invalidProjection("projection record does not exist in the graph");
     }
@@ -788,4 +786,12 @@ export function selectionProjectionOwnsRecord(
     selectionProjectionOrigins.has(projection) &&
     selectionProjectionRecordOwners.get(record) === projection
   );
+}
+
+export function selectionProjectionRecordForRef(
+  projection: unknown,
+  ref: GraphRecordRef,
+): ProjectionRecord | undefined {
+  if (!isSelectionProjection(projection) || !graphRecordRefsEqual(ref, ref)) return undefined;
+  return selectionProjectionRecordIndexes.get(projection)?.get(ref.source)?.get(ref.ordinal);
 }

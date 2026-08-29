@@ -10,6 +10,7 @@ import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { decodeFormatValue } from "../codec/format_values.js";
 import type { CompleteFormatRow } from "../codec/schemas.js";
 import {
+  graphRecordForRef,
   graphRecordRefsEqual,
   isNormalizedGraph,
   type GraphEntityRef,
@@ -55,7 +56,7 @@ function requireAuthenticProvenance(graph: NormalizedGraph, record: GraphRecordR
   if (
     !isNormalizedGraph(graph) ||
     !graphRecordRefsEqual(record, record) ||
-    !graph.records.some((candidate) => graphRecordRefsEqual(candidate.ref, record))
+    graphRecordForRef(graph, record) === undefined
   ) {
     throw new LibTmuxException("handle provenance is not authentic");
   }

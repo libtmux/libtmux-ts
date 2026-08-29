@@ -7,6 +7,7 @@ import { Window } from "../../window.js";
 import { runtimeForServer, type RuntimeContext } from "../runtime/context.js";
 import { initializeLiveHandle } from "../runtime/live_handle.js";
 import {
+  graphRecordForRef,
   graphRecordRefsEqual,
   isNormalizedGraph,
   type GraphRecord,
@@ -16,6 +17,7 @@ import {
 import {
   originGraphForSelectionProjection,
   selectionProjectionOwnsRecord,
+  selectionProjectionRecordForRef,
   type ProjectionRecord,
   type SelectionProjection,
 } from "./selection_projection.js";
@@ -53,7 +55,7 @@ function resolveGraphRecord(graph: NormalizedGraph, ref: GraphRecordRef): GraphR
   if (!graphRecordRefsEqual(ref, ref)) {
     return invalidMaterialization("graph record reference is not authentic");
   }
-  const record = graph.records.find((candidate) => graphRecordRefsEqual(candidate.ref, ref));
+  const record = graphRecordForRef(graph, ref);
   if (record === undefined) {
     return invalidMaterialization("graph record reference does not exist in the normalized graph");
   }
@@ -147,9 +149,7 @@ function projectionRecordForMember(
   projection: SelectionProjection,
   member: GraphRecordRef,
 ): ProjectionRecord {
-  const record = projection.records.find((candidate) =>
-    graphRecordRefsEqual(candidate.ref, member),
-  );
+  const record = selectionProjectionRecordForRef(projection, member);
   if (record === undefined || !selectionProjectionOwnsRecord(projection, record)) {
     return invalidMaterialization("projection member has no owned projection record");
   }
