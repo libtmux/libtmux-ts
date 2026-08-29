@@ -8,12 +8,18 @@ interface NpmPackFile {
 interface NpmPackRecord {
   readonly filename?: unknown;
   readonly files?: unknown;
+  readonly integrity?: unknown;
+  readonly name?: unknown;
+  readonly version?: unknown;
 }
 
 export interface NpmPackedArtifact {
   readonly entries: readonly string[];
   readonly filename: string;
+  readonly integrity: string;
+  readonly name: string;
   readonly tarballPath: string;
+  readonly version: string;
 }
 
 function contained(root: string, path: string): boolean {
@@ -65,6 +71,18 @@ export async function npmPack(
     if (typeof record.filename !== "string" || basename(record.filename) !== record.filename) {
       throw new Error("npm pack returned an invalid tarball filename");
     }
+    if (typeof record.name !== "string" || record.name === "") {
+      throw new Error("npm pack returned an invalid package name");
+    }
+    if (typeof record.version !== "string" || record.version === "") {
+      throw new Error("npm pack returned an invalid package version");
+    }
+    if (
+      typeof record.integrity !== "string" ||
+      !/^sha512-[A-Za-z0-9+/]+={0,2}$/u.test(record.integrity)
+    ) {
+      throw new Error("npm pack returned an invalid integrity digest");
+    }
     if (!Array.isArray(record.files)) throw new Error("npm pack returned no file inventory");
     const entries = (record.files as NpmPackFile[]).map(({ path }) => {
       if (typeof path !== "string" || path === "" || isAbsolute(path)) {
@@ -82,7 +100,10 @@ export async function npmPack(
     return {
       entries: entries.toSorted((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
       filename: record.filename,
+      integrity: record.integrity,
+      name: record.name,
       tarballPath,
+      version: record.version,
     };
   } finally {
     clearTimeout(deadline);

@@ -23,6 +23,9 @@ test("packs the exact npm artifact and reports its entries", async () => {
     const packed = await npmPack(root, destination);
 
     expect(packed.filename).toBe("ltx-pack-fixture-1.2.3.tgz");
+    expect(packed.integrity).toMatch(/^sha512-[A-Za-z0-9+/]+={0,2}$/u);
+    expect(packed.name).toBe("ltx-pack-fixture");
+    expect(packed.version).toBe("1.2.3");
     expect(packed.entries).toEqual(["index.js", "package.json"]);
     expect(await Bun.file(packed.tarballPath).exists()).toBe(true);
   } finally {
