@@ -7,9 +7,10 @@
     "declaration": true,
     "declarationMap": false,
     "inlineSources": true,
+    "lib": ["ES2024", "ESNext.Disposable", "DOM"],
     "sourceMap": true,
     "isolatedDeclarations": false,
-    "skipLibCheck": true,
+    "skipLibCheck": false,
     "types": ["node"]
   },
   "include": ["src/**/*.ts"]

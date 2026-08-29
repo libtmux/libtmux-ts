@@ -2,6 +2,8 @@
   "extends": "../libtmux/tsconfig.tooling.json",
   "compilerOptions": {
     "noEmit": true,
+    // Bun's ambient declarations conflict with the pinned Node declarations.
+    // The emitted and installed-package lanes check dependencies strictly.
     "skipLibCheck": true,
     "rootDir": "../..",
     "paths": {
