@@ -1,21 +1,28 @@
-import { types as nodeTypes } from "node:util";
-
 import {
   WHERE_FIELDS_V1,
   WHERE_RELATIONS_V1,
   type WhereModel,
   type WhereRelation,
 } from "../../_generated/where_fields.js";
-import { QueryValidationError } from "../../exc.js";
-import type { WhereDocumentV1 } from "../../selection.js";
-import {
-  decodeFormatValue,
-  encodeFormatValue,
-  formatCriterionExpectation,
-  isFormatCriterionValue,
-} from "../codec/format_values.js";
+import { decodeFormatValue } from "../codec/format_values.js";
 import type { GraphRecordRef } from "../graph/model.js";
 import type { ProjectionRecord } from "../graph/projection_identity.js";
+import {
+  at,
+  frozenArray,
+  frozenRecord,
+  invalidQuery,
+  isObject,
+  listed,
+  maximumWhereDepth,
+  newParseState,
+  quoted,
+  snapshotArray,
+  snapshotObject,
+  withActive,
+  type ParseState,
+} from "./validation.js";
+import { criteriaToWireValues } from "./wire.js";
 
 type RecordResolver = (reference: GraphRecordRef) => ProjectionRecord | undefined;
 type RecordPredicate = (record: ProjectionRecord, resolve: RecordResolver) => boolean;
@@ -28,41 +35,6 @@ interface ParsedCriteria {
 interface ParsedScalar {
   readonly query: string | null | Readonly<Record<string, unknown>>;
   readonly test: (value: string | null) => boolean;
-}
-
-interface ParseState {
-  readonly active: WeakSet<object>;
-  /** Where in the criteria the parser currently is, for naming a failure. */
-  readonly path: (string | number)[];
-}
-
-function newParseState(): ParseState {
-  return { active: new WeakSet(), path: [] };
-}
-
-/** Run `read` one step deeper, and leave the path as it was however it ends. */
-function at<Value>(state: ParseState, segment: string | number, read: () => Value): Value {
-  state.path.push(segment);
-  try {
-    return read();
-  } finally {
-    state.path.pop();
-  }
-}
-
-function renderPath(path: readonly (string | number)[]): string {
-  let rendered = "";
-  for (const segment of path) {
-    if (typeof segment === "number") rendered += `[${String(segment)}]`;
-    else rendered += rendered === "" ? segment : `.${segment}`;
-  }
-  return rendered;
-}
-
-const quoted = (name: string): string => JSON.stringify(name);
-
-function listed(names: readonly string[]): string {
-  return [...names].sort().map(quoted).join(", ");
 }
 
 /**
@@ -142,283 +114,9 @@ const regexFlags = new Set(["", "m", "s", "ms"]);
 const OPERATORS = listed([...scalarOperatorNames]);
 const escapedRegexLiterals = new Set("^$\\.*+?()[]{}|/-".split(""));
 const maximumRegexPatternLength = 512;
-const maximumWhereDepth = 64;
-const maximumCanonicalJsonDepth = maximumWhereDepth * 2 + 4;
-
-/**
- * Refuse a query, naming where in it the problem is and what was expected.
- *
- * Criteria arrive as data — from an MCP client, a stored document, a form —
- * where the type system cannot have caught the mistake, so the message is the
- * only thing a caller has to go on. It names keys and expectations and never an
- * operand: these travel to whoever sent the query, and a criterion's value can
- * be a pane title or a path.
- */
-function invalidQuery(state: ParseState, reason: string, cause?: unknown): never {
-  const where = state.path.length === 0 ? "" : ` at ${renderPath(state.path)}`;
-  throw new QueryValidationError({
-    ...(cause === undefined ? {} : { cause }),
-    code: "invalid-query",
-    message: `Invalid selection query${where}: ${reason}`,
-    path: [...state.path],
-  });
-}
-
-function isObject(value: unknown): value is object {
-  return (typeof value === "object" || typeof value === "function") && value !== null;
-}
-
-function withActive<Value>(value: object, state: ParseState, read: () => Value): Value {
-  if (state.active.has(value)) return invalidQuery(state, "the criteria refer to themselves");
-  state.active.add(value);
-  try {
-    return read();
-  } finally {
-    state.active.delete(value);
-  }
-}
-
-function snapshotObject(value: unknown, state: ParseState): ReadonlyMap<string, unknown> {
-  const plain = "expected a plain object";
-  if (!isObject(value) || typeof value === "function") return invalidQuery(state, plain);
-  try {
-    if (nodeTypes.isProxy(value) || Array.isArray(value)) return invalidQuery(state, plain);
-    const prototype = Object.getPrototypeOf(value) as object | null;
-    if (prototype !== Object.prototype && prototype !== null) return invalidQuery(state, plain);
-    const keys = Reflect.ownKeys(value);
-    const entries: Array<readonly [string, unknown]> = [];
-    for (const key of keys) {
-      // A symbol key names nothing this vocabulary has, and a getter would run
-      // caller code while the query is being read.
-      if (typeof key !== "string") return invalidQuery(state, "expected only string keys");
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-        return invalidQuery(state, `expected ${quoted(key)} to be a plain enumerable value`);
-      }
-      entries.push([key, descriptor.value]);
-    }
-    return new Map(entries);
-  } catch (error) {
-    if (error instanceof QueryValidationError) throw error;
-    return invalidQuery(state, plain, error);
-  }
-}
-
-function snapshotArray(value: unknown, state: ParseState): readonly unknown[] {
-  const plain = "expected an array";
-  if (!isObject(value) || typeof value === "function") return invalidQuery(state, plain);
-  try {
-    if (nodeTypes.isProxy(value) || !Array.isArray(value)) return invalidQuery(state, plain);
-    if (Object.getPrototypeOf(value) !== Array.prototype) return invalidQuery(state, plain);
-    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
-    if (
-      lengthDescriptor === undefined ||
-      !("value" in lengthDescriptor) ||
-      lengthDescriptor.enumerable ||
-      typeof lengthDescriptor.value !== "number" ||
-      !Number.isSafeInteger(lengthDescriptor.value) ||
-      lengthDescriptor.value < 0
-    ) {
-      return invalidQuery(state, plain);
-    }
-    const length = lengthDescriptor.value;
-    const keys = new Set(Reflect.ownKeys(value));
-    if (keys.size !== length + 1 || !keys.delete("length")) return invalidQuery(state, plain);
-    const result: unknown[] = [];
-    for (let index = 0; index < length; index += 1) {
-      const key = String(index);
-      if (!keys.delete(key)) return invalidQuery(state, plain);
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-        return invalidQuery(state, plain);
-      }
-      result.push(descriptor.value);
-    }
-    return result;
-  } catch (error) {
-    if (error instanceof QueryValidationError) throw error;
-    return invalidQuery(state, plain, error);
-  }
-}
-
-function frozenRecord(
-  entries: readonly (readonly [string, unknown])[],
-): Readonly<Record<string, unknown>> {
-  return Object.freeze(
-    Object.fromEntries(
-      [...entries].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
-    ),
-  );
-}
-
-function frozenArray(values: readonly unknown[]): readonly unknown[] {
-  return Object.freeze([...values]);
-}
 
 function relationFor(model: WhereModel, name: string): WhereRelation | undefined {
   return WHERE_RELATIONS_V1[model].find((relation) => relation.name === name);
-}
-
-/**
- * Criteria are written with idiomatic camelCase keys and serialized under
- * tmux-stable wire names, so a stored document stays readable by the CLI, the
- * MCP surface, and a future Rust port even as the TypeScript surface evolves.
- */
-function criteriaFromWire(
-  model: WhereModel,
-  value: unknown,
-  state: ParseState,
-  depth = 0,
-): unknown {
-  // Stop at the criteria depth budget and hand the original value on, so an
-  // over-deep or cyclic document is rejected by the validator rather than here.
-  if (depth > maximumWhereDepth || !isObject(value)) return value;
-  const byWire = new Map(
-    WHERE_FIELDS_V1[model].map(({ criteriaName, token, wireName }) => [
-      wireName,
-      { criteriaName, token },
-    ]),
-  );
-  const relations = new Map(
-    WHERE_RELATIONS_V1[model].map((relation) => [relation.name as string, relation] as const),
-  );
-  const translated: Array<readonly [string, unknown]> = [];
-  const seen = new Set<string>();
-  for (const [key, entry] of snapshotObject(value, state)) {
-    const field = byWire.get(key);
-    const translatedKey = field?.criteriaName ?? key;
-    if (seen.has(translatedKey)) {
-      return at(state, key, () =>
-        invalidQuery(state, "the field is already present under its other spelling"),
-      );
-    }
-    seen.add(translatedKey);
-    translated.push([
-      translatedKey,
-      at(state, key, () => {
-        const relation = relations.get(key);
-        if (relation !== undefined && isObject(entry)) {
-          const inner: Array<readonly [string, unknown]> = [];
-          for (const [operator, nested] of snapshotObject(entry, state)) {
-            inner.push([
-              operator,
-              at(state, operator, () =>
-                criteriaFromWire(relation.targetModel, nested, state, depth + 1),
-              ),
-            ]);
-          }
-          return frozenRecord(inner);
-        }
-        if (key === "AND" || key === "OR" || key === "NOT") {
-          return frozenArray(
-            snapshotArray(entry, state).map((child, index) =>
-              at(state, index, () => criteriaFromWire(model, child, state, depth + 1)),
-            ),
-          );
-        }
-        if (field !== undefined) {
-          return parseScalar(field.token, scalarCriterionToWire(field.token, entry, state), state)
-            .query;
-        }
-        return entry;
-      }),
-    ]);
-  }
-  return frozenRecord(translated);
-}
-
-/** Operators whose operand is a field value rather than text to search. */
-const valueOperators = new Set(["equals"]);
-const encodableListOperators = new Set(["in", "notIn"]);
-
-function encodeCriterionValue(token: string, value: unknown, state: ParseState): unknown {
-  if (!isFormatCriterionValue(token, value)) {
-    return invalidQuery(state, formatCriterionExpectation(token));
-  }
-  return encodeFormatValue(token, value);
-}
-
-function scalarCriterionToWire(token: string, entry: unknown, state: ParseState): unknown {
-  if (!isObject(entry) || nodeTypes.isDate(entry)) {
-    return encodeCriterionValue(token, entry, state);
-  }
-  const operators: Array<readonly [string, unknown]> = [];
-  for (const [operator, operand] of snapshotObject(entry, state)) {
-    operators.push([
-      operator,
-      at(state, operator, () => {
-        if (valueOperators.has(operator)) return encodeCriterionValue(token, operand, state);
-        if (encodableListOperators.has(operator)) {
-          return frozenArray(
-            snapshotArray(operand, state).map((item, index) =>
-              at(state, index, () => encodeCriterionValue(token, item, state)),
-            ),
-          );
-        }
-        // `mode` selects case folding; string operators and regex carry text
-        // to search rather than a value in this field's decoded domain.
-        return operand;
-      }),
-    ]);
-  }
-  return frozenRecord(operators);
-}
-
-/**
- * Spell a typed criteria value the way the row it will be compared against does.
- *
- * A caller writes `where({ active: true })` or passes an authenticated integer,
- * while a row holds `"1"` or `"2334787"`. Comparison uses that wire text.
- *
- * This is why the wire format did not need a second version. A stored
- * `WhereDocumentV1` still holds strings, and `criteriaFromWire` still reads
- * one; only the shapes a caller may write in TypeScript grew.
- */
-function criteriaToWireValues(
-  model: WhereModel,
-  value: unknown,
-  state: ParseState,
-  depth = 0,
-): unknown {
-  // As in `criteriaFromWire`: hand an over-deep or cyclic document on unchanged
-  // and let the validator reject it, rather than rejecting it here.
-  if (depth > maximumWhereDepth || !isObject(value)) return value;
-  const tokens = new Map(
-    WHERE_FIELDS_V1[model].map(({ criteriaName, token }) => [criteriaName as string, token]),
-  );
-  const relations = new Map(
-    WHERE_RELATIONS_V1[model].map((relation) => [relation.name as string, relation] as const),
-  );
-  const translated: Array<readonly [string, unknown]> = [];
-  for (const [key, entry] of snapshotObject(value, state)) {
-    translated.push([
-      key,
-      at(state, key, () => {
-        const relation = relations.get(key);
-        if (relation !== undefined && isObject(entry)) {
-          const inner: Array<readonly [string, unknown]> = [];
-          for (const [operator, nested] of snapshotObject(entry, state)) {
-            inner.push([
-              operator,
-              at(state, operator, () =>
-                criteriaToWireValues(relation.targetModel, nested, state, depth + 1),
-              ),
-            ]);
-          }
-          return frozenRecord(inner);
-        }
-        if (key === "AND" || key === "OR" || key === "NOT") {
-          return snapshotArray(entry, state).map((child, index) =>
-            at(state, index, () => criteriaToWireValues(model, child, state, depth + 1)),
-          );
-        }
-        const token = tokens.get(key);
-        if (token === undefined) return entry;
-        return scalarCriterionToWire(token, entry, state);
-      }),
-    ]);
-  }
-  return frozenRecord(translated);
 }
 
 function scalarFieldsFor(
@@ -754,6 +452,14 @@ function parseScalar(token: string, value: unknown, state: ParseState): ParsedSc
   });
 }
 
+export function canonicalizeScalarCriterion(
+  token: string,
+  value: unknown,
+  state: ParseState,
+): unknown {
+  return parseScalar(token, value, state).query;
+}
+
 function findAdjacency(record: ProjectionRecord, relation: WhereRelation) {
   return record.adjacency.find(
     (candidate) =>
@@ -940,7 +646,7 @@ function parseCriteria(
   });
 }
 
-function parseModel(value: unknown, state: ParseState): WhereModel {
+export function parseModel(value: unknown, state: ParseState): WhereModel {
   if (value !== "session" && value !== "window" && value !== "pane" && value !== "client") {
     return invalidQuery(
       state,
@@ -950,7 +656,7 @@ function parseModel(value: unknown, state: ParseState): WhereModel {
   return value;
 }
 
-function canonicalizeWhere(
+export function canonicalizeWhere(
   model: WhereModel,
   criteria: unknown,
   state: ParseState = newParseState(),
@@ -972,91 +678,4 @@ export function compileWhere(model: WhereModel, criteria: unknown): CompiledWher
       return record.model === parsedModel && parsed.test(record, resolve);
     },
   });
-}
-
-interface CanonicalWireDocument {
-  readonly model: WhereModel;
-  readonly version: 1;
-  readonly where: Readonly<Record<string, unknown>>;
-}
-
-function canonicalizeWhereDocumentForWire(
-  input: unknown,
-  state: ParseState,
-): CanonicalWireDocument {
-  const envelope = snapshotObject(input, state);
-  if (
-    envelope.size !== 3 ||
-    !envelope.has("model") ||
-    !envelope.has("version") ||
-    !envelope.has("where")
-  ) {
-    return invalidQuery(
-      state,
-      `expected exactly the keys ${listed(["model", "version", "where"])}`,
-    );
-  }
-  if (envelope.get("version") !== 1) {
-    return at(state, "version", () => invalidQuery(state, "expected 1"));
-  }
-  const model = at(state, "model", () => parseModel(envelope.get("model"), state));
-  // A stored document is written in wire names; criteria are written in the
-  // idiomatic ones. Translate before compiling so a document round-trips
-  // without the criteria surface having to accept tmux spellings.
-  const where = at(state, "where", () =>
-    canonicalizeWhere(model, criteriaFromWire(model, envelope.get("where"), state), state),
-  );
-  return Object.freeze({ model, version: 1, where });
-}
-
-/** Validate authored or serialized criteria and return the stable wire form. */
-export function canonicalizeWhereDocumentWire(input: unknown): CanonicalWireDocument {
-  return canonicalizeWhereDocumentForWire(input, newParseState());
-}
-
-/** Validate a document and return criteria with the public camelCase keys. */
-export function canonicalizeWhereDocument(input: unknown): WhereDocumentV1 {
-  const state = newParseState();
-  const wire = canonicalizeWhereDocumentForWire(input, state);
-  const where = at(state, "where", () => criteriaFromWire(wire.model, wire.where, state));
-  return Object.freeze({ model: wire.model, version: 1, where }) as WhereDocumentV1;
-}
-
-/**
- * Serializing a query that has already been validated.
- *
- * Reached only through {@link canonicalJson}, whose input is a parser's own
- * output, so these refusals describe a value this module built. They carry no
- * path because there is no caller's document to point into.
- */
-const NOT_SERIALIZABLE = "the canonical query holds a value that cannot be written";
-
-function jsonString(value: string, state: ParseState): string {
-  const encoded = JSON.stringify(value);
-  return encoded === undefined ? invalidQuery(state, NOT_SERIALIZABLE) : encoded;
-}
-
-function canonicalJsonValue(value: unknown, depth: number, state: ParseState): string {
-  if (value === null) return "null";
-  if (typeof value === "string") return jsonString(value, state);
-  if (typeof value === "boolean") return String(value);
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "null";
-  if (depth > maximumCanonicalJsonDepth || !isObject(value) || typeof value === "function") {
-    return invalidQuery(state, NOT_SERIALIZABLE);
-  }
-  if (Array.isArray(value)) {
-    return `[${snapshotArray(value, state)
-      .map((entry) => canonicalJsonValue(entry, depth + 1, state))
-      .join(",")}]`;
-  }
-  return `{${[...snapshotObject(value, state)]
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-    .map(
-      ([key, entry]) => `${jsonString(key, state)}:${canonicalJsonValue(entry, depth + 1, state)}`,
-    )
-    .join(",")}}`;
-}
-
-export function canonicalJson(value: object): string {
-  return canonicalJsonValue(value, 0, newParseState());
 }
