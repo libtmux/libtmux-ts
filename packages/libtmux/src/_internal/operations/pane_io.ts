@@ -32,7 +32,7 @@ export async function capturePane(
   paneId: string | null,
   options: CaptureOptions = {},
 ): Promise<readonly string[]> {
-  return runCommand(
+  const lines = await runCommand(
     runtime,
     [
       "capture-pane",
@@ -46,6 +46,9 @@ export async function capturePane(
     ],
     options,
   );
+  let end = lines.length;
+  while (lines[end - 1] === "") end -= 1;
+  return end === lines.length ? lines : Object.freeze(lines.slice(0, end));
 }
 
 /** Discard a pane's scrollback history. */
