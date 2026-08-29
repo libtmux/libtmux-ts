@@ -363,7 +363,9 @@ windows:
       expect(session.name).toBe("project");
 
       const snapshot = await server.snapshot();
-      const windows = snapshot.windows.filter((window) => window.sessionId === session.id);
+      const windows = snapshot.windows.filter(
+        (window) => window.format.session_id === session.id,
+      );
 
       // Exactly the two described windows: the first was adopted, not created.
       expect(windows.length).toBe(2);
@@ -628,7 +630,7 @@ windows:
       const session = await applyWorkspace(server, parseWorkspaceYaml(WORKSPACE));
       const snapshot = await server.snapshot();
       const server_window = snapshot.windows
-        .filter((window) => window.sessionId === session.id)
+        .filter((window) => window.format.session_id === session.id)
         .where({ name: "server" })
         .one();
 
