@@ -184,7 +184,7 @@ function declarationAt(
     let hasBody = false;
     for (let at = index; at < lines.length && at < index + 12; at += 1) {
       const line = lines[at] ?? "";
-      collected.push(line.trim());
+      collected.push(line.trimEnd());
       if (/;\s*$/u.test(line)) break;
       if (/\{\s*$/u.test(line)) {
         hasBody = true;
@@ -194,11 +194,9 @@ function declarationAt(
     return {
       hasBody,
       signature: collected
-        .join(" ")
+        .join("\n")
         .replace(/^export /u, "")
-        .replace(/\s*\{\s*$/u, "")
-        .replace(/;$/u, "")
-        .replace(/\s+/gu, " ")
+        .replace(/\s*\{\s*$/u, ";")
         .trim(),
     };
   }

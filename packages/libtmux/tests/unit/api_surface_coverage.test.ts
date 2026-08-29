@@ -120,9 +120,9 @@ describe("api surface coverage", () => {
     const splitSize = (await readRootApiSurface()).find((entry) => entry.name === "splitSize");
 
     expect(splitSize?.signatures).toEqual([
-      "function splitSize(value: number): SplitCellSize",
-      "function splitSize(value: SplitPercentage): SplitPercentage",
-      "function splitSize(value: SplitSize): SplitSize",
+      "function splitSize(value: number): SplitCellSize;",
+      "function splitSize(value: SplitPercentage): SplitPercentage;",
+      "function splitSize(value: SplitSize): SplitSize;",
     ]);
   });
 

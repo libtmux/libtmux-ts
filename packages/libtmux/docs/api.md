@@ -14,7 +14,10 @@ page is for looking one thing up.
 ### `parseLegacyWhere`
 
 ```ts
-function parseLegacyWhere<Model extends "session" | "window">( model: Model, input: unknown, ): Extract<WhereDocumentV1, { readonly model: Model }>
+function parseLegacyWhere<Model extends "session" | "window">(
+  model: Model,
+  input: unknown,
+): Extract<WhereDocumentV1, { readonly model: Model }>;
 ```
 
 Convert the Python port's `name__contains` spelling to canonical criteria.
@@ -34,7 +37,7 @@ snapshot.windows.where(document.where);
 ### `isSafeInteger`
 
 ```ts
-function isSafeInteger(value: unknown): value is SafeInteger
+function isSafeInteger(value: unknown): value is SafeInteger;
 ```
 
 Test whether a value is an exact JavaScript integer.
@@ -48,7 +51,7 @@ if (isSafeInteger(value)) snapshot.sessions.where({ attached: value });
 ### `safeInteger`
 
 ```ts
-function safeInteger(value: number): SafeInteger
+function safeInteger(value: number): SafeInteger;
 ```
 
 Authenticate an exact JavaScript integer or throw.
@@ -64,7 +67,7 @@ const pid = safeInteger(42);
 ### `isSplitSize`
 
 ```ts
-function isSplitSize(value: unknown): value is SplitSize
+function isSplitSize(value: unknown): value is SplitSize;
 ```
 
 Test whether a value is valid tmux split geometry.
@@ -78,15 +81,15 @@ const size = isSplitSize(value) ? value : undefined;
 ### `splitSize`
 
 ```ts
-function splitSize(value: number): SplitCellSize
+function splitSize(value: number): SplitCellSize;
 ```
 
 ```ts
-function splitSize(value: SplitPercentage): SplitPercentage
+function splitSize(value: SplitPercentage): SplitPercentage;
 ```
 
 ```ts
-function splitSize(value: SplitSize): SplitSize
+function splitSize(value: SplitSize): SplitSize;
 ```
 
 Authenticate tmux split geometry or throw.
