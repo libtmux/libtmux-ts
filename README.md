@@ -263,23 +263,27 @@ integration suite, so the code there is the code that runs.
 $ bun test examples
 ```
 
-## How commands travel
+## How work is arranged
 
-Transport, chaining and concurrency are independent, each one token at the call
-site, and **none of them changes what you get back** —
-[the full table is here](packages/libtmux/README.md#choosing-how-commands-travel).
+Observation, planning and concurrency compose around the same command engine —
+[the full table is here](packages/libtmux/README.md#choosing-how-work-is-arranged).
 
-| Mode      | Turn it on                    | When to use it                                      |
-| --------- | ----------------------------- | --------------------------------------------------- |
-| spawning  | the default                   | A script that runs a few commands and exits         |
-| connected | `await server.connect()`      | Anything long-lived, or a loop reacting to events   |
-| watching  | `server.watch()`              | Reacting to a change rather than polling to find it |
-| planned   | `.plan` + `server.batch([…])` | Creating or changing several things at once         |
+| Mode       | Turn it on                    | When to use it                                      |
+| ---------- | ----------------------------- | --------------------------------------------------- |
+| connected  | `await server.connect()`      | Pairing commands with a persistent event observer   |
+| watching   | `server.watch()`              | Reacting to a change rather than polling to find it |
+| pipeline   | `server.pipeline([…])`        | Ordered commands when printed output is enough      |
+| planned    | `.plan` + `server.batch([…])` | Ordered mutations that must return typed handles    |
+| concurrent | `Promise.all`                 | Independent work that may safely overlap            |
 
-Twelve windows, measured: one-at-a-time costs 64 tmux invocations and about a
-second; batched costs 5 and about 40 ms. Same answer, different cost —
-[reproduce it](packages/libtmux/README.md#choosing-how-commands-travel) with
-`bun packages/libtmux/scripts/bench-modes.ts`.
+For its create-twelve-windows-and-query workload, the benchmark uses 25
+invocations one at a time, 13 through `pipeline`, and 14 through `batch`; the
+last includes the snapshot that resolves typed handles. It reports
+machine-specific timings beside those deterministic counts:
+
+```console
+$ bun packages/libtmux/scripts/bench-modes.ts
+```
 
 ## What this package promises
 

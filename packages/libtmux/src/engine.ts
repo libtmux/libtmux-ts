@@ -2,15 +2,14 @@
  * Running tmux somewhere other than this machine's `tmux`.
  *
  * Everything above this — capabilities, acquisition, the graph, the handles,
- * the query layer — is built on one operation: hand tmux an argument vector and
- * get back what it wrote. An engine is that operation, so replacing it moves the
- * whole library to a tmux over ssh, inside a container, or behind a daemon,
- * without any of the layers above knowing.
+ * the query layer — is built on one operation: execute one structured tmux
+ * invocation and return its bytes and status. Replacing that operation moves
+ * the whole library to a tmux over SSH, inside a container, or behind a daemon.
  *
  * Deliberately small, and deliberately not the graph. A seam at the graph would
  * make every implementer responsible for framing, capability gating and
- * normalization; a seam here leaves them responsible for bytes, which is the
- * part that differs.
+ * normalization; a seam here leaves them responsible for execution, which is
+ * the part that differs.
  *
  * Global flags and commands stay distinct in the request, so an engine never
  * has to infer their boundary. `guardRequest` keeps an invocation addressed by
@@ -152,8 +151,8 @@ export type TmuxEngine = {
  *
  * `client.c` packs the whole argv into a single imsg and refuses anything over
  * `MAX_IMSGSIZE`, which OpenBSD's imsg — and tmux's bundled copy — fix at 16KB.
- * It bounds the *spawning* engine only: control mode sends a command as text on
- * an established socket and never packs an argv.
+ * It applies to engines that launch a tmux client with argv; an engine with a
+ * different wire protocol must enforce that protocol's own bound.
  */
 export const MAX_PACKED_ARGV_BYTES: 16384 = MAX_PACKED_ARGV_BYTES_INTERNAL;
 

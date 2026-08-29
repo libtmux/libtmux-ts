@@ -41,5 +41,5 @@ Four situations, because they fail differently:
 
 ## Where to go next
 
-[`../agent/`](../agent/README.md) puts the same connection to work in both
-directions — act, then wait for the result.
+[`../agent/`](../agent/README.md) combines this observer with commands from the
+same server — act, then wait for the result.

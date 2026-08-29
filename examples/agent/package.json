@@ -2,7 +2,7 @@
   "name": "@example/agent",
   "version": "0.0.0",
   "private": true,
-  "description": "Act on a pane and wait for the result over one connection. Never published.",
+  "description": "Act on a pane and wait through a persistent observer. Never published.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

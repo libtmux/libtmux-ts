@@ -805,7 +805,6 @@ Fill a paste buffer from data fed through tmux's stdin.
 
 Use this over {@link Server.setBuffer} for anything large or binary: that
 one passes its data as a command-line argument, and this one does not.
-Control mode has no channel for stdin, so this needs the spawning server.
 
 ```ts
 await server.loadBuffer("payload", new Uint8Array([0x68, 0x69]));
@@ -836,11 +835,6 @@ showBuffer(name: string): Promise<readonly string[]>
 
 Read a named paste buffer's contents.
 
-Over a control connection this stops at the first NUL byte: tmux writes a
-command's output to a control client as a C string. The buffer is unharmed
-— `saveBuffer` and a spawning server both read it whole — and a pane's own
-output is unaffected, being escaped before it is written.
-
 ```ts
 const lines = await server.showBuffer("greeting");
 lines[0]; // "hello"
@@ -855,8 +849,7 @@ showBufferBytes(name: string): Promise<Uint8Array>
 Read a named paste buffer without decoding or splitting its bytes.
 
 Unlike {@link Server.showBuffer}, this preserves NUL, invalid UTF-8, line
-endings, and trailing newlines. A connected server runs this read through
-the spawning transport because tmux control mode cannot carry those bytes.
+endings, and trailing newlines.
 
 ```ts
 const bytes = await server.showBufferBytes("payload");
@@ -985,9 +978,6 @@ Not atomic. tmux runs the commands in order and stops at the first failure,
 leaving everything before it applied; the error names the command that
 failed. Take a {@link Server.snapshot} afterwards if you need to know what
 survived.
-
-A connected server sends these one at a time instead, which costs the same
-over a connection that is already open.
 
 ```ts
 const [[first], [second]] = await server.pipeline([
