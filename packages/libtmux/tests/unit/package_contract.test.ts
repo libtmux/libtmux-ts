@@ -59,7 +59,7 @@ const expectedScripts = {
   "test:compat": "bun scripts/check-tmux-compat.ts",
   "test:coverage": "bun run build && bun scripts/check-coverage.ts",
   "test:package":
-    "bun run build && bun ../../scripts/check-source-maps.ts && bun scripts/check-package.ts",
+    "bun run build && bun ../../scripts/check-source-maps.ts && bun scripts/check-package.ts && bun ../../scripts/check-package-analysis.ts",
   "test:readme": "bun scripts/doc-examples/check-readme-runs.ts",
   "test:symbols": "bun scripts/doc-examples/check-symbol-runs.ts",
   "test:install": "bun run build && bun scripts/check-install.ts",

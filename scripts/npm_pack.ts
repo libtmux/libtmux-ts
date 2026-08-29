@@ -38,7 +38,9 @@ export async function npmPack(
     expired = true;
     child.kill("SIGTERM");
   }, 60_000);
+  const hardDeadline = setTimeout(() => child.kill("SIGKILL"), 65_000);
   deadline.unref?.();
+  hardDeadline.unref?.();
   try {
     const [exitCode, stdout, stderr] = await Promise.all([
       child.exited,
@@ -84,5 +86,6 @@ export async function npmPack(
     };
   } finally {
     clearTimeout(deadline);
+    clearTimeout(hardDeadline);
   }
 }

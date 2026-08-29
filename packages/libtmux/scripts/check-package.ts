@@ -113,9 +113,6 @@ if (declarationErrors.length > 0) {
   );
 }
 
-await run([resolveBinary("publint")]);
-await run([resolveBinary("attw"), "--pack", ".", "--profile", "esm-only"]);
-
 await rm(packDirectory, { force: true, recursive: true });
 packDirectory = undefined;
 

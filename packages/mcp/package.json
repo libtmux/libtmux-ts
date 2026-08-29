@@ -43,7 +43,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun run build && bun scripts/run-tests.ts",
-    "test:package": "bun run build && bun ../../scripts/check-source-maps.ts && ../../node_modules/.bin/publint && ../../node_modules/.bin/attw --pack . --profile esm-only",
+    "test:package": "bun run build && bun ../../scripts/check-source-maps.ts && bun ../../scripts/check-package-analysis.ts",
     "test:install": "bun run build && bun ../../scripts/check-consumer-install.ts packages/mcp"
   },
   "dependencies": {
