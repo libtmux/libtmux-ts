@@ -459,6 +459,7 @@ describe("policy", () => {
     expect(tierAllows("mutating", "readonly")).toBe(true);
     expect(tierAllows("mutating", "destructive")).toBe(false);
     expect(tierAllows("destructive", "destructive")).toBe(true);
+    expect(tierAllows(["destructive"] as unknown as "destructive", "destructive")).toBe(false);
   });
 });
 

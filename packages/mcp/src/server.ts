@@ -9,7 +9,7 @@ import { Server } from "libtmux/server";
 import { readCallerEnvironment } from "./caller.js";
 import { createContext } from "./context.js";
 import { buildInstructions } from "./instructions.js";
-import { resolvePolicy, type Policy } from "./policy.js";
+import { resolvePolicy, snapshotPolicy, type Policy } from "./policy.js";
 import { offeredTools } from "./register.js";
 import { registerBuffers } from "./tools/buffers.js";
 import { registerCapture } from "./tools/capture.js";
@@ -50,7 +50,9 @@ export function createTmuxMcpServer(
   } = {},
 ): McpServer {
   const caller = readCallerEnvironment(options.callerEnvironment ?? process.env);
-  const policy = options.policy ?? resolvePolicy(options.environment ?? process.env);
+  const policy = snapshotPolicy(
+    options.policy ?? resolvePolicy(options.environment ?? process.env),
+  );
   const mcp = new McpServer(
     { name: "libtmux", title: "tmux", version: PACKAGE_VERSION },
     {

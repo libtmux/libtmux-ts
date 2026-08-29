@@ -59,6 +59,10 @@ const TIER_RANK: Readonly<Record<SafetyTier, number>> = {
   readonly: 0,
 };
 
+function isSafetyTier(value: unknown): value is SafetyTier {
+  return value === "readonly" || value === "mutating" || value === "destructive";
+}
+
 export interface Policy {
   /** Ceiling on a wait that blocks the caller. */
   readonly blockingWaitMaxMs: number;
@@ -153,6 +157,63 @@ export function resolvePolicy(
   };
 }
 
+function requireInteger(field: string, value: number, floor: number, limit: number): void {
+  if (!Number.isSafeInteger(value) || value < floor || value > limit) {
+    throw new TypeError(`policy.${field} must be an integer from ${floor} to ${limit}`);
+  }
+}
+
+/** Validate and detach a policy supplied through the public JavaScript boundary. */
+export function snapshotPolicy(policy: Policy): Policy {
+  if (typeof policy !== "object" || policy === null) {
+    throw new TypeError("policy must be an object");
+  }
+
+  const { blockingWaitMaxMs, commandTimeoutMs, liveEnabled, maxResultLines, safety, tools } =
+    policy;
+
+  if (!isSafetyTier(safety)) {
+    throw new TypeError("policy.safety must be readonly, mutating, or destructive");
+  }
+  requireInteger(
+    "blockingWaitMaxMs",
+    blockingWaitMaxMs,
+    BLOCKING_WAIT_FLOOR_MS,
+    BLOCKING_WAIT_LIMIT_MS,
+  );
+  requireInteger("commandTimeoutMs", commandTimeoutMs, 1, COMMAND_TIMEOUT_LIMIT_MS);
+  if (typeof liveEnabled !== "boolean") {
+    throw new TypeError("policy.liveEnabled must be a boolean");
+  }
+  requireInteger("maxResultLines", maxResultLines, 1, MAX_RESULT_LINES_LIMIT);
+  let toolSnapshot: ReadonlySet<string> | undefined;
+  if (tools !== undefined) {
+    const copy = new Set<string>();
+    let invalidTool = false;
+    try {
+      Set.prototype.forEach.call(tools, (name: unknown): void => {
+        if (typeof name === "string") copy.add(name);
+        else invalidTool = true;
+      });
+    } catch {
+      throw new TypeError("policy.tools must be a Set or undefined");
+    }
+    if (invalidTool) {
+      throw new TypeError("policy.tools must contain only strings");
+    }
+    toolSnapshot = copy;
+  }
+
+  return {
+    blockingWaitMaxMs,
+    commandTimeoutMs,
+    liveEnabled,
+    maxResultLines,
+    safety,
+    tools: toolSnapshot,
+  };
+}
+
 /** Keep a caller's requested line count inside the operator's ceiling. */
 export function effectiveResultLines(policy: Policy, requested: number | undefined): number {
   const configured = Number.isSafeInteger(policy.maxResultLines)
@@ -168,7 +229,7 @@ export function effectiveResultLines(policy: Policy, requested: number | undefin
 
 /** Whether a tool needing `required` is offered under `active`. */
 export function tierAllows(active: SafetyTier, required: SafetyTier): boolean {
-  return TIER_RANK[active] >= TIER_RANK[required];
+  return isSafetyTier(active) && isSafetyTier(required) && TIER_RANK[active] >= TIER_RANK[required];
 }
 
 /**

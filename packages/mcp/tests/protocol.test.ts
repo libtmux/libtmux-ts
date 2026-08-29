@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 
 import { Server } from "libtmux/server";
 
-import { createTmuxMcpServer } from "../src/server.js";
+import { createTmuxMcpServer, type Policy } from "../src/server.js";
 import { paneViewSchema, sessionViewSchema, windowViewSchema } from "../src/views.js";
 
 async function withEmbeddedClient(
@@ -12,9 +12,11 @@ async function withEmbeddedClient(
   environment: Readonly<Record<string, string | undefined>> = {
     LIBTMUX_SAFETY: "destructive",
   },
+  policy?: Policy,
 ): Promise<void> {
   const mcp = createTmuxMcpServer(new Server(), {
     environment,
+    ...(policy === undefined ? {} : { policy }),
   });
   const client = new Client({ name: "protocol-test", version: "0.0.0" });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -47,6 +49,32 @@ test("a blank allowlist leaves a resources-only server", async () => {
       expect((await client.listResourceTemplates()).resourceTemplates.length).toBeGreaterThan(0);
     },
     { LIBTMUX_MCP_TOOLS: "", LIBTMUX_SAFETY: "destructive" },
+  );
+});
+
+test("copies an embedded allowlist from the Set's actual entries", async () => {
+  class MisleadingTools extends Set<string> {
+    override [Symbol.iterator](): SetIterator<string> {
+      return new Set(["kill_session"]).values();
+    }
+  }
+
+  const tools = new MisleadingTools(["list_panes"]);
+  const policy: Policy = {
+    blockingWaitMaxMs: 30_000,
+    commandTimeoutMs: 30_000,
+    liveEnabled: true,
+    maxResultLines: 200,
+    safety: "destructive",
+    tools,
+  };
+
+  await withEmbeddedClient(
+    async (client) => {
+      expect((await client.listTools()).tools.map(({ name }) => name)).toEqual(["list_panes"]);
+    },
+    {},
+    policy,
   );
 });
 
