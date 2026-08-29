@@ -450,6 +450,13 @@ export class Server {
     if (options !== undefined && "pauseAfterSeconds" in options) {
       throw new TypeError("pauseAfterSeconds belongs to Server.watch(), not Server.connect()");
     }
+    for (const removed of ["maxCommandBytes", "maxPendingCommands"] as const) {
+      if (options !== undefined && removed in options) {
+        throw new TypeError(
+          `${removed} was removed; Server.connect() observes events and commands use the server engine`,
+        );
+      }
+    }
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "connect");
     const commands = runtime.transport;

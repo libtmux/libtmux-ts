@@ -48,22 +48,6 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
 }
 
 describe("control-mode event bounds", () => {
-  test("carries a command's stdin, which the protocol itself cannot", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await using live = await server.connect();
-
-      // tmux's control protocol has no channel for stdin, so this is the one
-      // command shape the connection has to hand elsewhere. Choosing a
-      // transport must not decide which commands exist.
-      await live.loadBuffer("payload", new TextEncoder().encode("from-stdin"));
-
-      // Read it back through the connection to prove it reached this server,
-      // not merely that the call resolved.
-      expect((await live.showBuffer("payload")).join("")).toContain("from-stdin");
-    });
-  }, 40_000);
-
   test("names a connection that broke under a command in its own terms", async () => {
     const directory = await makeTestDirectory("ltx-broken-");
     const socketPath = join(directory, "s");
@@ -99,27 +83,6 @@ describe("control-mode event bounds", () => {
     }
   }, 40_000);
 
-  test("carries run-shell output, which tmux writes after the block", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await using live = await server.connect();
-
-      // tmux writes `run-shell`'s closing guard when the command returns, not
-      // when the job finishes, so its output arrives as bare lines belonging to
-      // no command.
-      const command = "echo first; echo second";
-      // A newline would reach the same fallback for the other reason.
-      expect(command.includes("\n")).toBe(false);
-
-      const spawned = await server.runShell(command);
-      expect(await live.runShell(command)).toEqual(spawned);
-      // 3.3a and 3.4 suppress a clientless run-shell's output entirely, which
-      // is the difference LIBTMUX_TMUX_BUILDS exists to surface. Where this
-      // tmux answers at all, both transports have to answer with the output.
-      if (spawned.length > 0) expect(await live.runShell(command)).toEqual(["first", "second"]);
-    });
-  }, 40_000);
-
   test("rejects invalid observer options before spawning", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -129,6 +92,13 @@ describe("control-mode event bounds", () => {
       const inherited = Object.create({ pauseAfterSeconds: 1 }) as never;
       await expect(server.connect(inherited)).rejects.toThrow(
         /pauseAfterSeconds belongs to Server\.watch/u,
+      );
+      await Promise.all(
+        (["maxCommandBytes", "maxPendingCommands"] as const).map((removed) =>
+          expect(server.connect({ [removed]: 1 } as never)).rejects.toThrow(
+            new RegExp(`${removed} was removed`, "u"),
+          ),
+        ),
       );
       expect(() => server.watch({ pauseAfterSeconds: 0 })).toThrow(/pauseAfterSeconds/u);
       expect(() => server.watch({ pauseAfterSeconds: 1.5 })).toThrow(/pauseAfterSeconds/u);

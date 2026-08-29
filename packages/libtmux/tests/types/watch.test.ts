@@ -130,7 +130,12 @@ export function connectIsNotAnObserver(): Promise<unknown> {
   return server.connect({ pauseAfterSeconds: 1 });
 }
 
+export function connectHasNoCommandResponseBounds(): Promise<unknown> {
+  // @ts-expect-error connected commands use the server engine, not the event observer.
+  return server.connect({ maxCommandBytes: 1 });
+}
+
 export function watchIsNotACommandChannel(): TmuxEventStream {
-  // @ts-expect-error command response bounds belong to Server.connect().
+  // @ts-expect-error command response bounds were removed with the control command lane.
   return server.watch({ maxCommandBytes: 1 });
 }
