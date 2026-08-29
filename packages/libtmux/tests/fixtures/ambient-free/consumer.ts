@@ -2,13 +2,15 @@ import type {
   CommandOptions,
   JoinOptions,
   Pane,
+  Selection,
   ServerSnapshot,
-  Session,
   SetOptionOptions,
   TmuxEvent,
   TmuxEventStream,
   TmuxOutputEvent,
+  Window,
 } from "libtmux";
+import { Session } from "libtmux";
 
 /**
  * A consumer with no ambient types at all.
@@ -29,6 +31,7 @@ declare const pane: Pane;
 declare const session: Session;
 declare const commandOptions: CommandOptions;
 declare const joinOptions: JoinOptions;
+declare const mixed: Selection<Session | Window>;
 declare const setOptionOptions: SetOptionOptions;
 declare const stream: TmuxEventStream;
 
@@ -78,3 +81,7 @@ void findOutput;
 void pane.toString();
 void snapshot.panes.where({ currentCommand: "vim" }).one();
 void snapshot.sessions.filter((candidate) => candidate.name !== null);
+const narrowedSessions: Selection<Session> = mixed.filter(
+  (candidate): candidate is Session => candidate instanceof Session,
+);
+void narrowedSessions;

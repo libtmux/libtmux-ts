@@ -375,6 +375,10 @@ export interface Selection<Model> extends Iterable<Model> {
    * snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true);
    * ```
    */
+  filter<Narrowed extends Model>(
+    predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed,
+    thisArg?: unknown,
+  ): Selection<Narrowed>;
   filter(
     predicate: (value: Model, index: number, values: readonly Model[]) => unknown,
     thisArg?: unknown,

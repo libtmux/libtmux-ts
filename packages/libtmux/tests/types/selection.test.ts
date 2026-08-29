@@ -46,6 +46,10 @@ type ExpectedSelection<Model> = {
     transform: (value: Model, index: number, values: readonly Model[]) => Result,
     thisArg?: unknown,
   ): Result[];
+  filter<Narrowed extends Model>(
+    predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed,
+    thisArg?: unknown,
+  ): Selection<Narrowed>;
   filter(
     predicate: (value: Model, index: number, values: readonly Model[]) => unknown,
     thisArg?: unknown,
@@ -148,7 +152,7 @@ type _CallbackResult = Expect<Equal<typeof callbackFiltered, Selection<Session>>
 const narrowed = mixed.filter(
   (value: Session | Window): value is Session => value instanceof Session,
 );
-type _NoTypeGuardNarrowing = Expect<Equal<typeof narrowed, Selection<Session | Window>>>;
+type _TypeGuardNarrowing = Expect<Equal<typeof narrowed, Selection<Session>>>;
 
 const thisArgument = { prefix: "m" };
 sessions.filter(function (this: typeof thisArgument, value: Session) {
