@@ -255,7 +255,7 @@ describe("Server.watch", () => {
       const server = serverFor(fixture);
       const events = server.watch({
         subscriptions: [
-          { format: "#{session_name}", name: "session", scope: undefined },
+          { format: "#{session_name}", name: "session" },
           { format: "#{pane_current_command}", name: "cmd", scope: "all-panes" },
         ],
       });
