@@ -1,5 +1,6 @@
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
 import { runCommand, runCommandBytes } from "./command.js";
+import { TmuxTransportError } from "../../exc.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 /**
@@ -12,7 +13,11 @@ import type { RuntimeContext } from "../runtime/context.js";
 export async function hasSession(runtime: RuntimeContext, name: string): Promise<boolean> {
   const result = adaptRawResult(
     await runtime.transport.execute(
-      prepareCommandRequest(runtime.connection, ["has-session", "-t", name]),
+      prepareCommandRequest(
+        runtime.connection,
+        ["has-session", "-t", `=${name}`],
+        runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs },
+      ),
     ),
   );
   return result.returncode === 0;
@@ -109,11 +114,24 @@ export async function deleteBuffer(runtime: RuntimeContext, name: string): Promi
 export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
   try {
     const result = adaptRawResult(
-      await runtime.transport.execute(prepareCommandRequest(runtime.connection, ["list-sessions"])),
+      await runtime.transport.execute(
+        prepareCommandRequest(
+          runtime.connection,
+          ["list-sessions"],
+          runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs },
+        ),
+      ),
     );
     return result.returncode === 0;
-  } catch {
-    return false;
+  } catch (error) {
+    if (
+      error instanceof TmuxTransportError &&
+      error.kind !== "cancelled" &&
+      error.kind !== "timeout"
+    ) {
+      return false;
+    }
+    throw error;
   }
 }
 

@@ -917,6 +917,10 @@ export class Server {
   /**
    * Whether a session with this name exists.
    *
+   * The name is matched exactly. tmux normally accepts a unique prefix as a
+   * session target, which would make checking `work` answer yes for
+   * `workspace`; this method does not.
+   *
    * ```ts
    * if (!(await server.hasSession("work"))) {
    *   await server.newSession({ name: "work" });
@@ -1069,6 +1073,10 @@ export class Server {
 
   /**
    * Whether the tmux server is reachable.
+   *
+   * A missing daemon, socket, or tmux executable answers false. Cancellation,
+   * a command deadline, or an engine programming error still raises: none says
+   * whether the server is alive.
    *
    * ```ts
    * if (await server.isAlive()) {

@@ -55,6 +55,9 @@ describe("server utilities", () => {
 
       expect(await server.hasSession(fixture.sessionName)).toBe(true);
       expect(await server.hasSession("definitely-absent")).toBe(false);
+
+      await server.newSession({ name: "prefix-long" });
+      expect(await server.hasSession("prefix")).toBe(false);
     });
   }, 40_000);
 
