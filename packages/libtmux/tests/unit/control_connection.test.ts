@@ -173,8 +173,41 @@ describe("ControlConnection child ownership", () => {
     await control.close();
   });
 
+  test("drops an incomplete pane character across a pause gap", async () => {
+    const child = new FakeChild(105);
+    const control = new ControlConnection(
+      connection(),
+      {},
+      false,
+      new RecordingTransport(),
+      () => child,
+    );
+    const events = control.subscribe();
+    const iterator = events[Symbol.asyncIterator]();
+    attach(child);
+    await events.ready();
+
+    child.stdout.write(Buffer.concat([Buffer.from("%output %1 "), Buffer.from([0xc3, 0x0a])]));
+    expect((await iterator.next()).value).toEqual({
+      data: "",
+      kind: "output",
+      paneId: parsePaneId("%1"),
+    });
+    child.stdout.write("%pause %1\n%continue %1\n%output %1 x\n");
+    expect((await iterator.next()).value).toEqual({ kind: "pause", paneId: parsePaneId("%1") });
+    expect((await iterator.next()).value).toEqual({ kind: "continue", paneId: parsePaneId("%1") });
+    expect((await iterator.next()).value).toEqual({
+      data: "x",
+      kind: "output",
+      paneId: parsePaneId("%1"),
+    });
+
+    await iterator.return?.();
+    await control.close();
+  });
+
   test("makes concurrent close callers await child retirement", async () => {
-    const child = new FakeChild(105, false);
+    const child = new FakeChild(106, false);
     const control = new ControlConnection(connection(), {}, false, undefined, () => child);
     attach(child);
     await control.ready();
@@ -208,7 +241,7 @@ describe("ControlConnection child ownership", () => {
         () =>
           new ControlConnection(connection(), { reconnect }, false, undefined, () => {
             spawns += 1;
-            return new FakeChild(106);
+            return new FakeChild(107);
           }),
       ).toThrow(field);
       expect(spawns).toBe(0);

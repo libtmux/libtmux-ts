@@ -782,6 +782,7 @@ export class ControlConnection implements CommandTransport {
 
   /** Publish a pause or resume, and ask a paused pane back. */
   #routeFlowControl(event: TmuxPaneFlowEvent): void {
+    this.#partial.delete(event.paneId);
     if (event.kind === "pause") this.#paused.add(event.paneId);
     else this.#paused.delete(event.paneId);
     for (const sink of this.#sinks) sink.push(event);
