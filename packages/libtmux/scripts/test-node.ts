@@ -87,6 +87,7 @@ import { FormatProtocolError, GuardCodec } from ${moduleUrl("dist/_internal/code
 import { adaptRawResult, executeBatch, prepareCommandRequest } from ${moduleUrl("dist/_internal/operations/request.js")};
 import { deriveTmuxCapabilities } from ${moduleUrl("dist/_internal/runtime/capabilities.js")};
 import { FORMAT_FIELD_TOKENS } from ${moduleUrl("dist/_generated/format_fields.js")};
+import { FORMAT_VALUE_TYPES } from ${moduleUrl("dist/_generated/field_types.js")};
 import { TmuxConnection } from ${moduleUrl("dist/_internal/runtime/connection.js")};
 import { ControlMode } from ${controlModeModule};
 import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_spawn_transport.js")};
@@ -125,10 +126,10 @@ const baselineCodec = new GuardCodec({
 });
 const baselineRequest = baselineCodec.prepare();
 const baselineValues = baselineRequest.fields.map(({ token }) => {
-  if (token === "session_id") return "$1";
+  if (FORMAT_VALUE_TYPES[token] === "session-id") return "$1";
   if (token === "session_group") return "";
-  if (token === "window_id") return "@2";
-  if (token === "pane_id") return "%3";
+  if (FORMAT_VALUE_TYPES[token] === "window-id") return "@2";
+  if (FORMAT_VALUE_TYPES[token] === "pane-id") return "%3";
   return "node:" + token;
 });
 const baselineFrame = new TextEncoder().encode(
