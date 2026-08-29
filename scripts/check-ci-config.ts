@@ -17,10 +17,8 @@ import { fileURLToPath } from "node:url";
  * workspace added beside it does not.
  *
  * What this deliberately does not claim: that every ecosystem dependabot could
- * file for is configured. Action pins are maintained by a researched sweep that
- * reads every `uses:` line and lands one commit per action, so there is no
- * github-actions entry to find and requiring one held this gate red against a
- * decision the repository had already made.
+ * file for is configured. Action pins are checked below, after the workflow
+ * set has been found, so a version tag cannot silently move the code CI runs.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -173,6 +171,31 @@ const workflows = await Array.fromAsync(
 );
 if (workflows.length === 0) {
   process.stderr.write(`${configPath}: no workflows were found to keep pinned\n`);
+  process.exit(1);
+}
+
+for (const workflow of workflows) {
+  // eslint-disable-next-line no-await-in-loop -- each workflow gets an exact diagnostic.
+  const source = await Bun.file(join(repositoryRoot, ".github", workflow)).text();
+  for (const [index, reference] of source.split("\n").entries()) {
+    const line = index + 1;
+    const found = /^\s*(?:-\s*)?uses:\s*[^@\s]+@([^\s#]+)/u.exec(reference);
+    if (found === null) continue;
+    const revision = found[1];
+    if (revision === undefined || !/^[0-9a-f]{40}$/u.test(revision)) {
+      failures.push(
+        `.github/${workflow}:${String(line)} pins an action by ${JSON.stringify(revision)}, not a full commit SHA`,
+      );
+    }
+  }
+}
+
+if (failures.length > 0) {
+  process.stderr.write(
+    `Continuous integration configuration the repository does not support:\n${failures
+      .map((failure) => `  ${failure}\n`)
+      .join("")}`,
+  );
   process.exit(1);
 }
 
