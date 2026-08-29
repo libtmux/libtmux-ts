@@ -90,7 +90,7 @@ when a program needs it, and nothing above depends on any of it.
 **Reacting to it** ·
 [Watching](#watching) ·
 [Waiting for something to happen](#waiting-for-something-to-happen) ·
-[Commands on the same connection](#commands-on-the-same-connection)
+[Commands beside a connection](#commands-beside-a-connection)
 
 **Getting the cost right** ·
 [Choosing how commands travel](#choosing-how-commands-travel) ·
@@ -701,8 +701,8 @@ at once, and `continue` follows. The pair is a record of what was missed, not
 something to act on.
 
 `watch()` is the notification observer and owns this pacing policy. `connect()`
-is the persistent command channel; command response lines remain literal even
-when they are exactly `%pause %1` or `%continue %1`.
+adds the same event channel and daemon-lifetime tracking to a server; its
+commands still use ordinary tmux processes.
 
 A connection attaches, so it needs a session to attach to. Connecting to a
 server with none fails at `connect()` with tmux's own words rather than through
@@ -747,11 +747,12 @@ const opened = await live.subscribe().find((event) => event.kind === "window-add
 Each `subscribe()` is an independent view with its own buffer, so a loop and a
 `waitFor` can run side by side without taking each other's events.
 
-### Commands on the same connection
+### Commands beside a connection
 
 `watch()` opens a connection for notifications only. `connect()` returns a
-server whose commands travel over that connection too, so a snapshot costs four
-writes instead of four processes:
+server paired with that observer. Commands remain process-boundary invocations
+because control mode cannot delimit arbitrary alias-expanded or waiting command
+output truthfully:
 
 <!-- static: reads every event until the process is interrupted -->
 
@@ -760,7 +761,7 @@ await using live = await server.connect();
 
 for await (const event of live.subscribe()) {
   if (event.kind !== "window-add") continue;
-  const snapshot = await live.snapshot(); // no process spawned
+  const snapshot = await live.snapshot(); // one four-command tmux invocation
   console.log(snapshot.windows.count());
 }
 ```
@@ -929,17 +930,13 @@ site, and none of them changes what you get back:
 | Mode           | Turn it on                         | What changes                                                        | When to use it                                                   |
 | -------------- | ---------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | **spawning**   | the default                        | Each command is its own `tmux` process.                             | A script that runs a few commands and exits.                     |
-| **connected**  | `await server.connect()`           | Commands travel over one already-open control connection.           | Anything long-lived, and any loop that reacts to events.         |
+| **connected**  | `await server.connect()`           | Adds events and daemon-lifetime tracking to a server.               | Anything long-lived, and any loop that reacts to events.         |
 | **watching**   | `server.watch()`                   | Yields tmux's notifications as they happen.                         | Reacting to a change, rather than polling to find it.            |
 | **planned**    | `.plan` instead of the direct call | Describes the mutation for `server.batch([…])` to run as one group. | Creating or changing several things at once.                     |
 | **concurrent** | `Promise.all`                      | Independent commands overlap.                                       | Slow work on independent targets — not ordering-sensitive setup. |
 
-The API and the types are the same throughout, with no exceptions: `connect()`
-hands back the same handles the spawning server does, and `.plan` takes what the
-direct call takes and resolves to what the direct call resolves to. tmux's
-control protocol has no channel for a command's stdin, so a connected server
-hands `loadBuffer` to a spawned process against the same socket rather than
-refusing it — choosing a transport does not decide which commands exist.
+The API and the types are the same throughout: `connect()` hands back the same
+handles as the base server, while its observer tracks daemon loss.
 
 ### Running tmux somewhere else
 
@@ -950,7 +947,7 @@ over ssh, inside a container, or behind a daemon:
 
 ```ts
 import { Server, TmuxServerRestarted } from "libtmux";
-import { asSingleInvocation, guardRequest } from "libtmux/engine";
+import { flattenInvocation, guardRequest } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine } from "libtmux/engine";
 
 /** `run` is yours: give it an argument vector, get back what tmux wrote. */
@@ -968,23 +965,13 @@ function engineOver(
       // so an engine inherits restart safety instead of rebuilding it.
       const guarded = guardRequest(request);
       const result = await run(
-        [guarded.request.executable, ...guarded.request.args],
+        [guarded.request.executable, ...flattenInvocation(guarded.request)],
         guarded.request.stdin,
       );
       if (guarded.refusedBy(result.returncode, result.stderr)) {
         throw new TmuxServerRestarted("the daemon this handle was read from is gone");
       }
       return result;
-    },
-    async executeGroup(requests) {
-      const first = requests[0];
-      if (first === undefined) return [];
-      // One tmux invocation, or a snapshot stops being one instant. This
-      // assembles the command list and splits its output back apart; the
-      // built-in engine calls the same helper.
-      const invocation = asSingleInvocation(requests);
-      const result = await run([first.executable, ...invocation.args], undefined);
-      return invocation.sections(result.stdout).map((stdout) => ({ ...result, stdout }));
     },
   };
 }
@@ -1013,10 +1000,9 @@ const remote = new Server({
 The seam is bytes in, bytes out, and stops there on purpose. One at the graph
 would make every implementer responsible for framing, capability gating and
 normalization; this one leaves them responsible only for the part that differs.
-Two obligations come with it, both documented on `TmuxEngine` and both with a
-helper rather than a description to follow: run a group as one command list
-(`asSingleInvocation`), and either honour a request's `daemonGuard`
-(`guardRequest`) or be bound to one daemon the way a control connection is.
+The request carries global flags and a nonempty command list separately, so an
+engine cannot accidentally split a snapshot into several clients. Honour a
+request's `daemonGuard` with `guardRequest`, or bind the engine to one daemon.
 
 `watch()` and `connect()` are the two calls an engine does not carry. Both hold
 a local `tmux -C attach` process open, which is the thing an engine exists to
@@ -1075,9 +1061,8 @@ const built = await server.withConnection(async (connected) => {
 failure. `batch` adds one final snapshot that turns printed ids into handles;
 `pipeline` returns the printed lines directly.
 
-A control connection removes process startup from each command. It does not
-make concurrent mutations safe to reorder: use `pipeline` or `batch` when
-command order matters.
+Use `pipeline` or `batch` when command order matters; a connection does not make
+concurrent mutations safe to reorder.
 
 ## Options and hooks
 
@@ -1211,8 +1196,8 @@ try {
 The refusal is tmux's, not a check this library made first and hoped would still
 hold: a command carrying a raw id goes as `if-shell -F` conditioned on the
 daemon's pid and start time, and tmux evaluates that inside the same command
-queue entry that would run it. Over a control connection there is nothing to
-condition — the connection is bound to one daemon, and losing it is the signal.
+queue entry that would run it. The connected observer invalidates its runtime
+when that daemon disappears.
 Reading a stale handle's captured fields still works; only commands are refused.
 
 An unreachable server raises rather than reading as empty, so an empty result

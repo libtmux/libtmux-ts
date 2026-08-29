@@ -345,13 +345,12 @@ async connect(options?: ConnectOptions): Promise<ConnectedServer>
 
 Bind this server to one control-mode connection and return it.
 
-The returned server has the same API, but its commands travel over an
-already-open connection instead of spawning a `tmux` process each. A
-snapshot costs four writes rather than four processes, which is what makes
-reacting to {@link watch} events affordable in a loop.
+The returned server has the same API and shares one control connection for
+events and daemon-lifetime tracking. Commands use ordinary tmux processes:
+control mode cannot frame arbitrary command output truthfully when aliases
+and waiting commands are allowed.
 
-Operations that need stdin or exact bytes use a spawned command against
-the same socket because control mode has no channel for either.
+A snapshot remains one tmux invocation containing all four listings.
 
 ```ts
 await using live = await server.connect();

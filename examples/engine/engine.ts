@@ -1,5 +1,5 @@
 import { Server } from "libtmux";
-import { asSingleInvocation, guardRequest, refusedByGuard } from "libtmux/engine";
+import { flattenInvocation, guardRequest } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine } from "libtmux/engine";
 import { TmuxServerRestarted } from "libtmux";
 
@@ -13,11 +13,8 @@ import { TmuxServerRestarted } from "libtmux";
  * local, shelling to the same tmux the built-in server drives, so the point is
  * only the seam: nothing above it knows the difference.
  *
- * The two obligations the seam documents are both honoured here with the helpers
- * it publishes: run a group as one command list (`asSingleInvocation`, so a
- * snapshot stays one instant), and let tmux refuse a command addressed to a
- * daemon that has since restarted (`guardRequest` / `refusedByGuard`, so an
- * engine inherits restart-safety rather than rebuilding it).
+ * The request already contains one structured command list, and `guardRequest`
+ * lets tmux refuse it when it addresses a daemon that has since restarted.
  */
 export async function throughACustomEngine(reference: Server): Promise<number> {
   const tmuxBin = reference.tmuxBin;
@@ -55,26 +52,21 @@ export async function throughACustomEngine(reference: Server): Promise<number> {
     endpoint: `local://${socketPath}`,
     async execute(request) {
       const guarded = guardRequest(request);
-      const result = await run([guarded.executable, ...guarded.args], guarded.stdin);
-      if (request.daemonGuard !== undefined && refusedByGuard(result.returncode, result.stderr)) {
+      const result = await run(
+        [guarded.request.executable, ...flattenInvocation(guarded.request)],
+        guarded.request.stdin,
+      );
+      if (guarded.refusedBy(result.returncode, result.stderr)) {
         throw new TmuxServerRestarted("the daemon this handle was read from is gone");
       }
       return result;
-    },
-    async executeGroup(requests) {
-      const first = requests[0];
-      if (first === undefined) return [];
-      const invocation = asSingleInvocation(requests);
-      const result = await run([first.executable, ...invocation.args], undefined);
-      return invocation.sections(result.stdout).map((stdout) => ({ ...result, stdout }));
     },
   };
 
   const remote = new Server({ engine });
 
-  // The whole API works over the seam. A snapshot is four commands run as one
-  // group through `executeGroup`, and it answers about the same tmux the
-  // built-in server sees.
+  // The whole API works over the seam. A snapshot's four commands arrive in
+  // one request, and it answers about the same tmux the built-in server sees.
   const snapshot = await remote.snapshot();
   return snapshot.sessions.count();
 }
