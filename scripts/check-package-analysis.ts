@@ -9,6 +9,7 @@ import { npmPack } from "./npm_pack.js";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const packageRoot = process.cwd();
+const MAX_ANALYZER_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 function binary(name: string): string {
   const path = join(repositoryRoot, "node_modules", ".bin", name);
@@ -20,9 +21,17 @@ async function run(command: readonly string[]): Promise<void> {
   const result = await runBoundedCommand(command, {
     cwd: packageRoot,
     env: { ...process.env },
+    maxOutputBytes: MAX_ANALYZER_OUTPUT_BYTES,
     timeoutMilliseconds: 60_000,
   });
-  if (result.timedOut) throw new Error(`${command[0] ?? "analyzer"} exceeded 60000ms`);
+  if (result.termination === "timed_out") {
+    throw new Error(`${command[0] ?? "analyzer"} exceeded 60000ms`);
+  }
+  if (result.termination === "output_limit_exceeded") {
+    throw new Error(
+      `${command[0] ?? "analyzer"} exceeded ${String(MAX_ANALYZER_OUTPUT_BYTES)} output bytes`,
+    );
+  }
   if (result.exitCode !== 0) {
     throw new Error(
       `${command.join(" ")} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`,

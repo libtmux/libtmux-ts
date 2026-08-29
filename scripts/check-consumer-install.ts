@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveNode22 } from "../packages/libtmux/src/_internal/test/node22.js";
+import { runBoundedCommand } from "./bounded_process.js";
 import { npmPack } from "./npm_pack.js";
 
 interface Manifest {
@@ -32,8 +33,17 @@ interface McpMessage {
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const packageDirectory = process.argv[2];
+const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024;
+const COMMAND_TIMEOUT_MILLISECONDS = 120_000;
+const INSTALL_TIMEOUT_MILLISECONDS = 300_000;
+const MCP_PROBE_TIMEOUT_MILLISECONDS = 20_000;
+const RUNTIME_TIMEOUT_MILLISECONDS = 30_000;
 
 function fail(message: string): never {
+  throw new Error(message);
+}
+
+function failBeforeProject(message: string): never {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 }
@@ -49,31 +59,33 @@ function resolveBinary(name: string): string {
   }
 }
 
-async function run(command: readonly string[], cwd: string): Promise<string> {
-  const child = Bun.spawn([...command], {
+async function run(
+  command: readonly string[],
+  cwd: string,
+  timeoutMilliseconds: number,
+): Promise<string> {
+  const result = await runBoundedCommand(command, {
     cwd,
     env: { ...process.env, NPM_CONFIG_AUDIT: "false", NPM_CONFIG_FUND: "false" },
-    stderr: "pipe",
-    stdout: "pipe",
+    maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+    timeoutMilliseconds,
   });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if (exitCode !== 0) fail(`${command.join(" ")} exited ${String(exitCode)}\n${stdout}${stderr}`);
-  return stdout;
+  if (result.termination === "timed_out") {
+    fail(`${command.join(" ")} exceeded ${String(timeoutMilliseconds)}ms`);
+  }
+  if (result.termination === "output_limit_exceeded") {
+    fail(`${command.join(" ")} exceeded ${String(MAX_COMMAND_OUTPUT_BYTES)} output bytes`);
+  }
+  if (result.exitCode !== 0) {
+    fail(
+      `${command.join(" ")} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`,
+    );
+  }
+  return result.stdout;
 }
 
 async function probeMcpBinary(project: string, node: string): Promise<void> {
   const binary = join(project, "node_modules", ".bin", "libtmux-mcp");
-  const child = Bun.spawn([node, binary], {
-    cwd: project,
-    env: { ...process.env, LIBTMUX_SAFETY: "readonly", TMUX: "", TMUX_PANE: "" },
-    stderr: "pipe",
-    stdin: "pipe",
-    stdout: "pipe",
-  });
   const frames = [
     {
       id: 1,
@@ -88,36 +100,23 @@ async function probeMcpBinary(project: string, node: string): Promise<void> {
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { id: 2, jsonrpc: "2.0", method: "tools/list", params: {} },
   ];
-  void child.stdin.write(`${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`);
-  await child.stdin.flush();
-
-  let expired = false;
-  const deadline = setTimeout(() => {
-    expired = true;
-    child.kill("SIGTERM");
-  }, 20_000);
-  const hardDeadline = setTimeout(() => child.kill("SIGKILL"), 21_000);
-  deadline.unref?.();
-  hardDeadline.unref?.();
-  let output = "";
-  try {
-    const reader = child.stdout.getReader();
-    const decoder = new TextDecoder();
-    for (;;) {
-      // eslint-disable-next-line no-await-in-loop -- protocol frames arrive in order.
-      const { done, value } = await reader.read();
-      if (done) break;
-      output += decoder.decode(value, { stream: true });
-      if (output.split("\n").some((line) => line.includes('"id":2'))) break;
-    }
-  } finally {
-    clearTimeout(deadline);
-    child.kill("SIGTERM");
-    await child.exited;
-    clearTimeout(hardDeadline);
+  const result = await runBoundedCommand([node, binary], {
+    cwd: project,
+    env: { ...process.env, LIBTMUX_SAFETY: "readonly", TMUX: "", TMUX_PANE: "" },
+    maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+    stdin: `${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`,
+    timeoutMilliseconds: MCP_PROBE_TIMEOUT_MILLISECONDS,
+  });
+  if (result.termination === "timed_out") {
+    fail(`installed ${binary} exceeded its handshake deadline\n${result.stderr}`);
   }
-  const stderr = await new Response(child.stderr).text();
-  if (expired) fail(`installed ${binary} exceeded its handshake deadline\n${stderr}`);
+  if (result.termination === "output_limit_exceeded") {
+    fail(`installed ${binary} exceeded ${String(MAX_COMMAND_OUTPUT_BYTES)} output bytes`);
+  }
+  if (result.exitCode !== 0) {
+    fail(`installed ${binary} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`);
+  }
+  const { stderr, stdout: output } = result;
 
   const messages = output
     .split("\n")
@@ -208,11 +207,11 @@ function consumerFor(name: string): Consumer {
       ].join("\n"),
     };
   }
-  fail(`no installed-consumer probe exists for ${name}`);
+  failBeforeProject(`no installed-consumer probe exists for ${name}`);
 }
 
 if (packageDirectory === undefined) {
-  fail("usage: bun scripts/check-consumer-install.ts <package-directory>");
+  failBeforeProject("usage: bun scripts/check-consumer-install.ts <package-directory>");
 }
 const targetRoot = resolve(repositoryRoot, packageDirectory);
 const libraryRoot = join(repositoryRoot, "packages", "libtmux");
@@ -224,20 +223,20 @@ const libraryManifest = JSON.parse(
   await readFile(join(libraryRoot, "package.json"), "utf8"),
 ) as Manifest;
 if (targetManifest.version !== libraryManifest.version) {
-  fail(
+  failBeforeProject(
     `${targetManifest.name}@${targetManifest.version} does not match libtmux@${libraryManifest.version}`,
   );
 }
 const declaredLibraryVersion = targetManifest[consumer.dependencyField]?.libtmux;
 if (declaredLibraryVersion !== libraryManifest.version) {
-  fail(
+  failBeforeProject(
     `${targetManifest.name} must declare exact ${consumer.dependencyField}.libtmux ${libraryManifest.version}; found ${typeof declaredLibraryVersion === "string" ? JSON.stringify(declaredLibraryVersion) : "nothing"}`,
   );
 }
 const project = await mkdtemp(join(tmpdir(), "ltx-consumer-install-"));
 
 try {
-  await run(["bun", "run", "build"], libraryRoot);
+  await run(["bun", "run", "build"], libraryRoot, COMMAND_TIMEOUT_MILLISECONDS);
   const artifacts = join(project, "artifacts");
   const { tarballPath: libraryTarball } = await npmPack(libraryRoot, artifacts);
   const { tarballPath: targetTarball } = await npmPack(targetRoot, artifacts);
@@ -245,7 +244,11 @@ try {
     join(project, "package.json"),
     `${JSON.stringify({ name: "ltx-consumer-install", private: true, type: "module", version: "0.0.0" })}\n`,
   );
-  await run(["npm", "install", "--no-save", libraryTarball, targetTarball], project);
+  await run(
+    ["npm", "install", "--no-save", libraryTarball, targetTarball],
+    project,
+    INSTALL_TIMEOUT_MILLISECONDS,
+  );
   await writeFile(join(project, "consumer.ts"), consumer.types);
   await writeFile(
     join(project, "tsconfig.json"),
@@ -270,12 +273,16 @@ try {
       2,
     )}\n`,
   );
-  await run([resolveBinary("tsc"), "--project", "tsconfig.json"], project);
+  await run(
+    [resolveBinary("tsc"), "--project", "tsconfig.json"],
+    project,
+    COMMAND_TIMEOUT_MILLISECONDS,
+  );
   await writeFile(join(project, "node.mjs"), consumer.nodeProbe);
   await writeFile(join(project, "bun.mjs"), consumer.bunProbe);
   const node = await resolveNode22();
-  await run([node, "node.mjs"], project);
-  await run(["bun", "bun.mjs"], project);
+  await run([node, "node.mjs"], project, RUNTIME_TIMEOUT_MILLISECONDS);
+  await run(["bun", "bun.mjs"], project, RUNTIME_TIMEOUT_MILLISECONDS);
   if (targetManifest.name === "@libtmux/mcp") await probeMcpBinary(project, node);
   process.stdout.write(
     `${JSON.stringify({
@@ -284,6 +291,9 @@ try {
       status: "passed",
     })}\n`,
   );
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 } finally {
   await rm(project, { force: true, recursive: true });
 }

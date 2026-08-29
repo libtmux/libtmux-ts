@@ -3,6 +3,8 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 
 import { runBoundedCommand } from "./bounded_process.js";
 
+const MAX_NPM_PACK_OUTPUT_BYTES = 4 * 1024 * 1024;
+
 interface NpmPackFile {
   readonly path?: unknown;
 }
@@ -40,10 +42,18 @@ export async function npmPack(
     {
       cwd: packageRoot,
       env: { ...process.env, NPM_CONFIG_AUDIT: "false", NPM_CONFIG_FUND: "false" },
+      maxOutputBytes: MAX_NPM_PACK_OUTPUT_BYTES,
       timeoutMilliseconds: 60_000,
     },
   );
-  if (result.timedOut) throw new Error(`npm pack exceeded 60000ms in ${packageRoot}`);
+  if (result.termination === "timed_out") {
+    throw new Error(`npm pack exceeded 60000ms in ${packageRoot}`);
+  }
+  if (result.termination === "output_limit_exceeded") {
+    throw new Error(
+      `npm pack exceeded ${String(MAX_NPM_PACK_OUTPUT_BYTES)} output bytes in ${packageRoot}`,
+    );
+  }
   if (result.exitCode !== 0) {
     throw new Error(
       `npm pack exited ${String(result.exitCode)} in ${packageRoot}\n${result.stdout}${result.stderr}`,

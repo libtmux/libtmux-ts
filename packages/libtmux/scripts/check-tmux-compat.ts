@@ -15,6 +15,8 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { runBoundedCommand } from "../../../scripts/bounded_process.js";
+
 const GATES = ["test:integration", "test:node", "test:differential"] as const;
 
 interface Candidate {
@@ -23,9 +25,14 @@ interface Candidate {
 }
 
 async function version(executable: string): Promise<string | undefined> {
-  const child = Bun.spawn([executable, "-V"], { stderr: "pipe", stdout: "pipe" });
-  const [code, out] = await Promise.all([child.exited, new Response(child.stdout).text()]);
-  return code === 0 ? out.trim() : undefined;
+  const result = await runBoundedCommand([executable, "-V"], {
+    env: { ...process.env },
+    maxOutputBytes: 4 * 1024,
+    timeoutMilliseconds: 5_000,
+  }).catch(() => undefined);
+  return result?.termination === "exited" && result.exitCode === 0
+    ? result.stdout.trim()
+    : undefined;
 }
 
 async function candidates(): Promise<readonly Candidate[]> {

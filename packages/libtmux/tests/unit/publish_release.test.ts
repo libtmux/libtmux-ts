@@ -617,6 +617,33 @@ describe("coordinated release", () => {
     expect(await io.queryVersion("libtmux", "9.9.9")).toBeUndefined();
   });
 
+  test("fails closed on E404 from an abnormally terminated command", async () => {
+    const prefix = `process.stdout.write(JSON.stringify({ error: { code: "E404" } })); `;
+    await Promise.all(
+      (
+        [
+          [
+            'process.stderr.write("x".repeat(65)); await Bun.sleep(60_000);',
+            1_000,
+            64,
+            "64 output bytes",
+          ],
+          ["await Bun.sleep(60_000);", 20, 1_024, "20ms"],
+          ['process.kill(process.pid, "SIGKILL");', 1_000, 1_024, "SIGKILL"],
+        ] as const
+      ).map(async ([suffix, timeoutMilliseconds, maxOutputBytes, diagnostic]) => {
+        const runner = createNpmCommandRunner(
+          [process.execPath, "-e", `${prefix}${suffix}`],
+          timeoutMilliseconds,
+          maxOutputBytes,
+        );
+        const io = createReleaseIO(runner);
+
+        await expect(io.queryVersion("libtmux", "9.9.9")).rejects.toThrow(diagnostic);
+      }),
+    );
+  });
+
   test("fails closed on a package-level E404", async () => {
     const runner: NpmCommandRunner = async () => ({
       exitCode: 1,
@@ -692,6 +719,20 @@ describe("coordinated release", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toBe("npm command exceeded 20ms\n");
+  });
+
+  test("terminates an npm command that exceeds its output limit", async () => {
+    const runner = createNpmCommandRunner(
+      [process.execPath, "-e", 'process.stdout.write("x".repeat(65)); await Bun.sleep(60_000);'],
+      1_000,
+      64,
+    );
+
+    const result = await runner([]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout.length).toBeLessThanOrEqual(64);
+    expect(result.stderr).toContain("npm command exceeded 64 output bytes");
   });
 
   test.skipIf(process.platform === "win32")(

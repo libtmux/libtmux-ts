@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runBoundedCommand } from "./bounded_process.js";
+import { runBoundedCommand, type BoundedCommandTermination } from "./bounded_process.js";
 import { npmPack } from "./npm_pack.js";
 
 interface SemanticVersion {
@@ -55,33 +55,62 @@ export interface ReleaseReport {
   readonly version: string;
 }
 
-export interface NpmCommandResult {
+interface NpmCommandOutput {
   readonly exitCode: number;
   readonly stderr: string;
   readonly stdout: string;
 }
 
+export type NpmCommandResult =
+  | (NpmCommandOutput & { readonly signalCode?: undefined; readonly termination?: undefined })
+  | (NpmCommandOutput & {
+      readonly signalCode?: string;
+      readonly termination: Exclude<BoundedCommandTermination, "exited">;
+    });
+
 export type NpmCommandRunner = (arguments_: readonly string[]) => Promise<NpmCommandResult>;
+
+const DEFAULT_NPM_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 export function createNpmCommandRunner(
   command: readonly string[] = ["npm"],
   timeoutMilliseconds = 60_000,
+  maxOutputBytes = DEFAULT_NPM_MAX_OUTPUT_BYTES,
 ): NpmCommandRunner {
   if (command.length === 0) throw new Error("npm command cannot be empty");
   if (!Number.isSafeInteger(timeoutMilliseconds) || timeoutMilliseconds < 1) {
     throw new Error("npm command timeout must be a positive integer");
   }
+  if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1) {
+    throw new Error("npm command output limit must be a positive integer");
+  }
   return async (arguments_) => {
     const result = await runBoundedCommand([...command, ...arguments_], {
       env: { ...process.env, NPM_CONFIG_AUDIT: "false", NPM_CONFIG_FUND: "false" },
+      maxOutputBytes,
       timeoutMilliseconds,
     });
-    return {
-      exitCode: result.timedOut && result.exitCode === 0 ? 1 : result.exitCode,
-      stderr: result.timedOut
-        ? `${result.stderr}${result.stderr.endsWith("\n") || result.stderr === "" ? "" : "\n"}npm command exceeded ${String(timeoutMilliseconds)}ms\n`
-        : result.stderr,
+    const diagnostic =
+      result.termination === "timed_out"
+        ? `npm command exceeded ${String(timeoutMilliseconds)}ms\n`
+        : result.termination === "output_limit_exceeded"
+          ? `npm command exceeded ${String(maxOutputBytes)} output bytes\n`
+          : result.termination === "signaled"
+            ? `npm command terminated by ${result.signalCode ?? "an unknown signal"}\n`
+            : "";
+    const output: NpmCommandOutput = {
+      exitCode: result.termination !== "exited" && result.exitCode === 0 ? 1 : result.exitCode,
+      stderr:
+        diagnostic === ""
+          ? result.stderr
+          : `${result.stderr}${result.stderr.endsWith("\n") || result.stderr === "" ? "" : "\n"}${diagnostic}`,
       stdout: result.stdout,
+    };
+    if (result.termination === "exited") return output;
+    return {
+      ...output,
+      ...(result.signalCode === null ? {} : { signalCode: result.signalCode }),
+      termination: result.termination,
     };
   };
 }
@@ -290,6 +319,7 @@ export function selectDistTag(
 }
 
 function npmErrorCode(result: NpmCommandResult): string | undefined {
+  if (result.termination !== undefined || result.signalCode !== undefined) return undefined;
   for (const source of [result.stderr, result.stdout]) {
     try {
       const document = JSON.parse(source) as { readonly error?: { readonly code?: unknown } };

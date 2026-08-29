@@ -2,6 +2,8 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
+import { runBoundedCommand, type BoundedCommandResult } from "../../../scripts/bounded_process.js";
+
 /**
  * Point every installed agent CLI at one build of this MCP server.
  *
@@ -46,6 +48,8 @@ export interface ServerSpec {
   readonly command: string;
   readonly env: Readonly<Record<string, string>>;
 }
+
+const MAX_PREFLIGHT_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 /**
  * `$XDG_CONFIG_HOME` when absolute, else `<home>/.config`.
@@ -642,35 +646,35 @@ export async function preflight(spec: ServerSpec, timeoutMs = 60_000): Promise<s
         },
       }),
     ].join("\n") + "\n";
-  let child;
+  let result: BoundedCommandResult;
   try {
-    child = Bun.spawn([spec.command, ...spec.args], {
+    result = await runBoundedCommand([spec.command, ...spec.args], {
       env: { ...process.env, ...spec.env },
-      stdin: new TextEncoder().encode(frames),
-      stderr: "pipe",
-      stdout: "pipe",
+      maxOutputBytes: MAX_PREFLIGHT_OUTPUT_BYTES,
+      stdin: frames,
+      timeoutMilliseconds: timeoutMs,
     });
   } catch (error) {
     return `could not start ${spec.command}: ${(error as Error).message}`;
   }
-  const timer = setTimeout(() => child.kill(), timeoutMs);
-  try {
-    const text = await new Response(child.stdout).text();
-    for (const line of text.split("\n")) {
-      if (line.trim() === "") continue;
-      try {
-        const message = JSON.parse(line) as { id?: number; result?: { serverInfo?: unknown } };
-        if (message.id === 1 && message.result !== undefined) return undefined;
-      } catch {
-        continue;
-      }
-    }
-    const stderr = (await new Response(child.stderr).text()).trim();
-    return `no initialize reply${stderr === "" ? "" : `: ${stderr.split("\n")[0]!}`}`;
-  } finally {
-    clearTimeout(timer);
-    child.kill();
+  if (result.termination === "timed_out") return `initialize exceeded ${String(timeoutMs)}ms`;
+  if (result.termination === "output_limit_exceeded") {
+    return `initialize exceeded ${String(MAX_PREFLIGHT_OUTPUT_BYTES)} output bytes`;
   }
+  if (result.termination === "signaled") {
+    return `server terminated by ${result.signalCode ?? "an unknown signal"}`;
+  }
+  for (const line of result.stdout.split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      const message = JSON.parse(line) as { id?: number; result?: { serverInfo?: unknown } };
+      if (message.id === 1 && message.result !== undefined) return undefined;
+    } catch {
+      continue;
+    }
+  }
+  const stderr = result.stderr.trim();
+  return `no initialize reply${stderr === "" ? "" : `: ${stderr.split("\n")[0]!}`}`;
 }
 
 interface Options {

@@ -11,10 +11,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 import { npmPack } from "../../../scripts/npm_pack.js";
 import { declarationClosureErrors, packageDeclarationExports } from "./declaration-closure.js";
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
+const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 /** Paths that must never reach a consumer, with the reason each is excluded. */
 const forbiddenEntries: readonly (readonly [prefix: string, reason: string])[] = [
@@ -49,14 +51,24 @@ function resolveBinary(name: string): string {
 }
 
 async function run(command: readonly string[]): Promise<string> {
-  const child = Bun.spawn([...command], { cwd: tsRoot, stderr: "pipe", stdout: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if (exitCode !== 0) fail(`${command.join(" ")} exited ${exitCode}\n${stdout}${stderr}`);
-  return stdout;
+  const result = await runBoundedCommand(command, {
+    cwd: tsRoot,
+    env: { ...process.env },
+    maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+    timeoutMilliseconds: 60_000,
+  });
+  if (result.termination === "timed_out") {
+    fail(`${command[0] ?? "command"} exceeded 60000ms`);
+  }
+  if (result.termination === "output_limit_exceeded") {
+    fail(`${command[0] ?? "command"} exceeded ${String(MAX_COMMAND_OUTPUT_BYTES)} output bytes`);
+  }
+  if (result.exitCode !== 0) {
+    fail(
+      `${command.join(" ")} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`,
+    );
+  }
+  return result.stdout;
 }
 
 async function runtimeImportCycles(entries: readonly string[]): Promise<readonly string[][]> {

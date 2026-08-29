@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 import { npmPack } from "../../../scripts/npm_pack.js";
 import { resolveNode22 } from "../src/_internal/test/node22.js";
 
@@ -20,10 +21,12 @@ import { resolveNode22 } from "../src/_internal/test/node22.js";
  */
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
+const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024;
+const COMMAND_TIMEOUT_MILLISECONDS = 120_000;
+const RUNTIME_TIMEOUT_MILLISECONDS = 30_000;
 
 function fail(message: string): never {
-  process.stderr.write(`${message}\n`);
-  process.exit(1);
+  throw new Error(message);
 }
 
 function resolveBinary(name: string): string {
@@ -40,34 +43,37 @@ function resolveBinary(name: string): string {
 async function run(
   command: readonly string[],
   cwd: string,
+  timeoutMilliseconds: number,
 ): Promise<{ stderr: string; stdout: string }> {
-  const child = Bun.spawn([...command], {
+  const result = await runBoundedCommand(command, {
     cwd,
     // The package has no runtime dependencies, so this install is offline.
     env: { ...process.env, NPM_CONFIG_AUDIT: "false", NPM_CONFIG_FUND: "false" },
-    stderr: "pipe",
-    stdout: "pipe",
+    maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
+    timeoutMilliseconds,
   });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if (exitCode !== 0) {
-    fail(`${command.join(" ")} exited ${String(exitCode)}\n${stdout}${stderr}`);
+  if (result.termination === "timed_out") {
+    fail(`${command.join(" ")} exceeded ${String(timeoutMilliseconds)}ms`);
   }
-  return { stderr, stdout };
+  if (result.termination === "output_limit_exceeded") {
+    fail(`${command.join(" ")} exceeded ${String(MAX_COMMAND_OUTPUT_BYTES)} output bytes`);
+  }
+  if (result.exitCode !== 0) {
+    fail(
+      `${command.join(" ")} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`,
+    );
+  }
+  return { stderr: result.stderr, stdout: result.stdout };
 }
 
 const manifest = JSON.parse(await readFile(join(tsRoot, "package.json"), "utf8")) as {
   name: string;
   version: string;
 };
+const node = await resolveNode22();
 
 // `ltx` so a sweep can tell this apart from another libtmux port's leavings.
 const project = await mkdtemp(join(tmpdir(), "ltx-install-"));
-const node = await resolveNode22();
-
 try {
   const { tarballPath: tarball } = await npmPack(tsRoot, join(project, "artifacts"));
 
@@ -75,7 +81,7 @@ try {
     join(project, "package.json"),
     `${JSON.stringify({ name: "ltx-install-canary", private: true, type: "module", version: "0.0.0" }, null, 2)}\n`,
   );
-  await run(["npm", "install", "--no-save", tarball], project);
+  await run(["npm", "install", "--no-save", tarball], project, COMMAND_TIMEOUT_MILLISECONDS);
 
   await writeFile(
     join(project, "declarations.ts"),
@@ -117,7 +123,11 @@ try {
       2,
     )}\n`,
   );
-  await run([resolveBinary("tsc"), "--project", "tsconfig.json"], project);
+  await run(
+    [resolveBinary("tsc"), "--project", "tsconfig.json"],
+    project,
+    COMMAND_TIMEOUT_MILLISECONDS,
+  );
 
   // Resolving proves `exports` and `dist` agree; calling proves the modules
   // evaluate, which a missing internal file fails at rather than at import.
@@ -146,8 +156,8 @@ try {
       "",
     ].join("\n"),
   );
-  const nodeResult = await run([node, probe], project);
-  const bunResult = await run([process.execPath, probe], project);
+  const nodeResult = await run([node, probe], project, RUNTIME_TIMEOUT_MILLISECONDS);
+  const bunResult = await run([process.execPath, probe], project, RUNTIME_TIMEOUT_MILLISECONDS);
   for (const [runtime, stdout] of [
     ["Node 22", nodeResult.stdout],
     [`Bun ${Bun.version}`, bunResult.stdout],
@@ -166,6 +176,9 @@ try {
       status: "passed",
     })}\n`,
   );
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 } finally {
   await rm(project, { force: true, recursive: true });
 }
