@@ -12,6 +12,30 @@ import { makeTestDirectory } from "./temp_root.js";
 
 export const RUN_ROOT_ENV = "LIBTMUX_TEST_RUN_ROOT";
 
+export const TEST_PARALLEL_ENV = "LIBTMUX_TEST_PARALLEL";
+
+/**
+ * How many test files Bun may run at once.
+ *
+ * Every suite here starts real tmux servers, so the bound is a machine's
+ * capacity rather than Bun's default of one file per core. Four is what a
+ * laptop sustains while the rest of it stays usable; `LIBTMUX_TEST_PARALLEL`
+ * lowers it for a machine with less to spare.
+ */
+export function testParallelism(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const raw = environment[TEST_PARALLEL_ENV] ?? "4";
+  if (!/^[1-9]\d*$/u.test(raw)) {
+    throw new Error(`${TEST_PARALLEL_ENV} must be a positive integer`);
+  }
+  const parallelism = Number(raw);
+  if (!Number.isSafeInteger(parallelism)) {
+    throw new Error(`${TEST_PARALLEL_ENV} must be a positive integer`);
+  }
+  return parallelism;
+}
+
 export interface SupervisorOptions {
   readonly command: readonly [string, ...string[]];
   /** Where the supervised command runs. Defaults to this process's directory. */

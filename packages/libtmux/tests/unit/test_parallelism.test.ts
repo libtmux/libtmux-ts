@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { testParallelism } from "../../scripts/preflight.js";
+import { testParallelism } from "../../src/_internal/test/testkit.js";
 
 describe("test runner parallelism", () => {
   test("defaults to four and accepts a constrained-machine override", () => {

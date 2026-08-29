@@ -1,4 +1,6 @@
-import { NODE22, preflight, testParallelism } from "./preflight.js";
+import { testParallelism } from "../src/_internal/test/testkit.js";
+
+import { NODE22, preflight } from "./preflight.js";
 
 await preflight([NODE22]);
 

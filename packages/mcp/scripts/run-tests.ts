@@ -10,7 +10,11 @@
  * that quietly stops being one, and this is the only test covering a refusal
  * `force` deliberately cannot override.
  */
-import { runSupervisor, sweepStaleRunRoots } from "../../libtmux/src/_internal/test/testkit.js";
+import {
+  runSupervisor,
+  sweepStaleRunRoots,
+  testParallelism,
+} from "../../libtmux/src/_internal/test/testkit.js";
 
 const NON_POSIX_SHELL = "fish";
 
@@ -40,6 +44,12 @@ const forwarded = Bun.argv.slice(2);
 const selectsFiles = forwarded[0] !== undefined && !forwarded[0].startsWith("-");
 
 process.exitCode = await runSupervisor({
-  command: ["bun", "test", "--no-orphans", ...(selectsFiles ? forwarded : ["tests", ...forwarded])],
+  command: [
+    "bun",
+    "test",
+    `--parallel=${String(testParallelism())}`,
+    "--no-orphans",
+    ...(selectsFiles ? forwarded : ["tests", ...forwarded]),
+  ],
   cwd: new URL("..", import.meta.url).pathname,
 });

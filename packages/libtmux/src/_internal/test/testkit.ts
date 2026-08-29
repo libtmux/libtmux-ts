@@ -61,7 +61,13 @@ export {
   validateSocketPath,
 } from "./records.js";
 export type { FixtureRecord, LaunchGeneration, SocketIdentity } from "./records.js";
-export { RUN_ROOT_ENV, runSupervisor, withOwnedRunRoot } from "./supervisor.js";
+export {
+  RUN_ROOT_ENV,
+  runSupervisor,
+  TEST_PARALLEL_ENV,
+  testParallelism,
+  withOwnedRunRoot,
+} from "./supervisor.js";
 export type { SupervisorOptions } from "./supervisor.js";
 export { assertOwnedSocketPath, makeTestDirectory } from "./temp_root.js";
 export { TestServer } from "./test_server.js";
