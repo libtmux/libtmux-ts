@@ -5,7 +5,13 @@ import type { Readable } from "node:stream";
 
 import type { DeliveryStatus } from "../../common.js";
 import type { CommandRequest, RawCommandResult } from "./types.js";
-import { flattenInvocation, MAX_PACKED_ARGV_BYTES, packedCommandBytes } from "./invocation.js";
+import {
+  flattenInvocation,
+  MAX_PACKED_ARGV_BYTES,
+  MAX_PACKED_ARGV_COUNT,
+  packedCommandBytes,
+  packedCommandCount,
+} from "./invocation.js";
 import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
 import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestarted } from "../../exc.js";
@@ -95,6 +101,13 @@ export class NodeSpawnTransport {
     }
     const stdin = submitted.stdin;
     const args = flattenInvocation(submitted);
+    const count = packedCommandCount(submitted);
+    if (count > MAX_PACKED_ARGV_COUNT) {
+      throw new TmuxTransportError(
+        `a tmux command of ${String(count)} arguments exceeds the ${String(MAX_PACKED_ARGV_COUNT)} argument limit`,
+        { delivery: "not_started", kind: "protocol" },
+      );
+    }
     const packed = packedCommandBytes(submitted);
     if (packed > MAX_PACKED_ARGV_BYTES) {
       throw new TmuxTransportError(

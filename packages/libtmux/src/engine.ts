@@ -26,6 +26,7 @@ import { guardRequest as guardRequestInternal } from "./_internal/transport/daem
 import {
   flattenInvocation as flattenInvocationInternal,
   MAX_PACKED_ARGV_BYTES as MAX_PACKED_ARGV_BYTES_INTERNAL,
+  MAX_PACKED_ARGV_COUNT as MAX_PACKED_ARGV_COUNT_INTERNAL,
 } from "./_internal/transport/invocation.js";
 import type { AbortLike } from "./types.js";
 
@@ -158,6 +159,15 @@ export type TmuxEngine = {
  * different wire protocol must enforce that protocol's own bound.
  */
 export const MAX_PACKED_ARGV_BYTES: 16_364 = MAX_PACKED_ARGV_BYTES_INTERNAL;
+
+/**
+ * How many arguments of one command a tmux client may hand the server.
+ *
+ * The other half of the same refusal, and reachable well inside the byte
+ * bound: a thousand short arguments are a few kilobytes. tmux parses 1000 and
+ * refuses 1001.
+ */
+export const MAX_PACKED_ARGV_COUNT: 1000 = MAX_PACKED_ARGV_COUNT_INTERNAL;
 
 /** Flatten a validated request into the argv accepted by tmux. */
 export const flattenInvocation: (request: TmuxInvocationRequest) => readonly string[] =

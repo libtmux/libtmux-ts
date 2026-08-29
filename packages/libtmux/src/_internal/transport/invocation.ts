@@ -15,6 +15,15 @@ import { TmuxTransportError } from "../../exc.js";
  */
 export const MAX_PACKED_ARGV_BYTES = 16_364;
 
+/**
+ * The most arguments tmux will pack into one client message.
+ *
+ * A separate bound from the byte one, and reachable well inside it: 999
+ * arguments spelling short commands are about 6KB. Measured — tmux parses 1000
+ * packed arguments and refuses 1001 as `command too long`.
+ */
+export const MAX_PACKED_ARGV_COUNT = 1000;
+
 /** What tmux counts: every argument plus its terminating NUL. */
 function packedArgvBytes(argv: readonly string[]): number {
   let total = 0;
@@ -94,4 +103,9 @@ function flattenCommands(commands: TmuxInvocationRequest["commands"]): string[] 
 /** What one invocation costs against {@link MAX_PACKED_ARGV_BYTES}. */
 export function packedCommandBytes(request: TmuxInvocationRequest): number {
   return packedArgvBytes(flattenCommands(request.commands));
+}
+
+/** What one invocation costs against {@link MAX_PACKED_ARGV_COUNT}. */
+export function packedCommandCount(request: TmuxInvocationRequest): number {
+  return flattenCommands(request.commands).length;
 }

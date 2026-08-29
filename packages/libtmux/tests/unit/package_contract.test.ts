@@ -522,6 +522,7 @@ import {
 } from "libtmux";
 import {
   MAX_PACKED_ARGV_BYTES,
+  MAX_PACKED_ARGV_COUNT,
   type TmuxEngine,
   type TmuxInvocationRequest,
 } from "libtmux/engine";
@@ -546,6 +547,7 @@ declare const abortLike: AbortLike;
 declare const paneIdentityRow: RowWithIdentities<"pane_id">;
 declare const decodedPaneId: DecodedFormatValue<"pane_id">;
 const exactPackedArgvLimit: 16364 = MAX_PACKED_ARGV_BYTES;
+const exactPackedArgvCount: 1000 = MAX_PACKED_ARGV_COUNT;
 const daemonIdentityFromServer: ServerDaemonIdentity = daemonIdentity;
 const paneIdFromRequiredRow: PaneId = paneIdentityRow.pane_id;
 const paneIdFromDecoder: PaneId = decodedPaneId;
@@ -568,6 +570,7 @@ void [
   engine.execute(request),
   abortLike.aborted,
   exactPackedArgvLimit,
+  exactPackedArgvCount,
   daemonIdentityFromServer,
   paneIdFromRequiredRow,
   paneIdFromDecoder,

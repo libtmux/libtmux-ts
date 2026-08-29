@@ -7,7 +7,9 @@ import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import {
   MAX_PACKED_ARGV_BYTES,
+  MAX_PACKED_ARGV_COUNT,
   packedCommandBytes,
+  packedCommandCount,
 } from "../../src/_internal/transport/invocation.js";
 import { SUPPORTED_TMUX_VERSIONS } from "../support/tmux_matrix.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
@@ -86,5 +88,20 @@ describe("acquisition argv budget", () => {
     // Measured against real servers: a packed command of 16364 bytes is
     // accepted by 3.2a and 3.7c alike, and 16365 fails.
     expect(MAX_PACKED_ARGV_BYTES).toBe(16_364);
+  });
+
+  test("counts arguments too, because tmux refuses on either bound", () => {
+    const connection = new TmuxConnection({
+      executable: "/usr/bin/tmux",
+      socketPath: "/tmp/ltx-a/s",
+    });
+    // 250 commands of three arguments, plus the 249 separators between them.
+    const many = Array.from({ length: 250 }, () => ["display-message", "-p", "x"]);
+    const request = prepareInvocationRequest(connection, many);
+    expect(packedCommandCount(request)).toBe(999);
+    // Measured: tmux parses 1000 packed arguments and refuses 1001 as
+    // `command too long`, whatever the byte size — 999 of these are 6KB.
+    expect(MAX_PACKED_ARGV_COUNT).toBe(1000);
+    expect(packedCommandBytes(request)).toBeLessThan(MAX_PACKED_ARGV_BYTES);
   });
 });
