@@ -167,7 +167,12 @@ export async function withOwnedRunRoot<T>(
     return await runWithCleanup(
       () => body(runRoot),
       async () => {
-        await reapOwnedRunRoot(runRoot);
+        // A reap that reports leaks has not cleaned up, whatever its status
+        // says. Treating it as success removed the directory holding the only
+        // evidence of what leaked, which is what the supervisor refuses to do
+        // for the root it owns.
+        const report = await reapOwnedRunRoot(runRoot);
+        if (report.leaks.length > 0) throw new Error(report.leaks.join("; "));
         reaped = true;
       },
     );
