@@ -1,6 +1,7 @@
 /** Split a byte stream into the lines tmux's control protocol is written in. */
 
 const NEWLINE = 0x0a;
+const PAGE_BYTES = 64 * 1024;
 
 /**
  * Bound on an unterminated line.
@@ -11,7 +12,41 @@ const NEWLINE = 0x0a;
 export const MAX_CARRY_BYTES: number = 16 * 1024 * 1024;
 
 export class LineFramer {
-  #carry = new Uint8Array(0);
+  readonly #pages: Uint8Array[] = [];
+  #length = 0;
+
+  #append(bytes: Uint8Array): boolean {
+    const length = this.#length + bytes.length;
+    if (length > MAX_CARRY_BYTES) {
+      this.reset();
+      return false;
+    }
+    let source = 0;
+    while (source < bytes.length) {
+      const pageOffset = this.#length % PAGE_BYTES;
+      if (pageOffset === 0) this.#pages.push(new Uint8Array(PAGE_BYTES));
+      const page = this.#pages.at(-1)!;
+      const copied = Math.min(page.length - pageOffset, bytes.length - source);
+      page.set(bytes.subarray(source, source + copied), pageOffset);
+      this.#length += copied;
+      source += copied;
+    }
+    return true;
+  }
+
+  #finish(bytes: Uint8Array): Uint8Array {
+    if (this.#length === 0) return bytes.slice();
+    const line = new Uint8Array(this.#length + bytes.length);
+    let offset = 0;
+    for (const page of this.#pages) {
+      const copied = Math.min(page.length, this.#length - offset);
+      line.set(page.subarray(0, copied), offset);
+      offset += copied;
+    }
+    line.set(bytes, offset);
+    this.reset();
+    return line;
+  }
 
   /**
    * The complete lines this chunk finished, in order.
@@ -20,34 +55,25 @@ export class LineFramer {
    * outgrew {@link MAX_CARRY_BYTES}; it is discarded rather than retained.
    */
   push(chunk: Uint8Array): readonly Uint8Array[] | undefined {
-    const merged = new Uint8Array(this.#carry.length + chunk.length);
-    merged.set(this.#carry);
-    merged.set(chunk, this.#carry.length);
-
     const lines: Uint8Array[] = [];
     let start = 0;
     for (;;) {
-      const newline = merged.indexOf(NEWLINE, start);
+      const newline = chunk.indexOf(NEWLINE, start);
       if (newline === -1) break;
-      lines.push(merged.subarray(start, newline));
+      lines.push(this.#finish(chunk.subarray(start, newline)));
       start = newline + 1;
     }
-
-    this.#carry = merged.subarray(start);
-    if (this.#carry.length > MAX_CARRY_BYTES) {
-      this.#carry = new Uint8Array(0);
-      return undefined;
-    }
-    return lines;
+    return this.#append(chunk.subarray(start)) ? lines : undefined;
   }
 
   /** Bytes held back for the next chunk. Zero between lines. */
   get pending(): number {
-    return this.#carry.length;
+    return this.#length;
   }
 
   /** Forget a partial line. A reconnect is a different process mid-sentence. */
   reset(): void {
-    this.#carry = new Uint8Array(0);
+    this.#pages.length = 0;
+    this.#length = 0;
   }
 }
