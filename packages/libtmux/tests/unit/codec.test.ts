@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 
 import {
+  executeGuardedList,
   executeGuardedListGroup,
   FormatProtocolError,
   GuardCodec,
@@ -10,6 +11,7 @@ import {
 } from "../../src/_internal/codec/guard_codec.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxException } from "../../src/exc.js";
 
@@ -77,6 +79,36 @@ function replaceMarkerWithBytes(
 }
 
 describe("guarded format codec", () => {
+  test("refuses execution when the codec capability fingerprint changes", async () => {
+    const capabilities = ["before", "after"].map((fingerprint) =>
+      Object.freeze({
+        fingerprint,
+        rawVersion: "3.7b",
+        tmuxVersion: parseTmuxVersion("3.7b"),
+      }),
+    );
+    let bindings = 0;
+    let executions = 0;
+
+    await expect(
+      executeGuardedList({
+        capabilities: {
+          bind: () => Promise.resolve(capabilities[bindings++]!),
+        },
+        connection: new TmuxConnection({ executable: "tmux" }),
+        listCommand: "list-clients",
+        transport: {
+          execute() {
+            executions += 1;
+            throw new Error("transport must not execute");
+          },
+        },
+      }),
+    ).rejects.toThrow("capability fingerprint changed before execution");
+    expect(bindings).toBe(2);
+    expect(executions).toBe(0);
+  });
+
   test("does not invent a failing subcommand for one aggregate result", async () => {
     const capabilities = deriveTmuxCapabilities({
       connectionAlias: "codec-test" as ConnectionAlias,

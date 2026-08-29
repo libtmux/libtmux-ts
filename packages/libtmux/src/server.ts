@@ -65,7 +65,6 @@ import {
 import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
 import {
   createRuntimeContext,
-  invalidateRuntimeEpoch,
   createServerWithRuntime,
   lastObservedDaemon,
   registerServerRuntime,
@@ -76,6 +75,7 @@ import {
 import { TmuxConnection } from "./_internal/runtime/connection.js";
 
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
+import { observerBoundTransport } from "./_internal/control/observer_transport.js";
 import { waitForSnapshot } from "./_internal/control/wait_for.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
@@ -470,25 +470,17 @@ export class Server {
         { cause: error },
       );
     }
-    const connectedCommands: CommandTransport = {
-      ...(commands.endpoint === undefined ? {} : { endpoint: commands.endpoint }),
-      execute(request) {
-        connection.assertAvailable();
-        return commands.execute(request);
-      },
-    };
+    const connectedCommands: CommandTransport = observerBoundTransport({
+      commands,
+      connection: runtime.connection,
+      observer: connection,
+    });
     const boundRuntime = createRuntimeContext({
       connection: runtime.connection,
       connectionAlias: randomUUID() as ConnectionAlias,
       daemonEpoch: 0 as DaemonEpoch,
       ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
       transport: connectedCommands,
-    });
-    // A control client proves which daemon it is talking to for as long as it
-    // stays up. When it does not, every handle read through it is from a daemon
-    // this connection can no longer vouch for.
-    connection.onDaemonLost(() => {
-      invalidateRuntimeEpoch(boundRuntime);
     });
     const bound = createServerWithRuntime(boundRuntime) as ConnectedServer;
 

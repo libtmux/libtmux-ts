@@ -961,8 +961,8 @@ describe("Server.watch", () => {
         (await live.snapshot()).sessions.count(),
       );
       expect(counted).toBeGreaterThan(0);
-      // One version probe and one four-command acquisition cross the engine.
-      expect(transport.spawned - before).toBe(2);
+      // One observer authentication, one version probe, and one acquisition.
+      expect(transport.spawned - before).toBe(3);
 
       let captured: unknown;
       await server
@@ -995,7 +995,8 @@ describe("Server.watch", () => {
           ["display-message", "-p", "three"],
         ]);
 
-        expect(transport.spawned - before).toBe(3);
+        // Authentication is shared; each user command keeps its own process.
+        expect(transport.spawned - before).toBe(4);
       } finally {
         await live.close();
       }

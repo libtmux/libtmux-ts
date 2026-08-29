@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { LibTmuxException, TmuxObjectDoesNotExist } from "../../exc.js";
+import type { AbortLike } from "../../types.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand, type OutputFormatField } from "./format_types.js";
 import { prepareCommandRequest, prepareInvocationRequest } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
-import type { CapabilityBinding, TmuxCapabilities } from "../runtime/capabilities.js";
 import type { TmuxVersion } from "../runtime/tmux_version.js";
 import {
   TmuxTransportError,
@@ -40,9 +40,21 @@ export interface GuardedFormatRequest {
 }
 
 export interface GuardCodecOptions {
-  readonly capabilities: TmuxCapabilities;
+  readonly capabilities: GuardCodecCapabilities;
   readonly guardFactory?: GuardFactory;
   readonly listCommand: ListCommand;
+}
+
+/** Capability evidence the format codec actually consumes. */
+export interface GuardCodecCapabilities {
+  readonly fingerprint: string;
+  readonly rawVersion: string;
+  readonly tmuxVersion: TmuxVersion;
+}
+
+/** A binding that detects codec capability changes before execution. */
+export interface GuardCodecCapabilityBinding {
+  bind(): Promise<GuardCodecCapabilities>;
 }
 
 export class FormatProtocolError extends LibTmuxException {}
@@ -338,7 +350,7 @@ function transportFailure(
 }
 
 export class GuardCodec {
-  readonly #capabilities: TmuxCapabilities;
+  readonly #capabilities: GuardCodecCapabilities;
   readonly #guardFactory: GuardFactory;
   readonly #listCommand: ListCommand;
   readonly #requests = new WeakSet<GuardedFormatRequest>();
@@ -398,9 +410,10 @@ export class GuardCodec {
 }
 
 interface GuardedExecutionOptions {
-  readonly capabilities: CapabilityBinding;
+  readonly capabilities: GuardCodecCapabilityBinding;
   readonly connection: TmuxConnection;
   readonly listExtraArgs?: readonly string[];
+  readonly signal?: AbortLike;
   /** Deadline for the listing, so acquisition is bounded like any command. */
   readonly timeoutMs?: number;
   readonly transport: CommandTransport;
@@ -492,7 +505,10 @@ export async function executeGuardedList(
   const commandRequest = prepareCommandRequest(
     options.connection,
     [options.listCommand, ...listExtraArgs, `-F${guardedRequest.format}`],
-    options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+    {
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    },
   );
   const currentCapabilities = await options.capabilities.bind();
   if (currentCapabilities.fingerprint !== guardedRequest.capabilityFingerprint) {
@@ -551,7 +567,10 @@ export async function executeGuardedListGroup(
       prepareInvocationRequest(
         options.connection,
         prepared.map(({ command }) => command),
-        options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+        {
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+          ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        },
       ),
     );
   } catch (error) {

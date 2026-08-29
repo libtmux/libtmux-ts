@@ -54,6 +54,11 @@ interface ControlConnectionOptions extends ConnectionOptions {
 
 type ControlChildSpawner = () => ControlChild;
 
+/** One successfully attached control client generation. */
+export interface ControlObserverBinding {
+  readonly clientPid: number;
+}
+
 /**
  * One `tmux -C` process carrying notifications and daemon-lifetime evidence.
  * Commands use process boundaries because control mode cannot frame arbitrary
@@ -121,6 +126,7 @@ export class ControlConnection {
   readonly #paused = new Set<PaneId>();
   /** Which reconnect attempt is in flight, so `reconnected` can name it once tmux answers. */
   #reconnectingAttempt: number | undefined;
+  #observerBinding: ControlObserverBinding | undefined;
 
   /**
    * @param streamEndsConnection
@@ -133,17 +139,6 @@ export class ControlConnection {
    * Commands that target this observer, such as pause and resume requests.
    */
   readonly #observerCommands: CommandTransport | undefined;
-
-  /**
-   * Told when this connection stops being proof of one daemon.
-   *
-   * A control client is attached to a daemon for its lifetime, so it never needs
-   * the inline guard a spawned command carries — but a reconnect attaches to
-   * whatever is on the socket now, which may be a successor that reissued every
-   * id. Announcing the drop is what lets the runtime retire the handles the old
-   * daemon handed out.
-   */
-  #onDaemonLost: (() => void) | undefined;
 
   constructor(
     connection: TmuxConnection,
@@ -424,9 +419,14 @@ export class ControlConnection {
       return;
     }
     if (this.#children.active() !== child || this.#closed) return;
+    if (child.pid === undefined) {
+      this.#fail(new Error("tmux control client has no process id"));
+      return;
+    }
 
     // A reconnect is usable only after tmux accepts the attach and restores
     // the observer's flow-control flag on the replacement client.
+    this.#observerBinding = Object.freeze({ clientPid: child.pid });
     this.#attachOutcome ??= { kind: "attached" };
     this.#attached?.resolve();
     this.#reopening = false;
@@ -479,10 +479,7 @@ export class ControlConnection {
 
   #fail(raw: Error | undefined): void {
     const failure = raw === undefined ? undefined : transportFailure(raw);
-    // Before deciding whether to reconnect: either way this connection is no
-    // longer evidence that the daemon its ids came from is the one answering.
-    // A deliberate close is not that — the runtime is going away with it.
-    if (!this.#closed && !this.#reopening) this.#onDaemonLost?.();
+    this.#observerBinding = undefined;
     this.#children.retire();
     if (this.#tryReconnect()) {
       this.#reopening = true;
@@ -581,12 +578,8 @@ export class ControlConnection {
       );
   }
 
-  onDaemonLost(notify: () => void): void {
-    this.#onDaemonLost = notify;
-  }
-
   /** Refuse work while this observer cannot vouch for its connected server. */
-  assertAvailable(): void {
+  #assertAvailable(): void {
     if (this.#closed) {
       throw new TmuxTransportError("tmux control connection is closed", {
         delivery: "not_started",
@@ -599,6 +592,18 @@ export class ControlConnection {
         kind: "pipe",
       });
     }
+  }
+
+  /** The attached control client a spawned command must see on its daemon. */
+  observerBinding(): ControlObserverBinding {
+    this.#assertAvailable();
+    if (this.#observerBinding === undefined) {
+      throw new TmuxTransportError("tmux control connection is not attached", {
+        delivery: "not_started",
+        kind: "pipe",
+      });
+    }
+    return this.#observerBinding;
   }
 
   #releaseAbort(): void {
