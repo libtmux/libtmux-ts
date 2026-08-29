@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readdir, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
+import { deadlineMs, FIXTURE_PROBE_DEADLINE_MS } from "./deadlines.js";
 import { tmuxCommand } from "../transport/invocation.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import {
@@ -325,7 +326,7 @@ export async function validateGenerationAuthority(
     environment,
     executable: record.controller.executablePath,
     globalArgs,
-    timeoutMs: 1_000,
+    timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
   if (result.returncode !== 0) throw new Error("fixture generation validation request failed");

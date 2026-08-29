@@ -1,4 +1,9 @@
-import { deadlineMs, READINESS_DEADLINE_MS, READINESS_POLL_INTERVAL_MS } from "./deadlines.js";
+import {
+  FIXTURE_BOOTSTRAP_DEADLINE_MS,
+  READINESS_DEADLINE_MS,
+  READINESS_POLL_INTERVAL_MS,
+  deadlineMs,
+} from "./deadlines.js";
 import { randomUUID } from "node:crypto";
 
 import { adaptRawResult } from "../operations/request.js";
@@ -291,7 +296,7 @@ export class TestServer {
     const executeController = async (
       args: readonly string[],
       purpose: "ordinary" | "readiness",
-      timeoutMs = 3_000,
+      timeoutMs = deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
     ): Promise<RawCommandResult> => {
       const request = observeRequest(entry.requestObserver, {
         args: ["-N", "-S", record.socketPath, ...args],
@@ -338,7 +343,7 @@ export class TestServer {
           environment: bootstrapRequest.environment,
           executable: bootstrapRequest.executable,
           globalArgs: bootstrapGlobalArgs,
-          timeoutMs: 3_000,
+          timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
         });
       } catch (error) {
         if (error instanceof TmuxTransportError && error.delivery === "not_started") {
@@ -475,7 +480,7 @@ export class TestServer {
       environment: request.environment,
       executable: request.executable,
       globalArgs: ["-N", "-S", this.socketPath],
-      timeoutMs: 3_000,
+      timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
     });
   }
 

@@ -86,6 +86,24 @@ export const DAEMON_REAPED_DEADLINE_MS = 2_000;
 export const CONTROL_REGISTRATION_DEADLINE_MS = 2_000;
 
 /**
+ * Wait for one tmux command the reaper or a launch probe runs to answer.
+ *
+ * Deliberately the shorter of the two: these sit on the cleanup path, where
+ * every millisecond is one the fixture holds its reservation while a later test
+ * waits for it to go. Scaled rather than lengthened — a busy machine needs
+ * proportionally longer, and an idle one should not wait longer than it did.
+ */
+export const FIXTURE_PROBE_DEADLINE_MS = 1_000;
+
+/**
+ * Wait for one tmux command that brings a fixture server up.
+ *
+ * Bootstrapping starts a daemon and waits for its first pane, so it is the
+ * slower of the two and is not on the path a later test is blocked behind.
+ */
+export const FIXTURE_BOOTSTRAP_DEADLINE_MS = 3_000;
+
+/**
  * Wait for a fixture's reservation directory to disappear after cleanup.
  *
  * Cleanup runs after the call that failed has already returned, so this is

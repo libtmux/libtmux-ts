@@ -7,8 +7,9 @@ import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import {
   DAEMON_EXIT_DEADLINE_MS,
   DAEMON_REAPED_DEADLINE_MS,
-  deadlineMs,
+  FIXTURE_PROBE_DEADLINE_MS,
   PIDFD_HELPER_DEADLINE_MS,
+  deadlineMs,
 } from "./deadlines.js";
 import { ownedTestDirectories } from "./temp_root.js";
 import {
@@ -515,7 +516,7 @@ async function discoverLaunchingDaemon(
     environment,
     executable: current.record.controller.executablePath,
     globalArgs: ["-N", "-S", current.record.socketPath],
-    timeoutMs: 1_000,
+    timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
   if (result.returncode !== 0) throw new Error("fixture generation discovery failed");
@@ -589,7 +590,7 @@ async function connectedGenerationKill(
       environment,
       executable: record.controller.executablePath,
       globalArgs: ["-N", "-S", record.socketPath],
-      timeoutMs: 1_000,
+      timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
     })
     .catch(() => undefined);
   if (result === undefined || result.returncode !== 0) return "unavailable";
