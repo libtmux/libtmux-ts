@@ -379,6 +379,13 @@ export interface Selection<Model> extends Iterable<Model> {
     predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed,
     thisArg?: unknown,
   ): Selection<Narrowed>;
+  /**
+   * Keep the members an ordinary predicate accepts without changing their type.
+   *
+   * ```ts
+   * snapshot.panes.filter((entry) => entry.active === true);
+   * ```
+   */
   filter(
     predicate: (value: Model, index: number, values: readonly Model[]) => unknown,
     thisArg?: unknown,
