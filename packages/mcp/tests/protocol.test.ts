@@ -49,6 +49,9 @@ test("publishes strict tmux id contracts", async () => {
       for (const schema of schemas) expect(schema.pattern, name).toBe(pattern);
     }
 
+    const killSession = tools.find((tool) => tool.name === "kill_session");
+    expect(namedSchemas(killSession?.outputSchema, "killed")[0]?.pattern).toBe(patterns.sessionId);
+
     expect(sessionViewSchema.shape.id.safeParse("session").success).toBe(false);
     expect(windowViewSchema.shape.id.safeParse("window").success).toBe(false);
     expect(paneViewSchema.shape.id.safeParse("pane").success).toBe(false);

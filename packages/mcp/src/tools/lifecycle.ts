@@ -26,7 +26,7 @@ import {
 } from "../context.js";
 import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
-import { paneIdSchema, windowIdSchema } from "../schemas.js";
+import { paneIdSchema, sessionIdSchema, windowIdSchema } from "../schemas.js";
 import {
   directoryNote,
   paneLine,
@@ -378,7 +378,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       description:
         "Remove a session. Windows and panes shared with another session remain available there.",
       inputSchema: { force: z.boolean().optional(), session: z.string() },
-      outputSchema: { killed: z.string() },
+      outputSchema: { killed: sessionIdSchema },
       title: "Kill session",
     },
     async ({ force, session }) => {
