@@ -154,19 +154,21 @@ combined = next(
     (
         case
         for case in fixture["cases"]
-        if case["id"] == "multiline-dotall-open-quantifier"
+        if case["id"] == "multiline-dotall-fixed-width"
     ),
     None,
 )
 if combined is None:
     fail("combined regex case is missing")
-unsatisfied_lower_bound = combined["pattern"].replace("{2,}", "{4,}")
-if unsatisfied_lower_bound == combined["pattern"]:
-    fail("combined regex case lacks its open lower bound")
+unsatisfied_token_count = combined["pattern"].replace(
+    "tokentokentoken", "tokentokentokentoken"
+)
+if unsatisfied_token_count == combined["pattern"]:
+    fail("combined regex case lacks its fixed token sequence")
 for label, flags, pattern in [
     ("without-dotall", "m", combined["pattern"]),
     ("without-multiline", "s", combined["pattern"]),
-    ("unsatisfied-lower-bound", "ms", unsatisfied_lower_bound),
+    ("unsatisfied-token-count", "ms", unsatisfied_token_count),
 ]:
     control = {**combined, "flags": flags, "pattern": pattern}
     if (

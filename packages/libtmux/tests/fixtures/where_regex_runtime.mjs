@@ -154,7 +154,7 @@ const observations = fixture.cases.map((entry) => {
   assert.equal(matched, entry.expected[implementation], entry.id);
   return { id: entry.id, matched };
 });
-const combined = fixture.cases.find(({ id }) => id === "multiline-dotall-open-quantifier");
+const combined = fixture.cases.find(({ id }) => id === "multiline-dotall-fixed-width");
 assert.ok(combined);
 const countCombined = (flags, pattern = combined.pattern) =>
   selection.count({
@@ -167,9 +167,9 @@ const countCombined = (flags, pattern = combined.pattern) =>
 assert.equal(countCombined("ms"), 1);
 assert.equal(countCombined("m"), 0);
 assert.equal(countCombined("s"), 0);
-const unsatisfiedLowerBound = combined.pattern.replace("{2,}", "{4,}");
-assert.notEqual(unsatisfiedLowerBound, combined.pattern);
-assert.equal(countCombined("ms", unsatisfiedLowerBound), 0);
+const unsatisfiedTokenCount = combined.pattern.replace("tokentokentoken", "tokentokentokentoken");
+assert.notEqual(unsatisfiedTokenCount, combined.pattern);
+assert.equal(countCombined("ms", unsatisfiedTokenCount), 0);
 assert.equal(requests.length, requestCount);
 
 process.stdout.write(

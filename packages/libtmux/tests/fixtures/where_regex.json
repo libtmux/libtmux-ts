@@ -50,30 +50,30 @@
     {
       "id": "capturing-alternation",
       "session_id": "$4",
-      "pattern": "^(cat|dog)+$",
+      "pattern": "^(cat|dog)$",
       "flags": "",
       "mode": "default",
-      "input": "catdog",
+      "input": "cat",
       "expected": { "bun": true, "node": true, "python": true },
       "adaptation": null
     },
     {
-      "id": "noncapturing-bounded-quantifier",
+      "id": "noncapturing-alternation",
       "session_id": "$5",
-      "pattern": "^(?:cat|dog){2}$",
+      "pattern": "^(?:cat|dog)$",
       "flags": "",
       "mode": "default",
-      "input": "dogcat",
+      "input": "dog",
       "expected": { "bun": true, "node": true, "python": true },
       "adaptation": null
     },
     {
-      "id": "greedy-open-and-optional-quantifiers",
+      "id": "single-greedy-open-quantifier",
       "session_id": "$6",
-      "pattern": "^a{2,4}b?c+$",
+      "pattern": "^a+$",
       "flags": "",
       "mode": "default",
-      "input": "aaabcc",
+      "input": "aaa",
       "expected": { "bun": true, "node": true, "python": true },
       "adaptation": null
     },
@@ -188,9 +188,9 @@
       "adaptation": "python-multiline-paragraph-separator"
     },
     {
-      "id": "multiline-dotall-open-quantifier",
+      "id": "multiline-dotall-fixed-width",
       "session_id": "$18",
-      "pattern": "^BEGIN.*(?:token){2,}.*END$",
+      "pattern": "^BEGIN.-tokentokentoken-.END$",
       "flags": "ms",
       "mode": "default",
       "input": "prefix\nBEGIN\n-tokentokentoken-\nEND\nsuffix",

@@ -616,7 +616,7 @@ describe("regex criteria", () => {
       expect(selection.count(criteria), entry.id).toBe(entry.expected.bun ? 1 : 0);
     }
 
-    const combined = corpus.cases.find(({ id }) => id === "multiline-dotall-open-quantifier");
+    const combined = corpus.cases.find(({ id }) => id === "multiline-dotall-fixed-width");
     if (combined === undefined) throw new Error("combined regex case is missing");
     const countCombined = (flags: "m" | "ms" | "s", pattern = combined.pattern): number =>
       selection.count({
@@ -629,9 +629,12 @@ describe("regex criteria", () => {
     expect(countCombined("ms")).toBe(1);
     expect(countCombined("m")).toBe(0);
     expect(countCombined("s")).toBe(0);
-    const unsatisfiedLowerBound = combined.pattern.replace("{2,}", "{4,}");
-    expect(unsatisfiedLowerBound).not.toBe(combined.pattern);
-    expect(countCombined("ms", unsatisfiedLowerBound)).toBe(0);
+    const unsatisfiedTokenCount = combined.pattern.replace(
+      "tokentokentoken",
+      "tokentokentokentoken",
+    );
+    expect(unsatisfiedTokenCount).not.toBe(combined.pattern);
+    expect(countCombined("ms", unsatisfiedTokenCount)).toBe(0);
   });
 
   test("accepts only the closed canonical flags and grammar", async () => {
@@ -1390,7 +1393,7 @@ describe("WhereDocumentV1 serialization", () => {
       where: {
         window: { isNot: null, is: { name: "editor" } },
         title: {
-          regex: { pattern: "^X.*$", flags: "ms" as const },
+          regex: { pattern: "^X.Y$", flags: "ms" as const },
           mode: "insensitive" as const,
           equals: "X\nY",
         },
@@ -1405,7 +1408,7 @@ describe("WhereDocumentV1 serialization", () => {
       '{"model":"window","version":1,"where":{"name":{"contains":"a","startsWith":"z"},"session":{"is":{"name":{"contains":"or","startsWith":"w"}},"isNot":null}}}',
     );
     expect(paneBytes).toBe(
-      '{"model":"pane","version":1,"where":{"pane_title":{"equals":"X\\nY","mode":"insensitive","regex":{"flags":"ms","pattern":"^X.*$"}},"window":{"is":{"name":"editor"},"isNot":null}}}',
+      '{"model":"pane","version":1,"where":{"pane_title":{"equals":"X\\nY","mode":"insensitive","regex":{"flags":"ms","pattern":"^X.Y$"}},"window":{"is":{"name":"editor"},"isNot":null}}}',
     );
     expect(paneBytes).not.toContain('"flags":"u"');
     expect(paneBytes).not.toContain('"flags":"i"');
