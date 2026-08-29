@@ -1021,10 +1021,6 @@ describe("Server.watch", () => {
       const server = serverFor(fixture);
       const live = await server.connect();
       try {
-        // tmux answers a chained line with one block per command, and this
-        // connection pairs one block with one request — so a chain sent down it
-        // would hand each reply to the request behind it. Sending them
-        // separately keeps the pairing and costs the same on an open socket.
         const results = await live.pipeline([
           ["display-message", "-p", "FIRST"],
           ["display-message", "-p", "SECOND"],
@@ -1056,7 +1052,6 @@ describe("Server.watch", () => {
           ]),
         ).rejects.toThrow();
 
-        // Same semantics as the chained form: earlier applied, later never ran.
         const windows = (await server.snapshot()).windows;
         expect(windows.exists({ name: "kept" })).toBe(true);
         expect(windows.exists({ name: "unreached" })).toBe(false);

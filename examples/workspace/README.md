@@ -49,9 +49,8 @@ const [logs, shell] = await server.batch([
 await logs.selectLayout("even-horizontal");
 ```
 
-`server.batch` plans every window first and creates them in one invocation, so
-this costs one tmux command and one snapshot rather than one round trip per
-window.
+`server.batch` plans every window first and resolves all of them from one final
+snapshot rather than taking one after each command.
 
 ## The declarative way
 

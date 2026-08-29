@@ -103,7 +103,7 @@ async function query(server: Server): Promise<{ ordered: boolean; result: string
 /** One cell of the grid, measured alone so no other cell is in its numbers. */
 async function measureCell(
   transport: "control" | "spawn",
-  batching: "chained" | "one-at-a-time" | "planned",
+  batching: "one-at-a-time" | "pipeline" | "planned",
   concurrency: "concurrent" | "sequential",
   socketPath: string,
   tmuxBin: string,
@@ -123,14 +123,13 @@ async function measureCell(
     const started = performance.now();
 
     if (batching === "planned") {
-      // The typed form of chaining: the same options as a direct call, one
-      // invocation, and handles back rather than argv in and lines out.
+      // The typed form returns handles after one final snapshot.
       await target.batch(
         Array.from({ length: WINDOWS }, (_, index) =>
           session.plan.newWindow({ name: `w${String(index)}` }),
         ),
       );
-    } else if (batching === "chained") {
+    } else if (batching === "pipeline") {
       await target.pipeline(
         Array.from({ length: WINDOWS }, (_, index) => [
           "new-window",
@@ -183,11 +182,9 @@ async function main(): Promise<void> {
   let tmuxVersion = "unknown";
 
   const cells = (["spawn", "control"] as const).flatMap((transport) =>
-    (["one-at-a-time", "chained", "planned"] as const).flatMap((batching) =>
+    (["one-at-a-time", "pipeline", "planned"] as const).flatMap((batching) =>
       (["sequential", "concurrent"] as const)
-        // Chaining already puts everything in one invocation, so overlapping it
-        // would be measuring nothing. Dropped rather than reported as a tie,
-        // which would read as a result.
+        // Pipeline and planned operations define their own ordering.
         .filter((concurrency) => !(batching !== "one-at-a-time" && concurrency === "concurrent"))
         .map((concurrency) => ({ batching, concurrency, transport })),
     ),

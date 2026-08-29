@@ -284,10 +284,8 @@ export class Session {
    * The same mutations, described instead of run.
    *
    * `session.plan.newWindow(…)` takes what `session.newWindow(…)` takes and
-   * resolves to what it resolves to; it just hands the work to
-   * {@link Server.batch} rather than doing it now. A batch spends one
-   * invocation and one snapshot on the whole group, where calling them one at a
-   * time spends both per call.
+   * resolves to what it resolves to; it hands the work to {@link Server.batch}
+   * so the planned mutations share one final snapshot.
    *
    * ```ts
    * const [editor, logs] = await server.batch([

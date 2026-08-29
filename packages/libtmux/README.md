@@ -618,8 +618,8 @@ mutation runs its command and then a snapshot, because it has to find what it
 just made — so twelve windows cost sixty-four invocations, not twelve.
 
 `plan` describes a mutation instead of running it. It takes what the direct call
-takes and resolves to what the direct call resolves to; `batch` then spends one
-invocation and one snapshot on the whole group:
+takes and resolves to what the direct call resolves to; `batch` runs the planned
+commands in order and resolves all of them from one final snapshot:
 
 ```ts
 const [first, second] = await server.batch([
@@ -640,7 +640,7 @@ const lines = await created.capture();
 For a command this package does not model, or one whose output you want raw,
 `pipeline` takes arguments and returns a result per command, in order — so a
 creating command's `-P -F` lands where you asked for it and a silent command
-frames as empty rather than shifting the one behind it:
+stays empty rather than shifting the one behind it:
 
 ```ts
 const [[madeWindow], , [madeOther]] = await server.pipeline([
@@ -655,14 +655,10 @@ failure, leaving everything before it applied; the `TmuxCommandError` names the
 command that failed rather than the whole sequence. Take a `snapshot()`
 afterwards when you need to know what survived.
 
-Length is not your problem: tmux refuses an argument vector past 1000 elements
-and a sequence shares one, so long sequences are split across invocations and
-returned as one result list. Eight thousand commands run in about a second.
-
-A connected server sends the commands one at a time instead. tmux answers a
-chained line with one response block per command while the connection pairs one
-block with one request, and separate sends cost the same on a socket that is
-already open.
+Each command is a separate tmux invocation. Arbitrary command output has no
+delimiter that a command alias cannot replace or print, so one combined stream
+cannot promise positional results. A connected server writes the same sequence
+over its open socket without spawning a process per command.
 
 ## Watching
 
@@ -1074,46 +1070,13 @@ const built = await server.withConnection(async (connected) => {
 });
 ```
 
-Batching stays a per-call-site choice rather than a mode: it changes when
-failures surface — a group stops at its first failure, leaving what ran applied
-— so turning it on from outside would change a program's error handling without
-touching its code.
+`pipeline` and `batch` stay per-call-site choices because both stop at the first
+failure. `batch` adds one final snapshot that turns printed ids into handles;
+`pipeline` returns the printed lines directly.
 
-Twelve windows, tmux 3.7b, 20 cores, median of three runs — reproduce with
-`bun scripts/bench-modes.ts`:
-
-| transport | batching      | concurrency | wall-clock | invocations | query result | order           |
-| --------- | ------------- | ----------- | ---------- | ----------- | ------------ | --------------- |
-| spawn     | one-at-a-time | sequential  | 1231 ms    | 64          | 12 windows   | as requested    |
-| spawn     | one-at-a-time | concurrent  | 1541 ms    | 64          | 12 windows   | reordered (3/3) |
-| spawn     | chained       | sequential  | 40 ms      | 5           | 12 windows   | as requested    |
-| spawn     | planned       | sequential  | 175 ms     | 9           | 12 windows   | as requested    |
-| control   | one-at-a-time | sequential  | 981 ms     | 0           | 12 windows   | as requested    |
-| control   | one-at-a-time | concurrent  | 1516 ms    | 0           | 12 windows   | as requested    |
-| control   | chained       | sequential  | 58 ms      | 0           | 12 windows   | as requested    |
-| control   | planned       | sequential  | 206 ms     | 0           | 12 windows   | as requested    |
-
-Every row answers the query identically. Only the cost differs, which is the
-point of the table. Reading it:
-
-**Batching is the one that matters.** Sixty-four invocations become nine, and a
-second becomes a fifth of one. `plan` costs four invocations more than raw
-`pipeline` because it takes the snapshot that turns printed ids into handles —
-that is what you are buying.
-
-**A connection removes processes, not round trips.** The `control` rows spawn
-nothing at all, which is what makes reacting to `watch` events in a loop
-affordable. It does not make a command sequence shorter, so batching still pays
-on top of it.
-
-**Concurrency is the one to be careful with.** It bought nothing here — twelve
-`new-window` calls are dominated by tmux's own serialization, not by waiting —
-and spawning them concurrently reordered the result in most runs: the windows
-all exist, but not in the order they were asked for. The table reports how often,
-because that is the hazard: an ordering that usually breaks is worse to rely on
-than one that always does. Over a connection the order survives, because one
-socket writes them in the order they were submitted. If order matters and you
-want the speed, batch instead.
+A control connection removes process startup from each command. It does not
+make concurrent mutations safe to reorder: use `pipeline` or `batch` when
+command order matters.
 
 ## Options and hooks
 

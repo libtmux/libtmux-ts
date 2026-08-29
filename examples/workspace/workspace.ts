@@ -7,10 +7,9 @@ import type { Workspace } from "@libtmux/workspace/config";
  * Build the shape most people reach for tmux to get: one session, a window
  * per concern, each pane already running the thing it is there for.
  *
- * `server.batch` plans several windows and creates them in one invocation, so
- * this costs one tmux command and one snapshot rather than one round trip per
- * window. `buildWorkspace`, below, delegates declared topology to the workspace
- * package instead of maintaining another reconciler here.
+ * `server.batch` plans several windows and resolves them from one final
+ * snapshot. `buildWorkspace`, below, delegates declared topology to the
+ * workspace package instead of maintaining another reconciler here.
  */
 export async function buildSimpleWorkspace(server: Server): Promise<Session> {
   const built = await server.newSession({

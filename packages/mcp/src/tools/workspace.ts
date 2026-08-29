@@ -1,10 +1,10 @@
 /**
- * Building a whole workspace in one invocation.
+ * Building a whole workspace in one tool call.
  *
  * Calling `new_window` five times spends five tmux invocations and five
- * snapshots, because each has to find what it just made. A batch spends one of
- * each for the group — and, for the agent, one tool call instead of five plus a
- * `list_panes` to learn the ids.
+ * snapshots, because each has to find what it just made. A batch shares one
+ * final snapshot — and, for the agent, one tool call replaces five plus a
+ * `list_panes` call to learn the ids.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

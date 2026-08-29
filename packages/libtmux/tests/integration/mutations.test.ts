@@ -372,14 +372,12 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
-  test("plans a pane's own mutations, so trimming panes costs one round trip", async () => {
+  test("plans a pane's own mutations with one final snapshot", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const window = (await server.snapshot()).windows.one();
       const origin = window.panes.one();
 
-      // Splitting from the pane rather than the window, described rather than
-      // run: three splits, one invocation and one snapshot.
       const created = await server.batch([
         origin.plan.split({}),
         origin.plan.split({}),
@@ -388,9 +386,7 @@ describe("lifecycle mutations", () => {
       expect(created.map((pane) => pane.id)).toHaveLength(3);
       expect(new Set(created.map((pane) => pane.id)).size).toBe(3);
 
-      // Trimming back down is the shape a workspace builder needs, and the
-      // reason a pane needs a plan of its own: killing one at a time costs a
-      // process and a snapshot each.
+      // Trimming back down is the shape a workspace builder needs.
       const extra = (await server.snapshot()).windows.one({ id: window.id }).panes.toArray();
       await server.batch(extra.slice(1).map((pane) => pane.plan.kill()));
 
