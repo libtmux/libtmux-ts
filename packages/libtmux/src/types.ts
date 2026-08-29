@@ -113,6 +113,9 @@ export interface NewWindowOptions extends CommandOptions {
   readonly startDirectory?: string;
 }
 
+type NonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+type NonNegativeIntegerText = "0" | (`${bigint}` & `${NonZeroDigit}${string}`);
+
 export interface SplitOptions extends CommandOptions {
   /**
    * Variables to set in the process this starts, tmux's `-e`.
@@ -128,7 +131,7 @@ export interface SplitOptions extends CommandOptions {
    * An integer is cells along the split's own axis; an integer `"30%"` string
    * is that share of the pane being divided. Without it tmux halves the pane.
    */
-  readonly size?: number | `${bigint}%`;
+  readonly size?: number | `${NonNegativeIntegerText}%`;
   /**
    * Which side of this pane the new one takes.
    *

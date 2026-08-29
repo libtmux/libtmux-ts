@@ -101,12 +101,25 @@ type ExpectedRuntimeContext = {
 
 type Child = Client | Pane | Session | Window;
 type ProjectedChild = Client | Pane | Session | Window;
+type ExpectedNonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+type ExpectedNonNegativeInteger = "0" | (`${bigint}` & `${ExpectedNonZeroDigit}${string}`);
 
 type _ServerOptions = Expect<Equal<ServerOptions, ExpectedServerOptions>>;
 type _ServerConstructor = Expect<
   Equal<ConstructorParameters<typeof Server>, [options?: ServerOptions]>
 >;
-type _SplitSize = Expect<Equal<SplitOptions["size"], number | `${bigint}%` | undefined>>;
+type _SplitSize = Expect<
+  Equal<SplitOptions["size"], number | `${ExpectedNonNegativeInteger}%` | undefined>
+>;
+type _SplitSizeRefusesHex = Expect<
+  Equal<"0x1%" extends SplitOptions["size"] ? true : false, false>
+>;
+type _SplitSizeRefusesLeadingZero = Expect<
+  Equal<"01%" extends SplitOptions["size"] ? true : false, false>
+>;
+type _SplitSizeRefusesNegativeZero = Expect<
+  Equal<"-0%" extends SplitOptions["size"] ? true : false, false>
+>;
 type _ServerFields = Expect<
   Equal<
     Pick<Server, "colors" | "configFile" | "socketName" | "socketPath" | "tmuxBin">,
