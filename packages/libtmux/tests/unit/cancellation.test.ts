@@ -16,6 +16,12 @@ const ignoreSigtermFixture = fileURLToPath(
 const echoFixture = fileURLToPath(new URL("../fixtures/echo_argv.mjs", import.meta.url));
 
 const holderPid = /^[1-9]\d*$/u;
+// These cases deliberately need a pipe-holding child to survive its parent.
+// Bun 1.4's `--no-orphans` mode otherwise propagates to the fixture and kills it.
+const detachedHolderEnvironment = Object.freeze({
+  ...process.env,
+  BUN_FEATURE_FLAG_NO_ORPHANS: "0",
+});
 
 /**
  * Wait for a marker to carry usable content, not merely to exist.
@@ -159,6 +165,7 @@ describe("transport cancellation", () => {
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const execution = transport.execute({
       args: [ignoreSigtermFixture, `--inherit-pipes=${markerPath}`],
+      environment: detachedHolderEnvironment,
       executable: process.execPath,
       signal: controller.signal,
     });
@@ -192,6 +199,7 @@ describe("transport cancellation", () => {
       diagnostic.stderr[0] = 0;
       expect(new TextDecoder().decode(diagnostic.stdout)).toBe("launch-frame\n");
       expect(new TextDecoder().decode(diagnostic.stderr)).toBe("launch-diagnostic\n");
+      expect(sameIdentity(await readProcessIdentity(holder.pid), holder)).toBe(true);
     } finally {
       if (holder !== undefined) await stopHolder(holder);
       await execution.catch(() => undefined);
@@ -210,6 +218,7 @@ describe("transport cancellation", () => {
     // is never written at all.
     const execution = transport.execute({
       args: [ignoreSigtermFixture, `--inherit-pipes=${markerPath}`],
+      environment: detachedHolderEnvironment,
       executable: process.execPath,
       timeoutMs: 2_000,
     });
@@ -233,6 +242,7 @@ describe("transport cancellation", () => {
       const diagnostic = outcome.error as TmuxTransportError;
       expect(new TextDecoder().decode(diagnostic.stdout)).toBe("launch-frame\n");
       expect(new TextDecoder().decode(diagnostic.stderr)).toBe("launch-diagnostic\n");
+      expect(sameIdentity(await readProcessIdentity(holder.pid), holder)).toBe(true);
     } finally {
       if (holder !== undefined) await stopHolder(holder);
       await execution.catch(() => undefined);
@@ -278,6 +288,7 @@ describe("transport cancellation", () => {
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const execution = transport.execute({
       args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"],
+      environment: detachedHolderEnvironment,
       executable: process.execPath,
       signal: controller.signal,
     });
@@ -297,6 +308,7 @@ describe("transport cancellation", () => {
       expect(result.returncode).toBe(0);
       expect(result.signal).toBeNull();
       expect(performance.now() - interruptedAt).toBeLessThan(3_000);
+      expect(sameIdentity(await readProcessIdentity(holder.pid), holder)).toBe(true);
     } finally {
       await execution.catch(() => undefined);
       if (holder !== undefined) await stopHolder(holder);
@@ -315,6 +327,7 @@ describe("transport cancellation", () => {
     // broken exit result: bounded drainage is what is measured, not fork speed.
     const execution = transport.execute({
       args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"],
+      environment: detachedHolderEnvironment,
       executable: process.execPath,
       timeoutMs: 1_500,
     });
@@ -327,6 +340,7 @@ describe("transport cancellation", () => {
       expect(result.signal).toBeNull();
       // Well under the descendant's hold: the point is that it did not wait.
       expect(performance.now() - startedAt).toBeLessThan(4_000);
+      expect(sameIdentity(await readProcessIdentity(holder.pid), holder)).toBe(true);
     } finally {
       await execution.catch(() => undefined);
       if (holder !== undefined) await stopHolder(holder);

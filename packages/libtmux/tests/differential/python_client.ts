@@ -137,6 +137,9 @@ export async function queryPythonOracle(
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
+  // The child result owns delivery failures; an early exit may also reject the
+  // request pipe, which must not become an unhandled stream error.
+  child.stdin!.on("error", () => undefined);
   child.stdin!.end(
     `${JSON.stringify({
       operation: "list-sessions",

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { EventEmitter } from "node:events";
 import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -1095,7 +1096,9 @@ describe("Server.watch", () => {
         );
         expect(ours).toEqual([]);
       } finally {
-        process.off("unhandledRejection", record);
+        // Bun hides the inherited generic overload, so detach through the EventEmitter view.
+        const processEvents: Pick<EventEmitter, "off"> = process;
+        processEvents.off("unhandledRejection", record);
       }
     });
   }, 40_000);

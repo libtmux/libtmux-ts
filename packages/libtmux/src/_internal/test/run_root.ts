@@ -1,5 +1,6 @@
 import { DAEMON_EXIT_DEADLINE_MS, DAEMON_REAPED_DEADLINE_MS, deadlineMs } from "./deadlines.js";
 import { spawn } from "node:child_process";
+import type { EventEmitter } from "node:events";
 import {
   access,
   chmod,
@@ -2712,7 +2713,9 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
   } finally {
     if (escalation !== undefined) clearTimeout(escalation);
     if (hardClose !== undefined) clearTimeout(hardClose);
-    process.removeListener("SIGINT", onSigint);
-    process.removeListener("SIGTERM", onSigterm);
+    // Bun hides the inherited generic overload, so detach through the EventEmitter view.
+    const processEvents: Pick<EventEmitter, "removeListener"> = process;
+    processEvents.removeListener("SIGINT", onSigint);
+    processEvents.removeListener("SIGTERM", onSigterm);
   }
 }
