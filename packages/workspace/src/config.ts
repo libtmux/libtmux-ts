@@ -25,10 +25,12 @@ const paneSchema = z.union([
   }),
 ]);
 
+const optionValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+
 const windowSchema = z.strictObject({
   focus: z.boolean().optional(),
   layout: z.string().optional(),
-  options: z.record(z.string(), z.string()).optional(),
+  options: z.record(z.string(), optionValueSchema).optional(),
   panes: z.array(paneSchema).default([]),
   shell_command_before: z.union([z.string(), z.array(z.string())]).optional(),
   start_directory: z.string().optional(),
@@ -36,7 +38,7 @@ const windowSchema = z.strictObject({
 });
 
 export const workspaceSchema = z.strictObject({
-  options: z.record(z.string(), z.string()).optional(),
+  options: z.record(z.string(), optionValueSchema).optional(),
   session_name: z.string().min(1),
   start_directory: z.string().optional(),
   // A session always has at least one window, so a workspace with none does not
@@ -48,6 +50,7 @@ export const workspaceSchema = z.strictObject({
 export type Workspace = z.infer<typeof workspaceSchema>;
 export type WorkspaceWindow = z.infer<typeof windowSchema>;
 export type WorkspacePane = z.infer<typeof paneSchema>;
+export type WorkspaceOptionValue = z.infer<typeof optionValueSchema>;
 
 /** Validate a parsed workspace, rejecting anything the schema does not allow. */
 export function parseWorkspace(value: unknown): Workspace {
@@ -104,4 +107,27 @@ export function paneStartDirectory(
 ): string | undefined {
   if (typeof pane !== "string" && pane.start_directory !== undefined) return pane.start_directory;
   return window.start_directory ?? workspace.start_directory;
+}
+
+/** A window's directory, inherited from its workspace when it has none. */
+export function windowStartDirectory(
+  window: WorkspaceWindow,
+  workspace: Workspace,
+): string | undefined {
+  return window.start_directory ?? workspace.start_directory;
+}
+
+/** The directory tmux needs when it creates the session's first pane. */
+export function initialPaneStartDirectory(workspace: Workspace): string | undefined {
+  const window = workspace.windows[0];
+  if (window === undefined) return workspace.start_directory;
+  const pane = window.panes[0];
+  return pane === undefined
+    ? windowStartDirectory(window, workspace)
+    : paneStartDirectory(pane, window, workspace);
+}
+
+/** Convert a YAML scalar to the string tmux accepts for an option value. */
+export function optionValue(value: WorkspaceOptionValue): string {
+  return String(value);
 }

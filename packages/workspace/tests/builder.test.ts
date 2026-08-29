@@ -1,6 +1,6 @@
 // The library's real-tmux fixture harness reaches into its internals, so it is
 // unpublished and an in-repo consumer reaches across packages for it by path.
-import { rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -171,6 +171,95 @@ describe("workspace builder", () => {
     expect(workspace.windows).toHaveLength(2);
     expect(workspace.windows[0]?.window_name).toBe("editor");
     expect(workspace.windows[1]?.panes).toHaveLength(1);
+  });
+
+  test("gives the initial pane directory precedence over its parents", async () => {
+    const root = await makeTestDirectory("ltx-workspace-cwd-");
+    const workspaceDirectory = join(root, "workspace");
+    const windowDirectory = join(root, "window");
+    const paneDirectory = join(root, "pane");
+    await Promise.all(
+      [workspaceDirectory, windowDirectory, paneDirectory].map((path) => mkdir(path)),
+    );
+
+    try {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        await applyWorkspace(server, {
+          session_name: "directories",
+          start_directory: workspaceDirectory,
+          windows: [
+            {
+              panes: [{ start_directory: paneDirectory }],
+              start_directory: windowDirectory,
+              window_name: "initial",
+            },
+            {
+              panes: [{}],
+              start_directory: windowDirectory,
+              window_name: "window",
+            },
+            { panes: [{}], window_name: "workspace" },
+          ],
+        });
+
+        const panes = (await server.snapshot()).panes;
+        expect(panes.one({ window: { is: { name: "initial" } } }).format.pane_current_path).toBe(
+          paneDirectory,
+        );
+        expect(panes.one({ window: { is: { name: "window" } } }).format.pane_current_path).toBe(
+          windowDirectory,
+        );
+        expect(panes.one({ window: { is: { name: "workspace" } } }).format.pane_current_path).toBe(
+          workspaceDirectory,
+        );
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  test("applies finite numeric and boolean YAML option values", async () => {
+    const workspace = parseWorkspaceYaml(`
+session_name: scalar-options
+options:
+  "@number": 42
+  "@boolean": true
+windows:
+  - options:
+      "@window-number": 7
+      "@window-boolean": false
+    window_name: main
+`);
+
+    expect(workspace.options).toEqual({ "@boolean": true, "@number": 42 });
+    expect(workspace.windows[0]?.options).toEqual({
+      "@window-boolean": false,
+      "@window-number": 7,
+    });
+    expect(() =>
+      parseWorkspaceYaml(`
+session_name: invalid-number
+options:
+  "@number": .inf
+windows:
+  - window_name: main
+`),
+    ).toThrow();
+
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await applyWorkspace(server, workspace);
+      expect((await session.showOptions()).get("@number")).toBe("42");
+      expect((await session.showOptions()).get("@boolean")).toBe("true");
+
+      const window = (await server.snapshot()).windows.one({
+        name: "main",
+        session: { is: { name: "scalar-options" } },
+      });
+      expect((await window.showOptions()).get("@window-number")).toBe("7");
+      expect((await window.showOptions()).get("@window-boolean")).toBe("false");
+    });
   });
 
   test("rejects a workspace missing its session name", () => {

@@ -77,7 +77,7 @@ the ones people already know — `session_name`, `windows`, `panes`,
 | ---------------------- | ----------------------- | ----------------------------------------------- |
 | `session_name`         | workspace               | The session to build or converge                |
 | `start_directory`      | workspace, window, pane | Working directory, inherited downward           |
-| `options`              | workspace, window       | tmux options set on that scope                  |
+| `options`              | workspace, window       | String, finite number, or boolean tmux values   |
 | `window_name`          | window                  | Renamed if it differs                           |
 | `layout`               | window                  | Applied once the pane count settles             |
 | `panes`                | window                  | A string is shorthand for `{ shell_command }`   |
@@ -88,6 +88,9 @@ the ones people already know — `session_name`, `windows`, `panes`,
 Because the config is data, it can come from a YAML file, an HTTP request, or a
 literal. `parseWorkspace` validates one you already parsed; `parseWorkspaceYaml`
 is a convenience that needs Bun's YAML parser and says so when it is missing.
+
+`start_directory` resolves pane, then window, then workspace. The same order
+applies to the first pane tmux creates with the session.
 
 ## Converging, not just creating
 

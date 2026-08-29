@@ -2,9 +2,12 @@ import type { Server } from "libtmux/server";
 import type { Session } from "libtmux/session";
 import type { Window } from "libtmux/window";
 import {
+  initialPaneStartDirectory,
+  optionValue,
   paneCommands,
   paneStartDirectory,
   paneWantsFocus,
+  windowStartDirectory,
   type Workspace,
   type WorkspaceWindow,
 } from "./config.js";
@@ -127,7 +130,7 @@ export async function applyWorkspace(
 
   for (const [option, value] of Object.entries(workspace.options ?? {})) {
     // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
-    await session.setOption(option, value);
+    await session.setOption(option, optionValue(value));
   }
 
   for (const [index, desired] of workspace.windows.entries()) {
@@ -137,7 +140,7 @@ export async function applyWorkspace(
     // so that window is this apply's too, and its panes take the commands.
     const born = existing === undefined && index === 0;
     // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
-    const placed = await windowAt(session, index, desired);
+    const placed = await windowAt(session, index, desired, workspace);
     // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
     await applyWindow(placed.window, desired, workspace, {
       commands,
@@ -235,11 +238,10 @@ export async function planWorkspace(
 }
 
 async function createSession(server: Server, workspace: Workspace): Promise<Session> {
+  const directory = initialPaneStartDirectory(workspace);
   return server.newSession({
     name: workspace.session_name,
-    ...(workspace.start_directory === undefined
-      ? {}
-      : { startDirectory: workspace.start_directory }),
+    ...(directory === undefined ? {} : { startDirectory: directory }),
     ...(workspace.windows[0]?.window_name === undefined
       ? {}
       : { windowName: workspace.windows[0].window_name }),
@@ -256,16 +258,16 @@ async function windowAt(
   session: Session,
   index: number,
   desired: WorkspaceWindow,
+  workspace: Workspace,
 ): Promise<{ readonly created: boolean; readonly window: Window }> {
   const existing = session.windows.at(index);
   if (existing === undefined) {
+    const directory = windowStartDirectory(desired, workspace);
     return {
       created: true,
       window: await session.newWindow({
         ...(desired.window_name === undefined ? {} : { name: desired.window_name }),
-        ...(desired.start_directory === undefined
-          ? {}
-          : { startDirectory: desired.start_directory }),
+        ...(directory === undefined ? {} : { startDirectory: directory }),
       }),
     };
   }
@@ -290,7 +292,7 @@ async function applyWindow(
 ): Promise<void> {
   for (const [option, value] of Object.entries(desired.options ?? {})) {
     // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
-    await window.setOption(option, value);
+    await window.setOption(option, optionValue(value));
   }
 
   const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;
