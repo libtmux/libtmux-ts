@@ -1998,10 +1998,23 @@ describe("staying out of the way", () => {
         // Not through this server. A person in a terminal, or another agent on
         // the same tmux server, changes the list too — and a client that
         // believes listChanged refreshes only on notice.
-        const session = (await tmux.snapshot()).sessions.one();
-        await session.newWindow({ name: "made-elsewhere" });
+        const beforeSplit = await tmux.snapshot();
+        const session = beforeSplit.sessions.one();
+        const split = await beforeSplit.panes.one().split({ shellCommand: "cat" });
         await new Promise((resolve) => setTimeout(resolve, 1_500));
         expect(notices).toBeGreaterThan(0);
+        const withSplit = (await client.listResources()).resources.map(({ uri }) => uri);
+        const splitUri = `tmux://panes/${encodeURIComponent(split.id)}`;
+        expect(withSplit).toContain(splitUri);
+        expect(withSplit).toContain(`${splitUri}/content`);
+
+        notices = 0;
+        await split.kill();
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        expect(notices).toBeGreaterThan(0);
+        const withoutSplit = (await client.listResources()).resources.map(({ uri }) => uri);
+        expect(withoutSplit).not.toContain(splitUri);
+        expect(withoutSplit).not.toContain(`${splitUri}/content`);
 
         const control = (
           await fixture.executeText([
@@ -2014,8 +2027,8 @@ describe("staying out of the way", () => {
         await fixture.executeText(["detach-client", "-t", control.slice(0, control.indexOf("\t"))]);
         await new Promise((resolve) => setTimeout(resolve, 500));
 
-        // A later list read re-arms a watcher whose connection died.
-        await client.listResources();
+        // Losing the listener announces uncertainty, then reconnects without a
+        // client request: a cached client has no reason to list again first.
         await new Promise((resolve) => setTimeout(resolve, 800));
         notices = 0;
         await session.newWindow({ name: "made-after-reconnect" });
