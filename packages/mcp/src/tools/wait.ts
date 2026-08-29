@@ -324,7 +324,7 @@ const waitOutputSchema = {
 };
 
 export function registerWait(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "readonly")) return;
+  if (!offers(context.policy, "readonly") || !context.policy.liveEnabled) return;
 
   const inputSchema = {
     cursor: paneCursorSchema

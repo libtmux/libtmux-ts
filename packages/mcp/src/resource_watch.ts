@@ -73,8 +73,6 @@ export function watchTopology(context: ToolContext, announce: () => void): () =>
  * a timer: a subscriber that nothing is writing to costs nothing.
  */
 export function registerResourceSubscriptions(mcp: McpServer, context: ToolContext): void {
-  const watching = new Map<string, () => void>();
-
   mcp.server.registerCapabilities({
     resources: {
       listChanged: true,
@@ -83,6 +81,9 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
       ...(context.policy.liveEnabled ? { subscribe: true } : {}),
     },
   });
+  if (!context.policy.liveEnabled) return;
+
+  const watching = new Map<string, () => void>();
 
   mcp.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
     const uri = request.params.uri;

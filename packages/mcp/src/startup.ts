@@ -34,7 +34,12 @@ function socketOf(server: Server): string {
  */
 export function describeStartup(facts: StartupFacts): string {
   const { caller, policy, server, version } = facts;
-  const narrowed = policy.tools === undefined ? "" : `, ${String(policy.tools.size)} tools allowed`;
+  const narrowed =
+    policy.tools === undefined
+      ? ""
+      : policy.tools.size === 0
+        ? ", 0 tools allowed"
+        : ", tool allowlist set";
   const pane = caller.paneId === undefined ? "" : `, from pane ${caller.paneId}`;
   return `libtmux-mcp ${version} serving ${socketOf(server)} at the ${policy.safety} tier${narrowed}${pane}`;
 }

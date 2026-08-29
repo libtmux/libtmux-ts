@@ -10,6 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
+import type { Policy } from "../policy.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
@@ -40,11 +41,23 @@ function shellName(command: string): string {
   return command.replace(/^-/, "");
 }
 
-function busyPane(paneId: string, active: string): ReturnType<typeof fail> {
+function commandFollowups(policy: Policy, paneId: string): string[] {
+  const offered = (name: string): boolean => policy.tools === undefined || policy.tools.has(name);
+  return [
+    policy.liveEnabled && offered("wait_for_text")
+      ? `wait_for_text on ${paneId} keeps waiting for it`
+      : "",
+    offered("send_keys") ? `send_keys with keys="C-c", enter=false, and force=true stops it` : "",
+  ].filter((text) => text !== "");
+}
+
+function busyPane(policy: Policy, paneId: string, active: string): ReturnType<typeof fail> {
+  const followups = commandFollowups(policy, paneId);
   return fail({
     hint:
-      "Wait for that command to finish, use wait_for_text for its output, or pass force " +
-      "to accept interleaved input. Pass force to send C-c when stopping it is the intent.",
+      followups.length === 0
+        ? "Wait for that command to finish before writing to the pane."
+        : `Wait for that command to finish, or ${followups.join(", or ")}.`,
     reason: `Refusing to write into ${paneId}: run_command ${active} is still active.`,
   });
 }
@@ -88,7 +101,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
       if (isFailure(pane)) return pane;
       const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) return busyPane(paneId, active);
+      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
 
       await pane.sendKeys(keys, {
         ...(enter === undefined ? {} : { enter }),
@@ -128,7 +141,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
       const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) return busyPane(paneId, active);
+      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
       await pane.sendKeys(text, { enter: enter ?? false, literal: true });
       return ok(
         { bytes: Buffer.byteLength(text, "utf8"), paneId },
@@ -224,7 +237,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       const active = activeFramedCommand(context, paneId);
       if (active !== undefined && force !== true) {
-        return busyPane(paneId, active);
+        return busyPane(context.policy, paneId, active);
       }
       if (pane.dead === true) {
         // Not a `force` case: a dead pane has no process to read the command,
@@ -275,6 +288,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       );
       const outputComplete =
         result.outputComplete && bounded.droppedLines === 0 && bounded.omittedBytes === 0;
+      const followups = commandFollowups(context.policy, paneId);
 
       const headline =
         result.outcome === "completed"
@@ -285,7 +299,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
               // whole new command, so it cannot resume this wait even in
               // principle — and the shell guard refuses it anyway, because the
               // pane is now running the first command rather than a shell.
-              `still running after ${String(result.effectiveTimeoutMs)}ms — wait_for_text on ${paneId} keeps waiting for it, or send_keys C-c stops it`;
+              `still running after ${String(result.effectiveTimeoutMs)}ms${followups.length === 0 ? "" : ` — ${followups.join(", or ")}`}`;
 
       return ok(
         {

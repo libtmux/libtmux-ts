@@ -61,7 +61,8 @@ export function createTmuxMcpServer(
 
   // Every tool registers against the filtered view, so the allowlist cannot be
   // half-applied by a module that forgot it.
-  const offered = offeredTools(mcp, policy);
+  const registeredTools = new Set<string>();
+  const offered = offeredTools(mcp, policy, registeredTools);
   registerDiscovery(offered, context);
   registerCapture(offered, context);
   registerSearch(offered, context);
@@ -73,7 +74,7 @@ export function createTmuxMcpServer(
   registerWait(offered, context);
   registerWorkspace(offered, context);
   registerResources(mcp, context);
-  if (policy.tools?.size !== 0) registerPrompts(mcp, context);
+  registerPrompts(mcp, context, registeredTools);
 
   // Each watched session holds a `tmux -C attach` for as long as something is
   // reading it. Losing the client is the end of every reason to hold one, and

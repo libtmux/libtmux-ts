@@ -6,9 +6,9 @@
  * prompt or a resource template and nothing else, so a pane id an agent can
  * complete has to be reachable through one of these.
  *
- * Pane content is subscribable. The updates come from the same control-mode
- * connection the wait tools use, so a subscriber costs one attach for the
- * session and no commands at all while it watches.
+ * Pane content is subscribable when live connections are enabled. The updates
+ * come from the same control-mode connection the wait tools use, so a
+ * subscriber costs one attach for the session and no commands while it watches.
  */
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -306,7 +306,9 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       list: undefined,
     }),
     {
-      description: "What a pane is showing, as text. Subscribe to be told when it changes.",
+      description: context.policy.liveEnabled
+        ? "What a pane is showing, as text. Subscribe to be told when it changes."
+        : "What a pane is showing, as text.",
       mimeType: TEXT_MIME,
       title: "Pane contents",
     },

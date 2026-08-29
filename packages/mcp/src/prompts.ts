@@ -20,13 +20,37 @@ function userPrompt(text: string): {
   return { messages: [{ content: { text, type: "text" }, role: "user" }] };
 }
 
-export function registerPrompts(mcp: McpServer, context: ToolContext): void {
+export function registerPrompts(
+  mcp: McpServer,
+  context: ToolContext,
+  registeredTools: ReadonlySet<string>,
+): void {
   const completePaneId = async (value: string): Promise<string[]> =>
     paneEntities((await context.snapshot()).panes.toArray())
       .map((pane) => pane.id)
       .filter((candidate) => candidate.startsWith(value));
 
-  mcp.registerPrompt(
+  const hasTools = (...required: readonly string[]): boolean =>
+    required.every((name) => registeredTools.has(name));
+  const whenTools = (...required: readonly string[]): McpServer | undefined =>
+    hasTools(...required) ? mcp : undefined;
+
+  const readers = context.policy.liveEnabled
+    ? ["wait_for_text", "observe"].filter((name) => hasTools(name))
+    : [];
+  const runFollowup = [
+    readers.length === 0 ? "" : `Use ${readers.join(" or ")} to watch later output.`,
+    hasTools("send_keys")
+      ? 'Use send_keys with keys="C-c", enter=false, and force=true to stop it.'
+      : "",
+    hasTools("send_keys", "capture_pane")
+      ? "Do not use send_keys and capture_pane for this; they cannot tell you the exit status and they mistake the pane's echo of the command for its output."
+      : "",
+  ]
+    .filter((text) => text !== "")
+    .join(" ");
+
+  whenTools("run_command")?.registerPrompt(
     "run-and-check",
     {
       argsSchema: {
@@ -43,14 +67,11 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
           `Use run_command(paneId="${paneId}", command=...). Read exitStatus and outcome from ` +
           `the result — do not infer success from the text. If outcome is "timed_out" the ` +
           `command is still running. Do not call run_command again: that sends the command a ` +
-          `second time. Use wait_for_text or observe to watch later output, or send_keys C-c to ` +
-          `stop it. ` +
-          `Do not use send_keys and capture_pane for this; they cannot tell you the exit status ` +
-          `and they mistake the pane's echo of the command for its output.`,
+          `second time.${runFollowup === "" ? "" : ` ${runFollowup}`}`,
       ),
   );
 
-  mcp.registerPrompt(
+  whenTools("wait_for_text")?.registerPrompt(
     "watch-until",
     {
       argsSchema: {
@@ -66,14 +87,14 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
       userPrompt(
         `Watch tmux pane ${paneId} until it prints ${JSON.stringify(expect)}, then tell me what happened.\n\n` +
           `Use wait_for_text(paneId=${JSON.stringify(paneId)}, patterns=[${JSON.stringify(expect)}]) — it streams tmux's ` +
-          `notifications, so it costs nothing while nothing is happening. Never loop capture_pane.\n\n` +
+          `notifications, so it costs nothing while nothing is happening.${hasTools("capture_pane") ? " Never loop capture_pane." : ""}\n\n` +
           `If it returns outcome="timed_out", the output field still holds everything the pane ` +
           `printed and cursor marks where you got to: call again with that cursor rather than ` +
           `starting from scratch. outcome="pane_died" means waiting again cannot help.`,
       ),
   );
 
-  mcp.registerPrompt(
+  whenTools("get_pane", "capture_pane")?.registerPrompt(
     "diagnose-pane",
     {
       argsSchema: {
@@ -87,15 +108,17 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
         `Something went wrong in tmux pane ${paneId}. Work out what.\n\n` +
           `1. get_pane(paneId="${paneId}") — what is it running, and is it dead?\n` +
           `2. capture_pane(paneId="${paneId}", start=-200) — the screen and some scrollback.\n` +
-          `3. If you need to keep looking as it changes, observe(paneId="${paneId}") once, then ` +
-          `pass the cursor it returns to each later call so you are only shown what is new.\n` +
-          `4. Name the last command that ran and the last non-empty output line.\n\n` +
+          (context.policy.liveEnabled && hasTools("observe")
+            ? `3. If you need to keep looking as it changes, observe(paneId="${paneId}") once, then ` +
+              `pass the cursor it returns to each later call so you are only shown what is new.\n`
+            : "") +
+          `${context.policy.liveEnabled && hasTools("observe") ? "4" : "3"}. Name the last command that ran and the last non-empty output line.\n\n` +
           `Give me a root-cause hypothesis and the single cheapest command that would confirm it. ` +
           `Do not run anything yet.`,
       ),
   );
 
-  mcp.registerPrompt(
+  whenTools("build_workspace")?.registerPrompt(
     "build-workspace",
     {
       argsSchema: {
@@ -111,8 +134,11 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
       userPrompt(
         `Build a tmux session called ${JSON.stringify(sessionName)} with windows: ${windows}.\n\n` +
           `Use build_workspace — it creates the session and every window with one final snapshot ` +
-          `and hands back every pane id, so you do not need new_window per window or a list_panes ` +
-          `afterwards. Report the pane id for each window so I can target them.`,
+          `and hands back every pane id` +
+          (hasTools("new_window", "list_panes")
+            ? `, so you do not need new_window per window or a list_panes afterwards`
+            : "") +
+          `. Report the pane id for each window so I can target them.`,
       ),
   );
 }

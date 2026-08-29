@@ -126,6 +126,10 @@ agent's cleanup can reap the session you are working in.
 | `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections      |
 | `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool allowlist; blank offers none  |
 
+With live connections disabled, `wait_for_text`, streaming prompts, and resource
+subscriptions are omitted; `observe` returns a bounded capture with
+`streaming: false`.
+
 Cancelling a request stops its wait. An over-large timeout is never an error:
 it is clamped, and every result reports the `effectiveTimeoutMs` it actually
 used.
@@ -168,8 +172,9 @@ $ LIBTMUX_MCP_TOOLS=list_panes,capture_pane,run_command libtmux-mcp
 ```
 
 Leaving the variable unset offers every tool permitted by the tier. Once set,
-it is always an allowlist: a blank value offers no tools or tool-dependent
-prompts, while resources remain available.
+it is always an allowlist: a blank value offers no tools, and any other value
+offers only named tools permitted by the tier. Tool-dependent prompts appear
+only when their required tools are available; resources remain available.
 
 Independently of the tier, the server refuses to write to or kill **the pane it
 is running in** and any pane **a person is currently watching**, unless the call

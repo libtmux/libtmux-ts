@@ -3,7 +3,8 @@
  *
  * `capture_pane` answers what is on screen now. `observe` answers what changed,
  * which is the question an agent asks repeatedly — and the one a re-capture
- * answers by charging for the whole screen every time.
+ * answers by charging for the whole screen every time. When live connections
+ * are disabled, `observe` deliberately falls back to that bounded re-capture.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -31,6 +32,7 @@ const SEED_LINES = 100;
 
 export function registerCapture(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "readonly")) return;
+  const live = context.policy.liveEnabled;
 
   mcp.registerTool(
     "capture_pane",
@@ -38,9 +40,10 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       annotations: READ_ONLY,
       description:
         "The text a pane is showing, or its scrollback. Negative `start` reaches " +
-        "back into history (-100 is a hundred lines above the top of the screen). " +
-        "For repeated reads of the same pane use observe instead — it returns only " +
-        "what is new.",
+        "back into history (-100 is a hundred lines above the top of the screen)." +
+        (live
+          ? " For repeated reads of the same pane use observe instead — it returns only what is new."
+          : ""),
       inputSchema: {
         end: z
           .number()
@@ -154,19 +157,25 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
     "observe",
     {
       annotations: READ_ONLY,
-      description:
-        "What a pane has printed since you last looked. Call it once with no " +
-        "cursor to start watching and get the current screen; keep the cursor it " +
-        "returns and pass it back each time after that, and you are charged only " +
-        "for what is new. This is the tool for watching a build, a log, or a test " +
-        "run — not a capture_pane loop. Set waitMs to block until something " +
-        "arrives rather than returning empty. Reports the stream in the order it " +
-        "was written, so a program that draws by moving the cursor (a progress " +
-        "bar, a full-screen TUI) reads jumbled here — capture_pane renders those.",
+      description: live
+        ? "What a pane has printed since you last looked. Call it once with no " +
+          "cursor to start watching and get the current screen; keep the cursor it " +
+          "returns and pass it back each time after that, and you are charged only " +
+          "for what is new. This is the tool for watching a build, a log, or a test " +
+          "run — not a capture_pane loop. Set waitMs to block until something " +
+          "arrives rather than returning empty. Reports the stream in the order it " +
+          "was written, so a program that draws by moving the cursor (a progress " +
+          "bar, a full-screen TUI) reads jumbled here — capture_pane renders those."
+        : "A bounded capture of what a pane is showing now. Live streaming is disabled, " +
+          "so this does not wait or return deltas; each call reads the current screen.",
       inputSchema: {
         cursor: paneCursorSchema
           .optional()
-          .describe("The cursor from your previous observe. Omit on the first call."),
+          .describe(
+            live
+              ? "The cursor from your previous observe. Omit on the first call."
+              : "Ignored while live streaming is disabled.",
+          ),
         maxLines: z.number().int().positive().optional(),
         paneId: paneIdSchema,
         waitMs: z
@@ -174,13 +183,21 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .int()
           .nonnegative()
           .optional()
-          .describe("Wait up to this long for new output before answering. Default 0."),
+          .describe(
+            live
+              ? "Wait up to this long for new output before answering. Default 0."
+              : "Ignored while live streaming is disabled; effectiveTimeoutMs is 0.",
+          ),
       },
       outputSchema: {
         byteClamped: z.boolean().describe("Whether the byte ceiling shortened this result."),
         cursor: paneCursorSchema
           .nullable()
-          .describe("Pass this to the next observe call; null means streaming was unavailable."),
+          .describe(
+            live
+              ? "Pass this to the next observe call; null means streaming was unavailable."
+              : "Always null while live streaming is disabled.",
+          ),
         droppedLines: z.number().int(),
         effectiveTimeoutMs: z
           .number()
@@ -198,15 +215,21 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         returnedBytes: z.number().int(),
         seeded: z
           .boolean()
-          .describe("True when this call started the watch and returned the screen."),
+          .describe(
+            live
+              ? "True when this call started the watch and returned the screen."
+              : "Always true because each call returns a fresh screen capture.",
+          ),
         streaming: z
           .boolean()
           .describe(
-            "False when no control connection was available and this fell back to capturing.",
+            live
+              ? "False when no control connection was available and this fell back to capturing."
+              : "Always false while live streaming is disabled.",
           ),
         text: z.string(),
       },
-      title: "Observe new output",
+      title: live ? "Observe new output" : "Capture current pane",
     },
     async ({ cursor, maxLines, paneId, waitMs }, extra) => {
       const snapshot = await context.snapshot();

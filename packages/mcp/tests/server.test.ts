@@ -486,7 +486,28 @@ describe("running commands", () => {
         const result = structured<{ outcome: string; stillRunning: boolean }>(answer);
         expect(result.outcome).toBe("timed_out");
         expect(result.stillRunning).toBe(true);
+        expect(toolText(answer)).toContain("enter=false");
+        expect(toolText(answer)).toContain("force=true");
       });
+    });
+  }, 60_000);
+
+  test("does not recommend filtered tools for a command that is still running", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const paneId = await shellPaneId(client);
+          const answer = await client.callTool({
+            arguments: { command: "sleep 30", paneId, timeoutMs: 1_500 },
+            name: "run_command",
+          });
+          expect(toolText(answer)).toContain("still running");
+          expect(toolText(answer)).not.toContain("wait_for_text");
+          expect(toolText(answer)).not.toContain("send_keys");
+        },
+        { LIBTMUX_MCP_TOOLS: "build_workspace,run_command" },
+      );
     });
   }, 60_000);
 
@@ -515,13 +536,13 @@ describe("running commands", () => {
 
   test("reserves a pane until a timed-out command finishes", async () => {
     await withServer(async (fixture) => {
-      const exercise = async (client: Client): Promise<void> => {
+      const exercise = async (client: Client, live: boolean): Promise<void> => {
         const paneId = await shellPaneId(client);
         await client.callTool({
           arguments: { name: "late", text: "late" },
           name: "load_buffer",
         });
-        await client.callTool({
+        const timedOut = await client.callTool({
           arguments: { command: "sleep 4", paneId, timeoutMs: 1_000 },
           name: "run_command",
         });
@@ -531,7 +552,10 @@ describe("running commands", () => {
         });
         expect((refused as { isError?: boolean }).isError).toBe(true);
         expect(toolText(refused)).toContain("sleep");
-        expect(toolText(refused)).toContain("force");
+        expect(toolText(refused)).toContain("enter=false");
+        expect(toolText(refused)).toContain("force=true");
+        expect(toolText(timedOut).includes("wait_for_text")).toBe(live);
+        expect(toolText(refused).includes("wait_for_text")).toBe(live);
         await Promise.all(
           (
             [
@@ -556,8 +580,10 @@ describe("running commands", () => {
         expect(available.outcome).toBe("completed");
       };
 
-      await withClient(fixture, exercise);
-      await withClient(fixture, exercise, { LIBTMUX_MCP_LIVE: "0" });
+      await withClient(fixture, (client) => exercise(client, true));
+      await withClient(fixture, (client) => exercise(client, false), {
+        LIBTMUX_MCP_LIVE: "0",
+      });
     });
   }, 60_000);
 

@@ -454,14 +454,18 @@ describe("startup line", () => {
     expect(line).toContain("/tmp/libtmux-rs-dev/agents");
   });
 
-  test("says when an allowlist has narrowed the surface further than the tier", () => {
+  test("reports an allowlist without counting requested names as offered tools", () => {
     const line = describeStartup({
       caller: { paneId: undefined, serverPid: undefined, socketPath: undefined },
-      policy: resolvePolicy({ LIBTMUX_MCP_TOOLS: "list_panes, capture_pane" }),
+      policy: resolvePolicy({
+        LIBTMUX_MCP_TOOLS: "list_panes, kill_session",
+        LIBTMUX_SAFETY: "readonly",
+      }),
       server: new Server({ socketName: "agents" }),
       version: "1.2.3",
     });
-    expect(line).toContain("2");
+    expect(line).toContain("tool allowlist set");
+    expect(line).not.toContain("2 tools allowed");
   });
 
   test("names the caller's pane, since the tools that would destroy it refuse", () => {
@@ -606,6 +610,21 @@ describe("instructions", () => {
     expect(text).toContain("whoami");
   });
 
+  test("keep shared and caller safety guidance under a nonempty allowlist", () => {
+    const text = buildInstructions(
+      resolvePolicy({ LIBTMUX_MCP_TOOLS: "run_command", LIBTMUX_SAFETY: "mutating" }),
+      { paneId: "%4", serverPid: "1", socketPath: "/s" },
+    );
+    expect(text).toContain("Server > Session > Window > Pane");
+    expect(text).toContain("ANTI-TRIGGERS");
+    expect(text).toContain("tmux://sessions");
+    expect(text).toContain("launched from tmux pane %4");
+    expect(text).toContain("only when it belongs to the served tmux server");
+    expect(text).toContain("refuses to write to or kill");
+    expect(text).not.toContain("Offered mutations");
+    expect(text).not.toContain("wait_for_text");
+  });
+
   test("say nothing about a pane when the server runs outside tmux", () => {
     const text = buildInstructions(resolvePolicy({}), {
       paneId: undefined,
@@ -619,6 +638,12 @@ describe("instructions", () => {
     expect(buildInstructions(resolvePolicy({ LIBTMUX_SAFETY: "readonly" }))).toContain(
       "Safety: readonly",
     );
+  });
+
+  test("does not advertise waits when live connections are disabled", () => {
+    const text = buildInstructions(resolvePolicy({ LIBTMUX_MCP_LIVE: "0" }));
+    expect(text).toContain("Live streaming is disabled");
+    expect(text).not.toContain("wait_for_text");
   });
 
   test("do not recommend tools when none are enabled", () => {
