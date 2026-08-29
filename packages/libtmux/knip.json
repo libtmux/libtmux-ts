@@ -21,6 +21,5 @@
     "tests/fixtures/type-aware-lint/no_floating_promise.ts"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
-  "ignoreBinaries": ["uv"],
-  "ignoreDependencies": ["@arethetypeswrong/cli", "publint"]
+  "ignoreBinaries": ["uv"]
 }
