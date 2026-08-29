@@ -17,7 +17,7 @@ import { offers, READ_ONLY } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
 import { isFailure, requirePane, type ReadablePane } from "../target_resolution.js";
-import type { PaneTailEndReason } from "../live.js";
+import type { PaneTailEndReason } from "../pane_tail.js";
 
 type WaitOutcome =
   | "cancelled"

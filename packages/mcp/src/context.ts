@@ -10,7 +10,8 @@ import type { ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
 
 import { resolveCallerIdentity, type CallerIdentity } from "./caller.js";
-import { LiveHub, type PaneTail } from "./live.js";
+import { LiveHub } from "./live.js";
+import type { PaneTail } from "./pane_tail.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";

@@ -11,7 +11,7 @@ import {
   MAX_RESULT_BYTES,
   resolvePolicy,
 } from "../src/policy.js";
-import { PaneTail } from "../src/live.js";
+import { PaneTail } from "../src/pane_tail.js";
 import { registerResources } from "../src/resources.js";
 import { registerCapture } from "../src/tools/capture.js";
 import { registerDiscovery } from "../src/tools/discovery.js";
