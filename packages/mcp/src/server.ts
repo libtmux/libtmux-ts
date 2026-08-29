@@ -20,7 +20,8 @@ import { registerSettings } from "./tools/settings.js";
 import { registerWait } from "./tools/wait.js";
 import { registerWorkspace } from "./tools/workspace.js";
 import { registerPrompts } from "./prompts.js";
-import { createListChangedNotifier, registerResources } from "./resources.js";
+import { registerResources } from "./resources.js";
+import { createListChangedNotifier } from "./resource_watch.js";
 import { describeStartup } from "./startup.js";
 
 import manifest from "../package.json" with { type: "json" };
