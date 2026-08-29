@@ -1,6 +1,7 @@
 /** The wrapper reads its marker after parsing, then removes it before running the command. */
 
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { Pane } from "libtmux";
 
@@ -9,6 +10,8 @@ import { captureGridBounded } from "./grid_capture.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";
 
 interface FramedResultBase {
+  /** Whether the marker that releases the staged command was delivered. */
+  readonly commandStarted: boolean;
   readonly effectiveTimeoutMs: number;
   /** Another writer was seen in this command's own output. */
   readonly foreignOutputSuspected: boolean;
@@ -25,8 +28,29 @@ export type FramedResult =
   | (FramedResultBase & { readonly exitStatus: number; readonly outcome: "completed" })
   | (FramedResultBase & {
       readonly exitStatus: null;
-      readonly outcome: "pane_died" | "timed_out";
+      readonly outcome: "cancelled" | "pane_died" | "timed_out";
     });
+
+function beforeStartResult(
+  effectiveTimeoutMs: number,
+  outcome: "cancelled" | "pane_died" | "timed_out",
+): FramedResult {
+  return {
+    commandStarted: false,
+    effectiveTimeoutMs,
+    exitStatus: null,
+    foreignOutputSuspected: false,
+    missedBytes: 0,
+    outcome,
+    output: "",
+    outputComplete: true,
+    settled: Promise.resolve(),
+  };
+}
+
+function isCancelled(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
 
 export interface FramedCommandReservation {
   release(): void;
@@ -79,14 +103,19 @@ const SETTLEMENT_POLL_MS = 1_000;
 const SETTLEMENT_LIVENESS_MS = 5_000;
 
 /** Read a bounded tail of the rendered grid when no live stream is available. */
-async function fallbackStream(pane: Pane): Promise<string> {
+async function fallbackStream(
+  pane: Pane,
+  options: { readonly signal?: AbortSignal; readonly timeoutMs?: number } = {},
+): Promise<string> {
   const height =
     pane.height !== null && Number.isSafeInteger(pane.height) && pane.height > 0 ? pane.height : 1;
   return captureGridBounded(pane, {
     byteLimit: MAX_RESULT_BYTES,
     joinWrapped: true,
     lineLimit: Math.min(Number.MAX_SAFE_INTEGER, FALLBACK_SCROLLBACK + height),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
     start: -FALLBACK_SCROLLBACK,
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   })
     .then(({ lines }) => lines.join("\n"))
     .catch(() => "");
@@ -335,22 +364,25 @@ export async function runFramedCommand(
   suppressHistory = true,
 ): Promise<FramedResult> {
   const budget = effectiveWaitMs(context.policy, timeoutMs);
+  if (isCancelled(signal)) return beforeStartResult(budget, "cancelled");
   const id = `ltx${randomId()}`;
   const ready = `ltxr${randomId()}`;
   const source = frame(command, ready, suppressHistory);
   const sessionId = pane.format.session_id;
 
   let tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
+  if (isCancelled(signal)) return beforeStartResult(budget, "cancelled");
 
   // Read the stream position before sending: output printed between the send
   // and the first read would otherwise be attributed to whatever came before.
   const cursor = tail?.cursor;
   const deadline = Date.now() + budget;
   let missedBytes = 0;
-  let readySeen = false;
+  let commandStarted = false;
   let usedFallback = tail === undefined;
   await sendLiteralLine(pane, source);
-  while (Date.now() < deadline && signal?.aborted !== true) {
+  for (;;) {
+    if (Date.now() >= deadline || isCancelled(signal)) break;
     if (tail?.endReason !== undefined) {
       tail = undefined;
       usedFallback = true;
@@ -358,21 +390,26 @@ export async function runFramedCommand(
     let stream: string;
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- each read follows the last.
-      stream = await fallbackStream(pane);
+      stream = await fallbackStream(pane, {
+        ...(signal === undefined ? {} : { signal }),
+        timeoutMs: Math.max(1, deadline - Date.now()),
+      });
     } else {
       const reading = tail.read(cursor);
       stream = reading.text;
       missedBytes = Math.max(missedBytes, reading.missedBytes);
     }
-    if (!readySeen && hasExactLine(stream, `${ready}_R`)) {
-      readySeen = true;
+    if (!commandStarted && hasExactLine(stream, `${ready}_R`)) {
+      if (Date.now() >= deadline || isCancelled(signal)) break;
       // eslint-disable-next-line no-await-in-loop -- input follows the readiness observation.
       await sendLiteralLine(pane, id);
+      commandStarted = true;
     }
-    if (readySeen) {
+    if (commandStarted) {
       const found = slice(stream, id);
       if (found !== undefined) {
         return {
+          commandStarted: true,
           effectiveTimeoutMs: budget,
           missedBytes,
           ...found,
@@ -382,9 +419,18 @@ export async function runFramedCommand(
         };
       }
     }
+    if (Date.now() >= deadline || isCancelled(signal)) break;
     if (tail === undefined) {
-      // eslint-disable-next-line no-await-in-loop -- the poll follows its read.
-      await new Promise((resolve) => setTimeout(resolve, FALLBACK_POLL_MS));
+      try {
+        // eslint-disable-next-line no-await-in-loop -- the poll follows its read.
+        await delay(
+          Math.min(FALLBACK_POLL_MS, Math.max(1, deadline - Date.now())),
+          undefined,
+          signal === undefined ? undefined : { signal },
+        );
+      } catch (error) {
+        if (!isCancelled(signal)) throw error;
+      }
     } else {
       // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
       const change = await tail.changed(
@@ -397,7 +443,29 @@ export async function runFramedCommand(
       }
     }
   }
-  if (!readySeen) await pane.sendKeys("C-c", { enter: false });
+  const cancelled = isCancelled(signal);
+  if (!commandStarted) {
+    await pane.sendKeys("C-c", { enter: false });
+    if (cancelled) return beforeStartResult(budget, "cancelled");
+    const after = (await context.snapshot()).panes.first({ id: pane.id });
+    return beforeStartResult(
+      budget,
+      after !== undefined && after.dead !== true ? "timed_out" : "pane_died",
+    );
+  }
+  if (cancelled) {
+    return {
+      commandStarted: true,
+      effectiveTimeoutMs: budget,
+      exitStatus: null,
+      foreignOutputSuspected: false,
+      missedBytes,
+      outcome: "cancelled",
+      output: "",
+      outputComplete: false,
+      settled: waitForSettlement(context, pane, id, cursor, tail),
+    };
+  }
 
   // Timed out, or the pane died under it — which is a different answer, and the
   // only one where calling again would wait on something that cannot arrive.
@@ -414,6 +482,7 @@ export async function runFramedCommand(
   const after = (await context.snapshot()).panes.first({ id: pane.id });
   const alive = after !== undefined && after.dead !== true;
   return {
+    commandStarted: true,
     effectiveTimeoutMs: budget,
     exitStatus: null,
     foreignOutputSuspected: cleaned.foreignOutputSuspected,
@@ -421,8 +490,7 @@ export async function runFramedCommand(
     outcome: alive ? "timed_out" : "pane_died",
     output: cleaned.text,
     outputComplete: startAt >= 0 && missedBytes === 0 && !usedFallback,
-    settled:
-      alive && readySeen ? waitForSettlement(context, pane, id, cursor, tail) : Promise.resolve(),
+    settled: alive ? waitForSettlement(context, pane, id, cursor, tail) : Promise.resolve(),
   };
 }
 

@@ -213,7 +213,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .nullable()
           .describe("The command's exit status; null if it did not finish."),
         outcome: z
-          .enum(["completed", "timed_out", "pane_died"])
+          .enum(["completed", "timed_out", "pane_died", "cancelled"])
           .describe("Why this returned. Read it rather than inferring from the text."),
         output: z.string().describe("The bounded tail of the command's output."),
         outputComplete: z
@@ -223,7 +223,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         returnedBytes: z.number().int().describe("UTF-8 output bytes returned."),
         stillRunning: z
           .boolean()
-          .describe("True when it timed out; the command keeps running in the pane."),
+          .describe("Whether the command may still be running after this call returned."),
       },
       title: "Run a command and wait",
     },
@@ -288,18 +288,33 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       );
       const outputComplete =
         result.outputComplete && bounded.droppedLines === 0 && bounded.omittedBytes === 0;
-      const followups = commandFollowups(context.policy, paneId);
+      const stillRunning =
+        result.commandStarted && (result.outcome === "timed_out" || result.outcome === "cancelled");
+      const followups = stillRunning ? commandFollowups(context.policy, paneId) : [];
 
-      const headline =
-        result.outcome === "completed"
-          ? `exit ${String(result.exitStatus)}`
-          : result.outcome === "pane_died"
+      let headline: string;
+      switch (result.outcome) {
+        case "completed":
+          headline = `exit ${String(result.exitStatus)}`;
+          break;
+        case "pane_died":
+          headline = result.commandStarted
             ? "the pane exited while the command ran"
-            : // Not "call again": a second call mints a fresh marker and sends a
-              // whole new command, so it cannot resume this wait even in
-              // principle — and the shell guard refuses it anyway, because the
-              // pane is now running the first command rather than a shell.
-              `still running after ${String(result.effectiveTimeoutMs)}ms${followups.length === 0 ? "" : ` — ${followups.join(", or ")}`}`;
+            : "the pane exited before the command started";
+          break;
+        case "cancelled":
+          headline = stillRunning
+            ? `request cancelled after the command started; it may still be running${followups.length === 0 ? "" : ` — ${followups.join(", or ")}`}`
+            : "request cancelled before the command started";
+          break;
+        case "timed_out":
+          // Not "call again": a second call mints a fresh marker and sends a
+          // whole new command, so it cannot resume this wait even in principle.
+          headline = stillRunning
+            ? `still running after ${String(result.effectiveTimeoutMs)}ms${followups.length === 0 ? "" : ` — ${followups.join(", or ")}`}`
+            : `did not start within ${String(result.effectiveTimeoutMs)}ms`;
+          break;
+      }
 
       return ok(
         {
@@ -314,7 +329,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           outputComplete,
           paneId,
           returnedBytes: bounded.returnedBytes,
-          stillRunning: result.outcome === "timed_out",
+          stillRunning,
         },
         `${renderBoundedText(
           bounded,

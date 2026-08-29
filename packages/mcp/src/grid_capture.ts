@@ -1,4 +1,4 @@
-import type { Pane } from "libtmux";
+import type { CaptureOptions, Pane } from "libtmux";
 
 /** tmux stores at most this many UTF-8 bytes in one grid cell. */
 const MAX_GRID_CELL_BYTES = 32;
@@ -65,7 +65,9 @@ export async function captureGridBounded(
     readonly end?: number;
     readonly joinWrapped?: boolean;
     readonly lineLimit: number;
+    readonly signal?: CaptureOptions["signal"];
     readonly start?: number;
+    readonly timeoutMs?: number;
   },
 ): Promise<BoundedGridCapture> {
   const requested = boundedCaptureRange(pane.height, options.start, options.end, options.lineLimit);
@@ -82,7 +84,9 @@ export async function captureGridBounded(
       : await pane.capture({
           ...(range.end === undefined ? {} : { end: range.end }),
           ...(options.joinWrapped === undefined ? {} : { joinWrapped: options.joinWrapped }),
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
           ...(range.start === undefined ? {} : { start: range.start }),
+          ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         });
   return { byteClamped, lines, range };
 }

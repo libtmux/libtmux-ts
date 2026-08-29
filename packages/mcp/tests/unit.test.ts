@@ -884,6 +884,39 @@ describe("command framing", () => {
     expect(result.exitStatus).toBe(127);
   });
 
+  test("sends nothing for a command whose caller already cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const sent: string[] = [];
+    const pane = {
+      capture: async () => [],
+      format: { session_id: "$1" },
+      height: 8,
+      id: "%1",
+      sendKeys: async (line: string) => {
+        sent.push(line);
+      },
+      width: 20,
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => undefined },
+      policy: resolvePolicy({ LIBTMUX_MCP_LIVE: "0" }),
+      snapshot: async () => ({ panes: { first: () => pane } }),
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(
+      context,
+      pane,
+      "touch SHOULD_NOT_RUN",
+      1_000,
+      controller.signal,
+    );
+
+    expect(result.outcome).toBe("cancelled");
+    expect(result.commandStarted).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
   test.each([
     ["caller cancellation", "cancelled", 1_000],
     ["deadline expiry", "timed_out", 5],
@@ -894,12 +927,17 @@ describe("command framing", () => {
       const sent: string[] = [];
       let ready = "";
       let captureCount = 0;
+      let captureOptions: { readonly signal?: AbortSignal; readonly timeoutMs?: number } = {};
       const firstCapture = Promise.withResolvers<string[]>();
       const capturing = Promise.withResolvers<void>();
       const pane = {
-        capture: async () => {
+        capture: async (options: {
+          readonly signal?: AbortSignal;
+          readonly timeoutMs?: number;
+        }) => {
           captureCount += 1;
           if (captureCount === 1) {
+            captureOptions = options;
             capturing.resolve();
             return firstCapture.promise;
           }
@@ -934,10 +972,53 @@ describe("command framing", () => {
       const result = await running;
 
       expect(result.outcome).toBe(outcome);
+      expect(result.commandStarted).toBe(false);
+      expect(captureOptions.signal).toBe(controller.signal);
+      expect(captureOptions.timeoutMs).toBeGreaterThan(0);
+      expect(captureOptions.timeoutMs).toBeLessThanOrEqual(timeoutMs);
       expect(sent.some((line) => /^ltx[0-9a-f]{10}$/u.test(line))).toBe(false);
       expect(sent.at(-1)).toBe("C-c");
     },
   );
+
+  test("keeps a cancelled command unsettled after its payload starts", async () => {
+    const controller = new AbortController();
+    const tail = new PaneTail("%1");
+    let id = "";
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      sendKeys: async (line: string) => {
+        const ready = /'(ltxr[0-9a-f]{10})' '_R'/u.exec(line)?.[1];
+        if (ready !== undefined) tail.append(`${ready}_R\n`);
+        else {
+          id = line;
+          tail.append(`${id}_S\n`);
+          controller.abort();
+        }
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+      snapshot: async () => ({ panes: { first: () => pane } }),
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "touch STARTED", 1_000, controller.signal);
+    let settled = false;
+    void result.settled.then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1));
+
+    expect(result.outcome).toBe("cancelled");
+    expect(result.commandStarted).toBe(true);
+    expect(settled).toBe(false);
+
+    tail.append(`${id}_E 0 ${id}_D\n`);
+    await result.settled;
+    expect(settled).toBe(true);
+  });
 });
 
 describe("concurrent framing", () => {
