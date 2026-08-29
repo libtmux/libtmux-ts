@@ -148,11 +148,11 @@ jobs:
       # gate that only runs while releasing finds them after the release.
       - name: Gate the MCP server
         working-directory: packages/mcp
-        run: bun run typecheck && bun run test && bun run test:package
+        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
 
       - name: Gate the workspace builder
         working-directory: packages/workspace
-        run: bun run typecheck && bun run test && bun run test:package
+        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
 
       # The recipes above the library package, reaching across it to the
       # workspace builder and the MCP server. After those gates because each
