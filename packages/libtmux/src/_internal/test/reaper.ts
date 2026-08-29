@@ -97,7 +97,9 @@ export async function prepareRunRoot(
   const record = await readOwner(runRoot);
   const observed = await readProcessIdentity(record.owner.pid);
   if (observed?.startIdentity === record.owner.startIdentity) {
-    throw new Error(`test run root has a live owner: ${String(record.owner.pid)}`);
+    throw new Error(
+      `test run root will not be taken over, it has a live owner: ${String(record.owner.pid)}`,
+    );
   }
   const report = await reapRunRootInternal(runRoot, "stale");
   if (report.leaks.length > 0 || !report.rootRemoved) {
@@ -734,7 +736,9 @@ async function reapDetachedOwnerEscrow(
   const observed = await readProcessIdentity(owner.owner.pid);
   const ownerIsLive = observed?.startIdentity === owner.owner.startIdentity;
   if (authority === "stale" && ownerIsLive) {
-    throw new Error(`test run root has a live owner: ${String(owner.owner.pid)}`);
+    throw new Error(
+      `owner escrow will not be recovered, its run root has a live owner: ${String(owner.owner.pid)}`,
+    );
   }
   if (authority === "owned") {
     const current = await readProcessIdentity(process.pid);
@@ -1094,7 +1098,9 @@ async function reapRunRootInternal(
   const observedOwner = await readProcessIdentity(owner.owner.pid);
   const ownerIsLive = observedOwner?.startIdentity === owner.owner.startIdentity;
   if (authority === "stale" && ownerIsLive) {
-    throw new Error(`test run root has a live owner: ${String(owner.owner.pid)}`);
+    throw new Error(
+      `test run root will not be reaped as stale, it has a live owner: ${String(owner.owner.pid)}`,
+    );
   }
   if (authority === "owned") {
     const current = await readProcessIdentity(process.pid);
