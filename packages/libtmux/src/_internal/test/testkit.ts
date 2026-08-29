@@ -8,30 +8,31 @@
 export { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 export {
   beginFixtureLaunch,
-  FIXTURE_RECORD_NAME,
-  OWNER_RECORD_NAME,
-  prepareRunRoot,
   promoteFixtureLaunch,
-  readFixtureRecord,
+  reserveFixture,
+  rollbackFixtureLaunchNotStarted,
+} from "./fixture_launch.js";
+export type {
+  FixtureControllerRequest,
+  LaunchAttemptCapability,
+  ReservationCapability,
+} from "./fixture_launch.js";
+export {
+  prepareRunRoot,
   reapFixture,
   reapOwnedRunRoot,
   reapStaleRunRoot,
-  reserveFixture,
   resolvePidfdInterpreter,
-  rollbackFixtureLaunchNotStarted,
-  RUN_ROOT_ENV,
+} from "./reaper.js";
+export type { ReapReport } from "./reaper.js";
+export {
+  FIXTURE_RECORD_NAME,
+  OWNER_RECORD_NAME,
+  readFixtureRecord,
   SOCKET_PATH_UTF8_LIMIT,
   validateOwnedRecordMetadata,
   validateSocketPath,
-} from "./run_root.js";
-export type {
-  FixtureControllerRequest,
-  FixtureRecord,
-  LaunchAttemptCapability,
-  LaunchGeneration,
-  ReapReport,
-  ReservationCapability,
-  SocketIdentity,
-} from "./run_root.js";
-export { runSupervisor } from "./supervisor.js";
+} from "./records.js";
+export type { FixtureRecord, LaunchGeneration, SocketIdentity } from "./records.js";
+export { RUN_ROOT_ENV, runSupervisor } from "./supervisor.js";
 export type { SupervisorOptions } from "./supervisor.js";

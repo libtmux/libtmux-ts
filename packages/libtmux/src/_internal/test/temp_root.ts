@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 /**
  * tmux refuses a socket path longer than this. Declared beside the naming rule
- * that has to fit inside it, and re-exported by run_root for its callers.
+ * that has to fit inside it, and re-exported by the testkit for its callers.
  */
 export const SOCKET_PATH_UTF8_LIMIT = 103;
 

@@ -6,7 +6,10 @@ import { join } from "node:path";
 
 import { reportSecondaryCleanupFailure } from "./cleanup.js";
 import { resolveControllerIdentity } from "./process_identity.js";
-import { prepareRunRoot, publishRunRootOwner, reapOwnedRunRoot, RUN_ROOT_ENV } from "./run_root.js";
+import { prepareRunRoot, reapOwnedRunRoot } from "./reaper.js";
+import { publishRunRootOwner } from "./records.js";
+
+export const RUN_ROOT_ENV = "LIBTMUX_TEST_RUN_ROOT";
 
 export interface SupervisorOptions {
   readonly command: readonly [string, ...string[]];

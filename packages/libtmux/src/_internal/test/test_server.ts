@@ -12,21 +12,18 @@ import {
   type ControllerIdentity,
   type ProcessIdentity,
 } from "./process_identity.js";
+import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import {
   beginFixtureLaunch,
   promoteFixtureLaunch,
-  readFixtureRecord,
-  reapFixture,
-  reportSecondaryCleanupFailure,
   reserveFixture,
   rollbackFixtureLaunchNotStarted,
-  runWithCleanup,
   type FixtureControllerRequest,
-  type FixtureRecord,
   type LaunchAttemptCapability,
-  type LaunchGeneration,
   type ReservationCapability,
-} from "./testkit.js";
+} from "./fixture_launch.js";
+import { reapFixture } from "./reaper.js";
+import { readFixtureRecord, type FixtureRecord, type LaunchGeneration } from "./records.js";
 
 export interface TestServerRequestSnapshot {
   readonly args: readonly string[];
