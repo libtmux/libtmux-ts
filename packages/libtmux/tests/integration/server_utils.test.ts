@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
+import { waitForProcessExit } from "../support/converge.js";
+
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -129,6 +131,17 @@ describe("server utilities", () => {
       // A socket that was never created is a negative answer, not a failure.
       expect(await absent.isAlive()).toBe(false);
       await expect(absent.raiseIfDead()).rejects.toThrow(/list-sessions failed/);
+    });
+  }, 40_000);
+
+  test("terminates the exact server it drives", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      await server.kill();
+      await waitForProcessExit(fixture.daemonIdentity.pid);
+
+      expect(await server.isAlive()).toBe(false);
     });
   }, 40_000);
 

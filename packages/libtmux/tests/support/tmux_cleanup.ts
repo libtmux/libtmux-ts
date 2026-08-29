@@ -1,10 +1,11 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { link, lstat, readFile } from "node:fs/promises";
+import { link, lstat, readFile, unlink } from "node:fs/promises";
 
 import { readDaemonIdentity } from "../../src/_internal/test/process_identity.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
+import { closeChild } from "./owned_child.js";
 
 interface CapturedTmuxCleanup {
   readonly commandLine: Buffer;
@@ -86,5 +87,51 @@ async function reapRedLaunch(socketPath: string): Promise<void> {
   await new Promise<void>((resolve) => child.once("close", () => resolve()));
 }
 
-export { captureTmuxCleanup, reapRedLaunch, terminateCapturedTmux };
+async function launchExactTmux(socketPath: string): Promise<number> {
+  const launched = await closeChild(
+    spawn(
+      "tmux",
+      [
+        "-f",
+        "/dev/null",
+        "-S",
+        socketPath,
+        "new-session",
+        "-d",
+        "-P",
+        "-F",
+        "#{pid}",
+        "-s",
+        `replacement-${randomUUID().slice(0, 8)}`,
+        "exec cat",
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    ),
+  );
+  if (launched.code !== 0) throw new Error(`tmux exact launch failed: ${launched.stderr}`);
+  const pid = Number.parseInt(launched.stdout.trim(), 10);
+  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error("tmux exact launch returned bad PID");
+  return pid;
+}
+
+async function killExactTmux(socketPath: string, pid: number): Promise<void> {
+  const recoverySocket = `${socketPath}.test-cleanup-${randomUUID()}`;
+  const captured = await captureTmuxCleanup(pid, socketPath, recoverySocket);
+  await terminateCapturedTmux(captured);
+  const original = await lstat(socketPath, { bigint: true }).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    },
+  );
+  if (original !== undefined) {
+    deepStrictEqual({ device: original.dev, inode: original.ino }, captured.socketIdentity);
+    await unlink(socketPath);
+  }
+  const recovery = await lstat(recoverySocket, { bigint: true });
+  deepStrictEqual({ device: recovery.dev, inode: recovery.ino }, captured.socketIdentity);
+  await unlink(recoverySocket);
+}
+
+export { captureTmuxCleanup, killExactTmux, launchExactTmux, reapRedLaunch, terminateCapturedTmux };
 export type { CapturedTmuxCleanup };

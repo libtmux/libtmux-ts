@@ -5,6 +5,20 @@ import { join } from "node:path";
 import { prepareRunRoot, reapOwnedRunRoot } from "../../src/_internal/test/testkit.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
+export async function createIsolatedRunRoot(
+  name: string,
+): Promise<{ parent: string; root: string }> {
+  const parent = await makeTestDirectory("ltx4-supervisor-");
+  const root = join(parent, name);
+  await prepareRunRoot(root);
+  return { parent, root };
+}
+
+export async function removeIsolatedRunRoot(parent: string, root: string): Promise<void> {
+  await reapOwnedRunRoot(root);
+  await rm(parent, { force: true, recursive: true });
+}
+
 async function withTemporaryRunRoot<T>(
   name: string,
   body: (runRoot: string) => Promise<T>,
