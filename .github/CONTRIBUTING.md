@@ -235,6 +235,13 @@ Do not edit the tree while `test:compat` runs. It spawns the suite once per
 build and reads the working tree each time, so a mid-run edit produces failures
 attributed to whichever tmux happened to be current.
 
+Do not run another suite beside it either. The bounds here are liveness bounds
+sized for an idle machine, and a second suite competing for the same cores turns
+one into a failure reported against whichever tmux was current. That happened:
+one cleanup case failed on 3.3a at 15,211ms against a 15,000ms bound, and the
+same case passes on 3.3a and 3.7c alike with the bound cut to 300ms once the
+machine is quiet.
+
 One tmux grammar note that costs an afternoon: an adjustment like
 `resize-pane -U 2` is a positional argument, so it has to follow every flag.
 Written next to its direction it turns any later flag into surplus arguments
