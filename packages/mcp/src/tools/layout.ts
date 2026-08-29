@@ -25,6 +25,7 @@ import {
   type SourcePlacement,
   type ToolContext,
 } from "../context.js";
+import { effectiveResultLines } from "../policy.js";
 import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import { paneIdSchema, windowIdSchema } from "../schemas.js";
@@ -32,6 +33,8 @@ import {
   paneLine,
   paneView,
   paneViewSchema,
+  limitViews,
+  renderViews,
   windowLine,
   windowView,
   windowViewSchema,
@@ -189,7 +192,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       annotations: MUTATING,
       description:
         "Rearrange a window's panes. Takes one of tmux's named layouts, or a layout " +
-        "string from an earlier window's `layout` field to reproduce it exactly.",
+        "string from an earlier window whose `metadataComplete` is true to reproduce it exactly.",
       inputSchema: {
         layout: z.string().describe(`One of ${LAYOUTS.join(", ")}, or a tmux layout string.`),
         windowId: windowIdSchema,
@@ -214,7 +217,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         { window: view },
         windowLine(view) +
           (ignored
-            ? `\n\n[the layout string was not applied: this window is still ${view.layout}. ` +
+            ? `\n\n[the layout string was not applied: the returned window.layout is unchanged. ` +
               `tmux accepts a layout describing a different set of panes and changes nothing.]`
             : ""),
       );
@@ -227,7 +230,11 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       annotations: MUTATING,
       description: "Exchange two panes' positions. Their ids and contents travel with them.",
       inputSchema: { otherPaneId: paneIdSchema, paneId: paneIdSchema },
-      outputSchema: { panes: z.array(paneViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int().nonnegative(),
+        panes: z.array(paneViewSchema),
+      },
       title: "Swap panes",
     },
     async ({ otherPaneId, paneId }) => {
@@ -244,7 +251,15 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       const otherView = projectPane(after, otherPaneId, identity);
       if (isFailure(otherView)) return otherView;
       const views = [firstView, otherView];
-      return ok({ panes: views }, views.map(paneLine).join("\n"));
+      const bounded = limitViews(views, effectiveResultLines(context.policy, undefined), paneLine);
+      return ok(
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          panes: bounded.views,
+        },
+        renderViews(bounded, "panes", "inspect each pane separately"),
+      );
     },
   );
 
@@ -395,7 +410,11 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         sourceSession: sourceSessionSchema,
         windowId: windowIdSchema,
       },
-      outputSchema: { windows: z.array(windowViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int().nonnegative(),
+        windows: z.array(windowViewSchema),
+      },
       title: "Swap windows",
     },
     async ({
@@ -427,7 +446,19 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(otherView)) return otherView;
       const views = [firstView, otherView];
       context.topologyChanged();
-      return ok({ windows: views }, views.map(windowLine).join("\n"));
+      const bounded = limitViews(
+        views,
+        effectiveResultLines(context.policy, undefined),
+        windowLine,
+      );
+      return ok(
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          windows: bounded.views,
+        },
+        renderViews(bounded, "windows", "inspect each window separately"),
+      );
     },
   );
 

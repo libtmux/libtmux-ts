@@ -11,7 +11,7 @@ import type { Server } from "libtmux/server";
 
 import { isAttended, isCallerPane, resolveCallerIdentity, type CallerIdentity } from "./caller.js";
 import { LiveHub, type PaneTail } from "./live.js";
-import type { Policy } from "./policy.js";
+import { MAX_RESULT_BYTES, type Policy } from "./policy.js";
 import { fail } from "./results.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
@@ -100,6 +100,7 @@ export function createContext(
 
 /** How many alternatives an error lists before the list stops helping. */
 const SUGGESTION_LIMIT = 12;
+const SUGGESTION_BYTES = MAX_RESULT_BYTES - 1_024;
 
 /**
  * Name some of what exists, and say when that is not all of it.
@@ -110,8 +111,16 @@ const SUGGESTION_LIMIT = 12;
  * remainder and the tool that lists it costs one clause.
  */
 function suggest(all: readonly string[], listing: string): string {
-  const shown = all.slice(0, SUGGESTION_LIMIT);
+  const shown: string[] = [];
+  let bytes = 0;
+  for (const value of all.slice(0, SUGGESTION_LIMIT)) {
+    const added = Buffer.byteLength(value, "utf8") + (shown.length === 0 ? 0 : 2);
+    if (bytes + added > SUGGESTION_BYTES) break;
+    shown.push(value);
+    bytes += added;
+  }
   const rest = all.length - shown.length;
+  if (shown.length === 0) return `${String(rest)} entries omitted — ${listing} lists them all`;
   return rest === 0
     ? shown.join(", ")
     : `${shown.join(", ")}, and ${String(rest)} more — ${listing} lists them all`;
@@ -352,12 +361,9 @@ function placementFailure(
   }[],
   source: SourcePlacement,
 ): CallToolResult {
-  const choices = placements
-    .map(
-      ({ index, sessionId, sessionName }) =>
-        `${sessionId}:${String(index)} (${sessionName ?? "?"})`,
-    )
-    .join(", ");
+  const choices = placements.map(
+    ({ index, sessionId, sessionName }) => `${sessionId}:${String(index)} (${sessionName ?? "?"})`,
+  );
   const selected = [
     ...(source.sourceSession === undefined
       ? []
@@ -368,7 +374,10 @@ function placementFailure(
     placements.length > 1 &&
     (source.sourceSession === undefined || source.sourceIndex === undefined);
   return fail({
-    hint: `Available source placements: ${choices}. Pass sourceSession and sourceIndex.`,
+    hint: `Available source placements: ${suggest(
+      choices,
+      kind === "pane" ? "list_panes" : "list_windows",
+    )}. Pass sourceSession and sourceIndex.`,
     reason:
       selected.length === 0
         ? `${kind === "pane" ? "Pane" : "Window"} ${id} names ${String(placements.length)} placements; a source placement is required.`

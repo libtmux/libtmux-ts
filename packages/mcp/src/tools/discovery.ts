@@ -9,6 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { CallerIdentity } from "../caller.js";
 import {
   isFailure,
   paneEntities,
@@ -26,73 +27,21 @@ import { paneIdSchema, windowIdSchema } from "../schemas.js";
 import {
   clientView,
   clientViewSchema,
+  limitViews,
   paneLine,
   paneView,
   paneViewSchema,
+  renderViews,
   sessionLine,
   sessionView,
   sessionViewSchema,
   windowLine,
   windowView,
   windowViewSchema,
+  type ClientView,
 } from "../views.js";
 
-interface ViewLimit<View> {
-  readonly complete: boolean;
-  readonly omittedEntries: number;
-  readonly text: ReturnType<typeof boundText>;
-  readonly views: readonly View[];
-}
-
-/** Keep the leading views whose JSON and readable lines both fit the server limits. */
-function limitViews<View>(
-  views: readonly View[],
-  lineLimit: number,
-  render: (view: View) => string,
-): ViewLimit<View> {
-  const kept: View[] = [];
-  const lines: string[] = [];
-  let structuredBytes = 2;
-  let textBytes = 0;
-
-  for (const view of views) {
-    const serialized = JSON.stringify(view);
-    const rendered = render(view);
-    const renderedLines = rendered.split("\n");
-    const nextStructured =
-      structuredBytes + Buffer.byteLength(serialized, "utf8") + (kept.length === 0 ? 0 : 1);
-    const nextTextBytes =
-      textBytes + Buffer.byteLength(rendered, "utf8") + (lines.length === 0 ? 0 : 1);
-    if (
-      nextStructured > MAX_RESULT_BYTES ||
-      lines.length + renderedLines.length > lineLimit ||
-      nextTextBytes > MAX_RESULT_BYTES
-    ) {
-      break;
-    }
-    kept.push(view);
-    lines.push(...renderedLines);
-    structuredBytes = nextStructured;
-    textBytes = nextTextBytes;
-  }
-
-  return {
-    complete: kept.length === views.length,
-    omittedEntries: views.length - kept.length,
-    text: boundText(lines, lineLimit, MAX_RESULT_BYTES),
-    views: kept,
-  };
-}
-
-function renderViews(result: ViewLimit<unknown>, noun: string, recovery: string): string {
-  const omission =
-    result.omittedEntries === 0
-      ? ""
-      : `[${String(result.omittedEntries)} later ${noun} omitted; ${recovery}]`;
-  return [renderBoundedText(result.text, recovery), omission]
-    .filter((part) => part !== "")
-    .join("\n");
-}
+const PROJECTED_RESULT_BYTES = MAX_RESULT_BYTES - 1_024;
 
 /**
  * A path, safe to put in a result.
@@ -111,6 +60,84 @@ function printable(value: string | null | undefined): string | null {
       code < 0x20 || code === 0x7f ? `\\x${code.toString(16).padStart(2, "0")}` : character;
   }
   return escaped;
+}
+
+interface WhoamiProjection extends Readonly<Record<string, unknown>> {
+  readonly attendedPaneIds: readonly string[];
+  readonly callerPaneId: string | null;
+  readonly callerPaneIsOnThisServer: boolean;
+  readonly clients: readonly ClientView[];
+  readonly complete: boolean;
+  readonly omittedAttendedPaneIds: number;
+  readonly omittedClients: number;
+  readonly serverPid: string | null;
+}
+
+function whoamiLines(value: WhoamiProjection): readonly string[] {
+  const watched =
+    value.attendedPaneIds.length === 0
+      ? value.omittedAttendedPaneIds === 0
+        ? "Nobody is attached; no pane is being watched."
+        : `${String(value.omittedAttendedPaneIds)} watched pane ids omitted by the result ceiling.`
+      : `Watched by a person: ${value.attendedPaneIds.join(", ")}${
+          value.omittedAttendedPaneIds === 0
+            ? ""
+            : `, and ${String(value.omittedAttendedPaneIds)} more`
+        }`;
+  return [
+    value.callerPaneId === null
+      ? "This server does not run inside a tmux pane, so it has no pane of its own."
+      : value.callerPaneIsOnThisServer
+        ? `Running inside pane ${value.callerPaneId} on this server — do not write to it.`
+        : `Running inside pane ${value.callerPaneId}, but on a different tmux server than this one.`,
+    watched,
+    value.omittedClients === 0
+      ? ""
+      : `${String(value.omittedClients)} attached clients omitted by the result ceiling.`,
+  ].filter((line) => line !== "");
+}
+
+function largestFittingPrefix(length: number, fits: (count: number) => boolean): number {
+  let low = 0;
+  let high = length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+function boundedWhoami(
+  identity: CallerIdentity,
+  callerPaneId: string | null,
+  clients: readonly ClientView[],
+): WhoamiProjection {
+  const build = (attendedCount: number, clientCount: number): WhoamiProjection => {
+    const omittedAttendedPaneIds = identity.attendedPaneIds.length - attendedCount;
+    const omittedClients = clients.length - clientCount;
+    return {
+      attendedPaneIds: identity.attendedPaneIds.slice(0, attendedCount),
+      callerPaneId,
+      callerPaneIsOnThisServer: identity.callerPaneIsOnThisServer,
+      clients: clients.slice(0, clientCount),
+      complete: omittedAttendedPaneIds === 0 && omittedClients === 0,
+      omittedAttendedPaneIds,
+      omittedClients,
+      serverPid: identity.serverPid ?? null,
+    };
+  };
+  const fits = (value: WhoamiProjection): boolean =>
+    Buffer.byteLength(JSON.stringify(value), "utf8") <= PROJECTED_RESULT_BYTES &&
+    Buffer.byteLength(whoamiLines(value).join("\n"), "utf8") <= PROJECTED_RESULT_BYTES;
+  // Pane ids carry the safety decision, so retain them before client metadata.
+  const attendedCount = largestFittingPrefix(identity.attendedPaneIds.length, (count) =>
+    fits(build(count, 0)),
+  );
+  const clientCount = largestFittingPrefix(clients.length, (count) =>
+    fits(build(attendedCount, count)),
+  );
+  return build(attendedCount, clientCount);
 }
 
 /**
@@ -350,6 +377,9 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         callerPaneId: paneIdSchema.nullable(),
         callerPaneIsOnThisServer: z.boolean(),
         clients: z.array(clientViewSchema),
+        complete: z.boolean(),
+        omittedAttendedPaneIds: z.number().int().nonnegative(),
+        omittedClients: z.number().int().nonnegative(),
         serverPid: z.string().nullable(),
       },
       title: "Who and where am I",
@@ -359,24 +389,12 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const clients = snapshot.clients.toArray().map(clientView);
       const callerPaneId = paneIdSchema.safeParse(identity.callerPaneId);
-      const structured = {
-        attendedPaneIds: identity.attendedPaneIds,
-        callerPaneId: callerPaneId.success ? callerPaneId.data : null,
-        callerPaneIsOnThisServer: identity.callerPaneIsOnThisServer,
+      const structured = boundedWhoami(
+        identity,
+        callerPaneId.success ? callerPaneId.data : null,
         clients,
-        serverPid: identity.serverPid ?? null,
-      };
-      const lines = [
-        identity.callerPaneId === undefined
-          ? "This server does not run inside a tmux pane, so it has no pane of its own."
-          : identity.callerPaneIsOnThisServer
-            ? `Running inside pane ${identity.callerPaneId} on this server — do not write to it.`
-            : `Running inside pane ${identity.callerPaneId}, but on a different tmux server than this one.`,
-        identity.attendedPaneIds.length === 0
-          ? "Nobody is attached; no pane is being watched."
-          : `Watched by a person: ${identity.attendedPaneIds.join(", ")}`,
-      ];
-      return ok(structured, lines.join("\n"));
+      );
+      return ok(structured, whoamiLines(structured).join("\n"));
     },
   );
 

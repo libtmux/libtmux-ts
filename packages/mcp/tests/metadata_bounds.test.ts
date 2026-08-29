@@ -3,16 +3,19 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, test } from "bun:test";
 
-import type { Pane, ServerSnapshot, Session, Window } from "libtmux";
+import type { Client as TmuxClient, Pane, ServerSnapshot, Session, Window } from "libtmux";
 
+import type { CallerIdentity } from "../src/caller.js";
 import type { ToolContext } from "../src/context.js";
 import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { registerResources } from "../src/resources.js";
 import { registerDiscovery } from "../src/tools/discovery.js";
+import { registerLayout } from "../src/tools/layout.js";
 import { registerSettings } from "../src/tools/settings.js";
 import { CLIENTS_URI, PANES_URI, SESSIONS_URI, WINDOWS_URI } from "../src/uris.js";
 
 const LARGE = "x".repeat(16 * 1024);
+const HUGE = "y".repeat(MAX_RESULT_BYTES + 8 * 1024);
 
 interface BoundedCollection<T> {
   readonly complete: boolean;
@@ -113,24 +116,85 @@ function fakeSnapshot(count = 32): ServerSnapshot {
   } as ServerSnapshot;
 }
 
+function linkedSnapshot(count = 32, clients: readonly TmuxClient[] = []): ServerSnapshot {
+  const sessions = Array.from(
+    { length: count },
+    (_, index) =>
+      ({
+        attached: 0,
+        id: `$${String(index)}`,
+        name: `session-${String(index)}-${LARGE}`,
+      }) as Session,
+  );
+  const windows = sessions.map(
+    (session, index) =>
+      ({
+        active: index === 0,
+        format: { session_id: session.id, window_index: String(index) },
+        id: "@1",
+        index,
+        layout: index === 0 ? HUGE : "80x24,0,0,1",
+        name: index === 0 ? HUGE : "shared",
+        select: async () => undefined,
+        session,
+        windowPanes: 2,
+        zoomedFlag: false,
+      }) as unknown as Window,
+  );
+  const panes = windows.flatMap((window, placementIndex) =>
+    [0, 1].map(
+      (paneIndex) =>
+        ({
+          active: paneIndex === 0,
+          currentCommand: "sh",
+          currentPath: placementIndex === 0 ? HUGE : "/workspace",
+          dead: false,
+          format: {
+            session_id: window.format.session_id,
+            window_id: window.id,
+            window_index: String(placementIndex),
+          },
+          height: 24,
+          id: `%${String(paneIndex + 1)}`,
+          index: paneIndex,
+          select: async () => undefined,
+          session: window.session,
+          swapWith: async () => undefined,
+          title: placementIndex === 0 ? HUGE : "shell",
+          width: 80,
+          window,
+        }) as unknown as Pane,
+    ),
+  );
+  return {
+    clients: { toArray: () => [...clients] },
+    panes: selection(panes),
+    sessions: selection(sessions),
+    windows: selection(windows),
+  } as unknown as ServerSnapshot;
+}
+
 function fakeContext(options?: {
   readonly count?: number;
+  readonly identity?: CallerIdentity;
   readonly onSnapshot?: () => void;
+  readonly snapshot?: ServerSnapshot;
 }): ToolContext {
   const repeated = Array.from(
     { length: 32 },
     (_, index) => [`entry-${String(index)}`, LARGE] as const,
   );
-  const snapshot = fakeSnapshot(options?.count);
+  const snapshot = options?.snapshot ?? fakeSnapshot(options?.count);
   return {
     hub: { anchor: async () => undefined },
-    identity: async () => ({
-      attendedPaneIds: [],
-      callerPaneId: undefined,
-      callerPaneIsOnThisServer: false,
-      clients: [],
-      serverPid: undefined,
-    }),
+    identity: async () =>
+      options?.identity ?? {
+        attendedPaneIds: [],
+        callerPaneId: undefined,
+        callerPaneIsOnThisServer: false,
+        clients: [],
+        serverPid: undefined,
+      },
     policy: resolvePolicy({ LIBTMUX_SAFETY: "mutating" }),
     snapshot: async () => {
       options?.onSnapshot?.();
@@ -235,6 +299,160 @@ describe("metadata tool bounds", () => {
         MAX_RESULT_BYTES + 256,
       );
     });
+  });
+
+  test("bounds linked placements in read and mutation projections", async () => {
+    const context = fakeContext({ snapshot: linkedSnapshot() });
+    await withMcp(
+      [registerDiscovery, registerLayout],
+      async (client) => {
+        for (const call of [
+          { arguments: { paneId: "%1" }, name: "get_pane" },
+          { arguments: { paneId: "%1" }, name: "select_pane" },
+        ]) {
+          // eslint-disable-next-line no-await-in-loop -- each call proves a distinct tool boundary.
+          const result = await client.callTool(call);
+          const value = structured<{
+            readonly pane: {
+              readonly metadataComplete: boolean;
+              readonly omittedPlacements: number;
+              readonly omittedMetadataBytes: number;
+              readonly placementsComplete: boolean;
+            };
+          }>(result);
+          const pane = value.pane;
+          expect(pane.metadataComplete).toBe(false);
+          expect(pane.omittedMetadataBytes).toBeGreaterThan(0);
+          expect(pane.placementsComplete).toBe(false);
+          expect(pane.omittedPlacements).toBeGreaterThan(0);
+          expect(Buffer.byteLength(JSON.stringify(value), "utf8")).toBeLessThanOrEqual(
+            MAX_RESULT_BYTES,
+          );
+          expect(Buffer.byteLength(text(result), "utf8")).toBeLessThanOrEqual(
+            MAX_RESULT_BYTES + 256,
+          );
+        }
+
+        const listed = await client.callTool({ arguments: {}, name: "list_windows" });
+        const listedWindow = structured<{
+          readonly complete: boolean;
+          readonly omittedEntries: number;
+          readonly windows: readonly {
+            readonly metadataComplete: boolean;
+            readonly omittedPlacements: number;
+            readonly omittedMetadataBytes: number;
+            readonly placementsComplete: boolean;
+          }[];
+        }>(listed);
+        const listedView = listedWindow.windows[0];
+        expect(listedView?.metadataComplete).toBe(false);
+        expect(listedView?.omittedMetadataBytes).toBeGreaterThan(0);
+        expect(listedView?.placementsComplete).toBe(false);
+        expect(listedView?.omittedPlacements).toBeGreaterThan(0);
+        expect(Buffer.byteLength(JSON.stringify(listedWindow), "utf8")).toBeLessThanOrEqual(
+          MAX_RESULT_BYTES,
+        );
+
+        const selected = await client.callTool({
+          arguments: { sourceIndex: 0, sourceSession: "$0", windowId: "@1" },
+          name: "select_window",
+        });
+        const selectedWindow = structured<{
+          readonly window: {
+            readonly metadataComplete: boolean;
+            readonly omittedPlacements: number;
+            readonly omittedMetadataBytes: number;
+            readonly placementsComplete: boolean;
+          };
+        }>(selected);
+        const selectedView = selectedWindow.window;
+        expect(selectedView.metadataComplete).toBe(false);
+        expect(selectedView.omittedMetadataBytes).toBeGreaterThan(0);
+        expect(selectedView.placementsComplete).toBe(false);
+        expect(selectedView.omittedPlacements).toBeGreaterThan(0);
+        expect(Buffer.byteLength(JSON.stringify(selectedWindow), "utf8")).toBeLessThanOrEqual(
+          MAX_RESULT_BYTES,
+        );
+        expect(Buffer.byteLength(text(selected), "utf8")).toBeLessThanOrEqual(
+          MAX_RESULT_BYTES + 256,
+        );
+
+        const swapped = await client.callTool({
+          arguments: { otherPaneId: "%2", paneId: "%1" },
+          name: "swap_pane",
+        });
+        const swappedValue = structured<{
+          readonly complete: boolean;
+          readonly omittedEntries: number;
+          readonly panes: readonly unknown[];
+        }>(swapped);
+        expect(swappedValue.complete).toBe(false);
+        expect(swappedValue.omittedEntries).toBe(1);
+        expect(Buffer.byteLength(JSON.stringify(swappedValue), "utf8")).toBeLessThanOrEqual(
+          MAX_RESULT_BYTES,
+        );
+      },
+      context,
+    );
+  });
+
+  test("bounds whoami clients and attended pane ids with omission counts", async () => {
+    const clients = Array.from(
+      { length: 32 },
+      (_, index) =>
+        ({
+          controlMode: false,
+          name: `client-${String(index)}-${LARGE}`,
+          session: { name: `session-${String(index)}-${LARGE}` },
+          tty: `/dev/pts/${String(index)}`,
+        }) as unknown as TmuxClient,
+    );
+    const attendedPaneIds = Array.from({ length: 50_000 }, (_, index) => `%${String(index)}`);
+    const context = fakeContext({
+      identity: {
+        attendedPaneIds,
+        callerPaneId: undefined,
+        callerPaneIsOnThisServer: false,
+        clients: [],
+        serverPid: undefined,
+      },
+      snapshot: linkedSnapshot(1, clients),
+    });
+
+    await withMcp(
+      [registerDiscovery],
+      async (client) => {
+        const result = await client.callTool({ arguments: {}, name: "whoami" });
+        const value = structured<{
+          readonly complete: boolean;
+          readonly omittedAttendedPaneIds: number;
+          readonly omittedClients: number;
+        }>(result);
+        expect(value.complete).toBe(false);
+        expect(value.omittedAttendedPaneIds + value.omittedClients).toBeGreaterThan(0);
+        expect(Buffer.byteLength(JSON.stringify(value), "utf8")).toBeLessThanOrEqual(
+          MAX_RESULT_BYTES,
+        );
+        expect(Buffer.byteLength(text(result), "utf8")).toBeLessThanOrEqual(MAX_RESULT_BYTES + 256);
+      },
+      context,
+    );
+  });
+
+  test("bounds ambiguous placement choices and reports the omitted count", async () => {
+    await withMcp(
+      [registerLayout],
+      async (client) => {
+        const result = await client.callTool({
+          arguments: { windowId: "@1" },
+          name: "select_window",
+        });
+        expect((result as { readonly isError?: boolean }).isError).toBe(true);
+        expect(text(result)).toContain("more");
+        expect(Buffer.byteLength(text(result), "utf8")).toBeLessThanOrEqual(MAX_RESULT_BYTES + 256);
+      },
+      fakeContext({ snapshot: linkedSnapshot() }),
+    );
   });
 });
 

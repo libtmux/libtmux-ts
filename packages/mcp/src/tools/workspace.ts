@@ -13,10 +13,11 @@ import { z } from "zod";
 import { TmuxCommandError, type PlannedOperation } from "libtmux";
 
 import type { ToolContext } from "../context.js";
+import { effectiveResultLines } from "../policy.js";
 import { MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import { sessionIdSchema } from "../schemas.js";
-import { paneLine, paneView, paneViewSchema } from "../views.js";
+import { limitViews, paneLine, paneView, paneViewSchema, renderViews } from "../views.js";
 
 const windowSpec = z.object({
   name: z.string().describe("Window name."),
@@ -92,9 +93,11 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
             windowName: z.string().nullable(),
           })
           .nullable(),
+        omittedPanes: z.number().int().nonnegative(),
         panes: z
           .array(paneViewSchema)
           .describe("One per surviving window, in the order asked for."),
+        resultComplete: z.boolean().describe("Whether every surviving pane fits in this result."),
         sessionId: sessionIdSchema,
       },
       title: "Build a workspace",
@@ -155,12 +158,20 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
         .map((target) => after.panes.toArray().find((pane) => pane.format.window_id === target.id))
         .filter((pane) => pane !== undefined)
         .map((pane) => paneView(pane, identity));
+      const bounded = limitViews(panes, effectiveResultLines(context.policy, undefined), paneLine);
 
       return ok(
-        { complete: failure === null, failure, panes, sessionId: created.id },
+        {
+          complete: failure === null,
+          failure,
+          omittedPanes: bounded.omittedEntries,
+          panes: bounded.views,
+          resultComplete: bounded.complete,
+          sessionId: created.id,
+        },
         [
           `${failure === null ? "Built" : "Partially built"} ${session} (${created.id}) with ${String(panes.length)} windows:`,
-          panes.map(paneLine).join("\n"),
+          renderViews(bounded, "panes", "inspect the session with list_panes"),
           failure === null
             ? ""
             : `[stopped at window ${failure.windowIndex === null ? "unknown" : String(failure.windowIndex)}${failure.windowName === null ? "" : ` (${failure.windowName})`}: ${failure.reason}]`,
