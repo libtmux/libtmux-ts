@@ -173,7 +173,7 @@ describe("workspace builder", () => {
     expect(workspace.windows[1]?.panes).toHaveLength(1);
   });
 
-  test("gives the initial pane directory precedence over its parents", async () => {
+  test("gives each initial pane directory precedence over its parents", async () => {
     const root = await makeTestDirectory("ltx-workspace-cwd-");
     const workspaceDirectory = join(root, "workspace");
     const windowDirectory = join(root, "window");
@@ -199,6 +199,11 @@ describe("workspace builder", () => {
               start_directory: windowDirectory,
               window_name: "window",
             },
+            {
+              panes: [{ start_directory: paneDirectory }],
+              start_directory: windowDirectory,
+              window_name: "later-pane",
+            },
             { panes: [{}], window_name: "workspace" },
           ],
         });
@@ -209,6 +214,9 @@ describe("workspace builder", () => {
         );
         expect(panes.one({ window: { is: { name: "window" } } }).format.pane_current_path).toBe(
           windowDirectory,
+        );
+        expect(panes.one({ window: { is: { name: "later-pane" } } }).format.pane_current_path).toBe(
+          paneDirectory,
         );
         expect(panes.one({ window: { is: { name: "workspace" } } }).format.pane_current_path).toBe(
           workspaceDirectory,

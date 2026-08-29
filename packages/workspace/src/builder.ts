@@ -343,7 +343,11 @@ async function windowAt(
 ): Promise<{ readonly created: boolean; readonly window: Window }> {
   const existing = session.windows.at(index);
   if (existing === undefined) {
-    const directory = windowStartDirectory(desired, workspace);
+    const firstPane = desired.panes[0];
+    const directory =
+      firstPane === undefined
+        ? windowStartDirectory(desired, workspace)
+        : paneStartDirectory(firstPane, desired, workspace);
     return {
       created: true,
       window: await session.newWindow({
