@@ -1,6 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { AbortLike, ConnectionOptions, TmuxEventStream, WatchOptions } from "../../types.js";
+import type { PaneId } from "../../common.js";
+import type {
+  AbortLike,
+  ConnectionOptions,
+  TmuxEventStream,
+  TmuxPaneFlowEvent,
+  WatchOptions,
+} from "../../types.js";
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { subcommandOf } from "../transport/group.js";
@@ -233,7 +240,7 @@ export class ControlConnection implements CommandTransport {
    */
   readonly #pauseAfterSeconds: number | undefined;
   /** Panes tmux has paused and this connection has not yet asked back. */
-  readonly #paused = new Set<string>();
+  readonly #paused = new Set<PaneId>();
   readonly #maxCommandBytes: number;
   /**
    * Writes that tmux's stdin was not ready to take.
@@ -749,7 +756,7 @@ export class ControlConnection implements CommandTransport {
   }
 
   /** Publish a pause or resume, and ask a paused pane back. */
-  #routeFlowControl(event: { kind: "continue" | "pause"; paneId: string }): void {
+  #routeFlowControl(event: TmuxPaneFlowEvent): void {
     if (event.kind === "pause") this.#paused.add(event.paneId);
     else this.#paused.delete(event.paneId);
     for (const sink of this.#sinks) sink.push(event);
@@ -758,7 +765,7 @@ export class ControlConnection implements CommandTransport {
   }
 
   /** Ask tmux to resume a pane it paused. tmux answers with `%continue`. */
-  #resumePane(paneId: string): void {
+  #resumePane(paneId: PaneId): void {
     const fallback = this.#spawnFallback;
     const child = this.#children.active();
     if (fallback === undefined || child?.pid === undefined) return;

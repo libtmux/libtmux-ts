@@ -1,4 +1,6 @@
 import type { TmuxEvent } from "../../types.js";
+import type { PaneId } from "../../common.js";
+import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
 
 /**
  * Framing tmux writes around a command's response.
@@ -104,9 +106,16 @@ export function completeUtf8Length(bytes: Uint8Array): number {
 }
 
 /** Decode one `%output` payload; the connection supplies a pane-aware one. */
-export type OutputDecoder = (paneId: string, payload: Uint8Array) => string;
+export type OutputDecoder = (paneId: PaneId, payload: Uint8Array) => string;
 
 const decodeWhole: OutputDecoder = (_paneId, payload) => decoder.decode(payload);
+
+function parsedId<Id extends string>(
+  isId: (value: unknown) => value is Id,
+  value: string,
+): Id | undefined {
+  return isId(value) ? value : undefined;
+}
 
 /**
  * Read `<time> <command number> <flags>`; flags 1 means this client's command.
@@ -169,7 +178,8 @@ export function parseControlLine(
       // The payload is raw bytes, so it is sliced before decoding.
       const payloadStart = line.indexOf(0x20, space + 1);
       if (space === -1 || payloadStart === -1) break;
-      const paneId = decoder.decode(line.subarray(space + 1, payloadStart));
+      const paneId = parsedId(isPaneId, decoder.decode(line.subarray(space + 1, payloadStart)));
+      if (paneId === undefined) break;
       return {
         data: decodeOutput(paneId, unescapeOutput(line.subarray(payloadStart + 1))),
         kind: "output",
@@ -182,68 +192,93 @@ export function parseControlLine(
       const ageEnd = offset === -1 ? -1 : line.indexOf(0x20, offset + 1);
       const markerEnd = ageEnd === -1 ? -1 : line.indexOf(0x20, ageEnd + 1);
       if (paneId === undefined || age === undefined || marker !== ":" || markerEnd === -1) break;
+      const parsedPaneId = parsedId(isPaneId, paneId);
+      if (parsedPaneId === undefined) break;
       return {
         age: Number(age),
-        data: decodeOutput(paneId, unescapeOutput(line.subarray(markerEnd + 1))),
+        data: decodeOutput(parsedPaneId, unescapeOutput(line.subarray(markerEnd + 1))),
         kind: "output",
-        paneId,
+        paneId: parsedPaneId,
       };
     }
     case "window-add":
     case "window-close":
     case "unlinked-window-add":
-    case "unlinked-window-close":
-      return { kind: name, windowId: rest };
+    case "unlinked-window-close": {
+      const windowId = parsedId(isWindowId, rest);
+      if (windowId === undefined) break;
+      return { kind: name, windowId };
+    }
     case "window-renamed":
     case "unlinked-window-renamed": {
       const [windowId, windowName] = splitArguments(rest, 2);
       if (windowId === undefined || windowName === undefined) break;
-      return { kind: name, name: windowName, windowId };
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      if (parsedWindowId === undefined) break;
+      return { kind: name, name: windowName, windowId: parsedWindowId };
     }
     case "window-pane-changed": {
       const [windowId, paneId] = splitArguments(rest, 2);
       if (windowId === undefined || paneId === undefined) break;
-      return { kind: name, paneId, windowId };
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      const parsedPaneId = parsedId(isPaneId, paneId);
+      if (parsedWindowId === undefined || parsedPaneId === undefined) break;
+      return { kind: name, paneId: parsedPaneId, windowId: parsedWindowId };
     }
     case "layout-change": {
       const [windowId, layout, visibleLayout, flags] = splitArguments(rest, 4);
       if (windowId === undefined || layout === undefined) break;
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      if (parsedWindowId === undefined) break;
       return {
         flags: flags ?? "",
         kind: name,
         layout,
         visibleLayout: visibleLayout ?? layout,
-        windowId,
+        windowId: parsedWindowId,
       };
     }
     case "session-changed":
     case "session-renamed": {
       const [sessionId, sessionName] = splitArguments(rest, 2);
       if (sessionId === undefined || sessionName === undefined) break;
-      return { kind: name, name: sessionName, sessionId };
+      const parsedSessionId = parsedId(isSessionId, sessionId);
+      if (parsedSessionId === undefined) break;
+      return { kind: name, name: sessionName, sessionId: parsedSessionId };
     }
     case "sessions-changed":
       return { kind: name };
     case "session-window-changed": {
       const [sessionId, windowId] = splitArguments(rest, 2);
       if (sessionId === undefined || windowId === undefined) break;
-      return { kind: name, sessionId, windowId };
+      const parsedSessionId = parsedId(isSessionId, sessionId);
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      if (parsedSessionId === undefined || parsedWindowId === undefined) break;
+      return { kind: name, sessionId: parsedSessionId, windowId: parsedWindowId };
     }
     case "client-session-changed": {
       const [client, sessionId, sessionName] = splitArguments(rest, 3);
       if (client === undefined || sessionId === undefined || sessionName === undefined) break;
-      return { client, kind: name, name: sessionName, sessionId };
+      const parsedSessionId = parsedId(isSessionId, sessionId);
+      if (parsedSessionId === undefined) break;
+      return { client, kind: name, name: sessionName, sessionId: parsedSessionId };
     }
     case "client-detached":
       return { client: rest, kind: name };
-    case "pane-mode-changed":
-      return { kind: name, paneId: rest };
+    case "pane-mode-changed": {
+      const paneId = parsedId(isPaneId, rest);
+      if (paneId === undefined) break;
+      return { kind: name, paneId };
+    }
     case "paste-buffer-changed":
     case "paste-buffer-deleted":
       return { buffer: rest, kind: name };
     case "continue":
-    case "pause":
-      return { kind: name, paneId: rest };
+    case "pause": {
+      const paneId = parsedId(isPaneId, rest);
+      if (paneId === undefined) break;
+      return { kind: name, paneId };
+    }
     case "config-error":
     case "message":
       return { kind: name, message: rest };

@@ -1,5 +1,23 @@
-import type { Server, TmuxEvent, TmuxEventStream, TmuxOutputEvent } from "../../src/index.js";
+import type {
+  PaneId,
+  Server,
+  SessionId,
+  TmuxEvent,
+  TmuxEventStream,
+  TmuxOutputEvent,
+  TmuxWindowLifecycleEvent,
+  WindowId,
+} from "../../src/index.js";
 import type { Equal, Expect } from "./assert.js";
+
+type _OutputPaneId = Expect<Equal<Extract<TmuxEvent, { kind: "output" }>["paneId"], PaneId>>;
+type _WindowLifecycleId = Expect<Equal<TmuxWindowLifecycleEvent["windowId"], WindowId>>;
+type _SessionWindowIds = Expect<
+  Equal<
+    Pick<Extract<TmuxEvent, { kind: "session-window-changed" }>, "sessionId" | "windowId">,
+    { readonly sessionId: SessionId; readonly windowId: WindowId }
+  >
+>;
 
 /**
  * The disposal and narrowing guarantees `watch()` advertises, checked by tsc.

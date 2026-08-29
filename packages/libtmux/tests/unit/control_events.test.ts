@@ -154,6 +154,27 @@ describe("control-mode line parsing", () => {
     });
   });
 
+  test("does not authenticate malformed notification identities", () => {
+    const malformed = [
+      "%output @1 text",
+      "%extended-output $1 1 : text",
+      "%window-add $1",
+      "%window-renamed %1 name",
+      "%window-pane-changed @1 @2",
+      "%layout-change %1 layout visible *",
+      "%session-changed @1 name",
+      "%session-window-changed $1 $2",
+      "%client-session-changed /dev/pts/3 @1 name",
+      "%pane-mode-changed @1",
+      "%pause $1",
+      "%continue @1",
+    ];
+
+    for (const line of malformed) {
+      expect(event(line).kind, line).toBe("unknown");
+    }
+  });
+
   test("parses output, preserving spaces in the payload", () => {
     expect(event("%output %1 hello world")).toEqual({
       data: "hello world",

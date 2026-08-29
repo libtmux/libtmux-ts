@@ -1,6 +1,6 @@
 import type { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";
 import type { Client } from "./client.js";
-import type { CommandOptions } from "./common.js";
+import type { CommandOptions, PaneId, SessionId, WindowId } from "./common.js";
 import type { Server } from "./server.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
@@ -390,27 +390,27 @@ export interface TmuxOutputEvent {
   readonly age?: number;
   readonly data: string;
   readonly kind: "output";
-  readonly paneId: string;
+  readonly paneId: PaneId;
 }
 
 /** A window was added, closed, or linked into or out of a session. */
 export interface TmuxWindowLifecycleEvent {
   readonly kind: "window-add" | "window-close" | "unlinked-window-add" | "unlinked-window-close";
-  readonly windowId: string;
+  readonly windowId: WindowId;
 }
 
 /** A window was renamed. */
 export interface TmuxWindowRenamedEvent {
   readonly kind: "window-renamed" | "unlinked-window-renamed";
   readonly name: string;
-  readonly windowId: string;
+  readonly windowId: WindowId;
 }
 
 /** The active pane of a window changed. */
 export interface TmuxWindowPaneChangedEvent {
   readonly kind: "window-pane-changed";
-  readonly paneId: string;
-  readonly windowId: string;
+  readonly paneId: PaneId;
+  readonly windowId: WindowId;
 }
 
 /** A window's layout changed. */
@@ -419,14 +419,14 @@ export interface TmuxLayoutChangeEvent {
   readonly kind: "layout-change";
   readonly layout: string;
   readonly visibleLayout: string;
-  readonly windowId: string;
+  readonly windowId: WindowId;
 }
 
 /** The attached session changed, or a session was renamed. */
 export interface TmuxSessionEvent {
   readonly kind: "session-changed" | "session-renamed";
   readonly name: string;
-  readonly sessionId: string;
+  readonly sessionId: SessionId;
 }
 
 /** The set of sessions changed. Carries no payload; re-read the server. */
@@ -437,8 +437,8 @@ export interface TmuxSessionsChangedEvent {
 /** A session's active window changed. */
 export interface TmuxSessionWindowChangedEvent {
   readonly kind: "session-window-changed";
-  readonly sessionId: string;
-  readonly windowId: string;
+  readonly sessionId: SessionId;
+  readonly windowId: WindowId;
 }
 
 /** Another client switched sessions. */
@@ -446,7 +446,7 @@ export interface TmuxClientSessionChangedEvent {
   readonly client: string;
   readonly kind: "client-session-changed";
   readonly name: string;
-  readonly sessionId: string;
+  readonly sessionId: SessionId;
 }
 
 /** Another client detached. */
@@ -458,7 +458,7 @@ export interface TmuxClientDetachedEvent {
 /** A pane entered or left a mode such as copy mode. */
 export interface TmuxPaneModeChangedEvent {
   readonly kind: "pane-mode-changed";
-  readonly paneId: string;
+  readonly paneId: PaneId;
 }
 
 /** A paste buffer was written or deleted. */
@@ -470,7 +470,7 @@ export interface TmuxPasteBufferEvent {
 /** tmux paused or resumed output for a pane that fell behind. */
 export interface TmuxPaneFlowEvent {
   readonly kind: "continue" | "pause";
-  readonly paneId: string;
+  readonly paneId: PaneId;
 }
 
 /** tmux reported a message, or an error in its configuration. */
