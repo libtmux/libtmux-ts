@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../common.js";
+import type { DaemonGuard } from "../../engine.js";
 import { LibTmuxException } from "../../exc.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
@@ -10,6 +11,7 @@ import { parseTmuxVersion, tmuxVersionIsExact, type TmuxVersion } from "./tmux_v
 
 export interface TmuxCapabilities {
   readonly connectionAlias: ConnectionAlias;
+  readonly daemon: DaemonGuard;
   readonly daemonEpoch: DaemonEpoch;
   readonly fingerprint: string;
   readonly quirks: Readonly<{
@@ -25,6 +27,7 @@ export interface CapabilityBinding {
 
 export interface DeriveTmuxCapabilitiesOptions {
   readonly connectionAlias: ConnectionAlias;
+  readonly daemon: DaemonGuard;
   readonly daemonEpoch: DaemonEpoch;
   readonly rawVersion: string;
 }
@@ -39,7 +42,15 @@ export interface LazyCapabilityBindingOptions {
 
 function capabilityFingerprint(options: DeriveTmuxCapabilitiesOptions): string {
   return createHash("sha256")
-    .update(JSON.stringify([options.connectionAlias, options.daemonEpoch, options.rawVersion]))
+    .update(
+      JSON.stringify([
+        options.connectionAlias,
+        options.daemonEpoch,
+        options.daemon.pid,
+        options.daemon.startTime,
+        options.rawVersion,
+      ]),
+    )
     .digest("hex");
 }
 
@@ -50,6 +61,7 @@ export function deriveTmuxCapabilities(options: DeriveTmuxCapabilitiesOptions): 
   });
   return Object.freeze({
     connectionAlias: options.connectionAlias,
+    daemon: Object.freeze({ pid: options.daemon.pid, startTime: options.daemon.startTime }),
     daemonEpoch: options.daemonEpoch,
     fingerprint: capabilityFingerprint(options),
     quirks,
@@ -105,7 +117,7 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
     if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);
     return snapshotInvocationRequest({
-      commands: [["display-message", "-p", "#{version}"]],
+      commands: [["display-message", "-p", "#{version}\t#{pid}\t#{start_time}"]],
       environment: this.#connection.environment,
       executable: this.#connection.executable,
       globalArgs: args,
@@ -137,15 +149,28 @@ export class LazyCapabilityBinding implements CapabilityBinding {
       );
     }
 
-    const versions = decodeBackslashReplace(result.stdout).split("\n");
-    while (versions.at(-1) === "") versions.pop();
-    if (versions.length === 0) {
+    const replies = decodeBackslashReplace(result.stdout).split("\n");
+    while (replies.at(-1) === "") replies.pop();
+    if (replies.length === 0) {
       throw new LibTmuxException("tmux version probe returned no version", {
         subcommand: "display-message",
       });
     }
-    if (versions.length !== 1) {
+    if (replies.length !== 1) {
       throw new LibTmuxException("tmux version probe returned multiple versions", {
+        subcommand: "display-message",
+      });
+    }
+    const [rawVersion, pid, startTime, extra] = replies[0]!.split("\t");
+    if (
+      rawVersion === undefined ||
+      pid === undefined ||
+      startTime === undefined ||
+      extra !== undefined ||
+      !/^[1-9]\d*$/u.test(pid) ||
+      !/^[1-9]\d*$/u.test(startTime)
+    ) {
+      throw new LibTmuxException("tmux capability probe returned an invalid daemon identity", {
         subcommand: "display-message",
       });
     }
@@ -154,8 +179,9 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     try {
       capabilities = deriveTmuxCapabilities({
         connectionAlias: this.#connectionAlias,
+        daemon: { pid, startTime },
         daemonEpoch,
-        rawVersion: versions[0]!,
+        rawVersion,
       });
     } catch (error) {
       throw new LibTmuxException(error instanceof Error ? error.message : "invalid tmux version", {

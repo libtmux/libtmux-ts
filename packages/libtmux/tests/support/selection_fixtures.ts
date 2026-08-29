@@ -77,7 +77,7 @@ function resultFor(request: CommandRequest): RawCommandResult {
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode("3.7b\n"),
+    stdout: encoder.encode("3.7b\t101\t202\n"),
   };
 }
 

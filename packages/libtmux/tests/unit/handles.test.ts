@@ -96,7 +96,7 @@ function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult 
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\n`),
+    stdout: encoder.encode(`${version}\t101\t202\n`),
   };
 }
 
@@ -535,6 +535,7 @@ describe("server and runtime foundations", () => {
     const capabilities = await fixture.runtime.capabilities.bind();
     const expected = deriveTmuxCapabilities({
       connectionAlias: fixture.runtime.connectionAlias,
+      daemon: { pid: "101", startTime: "202" },
       daemonEpoch: fixture.runtime.daemonEpoch,
       rawVersion: "3.7b",
     });
@@ -590,7 +591,7 @@ describe("logical reference binding", () => {
       "-Lhandles",
       "display-message",
       "-p",
-      "#{version}",
+      "#{version}\t#{pid}\t#{start_time}",
     ]);
   });
 

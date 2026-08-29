@@ -212,6 +212,7 @@ describe("public format constants", () => {
       ]);
       const capabilities = deriveTmuxCapabilities({
         connectionAlias: "fresh-process",
+        daemon: { pid: "101", startTime: "202" },
         daemonEpoch: 1,
         rawVersion: "3.7b",
       });

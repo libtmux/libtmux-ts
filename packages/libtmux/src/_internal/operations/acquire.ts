@@ -1,4 +1,5 @@
 import type { RawCompleteFormatRow } from "../codec/schemas.js";
+import { LibTmuxException } from "../../exc.js";
 import {
   executeGuardedListGroup,
   FormatProtocolError,
@@ -7,10 +8,13 @@ import {
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
 import {
+  beginDaemonObservation,
   observeDaemonIdentity,
   type DaemonIdentity,
   type RuntimeContext,
 } from "../runtime/context.js";
+
+const MAX_ACQUISITION_ATTEMPTS = 2;
 
 /**
  * The four listings one acquisition runs, in the order their sections arrive.
@@ -31,15 +35,11 @@ export const ACQUISITION_LISTINGS: readonly GuardedListing[] = Object.freeze([
  *
  * `pid` and `start_time` are universal-scope fields, so every row of every
  * listing already carries them and reading the daemon's identity costs no
- * command of its own. A server with nothing on it lists no rows at all, and
- * then there is nothing to compare — which is correct: an empty server has
- * handed out no handles to invalidate.
+ * command of its own.
  */
 type DaemonRow = Readonly<Pick<RawCompleteFormatRow, "pid" | "start_time">>;
 
-export function daemonIdentityOf(
-  rows: readonly (readonly DaemonRow[])[],
-): DaemonIdentity | undefined {
+export function daemonIdentityOf(rows: readonly (readonly DaemonRow[])[]): DaemonIdentity {
   let daemon: DaemonIdentity | undefined;
   for (const set of rows) {
     for (const row of set) {
@@ -55,6 +55,7 @@ export function daemonIdentityOf(
       }
     }
   }
+  if (daemon === undefined) throw new FormatProtocolError("captured graph has no daemon identity");
   return daemon;
 }
 
@@ -74,15 +75,11 @@ export function daemonIdentityOf(
  * placements of a window linked into two sessions survive as two window
  * records sharing one window entity.
  */
-export async function acquireServerGraph(
+async function acquireServerGraphAttempt(
   runtime: RuntimeContext,
-  // Set only by the retry below. A restart invalidates the epoch that this
-  // acquisition already read, so the rows in hand describe the new daemon under
-  // the old epoch and cannot be normalized. Reading again under the new one is
-  // the whole recovery, and a second restart in that window is a different
-  // outage rather than a reason to keep going round.
-  afterRestart = false,
+  attemptsRemaining: number,
 ): Promise<NormalizedGraph> {
+  const observation = beginDaemonObservation(runtime);
   const [capabilities, [sessions = [], windows = [], panes = [], clients = []]] = await Promise.all(
     [
       runtime.capabilities.bind(),
@@ -96,20 +93,17 @@ export async function acquireServerGraph(
     ],
   );
 
-  // A restart hands the next daemon the same socket and the same ids, so
-  // noticing it here is what keeps a handle from the previous one from
-  // resolving against its successor. Invalidating the epoch is what enforces
-  // that: every graph captured under the old epoch stops validating.
   const daemon = daemonIdentityOf([sessions, windows, panes, clients]);
-  if (daemon !== undefined && observeDaemonIdentity(runtime, daemon).restarted && !afterRestart) {
-    return acquireServerGraph(runtime, true);
+  if (!observeDaemonIdentity(runtime, observation, capabilities, daemon)) {
+    if (attemptsRemaining > 1) return acquireServerGraphAttempt(runtime, attemptsRemaining - 1);
+    throw new LibTmuxException("daemon changed repeatedly during graph acquisition");
   }
 
   return normalizeGraph({
     capture: {
       capabilityFingerprint: capabilities.fingerprint,
       connection: capabilities.connectionAlias,
-      ...(daemon === undefined ? {} : { daemon }),
+      daemon,
       epoch: capabilities.daemonEpoch,
       tmuxVersion: capabilities.rawVersion,
     },
@@ -120,4 +114,8 @@ export async function acquireServerGraph(
       { listCommand: "list-clients", rows: clients, source: createGraphSourceId("clients") },
     ] satisfies readonly CapturedRowSet[],
   });
+}
+
+export function acquireServerGraph(runtime: RuntimeContext): Promise<NormalizedGraph> {
+  return acquireServerGraphAttempt(runtime, MAX_ACQUISITION_ATTEMPTS);
 }

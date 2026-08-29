@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { executeGuardedListGroup } from "../../src/_internal/codec/guard_codec.js";
 import { acquireServerGraph, daemonIdentityOf } from "../../src/_internal/operations/acquire.js";
 import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
-import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
+import { createRuntimeContext, lastObservedDaemon } from "../../src/_internal/runtime/context.js";
 import type { RuntimeContext } from "../../src/_internal/runtime/context.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
@@ -22,6 +22,94 @@ import type { ConnectionAlias, DaemonEpoch, WindowId } from "../../src/common.js
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { Server } from "../../src/server.js";
+
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+class GatedTransport implements CommandTransport {
+  readonly #raw = new NodeSpawnTransport({ terminationGraceMs: 100 });
+  #afterCapabilityProbe: ((probe: number) => Promise<void>) | undefined;
+  #holdNext:
+    | {
+        readonly captured: ReturnType<typeof deferred>;
+        readonly release: ReturnType<typeof deferred>;
+      }
+    | undefined;
+  capabilityProbes = 0;
+  invocations = 0;
+
+  async execute(request: CommandRequest) {
+    if (request.commands.length === 1) {
+      const result = await this.#raw.execute(request);
+      this.capabilityProbes += 1;
+      await this.#afterCapabilityProbe?.(this.capabilityProbes);
+      return result;
+    }
+    this.invocations += 1;
+    const result = await this.#raw.execute(request);
+    const hold = this.#holdNext;
+    if (hold !== undefined) {
+      this.#holdNext = undefined;
+      hold.captured.resolve();
+      await hold.release.promise;
+    }
+    return result;
+  }
+
+  afterCapabilityProbe(callback: (probe: number) => Promise<void>): void {
+    this.#afterCapabilityProbe = callback;
+  }
+
+  holdNextInvocation(): { readonly captured: Promise<void>; readonly release: () => void } {
+    const captured = deferred();
+    const release = deferred();
+    this.#holdNext = { captured, release };
+    return { captured: captured.promise, release: release.resolve };
+  }
+}
+
+async function restartServer(controller: Server, sessionName: string): Promise<void> {
+  await controller.cmd("kill-server").catch(() => undefined);
+  await controller.cmd("new-session", ["-d", "-s", sessionName], { target: null });
+}
+
+async function withRestartableServer(
+  body: (fixture: {
+    readonly controller: Server;
+    readonly runtime: RuntimeContext;
+    readonly transport: GatedTransport;
+  }) => Promise<void>,
+): Promise<void> {
+  const directory = await makeTestDirectory("ltx-acquire-order-");
+  const socketPath = join(directory, "s");
+  const tmuxBin = process.env.LIBTMUX_TMUX_BIN ?? "tmux";
+  const environment = Object.freeze({ ...process.env });
+  const controller = new Server({
+    engine: new NodeSpawnTransport(),
+    environment,
+    socketPath,
+    tmuxBin,
+  });
+  const transport = new GatedTransport();
+  const runtime = createRuntimeContext({
+    connection: new TmuxConnection({ environment, executable: tmuxBin, socketPath }),
+    connectionAlias: "acquisition-order" as ConnectionAlias,
+    daemonEpoch: 0 as DaemonEpoch,
+    transport,
+  });
+  try {
+    await controller.cmd("new-session", ["-d", "-s", "before"], { target: null });
+    await body({ controller, runtime, transport });
+  } finally {
+    await controller.cmd("kill-server").catch(() => undefined);
+    await rm(directory, { force: true, recursive: true });
+  }
+}
 
 function runtimeFor(
   server: TestServer,
@@ -75,7 +163,7 @@ describe("server graph acquisition", () => {
   test("requires one complete daemon identity across every captured row", () => {
     const daemon = { pid: "101", start_time: "202" };
 
-    expect(daemonIdentityOf([[], []])).toBeUndefined();
+    expect(() => daemonIdentityOf([[], []])).toThrow("captured graph has no daemon identity");
     expect(daemonIdentityOf([[daemon], [daemon]])).toEqual({ pid: "101", startTime: "202" });
     for (const rows of [
       [[{ pid: "101", start_time: null }]],
@@ -203,6 +291,65 @@ describe("server graph acquisition", () => {
 
       expect(result.returncode).toBe(0);
       expect(new TextDecoder().decode(result.stdout)).toBe("literal;\nsecond\n");
+    });
+  }, 30_000);
+
+  test("discards a delayed observation from the previous daemon", async () => {
+    await withRestartableServer(async ({ controller, runtime, transport }) => {
+      const baseline = await acquireServerGraph(runtime);
+      const oldDaemon = baseline.capture.daemon;
+      const held = transport.holdNextInvocation();
+      const older = acquireServerGraph(runtime).then((graph) => ({
+        graph,
+        runtimeEpoch: runtime.daemonEpoch,
+      }));
+      await held.captured;
+
+      await restartServer(controller, "after");
+      const newer = acquireServerGraph(runtime).then((graph) => ({
+        graph,
+        runtimeEpoch: runtime.daemonEpoch,
+      }));
+      const newerResult = await newer.finally(held.release);
+
+      const olderResult = await older;
+      expect(olderResult.graph.capture.epoch).toBe(olderResult.runtimeEpoch);
+      expect(newerResult.graph.capture.epoch).toBe(newerResult.runtimeEpoch);
+      expect(olderResult.graph.capture.daemon).toEqual(lastObservedDaemon(runtime));
+      expect(newerResult.graph.capture.daemon).toEqual(lastObservedDaemon(runtime));
+      expect(newerResult.graph.capture.daemon).not.toEqual(oldDaemon);
+      expect(runtime.daemonEpoch).toBe(1 as DaemonEpoch);
+      expect(newerResult.graph).not.toBe(olderResult.graph);
+    });
+  }, 30_000);
+
+  test("rebinds first capabilities when their daemon differs from the capture", async () => {
+    await withRestartableServer(async ({ controller, runtime, transport }) => {
+      transport.afterCapabilityProbe(async (probe) => {
+        if (probe === 1) await restartServer(controller, "after-probe");
+      });
+
+      const graph = await acquireServerGraph(runtime);
+
+      expect(transport.capabilityProbes).toBe(2);
+      expect(transport.invocations).toBe(2);
+      expect(graph.capture.daemon).toEqual(lastObservedDaemon(runtime));
+      expect(graph.capture.epoch).toBe(1 as DaemonEpoch);
+      expect(runtime.daemonEpoch).toBe(1 as DaemonEpoch);
+    });
+  }, 30_000);
+
+  test("stops after two capability and capture conflicts", async () => {
+    await withRestartableServer(async ({ controller, runtime, transport }) => {
+      transport.afterCapabilityProbe((probe) => restartServer(controller, `after-probe-${probe}`));
+
+      await expect(acquireServerGraph(runtime)).rejects.toThrow(
+        "daemon changed repeatedly during graph acquisition",
+      );
+      expect(transport.capabilityProbes).toBe(2);
+      expect(transport.invocations).toBe(2);
+      expect(lastObservedDaemon(runtime)).toBeUndefined();
+      expect(runtime.daemonEpoch).toBe(2 as DaemonEpoch);
     });
   }, 30_000);
 

@@ -73,7 +73,7 @@ const transport = {
       returncode: 0,
       signal: null,
       stderr: new Uint8Array(),
-      stdout: new TextEncoder().encode("3.7b\n"),
+      stdout: new TextEncoder().encode("3.7b\t101\t202\n"),
     };
   },
 };

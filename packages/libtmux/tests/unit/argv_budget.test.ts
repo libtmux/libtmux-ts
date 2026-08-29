@@ -26,6 +26,7 @@ const REQUIRED_HEADROOM_BYTES = 3072;
 function acquisitionArgv(rawVersion: string): readonly string[] {
   const capabilities = deriveTmuxCapabilities({
     connectionAlias: "budget" as ConnectionAlias,
+    daemon: { pid: "101", startTime: "202" },
     daemonEpoch: 0 as DaemonEpoch,
     rawVersion,
   });
@@ -62,6 +63,7 @@ describe("acquisition argv budget", () => {
   test("the field separator is one byte, because 569 of them are what decides the budget", () => {
     const capabilities = deriveTmuxCapabilities({
       connectionAlias: "budget" as ConnectionAlias,
+      daemon: { pid: "101", startTime: "202" },
       daemonEpoch: 0 as DaemonEpoch,
       rawVersion: "3.7b",
     });

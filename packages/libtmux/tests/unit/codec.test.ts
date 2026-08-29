@@ -14,6 +14,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxException } from "../../src/exc.js";
 
 const encoder = new TextEncoder();
+const daemon = Object.freeze({ pid: "101", startTime: "202" });
 const guards: FormatGuards = Object.freeze({
   field: ";",
   recordEnd: "ltxE6c22",
@@ -51,6 +52,7 @@ function codecFor(
   return new GuardCodec({
     capabilities: deriveTmuxCapabilities({
       connectionAlias: "codec-test" as ConnectionAlias,
+      daemon,
       daemonEpoch: 1 as DaemonEpoch,
       rawVersion: version,
     }),
@@ -78,6 +80,7 @@ describe("guarded format codec", () => {
   test("does not invent a failing subcommand for one aggregate result", async () => {
     const capabilities = deriveTmuxCapabilities({
       connectionAlias: "codec-test" as ConnectionAlias,
+      daemon,
       daemonEpoch: 1 as DaemonEpoch,
       rawVersion: "3.7b",
     });
@@ -122,6 +125,7 @@ describe("guarded format codec", () => {
     expect(request.capabilityFingerprint).toBe(
       deriveTmuxCapabilities({
         connectionAlias: "codec-test" as ConnectionAlias,
+        daemon,
         daemonEpoch: 1 as DaemonEpoch,
         rawVersion: "3.7b",
       }).fingerprint,
@@ -177,6 +181,7 @@ describe("guarded format codec", () => {
       new GuardCodec({
         capabilities: deriveTmuxCapabilities({
           connectionAlias: alias as ConnectionAlias,
+          daemon,
           daemonEpoch: epoch as DaemonEpoch,
           rawVersion: version,
         }),

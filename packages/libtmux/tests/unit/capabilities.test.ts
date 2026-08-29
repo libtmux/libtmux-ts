@@ -31,7 +31,7 @@ function resultFor(request: CommandRequest, version: string): RawCommandResult {
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\n`),
+    stdout: encoder.encode(`${version}\t101\t202\n`),
   };
 }
 
@@ -50,7 +50,11 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 
 describe("tmux capabilities", () => {
   test("marks the break-pane quirk on 3.7 exactly, not on the releases that fixed it", () => {
-    const base = { connectionAlias: alias("daemon-a"), daemonEpoch: epoch(1) };
+    const base = {
+      connectionAlias: alias("daemon-a"),
+      daemon: { pid: "101", startTime: "202" },
+      daemonEpoch: epoch(1),
+    };
     const v37 = deriveTmuxCapabilities({ ...base, rawVersion: "3.7" });
     const v37a = deriveTmuxCapabilities({ ...base, rawVersion: "3.7a" });
     const v37b = deriveTmuxCapabilities({ ...base, rawVersion: "3.7b" });
@@ -62,25 +66,36 @@ describe("tmux capabilities", () => {
     expect(Object.isFrozen(v37.quirks)).toBe(true);
   });
 
-  test("fingerprints version, connection alias, and daemon epoch", () => {
+  test("fingerprints version, identity, connection alias, and daemon epoch", () => {
+    const daemon = { pid: "101", startTime: "202" };
     const original = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-a"),
+      daemon,
       daemonEpoch: epoch(1),
       rawVersion: "3.7b",
     });
     const changedVersion = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-a"),
+      daemon,
       daemonEpoch: epoch(1),
       rawVersion: "3.7a",
     });
     const changedAlias = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-b"),
+      daemon,
       daemonEpoch: epoch(1),
       rawVersion: "3.7b",
     });
     const changedEpoch = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-a"),
+      daemon,
       daemonEpoch: epoch(2),
+      rawVersion: "3.7b",
+    });
+    const changedDaemon = deriveTmuxCapabilities({
+      connectionAlias: alias("daemon-a"),
+      daemon: { pid: "303", startTime: "404" },
+      daemonEpoch: epoch(1),
       rawVersion: "3.7b",
     });
 
@@ -89,12 +104,14 @@ describe("tmux capabilities", () => {
         original.fingerprint,
         changedVersion.fingerprint,
         changedAlias.fingerprint,
+        changedDaemon.fingerprint,
         changedEpoch.fingerprint,
       ]).size,
-    ).toBe(4);
+    ).toBe(5);
     expect(
       deriveTmuxCapabilities({
         connectionAlias: alias("daemon-a"),
+        daemon,
         daemonEpoch: epoch(1),
         rawVersion: "3.7b",
       }).fingerprint,
@@ -124,6 +141,7 @@ describe("tmux capabilities", () => {
     const second = await binding.bind();
 
     expect(first).toBe(second);
+    expect(first.daemon).toEqual({ pid: "101", startTime: "202" });
     expect(first.rawVersion).toBe("3.6a");
     expect(requests).toHaveLength(1);
     expect(flattenInvocation(requests[0]!)).toEqual([
@@ -131,7 +149,7 @@ describe("tmux capabilities", () => {
       "-S/tmp/capability.sock",
       "display-message",
       "-p",
-      "#{version}",
+      "#{version}\t#{pid}\t#{start_time}",
     ]);
 
     currentEpoch = epoch(10);
@@ -205,7 +223,7 @@ describe("tmux capabilities", () => {
     expect(calls).toBe(2);
   });
 
-  test("maps malformed, ambiguous, and failed connected-daemon version replies", async () => {
+  test("maps malformed, ambiguous, and failed connected-daemon capability replies", async () => {
     const replies = [
       {
         diagnostic: "tmux version probe returned no version",
@@ -223,7 +241,19 @@ describe("tmux capabilities", () => {
         diagnostic: "invalid tmux version",
         returncode: 0,
         stderr: "",
-        stdout: "#{version}\n",
+        stdout: "#{version}\t101\t202\n",
+      },
+      {
+        diagnostic: "tmux capability probe returned an invalid daemon identity",
+        returncode: 0,
+        stderr: "",
+        stdout: "3.7b\t101\n",
+      },
+      {
+        diagnostic: "tmux capability probe returned an invalid daemon identity",
+        returncode: 0,
+        stderr: "",
+        stdout: "3.7b\tone\t202\n",
       },
       {
         diagnostic: "cannot reach tmux: no server running",
@@ -264,7 +294,7 @@ describe("tmux capabilities", () => {
         "-N",
         "display-message",
         "-p",
-        "#{version}",
+        "#{version}\t#{pid}\t#{start_time}",
       ]);
       expect(probeError).toBeInstanceOf(LibTmuxException);
       expect((probeError as Error).message).toContain(reply.diagnostic);

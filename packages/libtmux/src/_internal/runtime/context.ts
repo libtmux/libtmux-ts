@@ -10,20 +10,34 @@ import { Server, type DaemonIdentity } from "../../server.js";
 import { decodeLogicalRef } from "../graph/refs.js";
 import type { CommandTransport } from "../transport/types.js";
 import { timerDuration } from "../timing.js";
-import { LazyCapabilityBinding } from "./capabilities.js";
+import { LazyCapabilityBinding, type TmuxCapabilities } from "./capabilities.js";
 import type { TmuxConnection } from "./connection.js";
 
 export type { DaemonIdentity } from "../../server.js";
 
 interface RuntimeEpochState {
   daemonEpoch: DaemonEpoch;
+  daemonRevision: number;
   /** The daemon the last acquisition reached, so the next one can tell it apart. */
   daemon: DaemonIdentity | undefined;
+}
+
+export interface DaemonObservation {
+  readonly daemonEpoch: DaemonEpoch;
+  readonly revision: number;
 }
 
 /** Whether two readings describe the same running daemon. */
 function sameDaemon(left: DaemonIdentity, right: DaemonIdentity): boolean {
   return left.pid === right.pid && left.startTime === right.startTime;
+}
+
+function nextDaemonRevision(state: RuntimeEpochState): number {
+  const revision = state.daemonRevision + 1;
+  if (!Number.isSafeInteger(revision)) {
+    throw new LibTmuxException("daemon observation cannot exceed the safe integer range");
+  }
+  return revision;
 }
 
 const runtimeEpochStates = new WeakMap<RuntimeContext, RuntimeEpochState>();
@@ -91,7 +105,11 @@ function assertLogicalRefRuntime(runtime: RuntimeContext, ref: LogicalRef): void
 export function createRuntimeContext(options: RuntimeContextOptions): RuntimeContext {
   const timeoutMs =
     options.timeoutMs === undefined ? undefined : timerDuration("timeoutMs", options.timeoutMs);
-  const state: RuntimeEpochState = { daemon: undefined, daemonEpoch: options.daemonEpoch };
+  const state: RuntimeEpochState = {
+    daemon: undefined,
+    daemonEpoch: options.daemonEpoch,
+    daemonRevision: 0,
+  };
   const capabilities = new LazyCapabilityBinding({
     connection: options.connection,
     connectionAlias: options.connectionAlias,
@@ -148,24 +166,48 @@ export function invalidateRuntimeEpoch(runtime: RuntimeContext): DaemonEpoch {
   return state.daemonEpoch;
 }
 
-/**
- * Record which daemon just answered, and say whether it is a different one.
- *
- * Returns true the first time — there is nothing to have changed from. When it
- * *has* changed, the epoch is invalidated, which is what makes every handle
- * from the previous daemon refuse to resolve instead of quietly addressing
- * whatever now holds its id.
- */
+/** Commit an answer unless another daemon transition overtook its observation. */
 export function observeDaemonIdentity(
   runtime: RuntimeContext,
-  daemon: DaemonIdentity,
-): { readonly restarted: boolean } {
+  observation: DaemonObservation,
+  capabilities: Pick<TmuxCapabilities, "daemon" | "daemonEpoch">,
+  captured: DaemonIdentity,
+): boolean {
   const state = epochStateFor(runtime);
   const previous = state.daemon;
-  state.daemon = daemon;
-  if (previous === undefined || sameDaemon(previous, daemon)) return { restarted: false };
-  invalidateRuntimeEpoch(runtime);
-  return { restarted: true };
+  const observationIsCurrent =
+    state.daemonRevision === observation.revision && state.daemonEpoch === observation.daemonEpoch;
+  if (!sameDaemon(capabilities.daemon, captured)) {
+    if (observationIsCurrent && capabilities.daemonEpoch === observation.daemonEpoch) {
+      const daemonRevision = nextDaemonRevision(state);
+      invalidateRuntimeEpoch(runtime);
+      state.daemon = undefined;
+      state.daemonRevision = daemonRevision;
+    }
+    return false;
+  }
+  if (
+    capabilities.daemonEpoch !== observation.daemonEpoch ||
+    state.daemonEpoch !== observation.daemonEpoch
+  ) {
+    return false;
+  }
+  if (state.daemonRevision !== observation.revision) {
+    return previous !== undefined && sameDaemon(previous, captured);
+  }
+  if (previous !== undefined && sameDaemon(previous, captured)) {
+    return true;
+  }
+  const daemonRevision = nextDaemonRevision(state);
+  if (previous !== undefined) invalidateRuntimeEpoch(runtime);
+  state.daemon = captured;
+  state.daemonRevision = daemonRevision;
+  return previous === undefined;
+}
+
+export function beginDaemonObservation(runtime: RuntimeContext): DaemonObservation {
+  const state = epochStateFor(runtime);
+  return Object.freeze({ daemonEpoch: state.daemonEpoch, revision: state.daemonRevision });
 }
 
 /** The daemon the last acquisition reached, if there has been one. */
