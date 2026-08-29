@@ -420,12 +420,12 @@ Sessions, windows, and panes:
 ```ts
 import { isSplitSize, isTmuxName, splitSize } from "libtmux";
 
-const requestedName: unknown = "work";
-// Names holding `:` or `.` are refused: tmux rewrites them before 3.7, fails
-// on 3.7, and keeps them after, and they cannot be addressed as a target.
-if (!isTmuxName(requestedName)) throw new TypeError("invalid session name");
-const session = await server.newSession({ name: requestedName });
-const window = await session.newWindow({ name: "editor" });
+const session = await server.newSession({ name: "work" });
+const requestedName: unknown = "editor";
+// A name holding `:` or `.` is refused: tmux rewrites it before 3.7, fails on
+// 3.7, keeps it after, and it cannot be addressed as a target on any of them.
+if (!isTmuxName(requestedName)) throw new TypeError("invalid window name");
+const window = await session.newWindow({ name: requestedName });
 const requestedSize: unknown = "30%";
 if (!isSplitSize(requestedSize)) throw new TypeError("invalid split size");
 const pane = await window.split({ size: requestedSize, startDirectory: "/srv" });
