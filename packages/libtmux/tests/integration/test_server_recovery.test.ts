@@ -6,11 +6,7 @@ import { describe, expect, test } from "bun:test";
 
 import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
 import { createRegisteredTestServer } from "../support/fixture_registry.js";
-import {
-  reservationsIn,
-  waitForNoNewReservations,
-  withTemporaryRunRoot,
-} from "../support/run_root_harness.js";
+import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
 import { reapRedLaunch } from "../support/tmux_cleanup.js";
 
 import {
@@ -254,7 +250,6 @@ describe("TestServer launch recovery", () => {
     const runRoot = join(parent, "run");
     const marker = join(parent, "launch.frame");
     await prepareRunRoot(runRoot);
-    const before = new Set(await reservationsIn(runRoot));
     const wrapper = await writeNonzeroLaunchFrameWrapper(parent, marker);
     let primary: unknown;
     try {
@@ -268,7 +263,7 @@ describe("TestServer launch recovery", () => {
       const [socketPath, rawPid] = (await readFile(marker, "utf8")).trim().split("\t");
       await waitForProcessExit(Number(rawPid));
       await waitForPathAbsent(socketPath!);
-      await waitForNoNewReservations(runRoot, before);
+      await waitForOwnReservations(runRoot);
     } finally {
       try {
         const [socketPath] = (await readFile(marker, "utf8")).trim().split("\t");
@@ -286,7 +281,6 @@ describe("TestServer launch recovery", () => {
 
   test("removes a partial atomic identity temp and recovers from the original launching record", async () => {
     await withTemporaryRunRoot("partial-record-write", async (runRoot) => {
-      const before = new Set(await reservationsIn(runRoot));
       let unexpected: TestServer | undefined;
       try {
         unexpected = await TestServer.create({
@@ -300,7 +294,7 @@ describe("TestServer launch recovery", () => {
         await unexpected.dispose();
         throw new Error("expected injected partial identity record write failure");
       }
-      await waitForNoNewReservations(runRoot, before);
+      await waitForOwnReservations(runRoot);
     });
   });
 
@@ -345,7 +339,6 @@ describe("TestServer launch recovery", () => {
 
   test("reserves eight concurrent exact sockets and consumes pane readiness after signaling", async () => {
     await withTemporaryRunRoot("run, root with space", async (runRoot) => {
-      const before = new Set(await reservationsIn(runRoot));
       const servers = await Promise.all(
         Array.from({ length: 8 }, () => createRegisteredTestServer({ runRoot })),
       );
@@ -379,7 +372,7 @@ describe("TestServer launch recovery", () => {
         await Promise.all(servers.map((server) => server.dispose()));
       }
 
-      await waitForNoNewReservations(runRoot, before);
+      await waitForOwnReservations(runRoot);
     });
   }, 20_000);
 

@@ -19,6 +19,7 @@ export {
 } from "./deadlines.js";
 export {
   beginFixtureLaunch,
+  fixtureReservationPrefix,
   promoteFixtureLaunch,
   reserveFixture,
   rollbackFixtureLaunchNotStarted,

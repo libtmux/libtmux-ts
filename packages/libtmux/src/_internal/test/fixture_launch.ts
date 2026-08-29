@@ -100,6 +100,19 @@ export function restoreReservationCapability(
   return mintReservationCapability(fields, environment);
 }
 
+/**
+ * What every reservation this process makes is named after.
+ *
+ * A run root is shared by each test file the suite runs at once, so the
+ * process id is what tells one file's reservations from another's. Exported
+ * because a caller asking whether its own fixtures were released has to ask
+ * the same question this name answers, and a second copy of the format would
+ * go on agreeing after this one changed.
+ */
+export function fixtureReservationPrefix(): string {
+  return `t-${process.pid.toString(36)}-`;
+}
+
 export async function reserveFixture(
   runRoot: string,
   environment: Readonly<Record<string, string | undefined>> = process.env,
@@ -117,7 +130,7 @@ export async function reserveFixture(
   if (owner === undefined) throw new Error("cannot identify fixture owner process");
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const logicalSocketName = `t-${process.pid.toString(36)}-${randomUUID().slice(0, 12)}`;
+    const logicalSocketName = `${fixtureReservationPrefix()}${randomUUID().slice(0, 12)}`;
     const reservationPath = join(runRoot, logicalSocketName);
     try {
       // eslint-disable-next-line no-await-in-loop -- each retry must win one atomic mkdir before proceeding.

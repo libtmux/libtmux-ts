@@ -1,5 +1,6 @@
 import {
   deadlineMs,
+  fixtureReservationPrefix,
   RESERVATION_RELEASE_DEADLINE_MS,
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -45,32 +46,30 @@ async function reservationsIn(runRoot: string): Promise<readonly string[]> {
 }
 
 /**
- * Wait until this test's own reservations are gone from the run root.
+ * Wait until every reservation this process made has been released.
  *
- * The run root is shared: the supervisor publishes one and every test file uses
- * it, so at any moment another file running in parallel has live reservations
- * here that are none of this test's business. Asserting the directory is empty
- * asserts that nothing else is running, which under `--parallel` is a statement
- * about scheduling rather than about cleanup.
+ * A run root is shared: the supervisor publishes one and each test file the
+ * suite runs at once reserves in it. Only this process's own reservations say
+ * anything about its cleanup, and the name carries the process id that decides
+ * that — so the question is asked by owner rather than by comparing against a
+ * reading taken earlier, which counts a sibling's later reservation as this
+ * one's leak and waits out the deadline on a fixture that is still in use.
  *
- * So the baseline is taken before the work and only new entries are waited on.
- * Removing a reservation is also the tail of a cleanup the failing call has
- * already returned from, hence the wait rather than a single read.
+ * Removing a reservation is the tail of a cleanup the failing call has already
+ * returned from, hence the wait rather than a single read.
  */
-async function waitForNoNewReservations(
-  runRoot: string,
-  before: ReadonlySet<string>,
-): Promise<void> {
-  let added: string[] = [];
+async function waitForOwnReservations(runRoot: string): Promise<void> {
+  const prefix = fixtureReservationPrefix();
+  let held: string[] = [];
   const deadline = performance.now() + deadlineMs(RESERVATION_RELEASE_DEADLINE_MS);
   while (performance.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- absence is observed within one monotonic bound.
-    added = (await reservationsIn(runRoot)).filter((entry) => !before.has(entry));
-    if (added.length === 0) return;
+    held = (await reservationsIn(runRoot)).filter((entry) => entry.startsWith(prefix));
+    if (held.length === 0) return;
     // eslint-disable-next-line no-await-in-loop -- absence observation is bounded and sequential.
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  throw new Error(`fixture reservations were not released: ${added.join(", ")}`);
+  throw new Error(`fixture reservations were not released: ${held.join(", ")}`);
 }
 
-export { reservationsIn, waitForNoNewReservations, withTemporaryRunRoot };
+export { reservationsIn, waitForOwnReservations, withTemporaryRunRoot };

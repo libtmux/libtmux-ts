@@ -14,11 +14,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { waitForProcessExit } from "../support/converge.js";
-import {
-  reservationsIn,
-  waitForNoNewReservations,
-  withTemporaryRunRoot,
-} from "../support/run_root_harness.js";
+import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
 import { reapRedLaunch } from "../support/tmux_cleanup.js";
 
 import {
@@ -65,7 +61,6 @@ describe("TestServer cleanup", () => {
   ] as const) {
     test(`cleans socket, record, reservation, and daemon after ${fault} failure`, async () => {
       await withTemporaryRunRoot(`fault-${fault}`, async (runRoot) => {
-        const before = new Set(await reservationsIn(runRoot));
         let unexpected: TestServer | undefined;
         try {
           unexpected = await TestServer.create({ runRoot, faultInjection: fault } as never);
@@ -76,7 +71,7 @@ describe("TestServer cleanup", () => {
           await unexpected.dispose();
           throw new Error(`expected injected ${fault} failure`);
         }
-        await waitForNoNewReservations(runRoot, before);
+        await waitForOwnReservations(runRoot);
       });
     });
   }
@@ -111,7 +106,6 @@ describe("TestServer cleanup", () => {
 
   test("survives repeated immediate socket unlink cleanup after observed readiness", async () => {
     await withTemporaryRunRoot("unlink-stress", async (runRoot) => {
-      const before = new Set(await reservationsIn(runRoot));
       for (let iteration = 0; iteration < 20; iteration += 1) {
         // eslint-disable-next-line no-await-in-loop -- each fixture lifecycle is the stress subject.
         const server = await TestServer.create({ runRoot });
@@ -122,7 +116,7 @@ describe("TestServer cleanup", () => {
         // eslint-disable-next-line no-await-in-loop -- every iteration proves its reservation is gone.
         await expect(access(server.reservationPath)).rejects.toMatchObject({ code: "ENOENT" });
       }
-      await waitForNoNewReservations(runRoot, before);
+      await waitForOwnReservations(runRoot);
     });
   }, 30_000);
 
@@ -207,7 +201,6 @@ describe("TestServer cleanup", () => {
 
   test("cleans a failed startup without a daemon, registry, socket, or reservation", async () => {
     await withTemporaryRunRoot("startup-failure", async (runRoot) => {
-      const before = new Set(await reservationsIn(runRoot));
       await expect(
         TestServer.create({
           runRoot,
@@ -215,7 +208,7 @@ describe("TestServer cleanup", () => {
         }),
       ).rejects.toThrow();
 
-      await waitForNoNewReservations(runRoot, before);
+      await waitForOwnReservations(runRoot);
     });
   });
 
@@ -246,7 +239,6 @@ describe("TestServer cleanup", () => {
 
   test("cleans the fixture when its test body throws", async () => {
     await withTemporaryRunRoot("throwing-body", async (runRoot) => {
-      const before = new Set(await reservationsIn(runRoot));
       const primary = new Error("primary test failure");
       await expect(
         TestServer.run({ runRoot }, async () => {
@@ -254,7 +246,7 @@ describe("TestServer cleanup", () => {
         }),
       ).rejects.toBe(primary);
 
-      await waitForNoNewReservations(runRoot, before);
+      await waitForOwnReservations(runRoot);
     });
   });
 
