@@ -185,13 +185,26 @@ describe("ControlMode", () => {
       socketPath: "/does/not/exist/s",
       tmuxExecutable: "/does/not/exist/tmux",
     };
-    const originalEmit = ChildProcess.prototype.emit;
+    // `emit` is inherited from EventEmitter, so the patch adds an own property
+    // and the restore has to remove it rather than assign the original back.
+    // Read through Reflect: a member expression here is an unbound method
+    // reference, which a type-aware lint rule reports or not depending on the
+    // ambient declarations in the program.
+    const original = Reflect.get(ChildProcess.prototype, "emit") as (
+      this: ChildProcess,
+      ...args: unknown[]
+    ) => boolean;
+    const ownEmit = Object.getOwnPropertyDescriptor(ChildProcess.prototype, "emit");
     let spawnError: { readonly code?: string; readonly path?: string } | undefined;
-    ChildProcess.prototype.emit = function (event: string | symbol, ...args: unknown[]): boolean {
+    ChildProcess.prototype.emit = function (
+      this: ChildProcess,
+      event: string | symbol,
+      ...args: unknown[]
+    ): boolean {
       if (event === "error" && this.spawnfile === fakeServer.tmuxExecutable) {
         spawnError = args[0] as typeof spawnError;
       }
-      return Reflect.apply(originalEmit, this, [event, ...args]) as boolean;
+      return Reflect.apply(original, this, [event, ...args]) as boolean;
     };
     const started = performance.now();
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -209,7 +222,8 @@ describe("ControlMode", () => {
       ).rejects.toThrow("control-mode client did not spawn");
     } finally {
       if (deadline !== undefined) clearTimeout(deadline);
-      ChildProcess.prototype.emit = originalEmit;
+      if (ownEmit === undefined) Reflect.deleteProperty(ChildProcess.prototype, "emit");
+      else Object.defineProperty(ChildProcess.prototype, "emit", ownEmit);
     }
     expect(controllerAssertionRan).toBeTrue();
     expect(spawnError?.code).toBe("ENOENT");
