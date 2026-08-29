@@ -950,7 +950,7 @@ over ssh, inside a container, or behind a daemon:
 
 ```ts
 import { Server, TmuxServerRestarted } from "libtmux";
-import { asSingleInvocation, guardRequest, refusedByGuard } from "libtmux/engine";
+import { asSingleInvocation, guardRequest } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine } from "libtmux/engine";
 
 /** `run` is yours: give it an argument vector, get back what tmux wrote. */
@@ -964,13 +964,14 @@ function engineOver(
     endpoint,
     async execute(request) {
       // A command addressed by id must not run on a daemon that reissued that
-      // id. These two are the wrapper and its reply, published rather than
-      // described so an engine inherits restart safety instead of rebuilding
-      // it: `guardRequest` makes tmux refuse, `refusedByGuard` tells that
-      // refusal from the command itself having failed.
+      // id. This plan keeps the wrapper and its exact refusal detector together
+      // so an engine inherits restart safety instead of rebuilding it.
       const guarded = guardRequest(request);
-      const result = await run([guarded.executable, ...guarded.args], guarded.stdin);
-      if (request.daemonGuard !== undefined && refusedByGuard(result.returncode, result.stderr)) {
+      const result = await run(
+        [guarded.request.executable, ...guarded.request.args],
+        guarded.request.stdin,
+      );
+      if (guarded.refusedBy(result.returncode, result.stderr)) {
         throw new TmuxServerRestarted("the daemon this handle was read from is gone");
       }
       return result;
