@@ -142,6 +142,37 @@ function parseSemanticVersion(value: string): SemanticVersion {
   return prerelease === undefined ? { major, minor, patch } : { major, minor, patch, prerelease };
 }
 
+function compareSemanticVersions(leftValue: string, rightValue: string): number {
+  const left = parseSemanticVersion(leftValue);
+  const right = parseSemanticVersion(rightValue);
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (left[key] !== right[key]) return left[key] < right[key] ? -1 : 1;
+  }
+  if (left.prerelease === undefined) return right.prerelease === undefined ? 0 : 1;
+  if (right.prerelease === undefined) return -1;
+
+  const numeric = /^\d+$/u;
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left.prerelease[index];
+    const rightPart = right.prerelease[index];
+    if (leftPart === undefined) return -1;
+    if (rightPart === undefined) return 1;
+    if (leftPart === rightPart) continue;
+    const leftNumeric = numeric.test(leftPart);
+    const rightNumeric = numeric.test(rightPart);
+    if (leftNumeric && rightNumeric) {
+      if (leftPart.length !== rightPart.length) {
+        return leftPart.length < rightPart.length ? -1 : 1;
+      }
+      return leftPart < rightPart ? -1 : 1;
+    }
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    return leftPart < rightPart ? -1 : 1;
+  }
+  return 0;
+}
+
 function assertMinimumNpm(value: string): void {
   const installed = parseSemanticVersion(value.trim());
   const actual = [installed.major, installed.minor, installed.patch];
@@ -418,7 +449,17 @@ export async function coordinateRelease(
     if (packageState === undefined) {
       failures.push(`${artifact.name}: package state was not read`);
     } else if (versionState === undefined) {
-      pending.push(artifact);
+      const taggedVersion = packageState.distTags[distTag];
+      if (
+        taggedVersion !== undefined &&
+        compareSemanticVersions(artifact.version, taggedVersion) < 0
+      ) {
+        failures.push(
+          `${artifact.name}@${artifact.version} would move ${distTag} backward from ${taggedVersion}`,
+        );
+      } else {
+        pending.push(artifact);
+      }
     } else {
       const failure = existingArtifactFailure(artifact, versionState, packageState, distTag);
       if (failure === undefined) skipped.push(artifact.name);

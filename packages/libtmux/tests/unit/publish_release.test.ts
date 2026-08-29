@@ -271,6 +271,40 @@ describe("coordinated release", () => {
     }
   });
 
+  test.each([
+    ["0.9.0", "latest", "1.0.0", undefined],
+    ["1.0.0-alpha.1", "latest", "1.0.0-alpha.2", undefined],
+    ["1.1.0-alpha.1", "alpha", "1.0.0", "1.1.0-alpha.2"],
+    ["1.1.0-alpha.2", "alpha", "1.0.0", "1.1.0-alpha.10"],
+  ] as const)(
+    "rejects %s before moving %s backward",
+    async (version, distTag, latest, taggedVersion) => {
+      const fixture = await makeReleaseFixture(version);
+      const registry = makeRegistry(latest);
+      if (taggedVersion !== undefined) {
+        for (const state of registry.values()) state.distTags[distTag] = taggedVersion;
+      }
+      const { io, publishes } = makeReleaseIO(registry);
+      try {
+        await expect(
+          coordinateRelease(
+            {
+              artifactDirectory: fixture.artifacts,
+              dryRun: false,
+              eventName: "push",
+              refName: `v${version}`,
+              repositoryRoot: fixture.root,
+            },
+            io,
+          ),
+        ).rejects.toThrow(`would move ${distTag} backward from ${taggedVersion ?? latest}`);
+        expect(publishes).toEqual([]);
+      } finally {
+        await rm(fixture.root, { force: true, recursive: true });
+      }
+    },
+  );
+
   test("rejects a matching artifact with the wrong tag before publishing", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
     const registry = makeRegistry("0.9.0-alpha.1");
