@@ -25,6 +25,7 @@ import { activeFramedCommand } from "../command.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { fail, ok, tailBytes, tailLines } from "../results.js";
+import { paneIdSchema } from "../schemas.js";
 
 /**
  * The six scopes tmux keeps options in.
@@ -498,9 +499,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("Write even to this server's pane or one a person is watching. Default false."),
         name: z.string(),
-        paneId: z.string(),
+        paneId: paneIdSchema,
       },
-      outputSchema: { name: z.string(), paneId: z.string() },
+      outputSchema: { name: z.string(), paneId: paneIdSchema },
       title: "Paste buffer",
     },
     async ({ force, name, paneId }) => {

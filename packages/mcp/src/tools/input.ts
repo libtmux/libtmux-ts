@@ -13,6 +13,7 @@ import { isFailure, requireWritablePane, type ToolContext } from "../context.js"
 import { effectiveResultLines } from "../policy.js";
 import { offers, OPEN_WORLD } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
+import { paneIdSchema } from "../schemas.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
 /**
@@ -71,11 +72,11 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .boolean()
           .optional()
           .describe("Send the text as-is, without resolving key names."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
       },
       outputSchema: {
         attended: z.boolean().describe("A person is watching the pane this was sent to."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         sent: z.boolean(),
       },
       title: "Send keys",
@@ -114,10 +115,10 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .boolean()
           .optional()
           .describe("Write even to this server's pane or one a person is watching. Default false."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         text: z.string(),
       },
-      outputSchema: { bytes: z.number().int(), paneId: z.string() },
+      outputSchema: { bytes: z.number().int(), paneId: paneIdSchema },
       title: "Paste text",
     },
     async ({ enter, force, paneId, text }) => {
@@ -155,7 +156,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("Override pane-attention and shell-prompt checks. Default false."),
         maxLines: z.number().int().positive().optional(),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         timeoutMs: z
           .number()
           .int()
@@ -203,7 +204,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         outputComplete: z
           .boolean()
           .describe("False when bounded capture lost the start of the command's output."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         stillRunning: z
           .boolean()
           .describe("True when it timed out; the command keeps running in the pane."),

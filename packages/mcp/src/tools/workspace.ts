@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { ToolContext } from "../context.js";
 import { MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
+import { sessionIdSchema } from "../schemas.js";
 import { paneLine, paneView, paneViewSchema } from "../views.js";
 
 const windowSpec = z.object({
@@ -53,7 +54,7 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
       },
       outputSchema: {
         panes: z.array(paneViewSchema).describe("One per window, in the order asked for."),
-        sessionId: z.string(),
+        sessionId: sessionIdSchema,
       },
       title: "Build a workspace",
     },

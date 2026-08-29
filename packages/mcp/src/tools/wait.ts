@@ -22,7 +22,7 @@ import {
 import { effectiveResultLines, effectiveWaitMs } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
-import { paneCursorSchema } from "../schemas.js";
+import { paneCursorSchema, paneIdSchema } from "../schemas.js";
 import type { PaneTailEndReason } from "../live.js";
 
 type WaitOutcome =
@@ -295,7 +295,7 @@ const waitOutputSchema = {
     ])
     .describe("Why the wait ended. Read this rather than guessing from the output."),
   output: z.string().describe("Everything the pane printed while waiting, matched or not."),
-  paneId: z.string(),
+  paneId: paneIdSchema,
   screen: z
     .string()
     .describe(
@@ -315,7 +315,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       .optional()
       .describe("Start from a cursor an earlier observe or wait returned."),
     maxLines: z.number().int().positive().optional(),
-    paneId: z.string(),
+    paneId: paneIdSchema,
     patterns: z
       .array(z.string().min(1))
       .optional()

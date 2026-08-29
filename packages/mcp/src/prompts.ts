@@ -12,6 +12,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { ToolContext } from "./context.js";
+import { paneIdSchema } from "./schemas.js";
 
 function userPrompt(text: string): {
   messages: { content: { text: string; type: "text" }; role: "user" }[];
@@ -31,7 +32,7 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     {
       argsSchema: {
         command: z.string().describe("The shell command to run."),
-        paneId: completable(z.string().describe("Pane to run it in, e.g. %1."), completePaneId),
+        paneId: completable(paneIdSchema.describe("Pane to run it in, e.g. %1."), completePaneId),
       },
       description: "Run a command in a pane and report whether it worked.",
       title: "Run a command and check it",
@@ -55,7 +56,7 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     {
       argsSchema: {
         expect: z.string().describe("Text that means the thing you are waiting for happened."),
-        paneId: completable(z.string().describe("Pane to watch."), completePaneId),
+        paneId: completable(paneIdSchema.describe("Pane to watch."), completePaneId),
       },
       description: "Watch a pane that something else is writing to, until it says a thing.",
       title: "Watch a pane",
@@ -77,7 +78,7 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     "diagnose-pane",
     {
       argsSchema: {
-        paneId: completable(z.string().describe("The pane that is misbehaving."), completePaneId),
+        paneId: completable(paneIdSchema.describe("The pane that is misbehaving."), completePaneId),
       },
       description: "Work out what went wrong in a pane.",
       title: "Diagnose a pane",

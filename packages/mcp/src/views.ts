@@ -13,11 +13,11 @@ import type { Client, Session, Window } from "libtmux";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
 import { panePlacementIndex, windowPlacementIndex, type ReadablePane } from "./context.js";
-import { paneIdSchema, windowIdSchema } from "./schemas.js";
+import { paneIdSchema, sessionIdSchema, windowIdSchema } from "./schemas.js";
 
 export const placementViewSchema = z.object({
   index: z.number().int().describe("The window index in this session."),
-  sessionId: z.string(),
+  sessionId: sessionIdSchema,
   sessionName: z.string(),
 });
 export type PlacementView = z.infer<typeof placementViewSchema>;
@@ -49,7 +49,7 @@ export type PaneView = z.infer<typeof paneViewSchema>;
 
 export const sessionViewSchema = z.object({
   attachedClients: z.number().int().describe("How many clients are attached; 0 means detached."),
-  id: z.string().describe("Stable session id, e.g. $1."),
+  id: sessionIdSchema,
   name: z.string(),
   windows: z.number().int().describe("How many windows it holds."),
 });

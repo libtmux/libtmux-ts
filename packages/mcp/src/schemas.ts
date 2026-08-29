@@ -13,6 +13,11 @@ export const windowIdSchema = z
   .regex(/^@\d+$/u, "Expected a window id such as @1.")
   .describe("Stable window id, e.g. @1.");
 
+export const sessionIdSchema = z
+  .string()
+  .regex(/^\$\d+$/u, "Expected a session id such as $1.")
+  .describe("Stable session id, e.g. $1.");
+
 export const paneCursorSchema = z
   .string()
   .regex(PANE_CURSOR_PATTERN, "Expected a cursor returned by observe or wait_for_text.");

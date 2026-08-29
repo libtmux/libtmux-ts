@@ -27,7 +27,7 @@ import {
   tailBytes,
   tailLines,
 } from "../results.js";
-import { paneCursorSchema } from "../schemas.js";
+import { paneCursorSchema, paneIdSchema } from "../schemas.js";
 import { paneContentUri } from "../uris.js";
 
 /** How much of a first observation is seeded from the pane's visible screen. */
@@ -103,7 +103,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .positive()
           .optional()
           .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
-        paneId: z.string().describe("Pane id, e.g. %1."),
+        paneId: paneIdSchema,
         start: z
           .number()
           .int()
@@ -116,7 +116,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         effectiveEnd: z.number().int().nullable(),
         effectiveStart: z.number().int().nullable(),
         omittedBytes: z.number().int(),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         rangeClamped: z.boolean().describe("Whether a result ceiling shortened the range."),
         returnedBytes: z.number().int(),
         text: z.string(),
@@ -222,7 +222,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("The cursor from your previous observe. Omit on the first call."),
         maxLines: z.number().int().positive().optional(),
-        paneId: z.string().describe("Pane id, e.g. %1."),
+        paneId: paneIdSchema,
         waitMs: z
           .number()
           .int()
@@ -241,7 +241,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .describe(
             "Output that scrolled past before this read reached it. Non-zero means you fell behind.",
           ),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         seeded: z
           .boolean()
           .describe("True when this call started the watch and returned the screen."),
@@ -387,14 +387,14 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
                 "somebody else is capturing it stops their capture rather than " +
                 "leaving it alone.",
             ),
-          paneId: z.string(),
+          paneId: paneIdSchema,
           shellCommand: z
             .string()
             .optional()
             .describe("Omit to stop a pipe this pane already has open."),
         },
         outputSchema: {
-          paneId: z.string(),
+          paneId: paneIdSchema,
           piping: z
             .boolean()
             .describe(
@@ -461,7 +461,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         matches: z.array(
           z.object({
             lineNumber: z.number().int(),
-            paneId: z.string(),
+            paneId: paneIdSchema,
             sessionName: z.string(),
             text: z.string(),
             windowName: z.string(),
