@@ -16,16 +16,23 @@ import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestarted } from "../../exc.js";
 
 export interface NodeSpawnTransportOptions {
+  readonly maxOutputBytes?: number;
   readonly postKillGraceMs?: number;
   readonly terminationGraceMs?: number;
 }
+
+const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
 interface ClosedProcess {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
 }
 
-function collect(stream: Readable, chunks: Buffer[]): Promise<Uint8Array> {
+function collect(
+  stream: Readable,
+  chunks: Buffer[],
+  retain: (chunk: Buffer) => boolean,
+): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const cleanup = (): void => {
@@ -42,7 +49,8 @@ function collect(stream: Readable, chunks: Buffer[]): Promise<Uint8Array> {
     };
     const onClose = (): void => finish();
     const onData = (chunk: Buffer | Uint8Array): void => {
-      chunks.push(Buffer.from(chunk));
+      const copy = Buffer.from(chunk);
+      if (retain(copy)) chunks.push(copy);
     };
     const onEnd = (): void => finish();
     const onError = (error: Error): void => {
@@ -67,10 +75,15 @@ function isAborted(signal: AbortLike | undefined): boolean {
 }
 
 export class NodeSpawnTransport {
+  readonly #maxOutputBytes: number;
   readonly #postKillGraceMs: number;
   readonly #terminationGraceMs: number;
 
   constructor(options: NodeSpawnTransportOptions = {}) {
+    this.#maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+    if (!Number.isSafeInteger(this.#maxOutputBytes) || this.#maxOutputBytes < 1) {
+      throw new TypeError("maxOutputBytes must be a positive safe integer");
+    }
     this.#postKillGraceMs = options.postKillGraceMs ?? 250;
     this.#terminationGraceMs = options.terminationGraceMs ?? 100;
   }
@@ -106,7 +119,7 @@ export class NodeSpawnTransport {
 
     let closed = false;
     let drainageDiscarded = false;
-    let interruption: "cancelled" | "timeout" | undefined;
+    let interruption: "cancelled" | "output" | "timeout" | undefined;
     let observedExit: ClosedProcess | undefined;
     let delivery: DeliveryStatus = "not_started";
     let escalationTimer: NodeJS.Timeout | undefined;
@@ -168,9 +181,13 @@ export class NodeSpawnTransport {
       escalationTimer.unref();
     };
 
-    const interrupt = (kind: "cancelled" | "timeout"): void => {
+    const interrupt = (kind: "cancelled" | "output" | "timeout"): void => {
       if (interruption !== undefined) return;
       if (observedExit !== undefined) {
+        if (kind === "output") {
+          interruption = kind;
+          delivery = "indeterminate";
+        }
         discardDrainage();
         armHardSettlement();
         return;
@@ -207,8 +224,18 @@ export class NodeSpawnTransport {
       }
     });
 
-    const stdoutPromise = collect(child.stdout, stdoutChunks);
-    const stderrPromise = collect(child.stderr, stderrChunks);
+    let outputBytes = 0;
+    const retainOutput = (chunk: Buffer): boolean => {
+      if (interruption === "output") return false;
+      if (outputBytes + chunk.byteLength > this.#maxOutputBytes) {
+        interrupt("output");
+        return false;
+      }
+      outputBytes += chunk.byteLength;
+      return true;
+    };
+    const stdoutPromise = collect(child.stdout, stdoutChunks, retainOutput);
+    const stderrPromise = collect(child.stderr, stderrChunks, retainOutput);
     function onClose(code: number | null, signal: NodeJS.Signals | null): void {
       closed = true;
       clearLifecycleTimers();
@@ -243,10 +270,14 @@ export class NodeSpawnTransport {
 
     if (interruption !== undefined) {
       throw new TmuxTransportError(
-        interruption === "timeout" ? "command timed out" : "command cancelled",
+        interruption === "timeout"
+          ? "command timed out"
+          : interruption === "output"
+            ? `command output exceeded ${String(this.#maxOutputBytes)} bytes`
+            : "command cancelled",
         {
           delivery,
-          kind: interruption,
+          kind: interruption === "output" ? "protocol" : interruption,
           ...(observedExit === undefined ? {} : { signal: observedExit.signal }),
           ...(stderrState.status === "fulfilled" ? { stderr: stderrState.value } : {}),
           ...(stdoutState.status === "fulfilled" ? { stdout: stdoutState.value } : {}),

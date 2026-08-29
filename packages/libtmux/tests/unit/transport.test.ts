@@ -10,6 +10,7 @@ import {
 } from "../../src/_internal/operations/request.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
+import { TmuxTransportError } from "../../src/exc.js";
 
 const echoFixture = fileURLToPath(new URL("../fixtures/echo_argv.mjs", import.meta.url));
 const malformedFixture = fileURLToPath(new URL("../fixtures/malformed_utf8.mjs", import.meta.url));
@@ -50,6 +51,24 @@ describe("NodeSpawnTransport", () => {
 
     expect(raw.stdout.byteLength).toBe(1_048_576);
     expect(raw.stderr.byteLength).toBe(1_048_576);
+  });
+
+  test("terminates output beyond its retained-byte budget", async () => {
+    expect(() => new NodeSpawnTransport({ maxOutputBytes: 0 })).toThrow(/maxOutputBytes/u);
+    const transport = new NodeSpawnTransport({ maxOutputBytes: 1_024 });
+
+    try {
+      await transport.execute({
+        args: [echoFixture, "--dual-streams", "1048576"],
+        executable: process.execPath,
+      });
+      throw new Error("expected the output budget to stop the command");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TmuxTransportError);
+      if (!(error instanceof TmuxTransportError)) throw error;
+      expect(error).toMatchObject({ delivery: "indeterminate", kind: "protocol" });
+      expect(error.stdout.byteLength + error.stderr.byteLength).toBeLessThanOrEqual(1_024);
+    }
   });
 
   test("captures stdin bytes when execution begins", async () => {
