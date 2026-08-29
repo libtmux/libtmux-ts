@@ -1729,11 +1729,15 @@ describe("typed criteria values", () => {
       harness.sessions.values,
       harness.sessions.projection,
     );
+    const [sessionOne, sessionTwo] = harness.sessions.values;
+    if (sessionOne === undefined || sessionTwo === undefined) {
+      throw new Error("fixture sessions are missing");
+    }
     const decodedNullIds = harness.sessions.values
       .filter((session) => session.lastAttached === null)
       .map((session) => session.id);
 
-    expect(decodedNullIds).toEqual(["$1", "$2"]);
+    expect(decodedNullIds).toEqual([sessionOne.id, sessionTwo.id]);
     expect(
       sessions
         .where({ lastAttached: null })
@@ -1751,7 +1755,7 @@ describe("typed criteria values", () => {
         .where({ lastAttached: "0" })
         .toArray()
         .map((session) => session.id),
-    ).toEqual(["$1"]);
+    ).toEqual([sessionOne.id]);
   });
 
   test("validates equality and membership against every field domain", () => {
@@ -1866,25 +1870,31 @@ describe("typed criteria values", () => {
   test("matches a boolean field written as a boolean", async () => {
     const harness = await createRichProjectedHarness();
     const panes = createProjectedSelection("pane", harness.panes.values, harness.panes.projection);
+    const [activePaneOne, inactivePane, activePaneTwo] = harness.panes.values;
+    if (activePaneOne === undefined || inactivePane === undefined || activePaneTwo === undefined) {
+      throw new Error("fixture panes are missing");
+    }
+    const activeIds = [activePaneOne.id, activePaneTwo.id];
+    const inactiveIds = [inactivePane.id];
 
     expect(
       panes
         .where({ active: true })
         .toArray()
         .map((pane) => pane.id),
-    ).toEqual(["%1", "%3"]);
+    ).toEqual(activeIds);
     expect(
       panes
         .where({ active: "1" })
         .toArray()
         .map((pane) => pane.id),
-    ).toEqual(["%1", "%3"]);
+    ).toEqual(activeIds);
     expect(
       panes
         .where({ active: false })
         .toArray()
         .map((pane) => pane.id),
-    ).toEqual(["%2"]);
+    ).toEqual(inactiveIds);
   });
 
   test("matches a number field written as a number", async () => {
@@ -1916,25 +1926,31 @@ describe("typed criteria values", () => {
   test("spells a typed operand inside an operator", async () => {
     const harness = await createRichProjectedHarness();
     const panes = createProjectedSelection("pane", harness.panes.values, harness.panes.projection);
+    const [activePaneOne, inactivePane, activePaneTwo] = harness.panes.values;
+    if (activePaneOne === undefined || inactivePane === undefined || activePaneTwo === undefined) {
+      throw new Error("fixture panes are missing");
+    }
+    const activeIds = [activePaneOne.id, activePaneTwo.id];
+    const inactiveIds = [inactivePane.id];
 
     expect(
       panes
         .where({ active: { equals: true } })
         .toArray()
         .map((pane) => pane.id),
-    ).toEqual(["%1", "%3"]);
+    ).toEqual(activeIds);
     expect(
       panes
         .where({ active: { in: [true] } })
         .toArray()
         .map((pane) => pane.id),
-    ).toEqual(["%1", "%3"]);
+    ).toEqual(activeIds);
     expect(
       panes
         .where({ active: { notIn: [true] } })
         .toArray()
         .map((pane) => pane.id),
-    ).toEqual(["%2"]);
+    ).toEqual(inactiveIds);
   });
 
   test("spells a typed operand through a relation", async () => {
