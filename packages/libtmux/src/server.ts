@@ -82,6 +82,13 @@ import type { CommandTransport } from "./_internal/transport/types.js";
 export interface ServerOptions {
   readonly colors?: 88 | 256;
   readonly configFile?: string;
+  /**
+   * The complete environment passed to every spawned `tmux` process.
+   *
+   * This replaces `process.env`; it is not overlaid on it. Include inherited
+   * entries such as `PATH` explicitly when tmux or its shell needs them. Leave
+   * this unset to inherit the current process environment unchanged.
+   */
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly socketName?: string;
   readonly socketPath?: string;
