@@ -42,7 +42,9 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
           `    ${command}\n\n` +
           `Use run_command(paneId="${paneId}", command=...). Read exitStatus and outcome from ` +
           `the result — do not infer success from the text. If outcome is "timed_out" the ` +
-          `command is still running: call again to keep waiting rather than starting over. ` +
+          `command is still running. Do not call run_command again: that sends the command a ` +
+          `second time. Use wait_for_text or observe to watch later output, or send_keys C-c to ` +
+          `stop it. ` +
           `Do not use send_keys and capture_pane for this; they cannot tell you the exit status ` +
           `and they mistake the pane's echo of the command for its output.`,
       ),

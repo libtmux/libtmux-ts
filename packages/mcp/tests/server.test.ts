@@ -1868,6 +1868,17 @@ describe("browsing", () => {
           .join("\n");
         expect(text).toContain("wait_for_text");
         expect(text).toContain("Never loop capture_pane");
+
+        const command = await client.getPrompt({
+          arguments: { command: "make", paneId: "%0" },
+          name: "run-and-check",
+        });
+        const commandText = command.messages
+          .map((message) => (message.content.type === "text" ? message.content.text : ""))
+          .join("\n");
+        expect(commandText).toContain("wait_for_text");
+        expect(commandText).toContain("C-c");
+        expect(commandText).not.toContain("call again to keep waiting");
       });
     });
   }, 60_000);
