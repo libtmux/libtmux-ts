@@ -24,6 +24,14 @@ const windowSpec = z.object({
   startDirectory: z.string().optional(),
 });
 
+function directoryOption(
+  directory: string | undefined,
+  fallback: string | undefined,
+): { startDirectory?: string } {
+  const effective = directory ?? fallback;
+  return effective === undefined ? {} : { startDirectory: effective };
+}
+
 export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "mutating")) return;
 
@@ -67,9 +75,7 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
         name: session,
         windowName: first.name,
         ...(first.shellCommand === undefined ? {} : { shellCommand: first.shellCommand }),
-        ...((first.startDirectory ?? startDirectory === undefined)
-          ? {}
-          : { startDirectory: first.startDirectory ?? startDirectory }),
+        ...directoryOption(first.startDirectory, startDirectory),
       });
 
       if (rest.length > 0) {
@@ -78,9 +84,7 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
             created.plan.newWindow({
               name: window.name,
               ...(window.shellCommand === undefined ? {} : { shellCommand: window.shellCommand }),
-              ...((window.startDirectory ?? startDirectory === undefined)
-                ? {}
-                : { startDirectory: window.startDirectory ?? startDirectory }),
+              ...directoryOption(window.startDirectory, startDirectory),
             }),
           ),
         );
