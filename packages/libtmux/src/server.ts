@@ -22,7 +22,6 @@ import type {
   SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
-  WaitForOptions,
   WatchOptions,
 } from "./types.js";
 import { randomUUID } from "node:crypto";
@@ -63,7 +62,6 @@ import {
 import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
 import {
   createRuntimeContext,
-  createServerWithRuntime,
   lastObservedDaemon,
   registerServerRuntime,
   runtimeForServer,
@@ -74,8 +72,8 @@ import { TmuxConnection } from "./_internal/runtime/connection.js";
 import type { RuntimeConstructors } from "./_internal/runtime/constructors.js";
 
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
+import { createConnectedServer } from "./_internal/control/connected_server.js";
 import { observerBoundTransport } from "./_internal/control/observer_transport.js";
-import { waitForSnapshot } from "./_internal/control/wait_for.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
 
@@ -393,62 +391,7 @@ export class Server {
       ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
       transport: connectedCommands,
     });
-    const bound = createServerWithRuntime(boundRuntime, runtimeConstructors) as ConnectedServer;
-
-    /**
-     * The waits this connection has outstanding, so closing it can answer them.
-     *
-     * Closing on purpose — a caller cancelling, a scope ending — rejects every
-     * wait in flight, and a wait nobody is holding any more becomes an
-     * unhandled rejection the caller cannot even catch. Marking each one
-     * handled first silences exactly those, and only those: a daemon that dies
-     * never comes through here, so a real failure stays as loud as it was, and
-     * so does a wait somebody forgot to await that later times out.
-     *
-     * Held as records rather than as the promises themselves. Attaching
-     * `.finally` to a promise to clean up after it marks that promise handled
-     * at the moment it is created, which would silence every wait always and
-     * leave this looking like it worked.
-     */
-    const waiting = new Set<{ promise?: Promise<ServerSnapshot> }>();
-    const closeWaits = (): Promise<void> => {
-      for (const entry of waiting) entry.promise?.catch(() => undefined);
-      return connection.close();
-    };
-
-    Object.defineProperties(bound, {
-      close: { value: closeWaits },
-      subscribe: { value: () => connection.subscribe() },
-      waitFor: {
-        value: (
-          matches: (snapshot: ServerSnapshot) => boolean,
-          options: WaitForOptions = {},
-        ): Promise<ServerSnapshot> => {
-          const entry: { promise?: Promise<ServerSnapshot> } = {};
-          const run = async (): Promise<ServerSnapshot> => {
-            try {
-              return await waitForSnapshot({
-                matches,
-                options,
-                snapshot: () => bound.snapshot(),
-                subscribe: () => connection.subscribe(),
-              });
-            } finally {
-              // Inside the body on purpose: cleaning up from outside attaches
-              // a handler, which marks the promise handled the moment it exists
-              // and silences every wait rather than the closed ones.
-              waiting.delete(entry);
-            }
-          };
-          const promise = run();
-          entry.promise = promise;
-          waiting.add(entry);
-          return promise;
-        },
-      },
-      [Symbol.asyncDispose]: { value: closeWaits },
-    });
-    return bound;
+    return createConnectedServer(boundRuntime, runtimeConstructors, connection);
   }
 
   /**
