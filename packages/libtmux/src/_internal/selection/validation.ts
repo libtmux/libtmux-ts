@@ -34,7 +34,7 @@ function renderPath(path: readonly (string | number)[]): string {
   return rendered;
 }
 
-export const quoted = (name: string): string => JSON.stringify(name);
+const quoted = (name: string): string => JSON.stringify(name);
 
 export function listed(names: readonly string[]): string {
   return [...names].sort().map(quoted).join(", ");
