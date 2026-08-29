@@ -7,6 +7,160 @@ typecheck:symbols` is what keeps that true.
 Start with the [README](../README.md) for a reading order and recipes; this
 page is for looking one thing up.
 
+## Functions
+
+[`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+
+### `parseLegacyWhere`
+
+```ts
+function parseLegacyWhere<Model extends "session" | "window">( model: Model, input: unknown, ): Extract<WhereDocumentV1, { readonly model: Model }>
+```
+
+Convert the Python port's `name__contains` spelling to canonical criteria.
+
+Accepts one own data property on a plain object and never invokes accessors
+or conversion hooks. The returned document and its criteria are frozen.
+
+@throws QueryValidationError when the model is not `session` or `window`, or
+the input is not exactly one string-valued `name__contains` property.
+
+```ts
+import { parseLegacyWhere } from "libtmux";
+const document = parseLegacyWhere("window", { name__contains: "log" });
+snapshot.windows.where(document.where);
+```
+
+### `isSafeInteger`
+
+```ts
+function isSafeInteger(value: unknown): value is SafeInteger
+```
+
+Test whether a value is an exact JavaScript integer.
+
+```ts
+import { isSafeInteger } from "libtmux";
+const value: unknown = 3;
+if (isSafeInteger(value)) snapshot.sessions.where({ attached: value });
+```
+
+### `safeInteger`
+
+```ts
+function safeInteger(value: number): SafeInteger
+```
+
+Authenticate an exact JavaScript integer or throw.
+
+@throws TypeError when `value` is fractional, infinite, `NaN`, or outside
+JavaScript's safe integer range.
+
+```ts
+import { safeInteger } from "libtmux";
+const pid = safeInteger(42);
+```
+
+### `isSplitSize`
+
+```ts
+function isSplitSize(value: unknown): value is SplitSize
+```
+
+Test whether a value is valid tmux split geometry.
+
+```ts
+import { isSplitSize } from "libtmux";
+const value: unknown = "30%";
+const size = isSplitSize(value) ? value : undefined;
+```
+
+### `splitSize`
+
+```ts
+function splitSize(value: number): SplitCellSize
+```
+
+```ts
+function splitSize(value: SplitPercentage): SplitPercentage
+```
+
+```ts
+function splitSize(value: SplitSize): SplitSize
+```
+
+Authenticate tmux split geometry or throw.
+
+@throws TypeError when a cell count is negative, fractional, or above
+2147483647, or when a percentage is not a canonical whole `0%` to `100%`.
+
+```ts
+import { splitSize } from "libtmux";
+const size = splitSize(20);
+```
+
+## Scalar types
+
+[`SafeInteger`](#safeinteger-type) · [`SplitCellSize`](#splitcellsize-type) · [`SplitPercentage`](#splitpercentage-type) · [`SplitSize`](#splitsize-type)
+
+### `SafeInteger` type
+
+```ts
+type SafeInteger = number & { readonly [safeIntegerBrand]: "safe-integer" };
+```
+
+A finite whole number within JavaScript's safe integer range.
+
+```ts
+import { safeInteger } from "libtmux";
+import type { SafeInteger } from "libtmux";
+const count: SafeInteger = safeInteger(3);
+```
+
+### `SplitCellSize` type
+
+```ts
+type SplitCellSize = SafeInteger & {
+  readonly [splitCellSizeBrand]: "split-cell-size";
+};
+```
+
+A nonnegative cell count within tmux's signed 32-bit geometry range.
+
+```ts
+import { splitSize } from "libtmux";
+import type { SplitCellSize } from "libtmux";
+const size: SplitCellSize = splitSize(20);
+```
+
+### `SplitPercentage` type
+
+```ts
+type SplitPercentage = `${ZeroToNinetyNine}%` | "100%";
+```
+
+A canonical whole percentage from `0%` through `100%`.
+
+```ts
+import type { SplitPercentage } from "libtmux";
+const size: SplitPercentage = "30%";
+void size;
+```
+
+### `SplitSize` type
+
+```ts
+type SplitSize = SplitCellSize | SplitPercentage;
+```
+
+An authenticated cell count or canonical percentage for a pane split.
+
+```ts
+import type { SplitSize } from "libtmux";
+const size: SplitSize = "30%";
+void size;
+```
+
 ## Server
 
 [`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)

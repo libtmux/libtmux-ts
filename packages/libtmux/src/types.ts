@@ -131,18 +131,50 @@ type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 type NonZeroDigit = Exclude<Digit, "0">;
 type ZeroToNinetyNine = "0" | NonZeroDigit | `${NonZeroDigit}${Digit}`;
 
-/** A cell count authenticated for tmux split geometry. */
+/**
+ * A nonnegative cell count within tmux's signed 32-bit geometry range.
+ *
+ * ```ts
+ * import { splitSize } from "libtmux";
+ * import type { SplitCellSize } from "libtmux";
+ * const size: SplitCellSize = splitSize(20);
+ * ```
+ */
 export type SplitCellSize = SafeInteger & {
   readonly [splitCellSizeBrand]: "split-cell-size";
 };
 
-/** A canonical whole percentage from `0%` through `100%`. */
+/**
+ * A canonical whole percentage from `0%` through `100%`.
+ *
+ * ```ts
+ * import type { SplitPercentage } from "libtmux";
+ * const size: SplitPercentage = "30%";
+ * void size;
+ * ```
+ */
 export type SplitPercentage = `${ZeroToNinetyNine}%` | "100%";
 
-/** An authenticated cell count or canonical percentage for a pane split. */
+/**
+ * An authenticated cell count or canonical percentage for a pane split.
+ *
+ * ```ts
+ * import type { SplitSize } from "libtmux";
+ * const size: SplitSize = "30%";
+ * void size;
+ * ```
+ */
 export type SplitSize = SplitCellSize | SplitPercentage;
 
-/** Test whether a value is valid tmux split geometry. */
+/**
+ * Test whether a value is valid tmux split geometry.
+ *
+ * ```ts
+ * import { isSplitSize } from "libtmux";
+ * const value: unknown = "30%";
+ * const size = isSplitSize(value) ? value : undefined;
+ * ```
+ */
 export function isSplitSize(value: unknown): value is SplitSize {
   if (typeof value === "number") {
     return isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
@@ -150,7 +182,17 @@ export function isSplitSize(value: unknown): value is SplitSize {
   return typeof value === "string" && (value === "100%" || /^(?:0|[1-9]\d?)%$/u.test(value));
 }
 
-/** Authenticate tmux split geometry or throw. */
+/**
+ * Authenticate tmux split geometry or throw.
+ *
+ * @throws TypeError when a cell count is negative, fractional, or above
+ * 2147483647, or when a percentage is not a canonical whole `0%` to `100%`.
+ *
+ * ```ts
+ * import { splitSize } from "libtmux";
+ * const size = splitSize(20);
+ * ```
+ */
 export function splitSize(value: number): SplitCellSize;
 export function splitSize(value: SplitPercentage): SplitPercentage;
 export function splitSize(value: SplitSize): SplitSize;

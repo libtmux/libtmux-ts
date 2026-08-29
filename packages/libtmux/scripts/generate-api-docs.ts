@@ -1,7 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { readApiSurface, type ApiClass, type Member } from "./api_surface.js";
+import {
+  readApiSurface,
+  readRootApiSurface,
+  type ApiClass,
+  type ApiDeclaration,
+  type Member,
+} from "./api_surface.js";
 import { slugify } from "./markdown_anchors.js";
 import { packageRoot } from "./package_root.js";
 
@@ -76,7 +82,32 @@ function renderClass(entry: ApiClass): string {
   return lines.join("\n");
 }
 
+function renderDeclarations(title: string, declarations: readonly ApiDeclaration[]): string {
+  const heading = (entry: ApiDeclaration): string =>
+    entry.kind === "type" ? `${entry.name} type` : entry.name;
+  const lines = [
+    `## ${title}`,
+    "",
+    declarations
+      .map((entry) => "[`" + entry.name + "`](#" + slugify(heading(entry)) + ")")
+      .join(" · "),
+    "",
+  ];
+  for (const declaration of declarations) {
+    lines.push("### `" + declaration.name + "`" + (declaration.kind === "type" ? " type" : ""), "");
+    for (const signature of declaration.signatures) lines.push("```ts", signature, "```", "");
+    if (declaration.prose !== "") lines.push(declaration.prose, "");
+    if (declaration.example !== undefined) {
+      lines.push("```ts", declaration.example, "```", "");
+    }
+  }
+  return lines.join("\n");
+}
+
 const surface = await readApiSurface();
+const root = await readRootApiSurface();
+const functions = root.filter((entry) => entry.kind === "function");
+const types = root.filter((entry) => entry.kind === "type");
 const rendered = [
   "# API reference",
   "",
@@ -87,6 +118,8 @@ const rendered = [
   "Start with the [README](../README.md) for a reading order and recipes; this",
   "page is for looking one thing up.",
   "",
+  renderDeclarations("Functions", functions),
+  renderDeclarations("Scalar types", types),
   surface.map((entry) => renderClass(entry)).join("\n"),
 ]
   .join("\n")
@@ -105,14 +138,18 @@ if (process.argv.includes("--check")) {
     process.exit(1);
   }
   process.stdout.write(
-    `${OUTPUT} matches the source: ${String(surface.length)} classes, ${String(
+    `${OUTPUT} matches the source: ${String(root.length)} root declarations, ${String(
+      surface.length,
+    )} classes, ${String(
       surface.reduce((total, entry) => total + entry.members.length, 0),
     )} members\n`,
   );
 } else {
   await writeFile(target, wanted);
   process.stdout.write(
-    `wrote ${OUTPUT}: ${String(surface.length)} classes, ${String(
+    `wrote ${OUTPUT}: ${String(root.length)} root declarations, ${String(
+      surface.length,
+    )} classes, ${String(
       surface.reduce((total, entry) => total + entry.members.length, 0),
     )} members\n`,
   );

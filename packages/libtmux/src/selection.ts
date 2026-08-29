@@ -498,6 +498,21 @@ export type WhereDocumentV1 =
   | { readonly model: "pane"; readonly version: 1; readonly where: PaneWhere }
   | { readonly model: "client"; readonly version: 1; readonly where: ClientWhere };
 
+/**
+ * Convert the Python port's `name__contains` spelling to canonical criteria.
+ *
+ * Accepts one own data property on a plain object and never invokes accessors
+ * or conversion hooks. The returned document and its criteria are frozen.
+ *
+ * @throws QueryValidationError when the model is not `session` or `window`, or
+ * the input is not exactly one string-valued `name__contains` property.
+ *
+ * ```ts
+ * import { parseLegacyWhere } from "libtmux";
+ * const document = parseLegacyWhere("window", { name__contains: "log" });
+ * snapshot.windows.where(document.where);
+ * ```
+ */
 export function parseLegacyWhere<Model extends "session" | "window">(
   model: Model,
   input: unknown,

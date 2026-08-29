@@ -8,7 +8,12 @@ import {
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
-import { readApiSurface, requireSymbolExamples } from "../api_surface.js";
+import {
+  readApiSurface,
+  readRootApiSurface,
+  requireRootExamples,
+  requireSymbolExamples,
+} from "../api_surface.js";
 import { packageRoot } from "../package_root.js";
 import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { buildWorld, disposeWorld, type World } from "./readme_world.js";
@@ -172,6 +177,14 @@ const examples: SymbolExample[] = members.map((member) => ({
 for (const entry of surface) {
   examples.push(...fencedBlocks(entry.prose, (line) => `${entry.file}:${String(line)}`));
 }
+const root = requireRootExamples(await readRootApiSurface());
+examples.push(
+  ...root.map((entry) => ({
+    code: entry.example,
+    origin: `${entry.file}:${String(entry.line)}`,
+    symbol: entry.name,
+  })),
+);
 if (examples.length === 0) throw new Error("no symbol examples were found to run");
 
 const isolated = await mkdtemp(join(tmpdir(), "ltx-symbol-runs-"));

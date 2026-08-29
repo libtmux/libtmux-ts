@@ -83,6 +83,23 @@ describe("README coverage", () => {
 });
 
 describe("generated API reference", () => {
+  test("covers root helpers and behavioral scalar types", async () => {
+    const api = await readFile(new URL("../../docs/api.md", import.meta.url), "utf8");
+    const rootEntries = [...api.matchAll(/^### (`[^`]+`(?: type)?)$/gmu)].map((match) => match[1]!);
+
+    expect(rootEntries).toEqual([
+      "`parseLegacyWhere`",
+      "`isSafeInteger`",
+      "`safeInteger`",
+      "`isSplitSize`",
+      "`splitSize`",
+      "`SafeInteger` type",
+      "`SplitCellSize` type",
+      "`SplitPercentage` type",
+      "`SplitSize` type",
+    ]);
+  });
+
   test("gives every member one heading and anchor", async () => {
     const api = await readFile(new URL("../../docs/api.md", import.meta.url), "utf8");
     const headings = [...api.matchAll(/^#### `([^`]+)`$/gmu)].map((match) => match[1]!);

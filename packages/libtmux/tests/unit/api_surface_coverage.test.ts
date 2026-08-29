@@ -1,11 +1,15 @@
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, test } from "bun:test";
 
 import {
   requireSymbolExamples,
   readApiSurface,
+  readRootApiSurface,
   type PublicMember,
 } from "../../scripts/api_surface.js";
 import * as index from "../../src/index.js";
+import { runTypeScriptApi } from "../support/typescript_api.js";
 
 /**
  * The API surface reader sees every handle the package exports.
@@ -34,6 +38,52 @@ function isError(value: unknown): boolean {
     prototype = Object.getPrototypeOf(prototype);
   }
   return false;
+}
+
+interface RootExports {
+  readonly types: readonly string[];
+  readonly values: readonly string[];
+}
+
+const rootExportsScript = String.raw`
+import { API } from "typescript/unstable/sync";
+import { SyntaxKind } from "typescript/unstable/ast";
+
+const rootFile = process.argv.at(-1);
+const api = new API({ cwd: process.cwd() });
+try {
+  const snapshot = api.updateSnapshot({ openFiles: [rootFile] });
+  const project = snapshot.getDefaultProjectForFile(rootFile);
+  const sourceFile = project?.program.getSourceFile(rootFile);
+  if (sourceFile === undefined) throw new Error("root source was not parsed");
+  const types = [];
+  const values = [];
+  for (const statement of sourceFile.statements) {
+    if (statement.kind !== SyntaxKind.ExportDeclaration) continue;
+    for (const element of statement.exportClause?.elements ?? []) {
+      const name = element.name?.text;
+      if (name === undefined) continue;
+      if (statement.isTypeOnly === true || element.isTypeOnly === true) types.push(name);
+      else values.push(name);
+    }
+  }
+  process.stdout.write(JSON.stringify({ types: types.sort(), values: values.sort() }));
+} finally {
+  api.close();
+}
+`;
+
+async function rootExports(): Promise<RootExports> {
+  const rootPath = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+  const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
+  const { exitCode, stderr, stdout } = await runTypeScriptApi(
+    rootExportsScript,
+    [rootPath],
+    packageRoot,
+  );
+  expect(exitCode, stderr).toBe(0);
+  expect(stderr).toBe("");
+  return JSON.parse(stdout) as RootExports;
 }
 
 describe("api surface coverage", () => {
@@ -65,4 +115,30 @@ describe("api surface coverage", () => {
     expect(handles.length).toBeGreaterThan(0);
     expect(handles.filter((name) => !parsed.has(name))).toEqual([]);
   });
+
+  test("keeps every root overload and omits its implementation", async () => {
+    const splitSize = (await readRootApiSurface()).find((entry) => entry.name === "splitSize");
+
+    expect(splitSize?.signatures).toEqual([
+      "function splitSize(value: number): SplitCellSize",
+      "function splitSize(value: SplitPercentage): SplitPercentage",
+      "function splitSize(value: SplitSize): SplitSize",
+    ]);
+  });
+
+  test("root reference types are type-only exports and helpers are values", async () => {
+    const declarations = await readRootApiSurface();
+    const typeNames = declarations
+      .filter((entry) => entry.kind === "type")
+      .map((entry) => entry.name)
+      .sort();
+    const functionNames = declarations
+      .filter((entry) => entry.kind === "function")
+      .map((entry) => entry.name)
+      .sort();
+    const exported = await rootExports();
+
+    expect(exported.types.filter((name) => typeNames.includes(name))).toEqual(typeNames);
+    expect(exported.values.filter((name) => functionNames.includes(name))).toEqual(functionNames);
+  }, 30_000);
 });

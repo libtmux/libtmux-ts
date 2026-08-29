@@ -29,14 +29,24 @@ export type WindowIdInput = TmuxIdInput<"window">;
 /** Raw pane-ID text or an authenticated pane ID. */
 export type PaneIdInput = TmuxIdInput<"pane">;
 
-/** A number authenticated as an exact JavaScript integer. */
+/**
+ * A finite whole number within JavaScript's safe integer range.
+ *
+ * ```ts
+ * import { safeInteger } from "libtmux";
+ * import type { SafeInteger } from "libtmux";
+ * const count: SafeInteger = safeInteger(3);
+ * ```
+ */
 export type SafeInteger = number & { readonly [safeIntegerBrand]: "safe-integer" };
 
 /**
  * Test whether a value is an exact JavaScript integer.
  *
  * ```ts
- * if (isSafeInteger(value)) server.sessions.where({ attached: value });
+ * import { isSafeInteger } from "libtmux";
+ * const value: unknown = 3;
+ * if (isSafeInteger(value)) snapshot.sessions.where({ attached: value });
  * ```
  */
 export function isSafeInteger(value: unknown): value is SafeInteger {
@@ -46,7 +56,11 @@ export function isSafeInteger(value: unknown): value is SafeInteger {
 /**
  * Authenticate an exact JavaScript integer or throw.
  *
+ * @throws TypeError when `value` is fractional, infinite, `NaN`, or outside
+ * JavaScript's safe integer range.
+ *
  * ```ts
+ * import { safeInteger } from "libtmux";
  * const pid = safeInteger(42);
  * ```
  */
