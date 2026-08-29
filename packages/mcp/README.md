@@ -263,6 +263,10 @@ the global tables — `history-limit`, which decides how far `capture_pane` reac
 back, and `default-shell`, which decides what a new pane runs, both live there.
 `unset_option` puts an option back to what it inherits.
 
+Format-valued options such as `status-right` may contain `#()` jobs. tmux runs
+those through the host shell, and the option persists until it is unset, so
+`set_option` is marked open-world for host approval.
+
 `show_buffer` may stage a temporary file to measure the buffer and cap what it
 reads into the response; it removes that file before returning. `save_buffer`
 requires the `mutating` tier and writes the buffer to a file on tmux's own

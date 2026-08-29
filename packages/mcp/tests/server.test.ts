@@ -1859,7 +1859,8 @@ describe("staying out of the way", () => {
         // approve without asking, and the tier cannot separate these: all of
         // them are legitimately mutating. Every tool taking a shellCommand does
         // whatever that command does, which is as unknowable from here as what
-        // send_keys types.
+        // send_keys types. set_option can persist the same authority in a
+        // format's #() host-shell job.
         for (const name of [
           "send_keys",
           "paste_text",
@@ -1872,6 +1873,7 @@ describe("staying out of the way", () => {
           "build_workspace",
           "display_message",
           "pipe_pane",
+          "set_option",
         ]) {
           expect(byName.get(name)?.openWorldHint, `${name} hides an open world`).toBe(true);
         }
@@ -1884,6 +1886,7 @@ describe("staying out of the way", () => {
 
         // A spawn creates rather than ends, and a host needs those apart.
         expect(byName.get("new_window")?.destructiveHint).toBe(false);
+        expect(byName.get("set_option")?.destructiveHint).toBe(true);
       });
     });
   }, 60_000);

@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines, MAX_INLINE_REQUEST_BYTES } from "../policy.js";
-import { MUTATING, offers, READ_ONLY } from "../register.js";
+import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { fail, limitEntries, ok, renderEntries } from "../results.js";
 import { fitsInlineRequest, inlineRequestText, requestText } from "../schemas.js";
 import { isFailure, requirePane, requireSession, requireWindow } from "../target_resolution.js";
@@ -260,10 +260,11 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "set_option",
     {
-      annotations: MUTATING,
+      annotations: OPEN_WORLD,
       description:
         "Set a tmux option at server, session, or pane scope. Changes stay until " +
-        "something unsets them, including after this process ends.",
+        "something unsets them, including after this process ends. Format-valued " +
+        "options such as status-right may contain #() jobs that run host shell commands.",
       inputSchema: z
         .object({
           name: inlineRequestText("name"),
