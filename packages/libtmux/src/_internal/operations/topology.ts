@@ -3,6 +3,7 @@ import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../.
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";
 import { planRemoveWindowPlacement } from "./plans.js";
+import { assertName } from "./names.js";
 
 function destination(options: MoveWindowOptions): readonly string[] {
   if (options.session === undefined && options.index === undefined) return [];
@@ -15,7 +16,7 @@ export async function renameWindow(
   windowId: string | null,
   name: string,
 ): Promise<void> {
-  await runCommand(runtime, ["rename-window", ...target(windowId), name]);
+  await runCommand(runtime, ["rename-window", ...target(windowId), assertName("window", name)]);
 }
 
 /**

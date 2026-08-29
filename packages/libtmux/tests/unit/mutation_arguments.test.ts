@@ -9,7 +9,12 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
-import { planKillPaneIfUnshared, planSplitWindow } from "../../src/_internal/operations/plans.js";
+import {
+  planKillPaneIfUnshared,
+  planNewSession,
+  planNewWindow,
+  planSplitWindow,
+} from "../../src/_internal/operations/plans.js";
 import { splitSize } from "../../src/types.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 
@@ -193,5 +198,17 @@ describe("lifecycle command arguments", () => {
       expect(() => splitSize(size as never)).toThrow(/size/u);
       expect(() => planSplitWindow("%0", { size: size as never })).toThrow(/size/u);
     }
+  });
+
+  test("refuses names the supported tmux range does not carry identically", () => {
+    // 3.2a through 3.6b rewrite a delimiter to `_`, 3.7 rejects the name, and
+    // 3.7a onward stores it literally, so one call means three things.
+    expect(() => planNewSession({ name: "a:b" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a.b" })).toThrow("session name");
+    expect(() => planNewSession({ name: "" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a\u0007b" })).toThrow("session name");
+    expect(() => planNewSession({ windowName: "a:b" })).toThrow("window name");
+    expect(() => planNewWindow(null, { name: "a.b" })).toThrow("window name");
+    expect(planNewSession({ name: "work" }).argv).toContain("work");
   });
 });

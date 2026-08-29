@@ -333,6 +333,8 @@ export class Session {
    * ```ts
    * await session.rename("renamed");
    * ```
+   *
+   * Refuses a name the supported servers would not store identically.
    */
   rename(name: string): Promise<void> {
     return renameSession(runtimeForHandle(this), this.id, name);

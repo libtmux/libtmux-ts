@@ -12,6 +12,7 @@ import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { uniqueUnknownCommand } from "../transport/refusal.js";
+import { assertName } from "./names.js";
 
 function requireIdentity(lines: readonly string[], command: string): string {
   const identity = lines[0];
@@ -36,9 +37,9 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
     "-P",
     "-F",
     "#{session_id}",
-    ...(options.name === undefined ? [] : ["-s", options.name]),
+    ...(options.name === undefined ? [] : ["-s", assertName("session", options.name)]),
     ...(options.groupWith === undefined ? [] : ["-t", options.groupWith]),
-    ...(options.windowName === undefined ? [] : ["-n", options.windowName]),
+    ...(options.windowName === undefined ? [] : ["-n", assertName("window", options.windowName)]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
       "-e",
@@ -63,7 +64,7 @@ function newWindowArgs(sessionId: string | null, options: NewWindowOptions): rea
     "-F",
     "#{window_id}",
     ...(sessionId == null ? [] : ["-t", sessionId]),
-    ...(options.name === undefined ? [] : ["-n", options.name]),
+    ...(options.name === undefined ? [] : ["-n", assertName("window", options.name)]),
     ...(options.direction === undefined ? [] : [WINDOW_DIRECTION_FLAG_MAP[options.direction]]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [

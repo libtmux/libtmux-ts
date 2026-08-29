@@ -1320,6 +1320,8 @@ rename(name: string): Promise<void>
 
 Rename this session.
 
+Refuses a name the supported servers would not store identically.
+
 ```ts
 await session.rename("renamed");
 ```
@@ -1685,6 +1687,8 @@ rename(name: string): Promise<void>
 ```
 
 Rename this window.
+
+Refuses a name the supported servers would not store identically.
 
 ```ts
 await window.rename("editor");

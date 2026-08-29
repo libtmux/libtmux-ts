@@ -359,6 +359,8 @@ export class Window {
    * ```ts
    * await window.rename("editor");
    * ```
+   *
+   * Refuses a name the supported servers would not store identically.
    */
   rename(name: string): Promise<void> {
     return renameWindow(runtimeForHandle(this), this.id, name);

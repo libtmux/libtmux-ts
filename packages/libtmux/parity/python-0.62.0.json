@@ -5962,23 +5962,23 @@
       "typescriptSymbols": ["./server#instance:Server.cmd"]
     },
     {
-      "adaptation": null,
-      "declarationTest": null,
+      "adaptation": "The check runs inside every mutation that takes a name rather than as a function a caller invokes first, and refuses control characters and DEL as well as the delimiters.",
+      "declarationTest": "tests/types/handles.test.ts",
       "kind": "function",
       "owner": "libtmux.common",
       "python": "libtmux.common.session_check_name",
       "realTmuxScenario": null,
-      "reason": "session names are validated by tmux itself, and a rejected name surfaces as TmuxCommandError carrying tmux's own message",
+      "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/common.py",
-      "status": "unsupported",
-      "typescript": null,
-      "unitTest": null,
+      "status": "adapted",
+      "typescript": "Server.newSession",
+      "unitTest": "tests/unit/mutation_arguments.test.ts",
       "evidenceApplicability": {
-        "declarationTest": "not-applicable: the symbol is not ported, so it has no evidence to record",
-        "realTmuxScenario": "not-applicable: the symbol is not ported, so it has no evidence to record",
-        "unitTest": "not-applicable: the symbol is not ported, so it has no evidence to record"
+        "declarationTest": "required",
+        "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
+        "unitTest": "required"
       },
-      "typescriptSymbols": []
+      "typescriptSymbols": ["./server#instance:Server.newSession"]
     },
     {
       "adaptation": "Re-reading one object is `refreshed()` on the handle itself, which answers with a new handle and keeps the placement it was resolved at — the winlink ambiguity Python resolves by picking a best row does not arise, because the handle already knows which placement it is.",

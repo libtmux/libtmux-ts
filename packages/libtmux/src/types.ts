@@ -87,6 +87,15 @@ export interface NewSessionOptions extends CommandOptions {
    * 3.3 is the first release that honours them.
    */
   readonly height?: number;
+  /**
+   * The session's name, tmux's `-s`.
+   *
+   * Empty names, `:`, `.`, control characters and DEL are refused, because the
+   * supported servers do not agree on them: 3.2a through 3.6b rewrite a
+   * delimiter to `_` and hand back a session the caller did not name, 3.7
+   * fails, and 3.7a onward stores it literally. What is accepted here reads
+   * back unchanged from every supported server.
+   */
   readonly name?: string;
   /**
    * A command for tmux to run in place of the default shell.
@@ -99,6 +108,7 @@ export interface NewSessionOptions extends CommandOptions {
   readonly startDirectory?: string;
   /** Columns for the session's first window. See `height`. */
   readonly width?: number;
+  /** The first window's name. Same rules as `name`. */
   readonly windowName?: string;
 }
 
@@ -119,6 +129,12 @@ export interface NewWindowOptions extends CommandOptions {
    * measures from. Without this the window goes at the first free index.
    */
   readonly direction?: WindowDirection;
+  /**
+   * The window's name.
+   *
+   * Refuses what a session name refuses, and for the same reason: the
+   * supported servers do not store a delimiter identically.
+   */
   readonly name?: string;
   /**
    * A command for tmux to run in place of the default shell.

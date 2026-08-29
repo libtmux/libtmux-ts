@@ -1,4 +1,5 @@
 import { runCommand } from "./command.js";
+import { assertName } from "./names.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 export async function renameSession(
@@ -9,7 +10,7 @@ export async function renameSession(
   await runCommand(runtime, [
     "rename-session",
     ...(sessionId == null ? [] : ["-t", sessionId]),
-    name,
+    assertName("session", name),
   ]);
 }
 
