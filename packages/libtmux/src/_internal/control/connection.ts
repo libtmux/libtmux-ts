@@ -13,7 +13,7 @@ import type { TmuxConnection } from "../runtime/connection.js";
 import { subcommandOf } from "../transport/group.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
-import { TmuxTransportError } from "../transport/types.js";
+import { snapshotCommandRequest, TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
 import { ControlChildLifecycle, type ControlChild } from "./child.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
@@ -946,13 +946,21 @@ export class ControlConnection implements CommandTransport {
    * depends on the condition.
    */
   executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    const [first] = requests;
+    let submittedRequests: readonly CommandRequest[];
+    try {
+      submittedRequests = Object.freeze(requests.map(snapshotCommandRequest));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const [first] = submittedRequests;
     if (first === undefined) return Promise.resolve(Object.freeze([]));
-    if (requests.length === 1) return this.execute(first).then((result) => Object.freeze([result]));
+    if (submittedRequests.length === 1) {
+      return this.execute(first).then((result) => Object.freeze([result]));
+    }
     if (this.#closed || this.#reopening) {
       return this.execute(first).then((result) => Object.freeze([result]));
     }
-    if (requests.some((request) => request.stdin !== undefined)) {
+    if (submittedRequests.some((request) => request.stdin !== undefined)) {
       return Promise.reject(
         new TmuxTransportError("a command list cannot carry stdin", {
           delivery: "not_started",
@@ -960,7 +968,7 @@ export class ControlConnection implements CommandTransport {
         }),
       );
     }
-    const argvs = requests.map((request) => subcommandOf(request.args));
+    const argvs = submittedRequests.map((request) => subcommandOf(request.args));
     if (argvs.some((argv) => argv.length === 0)) {
       return Promise.reject(
         new TmuxTransportError("control mode request carries no subcommand", {
@@ -974,7 +982,7 @@ export class ControlConnection implements CommandTransport {
       // The whole list goes, not the one command: splitting it would cost the
       // single instant that is the reason a list is written as one line.
       const fallback = this.#spawnFallback;
-      if (fallback !== undefined) return fallback.executeGroup(requests);
+      if (fallback !== undefined) return fallback.executeGroup(submittedRequests);
       return Promise.reject(
         new TmuxTransportError(`control mode cannot carry ${unwritable}`, {
           delivery: "not_started",
@@ -982,10 +990,10 @@ export class ControlConnection implements CommandTransport {
         }),
       );
     }
-    if (this.#pending.length + requests.length > this.#maxPendingCommands) {
+    if (this.#pending.length + submittedRequests.length > this.#maxPendingCommands) {
       return Promise.reject(
         new TmuxTransportError(
-          `tmux control connection cannot hold a further ${String(requests.length)} commands`,
+          `tmux control connection cannot hold a further ${String(submittedRequests.length)} commands`,
           { delivery: "not_started", kind: "protocol" },
         ),
       );
@@ -994,7 +1002,9 @@ export class ControlConnection implements CommandTransport {
     // Enqueued and written without an await between, so nothing can slip a
     // command into the middle of the list or the middle of the queue.
     const group: PendingGroup = { aborted: false };
-    const answers = requests.map((request, index) => this.#enqueue(request, argvs[index]!, group));
+    const answers = submittedRequests.map((request, index) =>
+      this.#enqueue(request, argvs[index]!, group),
+    );
     this.#write(`${argvs.map((argv) => argv.map(quoteArgument).join(" ")).join(" ; ")}\n`);
     return Promise.all(answers).then((results) => Object.freeze(results));
   }

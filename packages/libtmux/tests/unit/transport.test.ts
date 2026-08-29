@@ -40,6 +40,17 @@ describe("NodeSpawnTransport", () => {
     expect(
       () => new NodeSpawnTransport({ postKillGraceMs: 0, terminationGraceMs: 0 }),
     ).not.toThrow();
+
+    await expect(
+      new NodeSpawnTransport().executeGroup([
+        { args: ["display-message", "first"], executable: "/definitely/not/an/executable" },
+        {
+          args: ["display-message", "second"],
+          executable: "/definitely/not/an/executable",
+          timeoutMs: Number.NaN,
+        },
+      ]),
+    ).rejects.toThrow(/timeoutMs/u);
   });
 
   test("passes hostile-looking values as distinct literal arguments", async () => {

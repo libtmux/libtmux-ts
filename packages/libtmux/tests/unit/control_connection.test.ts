@@ -250,8 +250,27 @@ describe("ControlConnection child ownership", () => {
     await control.close();
   });
 
+  test("rejects an invalid grouped deadline before writing", async () => {
+    const child = new FakeChild(109);
+    const control = new ControlConnection(connection(), {}, false, undefined, () => child);
+    attach(child);
+    await control.ready();
+
+    await expect(
+      control.executeGroup([
+        { args: ["display-message", "first"], executable: "tmux", timeoutMs: 1_000 },
+        {
+          args: ["display-message", "second"],
+          executable: "tmux",
+          timeoutMs: Number.NaN,
+        },
+      ]),
+    ).rejects.toThrow(/timeoutMs/u);
+    await control.close();
+  });
+
   test("makes concurrent close callers await child retirement", async () => {
-    const child = new FakeChild(109, false);
+    const child = new FakeChild(110, false);
     const control = new ControlConnection(connection(), {}, false, undefined, () => child);
     attach(child);
     await control.ready();

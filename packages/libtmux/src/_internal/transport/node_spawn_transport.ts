@@ -359,17 +359,18 @@ export class NodeSpawnTransport {
    * can forge one.
    */
   async executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    const [first, ...rest] = requests;
+    const submittedRequests = Object.freeze(requests.map(snapshotCommandRequest));
+    const [first, ...rest] = submittedRequests;
     if (first === undefined) return Object.freeze([]);
     if (rest.length === 0) return Object.freeze([await this.execute(first)]);
-    if (requests.some((request) => request.stdin !== undefined)) {
+    if (submittedRequests.some((request) => request.stdin !== undefined)) {
       throw new TmuxTransportError("a command list cannot carry stdin", {
         delivery: "not_started",
         kind: "protocol",
       });
     }
 
-    const invocation = asSingleInvocation(requests);
+    const invocation = asSingleInvocation(submittedRequests);
     const args = invocation.args;
     const packed = packedArgvBytes([first.executable, ...args]);
     if (packed > MAX_PACKED_ARGV_BYTES) {
@@ -396,7 +397,7 @@ export class NodeSpawnTransport {
     // and printed, and the section that stopped carries the exit status.
     return Object.freeze(
       sections.map((stdout, index) => ({
-        cmd: Object.freeze([requests[index]?.executable ?? first.executable, ...args]),
+        cmd: Object.freeze([submittedRequests[index]?.executable ?? first.executable, ...args]),
         returncode: index === sections.length - 1 ? result.returncode : 0,
         signal: index === sections.length - 1 ? result.signal : null,
         stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
