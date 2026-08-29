@@ -567,6 +567,32 @@ windows:
     });
   }, 90_000);
 
+  test.failing(
+    "types a shell command literally when its text names a tmux key",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const marker = join(await makeTestDirectory("ltx-ws-marker-"), "literal");
+        const workspace = parseWorkspaceYaml(
+          [
+            "session_name: literal",
+            "windows:",
+            "  - window_name: main",
+            `    shell_command_before: "Up() { echo literal >> ${marker}; }"`,
+            "    panes:",
+            '      - shell_command: "Up"',
+          ].join("\n"),
+        );
+
+        await applyWorkspace(server, workspace);
+        await drain(server, "literal", marker);
+
+        expect(await readMarker(marker)).toContain("literal");
+      });
+    },
+    90_000,
+  );
+
   test("delivers create-only commands once when layout fails afterward", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
