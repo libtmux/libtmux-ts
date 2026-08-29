@@ -262,73 +262,73 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
     },
   );
 
-  mcp.registerTool(
-    "pipe_pane",
-    {
-      annotations: OPEN_WORLD,
-      description:
-        "Send everything a pane writes to a shell command, for as long as the pipe " +
-        "is open. Use this for output too large to read back: a pane keeps only " +
-        "history-limit lines and observe keeps a bounded buffer, so a long build " +
-        "outruns both and the earliest output is gone before anyone asks. " +
-        "'cat >> /tmp/build.log' captures it whole and costs nothing to leave " +
-        "running. Call with no command to stop. The pipe attaches to the pane, not " +
-        "to the process in it, so it survives respawn_pane and keeps running until " +
-        "something stops it. The command runs on the machine tmux runs on, and does " +
-        "whatever it does — this server cannot tell.",
-      inputSchema: {
-        toggle: z
-          .boolean()
-          .optional()
-          .describe(
-            "Start a pipe when none is open, and stop one when there is. tmux " +
-              "closes the existing pipe before honouring this, so against a pane " +
-              "somebody else is capturing it stops their capture rather than " +
-              "leaving it alone.",
-          ),
-        paneId: z.string(),
-        shellCommand: z
-          .string()
-          .optional()
-          .describe("Omit to stop a pipe this pane already has open."),
+  if (offers(context.policy, "mutating")) {
+    mcp.registerTool(
+      "pipe_pane",
+      {
+        annotations: OPEN_WORLD,
+        description:
+          "Send everything a pane writes to a shell command, for as long as the pipe " +
+          "is open. Use this for output too large to read back: a pane keeps only " +
+          "history-limit lines and observe keeps a bounded buffer, so a long build " +
+          "outruns both and the earliest output is gone before anyone asks. " +
+          "'cat >> /tmp/build.log' captures it whole and costs nothing to leave " +
+          "running. Call with no command to stop. The pipe attaches to the pane, not " +
+          "to the process in it, so it survives respawn_pane and keeps running until " +
+          "something stops it. The command runs on the machine tmux runs on, and does " +
+          "whatever it does — this server cannot tell.",
+        inputSchema: {
+          toggle: z
+            .boolean()
+            .optional()
+            .describe(
+              "Start a pipe when none is open, and stop one when there is. tmux " +
+                "closes the existing pipe before honouring this, so against a pane " +
+                "somebody else is capturing it stops their capture rather than " +
+                "leaving it alone.",
+            ),
+          paneId: z.string(),
+          shellCommand: z
+            .string()
+            .optional()
+            .describe("Omit to stop a pipe this pane already has open."),
+        },
+        outputSchema: {
+          paneId: z.string(),
+          piping: z
+            .boolean()
+            .describe(
+              "Whether the pane is piped now, read back from tmux. A toggle against " +
+                "a pane already being piped closes that pipe and opens none, so this " +
+                "is false even though a command was given.",
+            ),
+        },
+        title: "Pipe pane output",
       },
-      outputSchema: {
-        paneId: z.string(),
-        piping: z
-          .boolean()
-          .describe(
-            "Whether the pane is piped now, read back from tmux. A toggle against " +
-              "a pane already being piped closes that pipe and opens none, so this " +
-              "is false even though a command was given.",
-          ),
+      async ({ paneId, shellCommand, toggle }) => {
+        const snapshot = await context.snapshot();
+        // This changes pane state and starts an arbitrary host command. It does
+        // not become read-only merely because tmux sends output rather than input.
+        const pane = requirePane(snapshot, paneId);
+        if (isFailure(pane)) return pane;
+        await pane.pipeTo(shellCommand, toggle === undefined ? {} : { toggle });
+        // Ask the pane rather than restating the request. tmux destroys an open
+        // pipe before deciding whether to open a new one, so supplying a command
+        // is not the same as having a pipe afterwards — and reporting the request
+        // back made a toggle that stopped somebody else's capture look identical
+        // to one that started yours.
+        const piping = (await pane.displayMessage("#{pane_pipe}"))[0] === "1";
+        const stopped =
+          shellCommand === undefined
+            ? `Stopped piping ${paneId}.`
+            : `Stopped piping ${paneId}: toggle closed the pipe that was open and started none.`;
+        return ok(
+          { paneId, piping },
+          piping ? `Piping ${paneId} into: ${String(shellCommand)}` : stopped,
+        );
       },
-      title: "Pipe pane output",
-    },
-    async ({ paneId, shellCommand, toggle }) => {
-      const snapshot = await context.snapshot();
-      // A read: tmux sends the pane's output to the command and writes nothing
-      // back, which is its default when neither -I nor -O is given. Adding -I
-      // would reverse that — the command's output would reach the pane as
-      // input — and this would then need requireWritablePane, not requirePane.
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
-      await pane.pipeTo(shellCommand, toggle === undefined ? {} : { toggle });
-      // Ask the pane rather than restating the request. tmux destroys an open
-      // pipe before deciding whether to open a new one, so supplying a command
-      // is not the same as having a pipe afterwards — and reporting the request
-      // back made a toggle that stopped somebody else's capture look identical
-      // to one that started yours.
-      const piping = (await pane.displayMessage("#{pane_pipe}"))[0] === "1";
-      const stopped =
-        shellCommand === undefined
-          ? `Stopped piping ${paneId}.`
-          : `Stopped piping ${paneId}: toggle closed the pipe that was open and started none.`;
-      return ok(
-        { paneId, piping },
-        piping ? `Piping ${paneId} into: ${String(shellCommand)}` : stopped,
-      );
-    },
-  );
+    );
+  }
 
   mcp.registerTool(
     "search_panes",

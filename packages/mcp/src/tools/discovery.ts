@@ -10,7 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { isFailure, requirePane, requireSession, type ToolContext } from "../context.js";
-import { offers, READ_ONLY } from "../register.js";
+import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { ok } from "../results.js";
 import {
   clientView,
@@ -319,44 +319,46 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     },
   );
 
-  mcp.registerTool(
-    "display_message",
-    {
-      annotations: READ_ONLY,
-      description:
-        "Resolve a tmux format string against a target, e.g. '#{pane_current_command}'. " +
-        "The escape hatch for any field these tools do not project.",
-      inputSchema: {
-        format: z.string().describe("A tmux format, e.g. '#{pane_pid}'."),
-        target: z.string().optional().describe("Pane id to resolve against."),
+  if (offers(context.policy, "mutating")) {
+    mcp.registerTool(
+      "display_message",
+      {
+        annotations: OPEN_WORLD,
+        description:
+          "Resolve a tmux format string against a target, e.g. '#{pane_current_command}'. " +
+          "The escape hatch for any field these tools do not project.",
+        inputSchema: {
+          format: z.string().describe("A tmux format, e.g. '#{pane_pid}'."),
+          target: z.string().optional().describe("Pane id to resolve against."),
+        },
+        outputSchema: { value: z.string() },
+        title: "Resolve a tmux format",
       },
-      outputSchema: { value: z.string() },
-      title: "Resolve a tmux format",
-    },
-    async ({ format, target }) => {
-      const snapshot = await context.snapshot();
-      if (target !== undefined) {
-        const pane = requirePane(snapshot, target);
-        if (isFailure(pane)) return pane;
-        const lines = await pane.displayMessage(format);
+      async ({ format, target }) => {
+        const snapshot = await context.snapshot();
+        if (target !== undefined) {
+          const pane = requirePane(snapshot, target);
+          if (isFailure(pane)) return pane;
+          const lines = await pane.displayMessage(format);
+          const value = lines.join("\n");
+          // displayMessage takes a format, not flags, so the enumeration goes
+          // through the command with the same pane as its target.
+          const unknown = await unknownFields(
+            () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
+            formatVariables(format),
+            value,
+          );
+          return ok({ value }, value + emptyNote(unknown));
+        }
+        const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
         const value = lines.join("\n");
-        // displayMessage takes a format, not flags, so the enumeration goes
-        // through the command with the same pane as its target.
         const unknown = await unknownFields(
-          () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
+          () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
           formatVariables(format),
           value,
         );
         return ok({ value }, value + emptyNote(unknown));
-      }
-      const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
-      const value = lines.join("\n");
-      const unknown = await unknownFields(
-        () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
-        formatVariables(format),
-        value,
-      );
-      return ok({ value }, value + emptyNote(unknown));
-    },
-  );
+      },
+    );
+  }
 }

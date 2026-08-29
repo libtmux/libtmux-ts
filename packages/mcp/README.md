@@ -170,15 +170,14 @@ can decide what to auto-approve.
 
 ### Find your way around
 
-| Tool              | Answers                                                 |
-| ----------------- | ------------------------------------------------------- |
-| `list_sessions`   | What sessions exist, and is anyone attached             |
-| `list_windows`    | What windows exist, optionally in one session           |
-| `list_panes`      | What panes exist, what each runs, which are yours       |
-| `get_pane`        | One pane's metadata                                     |
-| `whoami`          | Which pane this server runs in; which panes are watched |
-| `server_info`     | Socket, tmux version, daemon pid, totals                |
-| `display_message` | Any tmux format these projections do not carry          |
+| Tool            | Answers                                                 |
+| --------------- | ------------------------------------------------------- |
+| `list_sessions` | What sessions exist, and is anyone attached             |
+| `list_windows`  | What windows exist, optionally in one session           |
+| `list_panes`    | What panes exist, what each runs, which are yours       |
+| `get_pane`      | One pane's metadata                                     |
+| `whoami`        | Which pane this server runs in; which panes are watched |
+| `server_info`   | Socket, tmux version, daemon pid, totals                |
 
 ### Read what panes show
 
@@ -187,22 +186,28 @@ can decide what to auto-approve.
 | `capture_pane` | The rendered screen, or into the scrollback |
 | `observe`      | Only what is new since your cursor          |
 | `search_panes` | Which panes are showing something           |
-| `pipe_pane`    | Sends a pane's output to a command, durably |
+
+### Do things
+
+| Tool              | Does                                                    |
+| ----------------- | ------------------------------------------------------- |
+| `run_command`     | Runs a shell command, waits for it, reports exit status |
+| `send_keys`       | Sends keystrokes: TUIs, `C-c`, partial lines            |
+| `paste_text`      | Sends text with nothing read as a key name              |
+| `pipe_pane`       | Sends a pane's output to a host command, durably        |
+| `display_message` | Resolves arbitrary tmux formats, including `#()` jobs   |
+
+`display_message` is a mutating-tier tool because tmux formats may contain
+`#()` jobs that run through the host shell. The tier follows the authority the
+format accepts, even when a particular call only reads a field.
 
 A pane keeps `history-limit` lines and `observe` keeps a bounded buffer, so
 output larger than either is gone before anything asks for it. `pipe_pane` is
 tmux's answer: the command runs for as long as the pipe is open, so a long build
 is captured whole and costs nothing to leave running. It attaches to the pane
 rather than to the process in it, so it survives `respawn_pane` and keeps
-running until something stops it.
-
-### Do things
-
-| Tool          | Does                                                    |
-| ------------- | ------------------------------------------------------- |
-| `run_command` | Runs a shell command, waits for it, reports exit status |
-| `send_keys`   | Sends keystrokes: TUIs, `C-c`, partial lines            |
-| `paste_text`  | Sends text with nothing read as a key name              |
+running until something stops it. Starting or stopping the pipe mutates tmux,
+and its command has the tmux user's host authority.
 
 ### Wait
 

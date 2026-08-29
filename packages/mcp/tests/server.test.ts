@@ -1476,6 +1476,8 @@ describe("staying out of the way", () => {
           "split_pane",
           "respawn_pane",
           "build_workspace",
+          "display_message",
+          "pipe_pane",
         ]) {
           expect(byName.get(name)?.openWorldHint, `${name} hides an open world`).toBe(true);
         }
@@ -1691,9 +1693,32 @@ describe("staying out of the way", () => {
           expect(names).toContain("list_panes");
           // Hidden rather than refused: a tool an agent cannot see is one it
           // cannot spend a turn being denied.
+          expect(names).not.toContain("display_message");
+          expect(names).not.toContain("pipe_pane");
           expect(names).not.toContain("send_keys");
           expect(names).not.toContain("kill_pane");
           expect(client.getInstructions() ?? "").toContain("Safety: readonly");
+        },
+        { LIBTMUX_SAFETY: "readonly" },
+      );
+    });
+  }, 60_000);
+
+  test("does not execute format commands under the readonly tier", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const directory = await makeTestDirectory("ltx-format-command-");
+          const marker = join(directory, "executed");
+          const attempted = await client.callTool({
+            arguments: { format: `#(printf ran > ${shellQuote(marker)})` },
+            name: "display_message",
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          expect(existsSync(marker)).toBe(false);
+          expect((attempted as { isError?: boolean }).isError).toBe(true);
         },
         { LIBTMUX_SAFETY: "readonly" },
       );
