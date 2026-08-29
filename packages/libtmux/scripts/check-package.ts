@@ -5,11 +5,13 @@
  * three questions about it: does it resolve for the runtimes we claim, is the
  * manifest well formed, and does it carry anything a consumer has no use for.
  */
-import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { existsSync, rmSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { npmPack } from "../../../scripts/npm_pack.js";
 import { declarationClosureErrors, packageDeclarationExports } from "./declaration-closure.js";
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -21,7 +23,10 @@ const forbiddenEntries: readonly (readonly [prefix: string, reason: string])[] =
   ["dist/scripts/", "build tooling is not part of the published surface"],
 ];
 
+let packDirectory: string | undefined;
+
 function fail(message: string): never {
+  if (packDirectory !== undefined) rmSync(packDirectory, { force: true, recursive: true });
   process.stderr.write(`${message}\n`);
   process.exit(1);
 }
@@ -54,13 +59,10 @@ async function run(command: readonly string[]): Promise<string> {
   return stdout;
 }
 
-// `bun pm pack --dry-run` reports one "packed <size> <path>" line per entry.
-const packed = await run(["bun", "pm", "pack", "--dry-run"]);
-const entries = packed
-  .split("\n")
-  .map((line) => /^packed\s+\S+\s+(\S.*)$/.exec(line.trim())?.[1])
-  .filter((entry) => entry !== undefined)
-  .filter((entry) => entry.startsWith("dist/"));
+packDirectory = await mkdtemp(join(tmpdir(), "ltx-package-pack-"));
+const entries = await npmPack(tsRoot, packDirectory)
+  .then(({ entries: packed }) => packed.filter((entry) => entry.startsWith("dist/")))
+  .catch((error: unknown) => fail(error instanceof Error ? error.message : "npm pack failed"));
 if (entries.length === 0) fail("packing produced no dist entries; run `bun run build` first");
 
 for (const [prefix, reason] of forbiddenEntries) {
@@ -114,9 +116,8 @@ if (declarationErrors.length > 0) {
 await run([resolveBinary("publint")]);
 await run([resolveBinary("attw"), "--pack", ".", "--profile", "esm-only"]);
 
-// Named from the manifest: a hardcoded version leaves the packed tarball
-// behind the moment it is bumped.
-await rm(join(tsRoot, `${shipped.name}-${shipped.version}.tgz`), { force: true });
+await rm(packDirectory, { force: true, recursive: true });
+packDirectory = undefined;
 
 process.stdout.write(
   `${JSON.stringify({

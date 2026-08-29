@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveNode22 } from "../packages/libtmux/src/_internal/test/node22.js";
+import { npmPack } from "./npm_pack.js";
 
 interface Manifest {
   readonly name: string;
@@ -51,6 +52,70 @@ async function run(command: readonly string[], cwd: string): Promise<string> {
   ]);
   if (exitCode !== 0) fail(`${command.join(" ")} exited ${String(exitCode)}\n${stdout}${stderr}`);
   return stdout;
+}
+
+async function probeMcpBinary(project: string, node: string): Promise<void> {
+  const binary = join(project, "node_modules", ".bin", "libtmux-mcp");
+  const child = Bun.spawn([node, binary], {
+    cwd: project,
+    env: { ...process.env, LIBTMUX_SAFETY: "readonly", TMUX: "", TMUX_PANE: "" },
+    stderr: "pipe",
+    stdin: "pipe",
+    stdout: "pipe",
+  });
+  const frames = [
+    {
+      id: 1,
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: {
+        capabilities: {},
+        clientInfo: { name: "installed-bin-canary", version: "0" },
+        protocolVersion: "2024-11-05",
+      },
+    },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { id: 2, jsonrpc: "2.0", method: "tools/list", params: {} },
+  ];
+  void child.stdin.write(`${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`);
+  await child.stdin.flush();
+
+  let expired = false;
+  const deadline = setTimeout(() => {
+    expired = true;
+    child.kill("SIGTERM");
+  }, 20_000);
+  const hardDeadline = setTimeout(() => child.kill("SIGKILL"), 21_000);
+  deadline.unref?.();
+  hardDeadline.unref?.();
+  let output = "";
+  try {
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- protocol frames arrive in order.
+      const { done, value } = await reader.read();
+      if (done) break;
+      output += decoder.decode(value, { stream: true });
+      if (output.split("\n").some((line) => line.includes('"id":2'))) break;
+    }
+  } finally {
+    clearTimeout(deadline);
+    child.kill("SIGTERM");
+    await child.exited;
+    clearTimeout(hardDeadline);
+  }
+  const stderr = await new Response(child.stderr).text();
+  if (expired) fail(`installed ${binary} exceeded its handshake deadline\n${stderr}`);
+
+  const response = output
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as { id?: number; result?: { tools?: unknown[] } })
+    .find(({ id }) => id === 2);
+  if ((response?.result?.tools?.length ?? 0) === 0) {
+    fail(`installed ${binary} returned no tools\n${output}${stderr}`);
+  }
 }
 
 function consumerFor(name: string): Consumer {
@@ -130,21 +195,14 @@ const libraryRoot = join(repositoryRoot, "packages", "libtmux");
 const targetManifest = JSON.parse(
   await readFile(join(targetRoot, "package.json"), "utf8"),
 ) as Manifest;
-const libraryManifest = JSON.parse(
-  await readFile(join(libraryRoot, "package.json"), "utf8"),
-) as Manifest;
 const consumer = consumerFor(targetManifest.name);
-const targetTarball = join(
-  targetRoot,
-  `${targetManifest.name.replace("@", "").replace("/", "-")}-${targetManifest.version}.tgz`,
-);
-const libraryTarball = join(libraryRoot, `${libraryManifest.name}-${libraryManifest.version}.tgz`);
 const project = await mkdtemp(join(tmpdir(), "ltx-consumer-install-"));
 
 try {
   await run(["bun", "run", "build"], libraryRoot);
-  await run(["bun", "pm", "pack"], libraryRoot);
-  await run(["bun", "pm", "pack"], targetRoot);
+  const artifacts = join(project, "artifacts");
+  const { tarballPath: libraryTarball } = await npmPack(libraryRoot, artifacts);
+  const { tarballPath: targetTarball } = await npmPack(targetRoot, artifacts);
   await writeFile(
     join(project, "package.json"),
     `${JSON.stringify({ name: "ltx-consumer-install", private: true, type: "module", version: "0.0.0" })}\n`,
@@ -177,8 +235,10 @@ try {
   await run([resolveBinary("tsc"), "--project", "tsconfig.json"], project);
   await writeFile(join(project, "node.mjs"), consumer.nodeProbe);
   await writeFile(join(project, "bun.mjs"), consumer.bunProbe);
-  await run([await resolveNode22(), "node.mjs"], project);
+  const node = await resolveNode22();
+  await run([node, "node.mjs"], project);
   await run(["bun", "bun.mjs"], project);
+  if (targetManifest.name === "@libtmux/mcp") await probeMcpBinary(project, node);
   process.stdout.write(
     `${JSON.stringify({
       installed: `${targetManifest.name}@${targetManifest.version}`,
@@ -187,9 +247,5 @@ try {
     })}\n`,
   );
 } finally {
-  await Promise.all([
-    rm(project, { force: true, recursive: true }),
-    rm(libraryTarball, { force: true }),
-    rm(targetTarball, { force: true }),
-  ]);
+  await rm(project, { force: true, recursive: true });
 }

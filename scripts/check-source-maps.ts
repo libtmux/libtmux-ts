@@ -1,5 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { rmSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+
+import { npmPack } from "./npm_pack.js";
 
 interface SourceMap {
   readonly file?: unknown;
@@ -8,7 +12,10 @@ interface SourceMap {
   readonly sourcesContent?: unknown;
 }
 
+let packDirectory: string | undefined;
+
 function fail(message: string): never {
+  if (packDirectory !== undefined) rmSync(packDirectory, { force: true, recursive: true });
   process.stderr.write(`${message}\n`);
   process.exit(1);
 }
@@ -29,23 +36,11 @@ const declarations = Array.from(new Bun.Glob("**/*.d.ts").scanSync({ cwd: distRo
 if (javascript.length === 0) fail("dist contains no JavaScript files");
 if (declarations.length === 0) fail("dist contains no declaration files");
 
-const packedResult = Bun.spawnSync(["bun", "pm", "pack", "--dry-run"], {
-  cwd: packageRoot,
-  stderr: "pipe",
-  stdout: "pipe",
-});
-if (packedResult.exitCode !== 0) {
-  fail(
-    `bun pm pack --dry-run exited ${String(packedResult.exitCode)}\n` +
-      `${packedResult.stdout.toString()}${packedResult.stderr.toString()}`,
-  );
-}
+packDirectory = await mkdtemp(join(tmpdir(), "ltx-source-map-pack-"));
 const packed = new Set(
-  packedResult.stdout
-    .toString()
-    .split("\n")
-    .map((line) => /^packed\s+\S+\s+(\S.*)$/u.exec(line.trim())?.[1])
-    .filter((entry) => entry !== undefined),
+  await npmPack(packageRoot, packDirectory)
+    .then(({ entries }) => entries)
+    .catch((error: unknown) => fail(error instanceof Error ? error.message : "npm pack failed")),
 );
 if (packed.size === 0) fail("packing produced no entries");
 
@@ -119,6 +114,8 @@ await Promise.all([
   ...javascript.map((path) => validateMap(path, true)),
   ...declarations.map((path) => validateMap(path, false)),
 ]);
+await rm(packDirectory, { force: true, recursive: true });
+packDirectory = undefined;
 
 process.stdout.write(
   `${JSON.stringify({

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { npmPack } from "../../../scripts/npm_pack.js";
 import { resolveNode22 } from "../src/_internal/test/node22.js";
 
 /**
@@ -62,14 +63,13 @@ const manifest = JSON.parse(await readFile(join(tsRoot, "package.json"), "utf8")
   name: string;
   version: string;
 };
-const tarball = join(tsRoot, `${manifest.name}-${manifest.version}.tgz`);
 
 // `ltx` so a sweep can tell this apart from another libtmux port's leavings.
 const project = await mkdtemp(join(tmpdir(), "ltx-install-"));
 const node = await resolveNode22();
 
 try {
-  await run(["bun", "pm", "pack"], tsRoot);
+  const { tarballPath: tarball } = await npmPack(tsRoot, join(project, "artifacts"));
 
   await writeFile(
     join(project, "package.json"),
@@ -137,19 +137,26 @@ try {
       "",
     ].join("\n"),
   );
-  const { stdout } = await run([node, probe], project);
-  if (stdout.trim() !== "ok") {
-    fail(`the installed package answered ${JSON.stringify(stdout.trim())}`);
+  const nodeResult = await run([node, probe], project);
+  const bunResult = await run([process.execPath, probe], project);
+  for (const [runtime, stdout] of [
+    ["Node 22", nodeResult.stdout],
+    [`Bun ${Bun.version}`, bunResult.stdout],
+  ] as const) {
+    if (stdout.trim() !== "ok") {
+      fail(`${runtime} answered ${JSON.stringify(stdout.trim())} for the installed package`);
+    }
   }
 
   process.stdout.write(
     `${JSON.stringify({
       installed: `${manifest.name}@${manifest.version}`,
+      bun: Bun.version,
       node: node.split("/").at(-1) ?? "node",
       protocol: "libtmux-install-canary-v1",
       status: "passed",
     })}\n`,
   );
 } finally {
-  await Promise.all([rm(project, { force: true, recursive: true }), rm(tarball, { force: true })]);
+  await rm(project, { force: true, recursive: true });
 }
