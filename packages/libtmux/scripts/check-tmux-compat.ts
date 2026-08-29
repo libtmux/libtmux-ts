@@ -87,6 +87,12 @@ if ((await emitted.exited) !== 0) {
 }
 
 let failed = false;
+// The tmux on PATH is added as a candidate so a machine without
+// LIBTMUX_TMUX_BUILDS still checks something. When it is a build the range
+// already covers, running it again costs a whole suite per gate and proves
+// nothing new, so what has been checked is tracked by the version tmux reports
+// rather than by the path it was reached through.
+const checked = new Set<string>();
 for (const build of builds) {
   // eslint-disable-next-line no-await-in-loop -- one build at a time.
   const reported = await version(build.executable);
@@ -95,6 +101,11 @@ for (const build of builds) {
     failed = true;
     continue;
   }
+  if (checked.has(reported)) {
+    process.stdout.write(`${reported.padEnd(12)} ${build.label.padEnd(18)} already checked\n`);
+    continue;
+  }
+  checked.add(reported);
   for (const gate of GATES) {
     // Gates run one at a time: two tmux suites at once contend for the same
     // machine and turn a real failure into a timing question.
