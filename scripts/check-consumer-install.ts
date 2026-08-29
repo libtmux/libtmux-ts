@@ -8,12 +8,15 @@ import { resolveNode22 } from "../packages/libtmux/src/_internal/test/node22.js"
 import { npmPack } from "./npm_pack.js";
 
 interface Manifest {
+  readonly dependencies?: Readonly<Record<string, unknown>>;
   readonly name: string;
+  readonly peerDependencies?: Readonly<Record<string, unknown>>;
   readonly version: string;
 }
 
 interface Consumer {
   readonly bunProbe: string;
+  readonly dependencyField: "dependencies" | "peerDependencies";
   readonly libs: readonly string[];
   readonly nodeProbe: string;
   readonly types: string;
@@ -141,6 +144,7 @@ async function probeMcpBinary(project: string, node: string): Promise<void> {
 function consumerFor(name: string): Consumer {
   if (name === "@libtmux/mcp") {
     return {
+      dependencyField: "dependencies",
       libs: ["ES2024", "ESNext.Disposable", "DOM"],
       types: [
         'import { createTmuxMcpServer, type Policy, type SafetyTier } from "@libtmux/mcp";',
@@ -175,6 +179,7 @@ function consumerFor(name: string): Consumer {
   }
   if (name === "@libtmux/workspace") {
     return {
+      dependencyField: "peerDependencies",
       libs: ["ES2024", "ESNext.Disposable"],
       types: [
         'import { applyWorkspace } from "@libtmux/workspace";',
@@ -215,6 +220,20 @@ const targetManifest = JSON.parse(
   await readFile(join(targetRoot, "package.json"), "utf8"),
 ) as Manifest;
 const consumer = consumerFor(targetManifest.name);
+const libraryManifest = JSON.parse(
+  await readFile(join(libraryRoot, "package.json"), "utf8"),
+) as Manifest;
+if (targetManifest.version !== libraryManifest.version) {
+  fail(
+    `${targetManifest.name}@${targetManifest.version} does not match libtmux@${libraryManifest.version}`,
+  );
+}
+const declaredLibraryVersion = targetManifest[consumer.dependencyField]?.libtmux;
+if (declaredLibraryVersion !== libraryManifest.version) {
+  fail(
+    `${targetManifest.name} must declare exact ${consumer.dependencyField}.libtmux ${libraryManifest.version}; found ${typeof declaredLibraryVersion === "string" ? JSON.stringify(declaredLibraryVersion) : "nothing"}`,
+  );
+}
 const project = await mkdtemp(join(tmpdir(), "ltx-consumer-install-"));
 
 try {

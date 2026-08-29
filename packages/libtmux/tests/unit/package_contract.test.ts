@@ -276,17 +276,23 @@ describe("package contract", () => {
   test("pins the complete dependency boundary to the accepted runtime floors", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
-    const runtimeManifests = await Promise.all(
-      [
-        "../../package.json",
-        "package.json",
-        "../mcp/package.json",
-        "../workspace/package.json",
-      ].map((path) => readJson<{ engines: Record<string, string> }>(path)),
-    );
+    const [rootManifest, mcpManifest, workspaceManifest] = await Promise.all([
+      readJson<{ engines: Record<string, string> }>("../../package.json"),
+      readJson<{
+        dependencies?: Record<string, string>;
+        engines: Record<string, string>;
+      }>("../mcp/package.json"),
+      readJson<{
+        engines: Record<string, string>;
+        peerDependencies?: Record<string, string>;
+      }>("../workspace/package.json"),
+    ]);
+    const runtimeManifests = [rootManifest, packageManifest, mcpManifest, workspaceManifest];
     for (const manifest of runtimeManifests) {
       expect(manifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
     }
+    expect(mcpManifest.dependencies?.libtmux).toBe(packageManifest.version);
+    expect(workspaceManifest.peerDependencies?.libtmux).toBe(packageManifest.version);
     // Absent, not empty: an empty `dependencies` object is noise in a manifest.
     expect(packageManifest.dependencies ?? {}).toEqual(expectedDependencies);
     expect(packageManifest.devDependencies).toEqual(expectedDevDependencies);
