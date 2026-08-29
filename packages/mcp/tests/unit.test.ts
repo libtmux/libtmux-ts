@@ -883,6 +883,61 @@ describe("command framing", () => {
     expect(result.outcome).toBe("completed");
     expect(result.exitStatus).toBe(127);
   });
+
+  test.each([
+    ["caller cancellation", "cancelled", 1_000],
+    ["deadline expiry", "timed_out", 5],
+  ] as const)(
+    "does not start after %s during a fallback capture",
+    async (_, outcome, timeoutMs) => {
+      const controller = new AbortController();
+      const sent: string[] = [];
+      let ready = "";
+      let captureCount = 0;
+      const firstCapture = Promise.withResolvers<string[]>();
+      const capturing = Promise.withResolvers<void>();
+      const pane = {
+        capture: async () => {
+          captureCount += 1;
+          if (captureCount === 1) {
+            capturing.resolve();
+            return firstCapture.promise;
+          }
+          return [`${ready}_R`];
+        },
+        format: { session_id: "$1" },
+        height: 8,
+        id: "%1",
+        sendKeys: async (line: string) => {
+          sent.push(line);
+          ready = /'(ltxr[0-9a-f]{10})' '_R'/u.exec(line)?.[1] ?? ready;
+        },
+        width: 20,
+      } as unknown as Pane;
+      const context = {
+        hub: { closed: false, tail: async () => undefined },
+        policy: resolvePolicy({ LIBTMUX_MCP_LIVE: "0" }),
+        snapshot: async () => ({ panes: { first: () => pane } }),
+      } as unknown as ToolContext;
+
+      const running = runFramedCommand(
+        context,
+        pane,
+        "touch SHOULD_NOT_RUN",
+        timeoutMs,
+        controller.signal,
+      );
+      await capturing.promise;
+      if (outcome === "cancelled") controller.abort();
+      else await new Promise((resolve) => setTimeout(resolve, timeoutMs * 2));
+      firstCapture.resolve([`${ready}_R`]);
+      const result = await running;
+
+      expect(result.outcome).toBe(outcome);
+      expect(sent.some((line) => /^ltx[0-9a-f]{10}$/u.test(line))).toBe(false);
+      expect(sent.at(-1)).toBe("C-c");
+    },
+  );
 });
 
 describe("concurrent framing", () => {
