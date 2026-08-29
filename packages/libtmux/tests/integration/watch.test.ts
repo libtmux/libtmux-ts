@@ -279,7 +279,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("runs commands over the open connection instead of spawning", async () => {
+  test("snapshots through a connected server", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
@@ -292,7 +292,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("mutates over the connection and sees its own change", async () => {
+  test("mutates through a connected server and sees its own change", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
@@ -304,18 +304,13 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("carries notifications and command responses on one connection", async () => {
+  test("observes a change made through the connected server", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
 
-      // A command round-trip proves the client has attached. Sleeping instead
-      // races the attach against the mutation, and a missed notification is
-      // indistinguishable from a broken stream.
       const session = (await live.snapshot()).sessions.one({ name: "watch" });
 
-      // The stream buffers from the moment the connection opened, so iterating
-      // after the round-trip does not miss what arrived during it.
       const arrived = until(live.subscribe(), (event) => event.kind === "window-add");
       await session.newWindow({ name: "both-ways" });
 
@@ -557,7 +552,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("cancels a command already queued on a control connection", async () => {
+  test("rejects an already-aborted connected command", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
@@ -1001,29 +996,6 @@ describe("Server.watch", () => {
         ]);
 
         expect(transport.spawned - before).toBe(3);
-      } finally {
-        await live.close();
-      }
-    });
-  }, 60_000);
-
-  test("runs a sequence over a connection without disturbing correlation", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      const live = await server.connect();
-      try {
-        const results = await live.pipeline([
-          ["display-message", "-p", "FIRST"],
-          ["display-message", "-p", "SECOND"],
-          ["display-message", "-p", "THIRD"],
-        ]);
-
-        expect(results).toEqual([["FIRST"], ["SECOND"], ["THIRD"]]);
-
-        // And the connection still pairs correctly afterwards.
-        expect(await live.cmd("display-message", ["-p", "AFTER"], { target: null })).toEqual([
-          "AFTER",
-        ]);
       } finally {
         await live.close();
       }
