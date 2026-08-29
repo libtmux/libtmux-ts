@@ -333,11 +333,12 @@ both packed and linted clean.
 
 An in-repo consumer resolves `libtmux` to source through `paths` in its own
 tsconfig, so a branded class has one type identity rather than one per build
-output. The published `exports` deliberately name only `dist`: source is not in
-the tarball, so no condition may point at it. Consumer tests use the library's
-real-tmux fixture harness directly, across the package boundary — that harness
-reaches into the library's internals and cannot be published, so it stays where
-it is and in-repo consumers reach for it by path.
+output. Source ships so its source maps remain inspectable, but the published
+`exports` deliberately name only `dist`; consumers cannot import source through
+package paths. Consumer tests use the library's real-tmux fixture harness
+directly, across the package boundary — that harness reaches into the library's
+internals and cannot be published, so it stays where it is and in-repo consumers
+reach for it by path.
 
 Never create tags and never push them. See
 [Release commits](WRITING.md#release-commits).
