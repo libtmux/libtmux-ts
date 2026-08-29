@@ -574,7 +574,7 @@ windows:
 
       const plan = await planWorkspace(server, workspace);
       expect(plan.owned).toBe(false);
-      expect(plan.killsWindows).toEqual([]);
+      expect(plan.removesWindows).toEqual([]);
       expect(plan.retains).not.toBeEmpty();
 
       await applyWorkspace(server, workspace);
@@ -604,7 +604,9 @@ windows:
       const smaller = { ...workspace, windows: [workspace.windows[0]!] };
       const plan = await planWorkspace(server, smaller);
       expect(plan.owned).toBe(true);
-      expect(plan.killsWindows).toEqual(["two"]);
+      expect(
+        plan.removesWindows.map(({ action, window }) => ({ action, name: window.name })),
+      ).toEqual([{ action: "kill", name: "two" }]);
       expect(plan.retains).toEqual([]);
 
       await applyWorkspace(server, smaller);
@@ -612,6 +614,158 @@ windows:
       expect(after.windows.count()).toBe(1);
     });
   }, 60_000);
+
+  test("keeps duplicate window renames distinct in a plan", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "duplicate-plan", windowName: "same" });
+      await session.newWindow({ name: "same" });
+      const ids = (await server.snapshot()).sessions
+        .one({ id: session.id })
+        .windows.map(({ id }) => id);
+      const firstId = ids[0];
+      const secondId = ids[1];
+      if (firstId === undefined || secondId === undefined) {
+        throw new Error("expected two duplicate-name windows");
+      }
+
+      const plan = await planWorkspace(
+        server,
+        {
+          session_name: "duplicate-plan",
+          windows: [
+            { panes: [{}], window_name: "first" },
+            { panes: [{}], window_name: "second" },
+          ],
+        },
+        { prune: "always" },
+      );
+
+      expect(
+        plan.renamesWindows.map(({ from, to, window }) => ({
+          from,
+          id: window.id,
+          position: window.position,
+          to,
+        })),
+      ).toEqual([
+        { from: "same", id: firstId, position: 0, to: "first" },
+        { from: "same", id: secondId, position: 1, to: "second" },
+      ]);
+    });
+  }, 60_000);
+
+  test("unlinks a surplus window that another session uses", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const workspace = {
+        session_name: "linked-workspace",
+        windows: [
+          { panes: [{}], window_name: "kept" },
+          { panes: [{}], window_name: "shared" },
+        ],
+      };
+      await applyWorkspace(server, workspace);
+      const peer = await server.newSession({ name: "linked-peer" });
+      const surplus = (await server.snapshot()).sessions
+        .one({ name: workspace.session_name })
+        .windows.at(1);
+      if (surplus === undefined) throw new Error("expected a surplus window");
+      await surplus.link({ session: peer.id });
+
+      const smaller = { ...workspace, windows: [workspace.windows[0]!] };
+      const plan = await planWorkspace(server, smaller);
+      expect(plan.removesWindows.map(({ action, window }) => [action, window.id])).toEqual([
+        ["unlink", surplus.id],
+      ]);
+
+      await applyWorkspace(server, smaller);
+      const after = await server.snapshot();
+      expect(after.sessions.one({ name: workspace.session_name }).windows.count()).toBe(1);
+      expect(after.sessions.one({ id: peer.id }).windows.exists({ id: surplus.id })).toBe(true);
+    });
+  }, 60_000);
+
+  test("retains surplus windows shared by a session group", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const workspace = {
+        session_name: "grouped-workspace",
+        windows: [
+          { panes: [{}], window_name: "kept" },
+          { panes: [{}], window_name: "shared" },
+        ],
+      };
+      await applyWorkspace(server, workspace);
+      const peer = await server.newSession({
+        groupWith: workspace.session_name,
+        name: "group-peer",
+      });
+      const surplus = (await server.snapshot()).sessions
+        .one({ name: workspace.session_name })
+        .windows.at(1);
+      if (surplus === undefined) throw new Error("expected a surplus window");
+
+      const smaller = { ...workspace, windows: [workspace.windows[0]!] };
+      const plan = await planWorkspace(server, smaller);
+      expect(plan.removesWindows).toEqual([]);
+      expect(plan.retains).toContainEqual({
+        kind: "window",
+        reason: "grouped-session",
+        window: expect.objectContaining({ id: surplus.id }),
+      });
+
+      await applyWorkspace(server, smaller);
+      const after = await server.snapshot();
+      expect(
+        after.sessions.one({ name: workspace.session_name }).windows.exists({ id: surplus.id }),
+      ).toBe(true);
+      expect(after.sessions.one({ id: peer.id }).windows.exists({ id: surplus.id })).toBe(true);
+    });
+  }, 60_000);
+
+  for (const sharing of ["link", "group"] as const) {
+    test(`retains surplus panes in a ${sharing === "link" ? "linked" : "grouped"} window`, async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const workspace = {
+          session_name: `${sharing}-pane-workspace`,
+          windows: [{ panes: [{}, {}], window_name: "shared" }],
+        };
+        await applyWorkspace(server, workspace);
+        const session = (await server.snapshot()).sessions.one({ name: workspace.session_name });
+        const window = session.windows.one();
+        const originalPaneIds = window.panes.map(({ id }) => id);
+
+        // Workspace data cannot create shared topology, so the public core API sets up this fixture.
+        if (sharing === "link") {
+          const peer = await server.newSession({ name: "pane-link-peer" });
+          await window.link({ session: peer.id });
+        } else {
+          await server.newSession({ groupWith: session.id, name: "pane-group-peer" });
+        }
+
+        const smaller = {
+          ...workspace,
+          windows: [{ ...workspace.windows[0]!, panes: [{}] }],
+        };
+        const plan = await planWorkspace(server, smaller);
+        expect(plan.removesPanes).toEqual([]);
+        expect(plan.retains).toContainEqual({
+          count: 1,
+          kind: "panes",
+          reason: "shared-window",
+          window: expect.objectContaining({ id: window.id }),
+        });
+
+        await applyWorkspace(server, smaller);
+        const placements = (await server.snapshot()).windows.where({ id: window.id });
+        expect(placements.map((placement) => placement.panes.map(({ id }) => id))).toEqual(
+          placements.map(() => originalPaneIds),
+        );
+      });
+    }, 60_000);
+  }
 
   test("prunes a session it did not create only when told to in so many words", async () => {
     await withServer(async (fixture) => {
@@ -686,7 +840,7 @@ windows:
       });
 
       expect(plan.createsSession).toBe(true);
-      expect(plan.createsWindows).toEqual([0]);
+      expect(plan.createsWindows).toEqual([{ position: 0, name: "editor" }]);
     } finally {
       await rm(parent, { force: true, recursive: true });
     }
