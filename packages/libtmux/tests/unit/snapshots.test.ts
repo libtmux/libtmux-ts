@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { QueryValidationError } from "../../src/exc.js";
-import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
+import type { RawCompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -150,7 +150,7 @@ describe("frozen normalized snapshots", () => {
   });
 
   test("rejects incomplete, over-specified, and non-string scalar rows", () => {
-    const normalize = (row: CompleteFormatRow): unknown =>
+    const normalize = (row: RawCompleteFormatRow): unknown =>
       normalizeGraph({
         capture: capture(),
         sources: [
@@ -169,7 +169,7 @@ describe("frozen normalized snapshots", () => {
     const wrongType = completeFormatRow({ session_id: "$1" });
     Reflect.set(wrongType, "pane_z", 3);
 
-    expect(() => normalize(missing as CompleteFormatRow)).toThrow();
+    expect(() => normalize(missing)).toThrow();
     expect(() => normalize(extra)).toThrow();
     expect(() => normalize(wrongType)).toThrow();
   });
@@ -322,7 +322,7 @@ describe("frozen normalized snapshots", () => {
     );
 
     const sparseSources: CapturedRowSet[] = [];
-    const sparseRows: CompleteFormatRow[] = [];
+    const sparseRows: RawCompleteFormatRow[] = [];
     sparseSources.length = 1;
     sparseRows.length = 1;
     expectInvalidQuery(() => normalizeGraph({ capture: capture(), sources: sparseSources }));

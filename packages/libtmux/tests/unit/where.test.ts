@@ -9,6 +9,7 @@ import {
   decodeWhereDocument,
   encodeWhereDocument,
 } from "../../src/_internal/selection/serialization.js";
+import { parseSessionId } from "../../src/_internal/runtime/ids.js";
 import type { PaneWhere, SessionWhere, WhereDocumentV1, WindowWhere } from "../../src/selection.js";
 import { createRichProjectedHarness, createSessionHarness } from "../support/selection_fixtures.js";
 
@@ -588,14 +589,15 @@ describe("regex criteria", () => {
       corpus.cases.length,
     );
     for (const [index, entry] of corpus.cases.entries()) {
-      expect(harness.values[index]?.id, entry.id).toBe(entry.session_id);
+      const sessionId = parseSessionId(entry.session_id);
+      expect(harness.values[index]?.id, entry.id).toBe(sessionId);
       const criteria: SessionWhere = {
         name: {
           equals: entry.input,
           regex: { flags: entry.flags, pattern: entry.pattern },
           ...(entry.mode === "insensitive" ? { mode: "insensitive" as const } : {}),
         },
-        id: entry.session_id,
+        id: sessionId,
       };
       expect(selection.count(criteria), entry.id).toBe(entry.expected.bun ? 1 : 0);
     }

@@ -16,7 +16,7 @@ import {
   WINDOW_ALIASES,
 } from "../../src/_generated/field_aliases.js";
 import { Client } from "../../src/client.js";
-import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
+import type { RawCompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -235,7 +235,7 @@ function descriptorFor(value: object, property: PropertyKey): PropertyDescriptor
 
 function assertScalarSnapshot(
   handle: Session | Window | Pane | Client,
-  row: CompleteFormatRow,
+  row: RawCompleteFormatRow,
 ): void {
   const snapshot = snapshotForHandle(handle);
   expect(Object.isFrozen(handle)).toBe(true);
