@@ -167,18 +167,45 @@ export function planKill(
   };
 }
 
+function conditionalTargetMutation(
+  target: string,
+  condition: string,
+  command: readonly string[],
+  refusalMarker: string,
+): readonly string[] {
+  return [
+    "if-shell",
+    "-F",
+    "-t",
+    target,
+    condition,
+    quoteCommand(command),
+    quoteCommand(["list-windows", "-t", refusalMarker]),
+  ];
+}
+
+/** Destroy a pane only while its window has one placement. */
+export function planKillPaneIfUnshared(target: string): PlannedOperation<void> {
+  return {
+    argv: conditionalTargetMutation(
+      target,
+      "#{==:#{window_linked},0}",
+      ["kill-pane", "-t", target],
+      "libtmux-shared-window",
+    ),
+    resolve: () => undefined,
+  };
+}
+
 /** Remove one ungrouped placement, destroying the window only when it is last. */
 export function planRemoveWindowPlacement(target: string): PlannedOperation<void> {
   return {
-    argv: [
-      "if-shell",
-      "-F",
-      "-t",
+    argv: conditionalTargetMutation(
       target,
       "#{==:#{session_grouped},0}",
-      quoteCommand(["unlink-window", "-k", "-t", target]),
-      quoteCommand(["list-windows", "-t", "libtmux-grouped-session"]),
-    ],
+      ["unlink-window", "-k", "-t", target],
+      "libtmux-grouped-session",
+    ),
     resolve: () => undefined,
   };
 }

@@ -9,7 +9,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
-import { planSplitWindow } from "../../src/_internal/operations/plans.js";
+import { planKillPaneIfUnshared, planSplitWindow } from "../../src/_internal/operations/plans.js";
 
 /**
  * The tmux command line the lifecycle mutations build.
@@ -69,6 +69,18 @@ async function argumentsFor(
 }
 
 describe("lifecycle command arguments", () => {
+  test("guards a pane kill against a shared window", () => {
+    expect(planKillPaneIfUnshared("%4").argv).toEqual([
+      "if-shell",
+      "-F",
+      "-t",
+      "%4",
+      "#{==:#{window_linked},0}",
+      "'kill-pane' '-t' '%4'",
+      "'list-windows' '-t' 'libtmux-shared-window'",
+    ]);
+  });
+
   test("separates a window's shell command from tmux's own flags", async () => {
     const args = await argumentsFor((transport) =>
       newWindow({} as never, runtimeFor(transport), "$0", { shellCommand: "-n" }),

@@ -26,7 +26,11 @@ import {
   sendPrefix,
 } from "./_internal/operations/interactive.js";
 import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
-import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
+import {
+  killPaneIfWindowUnshared,
+  killTarget,
+  splitWindow,
+} from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
 import {
@@ -49,7 +53,7 @@ import {
   setPaneTitle,
   swapPanes,
 } from "./_internal/operations/topology.js";
-import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
+import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Session } from "./session.js";
@@ -65,6 +69,7 @@ import type { Server } from "./server.js";
 /** What {@link Pane.plan} offers, one entry per mutation it can describe. */
 export interface PanePlans {
   readonly kill: () => PlannedOperation<void>;
+  readonly killIfWindowUnshared: () => PlannedOperation<void>;
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
@@ -198,6 +203,17 @@ export class Pane {
   }
 
   /**
+   * Destroy this pane only if its window has one placement.
+   *
+   * ```ts
+   * await pane.killIfWindowUnshared();
+   * ```
+   */
+  killIfWindowUnshared(): Promise<void> {
+    return killPaneIfWindowUnshared(runtimeForHandle(this), this.id);
+  }
+
+  /**
    * The same mutations, described instead of run.
    *
    * Takes what the direct calls take and resolves to what they resolve to,
@@ -211,6 +227,7 @@ export class Pane {
   get plan(): PanePlans {
     return {
       kill: () => planKill("kill-pane", this.id),
+      killIfWindowUnshared: () => planKillPaneIfUnshared(this.id),
       split: (options?: SplitOptions) => planSplitWindow(this.id, options),
     };
   }
