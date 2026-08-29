@@ -317,6 +317,13 @@ names. The same type therefore covers what you write and what comes back.
 snapshot.panes.where({ active: true });
 snapshot.panes.where({ active: "1" }); // what a flag encodes to
 snapshot.panes.where({ pid: "2334787" }); // and a number
+```
+
+Invalid wire spellings remain type errors:
+
+<!-- static: the calls are intentionally invalid and would throw if executed -->
+
+```ts
 // @ts-expect-error a flag encodes to "0" or "1"; nothing else is a flag
 snapshot.panes.where({ active: "yes" });
 // @ts-expect-error and no number encodes to "banana"
