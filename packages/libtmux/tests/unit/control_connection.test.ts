@@ -77,7 +77,116 @@ async function nextTurn(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 
+async function promiseState(
+  promise: Promise<unknown>,
+): Promise<"pending" | "rejected" | "resolved"> {
+  let state: "pending" | "rejected" | "resolved" = "pending";
+  void promise.then(
+    () => {
+      state = "resolved";
+    },
+    () => {
+      state = "rejected";
+    },
+  );
+  await Promise.resolve();
+  return state;
+}
+
+function reconnectingFixture(firstPid: number) {
+  const first = new FakeChild(firstPid);
+  const replacement = new FakeChild(firstPid + 1);
+  const children = [first, replacement];
+  const replacementOpened = Promise.withResolvers<void>();
+  let spawns = 0;
+  const control = new ControlConnection(
+    connection(),
+    { reconnect: { attempts: 1, delayMs: 0 } },
+    false,
+    undefined,
+    () => {
+      const child = takeChild(children);
+      spawns += 1;
+      if (spawns === 2) replacementOpened.resolve();
+      return child;
+    },
+  );
+  return { control, first, replacement, replacementOpened: replacementOpened.promise };
+}
+
 describe("ControlConnection child ownership", () => {
+  test("keeps readiness resolved while a replacement is not attached", async () => {
+    const { control, first, replacement, replacementOpened } = reconnectingFixture(98);
+    const events = control.subscribe();
+    const iterator = events[Symbol.asyncIterator]();
+    attach(first);
+    await control.ready();
+
+    const reconnecting = iterator.next();
+    first.emit("close", 1);
+    expect((await reconnecting).value).toEqual({ attempts: 1, kind: "reconnecting" });
+
+    const readiness = control.ready();
+    expect(await promiseState(readiness)).toBe("resolved");
+    await replacementOpened;
+    expect(await promiseState(readiness)).toBe("resolved");
+
+    const reconnected = iterator.next();
+    attach(replacement);
+    await readiness;
+    expect((await reconnected).value).toEqual({ attempts: 1, kind: "reconnected" });
+    expect(await promiseState(control.ready())).toBe("resolved");
+    await iterator.return?.();
+    await control.close();
+  });
+
+  test("keeps the initial readiness waiter across an attach retry", async () => {
+    const { control, first, replacement, replacementOpened } = reconnectingFixture(96);
+    const events = control.subscribe();
+    const iterator = events[Symbol.asyncIterator]();
+    const readiness = control.ready();
+
+    const reconnecting = iterator.next();
+    first.emit("close", 1);
+    expect((await reconnecting).value).toEqual({ attempts: 1, kind: "reconnecting" });
+    expect(await promiseState(readiness)).toBe("pending");
+    await replacementOpened;
+    const retryReadiness = control.ready();
+    expect(await promiseState(readiness)).toBe("pending");
+    expect(await promiseState(retryReadiness)).toBe("pending");
+
+    const reconnected = iterator.next();
+    attach(replacement);
+    await Promise.all([readiness, retryReadiness]);
+    expect((await reconnected).value).toEqual({ attempts: 1, kind: "reconnected" });
+    expect(await promiseState(control.ready())).toBe("resolved");
+    await iterator.return?.();
+    await control.close();
+  });
+
+  test("keeps readiness resolved after reconnect attempts are exhausted", async () => {
+    const { control, first, replacement, replacementOpened } = reconnectingFixture(94);
+    const events = control.subscribe();
+    const iterator = events[Symbol.asyncIterator]();
+    attach(first);
+    await control.ready();
+
+    const reconnecting = iterator.next();
+    first.emit("close", 1);
+    expect((await reconnecting).value).toEqual({ attempts: 1, kind: "reconnecting" });
+    const duringOutage = control.ready();
+    expect(await promiseState(duringOutage)).toBe("resolved");
+    await replacementOpened;
+    const ended = iterator.next();
+    replacement.stderr.write("terminal replacement failed");
+    replacement.emit("close", 1);
+
+    expect(await promiseState(duringOutage)).toBe("resolved");
+    expect(await promiseState(control.ready())).toBe("resolved");
+    await expect(ended).rejects.toThrow("terminal replacement failed");
+    await control.close();
+  });
+
   test("retires a stale child before configuring its replacement", async () => {
     const old = new FakeChild(101);
     const replacement = new FakeChild(102);
