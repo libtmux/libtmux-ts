@@ -200,6 +200,11 @@ for (const workflow of workflows) {
 const publishPath = join(repositoryRoot, ".github/workflows/publish.yml");
 const publishSource = await Bun.file(publishPath).text();
 const publishDocument = Bun.YAML.parse(publishSource) as {
+  readonly concurrency?: {
+    readonly "cancel-in-progress"?: unknown;
+    readonly group?: unknown;
+    readonly queue?: unknown;
+  };
   readonly on?: { readonly workflow_dispatch?: unknown };
   readonly jobs?: { readonly publish?: { readonly steps?: unknown } };
 };
@@ -256,6 +261,17 @@ const releaseCoordinator = publishSteps.find((step) => step.name === "Coordinate
 if (releaseCoordinator !== "bun scripts/publish-release.ts") {
   failures.push(
     ".github/workflows/publish.yml: must delegate dry-run and tag publishing to scripts/publish-release.ts",
+  );
+}
+
+const publishConcurrency = publishDocument.concurrency;
+if (
+  publishConcurrency?.group !== "publish" ||
+  publishConcurrency.queue !== "max" ||
+  publishConcurrency["cancel-in-progress"] !== undefined
+) {
+  failures.push(
+    ".github/workflows/publish.yml: must queue every release in the repository-wide publish concurrency group",
   );
 }
 

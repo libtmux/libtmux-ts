@@ -14,8 +14,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: publish-${{ github.ref }}
-  cancel-in-progress: false
+  group: publish
+  queue: max
 
 jobs:
   publish:
