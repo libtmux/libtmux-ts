@@ -47,21 +47,17 @@ const CASE_FOLD_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
   ["\u1FBE", "\u03B9"],
 ]);
 
+// Built from the table so the two cannot drift, and through the constructor
+// because a literal class holding a combining mark is a lint error.
+const caseFoldExceptions = new RegExp(`[${[...CASE_FOLD_EXCEPTIONS.keys()].join("")}]`, "u");
+
 /** Fold one string into that relation. */
 export function foldCase(value: string): string {
   const lowered = value.toLowerCase();
+  if (!caseFoldExceptions.test(lowered)) return lowered;
   let folded = "";
-  let exceptional = false;
-  for (const character of lowered) {
-    const replacement = CASE_FOLD_EXCEPTIONS.get(character);
-    if (replacement === undefined) {
-      folded += character;
-      continue;
-    }
-    folded += replacement;
-    exceptional = true;
-  }
-  return exceptional ? folded : lowered;
+  for (const character of lowered) folded += CASE_FOLD_EXCEPTIONS.get(character) ?? character;
+  return folded;
 }
 
 interface ParsedScalarCriterion {
@@ -144,10 +140,11 @@ export function parseScalarCriterion(
           return at(state, name, () => invalidQuery(state, "expected a string or null"));
         }
         queryEntries.push([name, operand]);
+        const wanted = insensitive && operand !== null ? foldCase(operand) : operand;
         operations.push((candidate) => {
           if (operand === null) return decodeFormatValue(token, candidate) === null;
           if (candidate === null) return false;
-          return insensitive ? foldCase(candidate) === foldCase(operand) : candidate === operand;
+          return insensitive ? foldCase(candidate) === wanted : candidate === operand;
         });
         continue;
       }
@@ -156,10 +153,10 @@ export function parseScalarCriterion(
           return at(state, name, () => invalidQuery(state, "expected a string"));
         }
         queryEntries.push([name, operand]);
+        const right = insensitive ? foldCase(operand) : operand;
         operations.push((candidate) => {
           if (candidate === null) return false;
           const left = insensitive ? foldCase(candidate) : candidate;
-          const right = insensitive ? foldCase(operand) : operand;
           if (name === "contains") return left.includes(right);
           if (name === "startsWith") return left.startsWith(right);
           return left.endsWith(right);
