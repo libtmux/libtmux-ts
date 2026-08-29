@@ -7,10 +7,17 @@ const implementationModule =
   /(?:^|[/])(?:cleanup|fixture_launch|reaper|records|supervisor)\.(?:js|ts)/u;
 const internalTestDirectory = "packages/libtmux/src/_internal/test/";
 const testkitEntrypoint = "packages/libtmux/src/_internal/test/testkit.ts";
+const boundaryChecker = "scripts/check-testkit-boundary.ts";
+const recoveryAuthority = ["restore", "ReservationCapability"].join("");
+const recoveryAuthorityFiles = new Set([
+  "packages/libtmux/src/_internal/test/fixture_launch.ts",
+  "packages/libtmux/src/_internal/test/reaper.ts",
+]);
 const listed = await new Bun.$.Shell()`rg --files --glob "*.ts"`.cwd(repositoryRoot).text();
 const failures: string[] = [];
 
 for (const file of listed.split("\n").filter((line) => line !== "")) {
+  if (file === boundaryChecker) continue;
   // eslint-disable-next-line no-await-in-loop -- diagnostics preserve repository order.
   const source = await Bun.file(join(repositoryRoot, file)).text();
   for (const [index, line] of source.split("\n").entries()) {
@@ -20,6 +27,10 @@ for (const file of listed.split("\n").filter((line) => line !== "")) {
     }
     if (!file.startsWith(internalTestDirectory) && implementationModule.test(line)) {
       failures.push(`${file}:${String(index + 1)}: import through _internal/test/testkit`);
+      continue;
+    }
+    if (line.includes(recoveryAuthority) && !recoveryAuthorityFiles.has(file)) {
+      failures.push(`${file}:${String(index + 1)}: recovery authority belongs only to the reaper`);
       continue;
     }
     if (

@@ -72,6 +72,22 @@ const launchAttemptSnapshots = new WeakMap<
 >();
 const reservationMutationTails = new Map<string, Promise<void>>();
 
+function mintReservationCapability(
+  fields: Readonly<{
+    recordPath: string;
+    reservationPath: string;
+    runId: string;
+    runRoot: string;
+  }>,
+  environment: Readonly<Record<string, string | undefined>>,
+): ReservationCapability {
+  const capability = Object.freeze({ ...fields }) as ReservationCapability;
+  reservationCapabilities.add(capability);
+  reservationEnvironments.set(capability, snapshotEnvironment(environment));
+  return capability;
+}
+
+/** Reconstitute cleanup authority only for the exact-root reaper. */
 export function restoreReservationCapability(
   fields: Readonly<{
     recordPath: string;
@@ -81,10 +97,7 @@ export function restoreReservationCapability(
   }>,
   environment: Readonly<Record<string, string | undefined>>,
 ): ReservationCapability {
-  const capability = { ...fields } as ReservationCapability;
-  reservationCapabilities.add(capability);
-  reservationEnvironments.set(capability, snapshotEnvironment(environment));
-  return capability;
+  return mintReservationCapability(fields, environment);
 }
 
 export async function reserveFixture(
@@ -125,14 +138,10 @@ export async function reserveFixture(
       const recordPath = join(reservationPath, FIXTURE_RECORD_NAME);
       // eslint-disable-next-line no-await-in-loop -- registration must complete before returning this reservation.
       await writeAtomicJson(recordPath, record);
-      const capability = {
-        recordPath,
-        reservationPath,
-        runId: rootOwner.runId,
-        runRoot,
-      } as ReservationCapability;
-      reservationCapabilities.add(capability);
-      reservationEnvironments.set(capability, snapshotEnvironment(environment));
+      const capability = mintReservationCapability(
+        { recordPath, reservationPath, runId: rootOwner.runId, runRoot },
+        environment,
+      );
       return { capability, record, recordPath, reservationPath };
     } catch (error) {
       if (isErrno(error, "EEXIST")) continue;
@@ -350,13 +359,13 @@ export async function beginFixtureLaunch(
       phase: "launching",
     };
     await writeAtomicJson(capability.recordPath, updated);
-    const attempt = {
+    const attempt = Object.freeze({
       attemptId: randomUUID(),
       recordPath: capability.recordPath,
       reservationPath: capability.reservationPath,
       runId: capability.runId,
       runRoot: capability.runRoot,
-    } as LaunchAttemptCapability;
+    }) as LaunchAttemptCapability;
     launchAttemptCapabilities.add(attempt);
     launchAttemptReservations.set(attempt, capability);
     launchAttemptSnapshots.set(attempt, { bootstrapArgv, generation });

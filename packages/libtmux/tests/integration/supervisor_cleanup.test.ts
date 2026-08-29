@@ -908,6 +908,24 @@ describe("worker and exact-root reaping", () => {
     }
   });
 
+  test("does not let an issued reservation capability be retargeted", async () => {
+    const { parent, root } = await makeRoot("retargeted-writer-capability");
+    const first = await reserveFixture(root);
+    const second = await reserveFixture(root);
+    try {
+      expect(Reflect.set(first.capability, "recordPath", second.recordPath)).toBe(false);
+      expect(Reflect.set(first.capability, "reservationPath", second.reservationPath)).toBe(false);
+      expect(first.capability.recordPath).toBe(first.recordPath);
+      expect(first.capability.reservationPath).toBe(first.reservationPath);
+      expect((await readFixtureRecord(second.reservationPath)).phase).toBe("reserved");
+    } finally {
+      await reapFixture(first.capability).catch(() => undefined);
+      await reapFixture(second.capability).catch(() => undefined);
+      await removeOwnedRoot(parent, root).catch(() => undefined);
+      await rm(parent, { force: true, recursive: true });
+    }
+  });
+
   test("rejects the legacy daemon writer without a launch-attempt capability", async () => {
     const { parent, root } = await makeRoot("legacy-daemon-writer");
     const reserved = await reserveFixture(root);
