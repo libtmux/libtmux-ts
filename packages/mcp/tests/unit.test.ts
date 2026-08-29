@@ -111,6 +111,13 @@ describe("text filter", () => {
     expect(filter.push("\b\bar")).toBe("\ncar");
   });
 
+  test("bounds correction state for a newline-free stream", () => {
+    const filter = new TextFilter(16);
+    filter.push("x".repeat(2 * 1024 * 1024));
+
+    expect(filter.push("\b")).toBe(`\n${"x".repeat(15)}`);
+  });
+
   test("drops OSC title sequences whichever terminator they use", () => {
     expect(readableText("]0;titletext")).toBe("text");
     expect(readableText("]0;title\\text")).toBe("text");
@@ -137,6 +144,14 @@ describe("pane tail", () => {
     const seen = tail.read(start);
     expect(seen.missedBytes).toBe(8);
     expect(seen.text).toBe("89abcdef");
+  });
+
+  test("keeps correction state inside its retained byte limit", () => {
+    const tail = new PaneTail("%1", 4);
+    tail.append("abcdef");
+    tail.append("\b");
+
+    expect(tail.read(undefined).text).toBe("\ncde");
   });
 
   test("counts cursors and retention in UTF-8 bytes", () => {

@@ -78,7 +78,7 @@ export class PaneTail {
   #base = 0;
   #end = 0;
   #endReason: PaneTailEndReason | undefined;
-  readonly #filter = new TextFilter();
+  readonly #filter: TextFilter;
   readonly #generation = randomUUID().replaceAll("-", "");
   readonly #limit: number;
   readonly #waiters = new Set<(change: PaneTailChange) => void>();
@@ -90,6 +90,7 @@ export class PaneTail {
     }
     this.paneId = paneId;
     this.#limit = limit;
+    this.#filter = new TextFilter(limit);
   }
 
   /** The offset a reader should quote to be told only what comes next. */
