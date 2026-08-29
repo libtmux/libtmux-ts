@@ -130,6 +130,7 @@ export function hydrateProjection(
   // members, so walk outward from them instead of over the whole graph.
   const seen = new Set(members.map(recordKey));
   const queue = [...members];
+  let cursor = 0;
 
   const visit = (targets: readonly GraphRecordRef[]): void => {
     for (const target of targets) {
@@ -140,9 +141,9 @@ export function hydrateProjection(
     }
   };
 
-  while (queue.length > 0) {
-    const reference = queue.shift();
-    if (reference === undefined) break;
+  while (cursor < queue.length) {
+    const reference = queue[cursor]!;
+    cursor += 1;
     const record = byRef.get(recordKey(reference));
     if (record === undefined) continue;
     const winlink = record.winlink;
