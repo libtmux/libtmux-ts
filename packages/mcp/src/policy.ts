@@ -18,22 +18,9 @@ export const MAX_RESULT_BYTES = 256 * 1024;
  * How long a blocking wait may run.
  *
  * The ceiling bounds the agent's turn, not the transport: waits await
- * throughout, so a long one does not stall the connection. What it costs is the
- * agent — it picks the wrong marker once and the whole turn is gone with nothing
- * to show for it, and a plain tool call gives it no way to change its mind
- * mid-flight.
+ * throughout, so a long one does not stall the connection.
  */
 export const DEFAULT_BLOCKING_WAIT_MS = 30_000;
-
-/**
- * How long the same wait may run as a task.
- *
- * A task hands back a handle immediately and can be cancelled, so the reason the
- * blocking ceiling is low does not apply. What remains is tmux's own limit:
- * `grid_collect_history` frees the oldest scrollback once `history-limit` is
- * reached, which invalidates the anchor a long observation is measured from.
- */
-export const DEFAULT_TASK_WAIT_MS = 600_000;
 
 /** How long a single tmux command may run before it is killed. */
 export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
@@ -41,8 +28,6 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const BLOCKING_WAIT_FLOOR_MS = 1_000;
 const BLOCKING_WAIT_LIMIT_MS = 120_000;
 const MAX_RESULT_LINES_LIMIT = 10_000;
-const TASK_WAIT_FLOOR_MS = 1_000;
-const TASK_WAIT_LIMIT_MS = 3_600_000;
 
 /**
  * Which tools this server offers.
@@ -66,8 +51,6 @@ export interface Policy {
   readonly liveEnabled: boolean;
   readonly maxResultLines: number;
   readonly safety: SafetyTier;
-  /** Ceiling on a wait running as a task. */
-  readonly taskWaitMaxMs: number;
   /**
    * The only tools to offer, when an operator has narrowed it that far.
    *
@@ -156,11 +139,6 @@ export function resolvePolicy(
     ),
     safety: readSafety(environment.LIBTMUX_SAFETY),
     tools: readToolAllowlist(environment.LIBTMUX_MCP_TOOLS),
-    taskWaitMaxMs: clamp(
-      readInteger(environment.LIBTMUX_MCP_TASK_WAIT_MAX_MS, DEFAULT_TASK_WAIT_MS),
-      TASK_WAIT_FLOOR_MS,
-      TASK_WAIT_LIMIT_MS,
-    ),
   };
 }
 
@@ -189,14 +167,9 @@ export function tierAllows(active: SafetyTier, required: SafetyTier): boolean {
  * with one costs the agent a turn to learn a policy the result could have
  * carried. The honoured value comes back on every wait result instead.
  */
-export function effectiveWaitMs(
-  policy: Policy,
-  requested: number | undefined,
-  asTask: boolean,
-): number {
-  const ceiling = asTask ? policy.taskWaitMaxMs : policy.blockingWaitMaxMs;
-  const defaultWait = asTask ? DEFAULT_TASK_WAIT_MS : DEFAULT_BLOCKING_WAIT_MS;
+export function effectiveWaitMs(policy: Policy, requested: number | undefined): number {
+  const ceiling = policy.blockingWaitMaxMs;
   return requested === undefined
-    ? Math.min(defaultWait, ceiling)
+    ? Math.min(DEFAULT_BLOCKING_WAIT_MS, ceiling)
     : Math.min(requested, ceiling);
 }

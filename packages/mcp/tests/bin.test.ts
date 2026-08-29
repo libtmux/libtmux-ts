@@ -33,7 +33,13 @@ if (!existsSync(built)) {
   throw new Error(`${built} is not built; run \`bun run build\` in packages/mcp first`);
 }
 
-async function handshake(command: string): Promise<{ tools: number; stderr: string }> {
+interface Handshake {
+  readonly stderr: string;
+  readonly tasks: boolean;
+  readonly tools: readonly string[];
+}
+
+async function handshake(command: string): Promise<Handshake> {
   const child = Bun.spawn(["node", command], {
     stderr: "pipe",
     stdin: "pipe",
@@ -74,12 +80,26 @@ async function handshake(command: string): Promise<{ tools: number; stderr: stri
   }
   const stderr = await new Response(child.stderr).text();
 
-  for (const line of text.split("\n")) {
-    if (line.trim() === "") continue;
-    const message = JSON.parse(line) as { id?: number; result?: { tools?: unknown[] } };
-    if (message.id === 2) return { stderr, tools: message.result?.tools?.length ?? 0 };
-  }
-  return { stderr, tools: 0 };
+  const messages = text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          id?: number;
+          result?: {
+            capabilities?: { tasks?: unknown };
+            tools?: { name?: string }[];
+          };
+        },
+    );
+  const initialized = messages.find(({ id }) => id === 1);
+  const listed = messages.find(({ id }) => id === 2);
+  return {
+    stderr,
+    tasks: initialized?.result?.capabilities?.tasks !== undefined,
+    tools: listed?.result?.tools?.flatMap(({ name }) => (name === undefined ? [] : [name])) ?? [],
+  };
 }
 
 describe("the installed program", () => {
@@ -94,12 +114,20 @@ describe("the installed program", () => {
       const direct = await handshake(built);
       const linked = await handshake(link);
 
-      expect(direct.tools).toBeGreaterThan(0);
-      expect(linked.tools).toBeGreaterThan(0);
-      expect(linked.tools).toBe(direct.tools);
+      expect(direct.tools.length).toBeGreaterThan(0);
+      expect(linked.tools.length).toBeGreaterThan(0);
+      expect(linked.tools).toEqual(direct.tools);
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
+  }, 60_000);
+
+  test("offers the stable wait without experimental task support", async () => {
+    const result = await handshake(built);
+
+    expect(result.tools).toContain("wait_for_text");
+    expect(result.tools).not.toContain("wait_for_text_task");
+    expect(result.tasks).toBe(false);
   }, 60_000);
 
   test("says which authority it is running with, on stderr", async () => {

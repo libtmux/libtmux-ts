@@ -260,17 +260,12 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
 
       const reservation = reserveFramedCommand(context, paneId, command);
 
-      const result = await runFramedCommand(
-        context,
-        pane,
-        command,
-        timeoutMs,
-        false,
-        extra.signal,
-      ).catch((error: unknown) => {
-        reservation.release();
-        throw error;
-      });
+      const result = await runFramedCommand(context, pane, command, timeoutMs, extra.signal).catch(
+        (error: unknown) => {
+          reservation.release();
+          throw error;
+        },
+      );
       reservation.settleWith(result.settled);
       const bounded = boundText(
         result.output === "" ? [] : result.output.split("\n"),

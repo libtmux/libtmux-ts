@@ -207,14 +207,13 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
 
 The tools an agent reaches for first:
 
-| Tool                 | What it does                                                        |
-| -------------------- | ------------------------------------------------------------------- |
-| `run_command`        | Runs a shell command, waits for it, reports its real exit status    |
-| `wait_for_text`      | Blocks until a pane prints something, streaming tmux notifications  |
-| `wait_for_text_task` | The same wait as an MCP task: a handle now, the result later        |
-| `observe`            | Only what a pane printed since your cursor                          |
-| `whoami`             | Which pane the server runs in, and which panes a person is watching |
-| `build_workspace`    | A session and all its windows in one tmux invocation                |
+| Tool              | What it does                                                        |
+| ----------------- | ------------------------------------------------------------------- |
+| `run_command`     | Runs a shell command, waits for it, reports its real exit status    |
+| `wait_for_text`   | Blocks until a pane prints something, streaming tmux notifications  |
+| `observe`         | Only what a pane printed since your cursor                          |
+| `whoami`          | Which pane the server runs in, and which panes a person is watching |
+| `build_workspace` | A session and all its windows in one tmux invocation                |
 
 Panes, windows, sessions, layouts, options, buffers and environment are covered
 too, and the server is browsable: `tmux://` resources, subscribable pane
@@ -222,8 +221,7 @@ contents, prompts, and completions.
 
 Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 [Configuration](packages/mcp/README.md#point-it-at-a-server) ·
-[Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool) ·
-[Long waits](packages/mcp/README.md#long-waits-without-blocking)
+[Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool)
 
 ### [@libtmux/workspace](packages/workspace) — declarative sessions
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { InMemoryTaskStore } from "@modelcontextprotocol/sdk/experimental/tasks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { realpathSync } from "node:fs";
@@ -50,10 +49,6 @@ export function createTmuxMcpServer(
     { name: "libtmux", title: "tmux", version: PACKAGE_VERSION },
     {
       instructions: buildInstructions(policy, readCallerEnvironment(environment)),
-      // Tasks live for one process. A wait outlives neither the connection that
-      // asked for it nor the tmux server it watches, so nothing here is worth
-      // the durability an external store would buy.
-      taskStore: new InMemoryTaskStore(),
     },
   );
 

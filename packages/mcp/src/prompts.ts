@@ -67,9 +67,7 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
           `notifications, so it costs nothing while nothing is happening. Never loop capture_pane.\n\n` +
           `If it returns outcome="timed_out", the output field still holds everything the pane ` +
           `printed and cursor marks where you got to: call again with that cursor rather than ` +
-          `starting from scratch. If your client supports tasks, wait_for_text_task with a large ` +
-          `timeoutMs hands you a handle immediately so you can do other work meanwhile. ` +
-          `outcome="pane_died" means waiting again cannot help.`,
+          `starting from scratch. outcome="pane_died" means waiting again cannot help.`,
       ),
   );
 

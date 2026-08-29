@@ -361,19 +361,12 @@ describe("live hub", () => {
 describe("policy", () => {
   test("clamps a blocking wait to the ceiling and reports the ceiling", () => {
     const policy = resolvePolicy({});
-    expect(effectiveWaitMs(policy, 999_999_999, false)).toBe(policy.blockingWaitMaxMs);
+    expect(effectiveWaitMs(policy, 999_999_999)).toBe(policy.blockingWaitMaxMs);
   });
 
-  test("lets a task wait far longer than a blocking one", () => {
+  test("defaults a wait to the blocking ceiling", () => {
     const policy = resolvePolicy({});
-    expect(effectiveWaitMs(policy, 300_000, true)).toBe(300_000);
-    expect(effectiveWaitMs(policy, 300_000, false)).toBe(policy.blockingWaitMaxMs);
-  });
-
-  test("defaults each wait form to its own ceiling", () => {
-    const policy = resolvePolicy({});
-    expect(effectiveWaitMs(policy, undefined, false)).toBe(policy.blockingWaitMaxMs);
-    expect(effectiveWaitMs(policy, undefined, true)).toBe(policy.taskWaitMaxMs);
+    expect(effectiveWaitMs(policy, undefined)).toBe(policy.blockingWaitMaxMs);
   });
 
   test("keeps an operator override inside bounds that leave it a ceiling", () => {

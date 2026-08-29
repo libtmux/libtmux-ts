@@ -118,16 +118,13 @@ agent's cleanup can reap the session you are working in.
 | ------------------------------ | -------- | ----------------------------------------------------- |
 | `LIBTMUX_SAFETY`               | readonly | `readonly`, `mutating`, or `destructive`              |
 | `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller              |
-| `LIBTMUX_MCP_TASK_WAIT_MAX_MS` | 600000   | Ceiling on a wait running as a task                   |
 | `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links    |
 | `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections         |
 | `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool names, when a tier is too coarse |
 
-Two ceilings rather than one, because the two waits cost different things. A
-blocking wait spends the agent's turn, so it is held low. A task hands back a
-handle at once, so it may run for as long as the work does. Cancelling either
-request stops its wait. An over-large timeout is never an error: it is clamped,
-and every result reports the `effectiveTimeoutMs` it actually used.
+Cancelling a request stops its wait. An over-large timeout is never an error:
+it is clamped, and every result reports the `effectiveTimeoutMs` it actually
+used.
 
 ### Safety tiers
 
@@ -217,10 +214,9 @@ and its command has the tmux user's host authority.
 
 ### Wait
 
-| Tool                 | Does                                                    |
-| -------------------- | ------------------------------------------------------- |
-| `wait_for_text`      | Blocks until a pane prints something                    |
-| `wait_for_text_task` | The same wait as a task: a handle now, the result later |
+| Tool            | Does                                 |
+| --------------- | ------------------------------------ |
+| `wait_for_text` | Blocks until a pane prints something |
 
 ### Build and arrange
 
@@ -292,18 +288,6 @@ $ observe  paneId=%1  cursor=ltxc1.0123456789abcdef0123456789abcdef.4096  waitMs
 ```
 
 The second call is charged only for what arrived after the opaque cursor.
-
-## Long waits without blocking
-
-`wait_for_text_task` is the same wait registered as an MCP task. A client that
-speaks the task protocol gets a handle immediately, can do other work, and can
-cancel. A client that does not gets exactly the blocking tool it expects —
-`taskSupport` is `optional`, so the SDK polls on its behalf. Nothing has to be
-upgraded for this to be safe.
-
-That is why the two ceilings differ: as a task, a wait may run for
-`LIBTMUX_MCP_TASK_WAIT_MAX_MS`, ten minutes by default, because sitting through
-it costs the agent nothing.
 
 ## Resources
 

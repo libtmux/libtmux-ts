@@ -308,11 +308,10 @@ export async function runFramedCommand(
   pane: Pane,
   command: string,
   timeoutMs: number | undefined,
-  asTask: boolean,
   signal?: AbortSignal,
   suppressHistory = true,
 ): Promise<FramedResult> {
-  const budget = effectiveWaitMs(context.policy, timeoutMs, asTask);
+  const budget = effectiveWaitMs(context.policy, timeoutMs);
   const id = `ltx${randomId()}`;
   const ready = `ltxr${randomId()}`;
   const source = frame(command, ready, suppressHistory);

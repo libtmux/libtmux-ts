@@ -768,26 +768,6 @@ describe("waiting", () => {
       });
     });
   }, 60_000);
-
-  test("serves the task form to a client that does not speak tasks", async () => {
-    await withServer(async (fixture) => {
-      await withClient(fixture, async (client) => {
-        const paneId = await shellPaneId(client);
-        await client.callTool({
-          arguments: { keys: "(sleep 1; printf 'task-marker\\n') &", paneId },
-          name: "send_keys",
-        });
-        // taskSupport is optional, so the SDK polls on this client's behalf and
-        // it sees exactly the blocking tool. That is what makes shipping tasks
-        // safe rather than a compatibility break.
-        const answer = await client.callTool({
-          arguments: { paneId, patterns: ["task-marker"], timeoutMs: 20_000 },
-          name: "wait_for_text_task",
-        });
-        expect(structured<{ outcome: string }>(answer).outcome).toBe("matched");
-      });
-    });
-  }, 60_000);
 });
 
 test("leaves a pane usable straight after a caller cancels a wait on it", async () => {
@@ -1215,31 +1195,6 @@ describe("staying out of the way", () => {
           TMUX_PANE: paneId,
         },
       );
-    });
-  }, 60_000);
-
-  test("holds a task wait to the blocking ceiling when the client has no tasks", async () => {
-    await withServer(async (fixture) => {
-      await withClient(fixture, async (client) => {
-        const paneId = await shellPaneId(client);
-        await client.callTool({
-          arguments: { keys: "(sleep 1; printf 'ready-now\\n') &", paneId },
-          name: "send_keys",
-        });
-
-        // The delayed output makes the wait observe a new write without
-        // spending the ceiling. This client declares no task capability, so
-        // the SDK runs the tool and polls on its behalf: the call blocks and
-        // cannot be cancelled, which is what the task ceiling is traded for.
-        const result = structured<{ effectiveTimeoutMs: number; outcome: string }>(
-          await client.callTool({
-            arguments: { paneId, patterns: ["ready-now"], timeoutMs: 5_000_000 },
-            name: "wait_for_text_task",
-          }),
-        );
-        expect(result.outcome).toBe("matched");
-        expect(result.effectiveTimeoutMs).toBe(30_000);
-      });
     });
   }, 60_000);
 

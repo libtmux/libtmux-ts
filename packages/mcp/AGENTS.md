@@ -4,7 +4,7 @@ Rules for `@libtmux/mcp`, which serves one tmux server to Model Context
 Protocol clients. The repository-wide rules are in [AGENTS.md](../../AGENTS.md)
 and the files it routes to; this adds only what applies here.
 
-## Five facts hold the design up
+## Four facts hold the design up
 
 Each was read out of tmux's source or found by running the thing, and each is
 expensive to rediscover.
@@ -34,12 +34,6 @@ the marker, and restores shell state only after removing it from the command
 subshell. fish, csh, and PowerShell do not share that grammar, so the tool
 refuses them even with `force`. The marker is framing, not confinement: code
 with the tmux socket's authority can inspect the pane.
-
-**Two wait ceilings, not one.** A blocking wait spends the agent's turn, so it
-is held low. As an MCP task it hands back a handle at once, so it may run as long
-as the work does. Both paths accept request cancellation. `taskSupport` is
-`optional`, so a client without tasks gets the SDK's polling fallback. Keep the
-task's `pollInterval` low because it is added latency on that path.
 
 ## Cancellation
 

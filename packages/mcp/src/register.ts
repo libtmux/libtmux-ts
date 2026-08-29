@@ -98,24 +98,6 @@ export function offeredTools(mcp: McpServer, policy: Policy): McpServer {
   return new Proxy(mcp, {
     get(target, property, receiver): unknown {
       if (property === "registerTool") return filtered(target, "registerTool");
-      // A task tool registers through its own object, so filtering only
-      // `registerTool` would leave `wait_for_text_task` offered by a server
-      // that was told not to.
-      if (property === "experimental") {
-        const experimental = target.experimental;
-        const tasks = experimental.tasks;
-        return {
-          ...experimental,
-          tasks: new Proxy(tasks, {
-            get(taskTarget, taskProperty, taskReceiver): unknown {
-              if (taskProperty !== "registerToolTask") {
-                return Reflect.get(taskTarget, taskProperty, taskReceiver) as unknown;
-              }
-              return filtered(taskTarget, "registerToolTask");
-            },
-          }),
-        };
-      }
       return Reflect.get(target, property, receiver) as unknown;
     },
   });

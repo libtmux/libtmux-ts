@@ -2,10 +2,8 @@
  * Waiting for a pane to say something, without polling and without hanging.
  *
  * These stream tmux's own notifications, so nothing is spent while nothing is
- * happening. What they cost instead is the caller's turn, which is why the
- * blocking ceiling is low and why the same waits are also offered as tasks: a
- * task hands back a handle at once, so a ten-minute build is a thing to check
- * on rather than a thing to sit through.
+ * happening. The ceiling is low because the wait still spends the caller's
+ * turn.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -53,9 +51,8 @@ const IDLE_WAKE_MS = 500;
  *
  * A pane's death is not output, so nothing wakes the wait to announce it and
  * the only way to hear about it is to ask. Asking on every idle wake would
- * spend a snapshot twice a second — seven thousand of them across the hour a
- * task wait may run — so a quiet wait asks on this interval instead, and a wait
- * that is hearing output never asks at all.
+ * spend a snapshot twice a second, so a quiet wait asks on this interval
+ * instead, and a wait that is hearing output never asks at all.
  */
 const LIVENESS_MS = 5_000;
 
@@ -167,8 +164,7 @@ async function waitForOutput(
     }
 
     // Nothing arrived, and a pane that has died will never make anything
-    // arrive. A task wait may run for an hour, so waiting out the deadline
-    // reports the death long after it mattered.
+    // arrive. Waiting out the deadline reports the death long after it mattered.
     askedAlive = Date.now();
     // eslint-disable-next-line no-await-in-loop -- only a wait hearing nothing pays this.
     const current = (await context.snapshot()).panes.first({ id: pane.id });
@@ -385,7 +381,6 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       regex?: false | undefined;
       timeoutMs?: number | undefined;
     },
-    asTask: boolean,
   ): Promise<CallToolResult> {
     const matcher = buildMatcher(args.patterns);
 
@@ -404,7 +399,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
       matches: matcher,
       ...(signal === undefined ? {} : { signal }),
-      timeoutMs: effectiveWaitMs(context.policy, args.timeoutMs, asTask),
+      timeoutMs: effectiveWaitMs(context.policy, args.timeoutMs),
     });
     return renderWait(
       context,
@@ -427,66 +422,6 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       outputSchema: waitOutputSchema,
       title: "Wait for output",
     },
-    (args, extra) => run(extra.signal, args, false),
-  );
-
-  /**
-   * Whether the client on the other end actually speaks tasks.
-   *
-   * The task ceiling is traded for a handle that arrives at once and can be
-   * cancelled. A client that declares no task capability gets neither: the SDK
-   * runs the tool and polls on its behalf, so the call blocks and cannot be
-   * called off. Charging it the task ceiling hands it the worst combination
-   * available — an uncancellable wait carrying twenty times the ceiling the
-   * blocking tool would have used — which is the turn-destroying outcome the
-   * low blocking ceiling exists to prevent.
-   */
-  const clientSpeaksTasks = (): boolean => mcp.server.getClientCapabilities()?.tasks !== undefined;
-
-  // The same wait, offered as a task. A client that speaks tasks gets a handle
-  // immediately and can cancel; one that does not has the SDK poll on its
-  // behalf and sees exactly the blocking tool it saw before — which is why this
-  // is `optional` rather than `required`, and why the ceiling follows the
-  // client's capability rather than the tool's name.
-  mcp.experimental.tasks.registerToolTask(
-    "wait_for_text_task",
-    {
-      annotations: READ_ONLY,
-      description: `${description} If your client speaks tasks, you get a handle at once and can do other work, so a long timeoutMs costs nothing to wait on. If it does not, this blocks exactly like wait_for_text and is held to the same lower ceiling — the reply says which one it used.`,
-      execution: { taskSupport: "optional" },
-      inputSchema,
-      outputSchema: waitOutputSchema,
-      title: "Wait for output (task)",
-    },
-    {
-      createTask: async (args, extra) => {
-        const task = await extra.taskStore.createTask({
-          // The SDK polls at this interval for a client that does not speak
-          // tasks, so it is the added latency of the degraded path.
-          pollInterval: 200,
-          ttl: context.policy.taskWaitMaxMs + 60_000,
-        });
-        void run(extra.signal, args, clientSpeaksTasks())
-          .then((result) => extra.taskStore.storeTaskResult(task.taskId, "completed", result))
-          .catch((error: unknown) =>
-            extra.taskStore.storeTaskResult(
-              task.taskId,
-              "failed",
-              fail({ reason: error instanceof Error ? error.message : String(error) }),
-            ),
-          );
-        return { task };
-      },
-      getTask: (_args, extra) => extra.taskStore.getTask(extra.taskId),
-      getTaskResult: async (_args, extra) => {
-        // The store holds an arbitrary result; only one this tool wrote has
-        // `content`. Anything else means the task ended without one, and saying
-        // that beats handing back a shape the client will reject.
-        const stored: unknown = await extra.taskStore.getTaskResult(extra.taskId);
-        return typeof stored === "object" && stored !== null && "content" in stored
-          ? (stored as CallToolResult)
-          : fail({ reason: `Task ${extra.taskId} finished without a result.` });
-      },
-    },
+    (args, extra) => run(extra.signal, args),
   );
 }

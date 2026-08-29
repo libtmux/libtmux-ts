@@ -36,9 +36,7 @@ WAIT, DON'T POLL. Never loop send_keys + capture_pane.
 - observe: repeated reading. Keep the returned cursor and pass it back; you are
   then told only what arrived since, not the whole screen again.
 Waits stream tmux's own notifications; they cost no commands while waiting.
-Long waits: pass a large timeoutMs and call as a task if your client supports
-tasks — you get a handle at once and can do other work. Otherwise the wait is
-clamped, and every result reports the timeout it actually used.
+Every wait is clamped, and its result reports the timeout it actually used.
 
 NEVER STUCK: a wait that does not match still returns what the pane printed, its
 state, and what to try next. Read the outcome field rather than retrying blind.

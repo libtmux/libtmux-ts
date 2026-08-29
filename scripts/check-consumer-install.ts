@@ -19,6 +19,14 @@ interface Consumer {
   readonly types: string;
 }
 
+interface McpMessage {
+  readonly id?: number;
+  readonly result?: {
+    readonly capabilities?: { readonly tasks?: unknown };
+    readonly tools?: readonly { readonly name?: string }[];
+  };
+}
+
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const packageDirectory = process.argv[2];
 
@@ -108,13 +116,25 @@ async function probeMcpBinary(project: string, node: string): Promise<void> {
   const stderr = await new Response(child.stderr).text();
   if (expired) fail(`installed ${binary} exceeded its handshake deadline\n${stderr}`);
 
-  const response = output
+  const messages = output
     .split("\n")
     .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as { id?: number; result?: { tools?: unknown[] } })
-    .find(({ id }) => id === 2);
-  if ((response?.result?.tools?.length ?? 0) === 0) {
+    .map((line) => JSON.parse(line) as McpMessage);
+  const initialized = messages.find(({ id }) => id === 1);
+  const listed = messages.find(({ id }) => id === 2);
+  const tools =
+    listed?.result?.tools?.flatMap(({ name }) => (name === undefined ? [] : [name])) ?? [];
+  if (tools.length === 0) {
     fail(`installed ${binary} returned no tools\n${output}${stderr}`);
+  }
+  if (tools.includes("wait_for_text_task")) {
+    fail(`installed ${binary} offered experimental task tool\n${output}${stderr}`);
+  }
+  if (!tools.includes("wait_for_text")) {
+    fail(`installed ${binary} omitted stable wait tool\n${output}${stderr}`);
+  }
+  if (initialized?.result?.capabilities?.tasks !== undefined) {
+    fail(`installed ${binary} advertised experimental task support\n${output}${stderr}`);
   }
 }
 
@@ -132,7 +152,6 @@ function consumerFor(name: string): Consumer {
         "  liveEnabled: false,",
         "  maxResultLines: 2_000,",
         "  safety,",
-        "  taskWaitMaxMs: 3_600_000,",
         "  tools: undefined,",
         "};",
         'createTmuxMcpServer(new Server({ socketName: "ltx-install-canary" }), { policy });',
