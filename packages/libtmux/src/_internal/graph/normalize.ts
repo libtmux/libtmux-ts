@@ -39,6 +39,7 @@ import {
   type NormalizedGraph,
   type WinlinkEntity,
 } from "./model.js";
+import { snapshotOwnDataArray } from "./data_snapshot.js";
 import { createLogicalRef, createWinlinkRef, type WinlinkRef } from "./refs.js";
 
 export interface NormalizeGraphInput {
@@ -146,47 +147,22 @@ function parseListCommand(value: unknown): ListCommand {
 }
 
 function parseRows(value: unknown): readonly unknown[] {
-  let isArray: boolean;
-  let lengthDescriptor: PropertyDescriptor | undefined;
-  const elementDescriptors: Array<PropertyDescriptor | undefined> = [];
-  try {
-    isArray = Array.isArray(value);
-    if (isArray) {
-      lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
-      const length = lengthDescriptor?.value;
-      if (typeof length === "number" && Number.isSafeInteger(length) && length >= 0) {
-        for (let index = 0; index < length; index += 1) {
-          elementDescriptors.push(Object.getOwnPropertyDescriptor(value, String(index)));
-        }
-      }
-    }
-  } catch (error) {
-    return invalidNormalization("graph source rows could not be inspected", error);
-  }
+  const snapshot = snapshotOwnDataArray(value);
+  if (snapshot.ok) return snapshot.value;
 
-  if (!isArray) {
-    return invalidNormalization("graph source rows must be an array");
-  }
-  if (
-    lengthDescriptor === undefined ||
-    !("value" in lengthDescriptor) ||
-    lengthDescriptor.enumerable ||
-    typeof lengthDescriptor.value !== "number" ||
-    !Number.isSafeInteger(lengthDescriptor.value) ||
-    lengthDescriptor.value < 0 ||
-    elementDescriptors.length !== lengthDescriptor.value
-  ) {
-    return invalidNormalization("graph source rows must have a valid array length");
-  }
-
-  const rows: unknown[] = [];
-  for (const descriptor of elementDescriptors) {
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+  switch (snapshot.failure.reason) {
+    case "not-array":
+      return invalidNormalization("graph source rows must be an array");
+    case "inspection":
+      return invalidNormalization(
+        "graph source rows could not be inspected",
+        snapshot.failure.cause,
+      );
+    case "length":
+      return invalidNormalization("graph source rows must have a valid array length");
+    case "element":
       return invalidNormalization("graph source rows must contain own enumerable data elements");
-    }
-    rows.push(descriptor.value);
   }
-  return rows;
 }
 
 function copyCompleteFormatRow(value: unknown): RawCompleteFormatRow {

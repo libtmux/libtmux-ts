@@ -3,6 +3,7 @@ import {
   type WhereField,
   type WhereModel,
 } from "../../_generated/where_fields.js";
+import { snapshotOwnDataArray, snapshotPlainDataRecord } from "./data_snapshot.js";
 import type { GraphSource } from "./model.js";
 
 export interface ProjectionRelationRequirement {
@@ -28,95 +29,38 @@ export function readStrictDataRecord(
   expectedKeys: readonly string[],
   label: string,
 ): Readonly<Record<string, unknown>> {
-  if (typeof value !== "object" || value === null) {
-    return invalidProjection(`${label} must be an object`);
-  }
+  const snapshot = snapshotPlainDataRecord(value, expectedKeys);
+  if (snapshot.ok) return snapshot.value;
 
-  let isArray: boolean;
-  let prototype: object | null;
-  let ownKeys: readonly PropertyKey[];
-  let descriptors: readonly (PropertyDescriptor | undefined)[];
-  let finalPrototype: object | null;
-  let finalOwnKeys: readonly PropertyKey[];
-  try {
-    isArray = Array.isArray(value);
-    prototype = Object.getPrototypeOf(value);
-    ownKeys = Reflect.ownKeys(value);
-    descriptors = expectedKeys.map((key) => Object.getOwnPropertyDescriptor(value, key));
-    finalPrototype = Object.getPrototypeOf(value);
-    finalOwnKeys = Reflect.ownKeys(value);
-  } catch (error) {
-    return invalidProjection(`${label} could not be inspected`, error);
-  }
-
-  if (
-    isArray ||
-    prototype !== finalPrototype ||
-    (prototype !== Object.prototype && prototype !== null) ||
-    (finalPrototype !== Object.prototype && finalPrototype !== null)
-  ) {
-    return invalidProjection(`${label} must be a plain data object`);
-  }
-  if (
-    ownKeys.length !== expectedKeys.length ||
-    ownKeys.some((key) => typeof key !== "string" || !expectedKeys.includes(key)) ||
-    ownKeys.length !== finalOwnKeys.length ||
-    ownKeys.some((key) => !finalOwnKeys.includes(key))
-  ) {
-    return invalidProjection(`${label} has invalid keys`);
-  }
-
-  const entries: Array<readonly [string, unknown]> = [];
-  for (const [index, key] of expectedKeys.entries()) {
-    const descriptor = descriptors[index];
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+  switch (snapshot.failure.reason) {
+    case "not-object":
+      return invalidProjection(`${label} must be an object`);
+    case "array":
+    case "prototype":
+      return invalidProjection(`${label} must be a plain data object`);
+    case "inspection":
+      return invalidProjection(`${label} could not be inspected`, snapshot.failure.cause);
+    case "keys":
+      return invalidProjection(`${label} has invalid keys`);
+    case "property":
       return invalidProjection(`${label} must contain enumerable data properties`);
-    }
-    entries.push([key, descriptor.value]);
   }
-  return Object.fromEntries(entries);
 }
 
 export function snapshotDataArray(value: unknown, label: string): readonly unknown[] {
-  let isArray: boolean;
-  let lengthDescriptor: PropertyDescriptor | undefined;
-  const elementDescriptors: Array<PropertyDescriptor | undefined> = [];
-  try {
-    isArray = Array.isArray(value);
-    if (isArray) {
-      lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
-      const length = lengthDescriptor?.value;
-      if (typeof length === "number" && Number.isSafeInteger(length) && length >= 0) {
-        for (let index = 0; index < length; index += 1) {
-          elementDescriptors.push(Object.getOwnPropertyDescriptor(value, String(index)));
-        }
-      }
-    }
-  } catch (error) {
-    return invalidProjection(`${label} could not be inspected`, error);
-  }
+  const snapshot = snapshotOwnDataArray(value);
+  if (snapshot.ok) return snapshot.value;
 
-  if (!isArray) return invalidProjection(`${label} must be an array`);
-  if (
-    lengthDescriptor === undefined ||
-    !("value" in lengthDescriptor) ||
-    lengthDescriptor.enumerable ||
-    typeof lengthDescriptor.value !== "number" ||
-    !Number.isSafeInteger(lengthDescriptor.value) ||
-    lengthDescriptor.value < 0 ||
-    elementDescriptors.length !== lengthDescriptor.value
-  ) {
-    return invalidProjection(`${label} must have a valid array length`);
-  }
-
-  const values: unknown[] = [];
-  for (const descriptor of elementDescriptors) {
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+  switch (snapshot.failure.reason) {
+    case "not-array":
+      return invalidProjection(`${label} must be an array`);
+    case "inspection":
+      return invalidProjection(`${label} could not be inspected`, snapshot.failure.cause);
+    case "length":
+      return invalidProjection(`${label} must have a valid array length`);
+    case "element":
       return invalidProjection(`${label} must contain own enumerable data elements`);
-    }
-    values.push(descriptor.value);
   }
-  return values;
 }
 
 export function isWhereModel(value: unknown): value is WhereModel {
