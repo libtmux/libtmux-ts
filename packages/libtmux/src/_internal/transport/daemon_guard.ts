@@ -1,34 +1,9 @@
+import type { DaemonGuard } from "../../engine.js";
 import { subcommandOf } from "./group.js";
 import { quoteCommand } from "./lexer.js";
 import type { CommandRequest } from "./types.js";
 
-/**
- * Making a command refuse to run on a daemon that is not the one it was read
- * from.
- *
- * A tmux id is unique within one daemon and reissued by the next: `kill-server`
- * and a restart give a new daemon the same socket, and it numbers its panes from
- * `%0` again. A handle captured before the restart therefore names something
- * that exists, belongs to somebody else, and answers to the same command.
- *
- * Checking first and sending second does not close that: the daemon can change
- * between the two. `if-shell -F` does, because it is not a shell — tmux expands
- * the format inside its command queue and `cmdq_insert_after`s the guarded
- * command into the same queue, so nothing runs in between. The condition is
- * `pid` and `start_time` together, since pids are reused.
- *
- * The refusal has to be visible. tmux answers a false condition with no output
- * and status 0, which is indistinguishable from a command that printed nothing,
- * so the else branch is a read-only command with a target that cannot exist: it
- * fails, the invocation exits nonzero, and the message names the reason. The
- * guarded command keeps its own stdout and stderr either way, so nothing that
- * reads a result has to know this happened.
- */
-
-export interface DaemonGuard {
-  readonly pid: string;
-  readonly startTime: string;
-}
+export type { DaemonGuard } from "../../engine.js";
 
 /**
  * The branch taken when the daemon changed.

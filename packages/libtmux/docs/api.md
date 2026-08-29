@@ -76,7 +76,7 @@ new Server({ socketPath: "/tmp/tmux-1000/work" }).socketPath;
 #### `Server.engine`
 
 ```ts
-get engine(): CommandTransport | undefined
+get engine(): TmuxEngine | undefined
 ```
 
 The engine this server was built with, if it was given one.
@@ -2223,7 +2223,7 @@ declarative criteria that are data — serializable, inspectable, sendable over
 a wire — and `filter` takes an ordinary predicate. Reach for `where` unless
 the question genuinely needs to run code.
 
-[`length`](#selectionlength) · [`[Symbol.iterator]`](#selectionsymboliterator) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
+[`length`](#selectionlength) · [`[Symbol.iterator]`](#selectionsymboliterator) · [`at`](#selectionat) · [`toArray`](#selectiontoarray) · [`map`](#selectionmap) · [`filter`](#selectionfilter) · [`filter`](#selectionfilter) · [`where`](#selectionwhere) · [`first`](#selectionfirst) · [`one`](#selectionone) · [`oneOrUndefined`](#selectiononeorundefined) · [`exists`](#selectionexists) · [`count`](#selectioncount)
 
 ### Properties
 
@@ -2305,7 +2305,7 @@ snapshot.windows.map((entry) => entry.name); // string[]
 #### `Selection.filter`
 
 ```ts
-filter( predicate: (value: Model, index: number, values: readonly Model[]) => unknown, thisArg?: unknown, ): Selection<Model>
+filter<Narrowed extends Model>( predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed, thisArg?: unknown, ): Selection<Narrowed>
 ```
 
 Keep the members `predicate` accepts.
@@ -2316,6 +2316,18 @@ to another process, or stored.
 
 ```ts
 snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true);
+```
+
+#### `Selection.filter`
+
+```ts
+filter( predicate: (value: Model, index: number, values: readonly Model[]) => unknown, thisArg?: unknown, ): Selection<Model>
+```
+
+Keep the members an ordinary predicate accepts without changing their type.
+
+```ts
+snapshot.panes.filter((entry) => entry.active === true);
 ```
 
 #### `Selection.where`

@@ -1,5 +1,21 @@
-import type { ModelKindOf } from "./_internal/runtime/model_kind.js";
 import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/legacy.js";
+import type { Client } from "./client.js";
+import type { Pane } from "./pane.js";
+import type { Server } from "./server.js";
+import type { Session } from "./session.js";
+import type { Window } from "./window.js";
+
+type ModelKindOf<Model> = Model extends Client
+  ? "client"
+  : Model extends Pane
+    ? "pane"
+    : Model extends Server
+      ? "server"
+      : Model extends Session
+        ? "session"
+        : Model extends Window
+          ? "window"
+          : never;
 
 /**
  * A field's criteria accept its decoded shape as well as the text tmux sends:

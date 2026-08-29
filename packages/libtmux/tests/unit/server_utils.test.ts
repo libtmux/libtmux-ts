@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../src/server.js";
-import type { CommandRequest, RawCommandResult } from "../../src/engine.js";
+import type { TmuxCommandRequest, TmuxCommandResult } from "../../src/engine.js";
 import { singleCommandTransport } from "../support/transport_double.js";
 
-function success(request: CommandRequest): RawCommandResult {
+function success(request: TmuxCommandRequest): TmuxCommandResult {
   return {
     cmd: request.args,
     returncode: 0,
@@ -16,7 +16,7 @@ function success(request: CommandRequest): RawCommandResult {
 
 describe("server utility requests", () => {
   test("inherits the server deadline and targets a session name exactly", async () => {
-    const requests: CommandRequest[] = [];
+    const requests: TmuxCommandRequest[] = [];
     const engine = singleCommandTransport((request) => {
       requests.push(request);
       return Promise.resolve(success(request));

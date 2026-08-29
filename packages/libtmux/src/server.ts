@@ -32,6 +32,7 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 
 import type { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch } from "./common.js";
+import type { DaemonGuard, TmuxEngine } from "./engine.js";
 import { LibTmuxException, WaitTimeout } from "./exc.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
@@ -69,15 +70,22 @@ import {
   registerServerRuntime,
   runtimeForServer,
   runtimeForServerValue,
-  type DaemonIdentity,
   type RuntimeContext,
 } from "./_internal/runtime/context.js";
 import { TmuxConnection } from "./_internal/runtime/connection.js";
 
-export type { DaemonIdentity } from "./_internal/runtime/context.js";
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
-import type { CommandTransport } from "./_internal/transport/types.js";
+
+/**
+ * Which tmux daemon answered, as tmux itself reports it.
+ *
+ * A socket path names a place, not a process: `kill-server` and a restart give
+ * a new daemon the same path, and that daemon numbers its panes from `%0`
+ * again. The pid alone is not enough — pids are reused — so the start time goes
+ * with it.
+ */
+export type DaemonIdentity = DaemonGuard;
 
 export interface ServerOptions {
   readonly colors?: 88 | 256;
@@ -125,7 +133,7 @@ export interface ServerOptions {
    * says tmux is not somewhere it can. {@link Server.watch} and
    * {@link Server.connect} refuse for the same reason.
    */
-  readonly engine?: CommandTransport;
+  readonly engine?: TmuxEngine;
 }
 
 /** What `LIBTMUX_TRANSPORT` may say, and what it selects. */
@@ -357,7 +365,7 @@ export class Server {
    * (await reader.snapshot()).windows.count();
    * ```
    */
-  get engine(): CommandTransport | undefined {
+  get engine(): TmuxEngine | undefined {
     return runtimeForServerValue(this)?.engine;
   }
 

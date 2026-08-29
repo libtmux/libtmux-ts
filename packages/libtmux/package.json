@@ -59,6 +59,16 @@
       "import": "./dist/formats.js",
       "default": "./dist/formats.js"
     },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    },
+    "./field-types": {
+      "types": "./dist/field_types.d.ts",
+      "import": "./dist/field_types.js",
+      "default": "./dist/field_types.js"
+    },
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",

@@ -13,8 +13,8 @@ import type {
   PlannedOperation,
   SplitOptions,
 } from "./types.js";
-import { PANE_ALIASES, type PaneAliasMap } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
+import { PANE_ALIASES } from "./_generated/field_aliases.js";
+import type { AliasedFields, PaneAliasMap, RowWithIdentities } from "./field_types.js";
 import {
   chooseBuffer,
   chooseTree,

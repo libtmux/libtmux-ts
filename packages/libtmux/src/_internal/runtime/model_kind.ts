@@ -17,15 +17,3 @@ export type ModelForKind<Kind extends ModelKind> = Kind extends "client"
         : Window;
 
 export type NominalModel<Kind extends ModelKind> = ModelForKind<Kind>;
-
-export type ModelKindOf<Model> = Model extends Client
-  ? "client"
-  : Model extends Pane
-    ? "pane"
-    : Model extends Server
-      ? "server"
-      : Model extends Session
-        ? "session"
-        : Model extends Window
-          ? "window"
-          : never;

@@ -1,12 +1,8 @@
 import { v, type Validator } from "../validate.js";
 
-import {
-  FORMAT_IDENTITY_FIELDS,
-  type DecodedFormatValue,
-  type RawFormatValue,
-} from "../../_generated/field_types.js";
+import { FORMAT_IDENTITY_FIELDS } from "../../_generated/field_types.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
-import type { FormatFieldName } from "../../_generated/format_field_names.js";
+import type { FormatFieldName, RawFormatValue } from "../../field_types.js";
 import { parsePaneId, parseSessionId, parseWindowId } from "../runtime/ids.js";
 import type { ListCommand } from "./format_types.js";
 
@@ -14,36 +10,6 @@ export type RawCompleteFormatRow = Readonly<Record<FormatFieldName, string | nul
 
 export type CompleteFormatRow = {
   readonly [Key in FormatFieldName]: RawFormatValue<Key> | null;
-};
-
-/**
- * A complete row whose listing guarantees certain identities are populated.
- *
- * `normalizeGraph` rejects a row missing the identities its subcommand must
- * supply, so those fields cannot be null on a materialized handle. The set
- * differs per model — a session row guarantees only `session_id`, while a pane
- * row guarantees its whole ancestry — so the guarantee is expressed per model
- * rather than flattened onto every field.
- */
-/**
- * Idiomatic property names layered over a row, carrying decoded values.
- *
- * The row underneath stays text and stays reachable as `handle.format`.
- * Nullability is taken from the row rather than restated, so an identity field
- * stays non-null through the swap.
- */
-export type AliasedFields<Row, Aliases extends Readonly<Record<string, keyof Row>>> = {
-  readonly [Key in keyof Aliases]: Aliases[Key] extends FormatFieldName
-    ? null extends Row[Aliases[Key]]
-      ? DecodedFormatValue<Aliases[Key]> | null
-      : DecodedFormatValue<Aliases[Key]>
-    : Row[Aliases[Key]];
-};
-
-export type RowWithIdentities<Identities extends FormatFieldName> = {
-  readonly [Key in FormatFieldName]: Key extends Identities
-    ? Exclude<RawFormatValue<Key>, "">
-    : RawFormatValue<Key> | null;
 };
 
 const completeFormatRowShape = Object.fromEntries(

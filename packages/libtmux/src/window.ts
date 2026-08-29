@@ -7,8 +7,8 @@ import type {
   RespawnOptions,
   SplitOptions,
 } from "./types.js";
-import { WINDOW_ALIASES, type WindowAliasMap } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
+import { WINDOW_ALIASES } from "./_generated/field_aliases.js";
+import type { AliasedFields, RowWithIdentities, WindowAliasMap } from "./field_types.js";
 import {
   linkedSessionsOfWindow,
   panesOfPlacement,

@@ -1,5 +1,5 @@
-import { CLIENT_ALIASES, type ClientAliasMap } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
+import { CLIENT_ALIASES } from "./_generated/field_aliases.js";
+import type { AliasedFields, ClientAliasMap, RowWithIdentities } from "./field_types.js";
 import { paneById, sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { detachClient, switchClient } from "./_internal/operations/shell.js";

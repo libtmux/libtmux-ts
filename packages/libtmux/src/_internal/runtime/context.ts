@@ -6,29 +6,18 @@ import type {
   TmuxWarningSink,
 } from "../../common.js";
 import { LibTmuxException } from "../../exc.js";
-import { Server } from "../../server.js";
+import { Server, type DaemonIdentity } from "../../server.js";
 import { decodeLogicalRef } from "../graph/refs.js";
 import type { CommandTransport } from "../transport/types.js";
 import { LazyCapabilityBinding } from "./capabilities.js";
 import type { TmuxConnection } from "./connection.js";
 
+export type { DaemonIdentity } from "../../server.js";
+
 interface RuntimeEpochState {
   daemonEpoch: DaemonEpoch;
   /** The daemon the last acquisition reached, so the next one can tell it apart. */
   daemon: DaemonIdentity | undefined;
-}
-
-/**
- * Which tmux daemon answered, as tmux itself reports it.
- *
- * A socket path names a place, not a process: `kill-server` and a restart give
- * a new daemon the same path, and that daemon numbers its panes from `%0`
- * again. The pid alone is not enough — pids are reused — so the start time goes
- * with it.
- */
-export interface DaemonIdentity {
-  readonly pid: string;
-  readonly startTime: string;
 }
 
 /** Whether two readings describe the same running daemon. */

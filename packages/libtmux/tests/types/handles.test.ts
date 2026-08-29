@@ -1,6 +1,7 @@
 import * as clientModule from "../../src/client.js";
-import type { CompleteFormatRow, RowWithIdentities } from "../../src/_internal/codec/schemas.js";
+import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import type { TmuxEngine } from "../../src/engine.js";
+import type { RowWithIdentities } from "../../src/field_types.js";
 import type {
   GraphEntityRef,
   GraphRecordRef,
@@ -35,7 +36,6 @@ import {
 import type {
   ModelForKind,
   ModelKind,
-  ModelKindOf,
   NominalModel,
 } from "../../src/_internal/runtime/model_kind.js";
 import * as paneModule from "../../src/pane.js";
@@ -221,11 +221,6 @@ type _ServerForKind = Expect<Equal<ModelForKind<"server">, Server>>;
 type _SessionForKind = Expect<Equal<ModelForKind<"session">, Session>>;
 type _WindowForKind = Expect<Equal<ModelForKind<"window">, Window>>;
 type _AllNominalModels = Expect<Equal<NominalModel<ModelKind>, Child | Server>>;
-type _ClientKind = Expect<Equal<ModelKindOf<Client>, "client">>;
-type _PaneKind = Expect<Equal<ModelKindOf<Pane>, "pane">>;
-type _ServerKind = Expect<Equal<ModelKindOf<Server>, "server">>;
-type _SessionKind = Expect<Equal<ModelKindOf<Session>, "session">>;
-type _WindowKind = Expect<Equal<ModelKindOf<Window>, "window">>;
 
 type StructuralSession = RowWithIdentities<"session_id"> & {
   readonly equals: (other: unknown) => boolean;
@@ -239,9 +234,6 @@ type StructuralServer = {
   readonly socketPath: string | undefined;
   readonly tmuxBin: string;
 };
-type _StructuralSessionKind = Expect<Equal<ModelKindOf<StructuralSession>, never>>;
-type _StructuralServerKind = Expect<Equal<ModelKindOf<StructuralServer>, never>>;
-
 type _BindLogicalRef = Expect<
   Equal<typeof bindLogicalRef, (runtime: RuntimeContext, value: unknown) => Promise<LogicalRef>>
 >;
@@ -370,7 +362,6 @@ export type {
   _BindLogicalRef,
   _ClientEquals,
   _ClientForKind,
-  _ClientKind,
   _ClientModule,
   _ClientSnapshot,
   _CreateRuntimeContext,
@@ -384,7 +375,6 @@ export type {
   _ModelKind,
   _PaneEquals,
   _PaneForKind,
-  _PaneKind,
   _PaneModule,
   _PaneSnapshot,
   _RuntimeForServer,
@@ -394,20 +384,15 @@ export type {
   _ServerEquals,
   _ServerFields,
   _ServerForKind,
-  _ServerKind,
   _ServerModule,
   _ServerOptions,
   _SessionEquals,
   _SessionForKind,
-  _SessionKind,
   _SessionModule,
   _SessionSnapshot,
   _SnapshotForHandle,
-  _StructuralServerKind,
-  _StructuralSessionKind,
   _WindowEquals,
   _WindowForKind,
-  _WindowKind,
   _WindowModule,
   _WindowSnapshot,
   _WinlinkRefForHandle,

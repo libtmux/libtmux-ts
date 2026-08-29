@@ -199,6 +199,8 @@ describe("package contract", () => {
       "./exc",
       "./constants",
       "./formats",
+      "./types",
+      "./field-types",
       "./server",
       "./session",
       "./window",
@@ -233,6 +235,16 @@ describe("package contract", () => {
       types: "./dist/formats.d.ts",
       import: "./dist/formats.js",
       default: "./dist/formats.js",
+    });
+    expect(packageManifest.exports["./types"]).toEqual({
+      types: "./dist/types.d.ts",
+      import: "./dist/types.js",
+      default: "./dist/types.js",
+    });
+    expect(packageManifest.exports["./field-types"]).toEqual({
+      types: "./dist/field_types.d.ts",
+      import: "./dist/field_types.js",
+      default: "./dist/field_types.js",
     });
     for (const model of ["server", "session", "window", "pane", "client", "selection"]) {
       expect(packageManifest.exports[`./${model}`]).toEqual({
@@ -428,8 +440,11 @@ describe("package contract", () => {
           {
             exports: {
               ".": { types: "./types/index.d.ts" },
+              "./engine": { types: "./types/engine.d.ts" },
+              "./field-types": { types: "./types/field_types.d.ts" },
               "./formats": { types: "./types/formats.d.ts" },
               "./server": { types: "./types/server.d.ts" },
+              "./types": { types: "./types/types.d.ts" },
             },
             name: "libtmux",
             type: "module",
@@ -456,6 +471,7 @@ import {
   Session,
   Window,
   type CaptureOptions,
+  type DaemonIdentity,
   type NewSessionOptions,
   type PaneId,
   type PaneIdInput,
@@ -467,7 +483,14 @@ import {
   type WindowId,
   type WindowIdInput,
 } from "libtmux";
-import { Server as ServerFromSubpath } from "libtmux/server";
+import {
+  MAX_PACKED_ARGV_BYTES,
+  type TmuxCommandRequest,
+  type TmuxEngine,
+} from "libtmux/engine";
+import type { DecodedFormatValue, RowWithIdentities } from "libtmux/field-types";
+import { Server as ServerFromSubpath, type DaemonIdentity as ServerDaemonIdentity } from "libtmux/server";
+import type { AbortLike } from "libtmux/types";
 
 // The root entrypoint must be usable exactly as a published consumer sees it.
 declare const rootServer: Server;
@@ -479,6 +502,16 @@ declare const rootClient: Client;
 declare const rootCriteria: SessionWhere;
 declare const rootCapture: CaptureOptions;
 declare const rootNewSession: NewSessionOptions;
+declare const daemonIdentity: DaemonIdentity;
+declare const engine: TmuxEngine;
+declare const request: TmuxCommandRequest;
+declare const abortLike: AbortLike;
+declare const paneIdentityRow: RowWithIdentities<"pane_id">;
+declare const decodedPaneId: DecodedFormatValue<"pane_id">;
+const exactPackedArgvLimit: 16384 = MAX_PACKED_ARGV_BYTES;
+const daemonIdentityFromServer: ServerDaemonIdentity = daemonIdentity;
+const paneIdFromRequiredRow: PaneId = paneIdentityRow.pane_id;
+const paneIdFromDecoder: PaneId = decodedPaneId;
 const sessionId: SessionId = rootSnapshot.sessions.one().id;
 const windowId: WindowId = rootWindow.id;
 const paneId: PaneId = rootPane.id;
@@ -495,6 +528,12 @@ void [
   rootPane.capture(rootCapture),
   rootClient.session,
   rootServer.newSession(rootNewSession),
+  engine.execute(request),
+  abortLike.aborted,
+  exactPackedArgvLimit,
+  daemonIdentityFromServer,
+  paneIdFromRequiredRow,
+  paneIdFromDecoder,
   sessionId,
   windowId,
   paneId,

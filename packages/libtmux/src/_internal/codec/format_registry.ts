@@ -2,7 +2,8 @@ function camelCase(value: string): string {
   return value.replace(/_([a-z0-9])/g, (_match, character: string) => character.toUpperCase());
 }
 
-import { formatValueType, type FormatValueType } from "../../_generated/field_types.js";
+import { formatValueType } from "../../_generated/field_types.js";
+import type { FormatValueType } from "../../field_types.js";
 import type { FormatFieldName, FormatScope } from "../../_generated/format_field_names.js";
 import type { ListCommand } from "./format_types.js";
 import {
