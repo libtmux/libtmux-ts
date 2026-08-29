@@ -85,7 +85,7 @@ export function createTmuxMcpServer(
   const closeBackend = (): Promise<void> => {
     backendClose ??= (async () => {
       try {
-        disposeResources();
+        await disposeResources();
       } finally {
         await context.close();
       }

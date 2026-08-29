@@ -88,7 +88,7 @@ function contextWith(
     listener: (event: TmuxEvent) => void,
     signal?: AbortSignal,
   ) => Promise<LiveListener | undefined>,
-  takeSnapshot: () => Promise<ServerSnapshot> = async () => snapshot("$1"),
+  takeSnapshot: (signal?: AbortSignal) => Promise<ServerSnapshot> = async () => snapshot("$1"),
 ): ToolContext {
   return {
     hub: { closed: false, listen },
@@ -216,18 +216,20 @@ test("does not snapshot a catalog after its request is cancelled", async () => {
   }
 });
 
-test("releases catalog coverage when cancellation interrupts its snapshot", async () => {
+test("passes cancellation into and joins the catalog snapshot", async () => {
   const entered = Promise.withResolvers<void>();
   const releaseObserved = Promise.withResolvers<void>();
   const snapshotting = Promise.withResolvers<ServerSnapshot>();
   let released = 0;
   let retained = 0;
+  let snapshotSignal: AbortSignal | undefined;
   const mcp = new McpServer({ name: "resource-watch-test", version: "0" });
   mcp.server.registerCapabilities({ resources: {} });
   registerResourceCatalog(
     mcp,
     {
-      snapshot: () => {
+      snapshot: (signal?: AbortSignal) => {
+        snapshotSignal = signal;
         entered.resolve();
         return snapshotting.promise;
       },
@@ -251,12 +253,17 @@ test("releases catalog coverage when cancellation interrupts its snapshot", asyn
     await entered.promise;
     controller.abort();
     await listing.catch(() => undefined);
-    await releaseObserved.promise;
 
+    expect(snapshotSignal?.aborted).toBe(true);
     expect(retained).toBe(0);
+    expect(released).toBe(0);
+
+    snapshotting.resolve(snapshot("$1"));
+    await releaseObserved.promise;
     expect(released).toBe(1);
   } finally {
     snapshotting.resolve(snapshot("$1"));
+    await releaseObserved.promise;
     await Promise.allSettled([listing]);
     await client.close();
   }
@@ -361,7 +368,7 @@ test("shares the first topology reconciliation", async () => {
   expect(snapshotsAfterStart).toBeGreaterThan(0);
   await topology.start();
   expect(snapshots).toBe(snapshotsAfterStart);
-  topology.close();
+  await topology.close();
 });
 
 test("covers linked windows without attaching to every session", async () => {
@@ -399,7 +406,7 @@ test("covers linked windows without attaching to every session", async () => {
   await waitUntil(() => calls.length === 3, "uncovered window listener did not retry");
   expect(calls).toEqual(["$1", "$2", "$2"]);
   expect(opened.get("$1")?.stops()).toBe(1);
-  topology.close();
+  await topology.close();
 });
 
 test("removes a greedy session made redundant by the final cover", async () => {
@@ -418,7 +425,7 @@ test("removes a greedy session made redundant by the final cover", async () => {
   await topology.start();
 
   expect(calls).toEqual(["$2", "$3"]);
-  topology.close();
+  await topology.close();
 });
 
 test("backs off failed listeners and announces one recovery", async () => {
@@ -448,7 +455,7 @@ test("backs off failed listeners and announces one recovery", async () => {
   await waitUntil(() => attempts === 3 && notices === 1, "topology listener did not recover");
   events?.({ kind: "layout-change" } as TmuxEvent);
   expect(notices).toBe(2);
-  topology.close();
+  await topology.close();
 });
 
 test("does not retry an unreachable server between requests", async () => {
@@ -469,7 +476,7 @@ test("does not retry an unreachable server between requests", async () => {
 
     expect(snapshots).toBe(1);
   } finally {
-    topology.close();
+    await topology.close();
   }
 });
 
@@ -513,7 +520,7 @@ test("announces covered listener loss while recovery is already owed", async () 
     expect(notices).toBe(2);
   } finally {
     openingSecond.resolve(second.listener);
-    topology.close();
+    await topology.close();
   }
 });
 
@@ -534,14 +541,56 @@ test("stops a listener that opens after the topology watch closes", async () => 
 
   const starting = topology.start();
   await waitUntil(() => attempts === 1, "topology listener did not start opening");
-  topology.close();
+  const closing = topology.close();
   opening.resolve(late.listener);
-  await starting;
+  await Promise.all([starting, closing]);
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   expect(late.stops()).toBe(1);
   expect(attempts).toBe(1);
   expect(notices).toBe(0);
+});
+
+test("topology close aborts and joins an in-flight snapshot", async () => {
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const settled = Promise.withResolvers<void>();
+  let snapshotSignal: AbortSignal | undefined;
+  const topology = watchTopology(
+    contextWith(
+      async () => controlledListener().listener,
+      async (signal) => {
+        snapshotSignal = signal;
+        entered.resolve();
+        try {
+          await release.promise;
+          return snapshot("$1");
+        } finally {
+          settled.resolve();
+        }
+      },
+    ),
+    () => undefined,
+  );
+
+  const starting = topology.start();
+  await entered.promise;
+  const closing = topology.close();
+  let closeSettled = false;
+  void Promise.resolve(closing).then(() => {
+    closeSettled = true;
+  });
+  try {
+    expect(closing).toBeInstanceOf(Promise);
+    expect(snapshotSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+  } finally {
+    release.resolve();
+    await Promise.allSettled([starting, Promise.resolve(closing)]);
+  }
+  await settled.promise;
+  expect(closeSettled).toBe(true);
 });
 
 test("keeps shared topology startup alive when one request is cancelled", async () => {
@@ -572,9 +621,9 @@ test("keeps shared topology startup alive when one request is cancelled", async 
     expect(attempts).toBe(1);
     expect(opened.stops()).toBe(0);
   } finally {
-    topology.close();
+    const closing = topology.close();
     opening.resolve(opened.listener);
-    await Promise.allSettled([first, second]);
+    await Promise.allSettled([first, second, closing]);
   }
   expect(opened.stops()).toBe(1);
   expect(attachSignal?.aborted).toBe(true);
@@ -635,13 +684,14 @@ test("ignores a cancelled topology generation that opens under its replacement",
     expect(notices).toBe(0);
   } finally {
     if (deadline !== undefined) clearTimeout(deadline);
-    topology.close();
+    const closing = topology.close();
     firstOpening.resolve(stale.listener);
     secondOpening.resolve(current.listener);
     await Promise.allSettled([
       first,
       ...(second === undefined ? [] : [second]),
       ...(third === undefined ? [] : [third]),
+      closing,
     ]);
   }
   expect(attachSignals[1]?.aborted).toBe(true);
@@ -748,7 +798,7 @@ test("keeps shared subscription startup alive when one request is cancelled", as
     expect(listens).toBe(1);
     expect(attachSignal?.aborted).toBe(false);
 
-    dispose();
+    await dispose();
     expect(opened.stops()).toBe(1);
     expect(attachSignal?.aborted).toBe(true);
   } finally {
@@ -756,6 +806,46 @@ test("keeps shared subscription startup alive when one request is cancelled", as
     await Promise.allSettled([first, ...(second === undefined ? [] : [second])]);
     await client.close();
   }
+});
+
+test("subscription disposal aborts and joins an in-flight snapshot", async () => {
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let snapshotSignal: AbortSignal | undefined;
+  const mcp = new McpServer({ name: "resource-watch-test", version: "0" });
+  const dispose = registerResourceSubscriptions(
+    mcp,
+    contextWith(
+      async () => controlledListener().listener,
+      async (signal) => {
+        snapshotSignal = signal;
+        entered.resolve();
+        await release.promise;
+        return snapshotWithPane("%1");
+      },
+    ),
+  );
+  const client = new Client({ name: "resource-watch-test", version: "0" });
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await Promise.all([mcp.connect(serverSide), client.connect(clientSide)]);
+  const subscribing = client.subscribeResource({ uri: "tmux://panes/%251/content" });
+  await entered.promise;
+  const closing = dispose();
+  let closeSettled = false;
+  void Promise.resolve(closing).then(() => {
+    closeSettled = true;
+  });
+  try {
+    expect(closing).toBeInstanceOf(Promise);
+    expect(snapshotSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+  } finally {
+    release.resolve();
+    await Promise.allSettled([subscribing, Promise.resolve(closing)]);
+    await client.close();
+  }
+  expect(closeSettled).toBe(true);
 });
 
 test("does not retain a subscription whose request is cancelled", async () => {

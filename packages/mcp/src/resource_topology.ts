@@ -1,7 +1,8 @@
-import type { ServerSnapshot, SessionId, TmuxEvent } from "libtmux";
+import type { SessionId, TmuxEvent } from "libtmux";
 
 import { requireActive, waitForAbort } from "./abort.js";
 import { isUnreachableError, type ToolContext } from "./context.js";
+import { coveringSessions } from "./covering_sessions.js";
 import type { LiveListener } from "./live.js";
 
 const RETRY_MIN_MS = 250;
@@ -19,7 +20,6 @@ const STRUCTURAL = new Set<TmuxEvent["kind"]>([
   "window-renamed",
 ]);
 
-/** Whether an event can change resource identity or its catalog description. */
 function isCatalogResourceEvent(event: TmuxEvent): boolean {
   return STRUCTURAL.has(event.kind);
 }
@@ -33,7 +33,7 @@ export interface TopologyLease {
 export interface TopologyWatch {
   /** Provision coverage for one catalog request until its lease is released. */
   readonly acquire: (signal?: AbortSignal) => Promise<TopologyLease>;
-  readonly close: () => void;
+  readonly close: () => Promise<void>;
   /** Start and retain coverage directly. Primarily useful to lifecycle tests. */
   readonly start: (signal?: AbortSignal) => Promise<void>;
 }
@@ -48,149 +48,197 @@ const NOOP_LEASE: TopologyLease = {
   retain: () => undefined,
 };
 
-/** Choose an irredundant set of sessions that observes every distinct window. */
-function coveringSessions(
-  snapshot: ServerSnapshot,
-  active: ReadonlyMap<SessionId, unknown>,
-): Set<SessionId> {
-  const bySession = new Map<SessionId, Set<string>>();
-  const uncovered = new Set<string>();
-  for (const window of snapshot.windows.toArray()) {
-    uncovered.add(window.id);
-    const sessionId = window.format.session_id;
-    const windows = bySession.get(sessionId) ?? new Set<string>();
-    windows.add(window.id);
-    bySession.set(sessionId, windows);
+/** Own topology coverage, retries, generations, and every reconciliation task. */
+class TopologySupervisor implements TopologyWatch {
+  readonly #announce: () => void;
+  readonly #context: ToolContext;
+  readonly #listeners = new Map<SessionId, LiveListener>();
+  readonly #tasks = new Set<Promise<void>>();
+  #closed = false;
+  #closePromise: Promise<void> | undefined;
+  #generation = 0;
+  #generationAbort = new AbortController();
+  #leases = 0;
+  #lossNoticeSent = false;
+  #ready = false;
+  #reconcileAgain = false;
+  #reconciling: ReconcileRun | undefined;
+  #reconnect: ReturnType<typeof setTimeout> | undefined;
+  #recoveryNeeded = false;
+  #retained = false;
+  #retry = 0;
+  #stable: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(context: ToolContext, announce: () => void) {
+    this.#context = context;
+    this.#announce = announce;
   }
 
-  const desired = new Set<SessionId>();
-  while (uncovered.size > 0) {
-    let best: SessionId | undefined;
-    let bestActive = false;
-    let bestScore = 0;
-    for (const [sessionId, windows] of bySession) {
-      if (desired.has(sessionId)) continue;
-      let score = 0;
-      for (const windowId of windows) {
-        if (uncovered.has(windowId)) score += 1;
-      }
-      const isActive = active.has(sessionId);
-      if (score > bestScore || (score === bestScore && isActive && !bestActive)) {
-        best = sessionId;
-        bestActive = isActive;
-        bestScore = score;
-      }
+  async acquire(signal?: AbortSignal): Promise<TopologyLease> {
+    requireActive(signal);
+    if (this.#closed || this.#context.hub.closed || !this.#context.policy.liveEnabled) {
+      return NOOP_LEASE;
     }
-    if (best === undefined || bestScore === 0) break;
-    desired.add(best);
-    for (const windowId of bySession.get(best) ?? []) uncovered.delete(windowId);
-  }
-
-  // Greedy selection can make an earlier choice redundant once later sessions
-  // cover its windows. Drop such choices without turning this into exact set cover.
-  for (const candidate of desired) {
-    const windows = bySession.get(candidate) ?? [];
-    let needed = false;
-    for (const windowId of windows) {
-      let coveredElsewhere = false;
-      for (const other of desired) {
-        if (other !== candidate && bySession.get(other)?.has(windowId) === true) {
-          coveredElsewhere = true;
-          break;
-        }
-      }
-      if (coveredElsewhere) continue;
-      needed = true;
-      break;
+    this.#leases += 1;
+    let released = false;
+    const lease: TopologyLease = {
+      release: () => {
+        if (released) return;
+        released = true;
+        this.#leases -= 1;
+        if (!this.#closed && !this.#retained && this.#leases === 0) this.#dropCoverage();
+      },
+      retain: () => {
+        if (!released) this.#retained = true;
+      },
+    };
+    try {
+      await waitForAbort(this.#ensureStarted(), signal);
+      requireActive(signal);
+      return lease;
+    } catch (error) {
+      lease.release();
+      throw error;
     }
-    if (!needed) desired.delete(candidate);
   }
-  return desired;
-}
 
-/**
- * Watch every session whose pane layouts contribute resource URIs.
- *
- * tmux broadcasts session and window lifecycle, but sends a layout change only
- * to clients whose session contains that window. One listener cannot cover the
- * whole resource catalog.
- */
-export function watchTopology(context: ToolContext, announce: () => void): TopologyWatch {
-  const listeners = new Map<SessionId, LiveListener>();
-  let closed = false;
-  let generation = 0;
-  let generationAbort = new AbortController();
-  let leases = 0;
-  let lossNoticeSent = false;
-  let ready = false;
-  let reconcileAgain = false;
-  let reconciling: ReconcileRun | undefined;
-  let reconnect: ReturnType<typeof setTimeout> | undefined;
-  let recoveryNeeded = false;
-  let retained = false;
-  let retry = 0;
-  let stable: ReturnType<typeof setTimeout> | undefined;
+  close(): Promise<void> {
+    this.#closePromise ??= (async () => {
+      if (!this.#closed) {
+        this.#closed = true;
+        this.#dropCoverage();
+      }
+      await Promise.allSettled(this.#tasks);
+    })();
+    return this.#closePromise;
+  }
 
-  const clearStable = (): void => {
-    if (stable === undefined) return;
-    clearTimeout(stable);
-    stable = undefined;
-  };
-  const armStable = (): void => {
-    clearStable();
-    stable = setTimeout(() => {
-      stable = undefined;
-      retry = 0;
+  start(signal?: AbortSignal): Promise<void> {
+    if (signal === undefined) {
+      this.#retained = true;
+      return this.#ensureStarted();
+    }
+    return this.acquire(signal).then((lease) => {
+      lease.retain();
+      lease.release();
+    });
+  }
+
+  #announceLoss(): void {
+    this.#requireRecovery();
+    if (this.#lossNoticeSent) return;
+    this.#lossNoticeSent = true;
+    this.#announce();
+  }
+
+  #armStable(): void {
+    this.#clearStable();
+    this.#stable = setTimeout(() => {
+      this.#stable = undefined;
+      this.#retry = 0;
     }, STABLE_MS);
-    stable.unref?.();
-  };
-  const requireRecovery = (): void => {
-    recoveryNeeded = true;
-    ready = false;
-    clearStable();
-  };
-  const announceLoss = (): void => {
-    requireRecovery();
-    if (lossNoticeSent) return;
-    lossNoticeSent = true;
-    announce();
-  };
-  const dropCoverage = (): void => {
-    generationAbort.abort();
-    generation += 1;
-    generationAbort = new AbortController();
-    ready = false;
-    reconcileAgain = false;
-    reconciling = undefined;
-    recoveryNeeded = false;
-    lossNoticeSent = false;
-    retry = 0;
-    if (reconnect !== undefined) clearTimeout(reconnect);
-    reconnect = undefined;
-    clearStable();
-    const active = [...listeners.values()];
-    listeners.clear();
+    this.#stable.unref?.();
+  }
+
+  #beginReconcile(): Promise<void> {
+    const runGeneration = this.#generation;
+    const signal = this.#generationAbort.signal;
+    if (this.#reconciling?.generation === runGeneration) return this.#reconciling.promise;
+    let run!: ReconcileRun;
+    const running = (async () => {
+      try {
+        while (
+          this.#reconcileAgain &&
+          !this.#closed &&
+          !this.#context.hub.closed &&
+          runGeneration === this.#generation
+        ) {
+          this.#reconcileAgain = false;
+          // eslint-disable-next-line no-await-in-loop -- topology changes collapse into ordered passes.
+          const result = await this.#reconcile(runGeneration, signal);
+          if (result === undefined) return;
+          if (!result.complete) {
+            this.#requireRecovery();
+            this.#schedule(runGeneration);
+            return;
+          }
+          if (this.#reconnect !== undefined) return;
+          if (result.installed) this.#reconcileAgain = true;
+        }
+        if (
+          this.#closed ||
+          this.#context.hub.closed ||
+          runGeneration !== this.#generation ||
+          this.#reconnect !== undefined
+        ) {
+          return;
+        }
+        this.#ready = true;
+        if (this.#recoveryNeeded) {
+          this.#recoveryNeeded = false;
+          this.#lossNoticeSent = false;
+          this.#announce();
+        }
+        this.#armStable();
+      } catch (error) {
+        if (this.#closed || this.#context.hub.closed || runGeneration !== this.#generation) return;
+        if (isUnreachableError(error)) return;
+        this.#requireRecovery();
+        this.#schedule(runGeneration);
+      }
+    })().finally(() => {
+      if (this.#reconciling === run) this.#reconciling = undefined;
+    });
+    run = { generation: runGeneration, promise: running };
+    this.#reconciling = run;
+    this.#tasks.add(running);
+    void running.then(
+      () => this.#tasks.delete(running),
+      () => this.#tasks.delete(running),
+    );
+    return running;
+  }
+
+  #clearStable(): void {
+    if (this.#stable === undefined) return;
+    clearTimeout(this.#stable);
+    this.#stable = undefined;
+  }
+
+  #dropCoverage(): void {
+    this.#generationAbort.abort();
+    this.#generation += 1;
+    this.#generationAbort = new AbortController();
+    this.#ready = false;
+    this.#reconcileAgain = false;
+    this.#recoveryNeeded = false;
+    this.#lossNoticeSent = false;
+    this.#retry = 0;
+    if (this.#reconnect !== undefined) clearTimeout(this.#reconnect);
+    this.#reconnect = undefined;
+    this.#clearStable();
+    const active = [...this.#listeners.values()];
+    this.#listeners.clear();
     for (const stop of active) stop();
-  };
-  let requestReconcile!: () => void;
-  const schedule = (runGeneration = generation): void => {
-    if (closed || context.hub.closed || runGeneration !== generation || reconnect !== undefined) {
-      return;
+  }
+
+  #ensureStarted(): Promise<void> {
+    if (
+      this.#closed ||
+      this.#context.hub.closed ||
+      !this.#context.policy.liveEnabled ||
+      this.#reconnect !== undefined
+    ) {
+      return Promise.resolve();
     }
-    ready = false;
-    const wait = Math.min(RETRY_MAX_MS, RETRY_MIN_MS * 2 ** Math.min(retry, 5));
-    retry += 1;
-    reconnect = setTimeout(() => {
-      if (runGeneration !== generation) return;
-      reconnect = undefined;
-      requestReconcile();
-    }, wait);
-    reconnect.unref?.();
-  };
-  const listener = (event: TmuxEvent): void => {
-    // Layout also fires for resize and zoom. The shared notifier coalesces those
-    // false positives; omitting it would leave external split and kill stale.
-    if (event.kind === "layout-change" || isCatalogResourceEvent(event)) announce();
+    if (this.#ready) return Promise.resolve();
+    if (this.#reconciling?.generation === this.#generation) return this.#reconciling.promise;
+    this.#reconcileAgain = true;
+    return this.#beginReconcile();
+  }
+
+  readonly #listener = (event: TmuxEvent): void => {
+    if (event.kind === "layout-change" || isCatalogResourceEvent(event)) this.#announce();
     if (
       event.kind !== "sessions-changed" &&
       event.kind !== "unlinked-window-add" &&
@@ -200,35 +248,28 @@ export function watchTopology(context: ToolContext, announce: () => void): Topol
     ) {
       return;
     }
-    requireRecovery();
-    // The event announcement above already told the client coverage may differ.
-    lossNoticeSent = true;
-    requestReconcile();
+    this.#requireRecovery();
+    this.#lossNoticeSent = true;
+    this.#requestReconcile();
   };
-  const track = (sessionId: SessionId, opened: LiveListener): void => {
-    void opened.ended.then(() => {
-      if (listeners.get(sessionId) !== opened) return;
-      listeners.delete(sessionId);
-      if (closed || context.hub.closed) return;
-      announceLoss();
-      schedule();
-    });
-  };
-  const reconcile = async (
+
+  async #reconcile(
     runGeneration: number,
     signal: AbortSignal,
-  ): Promise<{ complete: boolean; installed: boolean } | undefined> => {
-    const snapshot = await context.snapshot();
-    if (closed || context.hub.closed || runGeneration !== generation) return undefined;
-    const desired = coveringSessions(snapshot, listeners);
+  ): Promise<{ complete: boolean; installed: boolean } | undefined> {
+    const snapshot = await this.#context.snapshot(signal);
+    if (this.#closed || this.#context.hub.closed || runGeneration !== this.#generation) {
+      return undefined;
+    }
+    const desired = coveringSessions(snapshot, this.#listeners);
     let installed = false;
     let complete = desired.size > 0;
 
     for (const sessionId of desired) {
-      if (listeners.has(sessionId)) continue;
+      if (this.#listeners.has(sessionId)) continue;
       // eslint-disable-next-line no-await-in-loop -- serial attaches bound process startup pressure.
-      const opened = await context.hub.listen(sessionId, listener, signal);
-      if (closed || context.hub.closed || runGeneration !== generation) {
+      const opened = await this.#context.hub.listen(sessionId, this.#listener, signal);
+      if (this.#closed || this.#context.hub.closed || runGeneration !== this.#generation) {
         opened?.();
         return undefined;
       }
@@ -237,129 +278,68 @@ export function watchTopology(context: ToolContext, announce: () => void): Topol
         complete = false;
         continue;
       }
-      listeners.set(sessionId, opened);
-      track(sessionId, opened);
+      this.#listeners.set(sessionId, opened);
+      this.#track(sessionId, opened);
       installed = true;
     }
 
-    if ([...desired].some((sessionId) => listeners.get(sessionId)?.active !== true)) {
+    if ([...desired].some((sessionId) => this.#listeners.get(sessionId)?.active !== true)) {
       complete = false;
     }
     if (complete) {
-      for (const [sessionId, opened] of listeners) {
+      for (const [sessionId, opened] of this.#listeners) {
         if (desired.has(sessionId)) continue;
-        listeners.delete(sessionId);
+        this.#listeners.delete(sessionId);
         opened();
       }
     }
     return { complete, installed };
-  };
-  const beginReconcile = (): Promise<void> => {
-    const runGeneration = generation;
-    const signal = generationAbort.signal;
-    if (reconciling?.generation === runGeneration) return reconciling.promise;
-    let run!: ReconcileRun;
-    const running = (async () => {
-      try {
-        while (reconcileAgain && !closed && !context.hub.closed && runGeneration === generation) {
-          reconcileAgain = false;
-          // eslint-disable-next-line no-await-in-loop -- topology changes collapse into ordered passes.
-          const result = await reconcile(runGeneration, signal);
-          if (result === undefined) return;
-          if (!result.complete) {
-            requireRecovery();
-            schedule(runGeneration);
-            return;
-          }
-          if (reconnect !== undefined) return;
-          // Verify after attaching: a new session before its listener opened
-          // could not have delivered the event that asks for another pass.
-          if (result.installed) reconcileAgain = true;
-        }
-        if (
-          closed ||
-          context.hub.closed ||
-          runGeneration !== generation ||
-          reconnect !== undefined
-        ) {
-          return;
-        }
-        ready = true;
-        if (recoveryNeeded) {
-          recoveryNeeded = false;
-          lossNoticeSent = false;
-          announce();
-        }
-        armStable();
-      } catch (error) {
-        if (closed || context.hub.closed || runGeneration !== generation) return;
-        if (isUnreachableError(error)) return;
-        requireRecovery();
-        schedule(runGeneration);
-      }
-    })().finally(() => {
-      if (reconciling === run) reconciling = undefined;
-    });
-    run = { generation: runGeneration, promise: running };
-    reconciling = run;
-    return running;
-  };
-  requestReconcile = (): void => {
-    if (closed || context.hub.closed || reconnect !== undefined) return;
-    reconcileAgain = true;
-    void beginReconcile();
-  };
-  const ensureStarted = (): Promise<void> => {
-    if (closed || context.hub.closed || !context.policy.liveEnabled || reconnect !== undefined) {
-      return Promise.resolve();
-    }
-    if (ready) return Promise.resolve();
-    if (reconciling?.generation === generation) return reconciling.promise;
-    reconcileAgain = true;
-    return beginReconcile();
-  };
-  const acquire = async (signal?: AbortSignal): Promise<TopologyLease> => {
-    requireActive(signal);
-    if (closed || context.hub.closed || !context.policy.liveEnabled) return NOOP_LEASE;
-    leases += 1;
-    let released = false;
-    const lease: TopologyLease = {
-      release: () => {
-        if (released) return;
-        released = true;
-        leases -= 1;
-        if (!closed && !retained && leases === 0) dropCoverage();
-      },
-      retain: () => {
-        if (!released) retained = true;
-      },
-    };
-    try {
-      await waitForAbort(ensureStarted(), signal);
-      requireActive(signal);
-      return lease;
-    } catch (error) {
-      lease.release();
-      throw error;
-    }
-  };
+  }
 
-  return {
-    acquire,
-    close: () => {
-      if (closed) return;
-      closed = true;
-      dropCoverage();
-    },
-    start: (signal?: AbortSignal) => {
-      if (signal === undefined) {
-        retained = true;
-        return ensureStarted();
-      }
-      return acquire(signal).then((lease) => {
-        lease.retain();
-        lease.release();
-      });
-    },
-  };
+  #requestReconcile(): void {
+    if (this.#closed || this.#context.hub.closed || this.#reconnect !== undefined) return;
+    this.#reconcileAgain = true;
+    void this.#beginReconcile();
+  }
+
+  #requireRecovery(): void {
+    this.#recoveryNeeded = true;
+    this.#ready = false;
+    this.#clearStable();
+  }
+
+  #schedule(runGeneration = this.#generation): void {
+    if (
+      this.#closed ||
+      this.#context.hub.closed ||
+      runGeneration !== this.#generation ||
+      this.#reconnect !== undefined
+    ) {
+      return;
+    }
+    this.#ready = false;
+    const wait = Math.min(RETRY_MAX_MS, RETRY_MIN_MS * 2 ** Math.min(this.#retry, 5));
+    this.#retry += 1;
+    this.#reconnect = setTimeout(() => {
+      if (runGeneration !== this.#generation) return;
+      this.#reconnect = undefined;
+      this.#requestReconcile();
+    }, wait);
+    this.#reconnect.unref?.();
+  }
+
+  #track(sessionId: SessionId, opened: LiveListener): void {
+    void opened.ended.then(() => {
+      if (this.#listeners.get(sessionId) !== opened) return;
+      this.#listeners.delete(sessionId);
+      if (this.#closed || this.#context.hub.closed) return;
+      this.#announceLoss();
+      this.#schedule();
+    });
+  }
+}
+
+/** Watch every session whose pane layouts contribute resource URIs. */
+export function watchTopology(context: ToolContext, announce: () => void): TopologyWatch {
+  return new TopologySupervisor(context, announce);
 }

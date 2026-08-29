@@ -136,7 +136,7 @@ function textResource(uri: string, text: string): ReadResourceResult {
   return { contents: [{ mimeType: TEXT_MIME, text, uri }] };
 }
 
-export function registerResources(mcp: McpServer, context: ToolContext): () => void {
+export function registerResources(mcp: McpServer, context: ToolContext): () => Promise<void> {
   // Reading a browsable list is what says somebody is browsing, and so the
   // point at which it is worth holding a connection to hear about changes
   // this server did not make.
@@ -340,16 +340,13 @@ export function registerResources(mcp: McpServer, context: ToolContext): () => v
     },
   );
 
-  registerResourceCatalog(mcp, context, topology.acquire);
+  registerResourceCatalog(mcp, context, (signal) => topology.acquire(signal));
   const disposeSubscriptions = registerResourceSubscriptions(mcp, context);
-  let disposed = false;
-  return (): void => {
-    if (disposed) return;
-    disposed = true;
-    try {
-      topology.close();
-    } finally {
-      disposeSubscriptions();
-    }
+  let disposePromise: Promise<void> | undefined;
+  return (): Promise<void> => {
+    disposePromise ??= Promise.all([topology.close(), disposeSubscriptions()]).then(
+      () => undefined,
+    );
+    return disposePromise;
   };
 }

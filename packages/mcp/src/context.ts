@@ -25,7 +25,7 @@ export interface ToolContext {
   readonly hub: LiveHub;
   identity(snapshot: ServerSnapshot): Promise<CallerIdentity>;
   readonly policy: Policy;
-  snapshot(): Promise<ServerSnapshot>;
+  snapshot(signal?: AbortSignal): Promise<ServerSnapshot>;
   readonly tmux: Server;
   /**
    * Say that this call may have changed the resource catalog's topology.
@@ -115,7 +115,7 @@ export function createContext(
     hub,
     identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, caller),
     policy,
-    snapshot: () => withRecovery(tmux, tmux.snapshot()),
+    snapshot: (signal) => withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal })),
     tmux,
     topologyChanged,
   };

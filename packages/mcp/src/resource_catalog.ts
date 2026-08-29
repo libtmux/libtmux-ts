@@ -9,7 +9,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerSnapshot } from "libtmux";
 
-import { waitForAbort } from "./abort.js";
 import { isUnreachableError, type ToolContext } from "./context.js";
 import { MAX_RESULT_BYTES } from "./policy.js";
 import type { TopologyLease } from "./resource_topology.js";
@@ -213,7 +212,7 @@ export function registerResourceCatalog(
       if (extra.signal.aborted) throw new Error("Resource listing cancelled");
       let snapshot: ServerSnapshot;
       try {
-        snapshot = await waitForAbort(context.snapshot(), extra.signal);
+        snapshot = await context.snapshot(extra.signal);
       } catch (error) {
         // An empty server can make the catalog snapshot fail even though the
         // watcher is exactly what will observe it becoming readable.
