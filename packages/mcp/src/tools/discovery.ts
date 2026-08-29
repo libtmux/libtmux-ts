@@ -10,6 +10,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { CallerIdentity } from "../caller.js";
+import type { ToolContext } from "../context.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
+import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
+import { boundText, ok, renderBoundedText } from "../results.js";
+import { paneIdSchema, windowIdSchema } from "../schemas.js";
 import {
   isFailure,
   paneEntities,
@@ -18,12 +23,7 @@ import {
   requireSession,
   windowEntities,
   windowPlacements,
-  type ToolContext,
-} from "../context.js";
-import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { boundText, ok, renderBoundedText } from "../results.js";
-import { paneIdSchema, windowIdSchema } from "../schemas.js";
+} from "../target_resolution.js";
 import {
   clientView,
   clientViewSchema,

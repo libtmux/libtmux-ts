@@ -11,8 +11,9 @@ import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { paneEntities, type ToolContext } from "./context.js";
+import type { ToolContext } from "./context.js";
 import { paneIdSchema } from "./schemas.js";
+import { paneEntities } from "./target_resolution.js";
 
 function userPrompt(text: string): {
   messages: { content: { text: string; type: "text" }; role: "user" }[];

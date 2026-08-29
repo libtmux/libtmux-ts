@@ -10,18 +10,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import {
-  isFailure,
-  requireLiveCursor,
-  requirePane,
-  type ReadablePane,
-  type ToolContext,
-} from "../context.js";
+import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema } from "../schemas.js";
+import { isFailure, requirePane, type ReadablePane } from "../target_resolution.js";
 import type { PaneTailEndReason } from "../live.js";
 
 type WaitOutcome =

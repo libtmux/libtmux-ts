@@ -9,15 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import {
-  isFailure,
-  paneEntities,
-  panePlacements,
-  requireLiveCursor,
-  requirePane,
-  requireSession,
-  type ToolContext,
-} from "../context.js";
+import { requireLiveCursor, type ToolContext } from "../context.js";
 import { boundedCaptureRange, captureGridBounded, captureRowLimit } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
@@ -32,6 +24,13 @@ import {
   tailLines,
 } from "../results.js";
 import { paneCursorSchema, paneIdSchema } from "../schemas.js";
+import {
+  isFailure,
+  paneEntities,
+  panePlacements,
+  requirePane,
+  requireSession,
+} from "../target_resolution.js";
 import { paneContentUri } from "../uris.js";
 import { panePlacementView, placementViewSchema, type PlacementView } from "../views.js";
 

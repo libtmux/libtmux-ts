@@ -14,6 +14,12 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult, type ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 
+import type { ToolContext } from "./context.js";
+import { captureGridBounded } from "./grid_capture.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "./policy.js";
+import { JSON_MIME, registerResourceCatalog, TEXT_MIME } from "./resource_catalog.js";
+import { registerResourceSubscriptions, watchTopology } from "./resource_watch.js";
+import { boundText, renderBoundedText } from "./results.js";
 import {
   isFailure,
   paneEntities,
@@ -23,13 +29,7 @@ import {
   requireWindow,
   windowEntities,
   windowPlacements,
-  type ToolContext,
-} from "./context.js";
-import { captureGridBounded } from "./grid_capture.js";
-import { effectiveResultLines, MAX_RESULT_BYTES } from "./policy.js";
-import { JSON_MIME, registerResourceCatalog, TEXT_MIME } from "./resource_catalog.js";
-import { registerResourceSubscriptions, watchTopology } from "./resource_watch.js";
-import { boundText, renderBoundedText } from "./results.js";
+} from "./target_resolution.js";
 import { CLIENTS_URI, PANES_URI, SESSIONS_URI, WINDOWS_URI } from "./uris.js";
 import { clientView, paneView, sessionView, windowView } from "./views.js";
 

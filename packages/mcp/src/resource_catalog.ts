@@ -9,9 +9,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerSnapshot } from "libtmux";
 
-import { paneEntities, windowEntities, type ToolContext } from "./context.js";
+import type { ToolContext } from "./context.js";
 import { MAX_RESULT_BYTES } from "./policy.js";
 import { tailBytes } from "./results.js";
+import { paneEntities, windowEntities } from "./target_resolution.js";
 import {
   paneContentUri,
   paneUri,

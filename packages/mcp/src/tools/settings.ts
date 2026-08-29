@@ -13,19 +13,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 
+import type { ToolContext } from "../context.js";
+import { activeFramedCommand } from "../command.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
+import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
+import { boundText, fail, ok, renderBoundedText, tailBytes, tailLines } from "../results.js";
+import { paneIdSchema } from "../schemas.js";
 import {
   isFailure,
   requirePane,
   requireSession,
   requireWindow,
   requireWritablePane,
-  type ToolContext,
-} from "../context.js";
-import { activeFramedCommand } from "../command.js";
-import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { boundText, fail, ok, renderBoundedText, tailBytes, tailLines } from "../results.js";
-import { paneIdSchema } from "../schemas.js";
+} from "../target_resolution.js";
 
 /**
  * The six scopes tmux keeps options in.

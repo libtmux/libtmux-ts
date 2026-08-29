@@ -9,11 +9,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
+import type { ToolContext } from "../context.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneIdSchema } from "../schemas.js";
+import { isFailure, requireWritablePane } from "../target_resolution.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
 /**

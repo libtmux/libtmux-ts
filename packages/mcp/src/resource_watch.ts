@@ -5,8 +5,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { TmuxEvent } from "libtmux";
 
-import { panePlacements, type ToolContext } from "./context.js";
+import type { ToolContext } from "./context.js";
 import type { LiveListener } from "./live.js";
+import { panePlacements } from "./target_resolution.js";
 import { PANES_URI } from "./uris.js";
 
 /** The shortest gap between two update notifications for one resource. */

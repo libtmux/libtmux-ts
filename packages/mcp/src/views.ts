@@ -12,10 +12,14 @@ import { z } from "zod";
 import { safeInteger, type Client, type Session, type Window } from "libtmux";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
-import { panePlacementIndex, windowPlacementIndex, type ReadablePane } from "./context.js";
 import { MAX_RESULT_BYTES } from "./policy.js";
 import { boundText, renderBoundedText, tailBytes, type BoundedText } from "./results.js";
 import { paneIdSchema, sessionIdSchema, windowIdSchema } from "./schemas.js";
+import {
+  panePlacementIndex,
+  windowPlacementIndex,
+  type ReadablePane,
+} from "./target_resolution.js";
 
 /** Leave room for the result envelope and tool-specific context around a view. */
 const PROJECTED_VIEW_BYTES = MAX_RESULT_BYTES - 16 * 1_024;

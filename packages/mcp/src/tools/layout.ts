@@ -13,6 +13,11 @@ import type { Pane, ServerSnapshot } from "libtmux";
 import { ResizeAdjustmentDirection } from "libtmux/constants";
 
 import type { CallerIdentity } from "../caller.js";
+import type { ToolContext } from "../context.js";
+import { effectiveResultLines } from "../policy.js";
+import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
+import { fail, ok } from "../results.js";
+import { paneIdSchema, windowIdSchema } from "../schemas.js";
 import {
   isFailure,
   panePlacements,
@@ -23,12 +28,7 @@ import {
   requireWindowPlacement,
   windowPlacements,
   type SourcePlacement,
-  type ToolContext,
-} from "../context.js";
-import { effectiveResultLines } from "../policy.js";
-import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
-import { fail, ok } from "../results.js";
-import { paneIdSchema, windowIdSchema } from "../schemas.js";
+} from "../target_resolution.js";
 import {
   paneLine,
   paneView,

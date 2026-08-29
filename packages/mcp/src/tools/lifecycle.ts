@@ -13,6 +13,10 @@ import type { ServerSnapshot } from "libtmux";
 import { PaneDirection } from "libtmux/constants";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "../caller.js";
+import type { ToolContext } from "../context.js";
+import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
+import { fail, ok } from "../results.js";
+import { paneIdSchema, sessionIdSchema, windowIdSchema } from "../schemas.js";
 import {
   isFailure,
   paneEntities,
@@ -22,11 +26,7 @@ import {
   requireWritablePane,
   requireWindow,
   windowPlacements,
-  type ToolContext,
-} from "../context.js";
-import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
-import { fail, ok } from "../results.js";
-import { paneIdSchema, sessionIdSchema, windowIdSchema } from "../schemas.js";
+} from "../target_resolution.js";
 import {
   directoryNote,
   paneLine,
