@@ -21,16 +21,18 @@ class FakeChild extends EventEmitter implements ControlChild {
   signalCode: "SIGKILL" | "SIGTERM" | null = null;
   readonly kills: ("SIGKILL" | "SIGTERM")[] = [];
   readonly pid: number;
+  readonly #closeOnKill: boolean;
 
-  constructor(pid: number) {
+  constructor(pid: number, closeOnKill = true) {
     super();
     this.pid = pid;
+    this.#closeOnKill = closeOnKill;
   }
 
   kill(signal: "SIGKILL" | "SIGTERM"): boolean {
     this.kills.push(signal);
     this.signalCode = signal;
-    this.emit("close", null);
+    if (this.#closeOnKill) this.emit("close", null);
     return true;
   }
 }
@@ -166,5 +168,25 @@ describe("ControlConnection child ownership", () => {
     });
     await events.close();
     await control.close();
+  });
+
+  test("makes concurrent close callers await child retirement", async () => {
+    const child = new FakeChild(105, false);
+    const control = new ControlConnection(connection(), {}, false, undefined, () => child);
+    attach(child);
+    await control.ready();
+
+    const first = control.close();
+    const second = control.close();
+    let secondSettled = false;
+    void second.then(() => {
+      secondSettled = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(secondSettled).toBe(false);
+
+    child.exitCode = 0;
+    child.emit("close", 0);
+    await Promise.all([first, second]);
   });
 });

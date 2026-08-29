@@ -227,6 +227,7 @@ export class ControlConnection implements CommandTransport {
    */
   #attachOutcome: { kind: "attached" } | { kind: "failed"; error: Error } | undefined;
   #closed = false;
+  #closePromise: Promise<void> | undefined;
   #onAbort: (() => void) | undefined;
   readonly #signal: AbortLike | undefined;
   readonly #stderr: Buffer[] = [];
@@ -1040,7 +1041,11 @@ export class ControlConnection implements CommandTransport {
     });
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    return (this.#closePromise ??= this.#close());
+  }
+
+  async #close(): Promise<void> {
     this.#releaseAbort();
     if (this.#closed) return;
     if (this.#reconnectTimer !== undefined) {
