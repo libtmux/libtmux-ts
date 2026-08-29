@@ -66,14 +66,69 @@ describe("event stream lifetime", () => {
     expect(closed).toBe(true);
   });
 
-  test("drops the oldest event and counts it when the consumer falls behind", () => {
+  test("drops the oldest event and counts it when the consumer falls behind", async () => {
     const sink = createEventStream(() => Promise.resolve(), 2);
 
-    sink.push({ data: "1", kind: "output", paneId: pane0 });
-    sink.push({ data: "2", kind: "output", paneId: pane0 });
-    sink.push({ data: "3", kind: "output", paneId: pane0 });
+    for (const data of ["1", "2", "3", "4", "5"]) {
+      sink.push({ data, kind: "output", paneId: pane0 });
+    }
+    sink.finish(undefined);
 
-    expect(sink.stream.dropped).toBe(1);
+    const seen: string[] = [];
+    for await (const event of sink.stream) if (event.kind === "output") seen.push(event.data);
+
+    // The bound keeps the newest in order; anything else is a ring that lost
+    // its head, which a count alone cannot tell apart.
+    expect(seen).toEqual(["4", "5"]);
+    expect(sink.stream.dropped).toBe(3);
+  });
+
+  test("keeps order when it grows after the head has moved", async () => {
+    // Capacity leaves room for a second growth step, and the drain before it
+    // moves the head off zero — the only arrangement where relaying the slots
+    // in place rather than from the head reorders them.
+    const sink = createEventStream(() => Promise.resolve(), 8);
+    const push = (data: string): void => {
+      sink.push({ data, kind: "output", paneId: pane0 });
+    };
+    for (const data of ["1", "2", "3", "4"]) push(data);
+    const iterator = sink.stream[Symbol.asyncIterator]();
+    expect(await iterator.next()).toMatchObject({ value: { data: "1" } });
+    for (const data of ["5", "6"]) push(data);
+    sink.finish(undefined);
+
+    const seen: string[] = [];
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- draining one at a time is the point.
+      const step = await iterator.next();
+      if (step.done === true) break;
+      if (step.value.kind === "output") seen.push(step.value.data);
+    }
+    expect(seen).toEqual(["2", "3", "4", "5", "6"]);
+    expect(sink.stream.dropped).toBe(0);
+  });
+
+  test("keeps order across the wrap after a partial drain", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 3);
+    const push = (data: string): void => {
+      sink.push({ data, kind: "output", paneId: pane0 });
+    };
+    push("1");
+    push("2");
+    const iterator = sink.stream[Symbol.asyncIterator]();
+    expect(await iterator.next()).toMatchObject({ value: { data: "1" } });
+    for (const data of ["3", "4", "5", "6"]) push(data);
+    sink.finish(undefined);
+
+    const seen: string[] = [];
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- draining one at a time is the point.
+      const step = await iterator.next();
+      if (step.done === true) break;
+      if (step.value.kind === "output") seen.push(step.value.data);
+    }
+    expect(seen).toEqual(["4", "5", "6"]);
+    expect(sink.stream.dropped).toBe(2);
   });
 
   test("refuses a second iteration rather than splitting the events", async () => {

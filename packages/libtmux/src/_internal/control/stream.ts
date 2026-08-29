@@ -5,6 +5,71 @@ import { timerDuration } from "../timing.js";
 export const DEFAULT_BUFFER_SIZE = 1024;
 
 /**
+ * A bounded FIFO that overwrites its oldest entry rather than growing.
+ *
+ * `Array.shift` costs a move of every remaining entry, and a subscriber that
+ * has fallen behind pays it on every notification — the case a bound exists
+ * for. Slots hold `undefined` rather than being deleted, which keeps the
+ * backing array packed, and are allocated as they are first needed so a
+ * short-lived subscriber holds what it saw rather than what it was allowed.
+ */
+class EventRing {
+  readonly #capacity: number;
+  #slots: (TmuxEvent | undefined)[] = [];
+  #head = 0;
+  #count = 0;
+  #dropped = 0;
+
+  constructor(capacity: number) {
+    this.#capacity = capacity;
+  }
+
+  get dropped(): number {
+    return this.#dropped;
+  }
+
+  get size(): number {
+    return this.#count;
+  }
+
+  push(event: TmuxEvent): void {
+    if (this.#count === this.#slots.length) {
+      if (this.#slots.length < this.#capacity) this.#grow();
+      else {
+        this.#slots[this.#head] = undefined;
+        this.#head = (this.#head + 1) % this.#capacity;
+        this.#count -= 1;
+        this.#dropped += 1;
+      }
+    }
+    this.#slots[(this.#head + this.#count) % this.#slots.length] = event;
+    this.#count += 1;
+  }
+
+  shift(): TmuxEvent | undefined {
+    if (this.#count === 0) return undefined;
+    const event = this.#slots[this.#head];
+    // Released rather than left addressable: a drained subscriber should not
+    // keep a pane's payload alive through a slot nothing will read again.
+    this.#slots[this.#head] = undefined;
+    this.#head = (this.#head + 1) % this.#slots.length;
+    this.#count -= 1;
+    return event;
+  }
+
+  /** Relay into a larger contiguous run, oldest first, and reset the head. */
+  #grow(): void {
+    const size = Math.min(this.#capacity, Math.max(4, this.#slots.length * 2));
+    const grown: (TmuxEvent | undefined)[] = Array.from({ length: size });
+    for (let index = 0; index < this.#count; index += 1) {
+      grown[index] = this.#slots[(this.#head + index) % this.#slots.length];
+    }
+    this.#slots = grown;
+    this.#head = 0;
+  }
+}
+
+/**
  * The consumer half of a control connection.
  *
  * The stream holds no process. It buffers what the connection routes to it and
@@ -12,8 +77,7 @@ export const DEFAULT_BUFFER_SIZE = 1024;
  * connection and closing either ends both.
  */
 class BufferedEventStream implements PublicEventStream {
-  readonly #buffer: TmuxEvent[] = [];
-  readonly #bufferSize: number;
+  readonly #buffer: EventRing;
   readonly #onClose: () => Promise<void>;
   readonly #onReady: () => Promise<void>;
   #closeOperation: Promise<void> | undefined;
@@ -26,13 +90,12 @@ class BufferedEventStream implements PublicEventStream {
    * which answers nothing about what was being waited for.
    */
   #ended: "closed" | "finished" | undefined;
-  #dropped = 0;
   #failure: Error | undefined;
   #iterated = false;
   #pending: (() => void) | undefined;
 
   constructor(bufferSize: number, onClose: () => Promise<void>, onReady: () => Promise<void>) {
-    this.#bufferSize = bufferSize;
+    this.#buffer = new EventRing(bufferSize);
     this.#onClose = onClose;
     this.#onReady = onReady;
   }
@@ -43,15 +106,11 @@ class BufferedEventStream implements PublicEventStream {
   }
 
   get dropped(): number {
-    return this.#dropped;
+    return this.#buffer.dropped;
   }
 
   push(event: TmuxEvent): void {
     if (this.#closed) return;
-    if (this.#buffer.length >= this.#bufferSize) {
-      this.#buffer.shift();
-      this.#dropped += 1;
-    }
     this.#buffer.push(event);
     this.#wake();
   }
@@ -88,7 +147,7 @@ class BufferedEventStream implements PublicEventStream {
     this.#iterated = true;
     try {
       for (;;) {
-        while (this.#buffer.length > 0) yield this.#buffer.shift()!;
+        while (this.#buffer.size > 0) yield this.#buffer.shift()!;
         if (this.#closed) {
           if (this.#failure !== undefined) throw this.#failure;
           return;
