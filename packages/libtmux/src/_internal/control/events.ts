@@ -117,6 +117,12 @@ function parsedId<Id extends string>(
   return isId(value) ? value : undefined;
 }
 
+function parseAge(value: string): number | undefined {
+  if (!/^\d+$/u.test(value)) return undefined;
+  const age = Number(value);
+  return Number.isSafeInteger(age) ? age : undefined;
+}
+
 /**
  * Read `<time> <command number> <flags>`; flags 1 means this client's command.
  *
@@ -193,9 +199,10 @@ export function parseControlLine(
       const markerEnd = ageEnd === -1 ? -1 : line.indexOf(0x20, ageEnd + 1);
       if (paneId === undefined || age === undefined || marker !== ":" || markerEnd === -1) break;
       const parsedPaneId = parsedId(isPaneId, paneId);
-      if (parsedPaneId === undefined) break;
+      const parsedAge = parseAge(age);
+      if (parsedPaneId === undefined || parsedAge === undefined) break;
       return {
-        age: Number(age),
+        age: parsedAge,
         data: decodeOutput(parsedPaneId, unescapeOutput(line.subarray(markerEnd + 1))),
         kind: "output",
         paneId: parsedPaneId,

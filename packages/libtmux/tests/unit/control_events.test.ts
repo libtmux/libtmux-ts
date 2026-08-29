@@ -194,6 +194,17 @@ describe("control-mode line parsing", () => {
       paneId: "%1",
     });
   });
+
+  test("does not publish malformed extended-output ages as numbers", () => {
+    for (const age of ["NaN", "Infinity", "-1", "+1", "1.5", "1e3", "9007199254740992"]) {
+      const parsed = event(`%extended-output %1 ${age} : late data`);
+      expect(parsed, age).toEqual({
+        args: ["%1", age, ":", "late", "data"],
+        kind: "unknown",
+        name: "extended-output",
+      });
+    }
+  });
 });
 
 describe("control-mode output unescaping", () => {
