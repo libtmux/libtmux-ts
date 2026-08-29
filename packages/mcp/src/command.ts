@@ -8,20 +8,25 @@ import type { ToolContext } from "./context.js";
 import { captureGridBounded } from "./grid_capture.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";
 
-export interface FramedResult {
+interface FramedResultBase {
   readonly effectiveTimeoutMs: number;
-  readonly exitStatus: number | null;
   /** Another writer was seen in this command's own output. */
   readonly foreignOutputSuspected: boolean;
   /** Output that fell out of the pane's buffer before this read reached it. */
   readonly missedBytes: number;
-  readonly outcome: "completed" | "pane_died" | "timed_out";
   readonly output: string;
   /** False when the start marker was gone and the returned output starts partway through. */
   readonly outputComplete: boolean;
   /** Settles when the wrapper ends or the pane can no longer run it. */
   readonly settled: Promise<void>;
 }
+
+export type FramedResult =
+  | (FramedResultBase & { readonly exitStatus: number; readonly outcome: "completed" })
+  | (FramedResultBase & {
+      readonly exitStatus: null;
+      readonly outcome: "pane_died" | "timed_out";
+    });
 
 export interface FramedCommandReservation {
   release(): void;
@@ -79,6 +84,7 @@ async function fallbackStream(pane: Pane): Promise<string> {
     pane.height !== null && Number.isSafeInteger(pane.height) && pane.height > 0 ? pane.height : 1;
   return captureGridBounded(pane, {
     byteLimit: MAX_RESULT_BYTES,
+    joinWrapped: true,
     lineLimit: Math.min(Number.MAX_SAFE_INTEGER, FALLBACK_SCROLLBACK + height),
     start: -FALLBACK_SCROLLBACK,
   })
@@ -118,7 +124,7 @@ export function frame(command: string, ready: string, suppressHistory: boolean):
     `case "\${${options}}" in *e*) set -e;; esac; ` +
     `case "\${${options}}" in *x*) set -x;; esac; ` +
     `unset ${options}; eval "\${${payload}}" ); ` +
-    `printf '%s %s\\n' "\${${marker}}_E" "$?"; }; ${scope} )`
+    `printf '%s %s %s\\n' "\${${marker}}_E" "$?" "\${${marker}}_D"; }; ${scope} )`
   );
 }
 
@@ -193,9 +199,10 @@ export function withoutForeignFraming(
 /**
  * Pull the command's own output out of the framed stream.
  *
- * The end marker says the wrapper finished and carries its status. Its random
- * value is unavailable through the command's inherited shell state; this is
- * framing, not a sandbox against code that can inspect the tmux server itself.
+ * The end marker carries the status; its matching done marker proves the
+ * status arrived whole. The random value is unavailable through the command's
+ * inherited shell state; this is framing, not a sandbox against code that can
+ * inspect the tmux server itself.
  * The start marker is only needed to locate where the body begins — and it is
  * printed first, so it is the first thing lost, whether to the tail's byte
  * limit or to a fallback capture that samples the last few hundred lines.
@@ -208,30 +215,46 @@ function slice(
   id: string,
 ):
   | {
-      exitStatus: number | null;
+      exitStatus: number;
       foreignOutputSuspected: boolean;
       output: string;
       outputComplete: boolean;
     }
   | undefined {
   const startAt = stream.indexOf(`${id}_S`);
-  const endAt = stream.indexOf(`${id}_E`, startAt < 0 ? 0 : startAt);
-  if (endAt < 0) return undefined;
+  const endPrefix = `${id}_E `;
+  const endSuffix = ` ${id}_D`;
+  let endAt = stream.indexOf(endPrefix, startAt < 0 ? 0 : startAt);
+  let exitStatus: number | undefined;
+  while (endAt >= 0) {
+    const suffixAt = stream.indexOf(endSuffix, endAt + endPrefix.length);
+    if (suffixAt < 0) return undefined;
+    const rawStatus = stream.slice(endAt + endPrefix.length, suffixAt);
+    const parsed = Number(rawStatus);
+    const afterSuffix = stream[suffixAt + endSuffix.length];
+    const completeSuffix =
+      afterSuffix === undefined ||
+      afterSuffix === "\n" ||
+      (afterSuffix === "\r" && stream[suffixAt + endSuffix.length + 1] === "\n");
+    if (/^(?:0|[1-9][0-9]{0,2})$/u.test(rawStatus) && parsed <= 255 && completeSuffix) {
+      exitStatus = parsed;
+      break;
+    }
+    endAt = stream.indexOf(endPrefix, endAt + endPrefix.length);
+  }
+  if (endAt < 0 || exitStatus === undefined) return undefined;
 
   // With the start marker gone, the retained buffer opens partway through the
   // command's own output, so that is where the body begins.
   const afterStart = startAt < 0 ? 0 : stream.indexOf("\n", startAt) + 1;
   const body =
     startAt >= 0 && (afterStart === 0 || afterStart > endAt) ? "" : stream.slice(afterStart, endAt);
-  const statusLine = stream.slice(endAt).split("\n", 1)[0] ?? "";
-  const parsed = Number.parseInt(statusLine.slice(`${id}_E`.length).trim(), 10);
 
-  // The end marker is printed on its own line, so the body ends with the
-  // newline that preceded it; trailing CR comes from the pty, not the command.
+  // Remove one line break before the marker and normalize the pty's CRLF.
   const cleaned = withoutForeignFraming(body.replace(/\r?\n?$/, "").replaceAll("\r\n", "\n"), id);
 
   return {
-    exitStatus: Number.isFinite(parsed) ? parsed : null,
+    exitStatus,
     foreignOutputSuspected: cleaned.foreignOutputSuspected,
     output: cleaned.text,
     outputComplete: startAt >= 0,

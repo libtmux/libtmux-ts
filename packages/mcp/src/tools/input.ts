@@ -278,7 +278,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
 
       const headline =
         result.outcome === "completed"
-          ? `exit ${String(result.exitStatus ?? -1)}`
+          ? `exit ${String(result.exitStatus)}`
           : result.outcome === "pane_died"
             ? "the pane exited while the command ran"
             : // Not "call again": a second call mints a fresh marker and sends a

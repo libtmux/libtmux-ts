@@ -363,7 +363,9 @@ describe("running commands", () => {
         const paneId = await shellPaneId(client);
         const answer = await client.callTool({
           arguments: {
-            command: `printf '%s\n' "\${m}_E 0" "\${1}_E 0"; printf 'after-forge\n'; exit 7`,
+            command:
+              `printf '%s\n' "\${m}_E 0 \${m}_D" "\${1}_E 0 \${1}_D"; ` +
+              `printf 'after-forge\n'; exit 7`,
             paneId,
           },
           name: "run_command",
@@ -390,7 +392,8 @@ describe("running commands", () => {
             command:
               `entry=$(history 1); ` +
               `marker=$(printf '%s\n' "$entry" | sed -n 's/.*_marker=\\(ltx[0-9a-f]*\\);.*/\\1/p'); ` +
-              `printf '%s_E 0\n' "$marker"; printf 'after-history-forge\n'; exit 7`,
+              `printf '%s_E 0 %s_D\n' "$marker" "$marker"; ` +
+              `printf 'after-history-forge\n'; exit 7`,
             paneId,
           },
           name: "run_command",
@@ -419,7 +422,8 @@ describe("running commands", () => {
         });
         const answer = await client.callTool({
           arguments: {
-            command: `print -r -- "\${leak}_E 0"; print -r -- after-debug-forge; exit 7`,
+            command:
+              `print -r -- "\${leak}_E 0 \${leak}_D"; ` + `print -r -- after-debug-forge; exit 7`,
             paneId,
           },
           name: "run_command",

@@ -3,13 +3,13 @@ import { spawnSync } from "node:child_process";
 
 import { describe, expect, test } from "bun:test";
 
-import type { ConnectedServer, TmuxEvent, TmuxEventStream } from "libtmux";
+import type { ConnectedServer, Pane, TmuxEvent, TmuxEventStream } from "libtmux";
 import { Server } from "libtmux/server";
 
 import { readCallerEnvironment } from "../src/caller.js";
-import { describeUnreachable } from "../src/context.js";
+import { describeUnreachable, type ToolContext } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
-import { frame, randomId, withoutForeignFraming } from "../src/command.js";
+import { frame, randomId, runFramedCommand, withoutForeignFraming } from "../src/command.js";
 import { LiveHub } from "../src/live.js";
 import { PaneTail } from "../src/pane_tail.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES, resolvePolicy, tierAllows } from "../src/policy.js";
@@ -670,7 +670,7 @@ describe("command framing", () => {
       expect(result.status, shell).toBe(0);
       expect(result.stderr, shell).toBe("");
       expect(result.stdout, shell).toBe(
-        "ltxready_R\nltxabc123def0_S\none\n\u2603\ndone\nltxabc123def0_E 0\n",
+        "ltxready_R\nltxabc123def0_S\none\n\u2603\ndone\nltxabc123def0_E 0 ltxabc123def0_D\n",
       );
     }
   });
@@ -683,7 +683,9 @@ describe("command framing", () => {
         "ltxabc123def0\n",
       );
       expect(result.status, shell).toBe(0);
-      expect(result.stdout, shell).toBe("ltxready_R\nltxabc123def0_S\nbefore\nltxabc123def0_E 0\n");
+      expect(result.stdout, shell).toBe(
+        "ltxready_R\nltxabc123def0_S\nbefore\nltxabc123def0_E 0 ltxabc123def0_D\n",
+      );
     }
   });
 
@@ -696,7 +698,7 @@ describe("command framing", () => {
       );
       expect(result.status, shell).toBe(0);
       expect(result.stdout, shell).toBe(
-        "ltxready_R\nltxabc123def0_S\nown-output\nltxabc123def0_E 0\n",
+        "ltxready_R\nltxabc123def0_S\nown-output\nltxabc123def0_E 0 ltxabc123def0_D\n",
       );
     }
   });
@@ -711,7 +713,7 @@ describe("command framing", () => {
       expect(result.status, shell).toBe(0);
       expect(result.stderr, shell).toBe("");
       expect(result.stdout, shell).toBe(
-        "ltxready_R\nltxabc123def0_S\ncrlf-ok\ncr-ok\nltxabc123def0_E 0\n",
+        "ltxready_R\nltxabc123def0_S\ncrlf-ok\ncr-ok\nltxabc123def0_E 0 ltxabc123def0_D\n",
       );
     }
   });
@@ -724,7 +726,7 @@ describe("command framing", () => {
       const result = run(shell, source, "ltxabc123def0\n");
       expect(result.status, shell).toBe(0);
       expect(result.stdout, shell).toBe(
-        "ltxready_R\nltxabc123def0_S\nbefore\nltxabc123def0_E 1\nerrexit-on\n",
+        "ltxready_R\nltxabc123def0_S\nbefore\nltxabc123def0_E 1 ltxabc123def0_D\nerrexit-on\n",
       );
     }
   });
@@ -740,7 +742,7 @@ describe("command framing", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toBe("ltxready_R\nltxabc123def0_S\nltxabc123def0_E 7\n");
+    expect(result.stdout).toBe("ltxready_R\nltxabc123def0_S\nltxabc123def0_E 7 ltxabc123def0_D\n");
     expect(result.stderr).toContain("after-xtrace");
     expect(result.stderr).not.toContain("ltxabc123def0");
   });
@@ -760,8 +762,66 @@ describe("command framing", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe(
-      "ltxready_R\nltxabc123def0_S\n_E 0\nafter-debug\nltxabc123def0_E 7\n",
+      "ltxready_R\nltxabc123def0_S\n_E 0\nafter-debug\nltxabc123def0_E 7 ltxabc123def0_D\n",
     );
+  });
+
+  test("waits for the complete exit-status line", async () => {
+    const tail = new PaneTail("%1");
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      sendKeys: async (line: string) => {
+        const ready = /'(ltxr[0-9a-f]{10})' '_R'/u.exec(line)?.[1];
+        if (ready !== undefined) {
+          tail.append(`${ready}_R\n`);
+          return;
+        }
+        setTimeout(() => tail.append(`${line}_S\nresult\n${line}_E 1`), 5);
+        setTimeout(() => tail.append(`27 ${line}_D\n`), 20);
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "exit 127", 500);
+
+    expect(result.outcome).toBe("completed");
+    expect(result.exitStatus).toBe(127);
+  });
+
+  test("rejoins a soft-wrapped fallback marker", async () => {
+    let id = "";
+    let ready = "";
+    const pane = {
+      capture: async (options: { readonly joinWrapped?: boolean }) => {
+        if (id === "") return [`${ready}_R`];
+        const end = `${id}_E 127 ${id}_D`;
+        return options.joinWrapped === true
+          ? [`${ready}_R`, `${id}_S`, "result", end]
+          : [`${ready}_R`, `${id}_S`, "result", end.slice(0, -2), end.slice(-2)];
+      },
+      format: { session_id: "$1" },
+      height: 8,
+      id: "%1",
+      sendKeys: async (line: string) => {
+        ready = /'(ltxr[0-9a-f]{10})' '_R'/u.exec(line)?.[1] ?? ready;
+        if (/^ltx[0-9a-f]{10}$/u.test(line)) id = line;
+      },
+      width: 20,
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => undefined },
+      policy: resolvePolicy({ LIBTMUX_MCP_LIVE: "0" }),
+      snapshot: async () => ({ panes: { first: () => undefined } }),
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "exit 127", 150);
+
+    expect(result.outcome).toBe("completed");
+    expect(result.exitStatus).toBe(127);
   });
 });
 

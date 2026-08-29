@@ -315,7 +315,7 @@ describe("bounded pane reads", () => {
           return;
         }
         if (!/^ltx[0-9a-f]{10}$/u.test(keys)) throw new Error("No command marker");
-        tail.append(`${keys}_S\n${"x".repeat(MAX_RESULT_BYTES + 1_000)}\n${keys}_E 0\n`);
+        tail.append(`${keys}_S\n${"x".repeat(MAX_RESULT_BYTES + 1_000)}\n${keys}_E 0 ${keys}_D\n`);
       },
     });
     const context = fakeContext([pane], {
