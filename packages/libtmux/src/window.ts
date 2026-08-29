@@ -77,11 +77,11 @@ export interface WindowPlans {
  * a smaller request rather than a different one.
  */
 function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOptions {
-  return { ...options, session: options.session ?? window.sessionId };
+  return { ...options, session: options.session ?? window.format.session_id };
 }
 
 function placementTarget(window: Window): string {
-  return `${window.sessionId}:${window.id}`;
+  return `${window.format.session_id}:${window.id}`;
 }
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
@@ -120,7 +120,7 @@ export class Window {
    * ```
    */
   get session(): Session | undefined {
-    return sessionOf(originGraphForHandle(this), this.sessionId);
+    return sessionOf(originGraphForHandle(this), this.format.session_id);
   }
 
   /**

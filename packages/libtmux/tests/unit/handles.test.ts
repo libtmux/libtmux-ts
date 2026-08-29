@@ -793,7 +793,7 @@ describe("authenticated handle materialization", () => {
     assertScalarSnapshot(client, rows.client);
     expect(rows.client.config_files).toBe("");
     expect(client.configFiles).toBe("");
-    expect(client.paneZ).toBeNull();
+    expect(client.format.pane_z).toBeNull();
   });
 
   test("defines child snapshot accessors on each concrete prototype", () => {

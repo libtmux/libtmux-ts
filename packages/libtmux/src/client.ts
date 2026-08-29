@@ -38,7 +38,7 @@ export class Client {
    * ```
    */
   get session(): Session | undefined {
-    return sessionOf(originGraphForHandle(this), this.sessionId);
+    return sessionOf(originGraphForHandle(this), this.format.session_id);
   }
 
   /**
@@ -60,7 +60,7 @@ export class Client {
    * ```
    */
   get pane(): Pane | undefined {
-    return paneById(originGraphForHandle(this), this.paneId);
+    return paneById(originGraphForHandle(this), this.format.pane_id);
   }
 
   /**

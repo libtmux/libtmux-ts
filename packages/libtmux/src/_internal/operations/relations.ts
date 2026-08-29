@@ -36,12 +36,14 @@ export function windowsOfSession(
   sessionId: string | null,
 ): Selection<Window> {
   return settledSelectionOfModel(graph, "window").filter(
-    (window) => window.sessionId === sessionId,
+    (window) => window.format.session_id === sessionId,
   );
 }
 
 export function panesOfSession(graph: NormalizedGraph, sessionId: string | null): Selection<Pane> {
-  return settledSelectionOfModel(graph, "pane").filter((pane) => pane.sessionId === sessionId);
+  return settledSelectionOfModel(graph, "pane").filter(
+    (pane) => pane.format.session_id === sessionId,
+  );
 }
 
 /** Panes of one window placement, so a linked window keeps its two sets apart. */
@@ -79,7 +81,7 @@ export function linkedSessionsOfWindow(
     settledSelectionOfModel(graph, "window")
       .filter((window) => window.id === windowId)
       .toArray()
-      .map(({ sessionId }) => sessionId),
+      .map((window) => window.format.session_id),
   );
   return settledSelectionOfModel(graph, "session").filter((session) => sessionIds.has(session.id));
 }

@@ -160,6 +160,24 @@ type _PaneRawPid = Expect<Equal<Pane["format"]["pane_pid"], string | null>>;
 type _PaneActive = Expect<Equal<Pane["active"], boolean | null>>;
 type _SessionCreated = Expect<Equal<Session["created"], Date | null>>;
 
+declare const typedSession: Session;
+declare const typedPane: Pane;
+declare const typedWindow: Window;
+declare const typedClient: Client;
+// The scalar aliases are model-scoped; the complete tmux row remains the
+// deliberate escape hatch for a caller that really needs a cross-model token.
+void typedSession.name;
+void typedSession.format.pane_pid;
+// @ts-expect-error pane fields are not session handle properties.
+void typedSession.panePid;
+// @ts-expect-error session fields are not pane handle properties.
+void typedPane.sessionName;
+// @ts-expect-error client fields are not window handle properties.
+void typedWindow.clientPid;
+// @ts-expect-error pane fields are not client handle properties.
+void typedClient.paneZ;
+void typedPane.panePid;
+
 type _ServerEquals = Expect<Equal<Server["equals"], (other: unknown) => boolean>>;
 type _ClientEquals = Expect<Equal<Client["equals"], (other: unknown) => boolean>>;
 type _PaneEquals = Expect<Equal<Pane["equals"], (other: unknown) => boolean>>;

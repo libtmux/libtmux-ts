@@ -101,7 +101,7 @@ export class Pane {
    * ```
    */
   get session(): Session | undefined {
-    return sessionOf(originGraphForHandle(this), this.sessionId);
+    return sessionOf(originGraphForHandle(this), this.format.session_id);
   }
 
   /**
@@ -357,7 +357,7 @@ export class Pane {
    * ```
    */
   breakOut(windowName?: string): Promise<void> {
-    return breakPane(runtimeForHandle(this), this.id, windowName, this.sessionId);
+    return breakPane(runtimeForHandle(this), this.id, windowName, this.format.session_id);
   }
 
   /**

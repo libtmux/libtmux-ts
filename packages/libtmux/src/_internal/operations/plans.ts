@@ -132,7 +132,9 @@ export function planNewWindow(
       const identity = requireIdentity(lines, "new-window");
       return found(
         snapshot.windows
-          .filter((window: Window) => window.id === identity && window.sessionId === sessionId)
+          .filter(
+            (window: Window) => window.id === identity && window.format.session_id === sessionId,
+          )
           .first(),
         "new-window",
         identity,
