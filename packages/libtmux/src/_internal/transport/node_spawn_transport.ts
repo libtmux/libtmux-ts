@@ -12,7 +12,7 @@ import {
   subcommandOf,
 } from "./group.js";
 import { snapshotCommandRequest, TmuxTransportError } from "./types.js";
-import { guardRequest, refusedByGuard } from "./daemon_guard.js";
+import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestarted } from "../../exc.js";
 
 export interface NodeSpawnTransportOptions {
@@ -76,7 +76,8 @@ export class NodeSpawnTransport {
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
-    const submitted = snapshotCommandRequest(guardRequest(request));
+    const guarded = guardRequest(snapshotCommandRequest(request));
+    const submitted = guarded.request;
     if (isAborted(submitted.signal)) {
       throw new TmuxTransportError("command cancelled before spawn", {
         delivery: "not_started",
@@ -300,7 +301,7 @@ export class NodeSpawnTransport {
     }
 
     const stderr = stderrState.status === "fulfilled" ? stderrState.value : new Uint8Array();
-    if (request.daemonGuard !== undefined && refusedByGuard(terminal.code, stderr)) {
+    if (guarded.refusedBy(terminal.code, stderr)) {
       throw new TmuxServerRestarted(
         "tmux refused the command: the daemon on this socket is not the one these ids came from",
         { subcommand: subcommandOf(request.args)[0] ?? "tmux" },

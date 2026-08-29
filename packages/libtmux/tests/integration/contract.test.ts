@@ -146,7 +146,7 @@ describe("handle identity", () => {
   // Owns its socket rather than borrowing the fixture's: replacing the daemon
   // at a fixture's path is exactly what that harness refuses to reap, and it is
   // right to — the socket it recorded is not the socket it would be deleting.
-  test("a restarted daemon invalidates the handles the old one handed out", async () => {
+  test("a restarted daemon invalidates old handles despite refusal-marker collisions", async () => {
     const directory = await makeTestDirectory("ltx-restart-");
     const socketPath = join(directory, "s");
     assertOwnedSocketPath(socketPath);
@@ -154,12 +154,23 @@ describe("handle identity", () => {
     try {
       await server.newSession({ name: "before" });
       const stale = (await server.snapshot()).panes.one();
+      expect(await stale.cmd("display-message", ["-p", "#{pane_id}"])).toEqual([stale.id]);
       // tmux reissues ids from the start, so this pane's `%n` belongs to a
       // different pane in a moment.
       await server.cmd("kill-server").catch(() => undefined);
       // Raw, so nothing materializes a handle: `newSession` would acquire, and
       // an acquisition is exactly what this test must not have.
-      await server.cmd("new-session", ["-d", "-s", "successor"], { target: null });
+      await server.cmd("new-session", ["-d", "-s", "libtmux-daemon-restarted"], {
+        target: null,
+      });
+      await server.cmd(
+        "set-option",
+        ["-s", "command-alias[100]", "libtmux-daemon-restarted=has-session"],
+        { target: null },
+      );
+      await server.cmd("set-option", ["-s", "command-alias[101]", "list-windows=has-session"], {
+        target: null,
+      });
 
       // Nothing has read the server since the restart, so nothing local knows
       // it happened. This is the case that matters: an acquisition in between
@@ -173,10 +184,12 @@ describe("handle identity", () => {
         TmuxServerRestarted,
       );
 
+      await server.cmd("set-option", ["-s", "-u", "command-alias[101]"], { target: null });
+
       // Refused, not applied: the successor's `%0` is still there.
       const successor = await server.snapshot();
       expect(successor.panes.count()).toBe(1);
-      expect(successor.sessions.one().name).toBe("successor");
+      expect(successor.sessions.one().name).toBe("libtmux-daemon-restarted");
 
       // That refusal moved the epoch on, so every other handle from the old
       // daemon now fails here rather than each learning it from tmux in turn —

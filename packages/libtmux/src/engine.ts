@@ -25,10 +25,7 @@
  * attaching to whichever local daemon answers.
  */
 
-import {
-  guardRequest as guardRequestInternal,
-  refusedByGuard as refusedByGuardInternal,
-} from "./_internal/transport/daemon_guard.js";
+import { guardRequest as guardRequestInternal } from "./_internal/transport/daemon_guard.js";
 import {
   asSingleInvocation as asSingleInvocationInternal,
   MAX_PACKED_ARGV_BYTES as MAX_PACKED_ARGV_BYTES_INTERNAL,
@@ -52,10 +49,10 @@ import type { AbortLike } from "./types.js";
  *
  * The refusal has to be visible. tmux answers a false condition with no output
  * and status 0, which is indistinguishable from a command that printed nothing,
- * so the else branch is a read-only command with a target that cannot exist: it
- * fails, the invocation exits nonzero, and the message names the reason. The
- * guarded command keeps its own stdout and stderr either way, so nothing that
- * reads a result has to know this happened.
+ * so the else branch is a freshly named unknown command. A 128-bit suffix makes
+ * matching a pre-existing command alias a guess, and the exact diagnostic
+ * distinguishes the refusal from the guarded command failing. The guarded
+ * command keeps its own stdout and stderr either way.
  */
 export type DaemonGuard = {
   readonly pid: string;
@@ -95,6 +92,12 @@ export type TmuxCommandRequest = {
    */
   readonly stdin?: Uint8Array;
   readonly timeoutMs?: number;
+};
+
+/** A daemon-guarded request paired with its exact refusal detector. */
+export type GuardedTmuxRequest = {
+  readonly request: TmuxCommandRequest;
+  readonly refusedBy: (returncode: number, stderr: Uint8Array) => boolean;
 };
 
 export type TmuxCommandResult = {
@@ -186,16 +189,12 @@ export const asSingleInvocation: (requests: readonly { readonly args: readonly s
 } = asSingleInvocationInternal;
 
 /**
- * Rebuild a request so tmux itself refuses it on the wrong daemon.
+ * Prepare a request so tmux itself refuses it on the wrong daemon.
  *
- * Returned unchanged when there is nothing to guard: no guard was asked for,
- * or the command carries stdin — `load-buffer -` reads the client's stdin and
- * an `if-shell` branch is a command tmux runs for itself, and no command that
- * takes stdin addresses an object by id anyway.
+ * The returned detector is bound to the random command in the transformed
+ * request. Keep the pair together until the command completes. A guarded
+ * request with stdin is rejected because an `if-shell` branch cannot read the
+ * spawning client's stdin.
  */
-export const guardRequest: (request: TmuxCommandRequest) => TmuxCommandRequest =
+export const guardRequest: (request: TmuxCommandRequest) => GuardedTmuxRequest =
   guardRequestInternal;
-
-/** Whether a failed result is the guard refusing rather than the command failing. */
-export const refusedByGuard: (returncode: number, stderr: Uint8Array) => boolean =
-  refusedByGuardInternal;

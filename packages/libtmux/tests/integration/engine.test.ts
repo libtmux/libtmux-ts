@@ -11,12 +11,7 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { Server } from "../../src/server.js";
-import {
-  asSingleInvocation,
-  guardRequest,
-  MAX_PACKED_ARGV_BYTES,
-  refusedByGuard,
-} from "../../src/engine.js";
+import { asSingleInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
 import { TmuxServerRestarted } from "../../src/exc.js";
 import type {
   DaemonGuard,
@@ -73,12 +68,12 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
       // from the command itself having failed.
       const guarded = guardRequest(request);
       const result = await run(
-        guarded.executable,
-        guarded.args,
-        guarded.environment,
-        guarded.stdin,
+        guarded.request.executable,
+        guarded.request.args,
+        guarded.request.environment,
+        guarded.request.stdin,
       );
-      if (request.daemonGuard !== undefined && refusedByGuard(result.returncode, result.stderr)) {
+      if (guarded.refusedBy(result.returncode, result.stderr)) {
         throw new TmuxServerRestarted("the daemon this handle was read from is gone");
       }
       return result;
@@ -150,7 +145,7 @@ describe("a supplied engine", () => {
 
       // An engine sees the guard it is obliged to honour, and honouring it is
       // one published call rather than a reimplementation of `if-shell -F`,
-      // the impossible else branch, and the stderr that tells a refusal from a
+      // the unique refusal command, and the stderr that tells a refusal from a
       // failure. What reaches tmux is what the built-in engine would have sent.
       const guards: (DaemonGuard | undefined)[] = [];
       const sent: (readonly string[])[] = [];
@@ -158,7 +153,7 @@ describe("a supplied engine", () => {
         engine: {
           execute: (request) => {
             guards.push(request.daemonGuard);
-            sent.push(guardRequest(request).args);
+            sent.push(guardRequest(request).request.args);
             return shellEngine(() => undefined).execute(request);
           },
           executeGroup: (requests) => shellEngine(() => undefined).executeGroup(requests),
