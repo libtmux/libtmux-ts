@@ -231,8 +231,27 @@ describe("ControlConnection child ownership", () => {
     );
   });
 
+  test("bounds one oversized stderr chunk to its diagnostic tail", async () => {
+    const child = new FakeChild(108);
+    const control = new ControlConnection(connection(), {}, false, undefined, () => child);
+    const ready = control.ready();
+    child.stderr.write(Buffer.concat([Buffer.alloc(256 * 1_024, "x"), Buffer.from("tail-marker")]));
+    child.emit("close", 1);
+
+    try {
+      await ready;
+      throw new Error("expected control attachment to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) throw error;
+      expect(error.message.length).toBeLessThanOrEqual(64 * 1_024 + 64);
+      expect(error.message).toEndWith("tail-marker");
+    }
+    await control.close();
+  });
+
   test("makes concurrent close callers await child retirement", async () => {
-    const child = new FakeChild(108, false);
+    const child = new FakeChild(109, false);
     const control = new ControlConnection(connection(), {}, false, undefined, () => child);
     attach(child);
     await control.ready();
@@ -266,7 +285,7 @@ describe("ControlConnection child ownership", () => {
         () =>
           new ControlConnection(connection(), { reconnect }, false, undefined, () => {
             spawns += 1;
-            return new FakeChild(109);
+            return new FakeChild(110);
           }),
       ).toThrow(field);
       expect(spawns).toBe(0);

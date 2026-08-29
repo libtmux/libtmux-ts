@@ -454,8 +454,17 @@ export class ControlConnection implements CommandTransport {
         // rather than let a chatty tmux hold the heap.
         this.#stderr.push(chunk);
         this.#stderrBytes += chunk.length;
-        while (this.#stderrBytes > MAX_STDERR_BYTES && this.#stderr.length > 1) {
-          this.#stderrBytes -= this.#stderr.shift()?.length ?? 0;
+        while (this.#stderrBytes > MAX_STDERR_BYTES) {
+          const first = this.#stderr[0];
+          if (first === undefined) break;
+          const excess = this.#stderrBytes - MAX_STDERR_BYTES;
+          if (first.length <= excess) {
+            this.#stderr.shift();
+            this.#stderrBytes -= first.length;
+          } else {
+            this.#stderr[0] = Buffer.from(first.subarray(excess));
+            this.#stderrBytes -= excess;
+          }
         }
       },
       stdinDrain: () => this.#flushWrites(),
