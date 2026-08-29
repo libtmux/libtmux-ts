@@ -1,3 +1,5 @@
+import { getEventListeners } from "node:events";
+
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "libtmux/server";
@@ -66,6 +68,31 @@ describe("pane tail", () => {
     expect(seen.text).toBe("89abcdef");
   });
 
+  test("counts cursors and retention in UTF-8 bytes", () => {
+    const tail = new PaneTail("%1", 7);
+    tail.append("你🙂ab");
+
+    expect(tail.cursor).toBe(9);
+    expect(tail.read(0)).toEqual({ cursor: 9, missedBytes: 3, text: "🙂ab" });
+  });
+
+  test("round-trips a byte cursor across multibyte output", () => {
+    const tail = new PaneTail("%1");
+    tail.append("你");
+    const mark = tail.cursor;
+    tail.append("🙂");
+
+    expect(mark).toBe(3);
+    expect(tail.read(mark).text).toBe("🙂");
+  });
+
+  test("does not decode from the middle of a multibyte character", () => {
+    const tail = new PaneTail("%1");
+    tail.append("🙂x");
+
+    expect(tail.read(1)).toEqual({ cursor: 5, missedBytes: 3, text: "x" });
+  });
+
   test("wakes a waiter when output arrives", async () => {
     const tail = new PaneTail("%1");
     const waiting = tail.changed(5_000);
@@ -91,6 +118,23 @@ describe("pane tail", () => {
     const started = Date.now();
     await tail.changed(30);
     expect(Date.now() - started).toBeGreaterThanOrEqual(25);
+  });
+
+  test("removes an abort listener when a wait times out", async () => {
+    const tail = new PaneTail("%1");
+    const controller = new AbortController();
+
+    expect(await tail.changed(5, controller.signal)).toBe(false);
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+
+  test("settles immediately when its caller is already cancelled", async () => {
+    const tail = new PaneTail("%1");
+    const controller = new AbortController();
+    controller.abort();
+
+    expect(await tail.changed(30, controller.signal)).toBe(true);
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
   });
 });
 

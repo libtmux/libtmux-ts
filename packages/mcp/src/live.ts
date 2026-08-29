@@ -24,9 +24,9 @@ const LINGER_MS = 30_000;
 const DEFAULT_TAIL_BYTES = 256 * 1024;
 
 /**
- * A pane's output as readable text with an absolute cursor.
+ * A pane's output as readable text with an absolute UTF-8 byte cursor.
  *
- * The cursor counts characters seen since the tail opened, so a reader that
+ * The cursor counts bytes seen since the tail opened, so a reader that
  * says where it got to is told exactly what arrived after that and nothing
  * else. Anchoring on a live stream rather than on a grid line is what makes
  * this survive `history-limit` trimming, which invalidates a grid anchor
@@ -37,18 +37,23 @@ const DEFAULT_TAIL_BYTES = 256 * 1024;
  * keeps the filter's state in step with the stream.
  */
 export class PaneTail {
-  #buffer = "";
+  #chunks: Buffer[] = [];
+  #chunkHead = 0;
+  #bufferedBytes = 0;
   /** When something last read this tail, for deciding whether it is still wanted. */
   #touched = Date.now();
-  /** Absolute offset of the first character still held. */
+  /** Absolute byte offset of the first character still held. */
   #base = 0;
   #end = 0;
   readonly #filter = new TextFilter();
   readonly #limit: number;
-  #waiters: (() => void)[] = [];
+  readonly #waiters = new Set<() => void>();
   readonly paneId: string;
 
   constructor(paneId: string, limit: number = DEFAULT_TAIL_BYTES) {
+    if (!Number.isSafeInteger(limit) || limit < 0) {
+      throw new RangeError("pane tail limit must be a non-negative safe integer");
+    }
     this.paneId = paneId;
     this.#limit = limit;
   }
@@ -61,16 +66,46 @@ export class PaneTail {
   append(raw: string): void {
     const data = this.#filter.push(raw);
     if (data === "") return;
-    this.#buffer += data;
-    this.#end += data.length;
-    if (this.#buffer.length > this.#limit) {
-      const excess = this.#buffer.length - this.#limit;
-      this.#buffer = this.#buffer.slice(excess);
-      this.#base += excess;
-    }
-    const waiting = this.#waiters;
-    this.#waiters = [];
+    const bytes = Buffer.from(data, "utf8");
+    this.#chunks.push(bytes);
+    this.#bufferedBytes += bytes.length;
+    this.#end += bytes.length;
+    this.#trim();
+    const waiting = [...this.#waiters];
+    this.#waiters.clear();
     for (const wake of waiting) wake();
+  }
+
+  /** Keep a UTF-8 boundary at the start while holding no more than the limit. */
+  #trim(): void {
+    let excess = this.#bufferedBytes - this.#limit;
+    while (excess > 0 && this.#chunkHead < this.#chunks.length) {
+      const chunk = this.#chunks[this.#chunkHead];
+      if (chunk === undefined) break;
+      if (excess >= chunk.length) {
+        this.#chunks[this.#chunkHead] = Buffer.alloc(0);
+        this.#chunkHead += 1;
+        this.#base += chunk.length;
+        this.#bufferedBytes -= chunk.length;
+        excess -= chunk.length;
+        continue;
+      }
+
+      let cut = excess;
+      while (cut < chunk.length && (chunk[cut]! & 0xc0) === 0x80) cut += 1;
+      this.#chunks[this.#chunkHead] = Buffer.from(chunk.subarray(cut));
+      this.#base += cut;
+      this.#bufferedBytes -= cut;
+      excess -= cut;
+    }
+
+    if (this.#chunkHead === this.#chunks.length) {
+      this.#chunks = [];
+      this.#chunkHead = 0;
+    } else if (this.#chunkHead >= 64 && this.#chunkHead * 2 >= this.#chunks.length) {
+      this.#chunks = this.#chunks.slice(this.#chunkHead);
+      this.#chunkHead = 0;
+    }
   }
 
   /**
@@ -88,18 +123,24 @@ export class PaneTail {
    */
   changed(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
     this.#touched = Date.now();
+    if (signal?.aborted === true) return Promise.resolve(true);
     return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.#waiters = this.#waiters.filter((entry) => entry !== wake);
-        resolve(false);
-      }, timeoutMs);
-      const wake = (): void => {
-        clearTimeout(timer);
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (changed: boolean): void => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        this.#waiters.delete(wake);
         signal?.removeEventListener("abort", wake);
-        resolve(true);
+        resolve(changed);
       };
+      const wake = (): void => {
+        finish(true);
+      };
+      timer = setTimeout(() => finish(false), timeoutMs);
       signal?.addEventListener("abort", wake, { once: true });
-      this.#waiters.push(wake);
+      this.#waiters.add(wake);
     });
   }
 
@@ -130,9 +171,10 @@ export class PaneTail {
   /**
    * What arrived after `from`.
    *
-   * `missedBytes` is what fell out of the buffer before this read reached it —
-   * the difference between "the pane printed nothing" and "it printed more than
-   * was kept", which are the same empty answer otherwise.
+   * `missedBytes` is what could not be returned before this read reached it —
+   * normally because it fell out of the buffer. A caller-supplied cursor inside
+   * a multibyte character also skips to the next boundary instead of returning
+   * replacement text. Cursors returned by this class are always boundaries.
    */
   read(from: number | undefined): {
     readonly cursor: number;
@@ -141,12 +183,32 @@ export class PaneTail {
   } {
     this.#touched = Date.now();
     const start = from ?? this.#base;
-    const missed = Math.max(0, this.#base - start);
-    const offset = Math.max(0, start - this.#base);
+    let missed = Math.max(0, this.#base - start);
+    let skip = Math.max(0, start - this.#base);
+    const parts: Buffer[] = [];
+    let size = 0;
+    for (let index = this.#chunkHead; index < this.#chunks.length; index += 1) {
+      const chunk = this.#chunks[index];
+      if (chunk === undefined || chunk.length === 0) continue;
+      if (skip >= chunk.length) {
+        skip -= chunk.length;
+        continue;
+      }
+      let offset = skip;
+      skip = 0;
+      while (offset < chunk.length && (chunk[offset]! & 0xc0) === 0x80) {
+        offset += 1;
+        missed += 1;
+      }
+      if (offset >= chunk.length) continue;
+      const part = chunk.subarray(offset);
+      parts.push(part);
+      size += part.length;
+    }
     return {
       cursor: this.#end,
       missedBytes: missed,
-      text: this.#buffer.slice(offset),
+      text: Buffer.concat(parts, size).toString("utf8"),
     };
   }
 }
