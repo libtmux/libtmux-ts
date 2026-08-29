@@ -5,6 +5,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { TmuxEvent } from "libtmux";
 
+import { cancellation, waitForAbort } from "./abort.js";
 import type { ToolContext } from "./context.js";
 import type { LiveListener } from "./live.js";
 import { panePlacements } from "./target_resolution.js";
@@ -13,56 +14,19 @@ import { PANES_URI } from "./uris.js";
 /** The shortest gap between two update notifications for one resource. */
 const UPDATE_COALESCE_MS = 500;
 
-/** The notifications that change which sessions, windows or panes exist. */
-const STRUCTURAL = new Set([
-  "session-renamed",
+const PLACEMENT_INVALIDATING_EVENTS = new Set<TmuxEvent["kind"]>([
   "sessions-changed",
   "unlinked-window-add",
   "unlinked-window-close",
-  "unlinked-window-renamed",
   "window-add",
   "window-close",
-  "window-renamed",
 ]);
 
-/**
- * Announce a change somebody else made.
- *
- * Sending `listChanged` from this server's own mutating tools covers what this
- * server did, and this server is not the only thing changing the list: a
- * person in a terminal, or another agent on the same tmux server, changes it
- * too — and a client that believes `listChanged` refreshes only on notice.
- *
- * Anchored on the first read of a browsable list rather than at startup, so a
- * server nobody browses holds no connection for this. If the anchor cannot be
- * opened, because there is no session to attach to, the next read tries again.
- */
-export function watchTopology(context: ToolContext, announce: () => void): () => void {
-  let stop: (() => void) | undefined;
-  let starting = false;
-
-  return (): void => {
-    if (stop !== undefined || starting || !context.policy.liveEnabled) return;
-    starting = true;
-    void context.hub
-      .anchor((event) => {
-        if (STRUCTURAL.has(event.kind)) announce();
-      })
-      .then((opened) => {
-        stop = opened;
-        if (opened !== undefined) {
-          void opened.ended.then(() => {
-            if (stop !== opened) return;
-            stop = undefined;
-            announce();
-          });
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        starting = false;
-      });
-  };
+interface SubscriptionWatch {
+  acknowledged: boolean;
+  readonly cancel: () => void;
+  readonly ready: Promise<void>;
+  waiters: number;
 }
 
 /**
@@ -72,7 +36,7 @@ export function watchTopology(context: ToolContext, announce: () => void): () =>
  * server underneath it. Updates are driven by the control connection rather than
  * a timer: a subscriber that nothing is writing to costs nothing.
  */
-export function registerResourceSubscriptions(mcp: McpServer, context: ToolContext): void {
+export function registerResourceSubscriptions(mcp: McpServer, context: ToolContext): () => void {
   mcp.server.registerCapabilities({
     resources: {
       listChanged: true,
@@ -81,13 +45,41 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
       ...(context.policy.liveEnabled ? { subscribe: true } : {}),
     },
   });
-  if (!context.policy.liveEnabled) return;
+  if (!context.policy.liveEnabled) return () => undefined;
 
-  const watching = new Map<string, () => void>();
+  const watching = new Map<string, SubscriptionWatch>();
+  const awaitReady = async (
+    uri: string,
+    watch: SubscriptionWatch,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    watch.waiters += 1;
+    try {
+      await waitForAbort(watch.ready, signal);
+    } finally {
+      watch.waiters -= 1;
+      if (
+        signal.aborted &&
+        !watch.acknowledged &&
+        watch.waiters === 0 &&
+        watching.get(uri) === watch
+      ) {
+        watching.delete(uri);
+        watch.cancel();
+      }
+    }
+  };
 
-  mcp.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+  mcp.server.setRequestHandler(SubscribeRequestSchema, async (request, extra) => {
     const uri = request.params.uri;
-    if (watching.has(uri)) return {};
+    if (extra.signal.aborted) throw cancellation(extra.signal);
+    const existing = watching.get(uri);
+    if (existing !== undefined) {
+      await awaitReady(uri, existing, extra.signal);
+      if (extra.signal.aborted) throw cancellation(extra.signal);
+      existing.acknowledged = true;
+      return {};
+    }
 
     const paneId = paneIdOfContentUri(uri);
     if (paneId === undefined) {
@@ -97,13 +89,16 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
     // a build printing continuously would cost a capture every time tmux
     // flushed. This bounds that to twice a second however fast the pane talks.
     let pending: ReturnType<typeof setTimeout> | undefined;
+    let placementCheck: ReturnType<typeof setTimeout> | undefined;
     let reconnect: ReturnType<typeof setTimeout> | undefined;
     let retry = 0;
     let stopped = false;
     let stop: LiveListener | undefined;
     let boundSessionId: string | undefined;
+    let boundWindowId: string | undefined;
     let reconciling: Promise<void> | undefined;
     let reconcileAgain = false;
+    const watchAbort = new AbortController();
     const announce = (): void => {
       if (pending !== undefined) return;
       pending = setTimeout(() => {
@@ -129,12 +124,20 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
       }, delay);
       reconnect.unref?.();
     };
+    let deferPlacementCheck!: () => void;
     const listener = (event: TmuxEvent): void => {
       if (event.kind === "output") {
         if (event.paneId === paneId) announce();
         return;
       }
-      if (STRUCTURAL.has(event.kind)) requestReconcile();
+      if (event.kind === "layout-change") {
+        if (event.windowId === boundWindowId) {
+          announce();
+          deferPlacementCheck();
+        }
+        return;
+      }
+      if (PLACEMENT_INVALIDATING_EVENTS.has(event.kind)) requestReconcile();
     };
     const reconcile = async (required: boolean): Promise<boolean> => {
       if (stopped) return false;
@@ -145,23 +148,26 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
         const previous = stop;
         stop = undefined;
         boundSessionId = undefined;
+        boundWindowId = undefined;
         previous?.();
         resetRetry();
         announce();
         if (required) throw new Error(`No pane ${paneId} to subscribe to`);
         return false;
       }
-      if (
-        boundSessionId !== undefined &&
-        placements.some((pane) => pane.format.session_id === boundSessionId)
-      ) {
+      const current = placements.find((pane) => pane.format.session_id === boundSessionId);
+      if (current !== undefined) {
+        const previousWindowId = boundWindowId;
+        boundWindowId = current.format.window_id;
         resetRetry();
-        return false;
+        return previousWindowId !== boundWindowId;
       }
-      const sessionId = placements[0]?.format.session_id;
-      if (sessionId === undefined) return false;
-      const opened = await context.hub.listen(sessionId, listener);
-      if (opened === undefined) {
+      const placement = placements[0];
+      if (placement === undefined) return false;
+      const sessionId = placement.format.session_id;
+      const opened = await context.hub.listen(sessionId, listener, watchAbort.signal);
+      if (opened === undefined || !opened.active) {
+        opened?.();
         throw new Error(`Cannot watch ${paneId}: no control connection`);
       }
       if (stopped) {
@@ -171,6 +177,7 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
       const previous = stop;
       stop = opened;
       boundSessionId = sessionId;
+      boundWindowId = placement.format.window_id;
       previous?.();
       resetRetry();
       if (!required) announce();
@@ -178,6 +185,7 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
         if (stopped || stop !== opened) return;
         stop = undefined;
         boundSessionId = undefined;
+        boundWindowId = undefined;
         announce();
         schedule();
       });
@@ -203,42 +211,81 @@ export function registerResourceSubscriptions(mcp: McpServer, context: ToolConte
     };
     requestReconcile = (): void => {
       if (stopped || context.hub.closed) return;
+      if (placementCheck !== undefined) {
+        clearTimeout(placementCheck);
+        placementCheck = undefined;
+      }
       void startReconcile(false).catch(() => {
         schedule();
       });
     };
+    deferPlacementCheck = (): void => {
+      if (stopped || context.hub.closed || placementCheck !== undefined) return;
+      placementCheck = setTimeout(() => {
+        placementCheck = undefined;
+        requestReconcile();
+      }, UPDATE_COALESCE_MS);
+      placementCheck.unref?.();
+    };
 
+    const cancelled = Promise.withResolvers<never>();
     const cancel = (): void => {
+      if (stopped) return;
       stopped = true;
+      watchAbort.abort();
       reconcileAgain = false;
       if (pending !== undefined) clearTimeout(pending);
+      if (placementCheck !== undefined) clearTimeout(placementCheck);
       if (reconnect !== undefined) clearTimeout(reconnect);
       stop?.();
       stop = undefined;
       boundSessionId = undefined;
+      boundWindowId = undefined;
+      cancelled.reject(new Error("resource subscription cancelled"));
     };
-    watching.set(uri, cancel);
+    const startup = startReconcile(true);
+    const ready = Promise.race([startup, cancelled.promise]);
+    const watch: SubscriptionWatch = {
+      acknowledged: false,
+      cancel,
+      ready,
+      waiters: 0,
+    };
+    void ready.then(
+      () => undefined,
+      () => {
+        if (watching.get(uri) !== watch) return;
+        watching.delete(uri);
+        cancel();
+      },
+    );
+    watching.set(uri, watch);
     try {
-      await startReconcile(true);
+      await awaitReady(uri, watch, extra.signal);
+      if (extra.signal.aborted) throw cancellation(extra.signal);
+      watch.acknowledged = true;
     } catch (error) {
-      cancel();
-      watching.delete(uri);
+      if (watching.get(uri) === watch && !watch.acknowledged && watch.waiters === 0) {
+        watching.delete(uri);
+        cancel();
+      }
       throw error;
     }
     return {};
   });
 
   mcp.server.setRequestHandler(UnsubscribeRequestSchema, (request) => {
-    watching.get(request.params.uri)?.();
+    watching.get(request.params.uri)?.cancel();
     watching.delete(request.params.uri);
     return {};
   });
 
-  const closed = mcp.server.onclose;
-  mcp.server.onclose = (): void => {
-    for (const cancel of watching.values()) cancel();
+  let disposed = false;
+  return (): void => {
+    if (disposed) return;
+    disposed = true;
+    for (const watch of watching.values()) watch.cancel();
     watching.clear();
-    closed?.();
   };
 }
 
@@ -249,20 +296,7 @@ function paneIdOfContentUri(uri: string): string | undefined {
   return encoded === undefined ? undefined : decodeURIComponent(encoded);
 }
 
-/**
- * Say the resource list changed, at most once per coalescing window.
- *
- * A client that believes `listChanged` caches the list and refreshes only on
- * notice, so a list this server changed and did not announce is a world the
- * agent goes on acting in after it is gone. Every split, every new window and
- * every dead pane changes it, which is why this is cheap enough to send from
- * each of them: build_workspace makes a session, its windows and their panes
- * in one call, and that is one notice rather than nine.
- *
- * This covers changes this server made. A change somebody else made on the
- * same tmux server still goes unannounced — that needs a control connection
- * held for structural notifications, which is a lifecycle question of its own.
- */
+/** Coalesce tool mutations and externally observed catalog changes into one notice. */
 export function createListChangedNotifier(mcp: McpServer): () => void {
   let pending: ReturnType<typeof setTimeout> | undefined;
   return (): void => {

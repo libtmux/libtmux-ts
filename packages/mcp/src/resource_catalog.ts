@@ -9,8 +9,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerSnapshot } from "libtmux";
 
-import type { ToolContext } from "./context.js";
+import { waitForAbort } from "./abort.js";
+import { isUnreachableError, type ToolContext } from "./context.js";
 import { MAX_RESULT_BYTES } from "./policy.js";
+import type { TopologyLease } from "./resource_topology.js";
 import { tailBytes } from "./results.js";
 import { paneEntities, windowEntities } from "./target_resolution.js";
 import {
@@ -130,7 +132,7 @@ function resourceDescriptors(snapshot: ServerSnapshot): Resource[] {
       uri: windowUri(window.id),
     })),
     ...paneEntities(snapshot.panes.toArray()).map((pane) => ({
-      description: `One pane running ${descriptorText(pane.currentCommand ?? "an unknown command")}.`,
+      description: "One pane.",
       mimeType: JSON_MIME,
       name: pane.id,
       title: "Pane",
@@ -201,12 +203,29 @@ function resourcePage(
 export function registerResourceCatalog(
   mcp: McpServer,
   context: ToolContext,
-  watching: () => void,
+  watching: (signal?: AbortSignal) => Promise<TopologyLease>,
 ): void {
-  mcp.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
+  mcp.server.setRequestHandler(ListResourcesRequestSchema, async (request, extra) => {
     const after = decodeResourceCursor(request.params?.cursor);
-    watching();
-    const resources = resourceDescriptors(await context.snapshot());
-    return resourcePage(resources, after);
+    let lease: TopologyLease | undefined;
+    try {
+      lease = await watching(extra.signal);
+      if (extra.signal.aborted) throw new Error("Resource listing cancelled");
+      let snapshot: ServerSnapshot;
+      try {
+        snapshot = await waitForAbort(context.snapshot(), extra.signal);
+      } catch (error) {
+        // An empty server can make the catalog snapshot fail even though the
+        // watcher is exactly what will observe it becoming readable.
+        if (!extra.signal.aborted && !isUnreachableError(error)) lease.retain();
+        throw error;
+      }
+      if (extra.signal.aborted) throw new Error("Resource listing cancelled");
+      const page = resourcePage(resourceDescriptors(snapshot), after);
+      lease.retain();
+      return page;
+    } finally {
+      lease?.release();
+    }
   });
 }

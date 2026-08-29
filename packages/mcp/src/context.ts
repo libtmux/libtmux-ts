@@ -83,6 +83,14 @@ export function describeUnreachable(tmux: Server, reason: string): string {
   );
 }
 
+/** Whether retrying without an operator configuration change can reach tmux. */
+export function isUnreachableError(error: unknown): boolean {
+  const reason = error instanceof Error ? error.message : String(error);
+  return (
+    reason.startsWith("cannot reach tmux") || reason.includes("version probe returned no version")
+  );
+}
+
 function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
   return work.catch((error: unknown) => {
     const reason = error instanceof Error ? error.message : String(error);
@@ -90,10 +98,7 @@ function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
     // problem: something was configured that is not a usable tmux, and no
     // amount of retrying by an agent will change it. It reached here without
     // the guidance because it does not share the wording.
-    const unreachable =
-      reason.startsWith("cannot reach tmux") ||
-      reason.includes("version probe returned no version");
-    if (!unreachable) throw error;
+    if (!isUnreachableError(error)) throw error;
     throw new Error(describeUnreachable(tmux, reason), { cause: error });
   });
 }
@@ -104,7 +109,7 @@ export function createContext(
   topologyChanged: () => void = () => undefined,
   caller: CallerEnvironment = readCallerEnvironment(),
 ): ToolContext & { close(): Promise<void> } {
-  const hub = new LiveHub(tmux);
+  const hub = new LiveHub(tmux, { connectTimeoutMs: policy.commandTimeoutMs });
   return {
     close: () => hub.close(),
     hub,

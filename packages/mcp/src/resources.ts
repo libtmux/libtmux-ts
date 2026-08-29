@@ -18,7 +18,8 @@ import type { ToolContext } from "./context.js";
 import { captureGridBounded } from "./grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "./policy.js";
 import { JSON_MIME, registerResourceCatalog, TEXT_MIME } from "./resource_catalog.js";
-import { registerResourceSubscriptions, watchTopology } from "./resource_watch.js";
+import { watchTopology } from "./resource_topology.js";
+import { registerResourceSubscriptions } from "./resource_watch.js";
 import { boundText, renderBoundedText } from "./results.js";
 import {
   isFailure,
@@ -135,11 +136,11 @@ function textResource(uri: string, text: string): ReadResourceResult {
   return { contents: [{ mimeType: TEXT_MIME, text, uri }] };
 }
 
-export function registerResources(mcp: McpServer, context: ToolContext): void {
+export function registerResources(mcp: McpServer, context: ToolContext): () => void {
   // Reading a browsable list is what says somebody is browsing, and so the
   // point at which it is worth holding a connection to hear about changes
   // this server did not make.
-  const watching = watchTopology(context, () => {
+  const topology = watchTopology(context, () => {
     context.topologyChanged();
   });
 
@@ -339,6 +340,16 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     },
   );
 
-  registerResourceCatalog(mcp, context, watching);
-  registerResourceSubscriptions(mcp, context);
+  registerResourceCatalog(mcp, context, topology.acquire);
+  const disposeSubscriptions = registerResourceSubscriptions(mcp, context);
+  let disposed = false;
+  return (): void => {
+    if (disposed) return;
+    disposed = true;
+    try {
+      topology.close();
+    } finally {
+      disposeSubscriptions();
+    }
+  };
 }

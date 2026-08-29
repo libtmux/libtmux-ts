@@ -78,19 +78,37 @@ export function createTmuxMcpServer(
   registerSettings(offered, context);
   registerWait(offered, context);
   registerWorkspace(offered, context);
-  registerResources(mcp, context);
+  const disposeResources = registerResources(mcp, context);
   registerPrompts(mcp, context, registeredTools);
 
-  // Each watched session holds a `tmux -C attach` for as long as something is
-  // reading it. Losing the client is the end of every reason to hold one, and
-  // a control client nobody closes stays attached until the daemon does.
-  const closed = mcp.server.onclose;
+  let backendClose: Promise<void> | undefined;
+  const closeBackend = (): Promise<void> => {
+    backendClose ??= (async () => {
+      try {
+        disposeResources();
+      } finally {
+        await context.close();
+      }
+    })();
+    return backendClose;
+  };
   mcp.server.onclose = (): void => {
-    try {
-      closed?.();
-    } finally {
-      void context.close();
-    }
+    void closeBackend().catch(() => undefined);
+  };
+
+  // The protocol close callback is synchronous. Embedded callers still need
+  // `close()` to mean every control process has actually left.
+  const closeProtocol = mcp.close.bind(mcp);
+  let serverClose: Promise<void> | undefined;
+  mcp.close = (): Promise<void> => {
+    serverClose ??= closeProtocol().then(
+      () => closeBackend(),
+      async (error: unknown) => {
+        await closeBackend();
+        throw error;
+      },
+    );
+    return serverClose;
   };
 
   return mcp;
