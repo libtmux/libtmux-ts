@@ -15,7 +15,7 @@ import {
 import type {
   ProjectionRecord,
   SelectionProjection,
-} from "../../src/_internal/graph/selection_projection.js";
+} from "../../src/_internal/graph/projection_identity.js";
 import {
   bindLogicalRef,
   createRuntimeContext,

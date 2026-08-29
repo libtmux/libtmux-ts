@@ -6,7 +6,7 @@ import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../dist/_generated/where
 import { createGraphSourceId } from "../../dist/_internal/graph/model.js";
 import { materializeProjectionMembers } from "../../dist/_internal/graph/materialize.js";
 import { normalizeGraph } from "../../dist/_internal/graph/normalize.js";
-import { SelectionProjectionBuilder } from "../../dist/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../dist/_internal/graph/projection_builder.js";
 import {
   createRuntimeContext,
   createServerWithRuntime,
@@ -104,7 +104,7 @@ const graph = normalizeGraph({
     },
   ],
 });
-const builder = SelectionProjectionBuilder.create({
+const builder = SelectionProjectionBuilder.createCorpus({
   descriptors: {
     client: {
       fields: WHERE_FIELDS_V1.client,
@@ -128,7 +128,7 @@ const builder = SelectionProjectionBuilder.create({
     },
   },
   graph,
-  source,
+  sources: [source],
 });
 for (const member of graph.sources[0].records) {
   builder.materializeMany(member, "windows", []);
@@ -136,7 +136,8 @@ for (const member of graph.sources[0].records) {
   builder.materializeOne(member, "activeWindow", null);
   builder.materializeOne(member, "activePane", null);
 }
-const projection = builder.seal();
+const projection = builder.sealViews().get(source);
+assert.ok(projection);
 const values = await materializeProjectionMembers(
   createServerWithRuntime(runtime),
   projection,

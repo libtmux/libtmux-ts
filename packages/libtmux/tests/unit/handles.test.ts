@@ -27,12 +27,12 @@ import {
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionDescriptor,
-  type ProjectionRecord,
-  type SelectionProjection,
-} from "../../src/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
+import type {
+  ProjectionRecord,
+  SelectionProjection,
+} from "../../src/_internal/graph/projection_identity.js";
 import {
   materializeClientRecord,
   materializeProjectionMembers,
@@ -188,11 +188,16 @@ function descriptors(): Readonly<Record<WhereModel, ProjectionDescriptor>> {
 }
 
 function projectionFor(graph: NormalizedGraph, sourceId: string): SelectionProjection {
-  return SelectionProjectionBuilder.create({
+  const source = createGraphSourceId(sourceId);
+  const projection = SelectionProjectionBuilder.createCorpus({
     descriptors: descriptors(),
     graph,
-    source: createGraphSourceId(sourceId),
-  }).seal();
+    sources: [source],
+  })
+    .sealViews()
+    .get(source);
+  if (projection === undefined) throw new Error(`missing projection view ${sourceId}`);
+  return projection;
 }
 
 function projectionRecord(projection: SelectionProjection, index = 0): ProjectionRecord {
@@ -1234,15 +1239,17 @@ describe("authenticated handle materialization", () => {
         relations: [{ cardinality: "many", name: "windows", targetModel: "window" }],
       },
     };
-    const builder = SelectionProjectionBuilder.create({
+    const sourceId = createGraphSourceId("sessions");
+    const builder = SelectionProjectionBuilder.createCorpus({
       descriptors: relationDescriptors,
       graph,
-      source: createGraphSourceId("sessions"),
+      sources: [sourceId],
     });
     builder.materializeMany(graphRecordRef(graph, "sessions"), "windows", [
       graphRecordRef(graph, "windows"),
     ]);
-    const projection = builder.seal();
+    const projection = builder.sealViews().get(sourceId);
+    if (projection === undefined) throw new Error("missing session projection view");
     const relatedRecord = projection.records.find(({ model }) => model === "window");
     if (relatedRecord === undefined) throw new Error("missing reachable window record");
 

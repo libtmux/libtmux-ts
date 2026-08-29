@@ -15,7 +15,7 @@ import {
   isFormatCriterionValue,
 } from "../codec/format_values.js";
 import type { GraphRecordRef } from "../graph/model.js";
-import type { ProjectionRecord } from "../graph/selection_projection.js";
+import type { ProjectionRecord } from "../graph/projection_identity.js";
 
 type RecordResolver = (reference: GraphRecordRef) => ProjectionRecord | undefined;
 type RecordPredicate = (record: ProjectionRecord, resolve: RecordResolver) => boolean;

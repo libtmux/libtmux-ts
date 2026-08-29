@@ -21,12 +21,11 @@ import {
   type GraphSourceId,
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionAdjacency,
-  type ProjectionBuilderState,
-  type SelectionProjection,
-} from "../../src/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type {
+  ProjectionAdjacency,
+  SelectionProjection,
+} from "../../src/_internal/graph/projection_identity.js";
 
 import type { Equal, Expect } from "./assert.js";
 
@@ -39,7 +38,6 @@ declare const sourceId: GraphSourceId;
 declare const recordRef: GraphRecordRef;
 declare const graph: NormalizedGraph;
 declare const projection: SelectionProjection;
-declare const builder: SelectionProjectionBuilder;
 declare const serialized: SerializedLogicalRef;
 declare const adjacency: ProjectionAdjacency;
 declare const replacementGraphSources: NormalizedGraph["sources"];
@@ -87,7 +85,6 @@ void winlinkRef.windowIndex;
 void nextRecord.ordinal;
 void graph.records;
 void projection.members;
-void builder.state;
 
 // @ts-expect-error Existing Window brands cannot be supplied as Session IDs.
 createLogicalRef({ connection, epoch, id: windowId, kind: "session" });
@@ -271,7 +268,6 @@ type _RecordRefKeys = Expect<Equal<keyof GraphRecordRef, "ordinal" | "source">>;
 type _SessionRefReturn = Expect<Equal<typeof sessionRef, SessionRef>>;
 type _WindowRefReturn = Expect<Equal<typeof windowRef, WindowRef>>;
 type _PaneRefReturn = Expect<Equal<typeof paneRef, PaneRef>>;
-type _BuilderState = Expect<Equal<ProjectionBuilderState, "collecting" | "complete" | "failed">>;
 type _ProjectionMembers = Expect<Equal<SelectionProjection["members"], readonly GraphRecordRef[]>>;
 type _ManyTargets = Expect<
   Equal<
@@ -292,18 +288,22 @@ type _MaterializeMany = Expect<
   >
 >;
 type _Abort = Expect<Equal<SelectionProjectionBuilder["abort"], (cause: unknown) => never>>;
-type _Seal = Expect<Equal<SelectionProjectionBuilder["seal"], () => SelectionProjection>>;
+type _SealViews = Expect<
+  Equal<
+    SelectionProjectionBuilder["sealViews"],
+    () => ReadonlyMap<GraphSourceId, SelectionProjection>
+  >
+>;
 
 export type {
   _Abort,
-  _BuilderState,
   _ManyTargets,
   _MaterializeMany,
   _MaterializeOne,
   _PaneRefReturn,
   _ProjectionMembers,
   _RecordRefKeys,
-  _Seal,
+  _SealViews,
   _SessionRefReturn,
   _SerializedKeys,
   _SerializedPane,

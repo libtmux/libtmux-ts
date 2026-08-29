@@ -1,6 +1,6 @@
 import { Client } from "../../src/client.js";
 import type { PaneId, WindowId } from "../../src/common.js";
-import type { SelectionProjection } from "../../src/_internal/graph/selection_projection.js";
+import type { SelectionProjection } from "../../src/_internal/graph/projection_identity.js";
 import type { ModelForKind } from "../../src/_internal/runtime/model_kind.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import { Pane } from "../../src/pane.js";

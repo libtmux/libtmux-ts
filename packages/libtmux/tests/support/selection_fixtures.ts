@@ -8,11 +8,9 @@ import {
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionDescriptor,
-  type SelectionProjection,
-} from "../../src/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
+import type { SelectionProjection } from "../../src/_internal/graph/projection_identity.js";
 import {
   materializeClientRecord,
   materializeProjectionMembers,
@@ -185,11 +183,17 @@ function refAt(refs: readonly GraphRecordRef[], index: number): GraphRecordRef {
 }
 
 function builderFor(graph: NormalizedGraph, rootSource: string): SelectionProjectionBuilder {
-  return SelectionProjectionBuilder.create({
+  return SelectionProjectionBuilder.createCorpus({
     descriptors,
     graph,
-    source: createGraphSourceId(rootSource),
+    sources: [createGraphSourceId(rootSource)],
   });
+}
+
+function sealView(builder: SelectionProjectionBuilder, rootSource: string): SelectionProjection {
+  const projection = builder.sealViews().get(createGraphSourceId(rootSource));
+  if (projection === undefined) throw new Error(`missing projection view ${rootSource}`);
+  return projection;
 }
 
 /** A client attached to nothing this graph lists: every relation resolves to null. */
@@ -244,7 +248,7 @@ export async function createSessionHarness(
   ]);
   const builder = builderFor(graph, "sessions-root");
   for (const session of sourceRefs(graph, "sessions-root")) hydrateEmptySession(builder, session);
-  const projection = builder.seal();
+  const projection = sealView(builder, "sessions-root");
   const values = requireSessions(
     await materializeProjectionMembers(createServerWithRuntime(runtime), projection, graph),
   );
@@ -398,7 +402,7 @@ async function projectedHarness<Model extends Session | Window | Pane>(
 ): Promise<ProjectedHarness<Model>> {
   const builder = builderFor(graph, rootSource);
   hydrateRichProjection(builder, graph, rootSource);
-  const projection = builder.seal();
+  const projection = sealView(builder, rootSource);
   const values = requireModel(
     await materializeProjectionMembers(createServerWithRuntime(runtime), projection, graph),
   );
@@ -462,7 +466,7 @@ export async function createWindowAssociationHarness(): Promise<ProjectedHarness
   builder.materializeOne(sessionTwo, "activeWindow", windowTwo);
   builder.materializeOne(sessionTwo, "activePane", null);
 
-  const projection = builder.seal();
+  const projection = sealView(builder, "windows-association");
   const values = requireWindows(
     await materializeProjectionMembers(createServerWithRuntime(runtime), projection, graph),
   );
@@ -522,7 +526,7 @@ export async function createSessionProvenanceHarness(): Promise<SessionProvenanc
     builder.materializeMany(secondWindow, "linkedSessions", [secondSession]);
     builder.materializeMany(secondWindow, "panes", []);
     builder.materializeOne(secondWindow, "activePane", null);
-    const projection = builder.seal();
+    const projection = sealView(builder, "sessions-provenance");
     const values = requireSessions(
       await materializeProjectionMembers(createServerWithRuntime(runtime), projection, sourceGraph),
     );
@@ -549,7 +553,7 @@ export async function createClientHarness(names: readonly string[]): Promise<Cli
   const server = createServerWithRuntime(runtime);
   const clientBuilder = builderFor(graph, "clients-root");
   for (const ref of sourceRefs(graph, "clients-root")) hydrateDetachedClient(clientBuilder, ref);
-  const projection = clientBuilder.seal();
+  const projection = sealView(clientBuilder, "clients-root");
   const values = await Promise.all(
     sourceRefs(graph, "clients-root").map((ref) => materializeClientRecord(server, graph, ref)),
   );

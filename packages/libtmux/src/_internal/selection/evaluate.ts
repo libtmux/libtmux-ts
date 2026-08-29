@@ -17,7 +17,7 @@ import {
   selectionProjectionOwnsRecord,
   type ProjectionRecord,
   type SelectionProjection,
-} from "../graph/selection_projection.js";
+} from "../graph/projection_identity.js";
 import type { ModelForKind } from "../runtime/model_kind.js";
 import {
   entityRefForHandle,

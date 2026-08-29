@@ -15,10 +15,8 @@ import {
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionDescriptor,
-} from "../../src/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
 import { LazyCapabilityBinding } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
@@ -224,10 +222,11 @@ describe("real normalized graph hydration", () => {
         linkedPaneId,
       ]);
 
-      const builder = SelectionProjectionBuilder.create({
+      const source = createGraphSourceId("windows");
+      const builder = SelectionProjectionBuilder.createCorpus({
         descriptors: descriptors(),
         graph,
-        source: createGraphSourceId("windows"),
+        sources: [source],
       });
       for (const windowRecord of windowRecords) {
         builder.materializeOne(windowRecord, "containingSession", sessionRecord);
@@ -239,7 +238,8 @@ describe("real normalized graph hydration", () => {
           builder.materializeOne(paneRecord, "containingWindow", windowRecord);
         }
       }
-      const projection = builder.seal();
+      const projection = builder.sealViews().get(source);
+      if (projection === undefined) throw new Error("missing window projection view");
 
       expect(projection.members).toEqual(sourceRecords(graph, "windows"));
       expect(projection.records.filter(({ model }) => model === "window")).toHaveLength(2);

@@ -12,16 +12,18 @@ import {
   type CapturedRowSet,
   type GraphCapture,
   type GraphRecordRef,
+  type GraphSourceId,
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
 import {
-  IncompleteProjectionError,
-  SelectionProjectionBuilder,
   isSelectionProjection,
   selectionProjectionOwnsRecord,
-  type ProjectionDescriptor,
-} from "../../src/_internal/graph/selection_projection.js";
+  selectionProjectionRecordForRef,
+  type SelectionProjection,
+} from "../../src/_internal/graph/projection_identity.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "../support/graph_rows.js";
 
@@ -102,6 +104,32 @@ function descriptors(
       relations: [],
     },
   };
+}
+
+interface SingleSourceBuilderInput {
+  readonly descriptors: Readonly<Record<WhereModel, ProjectionDescriptor>>;
+  readonly graph: NormalizedGraph;
+  readonly source: GraphSourceId;
+}
+
+function singleSourceBuilder(input: SingleSourceBuilderInput): SelectionProjectionBuilder {
+  return SelectionProjectionBuilder.createCorpus({
+    descriptors: input.descriptors,
+    graph: input.graph,
+    sources: [input.source],
+  });
+}
+
+function sealSingleSource(builder: SelectionProjectionBuilder): SelectionProjection {
+  const views = builder.sealViews();
+  if (views.size !== 1) throw new Error("expected one projection view");
+  const projection = views.values().next().value;
+  if (projection === undefined) throw new Error("missing projection view");
+  return projection;
+}
+
+function singleSourceProjection(input: SingleSourceBuilderInput): SelectionProjection {
+  return sealSingleSource(singleSourceBuilder(input));
 }
 
 function linkedWindowRows(): readonly MutableCompleteFormatRow[] {
@@ -469,11 +497,11 @@ describe("selection projection snapshots", () => {
     expect(windows.members).toHaveLength(1);
     expect(selectionProjectionOwnsRecord(sessions, windows.records[1])).toBe(true);
 
-    const independent = SelectionProjectionBuilder.create({
+    const independent = singleSourceProjection({
       descriptors: descriptors(),
       graph,
       source: createGraphSourceId("windows"),
-    }).seal();
+    });
     expect(selectionProjectionOwnsRecord(sessions, independent.records[0])).toBe(false);
     expect(() => (sessions.records as unknown[]).push(independent.records[0])).toThrow();
   });
@@ -483,17 +511,15 @@ describe("selection projection snapshots", () => {
       capture: capture(),
       sources: [source("windows", "list-windows", linkedWindowRows())],
     });
-    const builder = SelectionProjectionBuilder.create({
+    const builder = singleSourceBuilder({
       descriptors: descriptors(),
       graph,
       source: createGraphSourceId("windows"),
     });
-    expect(builder.state).toBe("collecting");
-    const projection = builder.seal();
+    const projection = sealSingleSource(builder);
     const rootSource = graph.sources[0];
     if (rootSource === undefined) throw new Error("missing window root source");
 
-    expect(builder.state).toBe("complete");
     expect(projection.members).toEqual(rootSource.records);
     expect(projection.records.map(({ scalars }) => scalars.name)).toEqual([
       "shared-first",
@@ -585,7 +611,7 @@ describe("selection projection snapshots", () => {
     }
     expect(isSelectionProjection(projection)).toBe(true);
     expect(isSelectionProjection({ ...projection })).toBe(false);
-    expect(builder.seal()).toBe(projection);
+    expect(sealSingleSource(builder)).toBe(projection);
     assertFrozenProjectionData(projection);
   });
 
@@ -627,11 +653,11 @@ describe("selection projection snapshots", () => {
     ];
 
     for (const [model, sourceId, row] of cases) {
-      const projection = SelectionProjectionBuilder.create({
+      const projection = singleSourceProjection({
         descriptors: descriptors(),
         graph,
         source: createGraphSourceId(sourceId),
-      }).seal();
+      });
       const scalars = projection.records[0]?.scalars;
       const expected = Object.fromEntries(
         WHERE_FIELDS_V1[model].map(({ token, wireName }) => [wireName, row[token]]),
@@ -664,11 +690,11 @@ describe("selection projection snapshots", () => {
         ]),
       ],
     });
-    const projection = SelectionProjectionBuilder.create({
+    const projection = singleSourceProjection({
       descriptors: descriptors(),
       graph,
       source: createGraphSourceId("sessions"),
-    }).seal();
+    });
 
     expect(projection.records).toHaveLength(1);
     expect(projection.entities.map(({ ref }) => `${ref.kind}:${String(ref.id)}`)).toEqual([
@@ -704,11 +730,11 @@ describe("selection projection snapshots", () => {
     });
     expect(graph.windows[0]?.occurrences).toHaveLength(3);
     expect(graph.winlinks[0]?.occurrences).toHaveLength(2);
-    const projection = SelectionProjectionBuilder.create({
+    const projection = singleSourceProjection({
       descriptors: descriptors(),
       graph,
       source: createGraphSourceId("root"),
-    }).seal();
+    });
 
     expect(projection.records).toHaveLength(1);
     expect(projection.entities).toHaveLength(1);
@@ -740,22 +766,21 @@ describe("selection projection snapshots", () => {
     });
     const member = recordRef(graph, "sessions", 0);
 
-    const incomplete = SelectionProjectionBuilder.create({
+    const incomplete = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
     });
-    expect(() => incomplete.seal()).toThrow(IncompleteProjectionError);
-    expect(incomplete.state).toBe("collecting");
+    expect(() => sealSingleSource(incomplete)).toThrow(/incomplete/);
 
-    const empty = SelectionProjectionBuilder.create({
+    const empty = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
     });
     empty.materializeOne(member, "activeWindow", null);
     empty.materializeMany(member, "windows", []);
-    const projection = empty.seal();
+    const projection = sealSingleSource(empty);
     expect(projection.records[0]?.adjacency).toEqual([
       {
         cardinality: "one",
@@ -780,7 +805,7 @@ describe("selection projection snapshots", () => {
     expect(() => empty.materializeOne(member, "activeWindow", null)).toThrow(/complete/);
     expect(() => empty.materializeMany(member, "windows", [])).toThrow(/complete/);
 
-    const failed = SelectionProjectionBuilder.create({
+    const failed = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -794,9 +819,8 @@ describe("selection projection snapshots", () => {
       expect(error).toBe(cause);
     }
     expect(abortThrew).toBe(true);
-    expect(failed.state).toBe("failed");
     for (const action of [
-      () => failed.seal(),
+      () => failed.sealViews(),
       () => failed.materializeOne(member, "activeWindow", null),
       () => failed.materializeMany(member, "windows", []),
     ]) {
@@ -838,7 +862,7 @@ describe("selection projection snapshots", () => {
     const firstWindow = recordRef(graph, "windows", 0);
     const secondWindow = recordRef(graph, "windows", 1);
     const targets = [firstWindow, firstWindow, secondWindow];
-    const builder = SelectionProjectionBuilder.create({
+    const builder = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -846,10 +870,10 @@ describe("selection projection snapshots", () => {
 
     builder.materializeMany(session, "windows", targets);
     targets.reverse();
-    expect(() => builder.seal()).toThrow(IncompleteProjectionError);
+    expect(() => sealSingleSource(builder)).toThrow(/incomplete/);
     builder.materializeOne(firstWindow, "session", session);
     builder.materializeOne(secondWindow, "session", session);
-    const projection = builder.seal();
+    const projection = sealSingleSource(builder);
 
     expect(projection.records).toHaveLength(3);
     expect(projection.records[0]?.adjacency[0]).toMatchObject({
@@ -908,16 +932,16 @@ describe("selection projection snapshots", () => {
     const secondWindow = recordRef(graph, "windows", 1);
     const firstSession = recordRef(graph, "sessions", 0);
     const secondSession = recordRef(graph, "sessions", 1);
-    const builder = SelectionProjectionBuilder.create({
+    const builder = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("windows"),
     });
 
     builder.materializeOne(firstWindow, "session", firstSession);
-    expect(() => builder.seal()).toThrow(IncompleteProjectionError);
+    expect(() => sealSingleSource(builder)).toThrow(/incomplete/);
     builder.materializeOne(secondWindow, "session", secondSession);
-    expect(builder.seal().members).toEqual([firstWindow, secondWindow]);
+    expect(sealSingleSource(builder).members).toEqual([firstWindow, secondWindow]);
   });
 
   test("rejects invalid slots, kinds, cardinalities, and duplicate materialization", () => {
@@ -949,7 +973,7 @@ describe("selection projection snapshots", () => {
     const window = recordRef(graph, "windows", 0);
     const pane = recordRef(graph, "panes", 0);
 
-    const wrongCardinality = SelectionProjectionBuilder.create({
+    const wrongCardinality = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -968,11 +992,11 @@ describe("selection projection snapshots", () => {
     ).toThrow(/record/);
     expect(() => wrongCardinality.materializeMany(window, "windows", [])).toThrow(/reachable/);
     wrongCardinality.materializeMany(session, "windows", [window]);
-    expect(wrongCardinality.seal().records[0]?.adjacency).toMatchObject([
+    expect(sealSingleSource(wrongCardinality).records[0]?.adjacency).toMatchObject([
       { cardinality: "many", name: "windows", targets: [window] },
     ]);
 
-    const duplicate = SelectionProjectionBuilder.create({
+    const duplicate = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -1002,7 +1026,7 @@ describe("selection projection snapshots", () => {
     const session = recordRef(graph, "sessions", 0);
     const firstWindow = recordRef(graph, "windows", 0);
     const secondWindow = recordRef(graph, "windows", 1);
-    const builder = SelectionProjectionBuilder.create({
+    const builder = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -1021,11 +1045,11 @@ describe("selection projection snapshots", () => {
     expect(() => builder.materializeMany(session, "windows", reentrantTargets)).toThrow(
       /materialized/,
     );
-    expect(builder.seal().records[0]?.adjacency).toMatchObject([
+    expect(sealSingleSource(builder).records[0]?.adjacency).toMatchObject([
       { cardinality: "many", name: "windows", targets: [firstWindow] },
     ]);
 
-    const failed = SelectionProjectionBuilder.create({
+    const failed = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -1055,9 +1079,8 @@ describe("selection projection snapshots", () => {
 
     expect(abortObserved).toBe(cause);
     expect(outerObserved).toBe(cause);
-    expect(failed.state).toBe("failed");
 
-    const directlyFailed = SelectionProjectionBuilder.create({
+    const directlyFailed = singleSourceBuilder({
       descriptors: relationDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -1080,11 +1103,10 @@ describe("selection projection snapshots", () => {
       directOuterObserved = error;
     }
     expect(directOuterObserved).toBe(directCause);
-    expect(directlyFailed.state).toBe("failed");
     for (const action of [
       () => directlyFailed.materializeOne(session, "windows", firstWindow),
       () => directlyFailed.materializeMany(session, "windows", [firstWindow]),
-      () => directlyFailed.seal(),
+      () => directlyFailed.sealViews(),
     ]) {
       let laterObserved: unknown;
       try {
@@ -1117,7 +1139,7 @@ describe("selection projection snapshots", () => {
     const callerDescriptors = descriptors({
       session: { fields, model: "session", relations },
     });
-    const builder = SelectionProjectionBuilder.create({
+    const builder = singleSourceBuilder({
       descriptors: callerDescriptors,
       graph,
       source: createGraphSourceId("sessions"),
@@ -1132,7 +1154,7 @@ describe("selection projection snapshots", () => {
       wireName: "later",
     });
     relations.push({ cardinality: "many", name: "later", targetModel: "window" });
-    const projection = builder.seal();
+    const projection = sealSingleSource(builder);
     expect(projection.records[0]?.scalars).toEqual({ name: "stable" });
 
     const canonicalNameField = {
@@ -1184,15 +1206,15 @@ describe("selection projection snapshots", () => {
     ];
     for (const invalid of invalidDescriptors) {
       expect(() =>
-        SelectionProjectionBuilder.create({
+        SelectionProjectionBuilder.createCorpus({
           descriptors: invalid,
           graph,
-          source: createGraphSourceId("sessions"),
+          sources: [createGraphSourceId("sessions")],
         }),
       ).toThrow(/duplicate/);
     }
     expect(() =>
-      SelectionProjectionBuilder.create({
+      SelectionProjectionBuilder.createCorpus({
         descriptors: descriptors({
           session: {
             fields: WHERE_FIELDS_V1.session,
@@ -1201,7 +1223,7 @@ describe("selection projection snapshots", () => {
           },
         }),
         graph,
-        source: createGraphSourceId("sessions"),
+        sources: [createGraphSourceId("sessions")],
       }),
     ).toThrow(/descriptor model/);
   });
@@ -1230,11 +1252,6 @@ describe("selection projection snapshots", () => {
         },
       });
     };
-    const input = {
-      descriptors: descriptors(),
-      graph,
-      source: sourceId,
-    };
     const corpusInput = {
       descriptors: descriptors(),
       graph,
@@ -1247,13 +1264,12 @@ describe("selection projection snapshots", () => {
     });
 
     const observed = [
-      () => SelectionProjectionBuilder.create(mutateDuringInspection(input)),
       () => SelectionProjectionBuilder.createCorpus(mutateDuringInspection(corpusInput)),
       () =>
-        SelectionProjectionBuilder.create({
+        SelectionProjectionBuilder.createCorpus({
           descriptors: descriptors({ session: mutatingDescriptor }),
           graph,
-          source: sourceId,
+          sources: [sourceId],
         }),
     ].map((action) => {
       try {
@@ -1285,7 +1301,7 @@ describe("selection projection snapshots", () => {
       name: string;
       targetModel: WhereModel;
     } = { cardinality: "many", name: "windows", targetModel: "window" };
-    const builder = SelectionProjectionBuilder.create({
+    const builder = singleSourceBuilder({
       descriptors: descriptors({
         session: {
           fields: WHERE_FIELDS_V1.session,
@@ -1305,7 +1321,7 @@ describe("selection projection snapshots", () => {
     const reconstructedWindow = createGraphRecordRef(window.source, window.ordinal);
 
     builder.materializeMany(reconstructedSession, "windows", [reconstructedWindow]);
-    const projection = builder.seal();
+    const projection = sealSingleSource(builder);
     expect(projection.records[0]?.adjacency).toEqual([
       {
         cardinality: "many",
@@ -1319,7 +1335,7 @@ describe("selection projection snapshots", () => {
     expect(projectedRelation.targets[0]).not.toBe(reconstructedWindow);
     expect(projection.members[0]).not.toBe(reconstructedSession);
 
-    const oneBuilder = SelectionProjectionBuilder.create({
+    const oneBuilder = singleSourceBuilder({
       descriptors: descriptors({
         session: {
           fields: WHERE_FIELDS_V1.session,
@@ -1334,7 +1350,7 @@ describe("selection projection snapshots", () => {
     const reconstructedOneTarget = createGraphRecordRef(window.source, window.ordinal);
 
     oneBuilder.materializeOne(reconstructedOneSource, "activeWindow", reconstructedOneTarget);
-    const oneProjection = oneBuilder.seal();
+    const oneProjection = sealSingleSource(oneBuilder);
     expect(oneProjection.records[0]?.adjacency).toEqual([
       {
         cardinality: "one",
@@ -1357,10 +1373,10 @@ describe("selection projection snapshots", () => {
     const forged = { ...graph } as NormalizedGraph;
 
     expect(() =>
-      SelectionProjectionBuilder.create({
+      SelectionProjectionBuilder.createCorpus({
         descriptors: descriptors(),
         graph: forged,
-        source: createGraphSourceId("sessions"),
+        sources: [createGraphSourceId("sessions")],
       }),
     ).toThrow(/authentic/);
   });
@@ -1375,20 +1391,22 @@ describe("selection projection snapshots", () => {
         source("targeted", "list-windows", [completeFormatRow({ ...second })]),
       ],
     });
-    const listing = SelectionProjectionBuilder.create({
+    const listingSource = createGraphSourceId("listing");
+    const targetedSource = createGraphSourceId("targeted");
+    const views = SelectionProjectionBuilder.createCorpus({
       descriptors: descriptors(),
       graph,
-      source: createGraphSourceId("listing"),
-    }).seal();
-    const targeted = SelectionProjectionBuilder.create({
-      descriptors: descriptors(),
-      graph,
-      source: createGraphSourceId("targeted"),
-    }).seal();
+      sources: [listingSource, targetedSource],
+    }).sealViews();
+    const listing = views.get(listingSource);
+    const targeted = views.get(targetedSource);
+    if (listing === undefined || targeted === undefined) throw new Error("missing projection view");
 
     expect(listing.members).toHaveLength(2);
     expect(targeted.members).toHaveLength(1);
-    expect(targeted.records[0]?.winlink?.windowIndex).toBe("4");
+    const member = targeted.members[0];
+    if (member === undefined) throw new Error("missing targeted projection member");
+    expect(selectionProjectionRecordForRef(targeted, member)?.winlink?.windowIndex).toBe("4");
   });
 
   test("builds a client root, which tmux identifies by terminal rather than by id", () => {
@@ -1399,11 +1417,11 @@ describe("selection projection snapshots", () => {
       ],
     });
 
-    const projection = SelectionProjectionBuilder.create({
+    const projection = singleSourceProjection({
       descriptors: descriptors(),
       graph,
       source: createGraphSourceId("clients"),
-    }).seal();
+    });
 
     expect(projection.members).toHaveLength(1);
     expect(projection.records[0]?.model).toBe("client");

@@ -3,6 +3,7 @@ import type { Selection } from "../../selection.js";
 import type { Server } from "../../server.js";
 import { materializeProjectionMembers } from "../graph/materialize.js";
 import { createGraphSourceId, type GraphSourceId, type NormalizedGraph } from "../graph/model.js";
+import type { SelectionProjection } from "../graph/projection_identity.js";
 import type { ModelForKind } from "../runtime/model_kind.js";
 import { createProjectedSelection } from "../selection/evaluate.js";
 import { hydrateProjectionViews } from "./hydrate.js";
@@ -49,7 +50,7 @@ const settled = new WeakMap<
 
 const projectionViews = new WeakMap<
   NormalizedGraph,
-  ReadonlyMap<GraphSourceId, import("../graph/selection_projection.js").SelectionProjection>
+  ReadonlyMap<GraphSourceId, SelectionProjection>
 >();
 
 function projectionForModel(graph: NormalizedGraph, model: ProjectedModel) {

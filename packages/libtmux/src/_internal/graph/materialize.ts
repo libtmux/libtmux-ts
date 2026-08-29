@@ -20,7 +20,7 @@ import {
   selectionProjectionRecordForRef,
   type ProjectionRecord,
   type SelectionProjection,
-} from "./selection_projection.js";
+} from "./projection_identity.js";
 
 type Child = Client | Pane | Session | Window;
 type ProjectedChild = Client | Pane | Session | Window;

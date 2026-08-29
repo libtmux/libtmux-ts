@@ -35,28 +35,7 @@ import {
 } from "./projection_identity.js";
 import { createLogicalRef, createWinlinkRef, type WinlinkRef } from "./refs.js";
 
-export type { ProjectionDescriptor } from "./projection_descriptor.js";
-export {
-  corpusForSelectionProjection,
-  isSelectionProjection,
-  originGraphForSelectionProjection,
-  resolverForSelectionProjection,
-  selectionProjectionOwnsRecord,
-  selectionProjectionRecordForRef,
-} from "./projection_identity.js";
-export type {
-  ProjectionAdjacency,
-  ProjectionRecord,
-  SelectionProjection,
-} from "./projection_identity.js";
-
-export type ProjectionBuilderState = "collecting" | "complete" | "failed";
-
-export interface SelectionProjectionBuilderInput {
-  readonly descriptors: Readonly<Record<WhereModel, ProjectionDescriptor>>;
-  readonly graph: NormalizedGraph;
-  readonly source: GraphSourceId;
-}
+type ProjectionBuilderState = "collecting" | "complete" | "failed";
 
 export interface SelectionProjectionCorpusBuilderInput {
   readonly descriptors: Readonly<Record<WhereModel, ProjectionDescriptor>>;
@@ -146,26 +125,17 @@ function projectScalars(record: GraphRecord, descriptor: ProjectionDescriptor): 
   );
 }
 
-export class IncompleteProjectionError extends Error {
-  constructor() {
-    super("selection projection hydration is incomplete");
-    this.name = "IncompleteProjectionError";
-  }
-}
-
 export class SelectionProjectionBuilder {
   private readonly descriptors: DescriptorSnapshots;
   private readonly graph: NormalizedGraph;
   private readonly reachableRecords: GraphRecord[] = [];
   private readonly reachableSet: Set<GraphRecord> = new Set<GraphRecord>();
-  private readonly rootRecords: readonly GraphRecord[];
   private readonly rootRecordsBySource: ReadonlyMap<GraphSourceId, readonly GraphRecord[]>;
   private readonly slots: Map<GraphRecord, Map<string, RelationSlot>> = new Map<
     GraphRecord,
     Map<string, RelationSlot>
   >();
   private builderState: ProjectionBuilderState = "collecting";
-  private completedProjection: SelectionProjection | undefined;
   private completedViews: ReadonlyMap<GraphSourceId, SelectionProjection> | undefined;
   private failureCause: unknown;
 
@@ -176,7 +146,6 @@ export class SelectionProjectionBuilder {
   ) {
     this.descriptors = descriptors;
     this.graph = graph;
-    const roots: GraphRecord[] = [];
     const rootsBySource = new Map<GraphSourceId, readonly GraphRecord[]>();
     for (const rootSource of rootSources) {
       const sourceRoots: GraphRecord[] = [];
@@ -187,34 +156,11 @@ export class SelectionProjectionBuilder {
           invalidProjection("source contains a record with the wrong root model");
         }
         sourceRoots.push(record);
-        roots.push(record);
         this.addReachable(record);
       }
       rootsBySource.set(rootSource.id, Object.freeze(sourceRoots));
     }
-    this.rootRecords = Object.freeze(roots);
     this.rootRecordsBySource = rootsBySource;
-  }
-
-  static create(input: SelectionProjectionBuilderInput): SelectionProjectionBuilder {
-    const values = readStrictDataRecord(
-      input,
-      ["descriptors", "graph", "source"],
-      "projection builder input",
-    );
-    const graph = values.graph;
-    if (!isNormalizedGraph(graph)) {
-      return invalidProjection("selection projection requires an authentic normalized graph");
-    }
-    if (typeof values.source !== "string" || values.source.length === 0) {
-      return invalidProjection("selection projection source must be a nonempty graph source ID");
-    }
-    const source = graph.sources.find(({ id }) => id === values.source);
-    if (source === undefined) {
-      return invalidProjection("selection projection source does not exist in the graph");
-    }
-    const descriptors = snapshotDescriptors(values.descriptors);
-    return new SelectionProjectionBuilder(descriptors, graph, [source]);
   }
 
   static createCorpus(input: SelectionProjectionCorpusBuilderInput): SelectionProjectionBuilder {
@@ -249,10 +195,6 @@ export class SelectionProjectionBuilder {
       return source;
     });
     return new SelectionProjectionBuilder(snapshotDescriptors(values.descriptors), graph, sources);
-  }
-
-  get state(): ProjectionBuilderState {
-    return this.builderState;
   }
 
   abort(cause: unknown): never {
@@ -326,24 +268,6 @@ export class SelectionProjectionBuilder {
     slot.manyTargets = Object.freeze(targetRecords);
     slot.materialized = true;
     for (const targetRecord of targetRecords) this.addReachable(targetRecord);
-  }
-
-  seal(): SelectionProjection {
-    if (this.builderState === "failed") throw this.failureCause;
-    if (this.builderState === "complete") {
-      if (this.completedProjection === undefined) {
-        return invalidProjection("completed selection projection is unavailable");
-      }
-      return this.completedProjection;
-    }
-
-    this.requireComplete();
-
-    const corpus = this.buildCorpus();
-    const projection = createSelectionProjectionView(this.graph, corpus, this.rootRecords);
-    this.completedProjection = projection;
-    this.builderState = "complete";
-    return projection;
   }
 
   sealViews(): ReadonlyMap<GraphSourceId, SelectionProjection> {
@@ -520,7 +444,9 @@ export class SelectionProjectionBuilder {
   private requireComplete(): void {
     for (const record of this.reachableRecords) {
       for (const slot of this.slots.get(record)?.values() ?? []) {
-        if (!slot.materialized) throw new IncompleteProjectionError();
+        if (!slot.materialized) {
+          return invalidProjection("selection projection hydration is incomplete");
+        }
       }
     }
   }

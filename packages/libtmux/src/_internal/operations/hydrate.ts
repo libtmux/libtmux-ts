@@ -10,11 +10,9 @@ import {
   type GraphSourceId,
   type NormalizedGraph,
 } from "../graph/model.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionDescriptor,
-  type SelectionProjection,
-} from "../graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../graph/projection_descriptor.js";
+import type { SelectionProjection } from "../graph/projection_identity.js";
 
 /**
  * Criteria fields and relations both come from the generated metadata, so the
