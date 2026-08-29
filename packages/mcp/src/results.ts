@@ -69,6 +69,13 @@ export interface BoundedText {
   readonly text: string;
 }
 
+export interface EntryLimit<Entry> {
+  readonly complete: boolean;
+  readonly entries: readonly Entry[];
+  readonly omittedEntries: number;
+  readonly text: BoundedText;
+}
+
 /**
  * Keep the last `limit` lines.
  *
@@ -128,6 +135,57 @@ export function renderBoundedText(result: BoundedText, recovery: string): string
       : `[${String(result.omittedBytes)} earlier bytes omitted; ${recovery}]`,
   ].filter((part) => part !== "");
   return [...notices, result.text].filter((part) => part !== "").join("\n");
+}
+
+/** Keep a truthful prefix that fits both the structured and text result ceilings. */
+export function limitEntries<Entry>(
+  entries: readonly Entry[],
+  lineLimit: number,
+  serialize: (entry: Entry) => string,
+  render: (entry: Entry) => string,
+): EntryLimit<Entry> {
+  const kept: Entry[] = [];
+  const lines: string[] = [];
+  let structuredBytes = 2;
+  let textBytes = 0;
+
+  for (const entry of entries) {
+    const renderedText = render(entry);
+    const rendered = renderedText.split("\n");
+    const serialized = serialize(entry);
+    const nextStructured =
+      structuredBytes + Buffer.byteLength(serialized, "utf8") + (kept.length === 0 ? 0 : 1);
+    const nextTextBytes =
+      textBytes + Buffer.byteLength(renderedText, "utf8") + (lines.length === 0 ? 0 : 1);
+    if (
+      nextStructured > MAX_RESULT_BYTES ||
+      lines.length + rendered.length > lineLimit ||
+      nextTextBytes > MAX_RESULT_BYTES
+    ) {
+      break;
+    }
+    kept.push(entry);
+    lines.push(...rendered);
+    structuredBytes = nextStructured;
+    textBytes = nextTextBytes;
+  }
+
+  return {
+    complete: kept.length === entries.length,
+    entries: kept,
+    omittedEntries: entries.length - kept.length,
+    text: boundText(lines, lineLimit, MAX_RESULT_BYTES),
+  };
+}
+
+export function renderEntries(result: EntryLimit<unknown>, noun: string, recovery: string): string {
+  const omission =
+    result.omittedEntries === 0
+      ? ""
+      : `[${String(result.omittedEntries)} later ${noun} omitted; ${recovery}]`;
+  return [renderBoundedText(result.text, recovery), omission]
+    .filter((part) => part !== "")
+    .join("\n");
 }
 
 /** Map in input order while bounding work that is in flight. */

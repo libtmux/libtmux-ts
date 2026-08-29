@@ -11,6 +11,7 @@ import { createContext } from "./context.js";
 import { buildInstructions } from "./instructions.js";
 import { resolvePolicy, type Policy } from "./policy.js";
 import { offeredTools } from "./register.js";
+import { registerBuffers } from "./tools/buffers.js";
 import { registerCapture } from "./tools/capture.js";
 import { registerDiscovery } from "./tools/discovery.js";
 import { registerInput } from "./tools/input.js";
@@ -62,6 +63,7 @@ export function createTmuxMcpServer(
   const offered = offeredTools(mcp, policy);
   registerDiscovery(offered, context);
   registerCapture(offered, context);
+  registerBuffers(offered, context);
   registerInput(offered, context);
   registerLifecycle(offered, context);
   registerLayout(offered, context);

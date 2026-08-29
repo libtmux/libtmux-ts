@@ -13,6 +13,7 @@ import {
 } from "../src/policy.js";
 import { PaneTail } from "../src/pane_tail.js";
 import { registerResources } from "../src/resources.js";
+import { registerBuffers } from "../src/tools/buffers.js";
 import { registerCapture } from "../src/tools/capture.js";
 import { registerDiscovery } from "../src/tools/discovery.js";
 import { registerInput } from "../src/tools/input.js";
@@ -212,7 +213,7 @@ describe("bounded request policy", () => {
       [registerInput, "send_keys", { keys: inline, paneId: "%1" }, "8192 bytes"],
       [registerInput, "paste_text", { paneId: "%1", text: inline }, "8192 bytes"],
       [registerInput, "run_command", { command: framed, paneId: "%1" }, "2048 UTF-8 bytes"],
-      [registerSettings, "load_buffer", { name: "probe", text: staged }, "262144 UTF-8 bytes"],
+      [registerBuffers, "load_buffer", { name: "probe", text: staged }, "262144 UTF-8 bytes"],
       [
         registerLifecycle,
         "new_session",
@@ -221,7 +222,7 @@ describe("bounded request policy", () => {
       ],
       [registerSettings, "set_option", { name: "history-limit", value: inline }, "8192 bytes"],
       [registerSettings, "set_environment", { name: "EDITOR", value: inline }, "8192 bytes"],
-      [registerSettings, "save_buffer", { name: "probe", path: inline }, "8192 bytes"],
+      [registerBuffers, "save_buffer", { name: "probe", path: inline }, "8192 bytes"],
       [registerCapture, "pipe_pane", { paneId: "%1", shellCommand: inline }, "8192 bytes"],
       [registerDiscovery, "display_message", { format: inline }, "8192 bytes"],
       [registerLayout, "select_layout", { layout: inline, windowId: "@1" }, "8192 bytes"],
@@ -704,7 +705,7 @@ describe("show_buffer", () => {
       saveBuffer: async (_name: string, path: string) =>
         writeFile(path, Buffer.alloc(300_000, "x")),
     };
-    await withTools(fakeContext([], { tmux }), registerSettings, async (client) => {
+    await withTools(fakeContext([], { tmux }), registerBuffers, async (client) => {
       const answer = await client.callTool({
         arguments: { name: "large" },
         name: "show_buffer",
@@ -736,7 +737,7 @@ describe("show_buffer", () => {
     };
     await withTools(
       fakeContext([], { maxResultLines: 2, tmux }),
-      registerSettings,
+      registerBuffers,
       async (client) => {
         const answer = await client.callTool({
           arguments: { maxLines: 999, name: "short" },
@@ -762,7 +763,7 @@ describe("show_buffer", () => {
       saveBuffer: async (_name: string, path: string) =>
         writeFile(path, new Uint8Array(100_000).fill(0xff)),
     };
-    await withTools(fakeContext([], { tmux }), registerSettings, async (client) => {
+    await withTools(fakeContext([], { tmux }), registerBuffers, async (client) => {
       const answer = await client.callTool({
         arguments: { name: "racing" },
         name: "show_buffer",

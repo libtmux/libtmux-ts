@@ -9,6 +9,7 @@ import type { CallerIdentity } from "../src/caller.js";
 import type { ToolContext } from "../src/context.js";
 import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { registerResources } from "../src/resources.js";
+import { registerBuffers } from "../src/tools/buffers.js";
 import { registerDiscovery } from "../src/tools/discovery.js";
 import { registerLayout } from "../src/tools/layout.js";
 import { registerLifecycle } from "../src/tools/lifecycle.js";
@@ -260,7 +261,7 @@ function expectBounded(result: unknown, field: string): void {
 
 describe("metadata tool bounds", () => {
   test("bounds settings collections and reports omitted entries", async () => {
-    await withMcp([registerSettings], async (client) => {
+    await withMcp([registerSettings, registerBuffers], async (client) => {
       const results = await Promise.all([
         client.callTool({ arguments: {}, name: "show_options" }),
         client.callTool({ arguments: {}, name: "show_hooks" }),
