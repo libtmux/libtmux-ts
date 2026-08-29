@@ -48,6 +48,25 @@ describe("server utility requests", () => {
     ]);
   });
 
+  test("forwards setHook command controls to the engine", async () => {
+    const requests: TmuxInvocationRequest[] = [];
+    const engine = singleCommandTransport((request) => {
+      requests.push(request);
+      return Promise.resolve(success(request));
+    });
+    const controller = new AbortController();
+    const server = new Server({ engine, timeoutMs: 91 });
+
+    await server.setHook("after-new-window", "display-message hooked", {
+      signal: controller.signal,
+      timeoutMs: 37,
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.signal).toBe(controller.signal);
+    expect(requests[0]?.timeoutMs).toBe(37);
+  });
+
   test("does not hide an engine programming error as a dead server", async () => {
     const engine = singleCommandTransport(() => Promise.reject(new TypeError("broken engine")));
 

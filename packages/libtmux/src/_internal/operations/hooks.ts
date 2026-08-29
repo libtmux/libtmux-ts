@@ -67,13 +67,17 @@ export async function setHook(
   command: string,
   options: SetHookOptions = {},
 ): Promise<void> {
-  await runCommand(runtime, [
-    "set-hook",
-    ...(options.append === true ? ["-a"] : []),
-    ...scopeArguments(scope, target),
-    literalFormat(name),
-    command,
-  ]);
+  await runCommand(
+    runtime,
+    [
+      "set-hook",
+      ...(options.append === true ? ["-a"] : []),
+      ...scopeArguments(scope, target),
+      literalFormat(name),
+      command,
+    ],
+    options,
+  );
 }
 
 /** Remove every command bound to a hook name at one scope. */
