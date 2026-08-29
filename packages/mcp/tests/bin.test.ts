@@ -108,7 +108,7 @@ describe("the installed program", () => {
     // throwing rather than by this assertion.
     const { stderr } = await handshake(built);
 
-    expect(stderr).toContain("mutating");
+    expect(stderr).toContain("readonly");
     expect(stderr.trimEnd().split("\n")).toHaveLength(1);
   }, 60_000);
 });

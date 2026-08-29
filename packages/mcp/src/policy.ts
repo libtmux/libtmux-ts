@@ -124,7 +124,7 @@ function readToolAllowlist(raw: string | undefined): ReadonlySet<string> | undef
  * this becomes visible.
  */
 function readSafety(raw: string | undefined): SafetyTier {
-  if (raw === undefined) return "mutating";
+  if (raw === undefined) return "readonly";
   const named = raw.trim().toLowerCase();
   if (named === "readonly" || named === "read-only") return "readonly";
   if (named === "mutating" || named === "destructive") return named;

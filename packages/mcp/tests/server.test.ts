@@ -99,6 +99,9 @@ async function withClient(
       ...fixture.controllerEnvironment,
       LIBTMUX_SOCKET_PATH: fixture.socketPath,
       LIBTMUX_TMUX_BIN: fixture.tmuxExecutable,
+      // Most integration cases exercise mutations. Production has a narrower
+      // default; this harness opts in explicitly.
+      LIBTMUX_SAFETY: "mutating",
       // A probe must not reach the terminal the suite is being run from.
       TMUX: "",
       TMUX_PANE: "",

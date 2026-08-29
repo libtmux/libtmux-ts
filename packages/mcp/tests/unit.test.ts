@@ -161,7 +161,7 @@ describe("policy", () => {
   });
 
   test("offers the default tier when nobody chose one", () => {
-    expect(resolvePolicy({}).safety).toBe("mutating");
+    expect(resolvePolicy({}).safety).toBe("readonly");
   });
 
   test("reads a tier by name, including the way readonly is usually mistyped", () => {

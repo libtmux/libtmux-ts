@@ -115,7 +115,7 @@ agent's cleanup can reap the session you are working in.
 
 | Variable                       | Default  | Effect                                                |
 | ------------------------------ | -------- | ----------------------------------------------------- |
-| `LIBTMUX_SAFETY`               | mutating | `readonly`, `mutating`, or `destructive`              |
+| `LIBTMUX_SAFETY`               | readonly | `readonly`, `mutating`, or `destructive`              |
 | `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller              |
 | `LIBTMUX_MCP_TASK_WAIT_MAX_MS` | 600000   | Ceiling on a wait running as a task                   |
 | `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links    |
