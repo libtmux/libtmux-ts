@@ -871,6 +871,7 @@ describe("Python 0.62.0 parity manifest", () => {
         };
         packageManifest.exports["."] = {
           types: "./dist/unrelated.d.ts",
+          bun: "./src/unrelated.ts",
           import: "./dist/unrelated.js",
           default: "./dist/unrelated.js",
         };

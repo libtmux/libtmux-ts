@@ -333,12 +333,12 @@ both packed and linted clean.
 
 An in-repo consumer resolves `libtmux` to source through `paths` in its own
 tsconfig, so a branded class has one type identity rather than one per build
-output. Source ships so its source maps remain inspectable, but the published
-`exports` deliberately name only `dist`; consumers cannot import source through
-package paths. Consumer tests use the library's real-tmux fixture harness
-directly, across the package boundary — that harness reaches into the library's
-internals and cannot be published, so it stays where it is and in-repo consumers
-reach for it by path.
+output. Published exports send Bun to the packed TypeScript source and keep
+types, Node, and other importers on `dist`. Packed-package canaries require each
+runtime to select its intended tree and keep root and subpath imports on one
+public runtime identity. The library's real-tmux fixture harness reaches into
+unpublished internals, so in-repo consumers still import that harness directly
+by path.
 
 Never create tags and never push them. See
 [Release commits](WRITING.md#release-commits).

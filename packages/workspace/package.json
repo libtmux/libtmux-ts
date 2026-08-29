@@ -32,17 +32,20 @@
   "exports": {
     ".": {
       "types": "./dist/builder.d.ts",
+      "bun": "./src/builder.ts",
       "import": "./dist/builder.js",
       "default": "./dist/builder.js"
     },
     "./config": {
       "types": "./dist/config.d.ts",
+      "bun": "./src/config.ts",
       "import": "./dist/config.js",
       "default": "./dist/config.js"
     },
     "./package.json": "./package.json",
     "./ownership": {
       "types": "./dist/ownership.d.ts",
+      "bun": "./src/ownership.ts",
       "import": "./dist/ownership.js",
       "default": "./dist/ownership.js"
     }

@@ -37,72 +37,86 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "bun": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json",
     "./common": {
       "types": "./dist/common.d.ts",
+      "bun": "./src/common.ts",
       "import": "./dist/common.js",
       "default": "./dist/common.js"
     },
     "./exc": {
       "types": "./dist/exc.d.ts",
+      "bun": "./src/exc.ts",
       "import": "./dist/exc.js",
       "default": "./dist/exc.js"
     },
     "./constants": {
       "types": "./dist/constants.d.ts",
+      "bun": "./src/constants.ts",
       "import": "./dist/constants.js",
       "default": "./dist/constants.js"
     },
     "./formats": {
       "types": "./dist/formats.d.ts",
+      "bun": "./src/formats.ts",
       "import": "./dist/formats.js",
       "default": "./dist/formats.js"
     },
     "./types": {
       "types": "./dist/types.d.ts",
+      "bun": "./src/types.ts",
       "import": "./dist/types.js",
       "default": "./dist/types.js"
     },
     "./field-types": {
       "types": "./dist/field_types.d.ts",
+      "bun": "./src/field_types.ts",
       "import": "./dist/field_types.js",
       "default": "./dist/field_types.js"
     },
     "./server": {
       "types": "./dist/server.d.ts",
+      "bun": "./src/server.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
     },
     "./session": {
       "types": "./dist/session.d.ts",
+      "bun": "./src/session.ts",
       "import": "./dist/session.js",
       "default": "./dist/session.js"
     },
     "./window": {
       "types": "./dist/window.d.ts",
+      "bun": "./src/window.ts",
       "import": "./dist/window.js",
       "default": "./dist/window.js"
     },
     "./pane": {
       "types": "./dist/pane.d.ts",
+      "bun": "./src/pane.ts",
       "import": "./dist/pane.js",
       "default": "./dist/pane.js"
     },
     "./client": {
       "types": "./dist/client.d.ts",
+      "bun": "./src/client.ts",
       "import": "./dist/client.js",
       "default": "./dist/client.js"
     },
     "./selection": {
       "types": "./dist/selection.d.ts",
+      "bun": "./src/selection.ts",
       "import": "./dist/selection.js",
       "default": "./dist/selection.js"
     },
     "./engine": {
       "types": "./dist/engine.d.ts",
+      "bun": "./src/engine.ts",
       "import": "./dist/engine.js",
       "default": "./dist/engine.js"
     }

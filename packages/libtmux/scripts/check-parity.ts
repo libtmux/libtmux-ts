@@ -707,25 +707,29 @@ interface ExportSource {
 function exportSource(moduleName: string, value: unknown): ExportSource {
   const path = `package.exports[${JSON.stringify(moduleName)}]`;
   const conditions = objectAt(value, path);
-  exactKeys(conditions, ["types", "import", "default"], path);
+  exactKeys(conditions, ["types", "bun", "import", "default"], path);
   const typesTarget = stringAt(conditions, "types", path);
+  const bunTarget = stringAt(conditions, "bun", path);
   const importTarget = stringAt(conditions, "import", path);
   const defaultTarget = stringAt(conditions, "default", path);
   const typesMatch = /^\.\/dist\/([a-z][a-z0-9_/-]*)\.d\.ts$/.exec(typesTarget);
+  const bunMatch = /^\.\/src\/([a-z][a-z0-9_/-]*)\.ts$/.exec(bunTarget);
   const importMatch = /^\.\/dist\/([a-z][a-z0-9_/-]*)\.js$/.exec(importTarget);
   const defaultMatch = /^\.\/dist\/([a-z][a-z0-9_/-]*)\.js$/.exec(defaultTarget);
   if (
     !typesMatch?.[1] ||
+    !bunMatch?.[1] ||
     !importMatch?.[1] ||
     !defaultMatch?.[1] ||
-    typesMatch[1] !== importMatch[1] ||
+    typesMatch[1] !== bunMatch[1] ||
+    bunMatch[1] !== importMatch[1] ||
     importMatch[1] !== defaultMatch[1]
   ) {
-    fail(`${path} must have aligned ./dist types, import, and default targets`);
+    fail(`${path} must have aligned ./dist types, ./src bun, import, and default targets`);
   }
   return {
-    importPath: `./src/${importMatch[1]}.js`,
-    relativePath: `./src/${importMatch[1]}.ts`,
+    importPath: `${bunTarget.slice(0, -3)}.js`,
+    relativePath: bunTarget,
   };
 }
 

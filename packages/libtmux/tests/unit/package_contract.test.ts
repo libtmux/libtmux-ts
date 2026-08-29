@@ -222,53 +222,63 @@ describe("package contract", () => {
     ]);
     expect(packageManifest.exports["."]).toEqual({
       types: "./dist/index.d.ts",
+      bun: "./src/index.ts",
       import: "./dist/index.js",
       default: "./dist/index.js",
     });
-    expect(Object.keys(packageManifest.exports["."]!)).toEqual(["types", "import", "default"]);
     expect(packageManifest.exports["./package.json"]).toBe("./package.json");
     expect(packageManifest.exports["./common"]).toEqual({
       types: "./dist/common.d.ts",
+      bun: "./src/common.ts",
       import: "./dist/common.js",
       default: "./dist/common.js",
     });
     expect(packageManifest.exports["./exc"]).toEqual({
       types: "./dist/exc.d.ts",
+      bun: "./src/exc.ts",
       import: "./dist/exc.js",
       default: "./dist/exc.js",
     });
     expect(packageManifest.exports["./constants"]).toEqual({
       types: "./dist/constants.d.ts",
+      bun: "./src/constants.ts",
       import: "./dist/constants.js",
       default: "./dist/constants.js",
     });
     expect(packageManifest.exports["./formats"]).toEqual({
       types: "./dist/formats.d.ts",
+      bun: "./src/formats.ts",
       import: "./dist/formats.js",
       default: "./dist/formats.js",
     });
     expect(packageManifest.exports["./types"]).toEqual({
       types: "./dist/types.d.ts",
+      bun: "./src/types.ts",
       import: "./dist/types.js",
       default: "./dist/types.js",
     });
     expect(packageManifest.exports["./field-types"]).toEqual({
       types: "./dist/field_types.d.ts",
+      bun: "./src/field_types.ts",
       import: "./dist/field_types.js",
       default: "./dist/field_types.js",
     });
-    for (const model of ["server", "session", "window", "pane", "client", "selection"]) {
+    for (const model of ["server", "session", "window", "pane", "client", "selection", "engine"]) {
       expect(packageManifest.exports[`./${model}`]).toEqual({
         types: `./dist/${model}.d.ts`,
+        bun: `./src/${model}.ts`,
         import: `./dist/${model}.js`,
         default: `./dist/${model}.js`,
       });
     }
+    for (const target of Object.values(packageManifest.exports)) {
+      if (typeof target !== "string") {
+        expect(Object.keys(target)).toEqual(["types", "bun", "import", "default"]);
+      }
+    }
 
     const serializedExports = JSON.stringify(packageManifest.exports);
     expect(serializedExports).not.toContain("require");
-    expect(serializedExports).not.toContain("bun");
-    expect(serializedExports).not.toContain("src/");
     expect(Object.keys(packageManifest.exports)).not.toContain("./*");
     expect(Object.keys(packageManifest.exports)).not.toContain("./dist/*");
   });

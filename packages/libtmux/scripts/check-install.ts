@@ -13,11 +13,11 @@ import { resolveNode22 } from "../src/_internal/test/node22.js";
  *
  * `test:package` reads the tarball; this one uses it. The project is empty
  * apart from the tarball, so nothing resolves through the workspace — no
- * `paths`, no hoisted `node_modules`, no source tree — and what `exports` names
- * has to be all there is.
+ * `paths`, no hoisted `node_modules`, no repository source tree — and every
+ * file named by `exports` has to be packed.
  *
- * Node at the floor the package claims, not Bun: the tarball is what a Node
- * consumer installs.
+ * Node 22 exercises the emitted JavaScript and Bun exercises the packed
+ * TypeScript source selected by its export condition.
  */
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -67,9 +67,27 @@ async function run(
 }
 
 const manifest = JSON.parse(await readFile(join(tsRoot, "package.json"), "utf8")) as {
+  exports: Record<
+    string,
+    | string
+    | {
+        bun: string;
+        import: string;
+      }
+  >;
   name: string;
   version: string;
 };
+const runtimeExports = Object.entries(manifest.exports).flatMap(([subpath, target]) => {
+  if (typeof target === "string") return [];
+  return [
+    {
+      bun: target.bun,
+      node: target.import,
+      specifier: subpath === "." ? manifest.name : `${manifest.name}/${subpath.slice(2)}`,
+    },
+  ];
+});
 const node = await resolveNode22();
 
 // `ltx` so a sweep can tell this apart from another libtmux port's leavings.
@@ -129,16 +147,26 @@ try {
     COMMAND_TIMEOUT_MILLISECONDS,
   );
 
-  // Resolving proves `exports` and `dist` agree; calling proves the modules
-  // evaluate, which a missing internal file fails at rather than at import.
+  // Resolving proves each runtime selects its intended packed tree; calling
+  // proves the modules evaluate rather than merely resolve.
   const probe = join(project, "probe.mjs");
   await writeFile(
     probe,
     [
       `import { decodeWhereDocument as decodeRoot, encodeWhereDocument as encodeRoot } from "${manifest.name}";`,
-      `import { Server, TmuxTransportError, PaneDirection, OptionScope } from "${manifest.name}";`,
+      `import { Server, TmuxTransportError, PaneDirection, OptionScope, safeInteger } from "${manifest.name}";`,
+      `import { Server as ServerFromSubpath } from "${manifest.name}/server";`,
       `import { decodeWhereDocument, encodeWhereDocument, parseLegacyWhere } from "${manifest.name}/selection";`,
+      `const bun = typeof Bun !== "undefined";`,
+      `const runtimeExports = ${JSON.stringify(runtimeExports)};`,
+      `for (const entry of runtimeExports) {`,
+      `  const expected = bun ? entry.bun : entry.node;`,
+      `  const url = import.meta.resolve(entry.specifier);`,
+      `  if (!url.endsWith(expected.slice(1))) throw new Error(entry.specifier + " resolved to " + url);`,
+      `  await import(entry.specifier);`,
+      `}`,
       "const server = new Server({ socketName: 'ltx-canary' });",
+      "if (Server !== ServerFromSubpath) throw new Error('Server exports have different identities');",
       "if (typeof server.snapshot !== 'function') throw new Error('Server.snapshot is missing');",
       "if (typeof server.watch !== 'function') throw new Error('Server.watch is missing');",
       "if (typeof TmuxTransportError !== 'function') throw new Error('TmuxTransportError is missing');",
@@ -152,11 +180,18 @@ try {
       "const encoded = encodeWhereDocument({ model: 'pane', version: 1, where: { title: { contains: 'log' } } });",
       "const decoded = decodeWhereDocument(JSON.parse(encoded));",
       "if (decoded.model !== 'pane' || decoded.where.title?.contains !== 'log') throw new Error('WHERE document codecs disagree');",
+      "let stack = '';",
+      "try { safeInteger(0.5); } catch (error) { stack = String(error instanceof Error ? error.stack : error); }",
+      "if (!stack.includes('/src/common.ts')) throw new Error('stack did not map to packed source: ' + stack);",
       "process.stdout.write('ok\\n');",
       "",
     ].join("\n"),
   );
-  const nodeResult = await run([node, probe], project, RUNTIME_TIMEOUT_MILLISECONDS);
+  const nodeResult = await run(
+    [node, "--enable-source-maps", probe],
+    project,
+    RUNTIME_TIMEOUT_MILLISECONDS,
+  );
   const bunResult = await run([process.execPath, probe], project, RUNTIME_TIMEOUT_MILLISECONDS);
   for (const [runtime, stdout] of [
     ["Node 22", nodeResult.stdout],
