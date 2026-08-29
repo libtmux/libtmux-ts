@@ -1,14 +1,9 @@
-import {
-  WHERE_FIELDS_V1,
-  type WhereField,
-  type WhereModel,
-} from "../../_generated/where_fields.js";
+import type { WhereModel } from "../../_generated/where_fields.js";
 import {
   createGraphRecordRef,
   graphRecordForRef,
   graphRecordRefsEqual,
   isNormalizedGraph,
-  type GraphCapture,
   type GraphEntity,
   type GraphEntityRef,
   type GraphRecord,
@@ -18,58 +13,40 @@ import {
   type NormalizedGraph,
   type WinlinkEntity,
 } from "./model.js";
+import {
+  invalidProjection,
+  isWhereModel,
+  readStrictDataRecord,
+  rootModel,
+  snapshotDataArray,
+  snapshotDescriptors,
+  type DescriptorSnapshots,
+  type ProjectionDescriptor,
+  type ProjectionRelationRequirement,
+} from "./projection_descriptor.js";
+import {
+  createSelectionProjectionCorpus,
+  createSelectionProjectionView,
+  type ProjectionAdjacency,
+  type ProjectionRecord,
+  type ProjectionScalars,
+  type SelectionProjection,
+  type SelectionProjectionCorpus,
+} from "./projection_identity.js";
 import { createLogicalRef, createWinlinkRef, type WinlinkRef } from "./refs.js";
 
-interface ProjectionRelationRequirement {
-  readonly cardinality: "many" | "one";
-  readonly name: string;
-  readonly targetModel: WhereModel;
-}
-
-export interface ProjectionDescriptor {
-  readonly fields: readonly WhereField[];
-  readonly model: WhereModel;
-  readonly relations: readonly ProjectionRelationRequirement[];
-}
-
-interface ProjectionOneAdjacency {
-  readonly cardinality: "one";
-  readonly name: string;
-  readonly target: GraphRecordRef | null;
-  readonly targetModel: WhereModel;
-}
-
-interface ProjectionManyAdjacency {
-  readonly cardinality: "many";
-  readonly name: string;
-  readonly targetModel: WhereModel;
-  readonly targets: readonly GraphRecordRef[];
-}
-
-export type ProjectionAdjacency = ProjectionManyAdjacency | ProjectionOneAdjacency;
-
-type ProjectionScalars = Readonly<Record<string, string | null>>;
-
-export interface ProjectionRecord {
-  readonly adjacency: readonly ProjectionAdjacency[];
-  readonly entity: GraphEntityRef;
-  readonly model: WhereModel;
-  readonly ref: GraphRecordRef;
-  readonly scalars: ProjectionScalars;
-  readonly winlink: WinlinkRef | null;
-}
-
-declare class SelectionProjectionNominal {
-  private readonly selectionProjectionBrand: undefined;
-}
-
-export interface SelectionProjection extends SelectionProjectionNominal {
-  readonly capture: GraphCapture;
-  readonly entities: readonly GraphEntity<GraphEntityRef>[];
-  readonly members: readonly GraphRecordRef[];
-  readonly records: readonly ProjectionRecord[];
-  readonly winlinks: readonly WinlinkEntity[];
-}
+export type { ProjectionDescriptor } from "./projection_descriptor.js";
+export {
+  isSelectionProjection,
+  originGraphForSelectionProjection,
+  selectionProjectionOwnsRecord,
+  selectionProjectionRecordForRef,
+} from "./projection_identity.js";
+export type {
+  ProjectionAdjacency,
+  ProjectionRecord,
+  SelectionProjection,
+} from "./projection_identity.js";
 
 export type ProjectionBuilderState = "collecting" | "complete" | "failed";
 
@@ -79,258 +56,17 @@ export interface SelectionProjectionBuilderInput {
   readonly source: GraphSourceId;
 }
 
+export interface SelectionProjectionCorpusBuilderInput {
+  readonly descriptors: Readonly<Record<WhereModel, ProjectionDescriptor>>;
+  readonly graph: NormalizedGraph;
+  readonly sources: readonly GraphSourceId[];
+}
+
 interface RelationSlot {
   manyTargets: readonly GraphRecord[];
   materialized: boolean;
   oneTarget: GraphRecord | null;
   readonly requirement: ProjectionRelationRequirement;
-}
-
-type DescriptorSnapshots = Readonly<Record<WhereModel, ProjectionDescriptor>>;
-type ProjectionRecordIndex = ReadonlyMap<string, ReadonlyMap<number, ProjectionRecord>>;
-
-const authenticatedSelectionProjections = new WeakSet<object>();
-const selectionProjectionOrigins = new WeakMap<object, NormalizedGraph>();
-const selectionProjectionRecordOwners = new WeakMap<object, SelectionProjection>();
-const selectionProjectionRecordIndexes = new WeakMap<object, ProjectionRecordIndex>();
-
-function invalidProjection(message: string, cause?: unknown): never {
-  throw cause === undefined ? new Error(message) : new Error(message, { cause });
-}
-
-function readStrictDataRecord(
-  value: unknown,
-  expectedKeys: readonly string[],
-  label: string,
-): Readonly<Record<string, unknown>> {
-  if (typeof value !== "object" || value === null) {
-    return invalidProjection(`${label} must be an object`);
-  }
-
-  let isArray: boolean;
-  let prototype: object | null;
-  let ownKeys: readonly PropertyKey[];
-  let descriptors: readonly (PropertyDescriptor | undefined)[];
-  let finalPrototype: object | null;
-  let finalOwnKeys: readonly PropertyKey[];
-  try {
-    isArray = Array.isArray(value);
-    prototype = Object.getPrototypeOf(value);
-    ownKeys = Reflect.ownKeys(value);
-    descriptors = expectedKeys.map((key) => Object.getOwnPropertyDescriptor(value, key));
-    finalPrototype = Object.getPrototypeOf(value);
-    finalOwnKeys = Reflect.ownKeys(value);
-  } catch (error) {
-    return invalidProjection(`${label} could not be inspected`, error);
-  }
-
-  if (
-    isArray ||
-    prototype !== finalPrototype ||
-    (prototype !== Object.prototype && prototype !== null) ||
-    (finalPrototype !== Object.prototype && finalPrototype !== null)
-  ) {
-    return invalidProjection(`${label} must be a plain data object`);
-  }
-  if (
-    ownKeys.length !== expectedKeys.length ||
-    ownKeys.some((key) => typeof key !== "string" || !expectedKeys.includes(key)) ||
-    ownKeys.length !== finalOwnKeys.length ||
-    ownKeys.some((key) => !finalOwnKeys.includes(key))
-  ) {
-    return invalidProjection(`${label} has invalid keys`);
-  }
-
-  const entries: Array<readonly [string, unknown]> = [];
-  for (const [index, key] of expectedKeys.entries()) {
-    const descriptor = descriptors[index];
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-      return invalidProjection(`${label} must contain enumerable data properties`);
-    }
-    entries.push([key, descriptor.value]);
-  }
-  return Object.fromEntries(entries);
-}
-
-function snapshotDataArray(value: unknown, label: string): readonly unknown[] {
-  let isArray: boolean;
-  let lengthDescriptor: PropertyDescriptor | undefined;
-  const elementDescriptors: Array<PropertyDescriptor | undefined> = [];
-  try {
-    isArray = Array.isArray(value);
-    if (isArray) {
-      lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
-      const length = lengthDescriptor?.value;
-      if (typeof length === "number" && Number.isSafeInteger(length) && length >= 0) {
-        for (let index = 0; index < length; index += 1) {
-          elementDescriptors.push(Object.getOwnPropertyDescriptor(value, String(index)));
-        }
-      }
-    }
-  } catch (error) {
-    return invalidProjection(`${label} could not be inspected`, error);
-  }
-
-  if (!isArray) return invalidProjection(`${label} must be an array`);
-  if (
-    lengthDescriptor === undefined ||
-    !("value" in lengthDescriptor) ||
-    lengthDescriptor.enumerable ||
-    typeof lengthDescriptor.value !== "number" ||
-    !Number.isSafeInteger(lengthDescriptor.value) ||
-    lengthDescriptor.value < 0 ||
-    elementDescriptors.length !== lengthDescriptor.value
-  ) {
-    return invalidProjection(`${label} must have a valid array length`);
-  }
-
-  const values: unknown[] = [];
-  for (const descriptor of elementDescriptors) {
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-      return invalidProjection(`${label} must contain own enumerable data elements`);
-    }
-    values.push(descriptor.value);
-  }
-  return values;
-}
-
-function isWhereModel(value: unknown): value is WhereModel {
-  return value === "session" || value === "window" || value === "pane" || value === "client";
-}
-
-function snapshotDescriptor(model: WhereModel, value: unknown): ProjectionDescriptor {
-  const descriptor = readStrictDataRecord(
-    value,
-    ["fields", "model", "relations"],
-    `${model} descriptor`,
-  );
-  if (descriptor.model !== model) {
-    return invalidProjection(`${model} descriptor model does not match its key`);
-  }
-
-  const fields: WhereField[] = [];
-  const seenTokens = new Set<string>();
-  const seenWireNames = new Set<string>();
-  for (const value of snapshotDataArray(descriptor.fields, `${model} descriptor fields`)) {
-    const field = readStrictDataRecord(
-      value,
-      ["criteriaName", "domain", "since", "token", "wireName"],
-      `${model} field`,
-    );
-    if (
-      typeof field.domain !== "string" ||
-      typeof field.token !== "string" ||
-      typeof field.wireName !== "string" ||
-      typeof field.criteriaName !== "string" ||
-      typeof field.since !== "string"
-    ) {
-      return invalidProjection(`${model} field is invalid`);
-    }
-    if (seenTokens.has(field.token)) {
-      return invalidProjection(`${model} descriptor has a duplicate field token`);
-    }
-    if (seenWireNames.has(field.wireName)) {
-      return invalidProjection(`${model} descriptor has a duplicate field wire name`);
-    }
-    const canonical = WHERE_FIELDS_V1[model].find(
-      ({ criteriaName, domain, since, token, wireName }) =>
-        domain === field.domain &&
-        token === field.token &&
-        wireName === field.wireName &&
-        criteriaName === field.criteriaName &&
-        since === field.since,
-    );
-    if (canonical === undefined) {
-      return invalidProjection(`${model} field does not belong to the generated descriptor`);
-    }
-    seenTokens.add(canonical.token);
-    seenWireNames.add(canonical.wireName);
-    fields.push(
-      Object.freeze({
-        criteriaName: canonical.criteriaName,
-        domain: canonical.domain,
-        since: canonical.since,
-        token: canonical.token,
-        wireName: canonical.wireName,
-      }),
-    );
-  }
-
-  const relations: ProjectionRelationRequirement[] = [];
-  const seenRelationNames = new Set<string>();
-  for (const value of snapshotDataArray(descriptor.relations, `${model} descriptor relations`)) {
-    const relation = readStrictDataRecord(
-      value,
-      ["cardinality", "name", "targetModel"],
-      `${model} relation`,
-    );
-    if (typeof relation.name !== "string" || relation.name.length === 0) {
-      return invalidProjection(`${model} relation name must be a nonempty string`);
-    }
-    if (seenRelationNames.has(relation.name)) {
-      return invalidProjection(`${model} descriptor has a duplicate relation name`);
-    }
-    if (relation.cardinality !== "one" && relation.cardinality !== "many") {
-      return invalidProjection(`${model} relation cardinality is invalid`);
-    }
-    if (!isWhereModel(relation.targetModel)) {
-      return invalidProjection(`${model} relation target model is invalid`);
-    }
-    seenRelationNames.add(relation.name);
-    relations.push(
-      Object.freeze({
-        cardinality: relation.cardinality,
-        name: relation.name,
-        targetModel: relation.targetModel,
-      }),
-    );
-  }
-
-  return Object.freeze({
-    fields: Object.freeze(fields),
-    model,
-    relations: Object.freeze(relations),
-  });
-}
-
-function snapshotDescriptors(value: unknown): DescriptorSnapshots {
-  const descriptors = readStrictDataRecord(
-    value,
-    ["client", "pane", "session", "window"],
-    "projection descriptors",
-  );
-  return Object.freeze({
-    client: snapshotDescriptor("client", descriptors.client),
-    pane: snapshotDescriptor("pane", descriptors.pane),
-    session: snapshotDescriptor("session", descriptors.session),
-    window: snapshotDescriptor("window", descriptors.window),
-  });
-}
-
-function rootModel(source: GraphSource): WhereModel {
-  switch (source.listCommand) {
-    case "list-clients":
-      return "client";
-    case "list-panes":
-      return "pane";
-    case "list-sessions":
-      return "session";
-    case "list-windows":
-      return "window";
-  }
-}
-
-function createProjectionRecordIndex(records: readonly ProjectionRecord[]): ProjectionRecordIndex {
-  const bySource = new Map<string, Map<number, ProjectionRecord>>();
-  for (const record of records) {
-    let byOrdinal = bySource.get(record.ref.source);
-    if (byOrdinal === undefined) {
-      byOrdinal = new Map<number, ProjectionRecord>();
-      bySource.set(record.ref.source, byOrdinal);
-    }
-    byOrdinal.set(record.ref.ordinal, record);
-  }
-  return bySource;
 }
 
 function logicalEntityForRecord(record: GraphRecord): GraphEntityRef {
@@ -421,32 +157,41 @@ export class SelectionProjectionBuilder {
   private readonly reachableRecords: GraphRecord[] = [];
   private readonly reachableSet: Set<GraphRecord> = new Set<GraphRecord>();
   private readonly rootRecords: readonly GraphRecord[];
+  private readonly rootRecordsBySource: ReadonlyMap<GraphSourceId, readonly GraphRecord[]>;
   private readonly slots: Map<GraphRecord, Map<string, RelationSlot>> = new Map<
     GraphRecord,
     Map<string, RelationSlot>
   >();
   private builderState: ProjectionBuilderState = "collecting";
   private completedProjection: SelectionProjection | undefined;
+  private completedViews: ReadonlyMap<GraphSourceId, SelectionProjection> | undefined;
   private failureCause: unknown;
 
   private constructor(
     descriptors: DescriptorSnapshots,
     graph: NormalizedGraph,
-    rootSource: GraphSource,
-    expectedRootModel: WhereModel,
+    rootSources: readonly GraphSource[],
   ) {
     this.descriptors = descriptors;
     this.graph = graph;
     const roots: GraphRecord[] = [];
-    for (const ref of rootSource.records) {
-      const record = this.resolveRecord(ref);
-      if (record.model !== expectedRootModel) {
-        invalidProjection("source contains a record with the wrong root model");
+    const rootsBySource = new Map<GraphSourceId, readonly GraphRecord[]>();
+    for (const rootSource of rootSources) {
+      const sourceRoots: GraphRecord[] = [];
+      const expectedRootModel = rootModel(rootSource);
+      for (const ref of rootSource.records) {
+        const record = this.resolveRecord(ref);
+        if (record.model !== expectedRootModel) {
+          invalidProjection("source contains a record with the wrong root model");
+        }
+        sourceRoots.push(record);
+        roots.push(record);
+        this.addReachable(record);
       }
-      roots.push(record);
-      this.addReachable(record);
+      rootsBySource.set(rootSource.id, Object.freeze(sourceRoots));
     }
     this.rootRecords = Object.freeze(roots);
+    this.rootRecordsBySource = rootsBySource;
   }
 
   static create(input: SelectionProjectionBuilderInput): SelectionProjectionBuilder {
@@ -455,19 +200,53 @@ export class SelectionProjectionBuilder {
       ["descriptors", "graph", "source"],
       "projection builder input",
     );
-    if (!isNormalizedGraph(values.graph)) {
+    const graph = values.graph;
+    if (!isNormalizedGraph(graph)) {
       return invalidProjection("selection projection requires an authentic normalized graph");
     }
     if (typeof values.source !== "string" || values.source.length === 0) {
       return invalidProjection("selection projection source must be a nonempty graph source ID");
     }
-    const source = values.graph.sources.find(({ id }) => id === values.source);
+    const source = graph.sources.find(({ id }) => id === values.source);
     if (source === undefined) {
       return invalidProjection("selection projection source does not exist in the graph");
     }
-    const expectedRootModel = rootModel(source);
     const descriptors = snapshotDescriptors(values.descriptors);
-    return new SelectionProjectionBuilder(descriptors, values.graph, source, expectedRootModel);
+    return new SelectionProjectionBuilder(descriptors, graph, [source]);
+  }
+
+  static createCorpus(input: SelectionProjectionCorpusBuilderInput): SelectionProjectionBuilder {
+    const values = readStrictDataRecord(
+      input,
+      ["descriptors", "graph", "sources"],
+      "selection projection corpus builder input",
+    );
+    const graph = values.graph;
+    if (!isNormalizedGraph(graph)) {
+      return invalidProjection("selection projection requires an authentic normalized graph");
+    }
+    const sourceIds = snapshotDataArray(values.sources, "selection projection corpus sources");
+    if (sourceIds.length === 0) {
+      return invalidProjection("selection projection corpus requires graph sources");
+    }
+    const seen = new Set<string>();
+    const sources = sourceIds.map((sourceId) => {
+      if (typeof sourceId !== "string" || sourceId.length === 0) {
+        return invalidProjection(
+          "selection projection corpus source must be a nonempty graph source ID",
+        );
+      }
+      if (seen.has(sourceId)) {
+        return invalidProjection("selection projection corpus has a duplicate graph source");
+      }
+      seen.add(sourceId);
+      const source = graph.sources.find(({ id }) => id === sourceId);
+      if (source === undefined) {
+        return invalidProjection("selection projection source does not exist in the graph");
+      }
+      return source;
+    });
+    return new SelectionProjectionBuilder(snapshotDescriptors(values.descriptors), graph, sources);
   }
 
   get state(): ProjectionBuilderState {
@@ -556,16 +335,32 @@ export class SelectionProjectionBuilder {
       return this.completedProjection;
     }
 
-    for (const record of this.reachableRecords) {
-      for (const slot of this.slots.get(record)?.values() ?? []) {
-        if (!slot.materialized) throw new IncompleteProjectionError();
-      }
-    }
+    this.requireComplete();
 
-    const projection = this.buildProjection();
+    const corpus = this.buildCorpus();
+    const projection = createSelectionProjectionView(this.graph, corpus, this.rootRecords);
     this.completedProjection = projection;
     this.builderState = "complete";
     return projection;
+  }
+
+  sealViews(): ReadonlyMap<GraphSourceId, SelectionProjection> {
+    if (this.builderState === "failed") throw this.failureCause;
+    if (this.builderState === "complete") {
+      if (this.completedViews === undefined) {
+        return invalidProjection("completed selection projection views are unavailable");
+      }
+      return this.completedViews;
+    }
+    this.requireComplete();
+    const corpus = this.buildCorpus();
+    const views = new Map<GraphSourceId, SelectionProjection>();
+    for (const [source, roots] of this.rootRecordsBySource) {
+      views.set(source, createSelectionProjectionView(this.graph, corpus, roots));
+    }
+    this.completedViews = views;
+    this.builderState = "complete";
+    return views;
   }
 
   private addReachable(record: GraphRecord): void {
@@ -587,7 +382,7 @@ export class SelectionProjectionBuilder {
     this.slots.set(record, relationSlots);
   }
 
-  private buildProjection(): SelectionProjection {
+  private buildCorpus(): SelectionProjectionCorpus {
     const projectedRefs = new Map<GraphRecord, GraphRecordRef>();
     for (const record of this.reachableRecords) {
       projectedRefs.set(record, createGraphRecordRef(record.ref.source, record.ref.ordinal));
@@ -712,18 +507,20 @@ export class SelectionProjectionBuilder {
         ? {}
         : { tmuxVersion: this.graph.capture.tmuxVersion }),
     });
-    const projection = Object.freeze({
+    return createSelectionProjectionCorpus({
       capture,
-      entities: Object.freeze(entities),
-      winlinks: Object.freeze(winlinks),
-      records: Object.freeze(records),
-      members: Object.freeze(this.rootRecords.map(projectedRef)),
-    }) as unknown as SelectionProjection;
-    authenticatedSelectionProjections.add(projection);
-    selectionProjectionOrigins.set(projection, this.graph);
-    selectionProjectionRecordIndexes.set(projection, createProjectionRecordIndex(records));
-    for (const record of records) selectionProjectionRecordOwners.set(record, projection);
-    return projection;
+      entities,
+      winlinks,
+      records,
+    });
+  }
+
+  private requireComplete(): void {
+    for (const record of this.reachableRecords) {
+      for (const slot of this.slots.get(record)?.values() ?? []) {
+        if (!slot.materialized) throw new IncompleteProjectionError();
+      }
+    }
   }
 
   private requireCollecting(): void {
@@ -755,43 +552,4 @@ export class SelectionProjectionBuilder {
     }
     return record;
   }
-}
-
-export function isSelectionProjection(value: unknown): value is SelectionProjection {
-  return (
-    typeof value === "object" && value !== null && authenticatedSelectionProjections.has(value)
-  );
-}
-
-export function originGraphForSelectionProjection(value: unknown): NormalizedGraph | undefined {
-  if ((typeof value !== "object" && typeof value !== "function") || value === null) {
-    return undefined;
-  }
-  return selectionProjectionOrigins.get(value);
-}
-
-export function selectionProjectionOwnsRecord(
-  projection: unknown,
-  record: unknown,
-): record is ProjectionRecord {
-  if (
-    (typeof projection !== "object" && typeof projection !== "function") ||
-    projection === null ||
-    (typeof record !== "object" && typeof record !== "function") ||
-    record === null
-  ) {
-    return false;
-  }
-  return (
-    selectionProjectionOrigins.has(projection) &&
-    selectionProjectionRecordOwners.get(record) === projection
-  );
-}
-
-export function selectionProjectionRecordForRef(
-  projection: unknown,
-  ref: GraphRecordRef,
-): ProjectionRecord | undefined {
-  if (!isSelectionProjection(projection) || !graphRecordRefsEqual(ref, ref)) return undefined;
-  return selectionProjectionRecordIndexes.get(projection)?.get(ref.source)?.get(ref.ordinal);
 }

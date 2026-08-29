@@ -129,8 +129,33 @@ export function hydrateProjection(
   source: GraphSourceId,
 ): SelectionProjection {
   const builder = SelectionProjectionBuilder.create({ descriptors: DESCRIPTORS, graph, source });
+  hydrateBuilder(graph, builder, graph.sources.find(({ id }) => id === source)?.records ?? []);
+  return builder.seal();
+}
+
+/** Build one shared immutable record corpus and one member view per source. */
+export function hydrateProjectionViews(
+  graph: NormalizedGraph,
+  sources: readonly GraphSourceId[],
+): ReadonlyMap<GraphSourceId, SelectionProjection> {
+  const builder = SelectionProjectionBuilder.createCorpus({
+    descriptors: DESCRIPTORS,
+    graph,
+    sources,
+  });
+  const members = sources.flatMap(
+    (source) => graph.sources.find(({ id }) => id === source)?.records ?? [],
+  );
+  hydrateBuilder(graph, builder, members);
+  return builder.sealViews();
+}
+
+function hydrateBuilder(
+  graph: NormalizedGraph,
+  builder: SelectionProjectionBuilder,
+  members: readonly GraphRecordRef[],
+): void {
   const index = indexGraph(graph);
-  const members = graph.sources.find(({ id }) => id === source)?.records ?? [];
 
   // A relation can only be materialized once its subject is reachable from the
   // members, so walk outward from them instead of over the whole graph.
@@ -237,6 +262,4 @@ export function hydrateProjection(
         break;
     }
   }
-
-  return builder.seal();
 }

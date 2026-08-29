@@ -19,6 +19,7 @@ import {
   IncompleteProjectionError,
   SelectionProjectionBuilder,
   isSelectionProjection,
+  selectionProjectionOwnsRecord,
   type ProjectionDescriptor,
 } from "../../src/_internal/graph/selection_projection.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
@@ -428,6 +429,55 @@ describe("normalized entity and winlink graph", () => {
 });
 
 describe("selection projection snapshots", () => {
+  test("shares one authenticated corpus across source member views", () => {
+    const graph = normalizeGraph({
+      capture: capture(),
+      sources: [
+        source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })]),
+        source("windows", "list-windows", [
+          completeFormatRow({
+            session_id: "$1",
+            window_id: "@1",
+            window_index: "0",
+          }),
+        ]),
+      ],
+    });
+    const builder = SelectionProjectionBuilder.createCorpus({
+      descriptors: descriptors(),
+      graph,
+      sources: [createGraphSourceId("sessions"), createGraphSourceId("windows")],
+    });
+    expect(() =>
+      SelectionProjectionBuilder.createCorpus({
+        descriptors: descriptors(),
+        graph,
+        sources: [createGraphSourceId("sessions"), createGraphSourceId("sessions")],
+      }),
+    ).toThrow(/duplicate/);
+    const views = builder.sealViews();
+    const sessions = views.get(createGraphSourceId("sessions"));
+    const windows = views.get(createGraphSourceId("windows"));
+    if (sessions === undefined || windows === undefined) throw new Error("missing corpus view");
+
+    expect(sessions.records).toBe(windows.records);
+    expect(sessions.entities).toBe(windows.entities);
+    expect(sessions.winlinks).toBe(windows.winlinks);
+    expect(sessions.capture).toBe(windows.capture);
+    expect(sessions.members).not.toBe(windows.members);
+    expect(sessions.members).toHaveLength(1);
+    expect(windows.members).toHaveLength(1);
+    expect(selectionProjectionOwnsRecord(sessions, windows.records[1])).toBe(true);
+
+    const independent = SelectionProjectionBuilder.create({
+      descriptors: descriptors(),
+      graph,
+      source: createGraphSourceId("windows"),
+    }).seal();
+    expect(selectionProjectionOwnsRecord(sessions, independent.records[0])).toBe(false);
+    expect(() => (sessions.records as unknown[]).push(independent.records[0])).toThrow();
+  });
+
   test("projects canonical scalar names and contextual window values", () => {
     const graph = normalizeGraph({
       capture: capture(),
@@ -1185,6 +1235,11 @@ describe("selection projection snapshots", () => {
       graph,
       source: sourceId,
     };
+    const corpusInput = {
+      descriptors: descriptors(),
+      graph,
+      sources: [sourceId],
+    };
     const mutatingDescriptor = mutateDuringInspection({
       fields: WHERE_FIELDS_V1.session,
       model: "session" as const,
@@ -1193,6 +1248,7 @@ describe("selection projection snapshots", () => {
 
     const observed = [
       () => SelectionProjectionBuilder.create(mutateDuringInspection(input)),
+      () => SelectionProjectionBuilder.createCorpus(mutateDuringInspection(corpusInput)),
       () =>
         SelectionProjectionBuilder.create({
           descriptors: descriptors({ session: mutatingDescriptor }),
