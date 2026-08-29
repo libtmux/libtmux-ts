@@ -31,6 +31,46 @@ export interface FramedResult {
   readonly output: string;
   /** False when the start marker was gone and the returned output starts partway through. */
   readonly outputComplete: boolean;
+  /** Settles when the wrapper ends or the pane can no longer run it. */
+  readonly settled: Promise<void>;
+}
+
+export interface FramedCommandReservation {
+  release(): void;
+  settleWith(settled: Promise<void>): void;
+}
+
+const activeCommands = new WeakMap<ToolContext, Map<string, Map<symbol, string>>>();
+
+/** Describe the first unfinished command this server started in a pane. */
+export function activeFramedCommand(context: ToolContext, paneId: string): string | undefined {
+  return activeCommands.get(context)?.get(paneId)?.values().next().value;
+}
+
+/** Reserve a pane until the command's framing proves that it settled. */
+export function reserveFramedCommand(
+  context: ToolContext,
+  paneId: string,
+  command: string,
+): FramedCommandReservation {
+  const byPane = activeCommands.get(context) ?? new Map<string, Map<symbol, string>>();
+  const commands = byPane.get(paneId) ?? new Map<symbol, string>();
+  const token = Symbol(paneId);
+  commands.set(token, JSON.stringify(command.slice(0, 80)));
+  byPane.set(paneId, commands);
+  activeCommands.set(context, byPane);
+
+  const release = (): void => {
+    commands.delete(token);
+    if (commands.size === 0) byPane.delete(paneId);
+    if (byPane.size === 0) activeCommands.delete(context);
+  };
+  return {
+    release,
+    settleWith: (settled) => {
+      void settled.then(release, () => undefined);
+    },
+  };
 }
 
 /** How far back a fallback capture reads, so a marker that scrolled is still found. */
@@ -38,6 +78,12 @@ const FALLBACK_SCROLLBACK = 400;
 
 /** How often the fallback re-reads the pane when no stream is available. */
 const FALLBACK_POLL_MS = 60;
+
+/** How often an already-returned command checks a streamless pane. */
+const SETTLEMENT_POLL_MS = 1_000;
+
+/** How often settlement confirms that a quiet pane still exists. */
+const SETTLEMENT_LIVENESS_MS = 5_000;
 
 /**
  * Wrap a command so its output can be told from the pane's echo of it.
@@ -185,6 +231,56 @@ function slice(
   };
 }
 
+/** Keep a timed-out pane reserved until its wrapper ends or its pane dies. */
+async function waitForSettlement(
+  context: ToolContext,
+  pane: Pane,
+  id: string,
+  cursor: string | undefined,
+  initialTail: Awaited<ReturnType<ToolContext["hub"]["tail"]>>,
+): Promise<void> {
+  let tail = initialTail;
+  let askedAlive = 0;
+  for (;;) {
+    if (context.hub.closed) return;
+    if (tail?.endReason !== undefined) {
+      if (tail.endReason === "hub_closed") return;
+      tail = undefined;
+    }
+
+    let stream: string;
+    if (tail === undefined) {
+      // eslint-disable-next-line no-await-in-loop -- each capture follows the previous observation.
+      stream = (await pane.capture({ start: -FALLBACK_SCROLLBACK }).catch(() => [])).join("\n");
+    } else {
+      stream = tail.read(cursor).text;
+    }
+    if (slice(stream, id) !== undefined) return;
+
+    if (Date.now() - askedAlive >= SETTLEMENT_LIVENESS_MS) {
+      askedAlive = Date.now();
+      // eslint-disable-next-line no-await-in-loop -- liveness is sampled over time.
+      const current = await context
+        .snapshot()
+        .then((snapshot) => snapshot.panes.first({ id: pane.id }))
+        .catch(() => undefined);
+      if (current === undefined || current.dead === true) return;
+    }
+
+    if (tail === undefined) {
+      // eslint-disable-next-line no-await-in-loop -- a streamless monitor polls serially.
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, SETTLEMENT_POLL_MS);
+        timer.unref?.();
+      });
+      continue;
+    }
+    // eslint-disable-next-line no-await-in-loop -- each wait follows the previous read.
+    const changed = await tail.changed(SETTLEMENT_POLL_MS);
+    if (changed === "closed" && tail.endReason === "hub_closed") return;
+  }
+}
+
 /**
  * Run `command` in `pane` and wait for it to finish.
  *
@@ -238,9 +334,9 @@ export async function runFramedCommand(
         ...found,
         outcome: "completed",
         outputComplete: found.outputComplete && !usedFallback,
+        settled: Promise.resolve(),
       };
     }
-    // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- the poll follows its read.
       await new Promise((resolve) => setTimeout(resolve, FALLBACK_POLL_MS));
@@ -282,6 +378,7 @@ export async function runFramedCommand(
     outcome: alive ? "timed_out" : "pane_died",
     output: cleaned.text,
     outputComplete: startAt >= 0 && missedBytes === 0 && !usedFallback,
+    settled: alive ? waitForSettlement(context, pane, id, cursor, tail) : Promise.resolve(),
   };
 }
 

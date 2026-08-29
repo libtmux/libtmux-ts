@@ -304,6 +304,11 @@ export class LiveHub {
   readonly #links = new Map<string, SessionLink>();
   readonly #opening = new Map<string, Promise<SessionLink>>();
   readonly #tmux: Server;
+
+  /** Whether this hub has begun its terminal close. */
+  get closed(): boolean {
+    return this.#closed;
+  }
   readonly #abort = new AbortController();
   /** How long a tail may go unread, and a link unused, before both are let go. */
   readonly #lingerMs: number;

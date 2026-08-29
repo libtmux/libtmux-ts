@@ -12,7 +12,7 @@ import { z } from "zod";
 import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
 import { MUTATING, offers, OPEN_WORLD } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
-import { runFramedCommand } from "../command.js";
+import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
 /**
  * Shells whose syntax the command framing is written in.
@@ -35,6 +35,15 @@ const OTHER_SHELLS = new Set(["csh", "elvish", "fish", "ion", "nu", "pwsh", "tcs
 /** tmux reports a login shell as `-zsh`; the leading dash is not part of it. */
 function shellName(command: string): string {
   return command.replace(/^-/, "");
+}
+
+function busyPane(paneId: string, active: string): ReturnType<typeof fail> {
+  return fail({
+    hint:
+      "Wait for that command to finish, use wait_for_text for its output, or pass force " +
+      "to accept interleaved input. Pass force to send C-c when stopping it is the intent.",
+    reason: `Refusing to write into ${paneId}: run_command ${active} is still active.`,
+  });
 }
 
 export function registerInput(mcp: McpServer, context: ToolContext): void {
@@ -75,6 +84,8 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
       if (isFailure(pane)) return pane;
+      const active = activeFramedCommand(context, paneId);
+      if (active !== undefined && force !== true) return busyPane(paneId, active);
 
       await pane.sendKeys(keys, {
         ...(enter === undefined ? {} : { enter }),
@@ -113,6 +124,8 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
+      const active = activeFramedCommand(context, paneId);
+      if (active !== undefined && force !== true) return busyPane(paneId, active);
       await pane.sendKeys(text, { enter: enter ?? false, literal: true });
       return ok(
         { bytes: Buffer.byteLength(text, "utf8"), paneId },
@@ -132,8 +145,8 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         "what the command printed, and it knows when the command actually ended " +
         "rather than guessing from the screen. The command runs in a subshell, so " +
         "cd and export do not persist to a later call. A pane is effectively " +
-        "single-writer: the check that it is at a shell prompt is one look taken " +
-        "before sending, not a lock, so two callers sharing a pane interleave.",
+        "single-writer: this server reserves it until the command settles, but " +
+        "another process with the same tmux socket can still write into it.",
       inputSchema: {
         command: z.string().describe("The shell command to run."),
         force: z
@@ -204,6 +217,10 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "run in");
       if (isFailure(pane)) return pane;
+      const active = activeFramedCommand(context, paneId);
+      if (active !== undefined && force !== true) {
+        return busyPane(paneId, active);
+      }
       if (pane.dead === true) {
         // Not a `force` case: a dead pane has no process to read the command,
         // so forcing it would spend the whole timeout waiting for a marker
@@ -237,7 +254,20 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         });
       }
 
-      const result = await runFramedCommand(context, pane, command, timeoutMs, false, extra.signal);
+      const reservation = reserveFramedCommand(context, paneId, command);
+
+      const result = await runFramedCommand(
+        context,
+        pane,
+        command,
+        timeoutMs,
+        false,
+        extra.signal,
+      ).catch((error: unknown) => {
+        reservation.release();
+        throw error;
+      });
+      reservation.settleWith(result.settled);
       const trimmed = tailLines(
         result.output === "" ? [] : result.output.split("\n"),
         maxLines ?? context.policy.maxResultLines,

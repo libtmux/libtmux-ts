@@ -403,22 +403,46 @@ describe("running commands", () => {
     });
   }, 60_000);
 
-  test("refuses a pane that is not at a shell, and says which command holds it", async () => {
+  test("reserves a pane until a timed-out command finishes", async () => {
     await withServer(async (fixture) => {
-      await withClient(fixture, async (client) => {
+      const exercise = async (client: Client): Promise<void> => {
         const paneId = await shellPaneId(client);
         await client.callTool({
-          arguments: { command: "sleep 30", paneId, timeoutMs: 1_000 },
+          arguments: { command: "sleep 2", paneId, timeoutMs: 1_000 },
           name: "run_command",
         });
         const refused = await client.callTool({
-          arguments: { command: "echo late", paneId },
+          arguments: { command: "echo late", paneId, timeoutMs: 1_000 },
           name: "run_command",
         });
         expect((refused as { isError?: boolean }).isError).toBe(true);
         expect(toolText(refused)).toContain("sleep");
         expect(toolText(refused)).toContain("force");
-      });
+        await Promise.all(
+          (
+            [
+              ["send_keys", { keys: "C-c", paneId }],
+              ["paste_text", { paneId, text: "late" }],
+            ] as const
+          ).map(async ([name, arguments_]) => {
+            const write = await client.callTool({ arguments: arguments_, name });
+            expect((write as { isError?: boolean }).isError).toBe(true);
+            expect(toolText(write)).toContain("sleep");
+          }),
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        const available = structured<{ outcome: string }>(
+          await client.callTool({
+            arguments: { command: "true", paneId, timeoutMs: 1_000 },
+            name: "run_command",
+          }),
+        );
+        expect(available.outcome).toBe("completed");
+      };
+
+      await withClient(fixture, exercise);
+      await withClient(fixture, exercise, { LIBTMUX_MCP_LIVE: "0" });
     });
   }, 60_000);
 });
