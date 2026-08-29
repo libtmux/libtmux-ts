@@ -105,6 +105,8 @@ export interface ServerOptions {
   /**
    * Default deadline, in milliseconds, for every command this server runs.
    *
+   * Must be a positive timer-safe integer.
+   *
    * A single call can override it. Without either, a command waits as long as
    * tmux takes; a long-lived process that cannot bound its work cannot recover
    * from a daemon that stops answering.

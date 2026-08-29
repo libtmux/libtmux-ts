@@ -84,6 +84,8 @@ export interface CommandOptions {
   /**
    * Give up on the command after this many milliseconds.
    *
+   * Must be a positive timer-safe integer.
+   *
    * Overrides the server's default. Without either, a command waits as long as
    * tmux takes, which for a wedged daemon is forever.
    */

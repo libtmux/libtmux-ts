@@ -1,5 +1,7 @@
 import type { EventEmitter } from "node:events";
 
+import { timerDelay } from "../timing.js";
+
 type ControlChildEventChannel = Pick<EventEmitter, "off" | "on">;
 
 type ControlChildInput = ControlChildEventChannel & {
@@ -50,7 +52,10 @@ export class ControlChildLifecycle {
 
   constructor(spawn: () => ControlChild, options: ControlChildLifecycleOptions = {}) {
     this.#spawn = spawn;
-    this.#terminationGraceMs = options.terminationGraceMs ?? 2_000;
+    this.#terminationGraceMs = timerDelay(
+      "terminationGraceMs",
+      options.terminationGraceMs ?? 2_000,
+    );
   }
 
   active(): ControlChild | undefined {

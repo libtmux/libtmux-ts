@@ -18,6 +18,22 @@ const event: TmuxEvent = { kind: "sessions-changed" };
 const pane0 = parsePaneId("%0");
 
 describe("event stream lifetime", () => {
+  test("rejects invalid deadlines without consuming the stream", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+
+    await Promise.all(
+      [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648].map((timeoutMs) =>
+        expect(sink.stream.find(() => false, { timeoutMs })).rejects.toThrow(/timeoutMs/u),
+      ),
+    );
+
+    const armed = sink.stream.find((candidate) => candidate.kind === "sessions-changed", {
+      timeoutMs: 1_000,
+    });
+    sink.push(event);
+    expect(await armed).toEqual(event);
+  });
+
   test("runs its close hook exactly once, however it is ended", async () => {
     let closes = 0;
     const sink = createEventStream(() => {

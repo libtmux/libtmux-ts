@@ -1,5 +1,6 @@
 import { LibTmuxException } from "../../exc.js";
 import type { TmuxEvent, TmuxEventStream as PublicEventStream } from "../../types.js";
+import { timerDuration } from "../timing.js";
 
 export const DEFAULT_BUFFER_SIZE = 1024;
 
@@ -113,7 +114,8 @@ class BufferedEventStream implements PublicEventStream {
     matches: (event: TmuxEvent) => unknown,
     options: { readonly timeoutMs?: number } = {},
   ): Promise<TmuxEvent | undefined> {
-    const deadline = setTimeout(() => void this.close(), options.timeoutMs ?? 30_000);
+    const timeoutMs = timerDuration("timeoutMs", options.timeoutMs ?? 30_000);
+    const deadline = setTimeout(() => void this.close(), timeoutMs);
     try {
       for await (const event of this) {
         if (matches(event)) return event;

@@ -15,6 +15,19 @@ function success(request: TmuxCommandRequest): TmuxCommandResult {
 }
 
 describe("server utility requests", () => {
+  test("rejects invalid server deadlines before invoking the engine", () => {
+    let executions = 0;
+    const engine = singleCommandTransport((request) => {
+      executions += 1;
+      return Promise.resolve(success(request));
+    });
+
+    for (const timeoutMs of [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
+      expect(() => new Server({ engine, timeoutMs })).toThrow(/timeoutMs/u);
+    }
+    expect(executions).toBe(0);
+  });
+
   test("inherits the server deadline and targets a session name exactly", async () => {
     const requests: TmuxCommandRequest[] = [];
     const engine = singleCommandTransport((request) => {

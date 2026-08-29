@@ -9,6 +9,7 @@ import { LibTmuxException } from "../../exc.js";
 import { Server, type DaemonIdentity } from "../../server.js";
 import { decodeLogicalRef } from "../graph/refs.js";
 import type { CommandTransport } from "../transport/types.js";
+import { timerDuration } from "../timing.js";
 import { LazyCapabilityBinding } from "./capabilities.js";
 import type { TmuxConnection } from "./connection.js";
 
@@ -88,12 +89,14 @@ function assertLogicalRefRuntime(runtime: RuntimeContext, ref: LogicalRef): void
 }
 
 export function createRuntimeContext(options: RuntimeContextOptions): RuntimeContext {
+  const timeoutMs =
+    options.timeoutMs === undefined ? undefined : timerDuration("timeoutMs", options.timeoutMs);
   const state: RuntimeEpochState = { daemon: undefined, daemonEpoch: options.daemonEpoch };
   const capabilities = new LazyCapabilityBinding({
     connection: options.connection,
     connectionAlias: options.connectionAlias,
     getDaemonEpoch: (): DaemonEpoch => state.daemonEpoch,
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     transport: options.transport,
   });
   const runtime: RuntimeContext = Object.freeze({
@@ -105,7 +108,7 @@ export function createRuntimeContext(options: RuntimeContextOptions): RuntimeCon
     },
     engine: options.engine,
     logger: options.logger ?? noopLogger,
-    timeoutMs: options.timeoutMs,
+    timeoutMs,
     transport: options.transport,
     warnings: options.warnings ?? noopWarnings,
   });

@@ -14,6 +14,7 @@ import {
 import { snapshotCommandRequest, TmuxTransportError } from "./types.js";
 import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestarted } from "../../exc.js";
+import { timerDelay } from "../timing.js";
 
 export interface NodeSpawnTransportOptions {
   readonly maxOutputBytes?: number;
@@ -84,8 +85,8 @@ export class NodeSpawnTransport {
     if (!Number.isSafeInteger(this.#maxOutputBytes) || this.#maxOutputBytes < 1) {
       throw new TypeError("maxOutputBytes must be a positive safe integer");
     }
-    this.#postKillGraceMs = options.postKillGraceMs ?? 250;
-    this.#terminationGraceMs = options.terminationGraceMs ?? 100;
+    this.#postKillGraceMs = timerDelay("postKillGraceMs", options.postKillGraceMs ?? 250);
+    this.#terminationGraceMs = timerDelay("terminationGraceMs", options.terminationGraceMs ?? 100);
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {

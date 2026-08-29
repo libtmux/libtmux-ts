@@ -750,6 +750,7 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
    * to stop waiting is not a failure anyone should have to catch. Undefined
    * therefore means the deadline passed or the wait was called off, and only
    * the deadline says the workload really did not print what was waited for.
+   * `timeoutMs`, when set, must be a positive timer-safe integer.
    */
   find<Match extends TmuxEvent>(
     matches: (event: TmuxEvent) => event is Match,

@@ -1,9 +1,9 @@
 import { LibTmuxException, WaitTimeout } from "../../exc.js";
 import type { TmuxEventStream, WaitForOptions } from "../../types.js";
+import { timerDuration } from "../timing.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const DEFAULT_TIMEOUT_MS = 30_000;
-const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 interface SnapshotWait<Snapshot> {
   readonly matches: (snapshot: Snapshot) => boolean;
@@ -16,13 +16,6 @@ interface WakeSignal {
   close(): void;
   next(): Promise<void>;
   signal(): void;
-}
-
-function duration(name: string, value: number): number {
-  if (!Number.isInteger(value) || value < 1 || value > MAX_TIMER_DELAY_MS) {
-    throw new TypeError(`${name} must be an integer between 1 and ${MAX_TIMER_DELAY_MS}`);
-  }
-  return value;
 }
 
 function createWakeSignal(pollIntervalMs: number): WakeSignal {
@@ -66,8 +59,8 @@ function timeout(): WaitTimeout {
 export async function waitForSnapshot<Snapshot>(
   request: SnapshotWait<Snapshot>,
 ): Promise<Snapshot> {
-  const timeoutMs = duration("timeoutMs", request.options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  const pollIntervalMs = duration(
+  const timeoutMs = timerDuration("timeoutMs", request.options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const pollIntervalMs = timerDuration(
     "pollIntervalMs",
     request.options?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
   );

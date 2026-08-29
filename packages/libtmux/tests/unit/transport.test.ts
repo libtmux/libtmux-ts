@@ -16,6 +16,32 @@ const echoFixture = fileURLToPath(new URL("../fixtures/echo_argv.mjs", import.me
 const malformedFixture = fileURLToPath(new URL("../fixtures/malformed_utf8.mjs", import.meta.url));
 
 describe("NodeSpawnTransport", () => {
+  test("rejects invalid timer values before spawning", async () => {
+    const invalidTimeout = [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648];
+    const invalidDelay = [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648];
+
+    await Promise.all(
+      invalidTimeout.map((timeoutMs) =>
+        expect(
+          new NodeSpawnTransport().execute({
+            args: [],
+            executable: "/definitely/not/an/executable",
+            timeoutMs,
+          }),
+        ).rejects.toThrow(/timeoutMs/u),
+      ),
+    );
+    for (const postKillGraceMs of invalidDelay) {
+      expect(() => new NodeSpawnTransport({ postKillGraceMs })).toThrow(/postKillGraceMs/u);
+    }
+    for (const terminationGraceMs of invalidDelay) {
+      expect(() => new NodeSpawnTransport({ terminationGraceMs })).toThrow(/terminationGraceMs/u);
+    }
+    expect(
+      () => new NodeSpawnTransport({ postKillGraceMs: 0, terminationGraceMs: 0 }),
+    ).not.toThrow();
+  });
+
   test("passes hostile-looking values as distinct literal arguments", async () => {
     const values = ["with space", "-leading", 'a"quote', "a\\backslash", "雪", ";"];
     const transport = new NodeSpawnTransport();

@@ -44,6 +44,28 @@ const handlers = (output: string[], failures: Error[] = []) => ({
 });
 
 describe("control child lifecycle", () => {
+  test("rejects invalid retirement grace periods before spawning", () => {
+    let spawns = 0;
+    const spawn = (): FakeChild => {
+      spawns += 1;
+      return new FakeChild();
+    };
+
+    for (const terminationGraceMs of [
+      -1,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      2_147_483_648,
+    ]) {
+      expect(() => new ControlChildLifecycle(spawn, { terminationGraceMs })).toThrow(
+        /terminationGraceMs/u,
+      );
+    }
+    expect(spawns).toBe(0);
+    expect(() => new ControlChildLifecycle(spawn, { terminationGraceMs: 0 })).not.toThrow();
+  });
+
   test("retires one generation once and silences its late callbacks", () => {
     const first = new FakeChild();
     const second = new FakeChild();

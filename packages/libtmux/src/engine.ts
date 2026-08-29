@@ -91,6 +91,7 @@ export type TmuxCommandRequest = {
    * the normalized `Uint8Array` form.
    */
   readonly stdin?: Uint8Array;
+  /** A positive timer-safe integer when the request has a deadline. */
   readonly timeoutMs?: number;
 };
 

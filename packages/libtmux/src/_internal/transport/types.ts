@@ -1,5 +1,6 @@
 import type { CommandResult, DeliveryStatus, OperationStatus } from "../../common.js";
 import type { TmuxCommandRequest, TmuxCommandResult, TmuxEngine } from "../../engine.js";
+import { timerDuration } from "../timing.js";
 // One transport error type, and it is the public one: a caller deciding
 // whether a timed-out mutation is safe to retry needs `delivery`, and an
 // internal-only class would mean re-deriving it at the package boundary.
@@ -11,6 +12,8 @@ export type RawCommandResult = TmuxCommandResult;
 export type CommandTransport = TmuxEngine;
 
 export function snapshotCommandRequest(request: CommandRequest): CommandRequest {
+  const timeoutMs =
+    request.timeoutMs === undefined ? undefined : timerDuration("timeoutMs", request.timeoutMs);
   const stdin = request.stdin === undefined ? undefined : new Uint8Array(request.stdin);
   const snapshot: CommandRequest = {
     args: Object.freeze([...request.args]),
@@ -28,7 +31,7 @@ export function snapshotCommandRequest(request: CommandRequest): CommandRequest 
     executable: request.executable,
     ...(request.rawOutput === undefined ? {} : { rawOutput: request.rawOutput }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
-    ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   };
   if (stdin !== undefined) {
     Object.defineProperty(snapshot, "stdin", {

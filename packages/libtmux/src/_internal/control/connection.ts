@@ -19,6 +19,7 @@ import { ControlChildLifecycle, type ControlChild } from "./child.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
 import { LineFramer, MAX_CARRY_BYTES } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
+import { MAX_TIMER_DELAY_MS, timerDelay, timerDuration } from "../timing.js";
 
 const encoder = new TextEncoder();
 
@@ -34,7 +35,6 @@ const DEFAULT_MAX_PENDING_COMMANDS = 1024;
 const DEFAULT_MAX_COMMAND_BYTES = 64 * 1024 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
-const MAX_TIMER_MS = 2_147_483_647;
 /** How long a closing process is given to leave before it is killed outright. */
 const TERMINATION_GRACE_MS = 2_000;
 
@@ -318,10 +318,8 @@ export class ControlConnection implements CommandTransport {
         throw new TypeError("reconnect.attempts must be a positive safe integer");
       }
       const delayMs = reconnect.delayMs ?? 50;
-      if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > MAX_TIMER_MS) {
-        throw new TypeError("reconnect.delayMs must be a non-negative timer-safe integer");
-      }
-      if (delayMs > 0 && reconnect.attempts > Math.floor(MAX_TIMER_MS / delayMs)) {
+      timerDelay("reconnect.delayMs", delayMs);
+      if (delayMs > 0 && reconnect.attempts > Math.floor(MAX_TIMER_DELAY_MS / delayMs)) {
         throw new TypeError("reconnect.delayMs exceeds the timer range across its attempts");
       }
     }
@@ -846,6 +844,7 @@ export class ControlConnection implements CommandTransport {
   }
 
   execute(request: CommandRequest): Promise<RawCommandResult> {
+    if (request.timeoutMs !== undefined) timerDuration("timeoutMs", request.timeoutMs);
     if (this.#closed) {
       return Promise.reject(
         new TmuxTransportError("tmux control connection is closed", {
