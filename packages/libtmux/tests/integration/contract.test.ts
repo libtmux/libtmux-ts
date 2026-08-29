@@ -63,6 +63,17 @@ async function withServers(
   }
 }
 
+async function waitForServerExit(server: Server): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+    if (!(await server.isAlive())) return;
+    if (Date.now() > deadline) throw new Error("timed out waiting for tmux to exit");
+    // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 describe("snapshot immutability", () => {
   test("a handle reached from a snapshot never changes", async () => {
     await withServers(1, async ([fixture]) => {
@@ -158,6 +169,7 @@ describe("handle identity", () => {
       // tmux reissues ids from the start, so this pane's `%n` belongs to a
       // different pane in a moment.
       await server.cmd("kill-server").catch(() => undefined);
+      await waitForServerExit(server);
       // Raw, so nothing materializes a handle: `newSession` would acquire, and
       // an acquisition is exactly what this test must not have.
       await server.cmd("new-session", ["-d", "-s", "libtmux-daemon-restarted"], {
@@ -217,6 +229,7 @@ describe("handle identity", () => {
       await server.newSession({ name: "first" });
       const before = (await server.snapshot()).panes.one();
       await server.cmd("kill-server").catch(() => undefined);
+      await waitForServerExit(server);
       await server.cmd("new-session", ["-d", "-s", "second"], { target: null });
 
       // A second Server object, so nothing but the daemon distinguishes them:
@@ -267,14 +280,7 @@ describe("handle identity", () => {
       // socket. Starting the successor into that window reaches a server on its
       // way out — "server exited unexpectedly" — so wait for the socket to go
       // quiet first. Bounded: a daemon that never leaves is a different failure.
-      const gone = Date.now() + 5_000;
-      for (;;) {
-        // eslint-disable-next-line no-await-in-loop -- polling a process that is leaving.
-        if (!(await server.isAlive()) || Date.now() >= gone) break;
-        // eslint-disable-next-line no-await-in-loop -- as above.
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      expect(await server.isAlive()).toBe(false);
+      await waitForServerExit(server);
       await server.cmd("new-session", ["-d", "-s", "successor"], { target: null });
 
       expect(await reconnected).toMatchObject({ kind: "reconnected" });
