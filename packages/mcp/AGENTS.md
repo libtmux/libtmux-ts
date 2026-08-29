@@ -28,14 +28,15 @@ failure with its own diagnostic shape is rejected as a protocol violation and
 the model never reads the reason. `fail()` returns text alone for this.
 
 **`run_command`'s framing is POSIX shell and nothing else.** It calls a
-short-lived shell function with the marker in `$1`, prints the start, then
-clears the command subshell's positional parameters before running it. The
-function has an independent random name and is removed afterwards. fish, csh,
-and PowerShell do not share that grammar. The tool refuses a shell it cannot
-address rather than letting the wait run out against a syntax error — and
-`force` does not override that one, because forcing it cannot work. The marker
-is framing, not confinement: the command does not inherit it through shell
-state, but code with the tmux socket's authority can inspect the pane.
+short-lived, argument-free shell function inside a subshell. The marker stays
+in that outer scope; the command subshell unsets it and clears its positional
+parameters before evaluating the command. The wrapper disables inherited
+tracing and errexit while it handles the marker, then restores both in the
+marker-free command subshell. fish, csh, and PowerShell do not share that
+grammar. The tool refuses a shell it cannot address rather than letting the
+wait run out against a syntax error — and `force` does not override that one,
+because forcing it cannot work. The marker is framing, not confinement: code
+with the tmux socket's authority can inspect the pane.
 
 **Two wait ceilings, not one.** A blocking wait spends the agent's turn and
 cannot be cancelled mid-flight, so it is held low. As an MCP task it hands back

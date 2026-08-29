@@ -1,4 +1,5 @@
 import { getEventListeners } from "node:events";
+import { spawnSync } from "node:child_process";
 
 import { describe, expect, test } from "bun:test";
 
@@ -373,6 +374,20 @@ describe("uris", () => {
 });
 
 describe("command framing", () => {
+  const shells = [
+    ...new Set(
+      ["sh", "bash", "dash", "zsh"].map((name) => Bun.which(name)).filter((path) => path !== null),
+    ),
+  ];
+
+  function run(
+    shell: string,
+    source: string,
+  ): { readonly status: number | null; readonly stderr: string; readonly stdout: string } {
+    const result = spawnSync(shell, ["-c", source], { encoding: "utf8" });
+    return { status: result.status, stderr: result.stderr, stdout: result.stdout };
+  }
+
   test("keeps a multiline command out of the shell history too", () => {
     // The leading space is the whole mechanism, and a shell records a
     // multiline buffer as one entry — so skipping it there put the shape most
@@ -385,6 +400,52 @@ describe("command framing", () => {
   test("leaves the space off when the caller did not ask for suppression", () => {
     expect(frame("echo one", "ltxabc", false).startsWith(" ")).toBe(false);
     expect(frame("echo one\necho two", "ltxabc", false).startsWith(" ")).toBe(false);
+  });
+
+  test("closes the protocol after a command ending in a comment", () => {
+    for (const shell of shells) {
+      const result = run(shell, frame("printf 'before\\n' # trailing comment", "ltxabc", false));
+      expect(result.status, shell).toBe(0);
+      expect(result.stdout, shell).toBe("ltxabc_S\nbefore\nltxabc_E 0\n");
+    }
+  });
+
+  test("normalizes carriage-return command text before the shell evaluates it", () => {
+    for (const shell of shells) {
+      const result = run(
+        shell,
+        frame("true\r\nprintf 'crlf-ok\\n'\rprintf 'cr-ok\\n'\r", "ltxabc", false),
+      );
+      expect(result.status, shell).toBe(0);
+      expect(result.stderr, shell).toBe("");
+      expect(result.stdout, shell).toBe("ltxabc_S\ncrlf-ok\ncr-ok\nltxabc_E 0\n");
+    }
+  });
+
+  test("reports a nonzero command under inherited errexit", () => {
+    for (const shell of shells) {
+      const source =
+        `set -e\n${frame("printf 'before\\n'; false; printf 'SHOULD-NOT-RUN\\n'", "ltxabc", false)}\n` +
+        `case $- in *e*) printf 'errexit-on\\n';; esac`;
+      const result = run(shell, source);
+      expect(result.status, shell).toBe(0);
+      expect(result.stdout, shell).toBe("ltxabc_S\nbefore\nltxabc_E 1\nerrexit-on\n");
+    }
+  });
+
+  test("keeps the marker out of inherited Bash debug state", () => {
+    const bash = Bun.which("bash");
+    expect(bash).not.toBeNull();
+    const command = `for value in "\${BASH_ARGV[@]}"; do printf '%s_E 0\\n' "$value"; done; exit 7`;
+    const result = run(
+      bash ?? "bash",
+      `set -x\nshopt -s extdebug\n${frame(command, "ltxabc", false)}\nprintf 'after-xtrace\\n' >/dev/null`,
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("ltxabc_S\nltxabc_E 7\n");
+    expect(result.stderr).toContain("after-xtrace");
+    expect(result.stderr).not.toContain("ltxabc");
   });
 });
 

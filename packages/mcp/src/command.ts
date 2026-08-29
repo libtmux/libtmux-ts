@@ -6,12 +6,11 @@
  * reports the command's own text as its output. Waiting for a marker does not
  * help by itself: the marker is in the command, so it is echoed too.
  *
- * The wrapper passes the marker as a shell function's positional parameter,
- * then clears the command subshell's parameters before running it. The literal
- * marker never appears in what the pane echoes, and the command does not
- * inherit the value it would need to forge completion. The function has an
- * independent random name and is removed afterwards. Nothing here depends on
- * the shell beyond functions, subshells, `set`, `printf`, `unset`, and `$?`.
+ * The wrapper keeps the marker in an outer subshell, then removes it from the
+ * command subshell before evaluating the caller's text. It also disables
+ * inherited tracing and errexit before the marker exists. The function has no
+ * arguments, so Bash's extended debug state cannot retain the marker after the
+ * command clears its ordinary parameters. Nothing escapes the outer subshell.
  */
 
 import { randomUUID } from "node:crypto";
@@ -51,14 +50,21 @@ const FALLBACK_POLL_MS = 60;
  * file and the unspaced form is written in full.
  */
 export function frame(command: string, id: string, suppressHistory: boolean): string {
-  const multiline = command.includes("\n") || command.includes("\r");
   const prefix = suppressHistory ? " " : "";
   const scope = `__ltx_${randomId()}`;
-  const open = `${prefix}${scope}() { printf '%s\\n' "\${1}_S"; ( set --;`;
-  const close = `); printf '%s %s\\n' "\${1}_E" "$?"; }; ${scope} ${id}; unset -f ${scope}`;
-  return multiline
-    ? `${open}\n${command.replace(/\s+$/, "")}\n${close}`
-    : `${open} ${command} ${close}`;
+  const marker = `${scope}_marker`;
+  const options = `${scope}_options`;
+  const normalized = command.replace(/\r\n?/gu, "\n");
+  const quoted = `'${normalized.replaceAll("'", `'\\''`)}'`;
+  return (
+    `${prefix}( ${options}=$-; set +x; set +e; ${marker}=${id}; ` +
+    `${scope}() { printf '%s\\n' "\${${marker}}_S"; ` +
+    `( unset ${marker}; set --; ` +
+    `case "\${${options}}" in *e*) set -e;; esac; ` +
+    `case "\${${options}}" in *x*) set -x;; esac; ` +
+    `unset ${options}; eval ${quoted} ); ` +
+    `printf '%s %s\\n' "\${${marker}}_E" "$?"; }; ${scope} )`
+  );
 }
 
 /** A framing marker: `<id>_S` or `<id>_E`, as the shell prints it. */

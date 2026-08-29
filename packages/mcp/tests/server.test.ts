@@ -264,6 +264,45 @@ describe("running commands", () => {
     });
   }, 60_000);
 
+  test("survives trailing comments and inherited errexit", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        const commented = structured<{ exitStatus: number; output: string }>(
+          await client.callTool({
+            arguments: { command: "printf 'comment-ok\\n' # trailing", paneId },
+            name: "run_command",
+          }),
+        );
+        expect(commented).toMatchObject({ exitStatus: 0, output: "comment-ok" });
+
+        await client.callTool({ arguments: { keys: "set -e", paneId }, name: "send_keys" });
+        const failed = structured<{ exitStatus: number; outcome: string; output: string }>(
+          await client.callTool({
+            arguments: {
+              command: "printf 'before-failure\\n'; false; printf 'SHOULD-NOT-RUN\\n'",
+              paneId,
+            },
+            name: "run_command",
+          }),
+        );
+        expect(failed).toMatchObject({
+          exitStatus: 1,
+          outcome: "completed",
+          output: "before-failure",
+        });
+
+        const after = structured<{ output: string }>(
+          await client.callTool({
+            arguments: { command: "printf 'still-alive\\n'", paneId },
+            name: "run_command",
+          }),
+        );
+        expect(after.output).toBe("still-alive");
+      });
+    });
+  }, 60_000);
+
   test("does not expose its completion marker to the command", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
