@@ -1,6 +1,3 @@
-import { join } from "node:path";
-import { rm } from "node:fs/promises";
-
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -10,12 +7,10 @@ import { Server } from "libtmux/server";
 
 import { createTmuxMcpServer } from "../src/server.js";
 import {
-  prepareRunRoot,
-  reapOwnedRunRoot,
   runWithCleanup,
+  withOwnedRunRoot,
   TestServer,
   assertOwnedSocketPath,
-  makeTestDirectory,
 } from "../../libtmux/src/_internal/test/testkit.js";
 
 interface Placement {
@@ -55,29 +50,14 @@ function serverFor(fixture: TestServer): Server {
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await makeTestDirectory("ltx-mcp-place-");
-  const published = process.env.LIBTMUX_TEST_RUN_ROOT;
-  const runRoot = published ?? join(parent, "run, root");
-  if (published === undefined) await prepareRunRoot(runRoot);
-  let done = false;
-  try {
+  return withOwnedRunRoot("ltx-mcp-place-", async (runRoot) => {
+    const fixture = await TestServer.create({ runRoot, sessionName: "placement" });
+    assertOwnedSocketPath(fixture.socketPath);
     await runWithCleanup(
-      async () => {
-        const fixture = await TestServer.create({ runRoot, sessionName: "placement" });
-        assertOwnedSocketPath(fixture.socketPath);
-        await runWithCleanup(
-          () => body(fixture),
-          () => fixture.dispose(),
-        );
-      },
-      async () => {
-        if (published === undefined) await reapOwnedRunRoot(runRoot);
-        done = true;
-      },
+      () => body(fixture),
+      () => fixture.dispose(),
     );
-  } finally {
-    if (done) await rm(parent, { force: true, recursive: true });
-  }
+  });
 }
 
 async function withClient(

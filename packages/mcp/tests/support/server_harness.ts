@@ -2,17 +2,14 @@
 // internal support module is the MCP suite's single bridge to it.
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import {
-  prepareRunRoot,
-  reapOwnedRunRoot,
   runWithCleanup,
+  withOwnedRunRoot,
   TestServer,
   assertOwnedSocketPath,
   makeTestDirectory,
@@ -31,32 +28,14 @@ export function serverFor(fixture: TestServer): Server {
 }
 
 export async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await makeTestDirectory("ltx-mcp-");
-  const published = process.env.LIBTMUX_TEST_RUN_ROOT;
-  const runRoot = published ?? join(parent, "run, root");
-  if (published === undefined) await prepareRunRoot(runRoot);
-  let done = false;
-  try {
+  return withOwnedRunRoot("ltx-mcp-", async (runRoot) => {
+    const fixture = await TestServer.create({ runRoot, sessionName: "mcp" });
+    assertOwnedSocketPath(fixture.socketPath);
     await runWithCleanup(
-      async () => {
-        const fixture = await TestServer.create({
-          runRoot,
-          sessionName: "mcp",
-        });
-        assertOwnedSocketPath(fixture.socketPath);
-        await runWithCleanup(
-          () => body(fixture),
-          () => fixture.dispose(),
-        );
-      },
-      async () => {
-        if (published === undefined) await reapOwnedRunRoot(runRoot);
-        done = true;
-      },
+      () => body(fixture),
+      () => fixture.dispose(),
     );
-  } finally {
-    if (done) await rm(parent, { force: true, recursive: true });
-  }
+  });
 }
 
 export async function waitUntil(
