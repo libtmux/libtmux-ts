@@ -338,16 +338,31 @@ windows:
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      // Reconciling holds a control connection open when it can, which is a
-      // process this one spawns. An engine says tmux is not somewhere this
-      // process can spawn it, so the apply has to do without rather than
-      // attach to whichever local tmux answers.
       const session = await applyWorkspace(server, parseWorkspaceYaml(WORKSPACE));
 
       expect(session.windows.map((window) => window.name)).toEqual(["editor", "server"]);
       const snapshot = await server.snapshot();
       expect(snapshot.panes.count({ window: { is: { name: "editor" } } })).toBe(2);
       expect(invocations).toBeGreaterThan(0);
+    });
+  }, 120_000);
+
+  test("reconciles without opening an unused event observer", async () => {
+    await withServer(async (fixture) => {
+      class ObserverFreeServer extends Server {
+        override connect(..._args: Parameters<Server["connect"]>): ReturnType<Server["connect"]> {
+          throw new Error("workspace reconciliation must not connect");
+        }
+      }
+      const server = new ObserverFreeServer({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      const session = await applyWorkspace(server, parseWorkspaceYaml(WORKSPACE));
+
+      expect(session.windows.map((window) => window.name)).toEqual(["editor", "server"]);
     });
   }, 120_000);
 

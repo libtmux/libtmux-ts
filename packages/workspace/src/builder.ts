@@ -67,14 +67,7 @@ export type WorkspaceApplyMilestone =
 /** The high-level operation an apply was attempting when it failed. */
 export type WorkspaceApplyStage =
   | {
-      readonly action:
-        | "claim"
-        | "connect"
-        | "create"
-        | "lookup"
-        | "ownership"
-        | "result"
-        | "snapshot";
+      readonly action: "claim" | "create" | "lookup" | "ownership" | "result" | "snapshot";
       readonly kind: "session";
     }
   | { readonly kind: "workspace-option"; readonly name: string }
@@ -234,22 +227,8 @@ export async function applyWorkspace(
     }
     const pruning = mayPrune(prune, owned);
 
-    // Reconciling re-reads the session after every change, so it runs over one
-    // control connection rather than a process per read. The session has to
-    // exist first: a control client attaches, and there is nothing to attach to
-    // on an empty server.
-    //
-    // A server built with an engine gets no connection: control mode is a
-    // process this one spawns, and an engine means tmux is somewhere it cannot.
-    // The reads are the same either way, so the apply proceeds and pays a
-    // command each rather than reconciling against whichever local tmux answers.
     failed = { action: "snapshot", kind: "session" };
-    const usesConnection = server.engine === undefined;
-    if (usesConnection) failed = { action: "connect", kind: "session" };
-    await using live = usesConnection ? await server.connect({ target: created.id }) : undefined;
-    failed = { action: "snapshot", kind: "session" };
-    const reader = live ?? server;
-    let session = (await reader.snapshot()).sessions.one({ id: created.id });
+    let session = (await server.snapshot()).sessions.one({ id: created.id });
 
     for (const [option, value] of Object.entries(workspace.options ?? {})) {
       failed = { kind: "workspace-option", name: option };
@@ -283,8 +262,6 @@ export async function applyWorkspace(
     }
     failed = { kind: "focus" };
     await focusRequested(session, workspace);
-    // The returned handle outlives the connection, so hand back one bound to the
-    // caller's server rather than one that stops working when this scope exits.
     failed = { action: "result", kind: "session" };
     return (await server.snapshot()).sessions.one({ id: created.id });
   } catch (error) {
