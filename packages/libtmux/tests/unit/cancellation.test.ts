@@ -7,11 +7,10 @@ import { describe, expect, test } from "bun:test";
 import {
   readProcessIdentity,
   type ProcessIdentity,
-} from "../../src/_internal/test/process_identity.js";
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import { TmuxTransportError } from "../../src/_internal/transport/types.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 const ignoreSigtermFixture = fileURLToPath(
   new URL("../fixtures/ignore_sigterm.mjs", import.meta.url),

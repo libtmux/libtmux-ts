@@ -13,12 +13,10 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../libtmux/src/_internal/test/testkit.js";
-import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
-import {
+  TestServer,
   assertOwnedSocketPath,
   makeTestDirectory,
-} from "../../libtmux/src/_internal/test/temp_root.js";
+} from "../../libtmux/src/_internal/test/testkit.js";
 
 interface Placement {
   readonly index: number;

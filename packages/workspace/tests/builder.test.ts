@@ -9,19 +9,17 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  assertOwnedSocketPath,
+  makeTestDirectory,
 } from "../../libtmux/src/_internal/test/testkit.js";
-import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
+
 import { Server } from "libtmux/server";
 import { flattenInvocation } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
 import { applyWorkspace, planWorkspace, WorkspaceApplyError } from "../src/builder.js";
 import { OWNERSHIP_OPTION } from "../src/ownership.js";
 import { parseWorkspace, parseWorkspaceYaml } from "../src/config.js";
-
-import {
-  assertOwnedSocketPath,
-  makeTestDirectory,
-} from "../../libtmux/src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

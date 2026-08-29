@@ -7,13 +7,14 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  assertOwnedSocketPath,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+
 import { Server } from "../../src/server.js";
 import { TmuxServerRestarted } from "../../src/exc.js";
-
-import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

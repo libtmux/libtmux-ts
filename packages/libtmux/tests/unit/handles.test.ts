@@ -49,7 +49,7 @@ import {
 } from "../../src/_internal/runtime/context.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/handle_prototypes.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
 import {
   entityRefForHandle,
   logicalRefForHandle,

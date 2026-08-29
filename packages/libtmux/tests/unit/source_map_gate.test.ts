@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "bun:test";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const gate = fileURLToPath(new URL("../../../../scripts/check-source-maps.ts", import.meta.url));
 const source = "export const answer = 42;\n";

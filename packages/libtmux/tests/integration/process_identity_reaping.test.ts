@@ -20,13 +20,11 @@ import {
 import {
   parseProcStatStartTime,
   readDaemonIdentity,
-} from "../../src/_internal/test/process_identity.js";
-import {
   reapOwnedRunRoot,
   validateOwnedRecordMetadata,
   type FixtureRecord,
+  TestServer,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
 
 describe("process identity", () => {
   test("parses field 22 after the final parenthesis without numeric coercion", () => {

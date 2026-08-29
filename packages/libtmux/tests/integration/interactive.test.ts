@@ -3,18 +3,18 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { ControlMode } from "../../src/_internal/test/control_mode.js";
 import {
+  ControlMode,
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

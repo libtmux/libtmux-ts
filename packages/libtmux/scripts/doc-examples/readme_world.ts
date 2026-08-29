@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { TestServer } from "../../src/_internal/test/test_server.js";
+import { TestServer } from "../../src/_internal/test/testkit.js";
 import type { Server as ServerHandle } from "../../src/server.js";
 import { Server } from "../../src/server.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";

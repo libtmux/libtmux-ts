@@ -14,8 +14,11 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  TEST_HANDLE_PROTOTYPES,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type {
   CommandRequest,
@@ -26,9 +29,6 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxException, WaitTimeout } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
-
-import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/handle_prototypes.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

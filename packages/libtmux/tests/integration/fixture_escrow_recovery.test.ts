@@ -37,10 +37,10 @@ import {
   readFixtureRecord,
   reapOwnedRunRoot,
   reserveFixture,
+  readDaemonIdentity,
+  TestServer,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { readDaemonIdentity } from "../../src/_internal/test/process_identity.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 describe("fixture escrow recovery", () => {
   for (const boundary of [

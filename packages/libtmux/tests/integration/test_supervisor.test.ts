@@ -22,8 +22,8 @@ import {
   OWNER_RECORD_NAME,
   reapStaleRunRoot,
   runSupervisor,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workerPath = fileURLToPath(new URL("../fixtures/leaking_tmux_worker.ts", import.meta.url));

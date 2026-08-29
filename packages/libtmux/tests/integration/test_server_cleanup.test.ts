@@ -25,9 +25,9 @@ import {
   prepareRunRoot,
   readFixtureRecord,
   reapOwnedRunRoot,
+  TestServer,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;

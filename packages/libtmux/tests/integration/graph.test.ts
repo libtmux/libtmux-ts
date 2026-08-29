@@ -23,12 +23,12 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "../../src/_internal/transport/types.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 interface QueryHarness {
   readonly capabilities: LazyCapabilityBinding;

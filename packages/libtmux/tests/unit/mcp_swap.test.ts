@@ -28,7 +28,7 @@ import {
   type CliInfo,
 } from "../../scripts/mcp_swap.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 

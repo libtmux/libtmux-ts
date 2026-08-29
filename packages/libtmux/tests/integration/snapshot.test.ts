@@ -7,13 +7,13 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  ControlMode,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { ControlMode } from "../../src/_internal/test/control_mode.js";
-import { Server } from "../../src/server.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

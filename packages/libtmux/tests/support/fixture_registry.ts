@@ -1,5 +1,8 @@
-import { assertOwnedSocketPath } from "../../src/_internal/test/temp_root.js";
-import { TestServer, type TestServerOptions } from "../../src/_internal/test/test_server.js";
+import {
+  assertOwnedSocketPath,
+  TestServer,
+  type TestServerOptions,
+} from "../../src/_internal/test/testkit.js";
 
 const fixtures = new Set<TestServer>();
 

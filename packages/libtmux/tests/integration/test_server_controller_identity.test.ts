@@ -19,15 +19,16 @@ import { dirname, join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { ControlMode } from "../../src/_internal/test/control_mode.js";
-import { readProcessIdentity } from "../../src/_internal/test/process_identity.js";
 import {
+  ControlMode,
+  readProcessIdentity,
   prepareRunRoot,
   reapOwnedRunRoot,
   type FixtureRecord,
+  TestServer,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+
 import { closeChildWithin, waitForProcessExit } from "../support/converge.js";
 import type { CapturedTmuxCleanup } from "../support/tmux_cleanup.js";
 

@@ -16,7 +16,7 @@ import {
   materializeProjectionMembers,
 } from "../../src/_internal/graph/materialize.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/handle_prototypes.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
 import {
   createRuntimeContext,
   createServerWithRuntime,

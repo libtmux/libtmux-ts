@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 import { npmPack } from "../../../scripts/npm_pack.js";
-import { resolveNode22 } from "../src/_internal/test/node22.js";
+import { resolveNode22 } from "../src/_internal/test/testkit.js";
 
 /**
  * Install the tarball into a project that has never seen this repository.

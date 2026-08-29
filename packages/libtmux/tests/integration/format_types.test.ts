@@ -8,17 +8,18 @@ import valueTypeFixture from "../fixtures/tmux-format-value-types.json" with { t
 import { formatFieldsForListCommand } from "../../src/_internal/codec/format_registry.js";
 import { GENERATED_FORMAT_FIELDS } from "../../src/_generated/format_fields.js";
 import { compareTmuxVersions, parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
-import { ControlMode } from "../../src/_internal/test/control_mode.js";
 import {
+  ControlMode,
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  assertOwnedSocketPath,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+
 import { FORMAT_SEPARATOR } from "../../src/formats.js";
 import { Server } from "../../src/server.js";
-
-import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 /**
  * Hold the declared shape of every format field to what tmux actually sends.

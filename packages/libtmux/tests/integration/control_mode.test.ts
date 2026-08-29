@@ -1,7 +1,11 @@
 import {
   CONTROL_REGISTRATION_DEADLINE_MS,
   deadlineMs,
-} from "../../src/_internal/test/deadlines.js";
+  ControlMode,
+  readFixtureRecord,
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 import { ChildProcess, spawn } from "node:child_process";
 import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,11 +17,7 @@ import { closeChildWithin, waitForPathPresent } from "../support/converge.js";
 import { parseNullFrames } from "../support/launch_frame.js";
 import { withTemporaryRunRoot } from "../support/run_root_harness.js";
 
-import { ControlMode } from "../../src/_internal/test/control_mode.js";
-import { readFixtureRecord } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
 import { createRegisteredTestServer } from "../support/fixture_registry.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -28,14 +28,8 @@ async function writeControlTimerProbe(
   mode: "dispose" | "partial-open",
   marker: string,
 ): Promise<string> {
-  const controlModule = pathToFileURL(
-    fileURLToPath(new URL("../../src/_internal/test/control_mode.ts", import.meta.url)),
-  ).href;
-  const runRootModule = pathToFileURL(
+  const testkitModule = pathToFileURL(
     fileURLToPath(new URL("../../src/_internal/test/testkit.ts", import.meta.url)),
-  ).href;
-  const testServerModule = pathToFileURL(
-    fileURLToPath(new URL("../../src/_internal/test/test_server.ts", import.meta.url)),
   ).href;
   const script = join(parent, `control-timer-${mode}.ts`);
   const wrapper = join(parent, "ignore-control-term.sh");
@@ -78,9 +72,7 @@ await reapOwnedRunRoot(runRoot);`;
   await writeFile(
     script,
     `import { writeFile } from "node:fs/promises";
-import { ControlMode } from ${JSON.stringify(controlModule)};
-import { prepareRunRoot, reapOwnedRunRoot } from ${JSON.stringify(runRootModule)};
-import { TestServer } from ${JSON.stringify(testServerModule)};
+import { ControlMode, prepareRunRoot, reapOwnedRunRoot, TestServer } from ${JSON.stringify(testkitModule)};
 ${body}
 await writeFile(${JSON.stringify(marker)}, "done");
 `,

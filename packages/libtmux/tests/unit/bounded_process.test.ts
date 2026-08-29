@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 
 import { killIfRunning, processExists } from "../support/converge.js";
 import { runBoundedCommand } from "../../../../scripts/bounded_process.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 const boundedProcessUrl = new URL("../../../../scripts/bounded_process.ts", import.meta.url).href;

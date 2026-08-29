@@ -25,7 +25,7 @@ import {
   validateWhereSchemaHistory,
 } from "../../src/_internal/codec/format_registry.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 interface PythonFormatFixture {
   baseline: {

@@ -7,12 +7,10 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../packages/libtmux/src/_internal/test/testkit.js";
-import { TestServer } from "../../packages/libtmux/src/_internal/test/test_server.js";
-import {
+  TestServer,
   assertOwnedSocketPath,
   makeTestDirectory,
-} from "../../packages/libtmux/src/_internal/test/temp_root.js";
+} from "../../packages/libtmux/src/_internal/test/testkit.js";
 
 /**
  * Hand a test an isolated, real tmux server and reap it afterwards.

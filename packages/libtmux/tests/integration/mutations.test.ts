@@ -7,14 +7,14 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
+  TestServer,
+  makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { LibTmuxException, TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

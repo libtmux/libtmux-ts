@@ -35,13 +35,11 @@ import {
   reapOwnedRunRoot,
   reapStaleRunRoot,
   type FixtureRecord,
-} from "../../src/_internal/test/testkit.js";
-import {
   readDaemonIdentity,
   readProcessIdentity,
-} from "../../src/_internal/test/process_identity.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 
 describe("run-root recovery", () => {
   test("enumerates only the exact run root", async () => {

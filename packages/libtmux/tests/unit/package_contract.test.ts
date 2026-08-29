@@ -6,7 +6,7 @@ import type { BunConnectionOptions } from "node:tls";
 
 import { describe, expect, test } from "bun:test";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 interface PackageManifest {
   author: string;

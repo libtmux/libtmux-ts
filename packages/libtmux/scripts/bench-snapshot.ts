@@ -23,9 +23,7 @@ import type {
   RawCommandResult,
 } from "../src/_internal/transport/types.js";
 import type { Server } from "../src/server.js";
-import { TEST_HANDLE_PROTOTYPES } from "../src/_internal/test/handle_prototypes.js";
-
-import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
+import { TEST_HANDLE_PROTOTYPES, makeTestDirectory } from "../src/_internal/test/testkit.js";
 
 /** Counts invocations and the bytes tmux answered with, which is the other cost. */
 class MeasuringTransport implements CommandTransport {

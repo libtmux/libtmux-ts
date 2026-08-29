@@ -4,9 +4,11 @@ import { access, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { resolveNode22 } from "../src/_internal/test/node22.js";
-import { reapStaleRunRoot } from "../src/_internal/test/testkit.js";
-import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
+import {
+  resolveNode22,
+  reapStaleRunRoot,
+  makeTestDirectory,
+} from "../src/_internal/test/testkit.js";
 
 interface Arguments {
   readonly expectMajor: number;
@@ -74,9 +76,7 @@ function scenarioSource(tsRoot: string, executable: string): string {
   const echoFixture = moduleUrl("tests/fixtures/echo_argv.mjs");
   const ignoreFixture = moduleUrl("tests/fixtures/ignore_sigterm.mjs");
   const malformedFixture = moduleUrl("tests/fixtures/malformed_utf8.mjs");
-  const processIdentityModule = moduleUrl("dist/_internal/test/process_identity.js");
-  const runRootModule = moduleUrl("dist/_internal/test/testkit.js");
-  const controlModeModule = moduleUrl("dist/_internal/test/control_mode.js");
+  const testkitModule = moduleUrl("dist/_internal/test/testkit.js");
 
   return `import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -90,15 +90,12 @@ import { deriveTmuxCapabilities } from ${moduleUrl("dist/_internal/runtime/capab
 import { FORMAT_FIELD_TOKENS } from ${moduleUrl("dist/_generated/format_fields.js")};
 import { FORMAT_VALUE_TYPES } from ${moduleUrl("dist/_generated/field_types.js")};
 import { TmuxConnection } from ${moduleUrl("dist/_internal/runtime/connection.js")};
-import { ControlMode } from ${controlModeModule};
+import { ControlMode, prepareRunRoot, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup, TestServer } from ${testkitModule};
 import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_spawn_transport.js")};
 // From the package root, not the internal module: a caller deciding whether a
 // timed-out mutation is safe to retry has to be able to name this type, so the
 // emitted lane proves it is reachable the way a consumer reaches it.
 import { TmuxTransportError } from ${moduleUrl("dist/index.js")};
-import { readProcessIdentity } from ${processIdentityModule};
-import { prepareRunRoot, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup } from ${runRootModule};
-import { TestServer } from ${moduleUrl("dist/_internal/test/test_server.js")};
 import { FORMAT_SEPARATOR } from ${moduleUrl("dist/formats.js")};
 import { ParsedFormatRow } from ${moduleUrl("dist/_internal/codec/format_types.js")};
 
@@ -562,7 +559,7 @@ async function runLateRootSiblingProbe() {
     '  return realRmdir.call(fs.promises, path, ...args);',
     '};',
     'syncBuiltinESMExports();',
-    'const { prepareRunRoot, reapOwnedRunRoot } = await import(' + JSON.stringify(${runRootModule}) + ');',
+    'const { prepareRunRoot, reapOwnedRunRoot } = await import(' + JSON.stringify(${testkitModule}) + ');',
     'await prepareRunRoot(runRoot);',
     'const ownerText = await fs.promises.readFile(ownerPath, "utf8");',
     'const ownerBefore = await fs.promises.lstat(ownerPath);',
@@ -697,9 +694,9 @@ async function runControlTimerProbe(mode) {
       ];
   const source = [
     'import { writeFile } from "node:fs/promises";',
-    'import { ControlMode } from ' + JSON.stringify(${controlModeModule}) + ';',
-    'import { prepareRunRoot, reapOwnedRunRoot } from ' + JSON.stringify(${runRootModule}) + ';',
-    'import { TestServer } from ' + JSON.stringify(${moduleUrl("dist/_internal/test/test_server.js")}) + ';',
+    'import { ControlMode, prepareRunRoot, reapOwnedRunRoot, TestServer } from ' +
+      JSON.stringify(${testkitModule}) +
+      ';',
     ...body,
     'await writeFile(' + JSON.stringify(marker) + ', "done");',
     '',
@@ -756,7 +753,7 @@ setInterval(() => undefined, 1000);\`,
 );
 await writeFile(
   supervisorPath,
-  \`import { runSupervisor } from ${runRootModule};
+  \`import { runSupervisor } from ${testkitModule};
 process.exitCode = await runSupervisor({
   command: [\${JSON.stringify(executable)}, \${JSON.stringify(holderPath)}],
   graceMs: 100,

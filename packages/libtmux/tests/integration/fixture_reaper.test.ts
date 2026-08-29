@@ -55,13 +55,11 @@ import {
   reapStaleRunRoot,
   reserveFixture,
   rollbackFixtureLaunchNotStarted,
-} from "../../src/_internal/test/testkit.js";
-import {
   readDaemonIdentity,
   readProcessIdentity,
-} from "../../src/_internal/test/process_identity.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
 const reaperPath = fileURLToPath(new URL("../../scripts/reap-test-run.ts", import.meta.url));

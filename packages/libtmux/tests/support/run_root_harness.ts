@@ -1,9 +1,12 @@
-import { deadlineMs, RESERVATION_RELEASE_DEADLINE_MS } from "../../src/_internal/test/deadlines.js";
+import {
+  deadlineMs,
+  RESERVATION_RELEASE_DEADLINE_MS,
+  prepareRunRoot,
+  reapOwnedRunRoot,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { prepareRunRoot, reapOwnedRunRoot } from "../../src/_internal/test/testkit.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 export async function createIsolatedRunRoot(
   name: string,

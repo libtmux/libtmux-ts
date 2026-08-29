@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveNode22 } from "../packages/libtmux/src/_internal/test/node22.js";
+import { resolveNode22 } from "../packages/libtmux/src/_internal/test/testkit.js";
 import { runBoundedCommand } from "./bounded_process.js";
 import { npmPack } from "./npm_pack.js";
 

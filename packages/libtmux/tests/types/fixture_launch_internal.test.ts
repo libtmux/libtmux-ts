@@ -7,16 +7,12 @@ import {
   type LaunchGeneration,
   type ReservationCapability,
   type SocketIdentity,
+  type ControllerIdentity,
+  type DaemonIdentity,
+  type ProcessIdentity,
+  type TestServerOptions,
+  type TestServerRequestSnapshot,
 } from "../../src/_internal/test/testkit.js";
-import type {
-  ControllerIdentity,
-  DaemonIdentity,
-  ProcessIdentity,
-} from "../../src/_internal/test/process_identity.js";
-import type {
-  TestServerOptions,
-  TestServerRequestSnapshot,
-} from "../../src/_internal/test/test_server.js";
 
 declare const capability: ReservationCapability;
 declare const attempt: LaunchAttemptCapability;

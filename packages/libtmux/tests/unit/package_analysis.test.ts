@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
 
 import { killIfRunning, processExists, waitForProcessExit } from "../support/converge.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const checker = fileURLToPath(
   new URL("../../../../scripts/check-package-analysis.ts", import.meta.url),

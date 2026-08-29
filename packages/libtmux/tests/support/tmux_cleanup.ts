@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { link, lstat, readFile, unlink } from "node:fs/promises";
 
-import { readDaemonIdentity } from "../../src/_internal/test/process_identity.js";
+import { readDaemonIdentity } from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
 import { closeChild } from "./owned_child.js";
 

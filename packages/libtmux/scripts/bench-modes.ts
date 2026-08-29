@@ -24,9 +24,7 @@ import type {
   RawCommandResult,
 } from "../src/_internal/transport/types.js";
 import type { Server } from "../src/server.js";
-import { TEST_HANDLE_PROTOTYPES } from "../src/_internal/test/handle_prototypes.js";
-
-import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
+import { TEST_HANDLE_PROTOTYPES, makeTestDirectory } from "../src/_internal/test/testkit.js";
 
 /** Counts what crosses the transport, which is what each mode is trying to change. */
 class CountingTransport implements CommandTransport {

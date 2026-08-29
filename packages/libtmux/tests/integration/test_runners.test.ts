@@ -8,9 +8,12 @@ import { describe, expect, test } from "bun:test";
 import { waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
 import { closeChild } from "../support/owned_child.js";
 
-import { resolveNode22 } from "../../src/_internal/test/node22.js";
-import { OWNER_RECORD_NAME, reapStaleRunRoot } from "../../src/_internal/test/testkit.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import {
+  resolveNode22,
+  OWNER_RECORD_NAME,
+  reapStaleRunRoot,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
 const differentialRunnerPath = fileURLToPath(
