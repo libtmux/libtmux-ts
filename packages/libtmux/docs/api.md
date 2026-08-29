@@ -316,7 +316,7 @@ async withConnection<T>( body: (live: ConnectedServer) => Promise<T>, options?: 
 
 Run `body` against a connected server, closing it afterwards.
 
-The scoped form of {@link connect}, for code that cannot use `await using`
+The scoped form of [`connect`](#serverconnect), for code that cannot use `await using`
 — it needs `Symbol.asyncDispose` in the consumer's `lib` — or would rather
 not manage the lifetime by hand. The connection closes on the way out
 whether `body` returns or throws.
@@ -407,7 +407,7 @@ Every session on the server, read now.
 This and its three siblings each take a snapshot of their own — four tmux
 commands per call — so calling several in a row describes several different
 instants and pays for each. Inside a loop that is an N+1: prefer one
-{@link snapshot} and read `sessions`, `windows`, `panes`, and `clients`
+[`snapshot`](#serversnapshot) and read `sessions`, `windows`, `panes`, and `clients`
 off it, which is both cheaper and consistent.
 
 ```ts
@@ -821,7 +821,7 @@ loadBuffer(name: string, data: string | Uint8Array): Promise<void>
 
 Fill a paste buffer from data fed through tmux's stdin.
 
-Use this over {@link Server.setBuffer} for anything large or binary: that
+Use this over [`Server.setBuffer`](#serversetbuffer) for anything large or binary: that
 one passes its data as a command-line argument, and this one does not.
 
 ```ts
@@ -866,7 +866,7 @@ showBufferBytes(name: string): Promise<Uint8Array>
 
 Read a named paste buffer without decoding or splitting its bytes.
 
-Unlike {@link Server.showBuffer}, this preserves NUL, invalid UTF-8, line
+Unlike [`Server.showBuffer`](#servershowbuffer), this preserves NUL, invalid UTF-8, line
 endings, and trailing newlines.
 
 ```ts
@@ -952,7 +952,7 @@ Assert the server is reachable, raising with tmux's reason if not.
 
 Every read already raises on an unreachable server, so this is not what
 tells an empty result from a missing one — it is the assertion form of
-{@link isAlive}, for a caller that wants the check and the reason without a
+[`isAlive`](#serverisalive), for a caller that wants the check and the reason without a
 read to hang it on.
 
 ```ts
@@ -972,7 +972,7 @@ caller to build their own subprocess — and reproduce the socket, the
 environment, the deadline, and the error handling — this runs one through
 the same path every other operation uses.
 
-Failure raises {@link TmuxCommandError} like any other command, carrying
+Failure raises `TmuxCommandError` like any other command, carrying
 tmux's own stderr.
 
 ```ts
@@ -994,7 +994,7 @@ delimiter.
 
 Not atomic. tmux runs the commands in order and stops at the first failure,
 leaving everything before it applied; the error names the command that
-failed. Take a {@link Server.snapshot} afterwards if you need to know what
+failed. Take a [`Server.snapshot`](#serversnapshot) afterwards if you need to know what
 survived.
 
 ```ts
@@ -1017,7 +1017,7 @@ the same handles come out, positionally and individually typed. Calling
 `newWindow` repeatedly takes one snapshot after each mutation; a batch runs
 the mutations in order and resolves all of them from one final snapshot.
 
-Not atomic, for the same reason {@link Server.pipeline} is not: tmux runs
+Not atomic, for the same reason [`Server.pipeline`](#serverpipeline) is not: tmux runs
 them in order and stops at the first failure, leaving everything before it
 applied.
 
@@ -1110,7 +1110,7 @@ get plan(): SessionPlans
 The same mutations, described instead of run.
 
 `session.plan.newWindow(…)` takes what `session.newWindow(…)` takes and
-resolves to what it resolves to; it hands the work to {@link Server.batch}
+resolves to what it resolves to; it hands the work to [`Server.batch`](#serverbatch)
 so the planned mutations share one final snapshot.
 
 ```ts
@@ -1411,7 +1411,7 @@ sameTmuxIdAs(other: Session): boolean
 Whether `other` carries the same `$n`, wherever it came from.
 
 Sessions on unrelated servers routinely share an id; this says so, and
-{@link equals} says they are still different sessions.
+`equals` says they are still different sessions.
 
 ```ts
 session.sameTmuxIdAs(await session.refreshed()); // true
@@ -1497,7 +1497,7 @@ get plan(): WindowPlans
 The same mutations, described instead of run.
 
 Takes what the direct calls take and resolves to what they resolve to,
-for {@link Server.batch} to share one final snapshot.
+for [`Server.batch`](#serverbatch) to share one final snapshot.
 
 ```ts
 const [created] = await server.batch([window.plan.split({})]);
@@ -1908,7 +1908,7 @@ get plan(): PanePlans
 The same mutations, described instead of run.
 
 Takes what the direct calls take and resolves to what they resolve to,
-for {@link Server.batch} to share one final snapshot.
+for [`Server.batch`](#serverbatch) to share one final snapshot.
 
 ```ts
 const [created] = await server.batch([pane.plan.split({})]);
@@ -2147,7 +2147,7 @@ pasteBuffer(name: string): Promise<void>
 Paste a named buffer into this pane, as if it were typed.
 
 The program running in the pane sees ordinary input, so a shell runs what
-arrives. {@link Server.loadBuffer} fills the buffer beforehand.
+arrives. [`Server.loadBuffer`](#serverloadbuffer) fills the buffer beforehand.
 
 ```ts
 await pane.pasteBuffer("greeting");
