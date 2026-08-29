@@ -1,23 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
-import { LibTmuxException, TmuxObjectDoesNotExist } from "../../exc.js";
-import type { AbortLike } from "../../types.js";
+import { LibTmuxException } from "../../exc.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand, type OutputFormatField } from "./format_types.js";
-import { prepareCommandRequest, prepareInvocationRequest } from "../operations/request.js";
-import type { TmuxConnection } from "../runtime/connection.js";
 import type { TmuxVersion } from "../runtime/tmux_version.js";
-import {
-  TmuxTransportError,
-  type CommandTransport,
-  type RawCommandResult,
-} from "../transport/types.js";
 import { decodeBackslashReplace } from "./backslash_replace.js";
 import { formatFieldsForListCommand } from "./format_registry.js";
 import {
   parseCompleteFormatRow,
-  parseFormatIdentity,
   type CompleteFormatRow,
   type RawCompleteFormatRow,
 } from "./schemas.js";
@@ -50,11 +41,6 @@ export interface GuardCodecCapabilities {
   readonly fingerprint: string;
   readonly rawVersion: string;
   readonly tmuxVersion: TmuxVersion;
-}
-
-/** A binding that detects codec capability changes before execution. */
-export interface GuardCodecCapabilityBinding {
-  bind(): Promise<GuardCodecCapabilities>;
 }
 
 export class FormatProtocolError extends LibTmuxException {}
@@ -281,74 +267,6 @@ function completeObj(row: CompleteFormatRow): ParsedFormatRow {
   return Object.freeze(instance) as ParsedFormatRow;
 }
 
-function primaryIdentity(listCommand: ListCommand): FormatFieldName {
-  switch (listCommand) {
-    case "list-clients":
-      return "client_name";
-    case "list-panes":
-      return "pane_id";
-    case "list-sessions":
-      return "session_id";
-    case "list-windows":
-      return "window_id";
-  }
-}
-
-function decodedStderr(bytes: Uint8Array): string {
-  return decodeBackslashReplace(bytes).trimEnd();
-}
-
-const tmuxStderrByFailure = new WeakMap<LibTmuxException, string>();
-
-function withTmuxStderr<Error extends LibTmuxException>(error: Error, stderr: string): Error {
-  tmuxStderrByFailure.set(error, stderr);
-  return error;
-}
-
-function commandFailure(
-  listCommand: ListCommand | undefined,
-  result: RawCommandResult,
-): LibTmuxException | undefined {
-  const stderr = decodedStderr(result.stderr);
-  if (result.returncode === 0 && result.signal === null && stderr === "") return undefined;
-  const message =
-    stderr !== ""
-      ? stderr
-      : result.signal === null
-        ? `tmux command failed with status ${result.returncode}`
-        : `tmux command failed with signal ${result.signal}`;
-  return withTmuxStderr(
-    new LibTmuxException(message, listCommand === undefined ? {} : { subcommand: listCommand }),
-    stderr,
-  );
-}
-
-/**
- * Re-describe a transport failure as one, rather than as a generic exception.
- *
- * Flattening it into a bare {@link LibTmuxException} would give one timeout a
- * different observable type depending on which command hit it, and cost the
- * caller the `delivery` that says whether a retry is safe.
- */
-function transportFailure(
-  listCommand: ListCommand | undefined,
-  error: TmuxTransportError,
-): TmuxTransportError {
-  const stderr = decodedStderr(error.stderr);
-  return withTmuxStderr(
-    new TmuxTransportError(stderr === "" ? error.message : stderr, {
-      cause: error,
-      delivery: error.delivery,
-      kind: error.kind,
-      ...(error.signal === undefined ? {} : { signal: error.signal }),
-      stderr: error.stderr,
-      stdout: error.stdout,
-      ...(listCommand === undefined ? {} : { subcommand: listCommand }),
-    }),
-    stderr,
-  );
-}
-
 export class GuardCodec {
   readonly #capabilities: GuardCodecCapabilities;
   readonly #guardFactory: GuardFactory;
@@ -409,25 +327,6 @@ export class GuardCodec {
   }
 }
 
-interface GuardedExecutionOptions {
-  readonly capabilities: GuardCodecCapabilityBinding;
-  readonly connection: TmuxConnection;
-  readonly listExtraArgs?: readonly string[];
-  readonly signal?: AbortLike;
-  /** Deadline for the listing, so acquisition is bounded like any command. */
-  readonly timeoutMs?: number;
-  readonly transport: CommandTransport;
-}
-
-export type GuardedListOptions = GuardedExecutionOptions & {
-  readonly listCommand: ListCommand;
-};
-
-export interface GuardedListing {
-  readonly listCommand: ListCommand;
-  readonly listExtraArgs?: readonly string[];
-}
-
 function concatenate(parts: readonly Uint8Array[]): Uint8Array {
   const joined = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
   let offset = 0;
@@ -439,7 +338,7 @@ function concatenate(parts: readonly Uint8Array[]): Uint8Array {
 }
 
 /** Assign complete self-framed rows from one stdout stream to their codecs. */
-function demultiplexGuardedOutput(
+export function demultiplexGuardedOutput(
   requests: readonly GuardedFormatRequest[],
   bytes: Uint8Array,
 ): readonly Uint8Array[] {
@@ -469,207 +368,4 @@ function demultiplexGuardedOutput(
     offset = next;
   }
   return Object.freeze(sections.map(concatenate));
-}
-
-export type GuardedFetchOptions = GuardedExecutionOptions &
-  (
-    | {
-        readonly identityField: "client_name";
-        readonly identityValue: string;
-        readonly listCommand: "list-clients";
-      }
-    | {
-        readonly identityField: "pane_id";
-        readonly identityValue: string;
-        readonly listCommand: "list-panes";
-      }
-    | {
-        readonly identityField: "session_id";
-        readonly identityValue: string;
-        readonly listCommand: "list-sessions";
-      }
-    | {
-        readonly identityField: "window_id";
-        readonly identityValue: string;
-        readonly listCommand: "list-windows";
-      }
-  );
-
-export async function executeGuardedList(
-  options: GuardedListOptions,
-): Promise<readonly ParsedFormatRow[]> {
-  const listExtraArgs: readonly string[] = Object.freeze([...(options.listExtraArgs ?? [])]);
-  const capabilities = await options.capabilities.bind();
-  const codec = new GuardCodec({ capabilities, listCommand: options.listCommand });
-  const guardedRequest = codec.prepare();
-  const commandRequest = prepareCommandRequest(
-    options.connection,
-    [options.listCommand, ...listExtraArgs, `-F${guardedRequest.format}`],
-    {
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    },
-  );
-  const currentCapabilities = await options.capabilities.bind();
-  if (currentCapabilities.fingerprint !== guardedRequest.capabilityFingerprint) {
-    throw new FormatProtocolError("capability fingerprint changed before execution");
-  }
-
-  let result: RawCommandResult;
-  try {
-    result = await options.transport.execute(commandRequest);
-  } catch (error) {
-    if (!(error instanceof TmuxTransportError)) throw error;
-    throw transportFailure(options.listCommand, error);
-  }
-  const failure = commandFailure(options.listCommand, result);
-  if (failure !== undefined) throw failure;
-  return codec.decode(guardedRequest, result.stdout);
-}
-
-/**
- * Run several listings as one tmux command list and decode each in turn.
- *
- * This is what makes a snapshot a snapshot. Issued separately, four listings are
- * four tmux clients with four command queues, and a window created between two
- * of them appears in one and not the other; issued as a list they are one queue,
- * drained without the event loop running in between. Measured under window
- * churn, separate listings tore about a fifth of their captures and this tore
- * none of 3340.
- *
- * Every listing is prepared against one capability binding, so a version change
- * mid-group is refused rather than decoded against the wrong field set.
- */
-export async function executeGuardedListGroup(
-  options: GuardedExecutionOptions & { readonly listings: readonly GuardedListing[] },
-): Promise<readonly (readonly ParsedFormatRow[])[]> {
-  if (options.listings.length === 0) return Object.freeze([]);
-  const capabilities = await options.capabilities.bind();
-  const prepared = options.listings.map((listing) => {
-    const codec = new GuardCodec({ capabilities, listCommand: listing.listCommand });
-    const request = codec.prepare();
-    return {
-      codec,
-      command: [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`],
-      listCommand: listing.listCommand,
-      request,
-    };
-  });
-
-  const current = await options.capabilities.bind();
-  if (prepared.some(({ request }) => current.fingerprint !== request.capabilityFingerprint)) {
-    throw new FormatProtocolError("capability fingerprint changed before execution");
-  }
-
-  let result: RawCommandResult;
-  try {
-    result = await options.transport.execute(
-      prepareInvocationRequest(
-        options.connection,
-        prepared.map(({ command }) => command),
-        {
-          ...(options.signal === undefined ? {} : { signal: options.signal }),
-          ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-        },
-      ),
-    );
-  } catch (error) {
-    if (!(error instanceof TmuxTransportError)) throw error;
-    throw transportFailure(undefined, error);
-  }
-
-  const failure = commandFailure(undefined, result);
-  if (failure !== undefined) throw failure;
-  const sections = demultiplexGuardedOutput(
-    prepared.map(({ request }) => request),
-    result.stdout,
-  );
-
-  return Object.freeze(
-    prepared.map(({ codec, request }, index) => codec.decode(request, sections[index]!)),
-  );
-}
-
-export async function executeGuardedFetch(options: GuardedFetchOptions): Promise<ParsedFormatRow> {
-  if (options.identityField !== primaryIdentity(options.listCommand)) {
-    throw new FormatProtocolError("point identity field does not match its list command");
-  }
-  try {
-    parseFormatIdentity(options.listCommand, options.identityValue);
-  } catch (error) {
-    throw new FormatProtocolError("point identity value does not match its list command", {
-      cause: error,
-    });
-  }
-
-  let rows: readonly ParsedFormatRow[];
-  try {
-    rows = await executeGuardedList(options);
-  } catch (error) {
-    if (
-      !(error instanceof LibTmuxException) ||
-      !isTargetNotFoundError(tmuxStderrByFailure.get(error) ?? "")
-    ) {
-      throw error;
-    }
-    throw new TmuxObjectDoesNotExist({
-      list_cmd: options.listCommand,
-      ...(options.listExtraArgs === undefined ? {} : { list_extra_args: options.listExtraArgs }),
-      obj_id: options.identityValue,
-      obj_key: options.identityField,
-    });
-  }
-  const matches = rows.filter((row) => row[options.identityField] === options.identityValue);
-  if (matches.length === 0) {
-    throw new TmuxObjectDoesNotExist({
-      list_cmd: options.listCommand,
-      ...(options.listExtraArgs === undefined ? {} : { list_extra_args: options.listExtraArgs }),
-      obj_id: options.identityValue,
-      obj_key: options.identityField,
-    });
-  }
-  return selectBestWinlink(matches);
-}
-
-export function isTargetNotFoundError(message: string): boolean {
-  return message.includes("can't find ");
-}
-
-export function selectBestWinlink<
-  Row extends Readonly<{
-    window_active?: string | null;
-    window_id?: string | null;
-    window_index?: string | null;
-  }>,
->(rows: readonly Row[]): Row {
-  if (rows.length === 0) throw new FormatProtocolError("cannot select from an empty winlink set");
-  if (rows.length === 1) return rows[0]!;
-  for (const row of rows) {
-    if (row.window_active === "1") return row;
-  }
-
-  const windowIndex = (row: Row): number => {
-    if (
-      row.window_index === undefined ||
-      row.window_index === null ||
-      !/^\d+$/u.test(row.window_index)
-    ) {
-      throw new FormatProtocolError("winlink row has an invalid window_index");
-    }
-    const index = Number.parseInt(row.window_index, 10);
-    if (!Number.isSafeInteger(index)) {
-      throw new FormatProtocolError("winlink row has an invalid window_index");
-    }
-    return index;
-  };
-  let selected = rows[0]!;
-  let selectedIndex = windowIndex(selected);
-  for (const row of rows.slice(1)) {
-    const index = windowIndex(row);
-    if (index < selectedIndex) {
-      selected = row;
-      selectedIndex = index;
-    }
-  }
-  return selected;
 }

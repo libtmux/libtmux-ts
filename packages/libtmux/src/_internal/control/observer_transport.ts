@@ -6,11 +6,8 @@ import type { DeliveryStatus } from "../../common.js";
 import type { DaemonGuard, TmuxCommand } from "../../engine.js";
 import { TmuxServerRestarted, TmuxTransportError } from "../../exc.js";
 import type { AbortLike } from "../../types.js";
-import {
-  executeGuardedList,
-  type GuardCodecCapabilities,
-  type GuardCodecCapabilityBinding,
-} from "../codec/guard_codec.js";
+import { executeGuardedList, type GuardCodecCapabilityBinding } from "../codec/guarded_listing.js";
+import type { GuardCodecCapabilities } from "../codec/guard_codec.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { parseTmuxVersion } from "../runtime/tmux_version.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";

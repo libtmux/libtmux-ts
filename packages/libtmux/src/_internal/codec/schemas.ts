@@ -49,7 +49,7 @@ export function parseCompleteFormatRow(
   return Object.freeze(parsed) as CompleteFormatRow;
 }
 
-export function parseFormatIdentity(listCommand: ListCommand, value: unknown): string {
+function parseFormatIdentity(listCommand: ListCommand, value: unknown): string {
   return identitySchemas[listCommand].parse(value);
 }
 

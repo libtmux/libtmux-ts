@@ -1,10 +1,7 @@
 import type { RawCompleteFormatRow } from "../codec/schemas.js";
 import { LibTmuxException } from "../../exc.js";
-import {
-  executeGuardedListGroup,
-  FormatProtocolError,
-  type GuardedListing,
-} from "../codec/guard_codec.js";
+import { executeGuardedListGroup, type GuardedListing } from "../codec/guarded_listing.js";
+import { FormatProtocolError } from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
 import {

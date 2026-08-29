@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { executeGuardedListGroup } from "../../src/_internal/codec/guard_codec.js";
+import { executeGuardedListGroup } from "../../src/_internal/codec/guarded_listing.js";
 import { acquireServerGraph, daemonIdentityOf } from "../../src/_internal/operations/acquire.js";
 import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import { createRuntimeContext, lastObservedDaemon } from "../../src/_internal/runtime/context.js";

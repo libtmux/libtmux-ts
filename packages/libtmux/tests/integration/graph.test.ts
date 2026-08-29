@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { executeGuardedFetch, executeGuardedList } from "../../src/_internal/codec/guard_codec.js";
+import { executeGuardedList } from "../../src/_internal/codec/guarded_listing.js";
 import {
   createGraphSourceId,
   type CapturedRowSet,
@@ -167,18 +167,11 @@ describe("real normalized graph hydration", () => {
         `${server.sessionId}:${linkedIndex}`,
       ]);
 
-      const [capabilities, sessions, windows, panes, targeted] = await Promise.all([
+      const [capabilities, sessions, windows, panes] = await Promise.all([
         harness.capabilities.bind(),
         executeGuardedList({ ...harness, listCommand: "list-sessions" }),
         executeGuardedList({ ...harness, listCommand: "list-windows", listExtraArgs: ["-a"] }),
         executeGuardedList({ ...harness, listCommand: "list-panes", listExtraArgs: ["-a"] }),
-        executeGuardedFetch({
-          ...harness,
-          identityField: "window_id",
-          identityValue: windowId,
-          listCommand: "list-windows",
-          listExtraArgs: ["-t", windowId],
-        }),
       ]);
       const capture: GraphCapture = {
         capabilityFingerprint: capabilities.fingerprint,
@@ -252,24 +245,6 @@ describe("real normalized graph hydration", () => {
       expect(projection.records.filter(({ model }) => model === "window")).toHaveLength(2);
       expect(projection.records.filter(({ model }) => model === "pane")).toHaveLength(2);
       expect(Object.isFrozen(projection.records[0]?.scalars)).toBe(true);
-
-      const targetedGraph = normalizeGraph({
-        capture,
-        sources: [
-          {
-            listCommand: "list-windows",
-            rows: [targeted],
-            source: createGraphSourceId("targeted"),
-          },
-        ],
-      });
-      expect(targetedGraph.records).toHaveLength(1);
-      const targetedWindowIndex = targeted.window_index;
-      if (targetedWindowIndex === null) throw new Error("missing targeted window index");
-      expect(targetedGraph.records[0]?.winlink?.windowIndex).toBe(targetedWindowIndex);
-      expect(windowRecords.map((ref) => graphRecord(graph, ref).winlink?.windowIndex)).toContain(
-        targetedWindowIndex,
-      );
 
       await server.executeText(["unlink-window", "-t", `${server.sessionId}:${linkedIndex}`]);
       const afterUnlink = await executeGuardedList({

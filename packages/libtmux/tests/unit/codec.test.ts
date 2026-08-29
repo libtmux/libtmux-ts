@@ -4,6 +4,8 @@ import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import {
   executeGuardedList,
   executeGuardedListGroup,
+} from "../../src/_internal/codec/guarded_listing.js";
+import {
   FormatProtocolError,
   GuardCodec,
   type FormatGuards,
