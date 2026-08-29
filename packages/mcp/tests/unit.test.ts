@@ -7,9 +7,10 @@ import type { ConnectedServer, Pane, TmuxEvent, TmuxEventStream } from "libtmux"
 import { Server } from "libtmux/server";
 
 import { readCallerEnvironment } from "../src/caller.js";
+import { runFramedCommand } from "../src/command.js";
+import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "../src/command_frame.js";
 import { describeUnreachable, type ToolContext } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
-import { frame, randomId, runFramedCommand, withoutForeignFraming } from "../src/command.js";
 import { LiveHub } from "../src/live.js";
 import { PaneTail } from "../src/pane_tail.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES, resolvePolicy, tierAllows } from "../src/policy.js";
@@ -982,6 +983,20 @@ describe("command framing", () => {
     const result = spawnSync(shell, ["-c", source], { encoding: "utf8", input });
     return { status: result.status, stderr: result.stderr, stdout: result.stdout };
   }
+
+  test("parses a complete framed result without pane state", () => {
+    expect(
+      parseFramedOutput(
+        "prompt\r\nltxabc123def0_S\r\nresult\r\nltxabc123def0_E 7 ltxabc123def0_D\r\n",
+        "ltxabc123def0",
+      ),
+    ).toEqual({
+      exitStatus: 7,
+      foreignOutputSuspected: false,
+      output: "result",
+      outputComplete: true,
+    });
+  });
 
   test("keeps a multiline command out of the shell history too", () => {
     // The leading space is the whole mechanism, and a shell records a
