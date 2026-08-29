@@ -314,17 +314,20 @@ names and text values; a decoded `WhereDocumentV1` restores camelCase criteria
 names. The same type therefore covers what you write and what comes back.
 
 ```ts
-import { safeInteger } from "libtmux";
+import { isSafeInteger, safeInteger } from "libtmux";
 
 snapshot.panes.where({ active: true });
 snapshot.panes.where({ active: "1" }); // what a flag encodes to
 snapshot.panes.where({ pid: "2334787" }); // and a number
 snapshot.panes.where({ pid: safeInteger(process.pid) }); // a computed number
+const candidate = Number(process.env["BUILD_PID"]);
+if (isSafeInteger(candidate)) snapshot.panes.where({ pid: candidate });
 ```
 
 `SafeInteger` keeps `NaN`, infinities, fractions, and unsafe integers out of
 typed criteria. Decoded numeric fields already carry the proof; authenticate a
 number from elsewhere with `safeInteger`, which throws when it is not exact.
+Use `isSafeInteger` to narrow an unknown value without throwing.
 
 Invalid wire spellings remain type errors:
 
@@ -410,11 +413,13 @@ those that create something return a handle to it.
 Sessions, windows, and panes:
 
 ```ts
-import { splitSize } from "libtmux";
+import { isSplitSize, splitSize } from "libtmux";
 
 const session = await server.newSession({ name: "work" });
 const window = await session.newWindow({ name: "editor" });
-const pane = await window.split({ size: "30%", startDirectory: "/srv" });
+const requestedSize: unknown = "30%";
+if (!isSplitSize(requestedSize)) throw new TypeError("invalid split size");
+const pane = await window.split({ size: requestedSize, startDirectory: "/srv" });
 await pane.split({ size: splitSize(20) });
 
 const active = session.activePane; // the active window's active pane
@@ -464,7 +469,6 @@ Moving and linking windows between sessions:
 await window.swapWith(other);
 await other.move({ index: 2, session: "other" });
 await window.link({ session: "other" }); // one window, in two sessions
-await window.unlink(); // and back to one
 await pane.breakOut();
 await pane.joinTo("other:1");
 await pane.swapWith(otherPane);
@@ -474,6 +478,31 @@ A handle names a placement rather than a window, because one window can sit in
 two sessions at once. Moving a window leaves the handle pointing at a placement
 that no longer exists, so read the moved window back from a fresh snapshot
 instead of reusing the handle that moved it.
+
+Unlink the placement resolved in the session you intend to remove:
+
+```ts
+const destination = await server.newSession({ name: "unlink-example" });
+await window.link({ session: destination.id });
+const placement = (await server.snapshot()).windows.one({
+  id: window.id,
+  session: { is: { id: destination.id } },
+});
+await placement.unlink();
+```
+
+`removePlacement` unlinks a linked placement or destroys the final ungrouped
+window. It refuses a grouped session, whose members share one window list:
+
+```ts
+await window.removePlacement();
+```
+
+`killIfWindowUnshared` kills a pane only while its window has one placement:
+
+```ts
+await pane.killIfWindowUnshared();
+```
 
 Pane input and contents:
 
