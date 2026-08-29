@@ -80,7 +80,7 @@ const expectedScripts = {
 const expectedDependencies = {};
 
 const expectedDevDependencies = {
-  "@types/bun": "1.3.14",
+  "@types/bun": "1.4.0",
   // Held at the floor deliberately: `engines.node` is ">=22", and types
   // describing a newer Node would compile calls the floor cannot run. The root
   // `overrides` pins it for the whole workspace, so a manifest naming anything
