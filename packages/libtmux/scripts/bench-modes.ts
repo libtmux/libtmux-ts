@@ -1,10 +1,9 @@
 /**
  * Compare the ways this library can talk to tmux, on one workload.
  *
- * Three choices are independent: which transport carries a command, whether
- * independent commands overlap, and whether several commands travel in one
- * invocation. They compose, so the interesting number is not any one of them
- * but the grid — and the query output beside it, which is the same in every
+ * Two choices are independent: whether commands overlap, and whether several
+ * commands travel in one invocation. They compose, so the interesting number
+ * is the grid — and the query output beside it, which is the same in every
  * cell. What differs is the cost.
  *
  * Run with `bun scripts/bench-modes.ts`. Numbers belong to the machine and the
@@ -52,7 +51,6 @@ interface Row {
   readonly orderedRuns?: number;
   readonly processes: number;
   readonly result: string;
-  readonly transport: string;
 }
 
 const WINDOWS = 12;
@@ -97,7 +95,6 @@ async function query(server: Server): Promise<{ ordered: boolean; result: string
 
 /** One cell of the grid, measured alone so no other cell is in its numbers. */
 async function measureCell(
-  transport: "control" | "spawn",
   batching: "one-at-a-time" | "pipeline" | "planned",
   concurrency: "concurrent" | "sequential",
   socketPath: string,
@@ -107,25 +104,20 @@ async function measureCell(
   await server.newSession({ name: "bench" });
   const tmuxVersion = (await server.version()).raw;
 
-  const live = transport === "control" ? await server.connect() : undefined;
   try {
-    const target = live ?? server;
-    // Derived from the server under test, not the one that made it: a handle
-    // carries the runtime it came from, so a session taken from the spawning
-    // server would keep spawning however it is used.
-    const session = (await target.snapshot()).sessions.one({ name: "bench" });
+    const session = (await server.snapshot()).sessions.one({ name: "bench" });
     const before = counter.calls;
     const started = performance.now();
 
     if (batching === "planned") {
       // The typed form returns handles after one final snapshot.
-      await target.batch(
+      await server.batch(
         Array.from({ length: WINDOWS }, (_, index) =>
           session.plan.newWindow({ name: `w${String(index)}` }),
         ),
       );
     } else if (batching === "pipeline") {
-      await target.pipeline(
+      await server.pipeline(
         Array.from({ length: WINDOWS }, (_, index) => [
           "new-window",
           "-d",
@@ -149,9 +141,7 @@ async function measureCell(
     }
 
     const ms = performance.now() - started;
-    const { ordered, result } = await query(target);
-    // Counted on the spawning transport, so a control-mode row reporting
-    // processes means its commands did not travel over the connection.
+    const { ordered, result } = await query(server);
     return {
       row: {
         batching,
@@ -160,12 +150,10 @@ async function measureCell(
         ordered,
         processes: counter.calls - before,
         result,
-        transport,
       },
       tmuxVersion,
     };
   } finally {
-    await live?.close();
     await server.kill().catch(() => undefined);
   }
 }
@@ -176,13 +164,11 @@ async function main(): Promise<void> {
   const rows: Row[] = [];
   let tmuxVersion = "unknown";
 
-  const cells = (["spawn", "control"] as const).flatMap((transport) =>
-    (["one-at-a-time", "pipeline", "planned"] as const).flatMap((batching) =>
-      (["sequential", "concurrent"] as const)
-        // Pipeline and planned operations define their own ordering.
-        .filter((concurrency) => !(batching !== "one-at-a-time" && concurrency === "concurrent"))
-        .map((concurrency) => ({ batching, concurrency, transport })),
-    ),
+  const cells = (["one-at-a-time", "pipeline", "planned"] as const).flatMap((batching) =>
+    (["sequential", "concurrent"] as const)
+      // Pipeline and planned operations define their own ordering.
+      .filter((concurrency) => !(batching !== "one-at-a-time" && concurrency === "concurrent"))
+      .map((concurrency) => ({ batching, concurrency })),
   );
 
   try {
@@ -191,7 +177,6 @@ async function main(): Promise<void> {
       for (let repeat = 0; repeat < REPEATS; repeat += 1) {
         // eslint-disable-next-line no-await-in-loop -- cells run one at a time; overlapping them would put each cell's contention in the others' numbers.
         const measured = await measureCell(
-          cell.transport,
           cell.batching,
           cell.concurrency,
           join(root, `s${String(index)}-${String(repeat)}`),
@@ -214,17 +199,8 @@ async function main(): Promise<void> {
     await rm(root, { force: true, recursive: true });
   }
 
-  const header = [
-    "transport",
-    "batching",
-    "concurrency",
-    "wall-clock",
-    "processes",
-    "query result",
-    "order",
-  ];
+  const header = ["batching", "concurrency", "wall-clock", "processes", "query result", "order"];
   const body = rows.map((row) => [
-    row.transport,
     row.batching,
     row.concurrency,
     `${row.ms.toFixed(0)} ms`,

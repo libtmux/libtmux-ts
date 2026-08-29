@@ -214,16 +214,15 @@ describe("server graph acquisition", () => {
         socketPath: server.socketPath,
         tmuxBin: server.tmuxExecutable,
       });
-      await using churnConnection = await churnServer.connect();
       let churning = true;
       const churn = (async () => {
         while (churning) {
           // eslint-disable-next-line no-await-in-loop -- the churn is the point: each change must land before the next.
-          await churnConnection
+          await churnServer
             .cmd("new-window", ["-d", "-t", `${server.sessionName}:`])
             .catch(() => undefined);
           // eslint-disable-next-line no-await-in-loop -- as above.
-          await churnConnection
+          await churnServer
             .cmd("kill-window", ["-t", `${server.sessionName}:$`])
             .catch(() => undefined);
         }
