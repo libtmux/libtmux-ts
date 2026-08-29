@@ -76,6 +76,16 @@ if (builds.length === 0) {
   process.exit(1);
 }
 
+// The gates import what the build emits, and none of them builds it in time:
+// test:node does, but it runs after test:integration, which needs it already
+// there. On a clean checkout that failed as a missing dist module rather than
+// as anything about tmux. The build does not vary by tmux, so it happens once.
+const emitted = Bun.spawn(["bun", "run", "build"], { stderr: "inherit", stdout: "ignore" });
+if ((await emitted.exited) !== 0) {
+  process.stderr.write("the library build failed, so no tmux was checked\n");
+  process.exit(1);
+}
+
 let failed = false;
 for (const build of builds) {
   // eslint-disable-next-line no-await-in-loop -- one build at a time.
