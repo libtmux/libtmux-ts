@@ -17,7 +17,7 @@ import {
 } from "./guard_codec.js";
 
 export interface GuardCodecCapabilityBinding {
-  bind(): Promise<GuardCodecCapabilities>;
+  bind(signal?: AbortLike): Promise<GuardCodecCapabilities>;
 }
 
 interface GuardedExecutionOptions {
@@ -77,7 +77,7 @@ export async function executeGuardedList(
   options: GuardedListOptions,
 ): Promise<readonly ParsedFormatRow[]> {
   const listExtraArgs: readonly string[] = Object.freeze([...(options.listExtraArgs ?? [])]);
-  const capabilities = await options.capabilities.bind();
+  const capabilities = await options.capabilities.bind(options.signal);
   const codec = new GuardCodec({ capabilities, listCommand: options.listCommand });
   const guardedRequest = codec.prepare();
   const commandRequest = prepareCommandRequest(
@@ -88,7 +88,7 @@ export async function executeGuardedList(
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     },
   );
-  const currentCapabilities = await options.capabilities.bind();
+  const currentCapabilities = await options.capabilities.bind(options.signal);
   if (currentCapabilities.fingerprint !== guardedRequest.capabilityFingerprint) {
     throw new FormatProtocolError("capability fingerprint changed before execution");
   }
@@ -110,7 +110,7 @@ export async function executeGuardedListGroup(
   options: GuardedExecutionOptions & { readonly listings: readonly GuardedListing[] },
 ): Promise<readonly (readonly ParsedFormatRow[])[]> {
   if (options.listings.length === 0) return Object.freeze([]);
-  const capabilities = await options.capabilities.bind();
+  const capabilities = await options.capabilities.bind(options.signal);
   const prepared = options.listings.map((listing) => {
     const codec = new GuardCodec({ capabilities, listCommand: listing.listCommand });
     const request = codec.prepare();
@@ -121,7 +121,7 @@ export async function executeGuardedListGroup(
     };
   });
 
-  const current = await options.capabilities.bind();
+  const current = await options.capabilities.bind(options.signal);
   if (prepared.some(({ request }) => current.fingerprint !== request.capabilityFingerprint)) {
     throw new FormatProtocolError("capability fingerprint changed before execution");
   }

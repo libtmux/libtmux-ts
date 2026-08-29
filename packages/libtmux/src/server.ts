@@ -19,6 +19,7 @@ import type {
   PlannedOperation,
   RunShellOptions,
   ServerSnapshot,
+  SnapshotOptions,
   SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
@@ -406,8 +407,8 @@ export class Server {
    * now.windows.count();
    * ```
    */
-  snapshot(): Promise<ServerSnapshot> {
-    return buildServerSnapshot(this, runtimeForServer(this));
+  snapshot(options: SnapshotOptions = {}): Promise<ServerSnapshot> {
+    return buildServerSnapshot(this, runtimeForServer(this), options.signal);
   }
 
   /**

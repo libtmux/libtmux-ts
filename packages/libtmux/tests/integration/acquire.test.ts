@@ -266,6 +266,32 @@ describe("server graph acquisition", () => {
     });
   }, 30_000);
 
+  test("carries snapshot cancellation through acquisition", async () => {
+    await withServer(async (fixture) => {
+      const requests: CommandRequest[] = [];
+      const raw = new NodeSpawnTransport({ terminationGraceMs: 100 });
+      const controller = new AbortController();
+      const server = new Server({
+        engine: {
+          execute(request) {
+            requests.push(request);
+            return raw.execute(request);
+          },
+        },
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      await server.snapshot({ signal: controller.signal });
+
+      expect(requests.map(({ commands }) => commands.length)).toEqual([1, 4]);
+      expect(requests[0]?.signal).toBeDefined();
+      expect(requests[0]?.signal).not.toBe(controller.signal);
+      expect(requests[1]?.signal).toBe(controller.signal);
+    });
+  }, 30_000);
+
   test("demultiplexes a later listing after an empty middle listing", async () => {
     await withServer(async (server) => {
       const runtime = runtimeFor(server);

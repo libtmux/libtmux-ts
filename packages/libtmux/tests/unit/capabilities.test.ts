@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException } from "../../src/exc.js";
+import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   deriveTmuxCapabilities,
@@ -200,6 +200,77 @@ describe("tmux capabilities", () => {
     expect(secondWaveRequests).toBe(2);
     expect(thirdSnapshot).toBe(fourthSnapshot);
     expect(thirdSnapshot).not.toBe(firstSnapshot);
+  });
+
+  test("keeps a shared probe alive for an uncancelled waiter", async () => {
+    const entered = deferred();
+    const release = deferred();
+    let request: CommandRequest | undefined;
+    const transport: CommandTransport = singleCommandTransport(async (current) => {
+      request = current;
+      entered.resolve();
+      await release.promise;
+      return resultFor(current, "3.7b");
+    });
+    const binding = new LazyCapabilityBinding({
+      connection: new TmuxConnection({ executable: "/usr/bin/tmux", socketName: "shared-probe" }),
+      connectionAlias: alias("shared-probe"),
+      getDaemonEpoch: () => epoch(30),
+      transport,
+    });
+    const controller = new AbortController();
+    const cancelled = binding.bind(controller.signal);
+    const waiting = binding.bind();
+
+    await entered.promise;
+    controller.abort();
+    release.resolve();
+    const outcomes = await Promise.allSettled([cancelled, waiting]);
+
+    expect(outcomes.map(({ status }) => status)).toEqual(["rejected", "fulfilled"]);
+    expect(request?.signal?.aborted).toBe(false);
+  });
+
+  test("joins the capability request after its last waiter cancels", async () => {
+    const entered = deferred();
+    const release = deferred();
+    const aborted = deferred();
+    let request: CommandRequest | undefined;
+    const transport: CommandTransport = singleCommandTransport(async (current) => {
+      request = current;
+      entered.resolve();
+      current.signal?.addEventListener("abort", aborted.resolve, { once: true });
+      await release.promise;
+      throw new TmuxTransportError("command cancelled", {
+        delivery: "indeterminate",
+        kind: "cancelled",
+      });
+    });
+    const binding = new LazyCapabilityBinding({
+      connection: new TmuxConnection({ executable: "/usr/bin/tmux", socketName: "last-waiter" }),
+      connectionAlias: alias("last-waiter"),
+      getDaemonEpoch: () => epoch(31),
+      transport,
+    });
+    const controller = new AbortController();
+    let outcome: unknown = "pending";
+    const pending = binding.bind(controller.signal).catch((error: unknown) => {
+      outcome = error;
+      throw error;
+    });
+
+    try {
+      await entered.promise;
+      controller.abort();
+      expect(request?.signal?.aborted).toBe(true);
+      await aborted.promise;
+      expect(outcome).toBe("pending");
+      release.resolve();
+      await expect(pending).rejects.toMatchObject({ kind: "cancelled" });
+    } finally {
+      release.resolve();
+      await pending.catch(() => undefined);
+    }
   });
 
   test("rejects an epoch change during the daemon probe without caching it", async () => {

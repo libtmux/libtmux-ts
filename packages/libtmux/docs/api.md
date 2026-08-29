@@ -364,7 +364,7 @@ for await (const event of live.subscribe()) {
 #### `Server.snapshot`
 
 ```ts
-snapshot(): Promise<ServerSnapshot>
+snapshot(options: SnapshotOptions = {}): Promise<ServerSnapshot>
 ```
 
 Acquire an immutable view of the server at this instant.

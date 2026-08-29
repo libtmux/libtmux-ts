@@ -46,6 +46,12 @@ export interface ServerSnapshot {
   readonly windows: Selection<Window>;
 }
 
+/** Options for {@link Server.snapshot}. */
+export interface SnapshotOptions {
+  /** Abort acquisition and join the command that was running. */
+  readonly signal?: AbortLike;
+}
+
 export interface NewSessionOptions extends CommandOptions {
   /**
    * Share another session's windows, tmux's `-t`.

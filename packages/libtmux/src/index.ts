@@ -44,6 +44,7 @@ export type {
   RunShellOptions,
   SendKeysOptions,
   ServerSnapshot,
+  SnapshotOptions,
   SetEnvironmentOptions,
   SetHookOptions,
   SetOptionOptions,

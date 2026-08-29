@@ -1,5 +1,6 @@
 import type { RawCompleteFormatRow } from "../codec/schemas.js";
 import { LibTmuxException } from "../../exc.js";
+import type { AbortLike } from "../../types.js";
 import { executeGuardedListGroup, type GuardedListing } from "../codec/guarded_listing.js";
 import { FormatProtocolError } from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
@@ -75,24 +76,24 @@ export function daemonIdentityOf(rows: readonly (readonly DaemonRow[])[]): Daemo
 async function acquireServerGraphAttempt(
   runtime: RuntimeContext,
   attemptsRemaining: number,
+  signal?: AbortLike,
 ): Promise<NormalizedGraph> {
   const observation = beginDaemonObservation(runtime);
-  const [capabilities, [sessions = [], windows = [], panes = [], clients = []]] = await Promise.all(
-    [
-      runtime.capabilities.bind(),
-      executeGuardedListGroup({
-        capabilities: runtime.capabilities,
-        connection: runtime.connection,
-        listings: ACQUISITION_LISTINGS,
-        ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
-        transport: runtime.transport,
-      }),
-    ],
-  );
+  const capabilities = await runtime.capabilities.bind(signal);
+  const [sessions = [], windows = [], panes = [], clients = []] = await executeGuardedListGroup({
+    capabilities: runtime.capabilities,
+    connection: runtime.connection,
+    listings: ACQUISITION_LISTINGS,
+    ...(signal === undefined ? {} : { signal }),
+    ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
+    transport: runtime.transport,
+  });
 
   const daemon = daemonIdentityOf([sessions, windows, panes, clients]);
   if (!observeDaemonIdentity(runtime, observation, capabilities, daemon)) {
-    if (attemptsRemaining > 1) return acquireServerGraphAttempt(runtime, attemptsRemaining - 1);
+    if (attemptsRemaining > 1) {
+      return acquireServerGraphAttempt(runtime, attemptsRemaining - 1, signal);
+    }
     throw new LibTmuxException("daemon changed repeatedly during graph acquisition");
   }
 
@@ -113,6 +114,9 @@ async function acquireServerGraphAttempt(
   });
 }
 
-export function acquireServerGraph(runtime: RuntimeContext): Promise<NormalizedGraph> {
-  return acquireServerGraphAttempt(runtime, MAX_ACQUISITION_ATTEMPTS);
+export function acquireServerGraph(
+  runtime: RuntimeContext,
+  signal?: AbortLike,
+): Promise<NormalizedGraph> {
+  return acquireServerGraphAttempt(runtime, MAX_ACQUISITION_ATTEMPTS, signal);
 }

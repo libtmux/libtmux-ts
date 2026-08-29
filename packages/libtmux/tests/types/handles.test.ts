@@ -462,6 +462,7 @@ export const cancellable: readonly Promise<unknown>[] = [
   cancelWindow.split({ signal: abort }),
   cancelWindow.move({ signal: abort }),
   cancelSession.newWindow({ signal: abort }),
+  cancelServer.snapshot({ signal: abort }),
   cancelServer.newSession({ signal: abort }),
   cancelServer.runShell("true", { signal: abort }),
   cancelServer.ifShell("true", "true", { signal: abort }),
