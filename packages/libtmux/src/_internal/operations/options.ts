@@ -1,6 +1,6 @@
 import type { CommandOptions } from "../../common.js";
 import type { SetOptionOptions } from "../../types.js";
-import type { OptionScope } from "../../types.js";
+import type { OptionScope } from "../../constants.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";
 

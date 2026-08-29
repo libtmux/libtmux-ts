@@ -47,10 +47,10 @@ export type DefaultOptionScope = { readonly [defaultOptionScopeBrand]: "default-
 export const DEFAULT_OPTION_SCOPE: DefaultOptionScope = {} as DefaultOptionScope;
 
 export const OptionScope = {
-  Server: "SERVER",
-  Session: "SESSION",
-  Window: "WINDOW",
-  Pane: "PANE",
+  Server: "server",
+  Session: "session",
+  Window: "window",
+  Pane: "pane",
 } as const;
 export type OptionScope = (typeof OptionScope)[keyof typeof OptionScope];
 

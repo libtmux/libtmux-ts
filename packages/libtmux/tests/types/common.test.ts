@@ -39,6 +39,8 @@ import {
   WindowDirection,
   WINDOW_DIRECTION_FLAG_MAP,
 } from "../../src/constants.js";
+import { OptionScope as RootOptionScope } from "../../src/index.js";
+import type { OptionScope as RootOptionScopeType } from "../../src/index.js";
 
 import type { Equal, Expect } from "./assert.js";
 
@@ -121,6 +123,7 @@ type _NoPublicAdjustmentInstanceHook = Expect<
   >
 >;
 void OptionScope.Server;
+void RootOptionScope.Server;
 void PaneDirection.Above;
 void ResizeAdjustmentDirection.Up;
 void WindowDirection.Before;
@@ -291,15 +294,19 @@ type _OptionFlags = Expect<
   Equal<typeof OPTION_SCOPE_FLAG_MAP, Readonly<Record<OptionScope, string>>>
 >;
 type _HookFlags = Expect<Equal<typeof HOOK_SCOPE_FLAG_MAP, Readonly<Record<OptionScope, string>>>>;
+type _OptionScope = Expect<Equal<OptionScope, "pane" | "server" | "session" | "window">>;
+type _RootOptionScope = Expect<Equal<RootOptionScopeType, OptionScope>>;
 
 export type {
   _CommandOutcomeKeys,
   _DeliveryStatus,
   _NoPublicAdjustmentInstanceHook,
   _OperationStatus,
+  _OptionScope,
   _PaneFlags,
   _PaneRef,
   _ResizeFlags,
+  _RootOptionScope,
   _SessionRef,
   _WindowFlags,
   _WindowRef,

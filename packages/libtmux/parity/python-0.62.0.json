@@ -110,7 +110,7 @@
       "typescriptSymbols": ["./server#instance:Server.cmd"]
     },
     {
-      "adaptation": null,
+      "adaptation": "TypeScript uses the lowercase operation scope strings instead of Python's uppercase enum values.",
       "declarationTest": "tests/types/common.test.ts",
       "kind": "class",
       "owner": "libtmux.constants",
@@ -118,7 +118,7 @@
       "realTmuxScenario": null,
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py",
-      "status": "implemented",
+      "status": "adapted",
       "typescript": "OptionScope",
       "unitTest": "tests/unit/constants.test.ts",
       "evidenceApplicability": {
@@ -1611,7 +1611,7 @@
       "typescriptSymbols": []
     },
     {
-      "adaptation": null,
+      "adaptation": "TypeScript uses the lowercase operation scope strings instead of Python's uppercase enum values.",
       "declarationTest": "tests/types/common.test.ts",
       "kind": "enum-member",
       "owner": "libtmux.constants.OptionScope",
@@ -1619,7 +1619,7 @@
       "realTmuxScenario": null,
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py",
-      "status": "implemented",
+      "status": "adapted",
       "typescript": "OptionScope.Pane",
       "unitTest": "tests/unit/constants.test.ts",
       "evidenceApplicability": {
@@ -1630,7 +1630,7 @@
       "typescriptSymbols": ["./constants#value:OptionScope.Pane"]
     },
     {
-      "adaptation": null,
+      "adaptation": "TypeScript uses the lowercase operation scope strings instead of Python's uppercase enum values.",
       "declarationTest": "tests/types/common.test.ts",
       "kind": "enum-member",
       "owner": "libtmux.constants.OptionScope",
@@ -1638,7 +1638,7 @@
       "realTmuxScenario": null,
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py",
-      "status": "implemented",
+      "status": "adapted",
       "typescript": "OptionScope.Server",
       "unitTest": "tests/unit/constants.test.ts",
       "evidenceApplicability": {
@@ -1649,7 +1649,7 @@
       "typescriptSymbols": ["./constants#value:OptionScope.Server"]
     },
     {
-      "adaptation": null,
+      "adaptation": "TypeScript uses the lowercase operation scope strings instead of Python's uppercase enum values.",
       "declarationTest": "tests/types/common.test.ts",
       "kind": "enum-member",
       "owner": "libtmux.constants.OptionScope",
@@ -1657,7 +1657,7 @@
       "realTmuxScenario": null,
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py",
-      "status": "implemented",
+      "status": "adapted",
       "typescript": "OptionScope.Session",
       "unitTest": "tests/unit/constants.test.ts",
       "evidenceApplicability": {
@@ -1668,7 +1668,7 @@
       "typescriptSymbols": ["./constants#value:OptionScope.Session"]
     },
     {
-      "adaptation": null,
+      "adaptation": "TypeScript uses the lowercase operation scope strings instead of Python's uppercase enum values.",
       "declarationTest": "tests/types/common.test.ts",
       "kind": "enum-member",
       "owner": "libtmux.constants.OptionScope",
@@ -1676,7 +1676,7 @@
       "realTmuxScenario": null,
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/constants.py",
-      "status": "implemented",
+      "status": "adapted",
       "typescript": "OptionScope.Window",
       "unitTest": "tests/unit/constants.test.ts",
       "evidenceApplicability": {

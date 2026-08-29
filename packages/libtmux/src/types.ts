@@ -316,8 +316,7 @@ export interface ChooseTreeOptions extends CommandOptions {
   readonly windowsOnly?: boolean;
 }
 
-/** The tmux option scope a lookup is addressed to. */
-export type OptionScope = "pane" | "server" | "session" | "window";
+export type { OptionScope } from "./constants.js";
 
 /** Hooks live at server or session scope. */
 export type HookScope = "server" | "session";

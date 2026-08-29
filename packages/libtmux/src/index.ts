@@ -35,7 +35,6 @@ export type {
   PlannedOperation,
   NewSessionOptions,
   NewWindowOptions,
-  OptionScope,
   PopupOptions,
   RespawnOptions,
   ResizeOptions,
@@ -88,4 +87,9 @@ export {
   WaitTimeout,
 } from "./exc.js";
 export type { DeliveryStatus } from "./common.js";
-export { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";
+export {
+  OptionScope,
+  PaneDirection,
+  ResizeAdjustmentDirection,
+  WindowDirection,
+} from "./constants.js";
