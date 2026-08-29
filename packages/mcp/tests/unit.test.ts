@@ -249,6 +249,201 @@ describe("pane tail", () => {
 });
 
 describe("live hub", () => {
+  test("bounds a control connection that never opens", async () => {
+    let aborted = false;
+    const hub = new LiveHub(
+      {
+        connect: ({ signal }: { signal: AbortSignal }) =>
+          new Promise<ConnectedServer>((_resolve, reject) => {
+            const stop = (): void => {
+              aborted = true;
+              reject(new Error("connection aborted"));
+            };
+            if (signal.aborted) stop();
+            else signal.addEventListener("abort", stop, { once: true });
+          }),
+      } as unknown as Server,
+      { connectTimeoutMs: 10 },
+    );
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        hub.listen("$1", () => undefined).then(() => "settled" as const),
+        new Promise<"deadline">((resolve) => {
+          deadline = setTimeout(() => resolve("deadline"), 250);
+        }),
+      ]);
+
+      expect(result).toBe("settled");
+      expect(aborted).toBe(true);
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
+      await hub.close();
+    }
+  });
+
+  test("keeps a shared connection opening when one listener cancels", async () => {
+    const events = new FakeEventStream();
+    const connected = fakeConnection(events, { count: 0 });
+    const opening = Promise.withResolvers<ConnectedServer>();
+    const entered = Promise.withResolvers<void>();
+    let connectionSignal: AbortSignal | undefined;
+    let connects = 0;
+    const hub = new LiveHub({
+      connect: ({ signal }: { signal: AbortSignal }) => {
+        connects += 1;
+        connectionSignal = signal;
+        entered.resolve();
+        return opening.promise;
+      },
+    } as unknown as Server);
+    const controller = new AbortController();
+    const first = hub.listen("$1", () => undefined, controller.signal);
+    const second = hub.listen("$1", () => undefined);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await entered.promise;
+      controller.abort();
+      const outcome = await Promise.race([
+        first.then(() => "settled" as const),
+        new Promise<"deadline">((resolve) => {
+          deadline = setTimeout(() => resolve("deadline"), 250);
+        }),
+      ]);
+
+      expect(outcome).toBe("settled");
+      expect(await first).toBeUndefined();
+      expect(connectionSignal?.aborted).toBe(false);
+      opening.resolve(connected);
+      const stop = await second;
+      expect(stop).toBeDefined();
+      expect(connects).toBe(1);
+      stop?.();
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
+      opening.resolve(connected);
+      await hub.close();
+      await Promise.allSettled([first, second]);
+    }
+  });
+
+  test("waits for a late connection after its last listener cancelled", async () => {
+    const entered = Promise.withResolvers<void>();
+    const opening = Promise.withResolvers<ConnectedServer>();
+    const closed = Promise.withResolvers<void>();
+    const events = new FakeEventStream();
+    const late = {
+      close: async () => {
+        events.finish();
+        closed.resolve();
+      },
+      subscribe: () => events.stream(),
+    } as ConnectedServer;
+    const hub = new LiveHub({
+      connect: () => {
+        entered.resolve();
+        return opening.promise;
+      },
+    } as Server);
+    const controller = new AbortController();
+    const listening = hub.listen("$1", () => undefined, controller.signal);
+    try {
+      await entered.promise;
+      controller.abort();
+      expect(await listening).toBeUndefined();
+      let closeSettled = false;
+      const closing = hub.close().then(() => {
+        closeSettled = true;
+      });
+      await Promise.resolve();
+      expect(closeSettled).toBe(false);
+      opening.resolve(late);
+
+      await closing;
+      await closed.promise;
+    } finally {
+      opening.resolve(late);
+      await hub.close();
+    }
+  });
+
+  test("replaces an aborted opening for a fresh listener", async () => {
+    const firstOpening = Promise.withResolvers<ConnectedServer>();
+    const entered = Promise.withResolvers<void>();
+    const secondEvents = new FakeEventStream();
+    const secondConnection = fakeConnection(secondEvents, { count: 0 });
+    let firstSignal: AbortSignal | undefined;
+    let connects = 0;
+    const hub = new LiveHub({
+      connect: ({ signal }: { signal: AbortSignal }) => {
+        connects += 1;
+        if (connects === 1) {
+          firstSignal = signal;
+          entered.resolve();
+        }
+        return connects === 1 ? firstOpening.promise : Promise.resolve(secondConnection);
+      },
+    } as unknown as Server);
+    const controller = new AbortController();
+    const first = hub.listen("$1", () => undefined, controller.signal);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await entered.promise;
+      controller.abort();
+      const outcome = await Promise.race([
+        first.then(() => "settled" as const),
+        new Promise<"deadline">((resolve) => {
+          deadline = setTimeout(() => resolve("deadline"), 250);
+        }),
+      ]);
+
+      expect(outcome).toBe("settled");
+      expect(await first).toBeUndefined();
+      expect(firstSignal?.aborted).toBe(true);
+
+      const secondOpening = hub.listen("$1", () => undefined);
+      await Promise.resolve();
+      expect(connects).toBe(2);
+      const second = await secondOpening;
+      expect(second).toBeDefined();
+      second?.();
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
+      firstOpening.resolve(fakeConnection(new FakeEventStream(), { count: 0 }));
+      await hub.close();
+      await Promise.allSettled([first]);
+    }
+  });
+
+  test("keeps equal callbacks independently registered", async () => {
+    const events = new FakeEventStream();
+    const hub = new LiveHub({
+      connect: async () => fakeConnection(events, { count: 0 }),
+    } as Server);
+    let received = 0;
+    const listener = (): void => {
+      received += 1;
+    };
+    const first = await hub.listen("$1", listener);
+    const second = await hub.listen("$1", listener);
+    try {
+      first?.();
+      expect(await first?.ended).toBe("listener_stopped");
+      events.emit({ kind: "window-add" } as TmuxEvent);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(received).toBe(1);
+
+      second?.();
+      events.emit({ kind: "window-add" } as TmuxEvent);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(received).toBe(1);
+    } finally {
+      first?.();
+      second?.();
+      await hub.close();
+    }
+  });
+
   test("closes tails when the source drops an event", async () => {
     const events = new FakeEventStream();
     const closed = { count: 0 };
@@ -273,13 +468,95 @@ describe("live hub", () => {
       connect: async () => fakeConnection(events, { count: 0 }),
     } as Server);
     const tail = await hub.tail("$1", "%1");
+    const listener = await hub.listen("$1", () => undefined);
     const waiting = tail?.changed(30_000);
 
     events.finish();
 
     expect(await waiting).toBe("closed");
     expect(tail?.endReason).toBe("connection_lost");
+    expect(await listener?.ended).toBe("connection_lost");
+    expect(listener?.active).toBe(false);
     await hub.close();
+  });
+
+  test("joins concurrent terminal closes", async () => {
+    const closingConnection = Promise.withResolvers<void>();
+    const events = new FakeEventStream();
+    const hub = new LiveHub({
+      connect: async () =>
+        ({
+          close: async () => {
+            await closingConnection.promise;
+            events.finish();
+          },
+          subscribe: () => events.stream(),
+        }) as ConnectedServer,
+    } as Server);
+    const listener = await hub.listen("$1", () => undefined);
+
+    const first = hub.close();
+    const second = hub.close();
+    try {
+      let settled = false;
+      void second.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(await listener?.ended).toBe("hub_closed");
+      expect(listener?.active).toBe(false);
+    } finally {
+      closingConnection.resolve();
+    }
+    await Promise.all([first, second]);
+  });
+
+  test("ends a rehomed link and joins its finalizer on close", async () => {
+    const closeEntered = Promise.withResolvers<void>();
+    const closingConnection = Promise.withResolvers<void>();
+    const events = new FakeEventStream();
+    const hub = new LiveHub({
+      connect: async () =>
+        ({
+          close: async () => {
+            closeEntered.resolve();
+            await closingConnection.promise;
+            events.finish();
+          },
+          subscribe: () => events.stream(),
+        }) as ConnectedServer,
+    } as Server);
+    const listener = await hub.listen("$1", () => undefined);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let closing: Promise<void> | undefined;
+    try {
+      events.emit({ kind: "session-changed", name: "other", sessionId: "$2" } as TmuxEvent);
+      const reason = await Promise.race([
+        listener?.ended,
+        new Promise<"deadline">((resolve) => {
+          deadline = setTimeout(() => resolve("deadline"), 250);
+        }),
+      ]);
+
+      expect(reason).toBe("topology_changed");
+      expect(listener?.active).toBe(false);
+      if (deadline !== undefined) clearTimeout(deadline);
+      deadline = undefined;
+      await closeEntered.promise;
+      closing = hub.close();
+      const outcome = await Promise.race([
+        closing.then(() => "settled" as const),
+        new Promise<"pending">((resolve) => {
+          deadline = setTimeout(() => resolve("pending"), 10);
+        }),
+      ]);
+      expect(outcome).toBe("pending");
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
+      closingConnection.resolve();
+      await (closing ?? hub.close());
+    }
   });
 
   test("closes a connection that opens after the hub closed", async () => {

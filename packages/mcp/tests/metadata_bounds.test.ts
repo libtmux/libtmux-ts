@@ -194,7 +194,7 @@ function fakeContext(options?: {
   );
   const snapshot = options?.snapshot ?? fakeSnapshot(options?.count);
   return {
-    hub: { anchor: async () => undefined },
+    hub: { closed: false },
     identity: async () =>
       options?.identity ?? {
         attendedPaneIds: [],
@@ -203,7 +203,7 @@ function fakeContext(options?: {
         clients: [],
         serverPid: undefined,
       },
-    policy: resolvePolicy({ LIBTMUX_SAFETY: "mutating" }),
+    policy: resolvePolicy({ LIBTMUX_MCP_LIVE: "0", LIBTMUX_SAFETY: "mutating" }),
     snapshot: async () => {
       options?.onSnapshot?.();
       return snapshot;

@@ -284,7 +284,7 @@ describe("linked and grouped placements", () => {
           resources.find(
             ({ uri }) => uri === `tmux://panes/${encodeURIComponent(topology.sharedPaneId)}`,
           )?.description,
-        ).toBe("One pane running sh.");
+        ).toBe("One pane.");
 
         for (const ref of [
           { type: "ref/resource" as const, uri: "tmux://panes/{paneId}" },

@@ -18,7 +18,7 @@ import { describe, expect, test } from "bun:test";
 
 import { LiveHub } from "../src/live.js";
 import { createTmuxMcpServer } from "../src/server.js";
-import { paneContentUri } from "../src/uris.js";
+import { paneContentUri, sessionUri } from "../src/uris.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -79,6 +79,14 @@ async function waitUntil(
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(failure);
+}
+
+async function controlSessionIds(fixture: TestServer): Promise<string[]> {
+  return (
+    await fixture.executeText(["list-clients", "-F", "#{client_control_mode}\t#{session_id}"])
+  ).stdout
+    .filter((line) => line.startsWith("1\t"))
+    .map((line) => line.slice(2));
 }
 
 /** Text content from a tool result. */
@@ -2007,18 +2015,8 @@ describe("staying out of the way", () => {
         // Browsing is what starts the watch: a server nobody browses holds no
         // connection for this.
         await client.listResources();
-        const controlSessions = async (): Promise<string[]> =>
-          (
-            await fixture.executeText([
-              "list-clients",
-              "-F",
-              "#{client_control_mode}\t#{session_id}",
-            ])
-          ).stdout
-            .filter((line) => line.startsWith("1\t"))
-            .map((line) => line.slice(2));
         await waitUntil(
-          async () => (await controlSessions()).includes(fixture.sessionId),
+          async () => (await controlSessionIds(fixture)).includes(fixture.sessionId),
           "topology listener did not attach to the fixture session",
         );
         notices = 0;
@@ -2029,7 +2027,7 @@ describe("staying out of the way", () => {
         const remote = await tmux.newSession({ name: "made-elsewhere", shellCommand: "cat" });
         await waitUntil(() => notices > 0, "new external session was not announced");
         await waitUntil(
-          async () => (await controlSessions()).includes(remote.id),
+          async () => (await controlSessionIds(fixture)).includes(remote.id),
           "topology listener did not attach to the external session",
         );
         notices = 0;
@@ -2050,6 +2048,7 @@ describe("staying out of the way", () => {
         const withoutSplit = (await client.listResources()).resources.map(({ uri }) => uri);
         expect(withoutSplit).not.toContain(splitUri);
         expect(withoutSplit).not.toContain(`${splitUri}/content`);
+        notices = 0;
 
         const controls = (
           await fixture.executeText([
@@ -2061,22 +2060,53 @@ describe("staying out of the way", () => {
         if (controls.length === 0) throw new Error("No topology control client");
         for (const control of controls) {
           // eslint-disable-next-line no-await-in-loop -- each identified client must be detached.
-          await fixture.executeText(["detach-client", "-t", control.slice(0, control.indexOf("\t"))]);
+          await fixture.executeText([
+            "detach-client",
+            "-t",
+            control.slice(0, control.indexOf("\t")),
+          ]);
         }
 
         // Losing the listener announces uncertainty, then reconnects without a
         // client request: a cached client has no reason to list again first.
         await waitUntil(() => notices > 0, "lost topology listeners were not announced");
-        await waitUntil(
-          async () => {
-            const sessions = await controlSessions();
-            return sessions.includes(fixture.sessionId) && sessions.includes(remote.id);
-          },
-          "topology listeners did not recover across both sessions",
-        );
+        await waitUntil(async () => {
+          const sessions = await controlSessionIds(fixture);
+          return sessions.includes(fixture.sessionId) && sessions.includes(remote.id);
+        }, "topology listeners did not recover across both sessions");
+        // Drain the coalesced recovery notice before proving the next mutation.
+        await new Promise((resolve) => setTimeout(resolve, 600));
         notices = 0;
         await remote.newWindow({ name: "made-after-reconnect" });
         await waitUntil(() => notices > 0, "change after listener recovery was not announced");
+      });
+    });
+  }, 60_000);
+
+  test("recovers a resource watch that starts with no session", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      await fixture.executeText(["set-option", "-s", "exit-empty", "off"]);
+      await fixture.executeText(["kill-session", "-t", fixture.sessionId]);
+
+      await withClient(fixture, async (client) => {
+        let notices = 0;
+        client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+          notices += 1;
+        });
+
+        // The catalog itself may be unreadable without a row from which to
+        // identify the daemon. Watch activation must survive that first read.
+        await client.listResources().catch(() => undefined);
+        notices = 0;
+
+        const recovered = await tmux.newSession({ name: "recovered", shellCommand: "cat" });
+        await waitUntil(
+          () => notices > 0,
+          "resource watch did not announce recovery from an empty server",
+        );
+        const uris = (await client.listResources()).resources.map(({ uri }) => uri);
+        expect(uris).toContain(sessionUri(recovered.id));
       });
     });
   }, 60_000);
@@ -2342,12 +2372,7 @@ describe("browsing", () => {
           name: "send_keys",
         });
 
-        const deadline = Date.now() + 20_000;
-        while (updates.length === 0 && Date.now() < deadline) {
-          // eslint-disable-next-line no-await-in-loop -- each check follows the last.
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-        expect(updates).toContain(uri);
+        await waitUntil(() => updates.includes(uri), "subscribed pane output was not announced");
 
         const control = (
           await fixture.executeText([
@@ -2357,20 +2382,81 @@ describe("browsing", () => {
           ])
         ).stdout.find((line) => line.endsWith("\t1"));
         if (control === undefined) throw new Error("No subscription control client");
+        updates.length = 0;
         await fixture.executeText(["detach-client", "-t", control.slice(0, control.indexOf("\t"))]);
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        await waitUntil(
+          async () => (await controlSessionIds(fixture)).includes(fixture.sessionId),
+          "pane subscription control client did not reconnect",
+          20_000,
+        );
+        await waitUntil(
+          () => updates.includes(uri),
+          "pane subscription recovery was not announced",
+        );
         updates.length = 0;
 
         await client.callTool({
           arguments: { keys: "printf 'after-reconnect\\n'", paneId },
           name: "send_keys",
         });
-        const reconnectedDeadline = Date.now() + 20_000;
-        while (updates.length === 0 && Date.now() < reconnectedDeadline) {
-          // eslint-disable-next-line no-await-in-loop -- each check follows the last.
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-        expect(updates).toContain(uri);
+        await waitUntil(
+          () => updates.includes(uri),
+          "pane output after reconnection was not announced",
+        );
+
+        await client.unsubscribeResource({ uri });
+      });
+    });
+  }, 60_000);
+
+  test("keeps a pane subscription after it moves to another session", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      await withClient(fixture, async (client) => {
+        const firstId = await firstPaneId(client);
+        const before = await tmux.snapshot();
+        const first = before.panes.one({ id: firstId });
+        const sourceWindow = first.window;
+        if (sourceWindow === undefined) throw new Error("Source pane has no window");
+        await sourceWindow.setOption("automatic-rename", "off");
+        await sourceWindow.rename("subscription-source");
+        const pane = await first.split({ shellCommand: "cat" });
+        await first.select();
+        const paneId = pane.id;
+        const uri = paneContentUri(paneId);
+        const destination = await tmux.newSession({
+          name: "subscription-destination",
+          shellCommand: "cat",
+        });
+        const destinationWindow = (await tmux.snapshot()).windows.one({
+          session: { is: { id: destination.id } },
+        });
+        await destinationWindow.setOption("automatic-rename", "off");
+        await destinationWindow.rename("subscription-destination");
+        expect((await tmux.snapshot()).panes.one({ id: paneId }).active).toBe(false);
+
+        const updates: string[] = [];
+        client.setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
+          updates.push(notification.params.uri);
+        });
+        await client.subscribeResource({ uri });
+        await waitUntil(
+          async () => (await controlSessionIds(fixture)).includes(fixture.sessionId),
+          "pane subscription did not attach to its source session",
+        );
+        await pane.joinTo(destinationWindow.id);
+
+        await waitUntil(
+          async () => (await controlSessionIds(fixture)).includes(destination.id),
+          "pane subscription did not follow its pane to the destination session",
+        );
+        await waitUntil(() => updates.includes(uri), "pane move was not announced");
+        updates.length = 0;
+        await client.callTool({
+          arguments: { keys: "moved-subscription", paneId },
+          name: "send_keys",
+        });
+        await waitUntil(() => updates.includes(uri), "moved pane output was not announced");
 
         await client.unsubscribeResource({ uri });
       });
@@ -2463,23 +2549,19 @@ describe("cleaning up after itself", () => {
       await Promise.all([mcp.connect(serverSide), client.connect(clientSide)]);
 
       const paneId = (await tmux.snapshot()).panes.one().id;
-      // Starts a watch, which is what opens the connection.
+      const uri = paneContentUri(paneId);
+      // Exercise every resource owner sharing the connection: catalog,
+      // subscription, and an observed tail.
+      await client.listResources();
+      await client.subscribeResource({ uri });
       await client.callTool({ arguments: { paneId }, name: "observe" });
       expect(await controlClients()).toBeGreaterThan(before);
 
       await client.close();
+      await mcp.close();
+      await mcp.close();
 
-      // Bounded for liveness: closing is asynchronous, so a connection that is
-      // going away has not necessarily gone yet.
-      const deadline = Date.now() + 10_000;
-      let remaining = await controlClients();
-      while (remaining > before && Date.now() < deadline) {
-        // eslint-disable-next-line no-await-in-loop -- each check follows the last.
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        // eslint-disable-next-line no-await-in-loop -- and each read follows its wait.
-        remaining = await controlClients();
-      }
-      expect(remaining).toBe(before);
+      expect(await controlClients()).toBe(before);
     });
   }, 60_000);
 });
