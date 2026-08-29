@@ -731,6 +731,32 @@ with `target` rather than relying on whichever tmux considers most recent.
 `ESNext.Disposable` alongside its ECMAScript target. `events.close()` is the
 same operation for a project that cannot add it.
 
+### Subscribing to a format
+
+A snapshot reads a format when you ask for it. A subscription reports it when it
+changes:
+
+```ts
+await using events = server.watch({
+  subscriptions: [{ format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }],
+});
+
+const report = await events.find((event) => event.kind === "subscription-changed");
+if (report?.kind === "subscription-changed") console.log(report.name, report.value);
+```
+
+tmux expands each subscription at most once per second and reports only when the
+value differs from the last report for that object, so a report is a change
+rather than a sample. The first evaluation always reports.
+
+`scope` takes a pane or window id, `"all-panes"`, or `"all-windows"`; omitted,
+the format expands once per session. A report names the object it expanded
+against, so a pane-scope one carries `paneId`, `windowId` and `windowIndex`.
+
+A connected server adds and drops them while it runs with `subscribeFormat` and
+`unsubscribeFormat`. A subscription belongs to the control client, so the
+connection re-issues its own after a reconnect.
+
 ### Waiting for something to happen
 
 Most work is "do this, then wait until that". `waitFor` is the join between a
