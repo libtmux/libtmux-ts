@@ -13,6 +13,7 @@ import { frame, randomId, runFramedCommand, withoutForeignFraming } from "../src
 import { LiveHub } from "../src/live.js";
 import { PaneTail } from "../src/pane_tail.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES, resolvePolicy, tierAllows } from "../src/policy.js";
+import { serverFromEnvironment } from "../src/server.js";
 import { describeStartup } from "../src/startup.js";
 import { fail, ok, renderOutput, tailLines } from "../src/results.js";
 import { TextFilter } from "../src/text.js";
@@ -402,6 +403,15 @@ describe("policy", () => {
       );
     }
     expect(resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "42" }).commandTimeoutMs).toBe(42);
+  });
+
+  test("passes a timer-unsafe command deadline into server construction", () => {
+    const environment = { LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "2147483648" };
+
+    expect(resolvePolicy(environment).commandTimeoutMs).toBe(2_147_483_648);
+    expect(() => serverFromEnvironment(environment)).toThrow(
+      "timeoutMs must be a positive timer-safe integer",
+    );
   });
 
   test("offers the default tier when nobody chose one", () => {
