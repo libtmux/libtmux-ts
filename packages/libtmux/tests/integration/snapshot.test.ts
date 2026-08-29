@@ -7,7 +7,7 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
+} from "../../src/_internal/test/testkit.js";
 import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { ControlMode } from "../../src/_internal/test/control_mode.js";

@@ -40,7 +40,7 @@ import {
   reapOwnedRunRoot,
   runWithCleanup,
   type FixtureRecord,
-} from "../../src/_internal/test/run_root.js";
+} from "../../src/_internal/test/testkit.js";
 import {
   TestServer,
   type TestServerRequestSnapshot,
@@ -675,7 +675,7 @@ async function writeControlTimerProbe(
     fileURLToPath(new URL("../../src/_internal/test/control_mode.ts", import.meta.url)),
   ).href;
   const runRootModule = pathToFileURL(
-    fileURLToPath(new URL("../../src/_internal/test/run_root.ts", import.meta.url)),
+    fileURLToPath(new URL("../../src/_internal/test/testkit.ts", import.meta.url)),
   ).href;
   const testServerModule = pathToFileURL(
     fileURLToPath(new URL("../../src/_internal/test/test_server.ts", import.meta.url)),

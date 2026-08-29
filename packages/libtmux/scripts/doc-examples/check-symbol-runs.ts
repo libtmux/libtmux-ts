@@ -6,7 +6,7 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
+} from "../../src/_internal/test/testkit.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import {
   readApiSurface,

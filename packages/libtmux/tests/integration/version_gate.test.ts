@@ -8,7 +8,7 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
+} from "../../src/_internal/test/testkit.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { compareTmuxVersions, parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";

@@ -10,7 +10,7 @@
   "scripts": {
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "lint": "oxlint . --ignore-pattern packages/libtmux/tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun packages/libtmux/scripts/check-type-aware-lint.ts",
+    "lint": "oxlint . --ignore-pattern packages/libtmux/tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun packages/libtmux/scripts/check-type-aware-lint.ts && bun scripts/check-testkit-boundary.ts",
     "typecheck:readme": "bun scripts/check-readme.ts",
     "test:docs": "bun scripts/check-readme-runs.ts",
     "docs:links": "bun scripts/check-doc-links.ts",

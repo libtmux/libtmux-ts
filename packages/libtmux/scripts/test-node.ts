@@ -5,7 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolveNode22 } from "../src/_internal/test/node22.js";
-import { reapStaleRunRoot } from "../src/_internal/test/run_root.js";
+import { reapStaleRunRoot } from "../src/_internal/test/testkit.js";
 import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
 
 interface Arguments {
@@ -75,7 +75,7 @@ function scenarioSource(tsRoot: string, executable: string): string {
   const ignoreFixture = moduleUrl("tests/fixtures/ignore_sigterm.mjs");
   const malformedFixture = moduleUrl("tests/fixtures/malformed_utf8.mjs");
   const processIdentityModule = moduleUrl("dist/_internal/test/process_identity.js");
-  const runRootModule = moduleUrl("dist/_internal/test/run_root.js");
+  const runRootModule = moduleUrl("dist/_internal/test/testkit.js");
   const controlModeModule = moduleUrl("dist/_internal/test/control_mode.js");
 
   return `import assert from "node:assert/strict";

@@ -14,7 +14,7 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
+} from "../../src/_internal/test/testkit.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandRequest, CommandTransport } from "../../src/_internal/transport/types.js";

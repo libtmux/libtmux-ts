@@ -7,7 +7,7 @@ import {
   type LaunchGeneration,
   type ReservationCapability,
   type SocketIdentity,
-} from "../../src/_internal/test/run_root.js";
+} from "../../src/_internal/test/testkit.js";
 import type {
   ControllerIdentity,
   DaemonIdentity,

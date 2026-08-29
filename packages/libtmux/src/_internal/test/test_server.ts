@@ -26,7 +26,7 @@ import {
   type LaunchAttemptCapability,
   type LaunchGeneration,
   type ReservationCapability,
-} from "./run_root.js";
+} from "./testkit.js";
 
 export interface TestServerRequestSnapshot {
   readonly args: readonly string[];

@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { prepareRunRoot, reapOwnedRunRoot } from "../../src/_internal/test/run_root.js";
+import { prepareRunRoot, reapOwnedRunRoot } from "../../src/_internal/test/testkit.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import {
   materializePythonBaseline,

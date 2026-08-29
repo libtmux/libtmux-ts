@@ -1,4 +1,4 @@
-import { runSupervisor } from "../src/_internal/test/run_root.js";
+import { runSupervisor } from "../src/_internal/test/testkit.js";
 
 interface Arguments {
   readonly command: readonly [string, ...string[]];

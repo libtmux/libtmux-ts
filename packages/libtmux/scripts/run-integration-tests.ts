@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { runSupervisor } from "../src/_internal/test/run_root.js";
+import { runSupervisor } from "../src/_internal/test/testkit.js";
 import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
 
 /**

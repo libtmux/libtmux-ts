@@ -13,7 +13,7 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../libtmux/src/_internal/test/run_root.js";
+} from "../../libtmux/src/_internal/test/testkit.js";
 import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
 import {
   assertOwnedSocketPath,
