@@ -61,6 +61,18 @@ export const READINESS_DEADLINE_MS = 20_000;
  */
 export const DAEMON_EXIT_DEADLINE_MS = 750;
 
+/**
+ * Let the pidfd helper finish before cleanup gives up on it.
+ *
+ * The slowest child the fixture starts: an interpreter start plus a program,
+ * spawned while the suite is running several files at once. A helper written to
+ * hang still has to be stopped, so there is a bound — but this is a liveness
+ * one, and a helper killed part-way leaves the daemon it was sent to reap. That
+ * reads as a leak in whatever test ran next rather than as the busy machine it
+ * was.
+ */
+export const PIDFD_HELPER_DEADLINE_MS = 5_000;
+
 /** Confirm a daemon is gone once cleanup has already escalated to reaping it. */
 export const DAEMON_REAPED_DEADLINE_MS = 2_000;
 

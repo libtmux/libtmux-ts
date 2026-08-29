@@ -4,7 +4,12 @@ import { chmod, link, lstat, mkdir, readdir, rename, rmdir, unlink } from "node:
 import { join } from "node:path";
 
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
-import { DAEMON_EXIT_DEADLINE_MS, DAEMON_REAPED_DEADLINE_MS, deadlineMs } from "./deadlines.js";
+import {
+  DAEMON_EXIT_DEADLINE_MS,
+  DAEMON_REAPED_DEADLINE_MS,
+  deadlineMs,
+  PIDFD_HELPER_DEADLINE_MS,
+} from "./deadlines.js";
 import { ownedTestDirectories } from "./temp_root.js";
 import {
   assertExactProcessLaunch,
@@ -150,8 +155,9 @@ async function collectChild(
         stdout: Buffer.concat(stdout),
       }),
     );
-    termTimer = setTimeout(() => child.kill("SIGTERM"), 750);
-    killTimer = setTimeout(() => child.kill("SIGKILL"), 1_000);
+    const bound = deadlineMs(PIDFD_HELPER_DEADLINE_MS);
+    termTimer = setTimeout(() => child.kill("SIGTERM"), bound);
+    killTimer = setTimeout(() => child.kill("SIGKILL"), bound + 250);
     closeTimer = setTimeout(() => {
       child.stdout?.destroy();
       child.stderr?.destroy();
@@ -165,7 +171,7 @@ async function collectChild(
         ]),
         stdout: Buffer.concat(stdout),
       });
-    }, 1_250);
+    }, bound + 500);
   });
 }
 
@@ -334,6 +340,12 @@ async function reapViaPidfd(
   if ("error" in result) return `pidfd cleanup unavailable: ${String(result.error)}`;
   if (result.code === 0) return undefined;
   const diagnostic = new TextDecoder().decode(result.stdout).trim();
+  // A refusal is the helper reporting that the daemon is not what the record
+  // says. A signal is the helper never getting to look, which is a different
+  // thing to go and read: this machine, not this fixture.
+  if (result.signal !== null) {
+    return `pidfd cleanup helper for daemon ${String(identity.pid)} was killed by ${result.signal} before it answered`;
+  }
   return `pidfd cleanup refused daemon ${String(identity.pid)}: ${diagnostic || String(result.code)}`;
 }
 
