@@ -43,16 +43,22 @@ const anchors = new Map<string, string>();
 const unresolved: string[] = [];
 
 function resolveLinks(prose: string, className?: string): string {
-  return prose.replace(/\{@link\s+([^}\s]+)\s*\}/gu, (_match, target: string) => {
-    const qualified =
-      className === undefined || target.includes(".") ? target : `${className}.${target}`;
-    const anchor = anchors.get(qualified) ?? anchors.get(target);
-    if (anchor !== undefined) return `[\`${target}\`](#${anchor})`;
-    const segments = target.split(".");
-    const known = exported.has(segments[0] ?? "") || EXEMPT.has(segments.at(-1) ?? "");
-    if (!known) unresolved.push(target);
-    return `\`${target}\``;
-  });
+  // TSDoc also spells this `{@link target | text}`; the text replaces the
+  // target in the rendering, and the target is still what has to resolve.
+  return prose.replace(
+    /\{@link\s+([^}|\s]+)(?:\s*\|\s*([^}]*?))?\s*\}/gu,
+    (_match, target: string, label: string | undefined) => {
+      const qualified =
+        className === undefined || target.includes(".") ? target : `${className}.${target}`;
+      const shown = label === undefined || label === "" ? `\`${target}\`` : label;
+      const anchor = anchors.get(qualified) ?? anchors.get(target);
+      if (anchor !== undefined) return `[${shown}](#${anchor})`;
+      const segments = target.split(".");
+      const known = exported.has(segments[0] ?? "") || EXEMPT.has(segments.at(-1) ?? "");
+      if (!known) unresolved.push(target);
+      return shown;
+    },
+  );
 }
 
 function anchorFor(className: string, member: string): string {
@@ -140,7 +146,11 @@ const functions = root.filter((entry) => entry.kind === "function");
 const types = root.filter((entry) => entry.kind === "type");
 
 const exported = new Set(
-  [...(await readFile(join(packageRoot, "src/index.ts"), "utf8")).matchAll(/\{([^}]*)\}/gu)]
+  [
+    ...(await readFile(join(packageRoot, "src/index.ts"), "utf8")).matchAll(
+      /^export(?:\s+type)?\s*\{([^}]*)\}/gmu,
+    ),
+  ]
     .flatMap(([, names]) => (names ?? "").split(","))
     .map((name) => name.replace(/\btype\b/u, "").trim())
     .filter((name) => /^[A-Za-z_]\w*$/u.test(name)),
