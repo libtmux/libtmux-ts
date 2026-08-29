@@ -486,14 +486,12 @@ describe("startup line", () => {
 });
 
 describe("tool allowlist", () => {
-  test("reads a list, and treats a blank value as no decision", () => {
+  test("distinguishes an unset allowlist from an empty one", () => {
     expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: "list_panes, capture_pane" }).tools).toEqual(
       new Set(["list_panes", "capture_pane"]),
     );
-    // Blank means "I did not decide", not "offer nothing" — the second is a
-    // puzzle rather than a policy.
-    expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: "" }).tools).toBeUndefined();
-    expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: " , " }).tools).toBeUndefined();
+    expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: "" }).tools).toEqual(new Set());
+    expect(resolvePolicy({ LIBTMUX_MCP_TOOLS: " , " }).tools).toEqual(new Set());
     expect(resolvePolicy({}).tools).toBeUndefined();
   });
 });
@@ -621,6 +619,12 @@ describe("instructions", () => {
     expect(buildInstructions(resolvePolicy({ LIBTMUX_SAFETY: "readonly" }))).toContain(
       "Safety: readonly",
     );
+  });
+
+  test("do not recommend tools when none are enabled", () => {
+    const text = buildInstructions(resolvePolicy({ LIBTMUX_MCP_TOOLS: "" }));
+    expect(text).toContain("No tools are enabled");
+    expect(text).not.toContain("run_command");
   });
 });
 

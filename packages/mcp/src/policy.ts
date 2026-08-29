@@ -97,20 +97,14 @@ function readInteger(raw: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/**
- * Read a comma-separated allowlist, treating an empty value as no list.
- *
- * Not as an empty list: a variable someone set and left blank means "I did not
- * decide", and answering it with a server that offers nothing is a puzzle
- * rather than a policy.
- */
+/** Read a comma-separated allowlist, preserving whether the variable was set. */
 function readToolAllowlist(raw: string | undefined): ReadonlySet<string> | undefined {
   if (raw === undefined) return undefined;
   const names = raw
     .split(",")
     .map((name) => name.trim())
     .filter((name) => name !== "");
-  return names.length === 0 ? undefined : new Set(names);
+  return new Set(names);
 }
 
 /**

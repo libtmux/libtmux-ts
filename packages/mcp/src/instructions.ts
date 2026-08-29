@@ -15,6 +15,11 @@ import type { Policy } from "./policy.js";
  */
 const MAX_BYTES = 3072;
 
+const RESOURCES_ONLY = `libtmux MCP server. No tools are enabled by LIBTMUX_MCP_TOOLS.
+Unset it to offer every tool permitted by LIBTMUX_SAFETY, or set it to a
+comma-separated allowlist. MCP resources remain available for browsing and
+subscriptions.`;
+
 const CORE = `libtmux MCP server. tmux hierarchy: Server > Session > Window > Pane.
 Target panes by id (%1) — ids survive renames and layout changes; names do not.
 
@@ -53,6 +58,8 @@ only if you need the whole thing.`;
  * text points at `whoami` for it rather than stating a fact that expires.
  */
 export function buildInstructions(policy: Policy, caller?: CallerEnvironment): string {
+  if (policy.tools?.size === 0) return RESOURCES_ONLY;
+
   const parts = [CORE];
 
   parts.push(

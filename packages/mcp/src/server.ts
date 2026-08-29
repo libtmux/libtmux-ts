@@ -73,7 +73,7 @@ export function createTmuxMcpServer(
   registerWait(offered, context);
   registerWorkspace(offered, context);
   registerResources(mcp, context);
-  registerPrompts(mcp, context);
+  if (policy.tools?.size !== 0) registerPrompts(mcp, context);
 
   // Each watched session holds a `tmux -C attach` for as long as something is
   // reading it. Losing the client is the end of every reason to hold one, and

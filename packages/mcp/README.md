@@ -118,13 +118,13 @@ agent's cleanup can reap the session you are working in.
 
 ### Tune what it will do
 
-| Variable                       | Default  | Effect                                                |
-| ------------------------------ | -------- | ----------------------------------------------------- |
-| `LIBTMUX_SAFETY`               | readonly | `readonly`, `mutating`, or `destructive`              |
-| `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller              |
-| `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links    |
-| `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections         |
-| `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool names, when a tier is too coarse |
+| Variable                       | Default  | Effect                                             |
+| ------------------------------ | -------- | -------------------------------------------------- |
+| `LIBTMUX_SAFETY`               | readonly | `readonly`, `mutating`, or `destructive`           |
+| `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller           |
+| `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links |
+| `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections      |
+| `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool allowlist; blank offers none  |
 
 Cancelling a request stops its wait. An over-large timeout is never an error:
 it is clamped, and every result reports the `effectiveTimeoutMs` it actually
@@ -166,6 +166,10 @@ registered, so an agent cannot spend a turn discovering it:
 ```console
 $ LIBTMUX_MCP_TOOLS=list_panes,capture_pane,run_command libtmux-mcp
 ```
+
+Leaving the variable unset offers every tool permitted by the tier. Once set,
+it is always an allowlist: a blank value offers no tools or tool-dependent
+prompts, while resources remain available.
 
 Independently of the tier, the server refuses to write to or kill **the pane it
 is running in** and any pane **a person is currently watching**, unless the call

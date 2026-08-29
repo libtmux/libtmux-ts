@@ -7,9 +7,14 @@ import { Server } from "libtmux/server";
 import { createTmuxMcpServer } from "../src/server.js";
 import { paneViewSchema, sessionViewSchema, windowViewSchema } from "../src/views.js";
 
-async function withEmbeddedClient(body: (client: Client) => Promise<void>): Promise<void> {
+async function withEmbeddedClient(
+  body: (client: Client) => Promise<void>,
+  environment: Readonly<Record<string, string | undefined>> = {
+    LIBTMUX_SAFETY: "destructive",
+  },
+): Promise<void> {
   const mcp = createTmuxMcpServer(new Server(), {
-    environment: { LIBTMUX_SAFETY: "destructive" },
+    environment,
   });
   const client = new Client({ name: "protocol-test", version: "0.0.0" });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -20,6 +25,19 @@ async function withEmbeddedClient(body: (client: Client) => Promise<void>): Prom
     await client.close();
   }
 }
+
+test("a blank allowlist leaves a resources-only server", async () => {
+  await withEmbeddedClient(
+    async (client) => {
+      expect(client.getServerCapabilities()?.tools).toBeUndefined();
+      expect(client.getServerCapabilities()?.prompts).toBeUndefined();
+      expect(client.getInstructions()).toContain("No tools are enabled");
+      expect(client.getInstructions()).not.toContain("run_command");
+      expect((await client.listResourceTemplates()).resourceTemplates.length).toBeGreaterThan(0);
+    },
+    { LIBTMUX_MCP_TOOLS: "", LIBTMUX_SAFETY: "destructive" },
+  );
+});
 
 test("watch-until serializes prompt arguments", async () => {
   await withEmbeddedClient(async (client) => {
