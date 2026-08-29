@@ -18,7 +18,7 @@ import {
   requireWindow,
   type ToolContext,
 } from "../context.js";
-import { MUTATING, offers } from "../register.js";
+import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
   paneLine,
@@ -267,49 +267,51 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
     },
   );
 
-  mcp.registerTool(
-    "move_pane",
-    {
-      annotations: MUTATING,
-      description:
-        "Move a pane into another window as a split, or break it out into a window " +
-        "of its own by naming no destination. The pane keeps its id and whatever is " +
-        "running in it, which killing it and splitting again does not. Moving a " +
-        "window's last pane destroys that window.",
-      inputSchema: {
-        paneId: z.string(),
-        vertical: z
-          .boolean()
-          .optional()
-          .describe(
-            "Join as a horizontal split rather than a vertical one. Unused when breaking out.",
-          ),
-        windowId: z
-          .string()
-          .optional()
-          .describe("Window to move it into. Omit to break it out into a window of its own."),
-        windowName: z.string().optional().describe("Name for the window a break-out creates."),
+  if (offers(context.policy, "destructive")) {
+    mcp.registerTool(
+      "move_pane",
+      {
+        annotations: DESTRUCTIVE,
+        description:
+          "Move a pane into another window as a split, or break it out into a window " +
+          "of its own by naming no destination. The pane keeps its id and whatever is " +
+          "running in it, which killing it and splitting again does not. Moving a " +
+          "window's last pane destroys that window.",
+        inputSchema: {
+          paneId: z.string(),
+          vertical: z
+            .boolean()
+            .optional()
+            .describe(
+              "Join as a horizontal split rather than a vertical one. Unused when breaking out.",
+            ),
+          windowId: z
+            .string()
+            .optional()
+            .describe("Window to move it into. Omit to break it out into a window of its own."),
+          windowName: z.string().optional().describe("Name for the window a break-out creates."),
+        },
+        outputSchema: { pane: paneViewSchema },
+        title: "Move pane",
       },
-      outputSchema: { pane: paneViewSchema },
-      title: "Move pane",
-    },
-    async ({ paneId, vertical, windowId, windowName }) => {
-      const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
-      if (windowId === undefined) {
-        await pane.breakOut(windowName);
-      } else {
-        const window = requireWindow(snapshot, windowId);
-        if (isFailure(window)) return window;
-        await pane.joinTo(window.id, vertical === undefined ? {} : { vertical });
-      }
-      const after = await context.snapshot();
-      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
-      context.topologyChanged();
-      return ok({ pane: view }, paneLine(view));
-    },
-  );
+      async ({ paneId, vertical, windowId, windowName }) => {
+        const snapshot = await context.snapshot();
+        const pane = requirePane(snapshot, paneId);
+        if (isFailure(pane)) return pane;
+        if (windowId === undefined) {
+          await pane.breakOut(windowName);
+        } else {
+          const window = requireWindow(snapshot, windowId);
+          if (isFailure(window)) return window;
+          await pane.joinTo(window.id, vertical === undefined ? {} : { vertical });
+        }
+        const after = await context.snapshot();
+        const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
+        context.topologyChanged();
+        return ok({ pane: view }, paneLine(view));
+      },
+    );
+  }
 
   mcp.registerTool(
     "swap_window",

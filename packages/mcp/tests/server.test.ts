@@ -380,7 +380,7 @@ describe("running commands", () => {
     });
   }, 60_000);
 
-  test("refuses a shell whose syntax the framing is not written in", async () => {
+  test("refuses a shell whose syntax the framing is not written in even when forced", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
         const built = structured<{ panes: { id: string }[] }>(
@@ -391,7 +391,7 @@ describe("running commands", () => {
         );
         const paneId = built.panes[0]?.id ?? "";
         const refused = await client.callTool({
-          arguments: { command: "echo hi", paneId },
+          arguments: { command: "echo hi", force: true, paneId, timeoutMs: 1_000 },
           name: "run_command",
         });
         // fish does not share the wrapper's POSIX subshell grammar, so framing
@@ -767,6 +767,35 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("uses the server option environment for caller identity", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      const paneId = (await tmux.snapshot()).panes.one().id;
+      const serverPid = String((await tmux.daemonIdentity())?.pid ?? "");
+      const mcp = createTmuxMcpServer(tmux, {
+        environment: {
+          TMUX: `${fixture.socketPath},${serverPid},0`,
+          TMUX_PANE: paneId,
+        },
+      });
+      const client = new Client({ name: "embedded-identity", version: "0.0.0" });
+      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+
+      await runWithCleanup(
+        async () => {
+          await Promise.all([mcp.connect(serverSide), client.connect(clientSide)]);
+          const identity = structured<{
+            callerPaneId: string | null;
+            callerPaneIsOnThisServer: boolean;
+          }>(await client.callTool({ arguments: {}, name: "whoami" }));
+          expect(identity.callerPaneId).toBe(paneId);
+          expect(identity.callerPaneIsOnThisServer).toBe(true);
+        },
+        () => client.close(),
+      );
+    });
+  }, 60_000);
+
   test("refuses every write path into the pane it runs in", async () => {
     await withServer(async (fixture) => {
       const tmux = serverFor(fixture);
@@ -840,6 +869,79 @@ describe("staying out of the way", () => {
           });
           expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
         });
+      });
+    });
+  }, 60_000);
+
+  test("marks every visible split attended and only the zoomed pane", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const originalPaneId = await firstPaneId(client);
+        const secondPaneId = structured<{ pane: { id: string } }>(
+          await client.callTool({
+            arguments: { paneId: originalPaneId, shellCommand: "exec cat" },
+            name: "split_pane",
+          }),
+        ).pane.id;
+
+        await withAttendedPane(fixture, async (activePaneId) => {
+          const visible = structured<{ attendedPaneIds: string[] }>(
+            await client.callTool({ arguments: {}, name: "whoami" }),
+          ).attendedPaneIds;
+          expect([...visible].sort()).toEqual([originalPaneId, secondPaneId].sort());
+
+          await client.callTool({
+            arguments: { paneId: activePaneId, zoom: true },
+            name: "resize_pane",
+          });
+          const zoomed = structured<{ attendedPaneIds: string[] }>(
+            await client.callTool({ arguments: {}, name: "whoami" }),
+          ).attendedPaneIds;
+          expect(zoomed).toEqual([activePaneId]);
+        });
+      });
+    });
+  }, 60_000);
+
+  test("does not protect a same-numbered pane on another server", async () => {
+    await withServer(async (callerFixture) => {
+      const callerTmux = serverFor(callerFixture);
+      const callerPaneId = (await callerTmux.snapshot()).panes.one().id;
+      const callerPid = String((await callerTmux.daemonIdentity())?.pid ?? "");
+
+      await withServer(async (targetFixture) => {
+        await withClient(
+          targetFixture,
+          async (client) => {
+            const targetPane = structured<{ pane: { id: string; windowId: string } }>(
+              await client.callTool({
+                arguments: { paneId: callerPaneId },
+                name: "get_pane",
+              }),
+            ).pane;
+            expect(targetPane.id).toBe(callerPaneId);
+
+            await client.callTool({
+              arguments: { name: "kept", session: targetFixture.sessionName },
+              name: "new_window",
+            });
+            const identity = structured<{ callerPaneIsOnThisServer: boolean }>(
+              await client.callTool({ arguments: {}, name: "whoami" }),
+            );
+            expect(identity.callerPaneIsOnThisServer).toBe(false);
+
+            const killed = await client.callTool({
+              arguments: { windowId: targetPane.windowId },
+              name: "kill_window",
+            });
+            expect((killed as { isError?: boolean }).isError ?? false).toBe(false);
+          },
+          {
+            LIBTMUX_SAFETY: "destructive",
+            TMUX: `${callerFixture.socketPath},${callerPid},0`,
+            TMUX_PANE: callerPaneId,
+          },
+        );
       });
     });
   }, 60_000);
@@ -1267,44 +1369,48 @@ describe("staying out of the way", () => {
 
   test("moves a pane between windows and back out again", async () => {
     await withServer(async (fixture) => {
-      await withClient(fixture, async (client) => {
-        const tmux = serverFor(fixture);
-        const session = (await tmux.snapshot()).sessions.one().name ?? "";
-        const home = structured<{ paneId: string; window: { id: string } }>(
-          await client.callTool({
-            arguments: { name: "home", session },
-            name: "new_window",
-          }),
-        );
-        const guest = structured<{ paneId: string; window: { id: string } }>(
-          await client.callTool({
-            arguments: { name: "guest", session },
-            name: "new_window",
-          }),
-        );
+      await withClient(
+        fixture,
+        async (client) => {
+          const tmux = serverFor(fixture);
+          const session = (await tmux.snapshot()).sessions.one().name ?? "";
+          const home = structured<{ paneId: string; window: { id: string } }>(
+            await client.callTool({
+              arguments: { name: "home", session },
+              name: "new_window",
+            }),
+          );
+          const guest = structured<{ paneId: string; window: { id: string } }>(
+            await client.callTool({
+              arguments: { name: "guest", session },
+              name: "new_window",
+            }),
+          );
 
-        // The one topology operation with no path: a pane could be made,
-        // destroyed, and exchanged in place, but not moved into another
-        // window. Joining keeps the pane and what runs in it.
-        const joined = structured<{ pane: { id: string; windowId: string } }>(
-          await client.callTool({
-            arguments: { paneId: guest.paneId, windowId: home.window.id },
-            name: "move_pane",
-          }),
-        ).pane;
-        expect(joined.id).toBe(guest.paneId);
-        expect(joined.windowId).toBe(home.window.id);
+          // The one topology operation with no path: a pane could be made,
+          // destroyed, and exchanged in place, but not moved into another
+          // window. Joining keeps the pane and what runs in it.
+          const joined = structured<{ pane: { id: string; windowId: string } }>(
+            await client.callTool({
+              arguments: { paneId: guest.paneId, windowId: home.window.id },
+              name: "move_pane",
+            }),
+          ).pane;
+          expect(joined.id).toBe(guest.paneId);
+          expect(joined.windowId).toBe(home.window.id);
 
-        // And back out into a window of its own, by naming no destination.
-        const broken = structured<{ pane: { id: string; windowId: string } }>(
-          await client.callTool({
-            arguments: { paneId: guest.paneId, windowName: "extracted" },
-            name: "move_pane",
-          }),
-        ).pane;
-        expect(broken.id).toBe(guest.paneId);
-        expect(broken.windowId).not.toBe(home.window.id);
-      });
+          // And back out into a window of its own, by naming no destination.
+          const broken = structured<{ pane: { id: string; windowId: string } }>(
+            await client.callTool({
+              arguments: { paneId: guest.paneId, windowName: "extracted" },
+              name: "move_pane",
+            }),
+          ).pane;
+          expect(broken.id).toBe(guest.paneId);
+          expect(broken.windowId).not.toBe(home.window.id);
+        },
+        { LIBTMUX_SAFETY: "destructive" },
+      );
     });
   }, 60_000);
 
@@ -1902,6 +2008,27 @@ describe("staying out of the way", () => {
         fixture,
         async (client) => {
           expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("kill_pane");
+        },
+        { LIBTMUX_SAFETY: "destructive" },
+      );
+    });
+  }, 60_000);
+
+  test("offers move_pane only as a destructive tool", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const names = (await client.listTools()).tools.map((tool) => tool.name);
+        expect(names).not.toContain("move_pane");
+      });
+
+      await withClient(
+        fixture,
+        async (client) => {
+          const movePane = (await client.listTools()).tools.find(
+            (tool) => tool.name === "move_pane",
+          );
+          expect(movePane).toBeDefined();
+          expect(movePane?.annotations?.destructiveHint).toBe(true);
         },
         { LIBTMUX_SAFETY: "destructive" },
       );

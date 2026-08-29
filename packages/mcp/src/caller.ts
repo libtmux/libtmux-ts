@@ -87,7 +87,8 @@ export async function resolveCallerIdentity(
 ): Promise<CallerIdentity> {
   const caller = readCallerEnvironment(environment);
   const identity = await tmux.daemonIdentity();
-  const clients = snapshot.clients.toArray().map((client): AttachedClient => ({
+  const attachedClients = snapshot.clients.toArray();
+  const clients = attachedClients.map((client): AttachedClient => ({
     activePaneId: client.pane?.id,
     controlMode: client.controlMode ?? false,
     name: client.name ?? "",
@@ -95,11 +96,15 @@ export async function resolveCallerIdentity(
     tty: client.tty ?? undefined,
   }));
 
-  // A control client is this process and its kin, not a person: counting it as
-  // attention would mark every pane the agent watches as one to stay out of.
-  const attended = clients
-    .filter((client) => !client.controlMode && client.activePaneId !== undefined)
-    .map((client) => client.activePaneId ?? "");
+  // A terminal client sees every split in its window. Only a confirmed zoom
+  // narrows that to its active pane; an absent flag keeps the conservative set.
+  const attended = attachedClients.flatMap((client) => {
+    const pane = client.pane;
+    if (client.controlMode === true || pane === undefined) return [];
+    const window = client.window;
+    if (window?.zoomedFlag === true) return [pane.id];
+    return (window?.panes.toArray() ?? [pane]).map((visible) => visible.id);
+  });
 
   const sameServer =
     caller.paneId !== undefined &&

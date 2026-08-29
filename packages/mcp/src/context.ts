@@ -84,12 +84,13 @@ export function createContext(
   tmux: Server,
   policy: Policy,
   topologyChanged: () => void = () => undefined,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
 ): ToolContext & { close(): Promise<void> } {
   const hub = new LiveHub(tmux);
   return {
     close: () => hub.close(),
     hub,
-    identity: (snapshot) => resolveCallerIdentity(tmux, snapshot),
+    identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, environment),
     policy,
     snapshot: () => withRecovery(tmux, tmux.snapshot()),
     tmux,

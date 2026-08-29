@@ -217,7 +217,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         });
       }
       const running = shellName(pane.currentCommand ?? "");
-      if (force !== true && OTHER_SHELLS.has(running)) {
+      if (OTHER_SHELLS.has(running)) {
         // Not a `force` case: forcing it would send POSIX syntax to a shell
         // that cannot parse it, and the wait would run to its deadline against
         // an error message.

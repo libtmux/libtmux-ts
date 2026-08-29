@@ -59,7 +59,7 @@ export function createTmuxMcpServer(
 
   // Built after the server so a tool can say the resource list changed; the
   // notifier needs somewhere to send it.
-  const context = createContext(tmux, policy, createListChangedNotifier(mcp));
+  const context = createContext(tmux, policy, createListChangedNotifier(mcp), environment);
 
   // Every tool registers against the filtered view, so the allowlist cannot be
   // half-applied by a module that forgot it.

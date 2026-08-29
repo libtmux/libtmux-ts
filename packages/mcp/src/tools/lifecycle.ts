@@ -11,6 +11,7 @@ import { z } from "zod";
 
 import { PaneDirection } from "libtmux/constants";
 
+import { isAttended, isCallerPane, type CallerIdentity } from "../caller.js";
 import {
   isFailure,
   requirePane,
@@ -273,12 +274,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
               `process, and this server offers the ${context.policy.safety} tier.`,
           });
         }
-        const guard = guardDestructive(
-          identity.callerPaneId,
-          identity.attendedPaneIds,
-          paneId,
-          force,
-        );
+        const guard = guardDestructive(identity, paneId, force);
         if (guard !== undefined) return guard;
       }
       await pane.respawn(shellCommand, killFirst === undefined ? {} : { kill: killFirst });
@@ -307,12 +303,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       // requireWritablePane already refused this server's own pane; this adds
       // the refusal for a pane somebody else is watching.
-      const guard = guardDestructive(
-        identity.callerPaneId,
-        identity.attendedPaneIds,
-        paneId,
-        force,
-      );
+      const guard = guardDestructive(identity, paneId, force);
       if (guard !== undefined) return guard;
       await pane.kill();
       context.topologyChanged();
@@ -336,12 +327,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const inside = snapshot.panes.toArray().filter((pane) => pane.format.window_id === windowId);
       for (const pane of inside) {
-        const guard = guardDestructive(
-          identity.callerPaneId,
-          identity.attendedPaneIds,
-          pane.id,
-          force,
-        );
+        const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
       }
       await window.kill();
@@ -366,12 +352,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const inside = snapshot.panes.toArray().filter((pane) => pane.format.session_id === found.id);
       for (const pane of inside) {
-        const guard = guardDestructive(
-          identity.callerPaneId,
-          identity.attendedPaneIds,
-          pane.id,
-          force,
-        );
+        const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
       }
       await found.kill();
@@ -389,19 +370,18 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
  * caller says it meant that one.
  */
 function guardDestructive(
-  callerPaneId: string | undefined,
-  attended: readonly string[],
+  identity: CallerIdentity,
   paneId: string,
   force: boolean | undefined,
 ): ReturnType<typeof fail> | undefined {
   if (force === true) return undefined;
-  if (callerPaneId === paneId) {
+  if (isCallerPane(identity, paneId)) {
     return fail({
       hint: "Pass force if you mean to end the terminal this server runs in.",
       reason: `Refusing to kill ${paneId}: it is the pane this MCP server runs in.`,
     });
   }
-  if (attended.includes(paneId)) {
+  if (isAttended(identity, paneId)) {
     return fail({
       hint: "whoami lists who is attached. Pass force if you mean it.",
       reason: `Refusing to kill ${paneId}: somebody is watching it.`,
