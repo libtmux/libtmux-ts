@@ -20,7 +20,10 @@ import {
  * lowercases a trailing capital sigma to a final sigma, so no Greek word
  * ending in one matches the medial sigma a caller types. One `mode` covers
  * every operator in a criterion, so `equals` and `regex` have to fold alike.
- * `where.test.ts` re-derives this table from the engine.
+ *
+ * `where.test.ts` re-derives these classes from the engine, bucketing by NFC
+ * and NFKC as well as by case: the last three uppercase to more than one code
+ * point, so a derivation that looks only at case round-trips cannot see them.
  */
 const CASE_FOLD_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
   ["\u00B5", "\u03BC"],
@@ -45,6 +48,9 @@ const CASE_FOLD_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
   ["\u1C88", "\uA64B"],
   ["\u1E9B", "\u1E61"],
   ["\u1FBE", "\u03B9"],
+  ["\u1FD3", "\u0390"],
+  ["\u1FE3", "\u03B0"],
+  ["\uFB06", "\uFB05"],
 ]);
 
 // Built from the table so the two cannot drift, and through the constructor

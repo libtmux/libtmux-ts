@@ -187,20 +187,48 @@ describe("scalar and logical criteria", () => {
     expect(selection.where({ name: { equals: "ss", mode: "insensitive" } }).toArray()).toEqual([]);
   });
 
-  test("folds exactly the code points the regex engine folds", () => {
-    const divergent: string[] = [];
+  test("folds exactly the classes the regex engine folds", () => {
+    // Bucketed by normalization as well as by case. Three classes hold a code
+    // point whose uppercase is several — U+1FD3, U+1FE3, U+FB06 — so a
+    // derivation that only round-trips through case never proposes them.
+    const buckets = new Map<string, Set<string>>();
     for (let point = 0; point <= 0x2ffff; point += 1) {
       if (point >= 0xd800 && point <= 0xdfff) continue;
       const character = String.fromCodePoint(point);
-      const lowered = character.toLowerCase();
-      const uppered = character.toUpperCase().toLowerCase();
-      if (lowered === uppered) continue;
-      if (new RegExp(`^${character}$`, "iu").test(uppered)) divergent.push(character);
+      for (const key of [
+        character.toLowerCase(),
+        character.toUpperCase().toLowerCase(),
+        character.normalize("NFC").toLowerCase(),
+        character.normalize("NFKC").toLowerCase(),
+      ]) {
+        const bucket = buckets.get(key);
+        if (bucket === undefined) buckets.set(key, new Set([character]));
+        else bucket.add(character);
+      }
     }
-    expect(divergent).not.toHaveLength(0);
-    for (const character of divergent) {
-      expect(foldCase(character)).toBe(foldCase(character.toUpperCase().toLowerCase()));
+
+    const disagreements: string[] = [];
+    let folded = 0;
+    for (const bucket of buckets.values()) {
+      const members = [...bucket];
+      for (let left = 0; left < members.length; left += 1) {
+        for (let right = left + 1; right < members.length; right += 1) {
+          const one = members[left]!;
+          const other = members[right]!;
+          const point = one.codePointAt(0)!.toString(16);
+          // Escaped by code point: the members include regex metacharacters.
+          const engine = new RegExp(`^\\u{${point}}$`, "iu").test(other);
+          if (engine) folded += 1;
+          if ((foldCase(one) === foldCase(other)) === engine) continue;
+          disagreements.push(
+            `U+${point.toUpperCase()} ~ U+${other.codePointAt(0)!.toString(16).toUpperCase()}`,
+          );
+        }
+      }
     }
+
+    expect(disagreements).toEqual([]);
+    expect(folded).toBeGreaterThan(0);
   });
 
   test("ANDs scalar operators only for candidates satisfying every comparison", async () => {
