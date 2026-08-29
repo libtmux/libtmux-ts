@@ -14,7 +14,7 @@ import {
 import { TmuxConnection } from "../../dist/_internal/runtime/connection.js";
 import { createProjectedSelection } from "../../dist/_internal/selection/evaluate.js";
 import { flattenInvocation } from "../../dist/engine.js";
-import { TEST_HANDLE_PROTOTYPES } from "../../dist/_internal/test/handle_prototypes.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../dist/_internal/test/testkit.js";
 
 const protocol = "libtmux-where-regex-v1";
 const implementation = process.argv[2];

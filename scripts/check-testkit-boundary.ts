@@ -2,9 +2,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
-const legacyModule = /(?:^|[/])run_root\.(?:js|ts)/u;
+const legacyModule = /(?:^|[/])run_root\.(?:[cm]?[jt]s|[jt]sx)/u;
 const implementationModule =
-  /(?:^|[/])(?:cleanup|control_mode|deadlines|fixture_launch|handle_prototypes|node22|process_identity|reaper|records|supervisor|temp_root|test_server)\.(?:js|ts)/u;
+  /(?:^|[/])(?:cleanup|control_mode|deadlines|fixture_launch|handle_prototypes|node22|process_identity|reaper|records|supervisor|temp_root|test_server)\.(?:[cm]?[jt]s|[jt]sx)/u;
 const internalTestDirectory = "packages/libtmux/src/_internal/test/";
 const testkitEntrypoint = "packages/libtmux/src/_internal/test/testkit.ts";
 const boundaryChecker = "scripts/check-testkit-boundary.ts";
@@ -13,7 +13,10 @@ const recoveryAuthorityFiles = new Set([
   "packages/libtmux/src/_internal/test/fixture_launch.ts",
   "packages/libtmux/src/_internal/test/reaper.ts",
 ]);
-const listed = await new Bun.$.Shell()`rg --files --glob "*.ts"`.cwd(repositoryRoot).text();
+const listed =
+  await new Bun.$.Shell()`rg --files --glob "*.ts" --glob "*.mts" --glob "*.cts" --glob "*.tsx" --glob "*.js" --glob "*.mjs" --glob "*.cjs" --glob "*.jsx"`
+    .cwd(repositoryRoot)
+    .text();
 const failures: string[] = [];
 
 for (const file of listed.split("\n").filter((line) => line !== "")) {
@@ -36,7 +39,7 @@ for (const file of listed.split("\n").filter((line) => line !== "")) {
     if (
       file.startsWith(internalTestDirectory) &&
       file !== testkitEntrypoint &&
-      /(?:^|[/])testkit\.(?:js|ts)/u.test(line)
+      /(?:^|[/])testkit\.(?:[cm]?[jt]s|[jt]sx)/u.test(line)
     ) {
       failures.push(
         `${file}:${String(index + 1)}: implementation modules must import their leaves`,
