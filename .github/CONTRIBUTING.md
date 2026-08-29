@@ -303,6 +303,25 @@ habit. The first stable release wants `latest`; a prerelease cut after it does
 not, and moving `latest` backwards onto an alpha is the failure the check
 exists to prevent. Whoever cuts that release decides the tag.
 
+### Stable release gate
+
+`0.1.0` is a coordinated release of all three packages. Cut it only when:
+
+- no known P0 or P1 correctness or security finding remains;
+- both Bun versions, Node 22 package consumers, every advertised tmux version,
+  and the pinned Python differential suite pass from packed artifacts;
+- real-tmux cancellation and process ownership pass on each advertised host
+  platform, or the platform contract names the narrower set;
+- the published declaration graph, examples, and install canaries cover all
+  three packages; and
+- one release candidate has spent 30 days in production-like use without a new
+  P0 or P1 finding.
+
+The packages stop sharing a release number after `0.1.0`. Core changes then
+advance `libtmux`; MCP and workspace changes advance their own packages and
+declare the `libtmux` range they were tested against. A consumer package does
+not force an unrelated core major release.
+
 `test:package` reads the tarball and `test:install` uses it — a clean
 directory, `npm install` of the packed file, and a Node 22 process that imports
 the package by name and runs something. Nothing there can resolve through the
