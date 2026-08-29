@@ -6,3 +6,4 @@
  * files so runtime responsibilities can move without changing every caller.
  */
 export * from "./run_root.js";
+export { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";

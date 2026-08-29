@@ -19,10 +19,10 @@ import { constants as fsConstants } from "node:fs";
 import { constants as osConstants, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { channel } from "node:diagnostics_channel";
 
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import { tmuxCommand } from "../transport/invocation.js";
+import { reportSecondaryCleanupFailure } from "./cleanup.js";
 import {
   assertControllerCurrent,
   assertControllerIdentity,
@@ -2312,51 +2312,6 @@ export async function reapOwnedRunRoot(runRoot: string): Promise<ReapReport> {
 
 export async function reapStaleRunRoot(runRoot: string): Promise<ReapReport> {
   return reapRunRootInternal(runRoot, "stale");
-}
-
-export async function runWithCleanup<T>(
-  body: () => Promise<T>,
-  cleanup: () => Promise<void>,
-): Promise<T> {
-  let result: T | undefined;
-  let primary: unknown;
-  let hasPrimary = false;
-  try {
-    result = await body();
-  } catch (error) {
-    hasPrimary = true;
-    primary = error;
-  }
-  try {
-    await cleanup();
-  } catch (cleanupError) {
-    if (!hasPrimary) throw cleanupError;
-    reportSecondaryCleanupFailure(primary, cleanupError);
-  }
-  if (hasPrimary) throw primary;
-  return result as T;
-}
-
-export function reportSecondaryCleanupFailure(primary: unknown, cleanupError: unknown): void {
-  if (typeof primary === "object" && primary !== null) {
-    try {
-      const descriptor = Object.getOwnPropertyDescriptor(primary, "cleanupError");
-      if (
-        descriptor?.configurable === true ||
-        (descriptor === undefined && Object.isExtensible(primary))
-      ) {
-        Object.defineProperty(primary, "cleanupError", {
-          configurable: true,
-          enumerable: false,
-          value: cleanupError,
-        });
-        return;
-      }
-    } catch {
-      // Cleanup reporting falls through to the diagnostics channel.
-    }
-  }
-  channel("libtmux.test.cleanup-failure").publish({ cleanupError, primary });
 }
 
 export interface SupervisorOptions {
