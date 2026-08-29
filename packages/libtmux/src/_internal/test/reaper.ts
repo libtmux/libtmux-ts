@@ -1260,17 +1260,24 @@ async function runRootsIn(directory: string): Promise<readonly string[]> {
 export async function sweepStaleRunRoots(): Promise<readonly string[]> {
   const reaped: string[] = [];
   for (const directory of await ownedTestDirectories()) {
+    let collected = false;
     // eslint-disable-next-line no-await-in-loop -- one owned directory at a time.
     for (const runRoot of await runRootsIn(directory)) {
       try {
         // eslint-disable-next-line no-await-in-loop -- reaping is sequential by design.
-        if ((await reapStaleRunRoot(runRoot)).rootRemoved) reaped.push(runRoot);
+        if ((await reapStaleRunRoot(runRoot)).rootRemoved) {
+          reaped.push(runRoot);
+          collected = true;
+        }
       } catch {
         continue;
       }
     }
+    // Only the directory a reaped root was in. A run creates its directory
+    // before the root inside it, so removing every empty one would delete the
+    // directory a concurrent run had just made and was about to fill.
     // eslint-disable-next-line no-await-in-loop -- the husk goes with its root.
-    await rmdir(directory).catch(() => undefined);
+    if (collected) await rmdir(directory).catch(() => undefined);
   }
   return reaped;
 }

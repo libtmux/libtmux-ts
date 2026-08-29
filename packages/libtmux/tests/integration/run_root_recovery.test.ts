@@ -555,4 +555,14 @@ describe("run-root recovery", () => {
       await removeIsolatedRunRoot(parent, root);
     }
   });
+
+  test("leaves an owned directory holding no run root alone", async () => {
+    const fresh = await makeTestDirectory("ltx-sweep-fresh-");
+    try {
+      await sweepStaleRunRoots();
+      expect((await lstat(fresh)).isDirectory()).toBe(true);
+    } finally {
+      await rm(fresh, { force: true, recursive: true });
+    }
+  });
 });
