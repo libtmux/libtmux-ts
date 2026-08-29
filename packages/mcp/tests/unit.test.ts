@@ -13,7 +13,7 @@ import { frame, randomId, runFramedCommand, withoutForeignFraming } from "../src
 import { LiveHub } from "../src/live.js";
 import { PaneTail } from "../src/pane_tail.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES, resolvePolicy, tierAllows } from "../src/policy.js";
-import { serverFromEnvironment } from "../src/server.js";
+import { createTmuxMcpServer, serverFromEnvironment } from "../src/server.js";
 import { describeStartup } from "../src/startup.js";
 import { fail, ok, renderOutput, tailLines } from "../src/results.js";
 import { TextFilter } from "../src/text.js";
@@ -376,6 +376,22 @@ describe("live hub", () => {
 });
 
 describe("policy", () => {
+  test("rejects malformed embedded policy before registering tools", () => {
+    const base = resolvePolicy({});
+    const malformed = [
+      ["safety", ["destructive"]],
+      ["blockingWaitMaxMs", 2_147_483_648],
+      ["liveEnabled", "false"],
+      ["maxResultLines", 0],
+      ["tools", []],
+    ] as const;
+
+    for (const [field, value] of malformed) {
+      const policy = { ...base, [field]: value } as unknown as typeof base;
+      expect(() => createTmuxMcpServer(new Server(), { policy })).toThrow(`policy.${field}`);
+    }
+  });
+
   test("clamps a blocking wait to the ceiling and reports the ceiling", () => {
     const policy = resolvePolicy({});
     expect(effectiveWaitMs(policy, 999_999_999)).toBe(policy.blockingWaitMaxMs);
