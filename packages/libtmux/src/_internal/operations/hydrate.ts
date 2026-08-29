@@ -3,11 +3,12 @@ import {
   WHERE_RELATIONS_V1,
   type WhereModel,
 } from "../../_generated/where_fields.js";
-import type {
-  GraphRecord,
-  GraphRecordRef,
-  GraphSourceId,
-  NormalizedGraph,
+import {
+  graphRecordForRef,
+  type GraphRecord,
+  type GraphRecordRef,
+  type GraphSourceId,
+  type NormalizedGraph,
 } from "../graph/model.js";
 import {
   SelectionProjectionBuilder,
@@ -52,6 +53,8 @@ interface Index {
   readonly windowsByEntity: ReadonlyMap<string, readonly GraphRecord[]>;
 }
 
+const graphIndexes = new WeakMap<NormalizedGraph, Index>();
+
 function push<Key>(map: Map<Key, GraphRecord[]>, key: Key, record: GraphRecord): void {
   const bucket = map.get(key);
   if (bucket === undefined) map.set(key, [record]);
@@ -59,6 +62,8 @@ function push<Key>(map: Map<Key, GraphRecord[]>, key: Key, record: GraphRecord):
 }
 
 function indexGraph(graph: NormalizedGraph): Index {
+  const cached = graphIndexes.get(graph);
+  if (cached !== undefined) return cached;
   const panesByWinlink = new Map<string, GraphRecord[]>();
   const panesBySession = new Map<string, GraphRecord[]>();
   const sessionByEntity = new Map<string, GraphRecord>();
@@ -88,7 +93,7 @@ function indexGraph(graph: NormalizedGraph): Index {
     }
   }
 
-  return {
+  const index = {
     panesBySession,
     panesByWinlink,
     sessionByEntity,
@@ -96,6 +101,8 @@ function indexGraph(graph: NormalizedGraph): Index {
     windowsByEntity,
     windowsBySession,
   };
+  graphIndexes.set(graph, index);
+  return index;
 }
 
 function refsOf(records: readonly GraphRecord[] | undefined): readonly GraphRecordRef[] {
@@ -123,7 +130,6 @@ export function hydrateProjection(
 ): SelectionProjection {
   const builder = SelectionProjectionBuilder.create({ descriptors: DESCRIPTORS, graph, source });
   const index = indexGraph(graph);
-  const byRef = new Map(graph.records.map((record) => [recordKey(record.ref), record]));
   const members = graph.sources.find(({ id }) => id === source)?.records ?? [];
 
   // A relation can only be materialized once its subject is reachable from the
@@ -144,7 +150,7 @@ export function hydrateProjection(
   while (cursor < queue.length) {
     const reference = queue[cursor]!;
     cursor += 1;
-    const record = byRef.get(recordKey(reference));
+    const record = graphRecordForRef(graph, reference);
     if (record === undefined) continue;
     const winlink = record.winlink;
     switch (record.model) {
