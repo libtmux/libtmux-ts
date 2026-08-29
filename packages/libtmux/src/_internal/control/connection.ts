@@ -4,10 +4,12 @@ import type { PaneId } from "../../common.js";
 import type {
   AbortLike,
   ConnectionOptions,
+  FormatSubscription,
   TmuxEventStream,
   TmuxPaneFlowEvent,
   WatchOptions,
 } from "../../types.js";
+import { assertSubscriptionFormat, assertSubscriptionName } from "../operations/names.js";
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
@@ -27,6 +29,14 @@ import { MAX_TIMER_DELAY_MS, timerDelay } from "../timing.js";
  * keeps a peer that never sends LF from growing the carry without bound.
  */
 const MAX_CONTROL_LINE_BYTES = 64 * 1024 * 1024;
+
+/** The `what` field of `refresh-client -B`; anything unrecognised is session scope. */
+function subscriptionScope(scope: FormatSubscription["scope"]): string {
+  if (scope === undefined) return "";
+  if (scope === "all-panes") return "%*";
+  if (scope === "all-windows") return "@*";
+  return scope;
+}
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
@@ -50,6 +60,7 @@ export function transportFailure(failure: Error): TmuxTransportError {
 
 interface ControlConnectionOptions extends ConnectionOptions {
   readonly pauseAfterSeconds?: number;
+  readonly subscriptions?: readonly FormatSubscription[];
 }
 
 type ControlChildSpawner = () => ControlChild;
@@ -125,6 +136,14 @@ export class ControlConnection {
   readonly #pauseAfterSeconds: number | undefined;
   /** Panes tmux has paused and this connection has not yet asked back. */
   readonly #paused = new Set<PaneId>();
+  /**
+   * Subscriptions by name, so a reconnect can re-issue them.
+   *
+   * tmux keeps these on the control client, which a reconnect replaces. The
+   * replacement starts with none, so a connection that did not re-issue would
+   * recover its stream and quietly stop reporting formats.
+   */
+  readonly #subscriptions = new Map<string, FormatSubscription>();
   /** Which reconnect attempt is in flight, so `reconnected` can name it once tmux answers. */
   #reconnectingAttempt: number | undefined;
   #observerBinding: ControlObserverBinding | undefined;
@@ -174,6 +193,10 @@ export class ControlConnection {
     }
     this.#framer = new LineFramer(Math.max(MAX_CARRY_BYTES, MAX_CONTROL_LINE_BYTES));
     this.#pauseAfterSeconds = pauseAfterSeconds;
+    for (const subscription of options.subscriptions ?? []) {
+      this.#subscriptions.set(assertSubscriptionName(subscription.name), subscription);
+      assertSubscriptionFormat(subscription.format);
+    }
     const globals = connectionArguments(connection);
     this.#commandPrefix = Object.freeze([...globals]);
     this.#signal = options.signal;
@@ -413,6 +436,14 @@ export class ControlConnection {
   async #finishAttach(child: ControlChild): Promise<void> {
     try {
       await this.#requestPauseAfter(child);
+      // Subscriptions belong to the control client, and a reconnect replaced
+      // it. Re-issued here, where the attach that would otherwise have lost
+      // them has just been accepted.
+      for (const name of this.#subscriptions.keys()) {
+        if (this.#children.active() !== child || this.#closed) return;
+        // eslint-disable-next-line no-await-in-loop -- one refusal names one subscription.
+        await this.#issueSubscription(child, name);
+      }
     } catch (error) {
       if (this.#children.active() === child) {
         this.#fail(error instanceof Error ? error : new Error("tmux refused pause-after"));
@@ -499,6 +530,56 @@ export class ControlConnection {
       if (attachment.kind === "pending") attachment.settle?.reject(reason);
     }
     for (const sink of this.#sinks) sink.finish(failure);
+  }
+
+  /**
+   * Issue one `refresh-client -B`, or the unsubscribe form when there is no
+   * subscription under that name.
+   *
+   * Travels on a spawned command targeted at the observer, like pause-after:
+   * sending it down the observer's own stream would put the reply where a
+   * notification is read.
+   */
+  async #issueSubscription(child: ControlChild, name: string): Promise<void> {
+    const fallback = this.#observerCommands;
+    if (fallback === undefined || child.pid === undefined) {
+      throw new Error("watch observer has no spawning transport");
+    }
+    const subscription = this.#subscriptions.get(name);
+    const argument =
+      subscription === undefined
+        ? name
+        : `${name}:${subscriptionScope(subscription.scope)}:${subscription.format}`;
+    const result = await fallback.execute({
+      commands: [["refresh-client", "-t", `client-${String(child.pid)}`, "-B", argument]],
+      executable: this.#executable,
+      environment: this.#environment,
+      globalArgs: this.#commandPrefix,
+      timeoutMs: 30_000,
+    });
+    if (result.returncode !== 0) {
+      throw new TmuxTransportError("tmux refused a format subscription", {
+        delivery: "replied",
+        kind: "protocol",
+      });
+    }
+  }
+
+  /** Add or replace a subscription, and issue it if there is a client to take it. */
+  async subscribeFormat(subscription: FormatSubscription): Promise<void> {
+    const name = assertSubscriptionName(subscription.name);
+    assertSubscriptionFormat(subscription.format);
+    this.#subscriptions.set(name, subscription);
+    const child = this.#children.active();
+    if (child !== undefined && !this.#closed) await this.#issueSubscription(child, name);
+  }
+
+  /** Forget a subscription, and tell tmux to stop reporting it. */
+  async unsubscribeFormat(name: string): Promise<void> {
+    assertSubscriptionName(name);
+    this.#subscriptions.delete(name);
+    const child = this.#children.active();
+    if (child !== undefined && !this.#closed) await this.#issueSubscription(child, name);
   }
 
   /**

@@ -246,6 +246,79 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
+  /**
+   * tmux evaluates a subscription on a one-second timer, so a report is a
+   * change rather than every value, and the deadline has to outlast a tick.
+   */
+  test("reports a subscribed format at each scope", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const events = server.watch({
+        subscriptions: [
+          { format: "#{session_name}", name: "session", scope: undefined },
+          { format: "#{pane_current_command}", name: "cmd", scope: "all-panes" },
+        ],
+      });
+      try {
+        const seen = new Map<string, string>();
+        for await (const event of events) {
+          if (event.kind !== "subscription-changed") continue;
+          seen.set(event.name, event.value);
+          if (event.name === "cmd") {
+            // A pane-scope report names the object it expanded against; a
+            // session-scope one has no window or pane to name.
+            expect(event.paneId).toMatch(/^%\d+$/u);
+            expect(event.windowId).toMatch(/^@\d+$/u);
+          }
+          if (event.name === "session") expect(event.paneId).toBeUndefined();
+          if (seen.size === 2) break;
+        }
+        expect(seen.get("session")).toBe("watch");
+        expect(seen.get("cmd")).not.toBe("");
+      } finally {
+        await events.close();
+      }
+    });
+  }, 60_000);
+
+  test("subscribes and unsubscribes on a live connection", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+      const events = live.subscribe();
+      await live.subscribeFormat({ format: "#{session_name}", name: "who" });
+
+      const first = await events.find(
+        (event) => event.kind === "subscription-changed" && event.name === "who",
+        { timeoutMs: 20_000 },
+      );
+      expect(first).toMatchObject({ kind: "subscription-changed", value: "watch" });
+
+      // Unsubscribing is the same command with the name alone; tmux answers
+      // nothing, so the assertion is that it was accepted.
+      await live.unsubscribeFormat("who");
+      await events.close();
+    });
+  }, 60_000);
+
+  test("refuses a subscription name tmux would misread", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+      // A colon splits the subscribe grammar and a space makes the report's
+      // fields ambiguous; both are refused here rather than sent.
+      await expect(
+        live.subscribeFormat({ format: "#{session_name}", name: "a:b" }),
+      ).rejects.toThrow(/subscription name/u);
+      await expect(
+        live.subscribeFormat({ format: "#{session_name}", name: "a b" }),
+      ).rejects.toThrow(/subscription name/u);
+      await expect(live.subscribeFormat({ format: "a\nb", name: "ok" })).rejects.toThrow(
+        /line break/u,
+      );
+    });
+  }, 60_000);
+
   test("refuses a second iteration of the same stream", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

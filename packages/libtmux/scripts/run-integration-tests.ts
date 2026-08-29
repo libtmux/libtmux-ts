@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { runSupervisor, sweepStaleRunRoots } from "../src/_internal/test/testkit.js";
-import { testParallelism } from "../src/_internal/test/testkit.js";
+import {
+  runSupervisor,
+  sweepStaleRunRoots,
+  testParallelism,
+} from "../src/_internal/test/testkit.js";
 
 import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
 

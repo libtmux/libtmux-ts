@@ -1,4 +1,9 @@
-import type { ConnectedServer, ServerSnapshot, WaitForOptions } from "../../types.js";
+import type {
+  ConnectedServer,
+  FormatSubscription,
+  ServerSnapshot,
+  WaitForOptions,
+} from "../../types.js";
 import { createServerWithRuntime, type RuntimeContext } from "../runtime/context.js";
 import type { RuntimeConstructors } from "../runtime/constructors.js";
 import type { ControlConnection } from "./connection.js";
@@ -35,6 +40,10 @@ export function createConnectedServer(
   Object.defineProperties(server, {
     close: { value: closeWaits },
     subscribe: { value: () => connection.subscribe() },
+    subscribeFormat: {
+      value: (subscription: FormatSubscription) => connection.subscribeFormat(subscription),
+    },
+    unsubscribeFormat: { value: (name: string) => connection.unsubscribeFormat(name) },
     waitFor: {
       value: (
         matches: (snapshot: ServerSnapshot) => boolean,

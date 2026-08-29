@@ -545,6 +545,38 @@ export interface TmuxWindowPaneChangedEvent {
 }
 
 /**
+ * A format tmux expands and reports whenever its value changes.
+ *
+ * ```ts
+ * { format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }
+ * ```
+ *
+ * Reports arrive as {@link TmuxSubscriptionEvent}. tmux evaluates every
+ * subscription at most once per second, so this reports a change rather than
+ * every intermediate value.
+ */
+export interface FormatSubscription {
+  /** A tmux format string. See `FORMATS` in the tmux manual. */
+  readonly format: string;
+  /**
+   * The caller's label, echoed back on every report.
+   *
+   * Refused when it holds `:`, whitespace, or a control character: the
+   * subscribe grammar splits on the colon and the report carries the name
+   * unescaped.
+   */
+  readonly name: string;
+  /**
+   * What the format is expanded against. Omitted expands once per session.
+   *
+   * A window or pane id subscribes to that object; `"all-panes"` and
+   * `"all-windows"` subscribe to each one in the attached session, reporting
+   * separately for each.
+   */
+  readonly scope?: PaneId | WindowId | "all-panes" | "all-windows";
+}
+
+/**
  * A subscribed format expanded to a new value.
  *
  * tmux evaluates a subscription at most once per second and reports only when
@@ -769,6 +801,13 @@ export interface WatchOptions extends ConnectionOptions {
    * so the pair records what was missed rather than needing a response.
    */
   readonly pauseAfterSeconds?: number;
+  /**
+   * Formats to subscribe to, reported as {@link TmuxSubscriptionEvent}.
+   *
+   * A subscription belongs to one control client, so these are re-issued after
+   * a reconnect; without that a recovered connection would stop reporting.
+   */
+  readonly subscriptions?: readonly FormatSubscription[];
 }
 
 /**
@@ -836,6 +875,29 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    * loop and a {@link waitFor} can run side by side.
    */
   subscribe(): TmuxEventStream;
+  /**
+   * Report a format whenever tmux expands it to a new value.
+   *
+   * Reports arrive on {@link subscribe} as {@link TmuxSubscriptionEvent}.
+   * Re-using a name replaces that subscription. The connection re-issues its
+   * subscriptions after a reconnect, because they belong to the control client
+   * that went away.
+   *
+   * ```ts
+   * await live.subscribeFormat({
+   *   format: "#{pane_current_command}",
+   *   name: "cmd",
+   *   scope: "all-panes",
+   * });
+   * ```
+   *
+   * @throws TypeError when the name holds `:`, whitespace, or a control
+   *   character, or the format holds a line break — each of which tmux would
+   *   either misread or report unattributably.
+   */
+  subscribeFormat(subscription: FormatSubscription): Promise<void>;
+  /** Stop reporting a subscription. Unknown names are accepted. */
+  unsubscribeFormat(name: string): Promise<void>;
   /**
    * Resolve once the server satisfies `matches`, or reject on timeout.
    *
