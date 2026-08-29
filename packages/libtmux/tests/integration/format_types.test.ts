@@ -35,9 +35,12 @@ const declared = valueTypeFixture.types as Readonly<Record<string, string>>;
 const shapes: Readonly<Record<string, RegExp>> = {
   boolean: /^[01]$/u,
   number: /^-?\d+$/u,
+  "pane-id": /^%\d+$/u,
+  "session-id": /^\$\d+$/u,
   // Epoch seconds. Bounded below so a plain `0` or a small counter cannot pass
   // as a timestamp, and above so a field that is really a byte count cannot.
   time: /^\d{9,11}$/u,
+  "window-id": /^@\d+$/u,
 };
 
 /**

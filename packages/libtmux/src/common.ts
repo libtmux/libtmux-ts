@@ -6,18 +6,26 @@ declare const daemonEpochBrand: unique symbol;
 
 export type TmuxIdKind = "session" | "window" | "pane";
 
+/** A tmux object ID authenticated for one object kind. */
 export type TmuxId<Kind extends TmuxIdKind> = string & {
   readonly [tmuxIdBrand]: Kind;
 };
 
+/** A session ID in tmux's `$n` form. */
 export type SessionId = TmuxId<"session">;
+/** A window ID in tmux's `@n` form. */
 export type WindowId = TmuxId<"window">;
+/** A pane ID in tmux's `%n` form. */
 export type PaneId = TmuxId<"pane">;
+/** Raw text or an already-authenticated ID of the expected kind. */
 export type TmuxIdInput<Kind extends TmuxIdKind> = string & {
   readonly [tmuxIdBrand]?: Kind;
 };
+/** Raw session-ID text or an authenticated session ID. */
 export type SessionIdInput = TmuxIdInput<"session">;
+/** Raw window-ID text or an authenticated window ID. */
 export type WindowIdInput = TmuxIdInput<"window">;
+/** Raw pane-ID text or an authenticated pane ID. */
 export type PaneIdInput = TmuxIdInput<"pane">;
 
 export type ConnectionAlias = string & { readonly [connectionAliasBrand]: "connection" };

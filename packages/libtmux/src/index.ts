@@ -88,7 +88,19 @@ export {
   VersionTooLow,
   WaitTimeout,
 } from "./exc.js";
-export type { CommandOptions, DeliveryStatus } from "./common.js";
+export type {
+  CommandOptions,
+  DeliveryStatus,
+  PaneId,
+  PaneIdInput,
+  SessionId,
+  SessionIdInput,
+  TmuxId,
+  TmuxIdInput,
+  TmuxIdKind,
+  WindowId,
+  WindowIdInput,
+} from "./common.js";
 export {
   OptionScope,
   PaneDirection,

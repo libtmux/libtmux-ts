@@ -28,6 +28,7 @@ function valueFor(token: string, overrides: Readonly<Record<string, string>>): s
   if (token === "session_id") return "$7";
   if (token === "window_id") return "@8";
   if (token === "pane_id") return "%9";
+  if (token === "next_session_id") return "$10";
   if (token === "client_name") return "/dev/pts/42";
   return `value:${token}`;
 }
@@ -252,6 +253,15 @@ describe("guarded format codec", () => {
         FormatProtocolError,
       );
     }
+  });
+
+  test("rejects a malformed populated identity outside the primary key", () => {
+    const codec = codecFor("list-sessions");
+    const request = codec.prepare();
+
+    expect(() =>
+      codec.decode(request, encoder.encode(`${frame(request, { next_session_id: "@1" })}\n`)),
+    ).toThrow(FormatProtocolError);
   });
 
   test("detects literal unknown format tokens", () => {

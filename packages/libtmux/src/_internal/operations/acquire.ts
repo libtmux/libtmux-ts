@@ -1,4 +1,4 @@
-import type { CompleteFormatRow } from "../codec/schemas.js";
+import type { RawCompleteFormatRow } from "../codec/schemas.js";
 import { executeGuardedListGroup, type GuardedListing } from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
@@ -31,7 +31,7 @@ export const ACQUISITION_LISTINGS: readonly GuardedListing[] = Object.freeze([
  * then there is nothing to compare — which is correct: an empty server has
  * handed out no handles to invalidate.
  */
-function daemonOf(rows: readonly (readonly CompleteFormatRow[])[]): DaemonIdentity | undefined {
+function daemonOf(rows: readonly (readonly RawCompleteFormatRow[])[]): DaemonIdentity | undefined {
   for (const set of rows) {
     const row = set[0];
     if (row?.pid == null || row.start_time == null) continue;

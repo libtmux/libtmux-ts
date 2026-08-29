@@ -1,12 +1,13 @@
 import { formatValueType } from "../../_generated/field_types.js";
+import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
 
 /**
  * Convert between the text tmux sends and the value it stands for.
  *
- * tmux has one wire type. Which fields are really numbers, booleans and times
- * is generated into `_generated/field_types.ts`; anything absent from it is
- * text. Decoding happens where a row becomes a handle, and the row keeps the
- * text, so `handle.format.pane_pid` is still `"2334787"`.
+ * tmux has one wire type. Which fields are numbers, booleans, times, or object
+ * IDs is generated into `_generated/field_types.ts`; anything absent from it
+ * is text. Decoding happens where a row becomes a handle, and the row keeps
+ * the text, so `handle.format.pane_pid` is still `"2334787"`.
  */
 
 /** A decoded field value. `null` covers both "tmux said nothing" and "unparseable". */
@@ -32,6 +33,10 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
       const parsed = Number(value);
       return Number.isSafeInteger(parsed) ? parsed : null;
     }
+    case "pane-id":
+      return isPaneId(value) ? value : null;
+    case "session-id":
+      return isSessionId(value) ? value : null;
     case "time": {
       if (!integer.test(value)) return null;
       const seconds = Number(value);
@@ -39,6 +44,8 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
       if (seconds <= 0 || !Number.isSafeInteger(seconds)) return null;
       return new Date(seconds * 1000);
     }
+    case "window-id":
+      return isWindowId(value) ? value : null;
   }
 }
 
@@ -51,6 +58,7 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
 export function encodeFormatValue(token: string, value: unknown): unknown {
   const type = formatValueType(token);
   if (type === undefined) return value;
+  if (type === "pane-id" || type === "session-id" || type === "window-id") return value;
   if (typeof value === "boolean") return value ? "1" : "0";
   if (typeof value === "number") {
     if (!Number.isSafeInteger(value)) return value;

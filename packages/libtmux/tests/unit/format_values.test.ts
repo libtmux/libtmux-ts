@@ -19,7 +19,7 @@ describe("decoding what tmux sends", () => {
     expect(decodeFormatValue("session_created", "1786878571")).toEqual(new Date(1786878571000));
   });
 
-  test("leaves a string field exactly as tmux sent it", () => {
+  test("leaves string and identity fields exactly as tmux sent them", () => {
     expect(decodeFormatValue("pane_current_command", "zsh")).toBe("zsh");
     expect(decodeFormatValue("pane_id", "%0")).toBe("%0");
     expect(decodeFormatValue("session_id", "$0")).toBe("$0");
@@ -35,6 +35,9 @@ describe("decoding what tmux sends", () => {
     expect(decodeFormatValue("pane_pid", "not a pid")).toBeNull();
     expect(decodeFormatValue("pane_active", "2")).toBeNull();
     expect(decodeFormatValue("session_created", "nonsense")).toBeNull();
+    expect(decodeFormatValue("pane_id", "@1")).toBeNull();
+    expect(decodeFormatValue("session_id", "%1")).toBeNull();
+    expect(decodeFormatValue("window_id", "$1")).toBeNull();
   });
 
   test("answers null for a time that has not happened", () => {
@@ -93,10 +96,25 @@ describe("encoding what a caller writes", () => {
           ? [true, false]
           : type === "time"
             ? [new Date(0), new Date(1_700_000_000_000), new Date(2_000_000_000_000)]
-            : [0, -1, 1, 2_334_787, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER];
+            : type === "number"
+              ? [0, -1, 1, 2_334_787, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER]
+              : type === "pane-id"
+                ? ["%0", "%42"]
+                : type === "session-id"
+                  ? ["$0", "$42"]
+                  : ["@0", "@42"];
       for (const sample of samples) {
         const encoded = encodeFormatValue(token, sample);
-        const shape = type === "boolean" ? flag : numeric;
+        const shape =
+          type === "boolean"
+            ? flag
+            : type === "number" || type === "time"
+              ? numeric
+              : type === "pane-id"
+                ? /^%\d+$/u
+                : type === "session-id"
+                  ? /^\$\d+$/u
+                  : /^@\d+$/u;
         if (typeof encoded !== "string" || !shape.test(encoded)) {
           offenders.push(`${token} (${type}): ${String(sample)} -> ${JSON.stringify(encoded)}`);
         }
@@ -110,7 +128,10 @@ describe("encoding what a caller writes", () => {
     const samples: Readonly<Record<string, string>> = {
       boolean: "1",
       number: "42",
+      "pane-id": "%42",
+      "session-id": "$42",
       time: "1786878571",
+      "window-id": "@42",
     };
     for (const [token, type] of Object.entries(FORMAT_VALUE_TYPES)) {
       const wire = samples[type];

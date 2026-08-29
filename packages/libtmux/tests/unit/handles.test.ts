@@ -345,6 +345,7 @@ function validChangedValue(token: (typeof FORMAT_FIELD_TOKENS)[number]): string 
       return "client-other";
     case "pane_id":
       return "%2";
+    case "next_session_id":
     case "session_id":
       return "$2";
     case "window_id":

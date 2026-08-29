@@ -10,9 +10,25 @@ import type {
 } from "../../common.js";
 import { QueryValidationError } from "../../exc.js";
 
-const sessionIdSchema = v.string().regex(/^\$\d+$/u, "a session id like $0");
-const windowIdSchema = v.string().regex(/^@\d+$/u, "a window id like @0");
-const paneIdSchema = v.string().regex(/^%\d+$/u, "a pane id like %0");
+const sessionIdPattern = /^\$\d+$/u;
+const windowIdPattern = /^@\d+$/u;
+const paneIdPattern = /^%\d+$/u;
+
+const sessionIdSchema = v.string().regex(sessionIdPattern, "a session id like $0");
+const windowIdSchema = v.string().regex(windowIdPattern, "a window id like @0");
+const paneIdSchema = v.string().regex(paneIdPattern, "a pane id like %0");
+
+export function isSessionId(value: unknown): value is SessionId {
+  return typeof value === "string" && sessionIdPattern.test(value);
+}
+
+export function isWindowId(value: unknown): value is WindowId {
+  return typeof value === "string" && windowIdPattern.test(value);
+}
+
+export function isPaneId(value: unknown): value is PaneId {
+  return typeof value === "string" && paneIdPattern.test(value);
+}
 
 function parseId<Id extends string>(schema: Validator<string>, value: string, label: string): Id {
   const result = schema.safeParse(value);

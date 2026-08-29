@@ -457,9 +457,15 @@ import {
   Window,
   type CaptureOptions,
   type NewSessionOptions,
+  type PaneId,
+  type PaneIdInput,
   type Selection,
   type ServerSnapshot,
+  type SessionId,
+  type SessionIdInput,
   type SessionWhere,
+  type WindowId,
+  type WindowIdInput,
 } from "libtmux";
 import { Server as ServerFromSubpath } from "libtmux/server";
 
@@ -473,6 +479,14 @@ declare const rootClient: Client;
 declare const rootCriteria: SessionWhere;
 declare const rootCapture: CaptureOptions;
 declare const rootNewSession: NewSessionOptions;
+const sessionId: SessionId = rootSnapshot.sessions.one().id;
+const windowId: WindowId = rootWindow.id;
+const paneId: PaneId = rootPane.id;
+const rawSessionId: SessionIdInput = "$1";
+const rawWindowId: WindowIdInput = "@1";
+const rawPaneId: PaneIdInput = "%1";
+// @ts-expect-error A pane ID already read from the package is not session input.
+const wrongSessionId: SessionIdInput = rootPane.id;
 void [
   rootServer.snapshot,
   rootSnapshot.sessions,
@@ -481,6 +495,13 @@ void [
   rootPane.capture(rootCapture),
   rootClient.session,
   rootServer.newSession(rootNewSession),
+  sessionId,
+  windowId,
+  paneId,
+  rawSessionId,
+  rawWindowId,
+  rawPaneId,
+  wrongSessionId,
   LibTmuxException,
   NoMatchError,
   ServerFromSubpath,

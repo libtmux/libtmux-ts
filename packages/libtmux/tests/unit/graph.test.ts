@@ -316,6 +316,7 @@ describe("normalized entity and winlink graph", () => {
       ["list-clients", completeFormatRow({ client_name: "" })],
       ["list-clients", completeFormatRow({ client_name: "%1" })],
       ["list-sessions", completeFormatRow({ session_id: "$1", window_id: "not-a-window-id" })],
+      ["list-sessions", completeFormatRow({ next_session_id: "@1", session_id: "$1" })],
     ];
     for (const [listCommand, row] of malformed) {
       expect(() =>

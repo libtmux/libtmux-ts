@@ -15,7 +15,12 @@ import {
 } from "../transport/types.js";
 import { decodeBackslashReplace } from "./backslash_replace.js";
 import { formatFieldsForListCommand } from "./format_registry.js";
-import { parseCompleteFormatRow, parseFormatIdentity, type CompleteFormatRow } from "./schemas.js";
+import {
+  parseCompleteFormatRow,
+  parseFormatIdentity,
+  type CompleteFormatRow,
+  type RawCompleteFormatRow,
+} from "./schemas.js";
 
 export interface FormatGuards {
   readonly field: string;
@@ -248,7 +253,7 @@ function frameBytes(
 function completeRowData(
   fields: readonly OutputFormatField[],
   values: readonly string[],
-): CompleteFormatRow {
+): RawCompleteFormatRow {
   const row = {} as Record<FormatFieldName, string | null>;
   for (const token of FORMAT_FIELD_TOKENS) row[token] = null;
   for (const [index, { token }] of fields.entries()) row[token] = values[index]!;

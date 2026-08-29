@@ -1,11 +1,20 @@
 import { v, type Validator } from "../validate.js";
 
-import type { DecodedFormatValue } from "../../_generated/field_types.js";
+import {
+  FORMAT_IDENTITY_FIELDS,
+  type DecodedFormatValue,
+  type RawFormatValue,
+} from "../../_generated/field_types.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
+import { parsePaneId, parseSessionId, parseWindowId } from "../runtime/ids.js";
 import type { ListCommand } from "./format_types.js";
 
-export type CompleteFormatRow = Readonly<Record<FormatFieldName, string | null>>;
+export type RawCompleteFormatRow = Readonly<Record<FormatFieldName, string | null>>;
+
+export type CompleteFormatRow = {
+  readonly [Key in FormatFieldName]: RawFormatValue<Key> | null;
+};
 
 /**
  * A complete row whose listing guarantees certain identities are populated.
@@ -32,7 +41,9 @@ export type AliasedFields<Row, Aliases extends Readonly<Record<string, keyof Row
 };
 
 export type RowWithIdentities<Identities extends FormatFieldName> = {
-  readonly [Key in FormatFieldName]: Key extends Identities ? string : string | null;
+  readonly [Key in FormatFieldName]: Key extends Identities
+    ? Exclude<RawFormatValue<Key>, "">
+    : RawFormatValue<Key> | null;
 };
 
 const completeFormatRowShape = Object.fromEntries(
@@ -64,13 +75,34 @@ function primaryIdentity(listCommand: ListCommand): FormatFieldName {
 
 export function parseCompleteFormatRow(
   listCommand: ListCommand,
-  row: CompleteFormatRow,
+  row: RawCompleteFormatRow,
 ): CompleteFormatRow {
-  const parsed = completeFormatRowSchema.parse(row) as CompleteFormatRow;
+  const parsed = completeFormatRowSchema.parse(row) as RawCompleteFormatRow;
+  validatePopulatedFormatIdentities(parsed);
   parseFormatIdentity(listCommand, parsed[primaryIdentity(listCommand)]);
-  return Object.freeze(parsed);
+  return Object.freeze(parsed) as CompleteFormatRow;
 }
 
 export function parseFormatIdentity(listCommand: ListCommand, value: unknown): string {
   return identitySchemas[listCommand].parse(value);
+}
+
+export function validatePopulatedFormatIdentities(row: RawCompleteFormatRow): void {
+  for (const { token, type } of FORMAT_IDENTITY_FIELDS) {
+    const value = row[token];
+    if (value === null || value === "") continue;
+    switch (type) {
+      case "pane-id":
+        parsePaneId(value);
+        break;
+      case "session-id":
+        parseSessionId(value);
+        break;
+      case "window-id":
+        parseWindowId(value);
+        break;
+      default:
+        break;
+    }
+  }
 }

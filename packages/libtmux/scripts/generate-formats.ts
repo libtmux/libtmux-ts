@@ -141,8 +141,11 @@ function occurrenceCount(source: string, needle: string): number {
 const criteriaTypeForDomain: Readonly<Record<string, string>> = {
   boolean: "ScalarCriteria<boolean, RawFlag>",
   number: "ScalarCriteria<number, RawNumber>",
+  "pane-id": "ScalarCriteria",
+  "session-id": "ScalarCriteria",
   string: "ScalarCriteria",
   time: "ScalarCriteria<Date, RawNumber>",
+  "window-id": "ScalarCriteria",
 };
 
 function generatedWhereFieldEntries(
@@ -718,7 +721,14 @@ async function readValueTypes(tokens: ReadonlySet<string>): Promise<ReadonlyMap<
   }
   const types = new Map<string, string>();
   for (const [token, type] of Object.entries(parsed.types)) {
-    if (type !== "boolean" && type !== "number" && type !== "time") {
+    if (
+      type !== "boolean" &&
+      type !== "number" &&
+      type !== "pane-id" &&
+      type !== "session-id" &&
+      type !== "time" &&
+      type !== "window-id"
+    ) {
       throw new Error(
         `format value-type fixture declares ${token} as unknown type ${String(type)}`,
       );
@@ -734,13 +744,22 @@ async function readValueTypes(tokens: ReadonlySet<string>): Promise<ReadonlyMap<
 /** The value each format field carries, at the type level and at runtime. */
 function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
   const entries = [...types].sort(([left], [right]) => (left < right ? -1 : 1));
+  const identityEntries = entries.filter(([, type]) => type.endsWith("-id"));
   return `${[
     GENERATED_BANNER,
     "",
+    'import type { PaneId, SessionId, WindowId } from "../common.js";',
     'import type { FormatFieldName } from "./format_field_names.js";',
     "",
     "/** The shapes tmux writes that are not simply text. */",
-    'export type FormatValueType = "boolean" | "number" | "time";',
+    "export type FormatValueType =",
+    '  | "boolean"',
+    '  | "number"',
+    '  | "pane-id"',
+    '  | "session-id"',
+    '  | "time"',
+    '  | "window-id";',
+    'export type FormatIdentityType = "pane-id" | "session-id" | "window-id";',
     "",
     "/**",
     " * Which fields carry which shape.",
@@ -754,15 +773,32 @@ function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
     ...entries.map(([token, type]) => `  readonly ${token}: "${type}";`),
     "}",
     "",
+    "/** The raw text tmux writes, authenticated where it carries an identity. */",
+    "export type RawFormatValue<Token extends FormatFieldName> = Token extends keyof FormatValueTypes",
+    '  ? FormatValueTypes[Token] extends "pane-id"',
+    '    ? PaneId | ""',
+    '    : FormatValueTypes[Token] extends "session-id"',
+    '      ? SessionId | ""',
+    '      : FormatValueTypes[Token] extends "window-id"',
+    '        ? WindowId | ""',
+    "        : string",
+    "  : string;",
+    "",
     // Written the way oxfmt writes it: `format:check` covers the generated
     // tree, so a shape it would rewrite makes it and `generate:check` disagree.
     "/** What a caller reads for one field, once the text has been decoded. */",
     "export type DecodedFormatValue<Token extends FormatFieldName> = Token extends keyof FormatValueTypes",
-    '  ? FormatValueTypes[Token] extends "number"',
-    "    ? number",
-    '    : FormatValueTypes[Token] extends "boolean"',
-    "      ? boolean",
-    "      : Date",
+    '  ? FormatValueTypes[Token] extends "pane-id"',
+    "    ? PaneId",
+    '    : FormatValueTypes[Token] extends "session-id"',
+    "      ? SessionId",
+    '      : FormatValueTypes[Token] extends "window-id"',
+    "        ? WindowId",
+    '        : FormatValueTypes[Token] extends "number"',
+    "          ? number",
+    '          : FormatValueTypes[Token] extends "boolean"',
+    "            ? boolean",
+    "            : Date",
     "  : string;",
     "",
     "export const FORMAT_VALUE_TYPES: Readonly<FormatValueTypes> = Object.freeze({",
@@ -773,6 +809,15 @@ function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
     "export function formatValueType(token: string): FormatValueType | undefined {",
     "  return FORMAT_VALUE_TYPES[token as keyof typeof FORMAT_VALUE_TYPES];",
     "}",
+    "",
+    "export const FORMAT_IDENTITY_FIELDS: readonly Readonly<{",
+    "  token: FormatFieldName;",
+    "  type: FormatIdentityType;",
+    "}>[] = Object.freeze([",
+    ...identityEntries.map(
+      ([token, type]) => `  Object.freeze({ token: "${token}", type: "${type}" }),`,
+    ),
+    "]);",
     "",
   ].join("\n")}`;
 }

@@ -271,6 +271,17 @@ session.name; // session_name
 pane.format.pane_current_command;
 ```
 
+Object IDs are authenticated before a snapshot handle or event exposes them.
+Their brands stop an ID already read as one kind from being mixed with another,
+while the input types still accept configuration and other raw strings:
+
+```ts
+import type { PaneId, PaneIdInput } from "libtmux";
+
+const capturedPane: PaneId = pane.id;
+const configuredPane: PaneIdInput = "%0";
+```
+
 ## Field values
 
 tmux has one wire type, and everything on it is text. A field whose shape this

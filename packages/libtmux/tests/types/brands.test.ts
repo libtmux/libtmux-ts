@@ -1,5 +1,16 @@
 import { parsePaneId, parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
-import type { PaneIdInput, SessionIdInput, WindowIdInput } from "../../src/common.js";
+import type {
+  Client,
+  Pane,
+  PaneId,
+  PaneIdInput,
+  Session,
+  SessionId,
+  SessionIdInput,
+  Window,
+  WindowId,
+  WindowIdInput,
+} from "../../src/index.js";
 
 declare const raw: string;
 
@@ -55,3 +66,52 @@ const erased: string = pane;
 parseSessionId(erased);
 parseWindowId(erased);
 parsePaneId(erased);
+
+declare const clientHandle: Client;
+declare const paneHandle: Pane;
+declare const sessionHandle: Session;
+declare const windowHandle: Window;
+
+const sessionOutput: SessionId = sessionHandle.id;
+const windowOutput: WindowId = windowHandle.id;
+const paneOutput: PaneId = paneHandle.id;
+const placedSessionOutput: SessionId = windowHandle.format.session_id;
+const paneSessionOutput: SessionId = paneHandle.format.session_id;
+const paneWindowOutput: WindowId = paneHandle.format.window_id;
+const clientPaneOutput: PaneId | "" | null = clientHandle.format.pane_id;
+
+const rawSessionOutput: SessionId = sessionHandle.format.session_id;
+const rawWindowOutput: WindowId = windowHandle.format.window_id;
+const rawPaneOutput: PaneId = paneHandle.format.pane_id;
+const optionalRawPaneOutput: PaneId | "" | null = sessionHandle.format.pane_id;
+const nextSessionOutput: SessionId | null = sessionHandle.nextSessionId;
+const rawNextSessionOutput: SessionId | "" | null = sessionHandle.format.next_session_id;
+
+void [
+  sessionOutput,
+  windowOutput,
+  paneOutput,
+  placedSessionOutput,
+  paneSessionOutput,
+  paneWindowOutput,
+  clientPaneOutput,
+  rawSessionOutput,
+  rawWindowOutput,
+  rawPaneOutput,
+  optionalRawPaneOutput,
+  nextSessionOutput,
+  rawNextSessionOutput,
+];
+
+const dynamicSessionInput: SessionIdInput = raw;
+const dynamicWindowInput: WindowIdInput = raw;
+const dynamicPaneInput: PaneIdInput = raw;
+void [dynamicSessionInput, dynamicWindowInput, dynamicPaneInput];
+
+// @ts-expect-error A branded pane output remains invalid session input.
+const wrongSessionInput: SessionIdInput = paneHandle.id;
+// @ts-expect-error A branded session output remains invalid window input.
+const wrongWindowInput: WindowIdInput = sessionHandle.id;
+// @ts-expect-error A branded window output remains invalid pane input.
+const wrongPaneInput: PaneIdInput = windowHandle.id;
+void [wrongSessionInput, wrongWindowInput, wrongPaneInput];

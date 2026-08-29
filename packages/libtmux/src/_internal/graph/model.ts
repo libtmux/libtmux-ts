@@ -9,7 +9,7 @@ import type {
 import { QueryValidationError } from "../../exc.js";
 import type { ListCommand } from "../codec/format_types.js";
 import type { DaemonIdentity } from "../runtime/context.js";
-import type { CompleteFormatRow } from "../codec/schemas.js";
+import type { CompleteFormatRow, RawCompleteFormatRow } from "../codec/schemas.js";
 import type { WinlinkRef } from "./refs.js";
 
 declare const graphSourceIdBrand: unique symbol;
@@ -45,7 +45,7 @@ export interface GraphCapture {
 
 export interface CapturedRowSet {
   readonly listCommand: ListCommand;
-  readonly rows: readonly CompleteFormatRow[];
+  readonly rows: readonly RawCompleteFormatRow[];
   readonly source: GraphSourceId;
 }
 

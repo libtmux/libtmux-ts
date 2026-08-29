@@ -46,8 +46,11 @@ import type {
   ConnectionAlias,
   DaemonEpoch,
   LogicalRef,
+  PaneId,
+  SessionId,
   TmuxLogger,
   TmuxWarningSink,
+  WindowId,
 } from "../../src/common.js";
 import { Client } from "../../src/client.js";
 import { Pane } from "../../src/pane.js";
@@ -133,20 +136,29 @@ type _WindowSnapshot = Expect<
 >;
 
 type _SessionAliases = Expect<
-  Equal<Pick<Session, "id" | "name">, { readonly id: string; readonly name: string | null }>
+  Equal<Pick<Session, "id" | "name">, { readonly id: SessionId; readonly name: string | null }>
 >;
 // `window_index` is a number tmux guarantees on a listed row, so it decodes
 // without becoming nullable; `window_id` keeps its `@` and stays text.
 type _WindowAliases = Expect<
   Equal<
     Pick<Window, "id" | "index" | "name">,
-    { readonly id: string; readonly index: number; readonly name: string | null }
+    { readonly id: WindowId; readonly index: number; readonly name: string | null }
   >
 >;
 type _PaneAliases = Expect<
   Equal<
     Pick<Pane, "id" | "currentCommand">,
-    { readonly id: string; readonly currentCommand: string | null }
+    { readonly id: PaneId; readonly currentCommand: string | null }
+  >
+>;
+type _WindowPlacementIds = Expect<
+  Equal<Pick<Window["format"], "session_id">, { readonly session_id: SessionId }>
+>;
+type _PanePlacementIds = Expect<
+  Equal<
+    Pick<Pane["format"], "session_id" | "window_id">,
+    { readonly session_id: SessionId; readonly window_id: WindowId }
   >
 >;
 // A de-stuttered scalar never shadows a relation or an operation.
