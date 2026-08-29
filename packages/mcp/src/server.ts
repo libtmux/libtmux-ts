@@ -26,6 +26,8 @@ import { describeStartup } from "./startup.js";
 
 import manifest from "../package.json" with { type: "json" };
 
+export type { Policy, SafetyTier } from "./policy.js";
+
 /** The version this server reports, taken from the manifest so it cannot drift. */
 const PACKAGE_VERSION: string = manifest.version;
 

@@ -58,9 +58,19 @@ function consumerFor(name: string): Consumer {
     return {
       libs: ["ES2024", "ESNext.Disposable", "DOM"],
       types: [
-        'import { createTmuxMcpServer } from "@libtmux/mcp";',
+        'import { createTmuxMcpServer, type Policy, type SafetyTier } from "@libtmux/mcp";',
         'import { Server } from "libtmux";',
-        'createTmuxMcpServer(new Server({ socketName: "ltx-install-canary" }));',
+        'const safety: SafetyTier = "readonly";',
+        "const policy: Policy = {",
+        "  blockingWaitMaxMs: 30_000,",
+        "  commandTimeoutMs: 10_000,",
+        "  liveEnabled: false,",
+        "  maxResultLines: 2_000,",
+        "  safety,",
+        "  taskWaitMaxMs: 3_600_000,",
+        "  tools: undefined,",
+        "};",
+        'createTmuxMcpServer(new Server({ socketName: "ltx-install-canary" }), { policy });',
         "",
       ].join("\n"),
       nodeProbe: [
