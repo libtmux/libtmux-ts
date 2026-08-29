@@ -1348,16 +1348,35 @@ created.id;
 showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
 ```
 
+Read hooks set on this window itself.
+
+```ts
+const hooks = await window.showHooks();
+hooks.get("window-renamed")?.[0];
+```
+
 #### `Window.setHook`
 
 ```ts
 setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
 ```
 
+Bind a tmux command to a window-scoped hook.
+
+```ts
+await window.setHook("window-renamed", "display-message 'renamed'");
+```
+
 #### `Window.unsetHook`
 
 ```ts
 unsetHook(name: string): Promise<void>
+```
+
+Remove every command bound to a window-scoped hook.
+
+```ts
+await window.unsetHook("window-renamed");
 ```
 
 #### `Window.showOptions`
@@ -1569,7 +1588,13 @@ linked to one session" — a group member leaves by being killed, not by
 unlinking.
 
 ```ts
-await window.unlink();
+const destination = await server.newSession({ name: "unlink-example" });
+await window.link({ session: destination.id });
+const placement = (await server.snapshot()).windows.one({
+  id: window.id,
+  session: { is: { id: destination.id } },
+});
+await placement.unlink();
 ```
 
 #### `Window.removePlacement`
@@ -1732,16 +1757,35 @@ created.id;
 showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
 ```
 
+Read hooks set on this pane itself.
+
+```ts
+const hooks = await pane.showHooks();
+hooks.get("pane-title-changed")?.[0];
+```
+
 #### `Pane.setHook`
 
 ```ts
 setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
 ```
 
+Bind a tmux command to a pane-scoped hook.
+
+```ts
+await pane.setHook("pane-title-changed", "display-message 'title changed'");
+```
+
 #### `Pane.unsetHook`
 
 ```ts
 unsetHook(name: string): Promise<void>
+```
+
+Remove every command bound to a pane-scoped hook.
+
+```ts
+await pane.unsetHook("pane-title-changed");
 ```
 
 #### `Pane.showOptions`

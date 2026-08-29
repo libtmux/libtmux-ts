@@ -111,17 +111,36 @@ export class Pane {
     return sessionOf(originGraphForHandle(this), this.format.session_id);
   }
 
-  /** Read hooks set on this pane itself. */
+  /**
+   * Read hooks set on this pane itself.
+   *
+   * ```ts
+   * const hooks = await pane.showHooks();
+   * hooks.get("pane-title-changed")?.[0];
+   * ```
+   */
   showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
     return showHooks(runtimeForHandle(this), "pane", this.id);
   }
 
-  /** Bind a tmux command to a pane-scoped hook. */
+  /**
+   * Bind a tmux command to a pane-scoped hook.
+   *
+   * ```ts
+   * await pane.setHook("pane-title-changed", "display-message 'title changed'");
+   * ```
+   */
   setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
     return setHook(runtimeForHandle(this), "pane", this.id, name, command, options);
   }
 
-  /** Remove every command bound to a pane-scoped hook. */
+  /**
+   * Remove every command bound to a pane-scoped hook.
+   *
+   * ```ts
+   * await pane.unsetHook("pane-title-changed");
+   * ```
+   */
   unsetHook(name: string): Promise<void> {
     return unsetHook(runtimeForHandle(this), "pane", this.id, name);
   }

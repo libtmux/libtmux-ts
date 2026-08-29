@@ -156,17 +156,36 @@ export class Window {
     return linkedSessionsOfWindow(originGraphForHandle(this), this.id);
   }
 
-  /** Read hooks set on this window itself. */
+  /**
+   * Read hooks set on this window itself.
+   *
+   * ```ts
+   * const hooks = await window.showHooks();
+   * hooks.get("window-renamed")?.[0];
+   * ```
+   */
   showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
     return showHooks(runtimeForHandle(this), "window", this.id);
   }
 
-  /** Bind a tmux command to a window-scoped hook. */
+  /**
+   * Bind a tmux command to a window-scoped hook.
+   *
+   * ```ts
+   * await window.setHook("window-renamed", "display-message 'renamed'");
+   * ```
+   */
   setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
     return setHook(runtimeForHandle(this), "window", this.id, name, command, options);
   }
 
-  /** Remove every command bound to a window-scoped hook. */
+  /**
+   * Remove every command bound to a window-scoped hook.
+   *
+   * ```ts
+   * await window.unsetHook("window-renamed");
+   * ```
+   */
   unsetHook(name: string): Promise<void> {
     return unsetHook(runtimeForHandle(this), "window", this.id, name);
   }
@@ -380,7 +399,13 @@ export class Window {
    * unlinking.
    *
    * ```ts
-   * await window.unlink();
+   * const destination = await server.newSession({ name: "unlink-example" });
+   * await window.link({ session: destination.id });
+   * const placement = (await server.snapshot()).windows.one({
+   *   id: window.id,
+   *   session: { is: { id: destination.id } },
+   * });
+   * await placement.unlink();
    * ```
    */
   unlink(): Promise<void> {
