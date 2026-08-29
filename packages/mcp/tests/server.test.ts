@@ -66,6 +66,21 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
+async function waitUntil(
+  predicate: () => boolean | Promise<boolean>,
+  failure: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop -- bounded polling observes an external process.
+    if (await predicate()) return;
+    // eslint-disable-next-line no-await-in-loop -- each pause follows one observation.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(failure);
+}
+
 /** Text content from a tool result. */
 function toolText(result: unknown): string {
   const { content } = result as { content: readonly { text?: string }[] };
@@ -1992,17 +2007,38 @@ describe("staying out of the way", () => {
         // Browsing is what starts the watch: a server nobody browses holds no
         // connection for this.
         await client.listResources();
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        const controlSessions = async (): Promise<string[]> =>
+          (
+            await fixture.executeText([
+              "list-clients",
+              "-F",
+              "#{client_control_mode}\t#{session_id}",
+            ])
+          ).stdout
+            .filter((line) => line.startsWith("1\t"))
+            .map((line) => line.slice(2));
+        await waitUntil(
+          async () => (await controlSessions()).includes(fixture.sessionId),
+          "topology listener did not attach to the fixture session",
+        );
         notices = 0;
 
         // Not through this server. A person in a terminal, or another agent on
         // the same tmux server, changes the list too — and a client that
         // believes listChanged refreshes only on notice.
-        const beforeSplit = await tmux.snapshot();
-        const session = beforeSplit.sessions.one();
-        const split = await beforeSplit.panes.one().split({ shellCommand: "cat" });
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
-        expect(notices).toBeGreaterThan(0);
+        const remote = await tmux.newSession({ name: "made-elsewhere", shellCommand: "cat" });
+        await waitUntil(() => notices > 0, "new external session was not announced");
+        await waitUntil(
+          async () => (await controlSessions()).includes(remote.id),
+          "topology listener did not attach to the external session",
+        );
+        notices = 0;
+
+        const remotePane = (await tmux.snapshot()).panes.one({
+          session: { is: { id: remote.id } },
+        });
+        const split = await remotePane.split({ shellCommand: "cat" });
+        await waitUntil(() => notices > 0, "external pane split was not announced");
         const withSplit = (await client.listResources()).resources.map(({ uri }) => uri);
         const splitUri = `tmux://panes/${encodeURIComponent(split.id)}`;
         expect(withSplit).toContain(splitUri);
@@ -2010,30 +2046,37 @@ describe("staying out of the way", () => {
 
         notices = 0;
         await split.kill();
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
-        expect(notices).toBeGreaterThan(0);
+        await waitUntil(() => notices > 0, "external pane removal was not announced");
         const withoutSplit = (await client.listResources()).resources.map(({ uri }) => uri);
         expect(withoutSplit).not.toContain(splitUri);
         expect(withoutSplit).not.toContain(`${splitUri}/content`);
 
-        const control = (
+        const controls = (
           await fixture.executeText([
             "list-clients",
             "-F",
             "#{client_name}\t#{client_control_mode}",
           ])
-        ).stdout.find((line) => line.endsWith("\t1"));
-        if (control === undefined) throw new Error("No topology control client");
-        await fixture.executeText(["detach-client", "-t", control.slice(0, control.indexOf("\t"))]);
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        ).stdout.filter((line) => line.endsWith("\t1"));
+        if (controls.length === 0) throw new Error("No topology control client");
+        for (const control of controls) {
+          // eslint-disable-next-line no-await-in-loop -- each identified client must be detached.
+          await fixture.executeText(["detach-client", "-t", control.slice(0, control.indexOf("\t"))]);
+        }
 
         // Losing the listener announces uncertainty, then reconnects without a
         // client request: a cached client has no reason to list again first.
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        await waitUntil(() => notices > 0, "lost topology listeners were not announced");
+        await waitUntil(
+          async () => {
+            const sessions = await controlSessions();
+            return sessions.includes(fixture.sessionId) && sessions.includes(remote.id);
+          },
+          "topology listeners did not recover across both sessions",
+        );
         notices = 0;
-        await session.newWindow({ name: "made-after-reconnect" });
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
-        expect(notices).toBeGreaterThan(0);
+        await remote.newWindow({ name: "made-after-reconnect" });
+        await waitUntil(() => notices > 0, "change after listener recovery was not announced");
       });
     });
   }, 60_000);
