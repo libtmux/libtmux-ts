@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { executeGuardedListGroup } from "../../src/_internal/codec/guard_codec.js";
-import { acquireServerGraph } from "../../src/_internal/operations/acquire.js";
+import { acquireServerGraph, daemonIdentityOf } from "../../src/_internal/operations/acquire.js";
 import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import type { RuntimeContext } from "../../src/_internal/runtime/context.js";
@@ -72,6 +72,22 @@ async function withServer(body: (server: TestServer) => Promise<void>): Promise<
 }
 
 describe("server graph acquisition", () => {
+  test("requires one complete daemon identity across every captured row", () => {
+    const daemon = { pid: "101", start_time: "202" };
+
+    expect(daemonIdentityOf([[], []])).toBeUndefined();
+    expect(daemonIdentityOf([[daemon], [daemon]])).toEqual({ pid: "101", startTime: "202" });
+    for (const rows of [
+      [[{ pid: "101", start_time: null }]],
+      [[{ pid: null, start_time: "202" }]],
+      [[{ pid: null, start_time: null }]],
+      [[daemon], [{ pid: "303", start_time: "202" }]],
+      [[daemon, { pid: "101", start_time: "404" }]],
+    ]) {
+      expect(() => daemonIdentityOf(rows)).toThrow(/daemon identity/u);
+    }
+  });
+
   test("builds the whole session, window, and pane graph", async () => {
     await withServer(async (server) => {
       await server.executeText(["new-window", "-d", "-t", server.sessionName, "-n", "editor"]);

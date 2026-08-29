@@ -1,5 +1,9 @@
 import type { RawCompleteFormatRow } from "../codec/schemas.js";
-import { executeGuardedListGroup, type GuardedListing } from "../codec/guard_codec.js";
+import {
+  executeGuardedListGroup,
+  FormatProtocolError,
+  type GuardedListing,
+} from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
 import {
@@ -31,13 +35,27 @@ export const ACQUISITION_LISTINGS: readonly GuardedListing[] = Object.freeze([
  * then there is nothing to compare — which is correct: an empty server has
  * handed out no handles to invalidate.
  */
-function daemonOf(rows: readonly (readonly RawCompleteFormatRow[])[]): DaemonIdentity | undefined {
+type DaemonRow = Readonly<Pick<RawCompleteFormatRow, "pid" | "start_time">>;
+
+export function daemonIdentityOf(
+  rows: readonly (readonly DaemonRow[])[],
+): DaemonIdentity | undefined {
+  let daemon: DaemonIdentity | undefined;
   for (const set of rows) {
-    const row = set[0];
-    if (row?.pid == null || row.start_time == null) continue;
-    return Object.freeze({ pid: row.pid, startTime: row.start_time });
+    for (const row of set) {
+      if (row.pid == null || row.start_time == null) {
+        throw new FormatProtocolError("captured row has an incomplete daemon identity");
+      }
+      if (daemon === undefined) {
+        daemon = Object.freeze({ pid: row.pid, startTime: row.start_time });
+        continue;
+      }
+      if (daemon.pid !== row.pid || daemon.startTime !== row.start_time) {
+        throw new FormatProtocolError("captured rows disagree on daemon identity");
+      }
+    }
   }
-  return undefined;
+  return daemon;
 }
 
 /**
@@ -82,7 +100,7 @@ export async function acquireServerGraph(
   // noticing it here is what keeps a handle from the previous one from
   // resolving against its successor. Invalidating the epoch is what enforces
   // that: every graph captured under the old epoch stops validating.
-  const daemon = daemonOf([sessions, windows, panes, clients]);
+  const daemon = daemonIdentityOf([sessions, windows, panes, clients]);
   if (daemon !== undefined && observeDaemonIdentity(runtime, daemon).restarted && !afterRestart) {
     return acquireServerGraph(runtime, true);
   }
