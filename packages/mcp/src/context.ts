@@ -23,12 +23,24 @@ export interface ToolContext {
   snapshot(): Promise<ServerSnapshot>;
   readonly tmux: Server;
   /**
-   * Say that this call changed which sessions, windows or panes exist.
+   * Say that this call may have changed the resource catalog's topology.
    *
-   * Called from the success path of every tool that adds, removes or renames
-   * one. Coalesced by the notifier, so calling it freely is the point.
+   * Called once after each structural mutation attempt. Coalesced by the
+   * notifier, so calling it freely is the point.
    */
   topologyChanged(): void;
+}
+
+/** Notify even when tmux may have applied a mutation before rejecting its result. */
+export async function runTopologyMutation<T>(
+  context: Pick<ToolContext, "topologyChanged">,
+  mutation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await mutation();
+  } finally {
+    context.topologyChanged();
+  }
 }
 
 /**

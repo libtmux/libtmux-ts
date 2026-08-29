@@ -19,6 +19,9 @@ const CASES = [
   ["split_pane", registerLifecycle, { paneId: "%1" }],
   ["rename_session", registerLifecycle, { name: "renamed", session: "$1" }],
   ["rename_window", registerLifecycle, { name: "renamed", windowId: "@1" }],
+  ["kill_pane", registerLifecycle, { force: true, paneId: "%1" }],
+  ["kill_window", registerLifecycle, { force: true, windowId: "@1" }],
+  ["kill_session", registerLifecycle, { force: true, session: "$1" }],
   ["move_window", registerLayout, { windowId: "@1" }],
   ["move_pane", registerLayout, { paneId: "%1" }],
   ["swap_window", registerLayout, { otherWindowId: "@2", windowId: "@1" }],
@@ -83,12 +86,15 @@ function failingReadBackFixture(name: string) {
   const failure = new Error("post-mutation boundary failed");
   const mutate = async <T>(value: T): Promise<T> => {
     mutations += 1;
-    if (name === "build_workspace") throw failure;
+    if (name === "new_session" || name.startsWith("kill_") || name === "build_workspace") {
+      throw failure;
+    }
     return value;
   };
 
   const session = {
     id: "$1",
+    kill: () => mutate(undefined),
     name: "work",
     newWindow: () => mutate(windowOne),
     rename: () => mutate(undefined),
@@ -97,6 +103,7 @@ function failingReadBackFixture(name: string) {
     format: { session_id: "$1", window_index: "0" },
     id: "@1",
     index: 0,
+    kill: () => mutate(undefined),
     move: () => mutate(undefined),
     name: "one",
     rename: () => mutate(undefined),
@@ -116,6 +123,7 @@ function failingReadBackFixture(name: string) {
     currentPath: "/workspace",
     format: { session_id: "$1", window_id: "@1", window_index: "0" },
     id: "%1",
+    kill: () => mutate(undefined),
     session,
     split: () => mutate(createdPane),
     window: windowOne,
@@ -148,7 +156,7 @@ function failingReadBackFixture(name: string) {
   };
 }
 
-test.each(CASES)("%s loses invalidation when read-back fails", async (name, register, args) => {
+test.each(CASES)("%s invalidates topology when read-back fails", async (name, register, args) => {
   const fixture = failingReadBackFixture(name);
   const handler = handlerFor(name, register, fixture.context);
 
@@ -156,7 +164,7 @@ test.each(CASES)("%s loses invalidation when read-back fails", async (name, regi
 
   expect(answer).toBe(fixture.failure);
   expect(fixture.mutations()).toBe(1);
-  expect(() => expect(fixture.topologyChanges()).toBe(1)).toThrow();
+  expect(fixture.topologyChanges()).toBe(1);
 });
 
 test("a failed preflight does not invalidate topology", async () => {

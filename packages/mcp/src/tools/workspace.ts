@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { TmuxCommandError, type PlannedOperation } from "libtmux";
 
-import type { ToolContext } from "../context.js";
+import { runTopologyMutation, type ToolContext } from "../context.js";
 import {
   effectiveResultLines,
   MAX_INLINE_REQUEST_BYTES,
@@ -186,30 +186,29 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
       const [first, ...rest] = windows;
       if (first === undefined) return fail({ reason: "windows must not be empty." });
 
-      const created = await context.tmux.newSession({
-        name: session,
-        windowName: first.name,
-        ...(first.shellCommand === undefined ? {} : { shellCommand: first.shellCommand }),
-        ...directoryOption(first.startDirectory, startDirectory),
-      });
+      const { created, failure } = await runTopologyMutation(context, async () => {
+        const made = await context.tmux.newSession({
+          name: session,
+          windowName: first.name,
+          ...(first.shellCommand === undefined ? {} : { shellCommand: first.shellCommand }),
+          ...directoryOption(first.startDirectory, startDirectory),
+        });
 
-      const plans = rest.map((window) =>
-        created.plan.newWindow({
-          name: window.name,
-          ...(window.shellCommand === undefined ? {} : { shellCommand: window.shellCommand }),
-          ...directoryOption(window.startDirectory, startDirectory),
-        }),
-      );
-      let failure: WorkspaceFailure | null = null;
-      try {
-        if (plans.length > 0) await context.tmux.batch(plans);
-      } catch (error) {
-        failure = failedWindow(error, plans, windows);
-      } finally {
-        // The session and any commands before a batch failure already changed
-        // topology, so live tails must be invalidated on both result paths.
-        context.topologyChanged();
-      }
+        const plans = rest.map((window) =>
+          made.plan.newWindow({
+            name: window.name,
+            ...(window.shellCommand === undefined ? {} : { shellCommand: window.shellCommand }),
+            ...directoryOption(window.startDirectory, startDirectory),
+          }),
+        );
+        let failure: WorkspaceFailure | null = null;
+        try {
+          if (plans.length > 0) await context.tmux.batch(plans);
+        } catch (error) {
+          failure = failedWindow(error, plans, windows);
+        }
+        return { created: made, failure };
+      });
 
       const after = await context.snapshot();
       const identity = await context.identity(after);

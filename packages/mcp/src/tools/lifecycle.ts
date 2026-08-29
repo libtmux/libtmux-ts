@@ -13,7 +13,7 @@ import type { ServerSnapshot } from "libtmux";
 import { PaneDirection } from "libtmux/constants";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "../caller.js";
-import type { ToolContext } from "../context.js";
+import { runTopologyMutation, type ToolContext } from "../context.js";
 import { MAX_INLINE_REQUEST_BYTES } from "../policy.js";
 import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
@@ -116,18 +116,19 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       title: "New session",
     },
     async ({ height, name, shellCommand, startDirectory, width, windowName }) => {
-      const session = await context.tmux.newSession({
-        ...(name === undefined ? {} : { name }),
-        ...(shellCommand === undefined ? {} : { shellCommand }),
-        ...(startDirectory === undefined ? {} : { startDirectory }),
-        ...(width === undefined ? {} : { width }),
-        ...(height === undefined ? {} : { height }),
-        ...(windowName === undefined ? {} : { windowName }),
-      });
+      const session = await runTopologyMutation(context, () =>
+        context.tmux.newSession({
+          ...(name === undefined ? {} : { name }),
+          ...(shellCommand === undefined ? {} : { shellCommand }),
+          ...(startDirectory === undefined ? {} : { startDirectory }),
+          ...(width === undefined ? {} : { width }),
+          ...(height === undefined ? {} : { height }),
+          ...(windowName === undefined ? {} : { windowName }),
+        }),
+      );
       const snapshot = await context.snapshot();
       const pane = snapshot.panes.first({ session: { is: { id: session.id } } });
       if (pane === undefined) {
-        context.topologyChanged();
         return fail({
           hint: "Use a command that stays running, or omit shellCommand to start a shell.",
           reason: `Session ${session.id} ended before its first pane could be read.`,
@@ -137,7 +138,6 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         session,
         snapshot.windows.count({ session: { is: { id: session.id } } }),
       );
-      context.topologyChanged();
       return ok(
         { paneId: pane.id, session: view, windowId: pane.format.window_id },
         `Created ${view.name} (${view.id}); its pane is ${pane.id}.` +
@@ -172,22 +172,22 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const found = requireSession(snapshot, session);
       if (isFailure(found)) return found;
-      const window = await found.newWindow({
-        ...(name === undefined ? {} : { name }),
-        ...(shellCommand === undefined ? {} : { shellCommand }),
-        ...(startDirectory === undefined ? {} : { startDirectory }),
-      });
+      const window = await runTopologyMutation(context, () =>
+        found.newWindow({
+          ...(name === undefined ? {} : { name }),
+          ...(shellCommand === undefined ? {} : { shellCommand }),
+          ...(startDirectory === undefined ? {} : { startDirectory }),
+        }),
+      );
       const after = await context.snapshot();
       const pane = after.panes.first({ window: { is: { id: window.id } } });
       if (pane === undefined) {
-        context.topologyChanged();
         return fail({
           hint: "Use a command that stays running, or omit shellCommand to start a shell.",
           reason: `Window ${window.id} ended before its first pane could be read.`,
         });
       }
       const view = windowView(window, windowPlacements(after, window.id));
-      context.topologyChanged();
       return ok(
         { paneId: pane.id, window: view },
         `${windowLine(view)}; its pane is ${pane.id}.` +
@@ -234,15 +234,16 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       // reads as "keep working here", so the source pane's directory is the
       // default; naming one still overrides it.
       const inherited = startDirectory ?? pane.currentPath ?? undefined;
-      const created = await pane.split({
-        ...(direction === undefined ? {} : { direction: DIRECTIONS[direction] }),
-        ...(shellCommand === undefined ? {} : { shellCommand }),
-        ...(inherited === undefined ? {} : { startDirectory: inherited }),
-      });
+      const created = await runTopologyMutation(context, () =>
+        pane.split({
+          ...(direction === undefined ? {} : { direction: DIRECTIONS[direction] }),
+          ...(shellCommand === undefined ? {} : { shellCommand }),
+          ...(inherited === undefined ? {} : { startDirectory: inherited }),
+        }),
+      );
       const after = await context.snapshot();
       const view = projectPane(after, created.id, await context.identity(after));
       if (isFailure(view)) return view;
-      context.topologyChanged();
       return ok({ pane: view }, paneLine(view) + directoryNote(startDirectory, view.cwd));
     },
   );
@@ -260,13 +261,12 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const found = requireSession(snapshot, session);
       if (isFailure(found)) return found;
-      await found.rename(name);
+      await runTopologyMutation(context, () => found.rename(name));
       const after = await context.snapshot();
       const view = sessionView(
         after.sessions.one({ id: found.id }),
         after.windows.count({ session: { is: { id: found.id } } }),
       );
-      context.topologyChanged();
       return ok({ session: view }, `Renamed ${found.id} to ${name}.`);
     },
   );
@@ -284,10 +284,9 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const window = requireWindow(snapshot, windowId);
       if (isFailure(window)) return window;
-      await window.rename(name);
+      await runTopologyMutation(context, () => window.rename(name));
       const view = projectWindow(await context.snapshot(), windowId);
       if (isFailure(view)) return view;
-      context.topologyChanged();
       return ok({ window: view }, windowLine(view));
     },
   );
@@ -369,8 +368,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       // the refusal for a pane somebody else is watching.
       const guard = guardDestructive(identity, paneId, force);
       if (guard !== undefined) return guard;
-      await pane.kill();
-      context.topologyChanged();
+      await runTopologyMutation(context, () => pane.kill());
       return ok({ killed: paneId }, `Killed ${paneId}.`);
     },
   );
@@ -396,8 +394,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
       }
-      await window.kill();
-      context.topologyChanged();
+      await runTopologyMutation(context, () => window.kill());
       return ok({ killed: windowId }, `Killed ${windowId} and its ${String(inside.length)} panes.`);
     },
   );
@@ -424,8 +421,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
       }
-      await found.kill();
-      context.topologyChanged();
+      await runTopologyMutation(context, () => found.kill());
       return ok(
         { killed: found.id },
         `Killed session ${found.id}. Windows and panes shared with other sessions remain there.`,

@@ -13,7 +13,7 @@ import type { Pane, ServerSnapshot } from "libtmux";
 import { ResizeAdjustmentDirection } from "libtmux/constants";
 
 import type { CallerIdentity } from "../caller.js";
-import type { ToolContext } from "../context.js";
+import { runTopologyMutation, type ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
 import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
 import { fail, ok } from "../results.js";
@@ -293,13 +293,14 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         if (isFailure(found)) return found;
         destination = found.id;
       }
-      await window.move({
-        ...(index === undefined ? {} : { index }),
-        ...(destination === undefined ? {} : { session: destination }),
-      });
+      await runTopologyMutation(context, () =>
+        window.move({
+          ...(index === undefined ? {} : { index }),
+          ...(destination === undefined ? {} : { session: destination }),
+        }),
+      );
       const view = projectWindow(await context.snapshot(), windowId);
       if (isFailure(view)) return view;
-      context.topologyChanged();
       return ok({ window: view }, windowLine(view));
     },
   );
@@ -381,17 +382,18 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
             ? requirePanePlacement(snapshot, paneId, sourcePlacement(sourceSession, sourceIndex))
             : requirePane(snapshot, paneId);
         if (isFailure(pane)) return pane;
-        if (windowId === undefined) {
-          await pane.breakOut(windowName);
-        } else {
-          const window = requireWindow(snapshot, windowId);
-          if (isFailure(window)) return window;
-          await pane.joinTo(window.id, vertical === undefined ? {} : { vertical });
-        }
+        const destination = windowId === undefined ? undefined : requireWindow(snapshot, windowId);
+        if (isFailure(destination)) return destination;
+        await runTopologyMutation(context, async () => {
+          if (destination === undefined) {
+            await pane.breakOut(windowName);
+          } else {
+            await pane.joinTo(destination.id, vertical === undefined ? {} : { vertical });
+          }
+        });
         const after = await context.snapshot();
         const view = projectPane(after, paneId, await context.identity(after));
         if (isFailure(view)) return view;
-        context.topologyChanged();
         return ok({ pane: view }, paneLine(view));
       },
     );
@@ -441,14 +443,13 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         sourcePlacement(otherSourceSession, otherSourceIndex),
       );
       if (isFailure(other)) return other;
-      await window.swapWith(other);
+      await runTopologyMutation(context, () => window.swapWith(other));
       const after = await context.snapshot();
       const firstView = projectWindow(after, windowId);
       if (isFailure(firstView)) return firstView;
       const otherView = projectWindow(after, otherWindowId);
       if (isFailure(otherView)) return otherView;
       const views = [firstView, otherView];
-      context.topologyChanged();
       const bounded = limitViews(
         views,
         effectiveResultLines(context.policy, undefined),
