@@ -7,6 +7,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { TmuxCommandError } from "libtmux";
 import { z } from "zod";
 
 import { requireLiveCursor, type ToolContext } from "../context.js";
@@ -458,6 +459,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           }),
         ),
         matchesTruncated: z.boolean(),
+        panesFailed: z.number().int(),
         panesSearched: z.number().int(),
         scrollbackClamped: z.boolean(),
       },
@@ -490,6 +492,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       }[] = [];
       let capturesByteClamped = false;
       let matchesTruncated = false;
+      let panesFailed = 0;
       let panesSearched = 0;
       let structuredBytes = 2;
       let textBytes = 0;
@@ -510,24 +513,34 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             rowLimit === 0
               ? { clamped: true, end: undefined, start: undefined }
               : boundedCaptureRange(pane.height, start, undefined, rowLimit);
-          return {
-            byteClamped: rowLimit === 0 || range.clamped,
-            lines:
+          try {
+            const lines =
               rowLimit === 0
                 ? []
-                : await pane
-                    .capture({
-                      ...(range.end === undefined ? {} : { end: range.end }),
-                      ...(range.start === undefined ? {} : { start: range.start }),
-                    })
-                    .catch(() => []),
-            pane,
-            placements: panePlacements(snapshot, pane.id).map(panePlacementView),
-          };
+                : await pane.capture({
+                    ...(range.end === undefined ? {} : { end: range.end }),
+                    ...(range.start === undefined ? {} : { start: range.start }),
+                  });
+            return {
+              byteClamped: rowLimit === 0 || range.clamped,
+              captured: true as const,
+              lines,
+              pane,
+              placements: panePlacements(snapshot, pane.id).map(panePlacementView),
+            };
+          } catch (error) {
+            if (!(error instanceof TmuxCommandError) || error.target !== pane.id) throw error;
+            return { captured: false as const };
+          }
         });
-        panesSearched += captures.length;
 
-        for (const { byteClamped, lines, pane, placements } of captures) {
+        for (const capture of captures) {
+          if (!capture.captured) {
+            panesFailed += 1;
+            continue;
+          }
+          panesSearched += 1;
+          const { byteClamped, lines, pane, placements } = capture;
           capturesByteClamped ||= byteClamped;
           let foundForPane = 0;
           for (const [index, line] of lines.entries()) {
@@ -574,6 +587,16 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         }
       }
 
+      if (panesFailed > 0 && panesSearched === 0) {
+        return fail({
+          hint: "Refresh the pane list and retry search_panes.",
+          reason:
+            panesFailed === 1
+              ? "No pane could be searched because its capture failed."
+              : `No pane could be searched because all ${String(panesFailed)} captures failed.`,
+        });
+      }
+
       const answer =
         matches.length === 0
           ? matchesTruncated
@@ -592,6 +615,11 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           ? [`[scrollbackLines clamped to ${String(effectiveScrollback)}]`]
           : []),
         ...(capturesByteClamped ? ["[pane captures shortened to fit the byte ceiling]"] : []),
+        ...(panesFailed === 0
+          ? []
+          : [
+              `[${String(panesFailed)} pane capture${panesFailed === 1 ? "" : "s"} failed; those panes were not searched]`,
+            ]),
         ...(matchesTruncated ? [`[matches truncated at ${String(resultLimit)} lines]`] : []),
       ];
       return ok(
@@ -600,6 +628,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           effectiveScrollbackLines: effectiveScrollback,
           matches,
           matchesTruncated,
+          panesFailed,
           panesSearched,
           scrollbackClamped,
         },

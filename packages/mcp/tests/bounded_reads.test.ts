@@ -29,7 +29,13 @@ import {
   requestTextArray,
 } from "../src/schemas.js";
 import type { ToolContext } from "../src/context.js";
-import type { Pane, ServerSnapshot } from "libtmux";
+import {
+  TmuxCommandError,
+  TmuxServerRestarted,
+  TmuxTransportError,
+  type Pane,
+  type ServerSnapshot,
+} from "libtmux";
 
 interface FakePaneOptions {
   readonly capture?: (options: {
@@ -64,6 +70,15 @@ function fakePane({
     width,
     window: { name: "window" },
   } as unknown as Pane;
+}
+
+function commandFailure(target: string, diagnostic: string): TmuxCommandError {
+  return new TmuxCommandError({
+    args: ["capture-pane", "-p", "-t", target],
+    exitCode: 1,
+    stderr: [diagnostic],
+    target,
+  });
 }
 
 function fakeSelection<T extends { readonly id: string }>(items: readonly T[]): unknown {
@@ -624,6 +639,91 @@ describe("search_panes", () => {
         expect(result.matches.map((match) => match.paneId)).toEqual(["%1", "%2"]);
       },
     );
+  });
+
+  test("separates a vanished pane from panes it searched", async () => {
+    const staleDiagnostic = "stale pane diagnostic must stay private";
+    const panes = [
+      fakePane({ capture: async () => ["needle"], id: "%1" }),
+      fakePane({
+        capture: async () => {
+          throw commandFailure("%2", staleDiagnostic);
+        },
+        id: "%2",
+      }),
+    ];
+
+    await withTools(fakeContext(panes), registerCapture, async (client) => {
+      const answer = await client.callTool({
+        arguments: { pattern: "needle" },
+        name: "search_panes",
+      });
+      const result = structured<{
+        readonly matches: readonly { readonly paneId: string }[];
+        readonly panesFailed: number;
+        readonly panesSearched: number;
+      }>(answer);
+
+      expect(answer.isError ?? false).toBe(false);
+      expect(result).toMatchObject({ panesFailed: 1, panesSearched: 1 });
+      expect(result.matches.map(({ paneId }) => paneId)).toEqual(["%1"]);
+      expect(text(answer)).toContain("1 pane capture failed");
+      expect(text(answer)).not.toContain(staleDiagnostic);
+      expect(text(answer)).not.toContain("%2");
+    });
+  });
+
+  test("fails when no attempted pane can be searched", async () => {
+    const diagnostic = "all stale diagnostic must stay private";
+    const pane = fakePane({
+      capture: async () => {
+        throw commandFailure("%1", diagnostic);
+      },
+      id: "%1",
+    });
+
+    await withTools(fakeContext([pane]), registerCapture, async (client) => {
+      const answer = await client.callTool({
+        arguments: { pattern: "needle" },
+        name: "search_panes",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(answer).not.toHaveProperty("structuredContent");
+      expect(text(answer)).toContain("No pane could be searched");
+      expect(text(answer)).not.toContain(diagnostic);
+      expect(text(answer)).not.toContain("%1");
+    });
+  });
+
+  test.each([
+    ["a command error for another target", commandFailure("%9", "wrong target")],
+    [
+      "a transport error",
+      new TmuxTransportError("transport failed", {
+        delivery: "not_started",
+        kind: "spawn",
+      }),
+    ],
+    ["a server restart", new TmuxServerRestarted("server restarted")],
+    ["an unknown error", new Error("unexpected capture failure")],
+  ])("propagates %s", async (_label, failure) => {
+    const pane = fakePane({
+      capture: async () => {
+        throw failure;
+      },
+      id: "%1",
+    });
+
+    await withTools(fakeContext([pane]), registerCapture, async (client) => {
+      const answer = await client.callTool({
+        arguments: { pattern: "needle" },
+        name: "search_panes",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(answer).not.toHaveProperty("structuredContent");
+    });
   });
 
   test("runs no more than eight captures at once", async () => {
