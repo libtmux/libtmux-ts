@@ -1281,11 +1281,16 @@ published types cannot start requiring either without the gate saying so.
 
 ## Entrypoints
 
-The root export carries everything. Each model is also its own subpath for a
-consumer that wants to name one: `libtmux/server`, `libtmux/session`,
-`libtmux/window`, `libtmux/pane`, `libtmux/client`, and `libtmux/selection`,
-plus `libtmux/formats`, `libtmux/constants`, `libtmux/common`, and
-`libtmux/exc`.
+The root export carries the everyday handle, query, operation, error, and
+constant surface. Each model is also its own subpath: `libtmux/server`,
+`libtmux/session`, `libtmux/window`, `libtmux/pane`, `libtmux/client`, and
+`libtmux/selection`. Supporting subpaths are `libtmux/formats`,
+`libtmux/constants`, `libtmux/common`, and `libtmux/exc`.
+
+Three specialist subpaths keep their complete contracts out of the root:
+`libtmux/engine` for custom execution engines, `libtmux/types` for the full
+operation and event type inventory, and `libtmux/field-types` for generated
+format-field, decoded-value, and handle-alias types.
 
 ## tmux versions
 

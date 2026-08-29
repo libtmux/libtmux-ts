@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { readApiSurface, type ApiClass } from "./api_surface.js";
+import { readApiSurface, type ApiClass, type Member } from "./api_surface.js";
 import { slugify } from "./markdown_anchors.js";
 import { packageRoot } from "./package_root.js";
 
@@ -26,17 +26,32 @@ function anchorFor(className: string, member: string): string {
   return slugify(`${className}.${member}`);
 }
 
+interface MemberGroup {
+  readonly members: readonly Member[];
+  readonly name: string;
+}
+
+/** Keep overloads together so one documented member owns one stable anchor. */
+function groupMembers(members: readonly Member[]): readonly MemberGroup[] {
+  const grouped = new Map<string, Member[]>();
+  for (const member of members) {
+    const overloads = grouped.get(member.name);
+    if (overloads === undefined) grouped.set(member.name, [member]);
+    else overloads.push(member);
+  }
+  return [...grouped].map(([name, overloads]) => ({ members: overloads, name }));
+}
+
 function renderClass(entry: ApiClass): string {
   const lines: string[] = [`## ${entry.name}`, ""];
   if (entry.prose !== "") lines.push(entry.prose, "");
 
-  const properties = entry.members.filter((member) => member.kind !== "method");
-  const methods = entry.members.filter((member) => member.kind === "method");
-  if (entry.members.length > 0) {
+  const members = groupMembers(entry.members);
+  const properties = members.filter(({ members: [member] }) => member?.kind !== "method");
+  const methods = members.filter(({ members: [member] }) => member?.kind === "method");
+  if (members.length > 0) {
     lines.push(
-      entry.members
-        .map((member) => `[\`${member.name}\`](#${anchorFor(entry.name, member.name)})`)
-        .join(" · "),
+      members.map(({ name }) => `[\`${name}\`](#${anchorFor(entry.name, name)})`).join(" · "),
       "",
     );
   }
@@ -47,11 +62,15 @@ function renderClass(entry: ApiClass): string {
   ] as const) {
     if (group.length === 0) continue;
     lines.push(`### ${heading}`, "");
-    for (const member of group) {
-      lines.push(`#### \`${entry.name}.${member.name}\``, "");
-      lines.push("```ts", member.signature, "```", "");
-      if (member.prose !== "") lines.push(member.prose, "");
-      if (member.example !== undefined) lines.push("```ts", member.example, "```", "");
+    for (const memberGroup of group) {
+      lines.push(`#### \`${entry.name}.${memberGroup.name}\``, "");
+      for (const member of memberGroup.members) {
+        lines.push("```ts", member.signature, "```", "");
+        if (member.prose !== "") lines.push(member.prose, "");
+        if (member.example !== undefined) {
+          lines.push("```ts", member.example, "```", "");
+        }
+      }
     }
   }
   return lines.join("\n");

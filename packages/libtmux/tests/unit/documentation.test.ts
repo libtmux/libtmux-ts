@@ -81,3 +81,13 @@ describe("README coverage", () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe("generated API reference", () => {
+  test("gives every member one heading and anchor", async () => {
+    const api = await readFile(new URL("../../docs/api.md", import.meta.url), "utf8");
+    const headings = [...api.matchAll(/^#### `([^`]+)`$/gmu)].map((match) => match[1]!);
+    const duplicates = headings.filter((heading, index) => headings.indexOf(heading) !== index);
+
+    expect(duplicates).toEqual([]);
+  });
+});
