@@ -1,11 +1,22 @@
 import type { TmuxCommand, TmuxInvocationRequest } from "../../engine.js";
 import { TmuxTransportError } from "../../exc.js";
 
-/** The maximum argv tmux can pack into one client message. */
-export const MAX_PACKED_ARGV_BYTES = 16384;
+/**
+ * The most command bytes tmux will pack into one client message.
+ *
+ * The frame is 16384 bytes including a 16-byte header and the four-byte
+ * argument count, which leaves this. Measured rather than derived: a packed
+ * command of 16364 bytes is accepted by 3.2a and 3.7c alike, 16365 through
+ * 16380 report `failed to send command`, and more reports `command too long`.
+ *
+ * What counts is the command alone. tmux parses its own global flags and the
+ * executable is the process, so neither reaches the packed payload — charging
+ * a caller for a long socket path refused commands tmux would have run.
+ */
+export const MAX_PACKED_ARGV_BYTES = 16_364;
 
 /** What tmux counts: every argument plus its terminating NUL. */
-export function packedArgvBytes(argv: readonly string[]): number {
+function packedArgvBytes(argv: readonly string[]): number {
   let total = 0;
   for (const argument of argv) total += Buffer.byteLength(argument, "utf8") + 1;
   return total;
@@ -67,10 +78,20 @@ function flattenCommand(command: TmuxCommand): readonly string[] {
 /** Flatten a structured request while keeping literal and structural semicolons distinct. */
 export function flattenInvocation(request: TmuxInvocationRequest): readonly string[] {
   validateInvocation(request);
-  const argv = [...request.globalArgs];
-  for (const [index, command] of request.commands.entries()) {
+  return Object.freeze([...request.globalArgs, ...flattenCommands(request.commands)]);
+}
+
+/** The command portion, with the separators tmux packs between commands. */
+function flattenCommands(commands: TmuxInvocationRequest["commands"]): string[] {
+  const argv: string[] = [];
+  for (const [index, command] of commands.entries()) {
     if (index > 0) argv.push(";");
     argv.push(...flattenCommand(command));
   }
-  return Object.freeze(argv);
+  return argv;
+}
+
+/** What one invocation costs against {@link MAX_PACKED_ARGV_BYTES}. */
+export function packedCommandBytes(request: TmuxInvocationRequest): number {
+  return packedArgvBytes(flattenCommands(request.commands));
 }

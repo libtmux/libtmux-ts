@@ -545,7 +545,7 @@ declare const request: TmuxInvocationRequest;
 declare const abortLike: AbortLike;
 declare const paneIdentityRow: RowWithIdentities<"pane_id">;
 declare const decodedPaneId: DecodedFormatValue<"pane_id">;
-const exactPackedArgvLimit: 16384 = MAX_PACKED_ARGV_BYTES;
+const exactPackedArgvLimit: 16364 = MAX_PACKED_ARGV_BYTES;
 const daemonIdentityFromServer: ServerDaemonIdentity = daemonIdentity;
 const paneIdFromRequiredRow: PaneId = paneIdentityRow.pane_id;
 const paneIdFromDecoder: PaneId = decodedPaneId;

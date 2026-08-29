@@ -6,9 +6,8 @@ import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import {
-  flattenInvocation,
   MAX_PACKED_ARGV_BYTES,
-  packedArgvBytes,
+  packedCommandBytes,
 } from "../../src/_internal/transport/invocation.js";
 import { SUPPORTED_TMUX_VERSIONS } from "../support/tmux_matrix.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
@@ -23,7 +22,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
  */
 const REQUIRED_HEADROOM_BYTES = 3072;
 
-function acquisitionArgv(rawVersion: string): readonly string[] {
+function acquisitionRequest(rawVersion: string): ReturnType<typeof prepareInvocationRequest> {
   const capabilities = deriveTmuxCapabilities({
     connectionAlias: "budget" as ConnectionAlias,
     daemon: { pid: "101", startTime: "202" },
@@ -43,13 +42,13 @@ function acquisitionArgv(rawVersion: string): readonly string[] {
     }).prepare();
     return [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`];
   });
-  return flattenInvocation(prepareInvocationRequest(connection, commands));
+  return prepareInvocationRequest(connection, commands);
 }
 
 describe("acquisition argv budget", () => {
   test("one atomic acquisition fits what tmux packs an argv into, with room to grow", () => {
     const measured = SUPPORTED_TMUX_VERSIONS.map((version) => {
-      const packed = packedArgvBytes(["/usr/bin/tmux", ...acquisitionArgv(version)]);
+      const packed = packedCommandBytes(acquisitionRequest(version));
       return { fits: packed <= MAX_PACKED_ARGV_BYTES - REQUIRED_HEADROOM_BYTES, packed, version };
     });
 
@@ -70,5 +69,22 @@ describe("acquisition argv budget", () => {
     const request = new GuardCodec({ capabilities, listCommand: "list-panes" }).prepare();
     expect(request.guards.field).toHaveLength(1);
     expect(request.format).toContain(`#{q:pane_id}${request.guards.field}`);
+  });
+
+  test("charges what tmux packs, which is neither the executable nor the global flags", () => {
+    const near = new TmuxConnection({ executable: "/usr/bin/tmux", socketPath: "/tmp/ltx-a/s" });
+    const far = new TmuxConnection({
+      executable: "/a/much/longer/path/to/tmux",
+      socketPath: "/tmp/ltx-a-deliberately-much-longer-socket-directory/s",
+    });
+    const command = [["display-message", "-p", "x".repeat(64)]];
+    // tmux parses its own global flags and packs only the command, so neither
+    // the executable nor `-S` may consume a caller's budget.
+    expect(packedCommandBytes(prepareInvocationRequest(far, command))).toBe(
+      packedCommandBytes(prepareInvocationRequest(near, command)),
+    );
+    // Measured against real servers: a packed command of 16364 bytes is
+    // accepted by 3.2a and 3.7c alike, and 16365 fails.
+    expect(MAX_PACKED_ARGV_BYTES).toBe(16_364);
   });
 });

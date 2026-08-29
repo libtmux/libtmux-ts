@@ -147,14 +147,17 @@ export type TmuxEngine = {
 };
 
 /**
- * How much of one invocation a tmux client may hand the server.
+ * How much of one command a tmux client may hand the server.
  *
- * `client.c` packs the whole argv into a single imsg and refuses anything over
- * `MAX_IMSGSIZE`, which OpenBSD's imsg — and tmux's bundled copy — fix at 16KB.
+ * `client.c` packs the command into a single imsg, and OpenBSD's imsg — and
+ * tmux's bundled copy — fix the frame at 16KB. A 16-byte header and the
+ * four-byte argument count come out of that, leaving this for the command
+ * itself. Global flags and the executable are not packed and do not count.
+ *
  * It applies to engines that launch a tmux client with argv; an engine with a
  * different wire protocol must enforce that protocol's own bound.
  */
-export const MAX_PACKED_ARGV_BYTES: 16384 = MAX_PACKED_ARGV_BYTES_INTERNAL;
+export const MAX_PACKED_ARGV_BYTES: 16_364 = MAX_PACKED_ARGV_BYTES_INTERNAL;
 
 /** Flatten a validated request into the argv accepted by tmux. */
 export const flattenInvocation: (request: TmuxInvocationRequest) => readonly string[] =
