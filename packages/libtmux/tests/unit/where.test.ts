@@ -740,6 +740,15 @@ describe("regex criteria", () => {
 });
 
 describe("plain-data validation", () => {
+  test("rejects oversized keys before scoring or reporting them", () => {
+    const key = "x".repeat(100_000);
+    const error = expectInvalidQuery(() => compileWhere("session", { [key]: null }));
+
+    expect(error.path).toEqual([]);
+    expect(error.message).toContain("128 code units");
+    expect(error.message).not.toContain(key);
+  });
+
   test("rejects object-prototype keys at every recursive criteria position", () => {
     for (const key of ["__proto__", "constructor", "prototype"]) {
       const criterion = JSON.parse(`{${JSON.stringify(key)}:null}`) as unknown;

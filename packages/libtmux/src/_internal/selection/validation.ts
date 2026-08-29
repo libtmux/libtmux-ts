@@ -8,6 +8,7 @@ export interface ParseState {
   readonly path: (string | number)[];
 }
 
+const maximumCriteriaKeyLength = 128;
 export const maximumWhereDepth = 64;
 
 export function newParseState(): ParseState {
@@ -85,6 +86,12 @@ export function snapshotObject(value: unknown, state: ParseState): ReadonlyMap<s
       // A symbol key names nothing this vocabulary has, and a getter would run
       // caller code while the query is being read.
       if (typeof key !== "string") return invalidQuery(state, "expected only string keys");
+      if (key.length > maximumCriteriaKeyLength) {
+        return invalidQuery(
+          state,
+          `expected keys no longer than ${String(maximumCriteriaKeyLength)} code units`,
+        );
+      }
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
         return invalidQuery(state, `expected ${quoted(key)} to be a plain enumerable value`);
