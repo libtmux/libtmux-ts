@@ -1,5 +1,5 @@
 import { Client } from "../../src/client.js";
-import type { PaneId, PaneIdInput, SessionId, WindowId } from "../../src/common.js";
+import type { PaneId, PaneIdInput, SafeInteger, SessionId, WindowId } from "../../src/common.js";
 import { WHERE_RELATIONS_V1 } from "../../src/_generated/where_fields.js";
 import { Pane } from "../../src/pane.js";
 import { Session } from "../../src/session.js";
@@ -317,7 +317,7 @@ type _BooleanDomain = Expect<
   MutuallyAssignable<PaneWhere["active"], ExpectedScalarCriteria<boolean, "0" | "1">>
 >;
 type _NumberDomain = Expect<
-  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number, ExpectedRawNumber>>
+  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<SafeInteger, ExpectedRawNumber>>
 >;
 type _TimeDomain = Expect<
   MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date, ExpectedRawNumber>>
@@ -345,6 +345,12 @@ type _NumberRefusesNegativeZero = Expect<
 type _NumberTakesZero = Expect<Equal<"0" extends PaneWhere["pid"] ? true : false, true>>;
 type _NumberTakesPositive = Expect<Equal<"42" extends PaneWhere["pid"] ? true : false, true>>;
 type _NumberTakesNegative = Expect<Equal<"-42" extends PaneWhere["pid"] ? true : false, true>>;
+type _NumberRefusesBareNumber = Expect<
+  Equal<number extends PaneWhere["pid"] ? true : false, false>
+>;
+type _NumberTakesSafeInteger = Expect<
+  Equal<SafeInteger extends PaneWhere["pid"] ? true : false, true>
+>;
 type _FlagTakesItsText = Expect<Equal<"1" extends PaneWhere["active"] ? true : false, true>>;
 // A field tmux answers with text takes any of it, including text that looks
 // numeric — `%1` is an id, not a number.

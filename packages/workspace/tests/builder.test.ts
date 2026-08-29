@@ -484,7 +484,7 @@ windows:
         session: { is: { name: "focused" } },
       });
       expect(active.name).toBe("second");
-      expect(active.panes.one({ active: true }).index).toBe(1);
+      expect(Number(active.panes.one({ active: true }).index)).toBe(1);
     });
   }, 90_000);
 

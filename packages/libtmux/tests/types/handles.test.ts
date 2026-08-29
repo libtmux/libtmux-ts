@@ -47,6 +47,7 @@ import type {
   DaemonEpoch,
   LogicalRef,
   PaneId,
+  SafeInteger,
   SessionId,
   TmuxLogger,
   TmuxWarningSink,
@@ -151,12 +152,12 @@ type _WindowSnapshot = Expect<
 type _SessionAliases = Expect<
   Equal<Pick<Session, "id" | "name">, { readonly id: SessionId; readonly name: string | null }>
 >;
-// `window_index` is a number tmux guarantees on a listed row, so it decodes
-// without becoming nullable; `window_id` keeps its `@` and stays text.
+// `window_index` is guaranteed and authenticated before graph construction;
+// `window_id` keeps its `@` and stays text.
 type _WindowAliases = Expect<
   Equal<
     Pick<Window, "id" | "index" | "name">,
-    { readonly id: WindowId; readonly index: number; readonly name: string | null }
+    { readonly id: WindowId; readonly index: SafeInteger; readonly name: string | null }
   >
 >;
 type _PaneAliases = Expect<
@@ -178,9 +179,9 @@ type _PanePlacementIds = Expect<
 type _ClientSessionIsRelation = Expect<Equal<Client["session"], Session | undefined>>;
 type _ClientSessionScalar = Expect<Equal<Client["clientSession"], string | null>>;
 // tmux exposes both `pid` and `pane_pid`, so the pane keeps the longer name.
-// Both decode to a number; the text tmux sent stays on `format`.
-type _PanePid = Expect<Equal<Pane["panePid"], number | null>>;
-type _ServerPid = Expect<Equal<Pane["pid"], number | null>>;
+// Both decode to authenticated integers; the text stays on `format`.
+type _PanePid = Expect<Equal<Pane["panePid"], SafeInteger | null>>;
+type _ServerPid = Expect<Equal<Pane["pid"], SafeInteger | null>>;
 type _PaneRawPid = Expect<Equal<Pane["format"]["pane_pid"], string | null>>;
 type _PaneActive = Expect<Equal<Pane["active"], boolean | null>>;
 type _SessionCreated = Expect<Equal<Session["created"], Date | null>>;

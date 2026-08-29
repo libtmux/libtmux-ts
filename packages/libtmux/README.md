@@ -285,14 +285,14 @@ const configuredPane: PaneIdInput = "%0";
 ## Field values
 
 tmux has one wire type, and everything on it is text. A field whose shape this
-port knows is decoded on the way out, so a pid is a number, a flag is a boolean,
-and a timestamp is a `Date`:
+port knows is decoded on the way out, so a pid is an authenticated safe integer,
+a flag is a boolean, and a timestamp is a `Date`:
 
 ```ts
-pane.panePid; // number | null
+pane.panePid; // SafeInteger | null
 pane.active; // boolean | null
 session.created; // Date | null
-window.index; // number — an identity tmux always populates, so never null
+window.index; // SafeInteger — an identity tmux always populates
 ```
 
 Which fields those are comes from tmux's own `format.c`, and an integration test
@@ -314,10 +314,17 @@ names and text values; a decoded `WhereDocumentV1` restores camelCase criteria
 names. The same type therefore covers what you write and what comes back.
 
 ```ts
+import { safeInteger } from "libtmux";
+
 snapshot.panes.where({ active: true });
 snapshot.panes.where({ active: "1" }); // what a flag encodes to
 snapshot.panes.where({ pid: "2334787" }); // and a number
+snapshot.panes.where({ pid: safeInteger(process.pid) }); // a computed number
 ```
+
+`SafeInteger` keeps `NaN`, infinities, fractions, and unsafe integers out of
+typed criteria. Decoded numeric fields already carry the proof; authenticate a
+number from elsewhere with `safeInteger`, which throws when it is not exact.
 
 Invalid wire spellings remain type errors:
 
@@ -336,7 +343,7 @@ is. Say what it means:
 
 ```ts
 const fromConfig = process.argv[2] ?? "";
-snapshot.windows.where({ index: Number(fromConfig) });
+snapshot.windows.where({ index: safeInteger(Number(fromConfig)) });
 // Or ask about the characters rather than the value, which is what the
 // substring operators are for and why they stay plain strings.
 snapshot.windows.where({ index: { contains: fromConfig } });
@@ -364,7 +371,7 @@ const activeCount = panes.count({ active: true });
 const pids = panes
   .toArray()
   .map((pane) => pane.panePid)
-  .filter((pid): pid is number => pid !== null);
+  .filter((pid) => pid !== null);
 
 // Times arrive as Date.
 const created = snapshot.sessions.one({ name: "fields" }).created;

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 
 import { NoMatchError, QueryValidationError } from "../../src/exc.js";
+import { safeInteger } from "../../src/common.js";
 import { compileWhere } from "../../src/_internal/selection/compile.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import {
@@ -1907,9 +1908,11 @@ describe("typed criteria values", () => {
       harness.windows.projection,
     );
 
-    expect(windows.where({ index: 0 }).count()).toBe(windows.where({ index: "0" }).count());
-    expect(windows.where({ index: 0 }).count()).toBeGreaterThan(0);
-    expect(windows.where({ index: 99 }).count()).toBe(0);
+    expect(windows.where({ index: safeInteger(0) }).count()).toBe(
+      windows.where({ index: "0" }).count(),
+    );
+    expect(windows.where({ index: safeInteger(0) }).count()).toBeGreaterThan(0);
+    expect(windows.where({ index: safeInteger(99) }).count()).toBe(0);
   });
 
   test("refuses numbers that cannot be tmux integer text", async () => {

@@ -3,6 +3,7 @@ import type { AbortLike } from "./types.js";
 declare const tmuxIdBrand: unique symbol;
 declare const connectionAliasBrand: unique symbol;
 declare const daemonEpochBrand: unique symbol;
+declare const safeIntegerBrand: unique symbol;
 
 export type TmuxIdKind = "session" | "window" | "pane";
 
@@ -27,6 +28,32 @@ export type SessionIdInput = TmuxIdInput<"session">;
 export type WindowIdInput = TmuxIdInput<"window">;
 /** Raw pane-ID text or an authenticated pane ID. */
 export type PaneIdInput = TmuxIdInput<"pane">;
+
+/** A number authenticated as an exact JavaScript integer. */
+export type SafeInteger = number & { readonly [safeIntegerBrand]: "safe-integer" };
+
+/**
+ * Test whether a value is an exact JavaScript integer.
+ *
+ * ```ts
+ * if (isSafeInteger(value)) server.sessions.where({ attached: value });
+ * ```
+ */
+export function isSafeInteger(value: unknown): value is SafeInteger {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+/**
+ * Authenticate an exact JavaScript integer or throw.
+ *
+ * ```ts
+ * const pid = safeInteger(42);
+ * ```
+ */
+export function safeInteger(value: number): SafeInteger {
+  if (!isSafeInteger(value)) throw new TypeError("value must be a safe integer");
+  return value;
+}
 
 export type ConnectionAlias = string & { readonly [connectionAliasBrand]: "connection" };
 export type DaemonEpoch = number & { readonly [daemonEpochBrand]: "daemon" };

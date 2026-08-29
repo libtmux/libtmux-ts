@@ -140,7 +140,7 @@ function occurrenceCount(source: string, needle: string): number {
 /** The criteria type a field's domain calls for. */
 const criteriaTypeForDomain: Readonly<Record<string, string>> = {
   boolean: "ScalarCriteria<boolean, RawFlag>",
-  number: "ScalarCriteria<number, RawNumber>",
+  number: "ScalarCriteria<SafeInteger, RawNumber>",
   "pane-id": "ScalarCriteria<PaneIdInput, never>",
   "session-id": "ScalarCriteria<SessionIdInput, never>",
   string: "ScalarCriteria",
@@ -773,7 +773,7 @@ function renderPublicFieldTypesSource(
   return `${[
     GENERATED_BANNER,
     "",
-    'import type { PaneId, SessionId, WindowId } from "./common.js";',
+    'import type { PaneId, SafeInteger, SessionId, WindowId } from "./common.js";',
     "",
     fieldNamesSource.trimEnd(),
     "",
@@ -821,7 +821,7 @@ function renderPublicFieldTypesSource(
     '      : FormatValueTypes[Token] extends "window-id"',
     "        ? WindowId",
     '        : FormatValueTypes[Token] extends "number"',
-    "          ? number",
+    "          ? SafeInteger",
     '          : FormatValueTypes[Token] extends "boolean"',
     "            ? boolean",
     "            : Date",

@@ -9,7 +9,7 @@
 
 import { z } from "zod";
 
-import type { Client, Session, Window } from "libtmux";
+import { safeInteger, type Client, type Session, type Window } from "libtmux";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
 import { panePlacementIndex, windowPlacementIndex, type ReadablePane } from "./context.js";
@@ -104,9 +104,9 @@ export function paneView(
     command: no(pane.currentCommand, ""),
     cwd: no(pane.currentPath, ""),
     dead: no(pane.dead, false),
-    height: no(pane.height, 0),
+    height: no(pane.height, safeInteger(0)),
     id: pane.id,
-    index: no(pane.index, 0),
+    index: no(pane.index, safeInteger(0)),
     isAttended: isAttended(identity, pane.id),
     isCallerPane: isCallerPane(identity, pane.id),
     placements: placements.map((placement) => ({
@@ -115,7 +115,7 @@ export function paneView(
       sessionName: no(placement.session?.name, ""),
     })),
     title: no(pane.title, ""),
-    width: no(pane.width, 0),
+    width: no(pane.width, safeInteger(0)),
     windowId: pane.format.window_id,
     windowName: no(pane.window?.name, ""),
   };
@@ -123,7 +123,7 @@ export function paneView(
 
 export function sessionView(session: Session, windows: number): SessionView {
   return {
-    attachedClients: no(session.attached, 0),
+    attachedClients: no(session.attached, safeInteger(0)),
     id: session.id,
     name: no(session.name, ""),
     windows,
@@ -135,7 +135,7 @@ export function windowView(window: Window, placements: readonly Window[] = [wind
     id: window.id,
     layout: no(window.layout, ""),
     name: no(window.name, ""),
-    panes: no(window.windowPanes, 0),
+    panes: no(window.windowPanes, safeInteger(0)),
     placements: placements.map((placement) => ({
       active: no(placement.active, false),
       index: windowPlacementIndex(placement),

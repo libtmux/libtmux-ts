@@ -302,8 +302,10 @@ describe("linked and grouped placements", () => {
         });
         expect(selected.isError ?? false, toolText(selected)).toBe(false);
         expect(
-          (await tmux.snapshot()).sessions.one({ id: topology.originSessionId }).activeWindow
-            ?.index,
+          Number(
+            (await tmux.snapshot()).sessions.one({ id: topology.originSessionId }).activeWindow
+              ?.index,
+          ),
         ).toBe(11);
 
         const moved = await client.callTool({
@@ -320,14 +322,14 @@ describe("linked and grouped placements", () => {
         expect(
           snapshot.windows.exists({
             id: topology.sharedWindowId,
-            index: 7,
+            index: "7",
             session: { is: { id: topology.originSessionId } },
           }),
         ).toBe(true);
         expect(
           snapshot.windows.exists({
             id: topology.sharedWindowId,
-            index: 11,
+            index: "11",
             session: { is: { id: topology.originSessionId } },
           }),
         ).toBe(false);
@@ -348,14 +350,14 @@ describe("linked and grouped placements", () => {
         expect(
           snapshot.windows.exists({
             id: topology.sharedWindowId,
-            index: 0,
+            index: "0",
             session: { is: { id: topology.otherSessionId } },
           }),
         ).toBe(true);
         expect(
           snapshot.windows.exists({
             id: topology.otherWindowId,
-            index: 7,
+            index: "7",
             session: { is: { id: topology.originSessionId } },
           }),
         ).toBe(true);

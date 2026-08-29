@@ -1,5 +1,6 @@
 import { types as nodeTypes } from "node:util";
 
+import { isSafeInteger, safeInteger, type SafeInteger } from "../../common.js";
 import { formatValueType } from "../../_generated/field_types.js";
 import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
 
@@ -13,7 +14,7 @@ import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
  */
 
 /** A decoded field value. `null` covers both "tmux said nothing" and "unparseable". */
-export type DecodedValue = boolean | number | string | Date | null;
+export type DecodedValue = boolean | SafeInteger | string | Date | null;
 
 const integer = /^-?\d+$/u;
 const IntrinsicDate = Date;
@@ -27,7 +28,7 @@ const intrinsicGetTime = Function.prototype.call.bind(Date.prototype.getTime) as
 function canonicalSafeIntegerText(value: unknown): value is string {
   if (typeof value !== "string" || !integer.test(value)) return false;
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && String(parsed) === value;
+  return isSafeInteger(parsed) && String(parsed) === value;
 }
 
 function intrinsicDateMilliseconds(value: unknown): number | undefined {
@@ -47,7 +48,7 @@ export function isFormatCriterionValue(token: string, value: unknown): boolean {
   if (type === undefined) return typeof value === "string";
   if (type === "boolean") return typeof value === "boolean" || value === "0" || value === "1";
   if (type === "number") {
-    return Number.isSafeInteger(value) || canonicalSafeIntegerText(value);
+    return isSafeInteger(value) || canonicalSafeIntegerText(value);
   }
   if (type === "time") {
     const milliseconds = intrinsicDateMilliseconds(value);
@@ -87,7 +88,7 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
       return null;
     }
     case "number": {
-      return canonicalSafeIntegerText(value) ? Number(value) : null;
+      return canonicalSafeIntegerText(value) ? safeInteger(Number(value)) : null;
     }
     case "pane-id":
       return isPaneId(value) ? value : null;
@@ -97,7 +98,7 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
       if (!canonicalSafeIntegerText(value)) return null;
       const seconds = Number(value);
       // tmux writes 0 for a time that has not happened.
-      if (seconds <= 0 || !Number.isSafeInteger(seconds)) return null;
+      if (seconds <= 0 || !isSafeInteger(seconds)) return null;
       const decoded = new IntrinsicDate(seconds * 1000);
       return Number.isFinite(intrinsicGetTime(decoded)) ? decoded : null;
     }
@@ -119,7 +120,7 @@ export function encodeFormatValue(token: string, value: unknown): unknown {
   if (type === "pane-id" || type === "session-id" || type === "window-id") return value;
   if (typeof value === "boolean") return value ? "1" : "0";
   if (typeof value === "number") {
-    if (!Number.isSafeInteger(value)) return value;
+    if (!isSafeInteger(value)) return value;
     return type === "time" ? String(Math.trunc(value / 1000)) : String(value);
   }
   const time = intrinsicDateMilliseconds(value);

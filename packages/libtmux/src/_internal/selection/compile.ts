@@ -366,10 +366,8 @@ function scalarCriterionToWire(token: string, entry: unknown, state: ParseState)
 /**
  * Spell a typed criteria value the way the row it will be compared against does.
  *
- * A caller writes `where({ active: true })` or `where({ pid: 2334787 })`, and a
- * row holds `"1"` and `"2334787"`. The comparison happens on text — that is
- * what tmux sent and what a serialized query has to survive as — so the typed
- * value is spelled out here, once, before anything else looks at it.
+ * A caller writes `where({ active: true })` or passes an authenticated integer,
+ * while a row holds `"1"` or `"2334787"`. Comparison uses that wire text.
  *
  * This is why the wire format did not need a second version. A stored
  * `WhereDocumentV1` still holds strings, and `criteriaFromWire` still reads

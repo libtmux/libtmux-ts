@@ -7,6 +7,18 @@ import {
 } from "../../src/_internal/codec/format_values.js";
 import { FORMAT_VALUE_TYPES, formatValueType } from "../../src/_generated/field_types.js";
 import { WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
+import { isSafeInteger, safeInteger } from "../../src/common.js";
+
+describe("safe integer proof", () => {
+  test("authenticates only exact JavaScript integers", () => {
+    expect(safeInteger(42)).toBe(42);
+    expect(isSafeInteger(-42)).toBe(true);
+    for (const value of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
+      expect(isSafeInteger(value)).toBe(false);
+      expect(() => safeInteger(value)).toThrow(/safe integer/u);
+    }
+  });
+});
 
 describe("decoding what tmux sends", () => {
   test("reads a number field as a number", () => {
@@ -113,11 +125,9 @@ describe("encoding what a caller writes", () => {
    * The `where` types promise a text domain; this is what makes it a fact.
    *
    * `ScalarCriteria`'s text side is not a taste — it is the lexical shape this
-   * function can emit for that kind of field. Safe-integer range and canonical
-   * spelling are runtime properties because TypeScript cannot express either.
-   * If the encoder emits something outside the lexical type, the declarations
-   * start describing documents this library does not produce, and that has to
-   * fail here rather than in a consumer's editor.
+   * function can emit for that kind of field. Raw numeric text cannot carry a
+   * safe-range proof, so runtime validation still owns magnitude and canonical
+   * spelling. An encoder value outside the lexical type breaks the contract.
    */
   test("emits only the text the where types admit, for every declared field", () => {
     const flag = /^[01]$/u;

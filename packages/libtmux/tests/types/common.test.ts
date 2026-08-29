@@ -8,6 +8,7 @@ import type {
   LogicalRef,
   DeliveryStatus,
   OperationStatus,
+  SafeInteger,
   TmuxLogger,
   TmuxLogContext,
   TmuxWarning,
@@ -19,6 +20,7 @@ import type {
   WindowId,
   WindowRef,
 } from "../../src/common.js";
+import { isSafeInteger, safeInteger } from "../../src/common.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
 import * as exception from "../../src/exc.js";
 import {
@@ -39,13 +41,18 @@ import {
   WindowDirection,
   WINDOW_DIRECTION_FLAG_MAP,
 } from "../../src/constants.js";
-import { OptionScope as RootOptionScope } from "../../src/index.js";
+import {
+  isSafeInteger as rootIsSafeInteger,
+  OptionScope as RootOptionScope,
+  safeInteger as rootSafeInteger,
+} from "../../src/index.js";
 import type {
   CommandOptions as RootCommandOptions,
   HookScope,
   JoinOptions as RootJoinOptions,
   OptionScope as RootOptionScopeType,
   SetOptionOptions as RootSetOptionOptions,
+  SafeInteger as RootSafeInteger,
 } from "../../src/index.js";
 import type { JoinOptions, SetOptionOptions } from "../../src/types.js";
 
@@ -307,6 +314,13 @@ type _RootCommandOptions = Expect<Equal<RootCommandOptions, CommandOptions>>;
 type _RootJoinOptions = Expect<Equal<RootJoinOptions, JoinOptions>>;
 type _RootOptionScope = Expect<Equal<RootOptionScopeType, OptionScope>>;
 type _RootSetOptionOptions = Expect<Equal<RootSetOptionOptions, SetOptionOptions>>;
+type _SafeIntegerGuard = Expect<
+  Equal<typeof isSafeInteger, (value: unknown) => value is SafeInteger>
+>;
+type _SafeIntegerProof = Expect<Equal<typeof safeInteger, (value: number) => SafeInteger>>;
+type _RootSafeInteger = Expect<Equal<RootSafeInteger, SafeInteger>>;
+type _RootSafeIntegerGuard = Expect<Equal<typeof rootIsSafeInteger, typeof isSafeInteger>>;
+type _RootSafeIntegerProof = Expect<Equal<typeof rootSafeInteger, typeof safeInteger>>;
 
 export type {
   _CommandOutcomeKeys,
@@ -322,6 +336,11 @@ export type {
   _RootCommandOptions,
   _RootJoinOptions,
   _RootSetOptionOptions,
+  _RootSafeInteger,
+  _RootSafeIntegerGuard,
+  _RootSafeIntegerProof,
+  _SafeIntegerGuard,
+  _SafeIntegerProof,
   _SessionRef,
   _WindowFlags,
   _WindowRef,

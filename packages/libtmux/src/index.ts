@@ -93,6 +93,7 @@ export type {
   DeliveryStatus,
   PaneId,
   PaneIdInput,
+  SafeInteger,
   SessionId,
   SessionIdInput,
   TmuxId,
@@ -101,6 +102,7 @@ export type {
   WindowId,
   WindowIdInput,
 } from "./common.js";
+export { isSafeInteger, safeInteger } from "./common.js";
 export {
   OptionScope,
   PaneDirection,
