@@ -6,7 +6,7 @@
 export const FORMAT_SEPARATOR: string = process.env.LIBTMUX_TMUX_FORMAT_SEPARATOR ?? "␞";
 
 /** Python-compatible default session fields, not the complete generated registry. */
-export const SESSION_FORMATS = Object.freeze([
+export const SESSION_FORMATS = [
   "session_name",
   "session_windows",
   "session_width",
@@ -16,10 +16,11 @@ export const SESSION_FORMATS = Object.freeze([
   "session_created_string",
   "session_attached",
   "session_group",
-] as const);
+] as const;
+Object.freeze(SESSION_FORMATS);
 
 /** Python-compatible default client fields, not the complete generated registry. */
-export const CLIENT_FORMATS = Object.freeze([
+export const CLIENT_FORMATS = [
   "client_cwd",
   "client_height",
   "client_width",
@@ -34,10 +35,11 @@ export const CLIENT_FORMATS = Object.freeze([
   "client_readonly",
   "client_session",
   "client_last_session",
-] as const);
+] as const;
+Object.freeze(CLIENT_FORMATS);
 
 /** Python-compatible default window fields, not the complete generated registry. */
-export const WINDOW_FORMATS = Object.freeze([
+export const WINDOW_FORMATS = [
   "window_id",
   "window_name",
   "window_width",
@@ -50,10 +52,11 @@ export const WINDOW_FORMATS = Object.freeze([
   "window_bell_flag",
   "window_activity_flag",
   "window_silence_flag",
-] as const);
+] as const;
+Object.freeze(WINDOW_FORMATS);
 
 /** Python-compatible default pane fields, not the complete generated registry. */
-export const PANE_FORMATS = Object.freeze([
+export const PANE_FORMATS = [
   "history_size",
   "history_limit",
   "history_bytes",
@@ -101,4 +104,5 @@ export const PANE_FORMATS = Object.freeze([
   "pane_pipe_pid",
   "bracket_paste_flag",
   "synchronized_output_flag",
-] as const);
+] as const;
+Object.freeze(PANE_FORMATS);
