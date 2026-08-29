@@ -53,6 +53,30 @@ export interface Member {
   readonly signature: string;
 }
 
+export interface PublicMember extends Member {
+  readonly owner: string;
+}
+
+export type DocumentedPublicMember = PublicMember & { readonly example: string };
+
+/** Refuse a public surface that would let either symbol gate skip an example. */
+export function requireSymbolExamples(
+  members: readonly PublicMember[],
+): readonly DocumentedPublicMember[] {
+  const missing = members.filter((member) => member.example === undefined);
+  if (missing.length > 0) {
+    throw new Error(
+      `${String(missing.length)} of ${String(members.length)} public symbols have no example:\n` +
+        missing
+          .map(
+            (member) => `  ${member.file}:${String(member.line)}  ${member.owner}.${member.name}`,
+          )
+          .join("\n"),
+    );
+  }
+  return members as readonly DocumentedPublicMember[];
+}
+
 export interface ApiClass {
   readonly file: string;
   readonly members: readonly Member[];

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { readApiSurface } from "../../scripts/api_surface.js";
+import {
+  requireSymbolExamples,
+  readApiSurface,
+  type PublicMember,
+} from "../../scripts/api_surface.js";
 import * as index from "../../src/index.js";
 
 /**
@@ -33,6 +37,23 @@ function isError(value: unknown): boolean {
 }
 
 describe("api surface coverage", () => {
+  test("rejects every public member missing an example", () => {
+    const members: readonly PublicMember[] = [
+      {
+        example: undefined,
+        file: "src/window.ts",
+        kind: "method",
+        line: 160,
+        name: "showHooks",
+        owner: "Window",
+        prose: "Read hooks set on this window itself.",
+        signature: "showHooks(): Promise<ReadonlyMap<string, readonly string[]>>",
+      },
+    ];
+
+    expect(() => requireSymbolExamples(members)).toThrow("src/window.ts:160  Window.showHooks");
+  });
+
   test("every handle class the package exports is read by the surface", async () => {
     const parsed = new Set((await readApiSurface()).map((entry) => entry.name));
     const handles = Object.entries(index)

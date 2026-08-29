@@ -8,7 +8,7 @@ import {
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
-import { readApiSurface } from "../api_surface.js";
+import { readApiSurface, requireSymbolExamples } from "../api_surface.js";
 import { packageRoot } from "../package_root.js";
 import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { buildWorld, disposeWorld, type World } from "./readme_world.js";
@@ -156,16 +156,19 @@ function generate(examples: readonly Example[]): string {
 }
 
 const surface = await readApiSurface();
-const members = surface.flatMap((entry) =>
-  entry.members.map((member) => ({ ...member, symbol: `${entry.name}.${member.name}` })),
+const members = requireSymbolExamples(
+  surface.flatMap((entry) =>
+    entry.members.map((member) => ({
+      ...member,
+      owner: entry.name,
+    })),
+  ),
 );
-const examples: SymbolExample[] = members
-  .filter((member) => member.example !== undefined)
-  .map((member) => ({
-    code: member.example ?? "",
-    origin: `${member.file}:${String(member.line)}`,
-    symbol: member.symbol,
-  }));
+const examples: SymbolExample[] = members.map((member) => ({
+  code: member.example,
+  origin: `${member.file}:${String(member.line)}`,
+  symbol: `${member.owner}.${member.name}`,
+}));
 for (const entry of surface) {
   examples.push(...fencedBlocks(entry.prose, (line) => `${entry.file}:${String(line)}`));
 }
