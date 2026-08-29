@@ -394,6 +394,15 @@ describe("policy", () => {
     expect(resolvePolicy({ LIBTMUX_MCP_WAIT_MAX_MS: "soon" }).blockingWaitMaxMs).toBe(30_000);
   });
 
+  test("requires an exact positive decimal safe integer", () => {
+    for (const given of ["0", "-1", "42junk", "1.5", "1e6", "+42", " 42", "9007199254740992"]) {
+      expect(resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: given }).commandTimeoutMs).toBe(
+        30_000,
+      );
+    }
+    expect(resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "42" }).commandTimeoutMs).toBe(42);
+  });
+
   test("offers the default tier when nobody chose one", () => {
     expect(resolvePolicy({}).safety).toBe("readonly");
   });

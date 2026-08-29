@@ -78,8 +78,9 @@ function clamp(value: number, floor: number, limit: number): number {
  */
 function readInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  if (!/^[0-9]+$/u.test(raw)) return fallback;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 /**
