@@ -1228,6 +1228,11 @@ release that has it, and the release running, because "no pane has this" and
 `ObjectDoesNotExist`, `MultipleObjectsReturned`, and `DeprecatedError` exist for
 compatibility with the Python library's names.
 
+The `libtmux/exc` subpath also exports Python's wider model-specific exception
+hierarchy for import parity. TypeScript operations do not translate failures
+into names such as `PaneNotFound` or `UnknownOption`; catch the root-exported
+errors documented above for failures raised by this package.
+
 `parseLegacyWhere` converts Python-style `name__contains=` filter strings into
 criteria, for code being ported rather than written fresh.
 
