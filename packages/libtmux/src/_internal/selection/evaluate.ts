@@ -1,22 +1,12 @@
 import { types as nodeTypes } from "node:util";
 
 import { Client } from "../../client.js";
-import {
-  MultipleMatchesError,
-  NoMatchError,
-  QueryValidationError,
-  VersionTooLow,
-} from "../../exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../exc.js";
 import { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
 import { Session } from "../../session.js";
 import { Window } from "../../window.js";
-import {
-  WHERE_FIELDS_V1,
-  WHERE_RELATIONS_V1,
-  type WhereModel,
-} from "../../_generated/where_fields.js";
-import { compareTmuxVersions, parseTmuxVersion } from "../runtime/tmux_version.js";
+import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
 import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
@@ -37,17 +27,18 @@ import {
   winlinkRefForHandle,
 } from "../runtime/live_handle.js";
 import { compileWhere, type CompiledWhere } from "./compile.js";
+import { refuseFieldsNewerThanServer } from "./version_gate.js";
 
 type ProjectedKind = "client" | "pane" | "session" | "window";
 type ProjectedModel = Client | Pane | Session | Window;
 
 interface SelectionEntry<Model> {
-  readonly record: ProjectionRecord | null;
+  readonly record: ProjectionRecord;
   readonly value: Model;
 }
 
 /** Which scalar carries a model's own id, for the models that can share one. */
-const ID_SCALARS: Readonly<Partial<Record<string, string>>> = Object.freeze({
+const ID_SCALARS: Readonly<Partial<Record<ProjectedKind, string>>> = Object.freeze({
   pane: "pane_id",
   window: "window_id",
 });
@@ -59,7 +50,7 @@ const ID_SCALARS: Readonly<Partial<Record<string, string>>> = Object.freeze({
  * message still describes those.
  */
 function sharedPlacementHint<Model>(
-  kind: string,
+  kind: ProjectedKind,
   entries: readonly SelectionEntry<Model>[],
 ): string | undefined {
   const scalar = ID_SCALARS[kind];
@@ -67,9 +58,9 @@ function sharedPlacementHint<Model>(
   const ids = new Set<string>();
   const sessions: string[] = [];
   for (const entry of entries) {
-    const id = entry.record?.scalars[scalar];
+    const id = entry.record.scalars[scalar];
     // The winlink is the placement: which session holds this one.
-    const session = entry.record?.winlink?.sessionId;
+    const session = entry.record.winlink?.sessionId;
     if (typeof id !== "string" || session === undefined) return undefined;
     ids.add(id);
     const named = String(session);
@@ -90,8 +81,6 @@ interface ProjectedSelectionState {
   readonly projection: SelectionProjection;
   readonly resolve: (reference: GraphRecordRef) => ProjectionRecord | undefined;
 }
-
-type SelectionState = ProjectedSelectionState;
 
 const emptyQuery: Readonly<Record<string, unknown>> = Object.freeze({});
 const selectionConstructionToken: object = Object.freeze({});
@@ -300,10 +289,14 @@ function projectedEntries<Kind extends ProjectedKind>(
 
 class SelectionImpl<Model> implements Selection<Model> {
   readonly #entries: readonly SelectionEntry<Model>[];
-  readonly #state: SelectionState;
+  readonly #state: ProjectedSelectionState;
   readonly #values: readonly Model[];
 
-  constructor(token: object, entries: readonly SelectionEntry<Model>[], state: SelectionState) {
+  constructor(
+    token: object,
+    entries: readonly SelectionEntry<Model>[],
+    state: ProjectedSelectionState,
+  ) {
     if (token !== selectionConstructionToken) invalidSelection();
     this.#entries = entries;
     this.#state = state;
@@ -448,7 +441,6 @@ class SelectionImpl<Model> implements Selection<Model> {
     const state = this.#state;
     const entries: SelectionEntry<Model>[] = [];
     for (const entry of this.#entries) {
-      if (entry.record === null) continue;
       if (!compiled.matches(entry.record, state.resolve)) continue;
       entries.push(entry);
       if (entries.length >= limit) break;
@@ -459,61 +451,6 @@ class SelectionImpl<Model> implements Selection<Model> {
 
 Object.freeze(SelectionImpl.prototype);
 Object.freeze(SelectionImpl);
-
-/**
- * Refuse a query naming a field the server is too old to have.
- *
- * tmux answers for the fields its release knows and says nothing about the
- * rest, so a criterion on a newer field matched against an older server
- * matches nothing — which is indistinguishable from "no object has this", and
- * is a different statement. The typed row already draws that line: it answers
- * `null` for a field the server does not have, and `false` for one it has and
- * is off. This is the same line, drawn for queries.
- *
- * Checked once per query rather than once per candidate, and against the
- * version the graph recorded when it was acquired — so a stored query replayed
- * against an old server is answered the same way an inline one is.
- */
-function refuseFieldsNewerThanServer(
-  model: WhereModel,
-  query: Readonly<Record<string, unknown>>,
-  serverVersion: string | undefined,
-): void {
-  // A graph normalized from stored bytes predates this and cannot say which
-  // tmux answered. Refusing on a guess would be worse than the silence.
-  if (serverVersion === undefined) return;
-  const actual = parseTmuxVersion(serverVersion);
-
-  const walk = (scope: WhereModel, node: Readonly<Record<string, unknown>>): void => {
-    const relations = WHERE_RELATIONS_V1[scope];
-    for (const [key, value] of Object.entries(node)) {
-      if (key === "AND" || key === "OR" || key === "NOT") {
-        for (const branch of value as readonly Readonly<Record<string, unknown>>[]) {
-          walk(scope, branch);
-        }
-        continue;
-      }
-      const relation = relations.find((candidate) => candidate.name === key);
-      if (relation !== undefined) {
-        for (const quantified of Object.values(value as Readonly<Record<string, unknown>>)) {
-          if (quantified !== null) {
-            walk(relation.targetModel, quantified as Readonly<Record<string, unknown>>);
-          }
-        }
-        continue;
-      }
-      const field = WHERE_FIELDS_V1[scope].find((candidate) => candidate.wireName === key);
-      if (field === undefined) continue;
-      if (compareTmuxVersions(actual, parseTmuxVersion(field.since)) >= 0) continue;
-      throw new VersionTooLow({
-        criteriaName: field.criteriaName,
-        serverVersion,
-        since: field.since,
-      });
-    }
-  };
-  walk(model, query);
-}
 
 export function createProjectedSelection<Kind extends ProjectedKind>(
   model: Kind,
