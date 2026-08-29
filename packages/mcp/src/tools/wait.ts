@@ -19,7 +19,7 @@ import {
   type ReadablePane,
   type ToolContext,
 } from "../context.js";
-import { effectiveWaitMs } from "../policy.js";
+import { effectiveResultLines, effectiveWaitMs } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
 import { paneCursorSchema } from "../schemas.js";
@@ -210,7 +210,7 @@ async function renderWait(
       reason: `Cannot watch ${paneId}: no control-mode connection is available.`,
     });
   }
-  const limit = maxLines ?? context.policy.maxResultLines;
+  const limit = effectiveResultLines(context.policy, maxLines);
   const trimmed = tailLines(report.output === "" ? [] : report.output.split("\n"), limit);
   const screen =
     report.outcome === "matched" || report.outcome === "cancelled"
@@ -253,6 +253,7 @@ async function renderWait(
     {
       alreadyOnScreen,
       cursor: report.cursor,
+      droppedLines: trimmed.droppedLines,
       effectiveTimeoutMs: report.effectiveTimeoutMs,
       matched: report.matched,
       missedBytes: report.missedBytes,
@@ -275,6 +276,7 @@ const waitOutputSchema = {
   cursor: paneCursorSchema
     .nullable()
     .describe("Pass to observe or another wait; null means the live stream cannot be resumed."),
+  droppedLines: z.number().int().describe("Output lines omitted by the result limit."),
   effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced, after clamping."),
   matched: z.string().nullable().describe("The text that matched, or null."),
   missedBytes: z

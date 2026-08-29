@@ -10,6 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
+import { effectiveResultLines } from "../policy.js";
 import { offers, OPEN_WORLD } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
@@ -270,7 +271,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       reservation.settleWith(result.settled);
       const trimmed = tailLines(
         result.output === "" ? [] : result.output.split("\n"),
-        maxLines ?? context.policy.maxResultLines,
+        effectiveResultLines(context.policy, maxLines),
       );
 
       const headline =

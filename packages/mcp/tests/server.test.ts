@@ -450,6 +450,54 @@ describe("running commands", () => {
       await withClient(fixture, exercise, { LIBTMUX_MCP_LIVE: "0" });
     });
   }, 60_000);
+
+  test("holds command and wait output to the operator line ceiling", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const paneId = await shellPaneId(client);
+          const command = structured<{ droppedLines: number; output: string }>(
+            await client.callTool({
+              arguments: {
+                command: "printf 'one\\ntwo\\nthree\\nfour\\n'",
+                maxLines: 999,
+                paneId,
+              },
+              name: "run_command",
+            }),
+          );
+          expect(command.output).toBe("three\nfour");
+          expect(command.droppedLines).toBe(2);
+
+          const { cursor } = structured<{ cursor: string }>(
+            await client.callTool({ arguments: { paneId }, name: "observe" }),
+          );
+          await client.callTool({
+            arguments: { keys: "(sleep 1; printf 'one\\ntwo\\nthree\\nfour\\n') &", paneId },
+            name: "send_keys",
+          });
+          const waitAnswer = await client.callTool({
+            arguments: {
+              maxLines: 999,
+              paneId,
+              patterns: ["never-printed-by-this"],
+              timeoutMs: 2_000,
+              cursor,
+            },
+            name: "wait_for_text",
+          });
+          expect((waitAnswer as { isError?: boolean }).isError ?? false, toolText(waitAnswer)).toBe(
+            false,
+          );
+          const waited = structured<{ droppedLines: number; output: string }>(waitAnswer);
+          expect(waited.output.split("\n").length).toBeLessThanOrEqual(2);
+          expect(waited.droppedLines).toBeGreaterThan(0);
+        },
+        { LIBTMUX_MCP_MAX_RESULT_LINES: "2" },
+      );
+    });
+  }, 60_000);
 });
 
 describe("waiting", () => {
