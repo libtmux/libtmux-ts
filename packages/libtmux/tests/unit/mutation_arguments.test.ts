@@ -207,6 +207,8 @@ describe("lifecycle command arguments", () => {
     expect(() => planNewSession({ name: "a.b" })).toThrow("session name");
     expect(() => planNewSession({ name: "" })).toThrow("session name");
     expect(() => planNewSession({ name: "a\u0007b" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a\u007fb" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a\ud800b" })).toThrow("unpaired surrogate");
     expect(() => planNewSession({ windowName: "a:b" })).toThrow("window name");
     expect(() => planNewWindow(null, { name: "a.b" })).toThrow("window name");
     expect(planNewSession({ name: "work" }).argv).toContain("work");
