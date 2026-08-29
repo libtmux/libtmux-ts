@@ -8,15 +8,6 @@ import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 const gate = fileURLToPath(new URL("../../../../scripts/check-source-maps.ts", import.meta.url));
 const source = "export const answer = 42;\n";
-const javascriptMap = `${JSON.stringify({
-  file: "index.js",
-  mappings: "",
-  names: [],
-  sourceRoot: "",
-  sources: ["../src/index.ts"],
-  sourcesContent: [source],
-  version: 3,
-})}\n`;
 const declarationMap = `${JSON.stringify({
   file: "index.d.ts",
   mappings: "",
@@ -28,6 +19,11 @@ const declarationMap = `${JSON.stringify({
 })}\n`;
 
 interface FixtureOptions {
+  readonly corruption?:
+    | "absolute-source"
+    | "mismatched-content"
+    | "nonempty-source-root"
+    | "outside-source";
   readonly declarationMap: boolean;
   readonly shipDeclarationSource: boolean;
   readonly shipMaps: boolean;
@@ -39,6 +35,21 @@ async function runGate(options: FixtureOptions): Promise<{
 }> {
   const root = await makeTestDirectory("ltx-source-map-gate-");
   try {
+    const javascriptMap = `${JSON.stringify({
+      file: "index.js",
+      mappings: "",
+      names: [],
+      sourceRoot: options.corruption === "nonempty-source-root" ? "../src" : "",
+      sources: [
+        options.corruption === "absolute-source"
+          ? "/tmp/index.ts"
+          : options.corruption === "outside-source"
+            ? "../../outside.ts"
+            : "../src/index.ts",
+      ],
+      sourcesContent: [options.corruption === "mismatched-content" ? `${source}changed\n` : source],
+      version: 3,
+    })}\n`;
     await Promise.all([mkdir(join(root, "dist")), mkdir(join(root, "src"))]);
     await Promise.all([
       writeFile(
@@ -116,4 +127,23 @@ test("rejects a map omitted from the tarball", async () => {
 
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain("index.d.ts references dist/index.d.ts.map, which is not packed");
+});
+
+test("rejects unsafe and dishonest map contents", async () => {
+  for (const [corruption, message] of [
+    ["absolute-source", "absolute source path"],
+    ["outside-source", "source outside the package"],
+    ["nonempty-source-root", "must set an empty sourceRoot"],
+    ["mismatched-content", "does not embed the exact source"],
+  ] as const) {
+    // eslint-disable-next-line no-await-in-loop -- each fixture proves one independent refusal.
+    const result = await runGate({
+      corruption,
+      declarationMap: true,
+      shipDeclarationSource: true,
+      shipMaps: true,
+    });
+    expect(result.exitCode, corruption).toBe(1);
+    expect(result.stderr, corruption).toContain(message);
+  }
 });

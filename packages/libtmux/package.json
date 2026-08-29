@@ -108,7 +108,7 @@
     }
   },
   "scripts": {
-    "build": "bun run generate:check && rm -rf dist && tsc -p tsconfig.build.json && bun scripts/normalize-source-map.ts dist/index.js.map",
+    "build": "bun run generate:check && rm -rf dist && tsc -p tsconfig.build.json",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "generate": "bun scripts/generate-formats.ts --write",

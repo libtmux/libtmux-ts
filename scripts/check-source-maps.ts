@@ -59,8 +59,8 @@ async function validateMap(artifactPath: string, requireEmbeddedSources: boolean
   } catch {
     fail(`${relative(packageRoot, mapPath)} is missing or invalid`);
   }
-  if (map.sourceRoot !== undefined && map.sourceRoot !== "") {
-    fail(`${artifactPath}.map must not set a sourceRoot`);
+  if (map.sourceRoot !== "") {
+    fail(`${artifactPath}.map must set an empty sourceRoot`);
   }
   if (map.file !== basename(absoluteArtifactPath)) {
     fail(`${artifactPath}.map names the wrong artifact`);
