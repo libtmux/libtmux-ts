@@ -27,6 +27,7 @@ import {
 } from "../../src/_internal/runtime/context.js";
 import type { LazyCapabilityBinding } from "../../src/_internal/runtime/capabilities.js";
 import type { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import type { RuntimeConstructors } from "../../src/_internal/runtime/constructors.js";
 import {
   entityRefForHandle,
   logicalRefForHandle,
@@ -281,7 +282,10 @@ type _CreateRuntimeContext = Expect<
   Equal<typeof createRuntimeContext, (options: RuntimeContextOptions) => RuntimeContext>
 >;
 type _CreateServerWithRuntime = Expect<
-  Equal<typeof createServerWithRuntime, (runtime: RuntimeContext) => Server>
+  Equal<
+    typeof createServerWithRuntime,
+    (runtime: RuntimeContext, constructors: RuntimeConstructors) => Server
+  >
 >;
 type _InvalidateRuntimeEpoch = Expect<
   Equal<typeof invalidateRuntimeEpoch, (runtime: RuntimeContext) => DaemonEpoch>

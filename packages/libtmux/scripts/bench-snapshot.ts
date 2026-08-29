@@ -23,6 +23,7 @@ import type {
   RawCommandResult,
 } from "../src/_internal/transport/types.js";
 import type { Server } from "../src/server.js";
+import { TEST_HANDLE_PROTOTYPES } from "../src/_internal/test/handle_prototypes.js";
 
 import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
 
@@ -80,6 +81,7 @@ function serverOn(
       daemonEpoch: 0 as DaemonEpoch,
       transport,
     }),
+    TEST_HANDLE_PROTOTYPES,
   );
   return { server, transport };
 }

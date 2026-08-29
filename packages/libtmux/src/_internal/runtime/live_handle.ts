@@ -163,6 +163,10 @@ export function initializeLiveHandle<Handle extends Child>(
   return handle;
 }
 
+export function modelKindForHandle(value: unknown): GraphModel | undefined {
+  return stateForValue(value)?.model;
+}
+
 /**
  * Whether two handles describe the same thing on the same tmux server.
  *

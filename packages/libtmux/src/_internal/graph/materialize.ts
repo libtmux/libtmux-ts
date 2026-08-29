@@ -1,10 +1,11 @@
-import { Client } from "../../client.js";
+import type { Client } from "../../client.js";
 import { LibTmuxException, QueryValidationError } from "../../exc.js";
-import { Pane } from "../../pane.js";
+import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
-import { Session } from "../../session.js";
-import { Window } from "../../window.js";
+import type { Session } from "../../session.js";
+import type { Window } from "../../window.js";
 import { runtimeForServer, type RuntimeContext } from "../runtime/context.js";
+import { runtimePrototype } from "../runtime/constructors.js";
 import { initializeLiveHandle } from "../runtime/live_handle.js";
 import {
   graphRecordForRef,
@@ -128,13 +129,13 @@ function createProjectedHandle(
 ): ProjectedChild {
   switch (record.model) {
     case "pane":
-      return initialize<Pane>(Pane.prototype, server, graph, record);
+      return initialize<Pane>(runtimePrototype(server, "pane"), server, graph, record);
     case "session":
-      return initialize<Session>(Session.prototype, server, graph, record);
+      return initialize<Session>(runtimePrototype(server, "session"), server, graph, record);
     case "window":
-      return initialize<Window>(Window.prototype, server, graph, record);
+      return initialize<Window>(runtimePrototype(server, "window"), server, graph, record);
     case "client":
-      return initialize<Client>(Client.prototype, server, graph, record);
+      return initialize<Client>(runtimePrototype(server, "client"), server, graph, record);
   }
 }
 
@@ -142,7 +143,7 @@ function createClientHandle(server: Server, graph: NormalizedGraph, record: Grap
   if (record.model !== "client") {
     return invalidMaterialization("Client materialization requires a Client graph record");
   }
-  return initialize<Client>(Client.prototype, server, graph, record);
+  return initialize<Client>(runtimePrototype(server, "client"), server, graph, record);
 }
 
 function projectionRecordForMember(

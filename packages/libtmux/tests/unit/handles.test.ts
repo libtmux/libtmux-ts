@@ -49,6 +49,7 @@ import {
 } from "../../src/_internal/runtime/context.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/handle_prototypes.js";
 import {
   entityRefForHandle,
   logicalRefForHandle,
@@ -71,7 +72,6 @@ import { completeFormatRow, type MutableCompleteFormatRow } from "../support/gra
 import { singleCommandTransport } from "../support/transport_double.js";
 
 const encoder = new TextEncoder();
-
 interface RecordingTransport extends CommandTransport {
   readonly requests: CommandRequest[];
 }
@@ -149,7 +149,7 @@ function runtimeFixture(
   });
   return {
     runtime,
-    server: createServerWithRuntime(runtime),
+    server: createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
     transport,
   };
 }

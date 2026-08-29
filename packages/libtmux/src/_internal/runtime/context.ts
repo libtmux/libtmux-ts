@@ -6,12 +6,13 @@ import type {
   TmuxWarningSink,
 } from "../../common.js";
 import { LibTmuxException } from "../../exc.js";
-import { Server, type DaemonIdentity } from "../../server.js";
+import type { DaemonIdentity, Server } from "../../server.js";
 import { decodeLogicalRef } from "../graph/refs.js";
 import type { CommandTransport } from "../transport/types.js";
 import { timerDuration } from "../timing.js";
 import { LazyCapabilityBinding, type TmuxCapabilities } from "./capabilities.js";
 import type { TmuxConnection } from "./connection.js";
+import { registerRuntimeConstructors, type RuntimeConstructors } from "./constructors.js";
 
 export type { DaemonIdentity } from "../../server.js";
 
@@ -134,12 +135,17 @@ export function createRuntimeContext(options: RuntimeContextOptions): RuntimeCon
   return runtime;
 }
 
-export function registerServerRuntime(server: Server, runtime: RuntimeContext): void {
+export function registerServerRuntime(
+  server: Server,
+  runtime: RuntimeContext,
+  constructors: RuntimeConstructors,
+): void {
   epochStateFor(runtime);
   if (serverRuntimes.has(server)) {
     throw new LibTmuxException("Server already has a runtime context");
   }
   serverRuntimes.set(server, runtime);
+  registerRuntimeConstructors(server, constructors);
 }
 
 export function runtimeForServerValue(value: unknown): RuntimeContext | undefined {
@@ -149,10 +155,13 @@ export function runtimeForServerValue(value: unknown): RuntimeContext | undefine
   return serverRuntimes.get(value);
 }
 
-export function createServerWithRuntime(runtime: RuntimeContext): Server {
+export function createServerWithRuntime(
+  runtime: RuntimeContext,
+  constructors: RuntimeConstructors,
+): Server {
   epochStateFor(runtime);
-  const server = Object.create(Server.prototype) as Server;
-  registerServerRuntime(server, runtime);
+  const server = Object.create(constructors.server) as Server;
+  registerServerRuntime(server, runtime, constructors);
   return server;
 }
 

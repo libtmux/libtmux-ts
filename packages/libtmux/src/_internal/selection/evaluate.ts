@@ -1,11 +1,11 @@
 import { types as nodeTypes } from "node:util";
 
-import { Client } from "../../client.js";
+import type { Client } from "../../client.js";
 import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../exc.js";
-import { Pane } from "../../pane.js";
+import type { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
-import { Session } from "../../session.js";
-import { Window } from "../../window.js";
+import type { Session } from "../../session.js";
+import type { Window } from "../../window.js";
 import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
 import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
@@ -22,6 +22,7 @@ import type { ModelForKind } from "../runtime/model_kind.js";
 import {
   entityRefForHandle,
   graphRecordRefForHandle,
+  modelKindForHandle,
   originGraphForHandle,
   snapshotForHandle,
   winlinkRefForHandle,
@@ -204,16 +205,7 @@ function validateProjectionRecord(
 function hasProjectedClass(model: ProjectedKind, value: unknown): value is ProjectedModel {
   if ((typeof value !== "object" && typeof value !== "function") || value === null) return false;
   if (nodeTypes.isProxy(value)) return false;
-  switch (model) {
-    case "client":
-      return value instanceof Client;
-    case "pane":
-      return value instanceof Pane;
-    case "session":
-      return value instanceof Session;
-    case "window":
-      return value instanceof Window;
-  }
+  return modelKindForHandle(value) === model;
 }
 
 function authenticateProjectedValue(

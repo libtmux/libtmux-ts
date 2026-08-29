@@ -14,6 +14,7 @@ import {
 import { TmuxConnection } from "../../dist/_internal/runtime/connection.js";
 import { createProjectedSelection } from "../../dist/_internal/selection/evaluate.js";
 import { flattenInvocation } from "../../dist/engine.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../dist/_internal/test/handle_prototypes.js";
 
 const protocol = "libtmux-where-regex-v1";
 const implementation = process.argv[2];
@@ -139,7 +140,7 @@ for (const member of graph.sources[0].records) {
 const projection = builder.sealViews().get(source);
 assert.ok(projection);
 const values = await materializeProjectionMembers(
-  createServerWithRuntime(runtime),
+  createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
   projection,
   graph,
 );

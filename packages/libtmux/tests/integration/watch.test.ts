@@ -27,6 +27,7 @@ import { LibTmuxException, WaitTimeout } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
 
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/handle_prototypes.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -65,6 +66,7 @@ function countingServerFor(fixture: TestServer): {
       daemonEpoch: 0 as DaemonEpoch,
       transport,
     }),
+    TEST_HANDLE_PROTOTYPES,
   );
   return { server, transport };
 }
