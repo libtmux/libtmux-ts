@@ -16,13 +16,62 @@ import {
   requireSession,
   type ToolContext,
 } from "../context.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { fail, ok, renderOutput, resourceLink, tailLines } from "../results.js";
+import {
+  fail,
+  mapConcurrent,
+  ok,
+  renderOutput,
+  resourceLink,
+  tailBytes,
+  tailLines,
+} from "../results.js";
 import { paneCursorSchema } from "../schemas.js";
 import { paneContentUri } from "../uris.js";
 
 /** How much of a first observation is seeded from the pane's visible screen. */
 const SEED_LINES = 100;
+
+/** How many pane captures a search may have in flight. */
+const SEARCH_CONCURRENCY = 8;
+
+/** tmux stores at most this many UTF-8 bytes in one grid cell. */
+const MAX_GRID_CELL_BYTES = 32;
+
+interface CaptureRange {
+  readonly clamped: boolean;
+  readonly end: number | undefined;
+  readonly start: number | undefined;
+}
+
+/** Preserve the tail of a requested range without asking tmux for an unbounded grid. */
+function boundedCaptureRange(
+  paneHeight: number | null,
+  start: number | undefined,
+  end: number | undefined,
+  limit: number,
+): CaptureRange {
+  const first = start ?? 0;
+  const knownHeight =
+    paneHeight !== null && Number.isSafeInteger(paneHeight) && paneHeight > 0
+      ? paneHeight
+      : undefined;
+  const unknownEnd = end === undefined && knownHeight === undefined;
+  const last = end ?? (knownHeight === undefined ? Math.max(first, 0) : knownHeight - 1);
+  if (last < first || last - first < limit) {
+    return unknownEnd ? { clamped: true, end: last, start: first } : { clamped: false, end, start };
+  }
+  return { clamped: true, end: last, start: last - limit + 1 };
+}
+
+/** Bound rows before tmux serializes a grid into the command response. */
+function captureRowLimit(paneWidth: number | null, lineLimit: number): number {
+  if (paneWidth === null || !Number.isSafeInteger(paneWidth) || paneWidth <= 0) return 0;
+  const rowBytes = paneWidth * MAX_GRID_CELL_BYTES + 1;
+  if (!Number.isSafeInteger(rowBytes) || rowBytes > MAX_RESULT_BYTES) return 0;
+  return Math.min(lineLimit, Math.floor(MAX_RESULT_BYTES / rowBytes));
+}
 
 export function registerCapture(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "readonly")) return;
@@ -62,8 +111,14 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .describe("First line; negative reaches into scrollback."),
       },
       outputSchema: {
+        byteClamped: z.boolean().describe("Whether the byte ceiling shortened the capture."),
         droppedLines: z.number().int().describe("Lines cut from the front to fit maxLines."),
+        effectiveEnd: z.number().int().nullable(),
+        effectiveStart: z.number().int().nullable(),
+        omittedBytes: z.number().int(),
         paneId: z.string(),
+        rangeClamped: z.boolean().describe("Whether a result ceiling shortened the range."),
+        returnedBytes: z.number().int(),
         text: z.string(),
         totalLines: z.number().int().describe("How many lines the capture held before trimming."),
       },
@@ -74,25 +129,67 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
 
-      const captured = await pane.capture({
-        ...(end === undefined ? {} : { end }),
-        ...(joinWrapped === undefined ? {} : { joinWrapped }),
-        ...(start === undefined ? {} : { start }),
-      });
-      const trimmed = tailLines(captured, maxLines ?? context.policy.maxResultLines);
+      const limit = effectiveResultLines(context.policy, maxLines);
+      const lineRange = boundedCaptureRange(pane.height, start, end, limit);
+      const rowLimit = captureRowLimit(pane.width, limit);
+      const range =
+        rowLimit === 0
+          ? { clamped: true, end: undefined, start: undefined }
+          : boundedCaptureRange(pane.height, start, end, rowLimit);
+      const captured =
+        rowLimit === 0
+          ? []
+          : await pane.capture({
+              ...(range.end === undefined ? {} : { end: range.end }),
+              ...(joinWrapped === undefined ? {} : { joinWrapped }),
+              ...(range.start === undefined ? {} : { start: range.start }),
+            });
+      const trimmed = tailLines(captured, limit);
+      const byteTrimmed = tailBytes(trimmed.lines.join("\n"), MAX_RESULT_BYTES);
+      const byteClamped =
+        rowLimit === 0 ||
+        range.end !== lineRange.end ||
+        range.start !== lineRange.start ||
+        byteTrimmed.droppedBytes > 0;
       const structured = {
+        byteClamped,
         droppedLines: trimmed.droppedLines,
+        effectiveEnd: range.end ?? null,
+        effectiveStart: range.start ?? null,
+        omittedBytes: byteTrimmed.droppedBytes,
         paneId,
-        text: trimmed.lines.join("\n"),
+        rangeClamped: range.clamped,
+        returnedBytes: Buffer.byteLength(byteTrimmed.text, "utf8"),
+        text: byteTrimmed.text,
         totalLines: captured.length,
       };
 
+      const rangeNotice = range.clamped
+        ? rowLimit === 0
+          ? `[capture omitted: no complete row fits the ${String(MAX_RESULT_BYTES)}-byte result ceiling]`
+          : `[capture range clamped to ${String(rowLimit)} rows: ${String(range.start)} through ${String(range.end)}]`
+        : "";
+      const byteNotice =
+        byteTrimmed.droppedBytes === 0
+          ? ""
+          : `[${String(byteTrimmed.droppedBytes)} earlier bytes omitted; narrow the range or use the pane resource]`;
+      const lineNotice =
+        trimmed.droppedLines === 0
+          ? ""
+          : `[${String(trimmed.droppedLines)} earlier lines omitted; raise maxLines within the server limit]`;
       const content: { text: string; type: "text" }[] = [
-        { text: renderOutput(trimmed), type: "text" },
+        {
+          text: [rangeNotice, lineNotice, byteNotice, byteTrimmed.text]
+            .filter((part) => part !== "")
+            .join("\n"),
+          type: "text",
+        },
       ];
+      const defaultVisible = start === undefined && end === undefined && joinWrapped !== true;
+      const shortened = range.clamped || trimmed.droppedLines > 0 || byteTrimmed.droppedBytes > 0;
       return {
         content:
-          trimmed.droppedLines === 0
+          !shortened || !defaultVisible
             ? content
             : [
                 ...content,
@@ -181,7 +278,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       // position it can trust for deltas.
       if (tail === undefined) {
         const captured = await pane.capture();
-        const trimmed = tailLines(captured, maxLines ?? context.policy.maxResultLines);
+        const trimmed = tailLines(captured, effectiveResultLines(context.policy, maxLines));
         return ok(
           {
             cursor: null,
@@ -203,10 +300,11 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         // Mark the stream before capturing. Output racing the capture may be
         // repeated on the next call, but it can never disappear between them.
         const seededCursor = tail.cursor;
-        const captured = await pane.capture({ start: -SEED_LINES });
+        const limit = effectiveResultLines(context.policy, maxLines);
+        const captured = await pane.capture({ start: -Math.min(SEED_LINES, limit) });
         const ended = requireLiveCursor(tail, seededCursor, paneId);
         if (ended !== undefined) return ended;
-        const trimmed = tailLines(captured, maxLines ?? context.policy.maxResultLines);
+        const trimmed = tailLines(captured, limit);
         return ok(
           {
             cursor: seededCursor,
@@ -238,7 +336,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
 
       const trimmed = tailLines(
         delta.text === "" ? [] : delta.text.split("\n"),
-        maxLines ?? context.policy.maxResultLines,
+        effectiveResultLines(context.policy, maxLines),
       );
       const body =
         delta.text === ""
@@ -342,7 +440,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         "pane, so you can target one without capturing them all.",
       inputSchema: {
         maxMatchesPerPane: z.number().int().positive().optional(),
-        pattern: z.string().describe("Literal text to find."),
+        pattern: z.string().min(1).describe("Non-empty literal text to find."),
         regex: z
           .literal(false)
           .optional()
@@ -358,6 +456,8 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         session: z.string().optional().describe("Restrict to one session by id or name."),
       },
       outputSchema: {
+        capturesByteClamped: z.boolean(),
+        effectiveScrollbackLines: z.number().int(),
         matches: z.array(
           z.object({
             lineNumber: z.number().int(),
@@ -367,7 +467,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             windowName: z.string(),
           }),
         ),
+        matchesTruncated: z.boolean(),
         panesSearched: z.number().int(),
+        scrollbackClamped: z.boolean(),
       },
       title: "Search pane contents",
     },
@@ -377,52 +479,125 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
-      const panes = snapshot.panes
-        .toArray()
-        .filter((pane) => target === undefined || pane.format.session_id === target.id);
-      const perPane = maxMatchesPerPane ?? 5;
-      const start =
-        scrollbackLines === undefined || scrollbackLines === 0 ? undefined : -scrollbackLines;
+      const panes = [
+        ...new Map(
+          snapshot.panes
+            .toArray()
+            .filter((pane) => target === undefined || pane.format.session_id === target.id)
+            .map((pane) => [pane.id, pane]),
+        ).values(),
+      ];
+      const perPane = effectiveResultLines(context.policy, maxMatchesPerPane ?? 5);
+      const resultLimit = effectiveResultLines(context.policy, undefined);
+      const requestedScrollback = scrollbackLines ?? 0;
+      const effectiveScrollback = Math.min(requestedScrollback, resultLimit);
+      const scrollbackClamped = effectiveScrollback !== requestedScrollback;
+      const start = effectiveScrollback === 0 ? undefined : -effectiveScrollback;
 
-      const captures = await Promise.all(
-        panes.map(async (pane) => ({
-          lines: await pane.capture(start === undefined ? {} : { start }).catch(() => []),
-          pane,
-        })),
-      );
+      const matches: {
+        lineNumber: number;
+        paneId: string;
+        sessionName: string;
+        text: string;
+        windowName: string;
+      }[] = [];
+      let capturesByteClamped = false;
+      let matchesTruncated = false;
+      let panesSearched = 0;
+      let resultBytes = 0;
+      searchLoop: for (let offset = 0; offset < panes.length; offset += SEARCH_CONCURRENCY) {
+        const batch = panes.slice(offset, offset + SEARCH_CONCURRENCY);
+        // eslint-disable-next-line no-await-in-loop -- each bounded batch is released before the next.
+        const captures = await mapConcurrent(batch, SEARCH_CONCURRENCY, async (pane) => {
+          const visibleRows =
+            pane.height === null || !Number.isSafeInteger(pane.height) || pane.height <= 0
+              ? 1
+              : pane.height;
+          const requestedRows = Math.min(
+            Number.MAX_SAFE_INTEGER,
+            visibleRows + effectiveScrollback,
+          );
+          const rowLimit = captureRowLimit(pane.width, requestedRows);
+          const range =
+            rowLimit === 0
+              ? { clamped: true, end: undefined, start: undefined }
+              : boundedCaptureRange(pane.height, start, undefined, rowLimit);
+          return {
+            byteClamped: rowLimit === 0 || range.clamped,
+            lines:
+              rowLimit === 0
+                ? []
+                : await pane
+                    .capture({
+                      ...(range.end === undefined ? {} : { end: range.end }),
+                      ...(range.start === undefined ? {} : { start: range.start }),
+                    })
+                    .catch(() => []),
+            pane,
+          };
+        });
+        panesSearched += captures.length;
 
-      const matches = captures.flatMap(({ lines, pane }) => {
-        const found: {
-          lineNumber: number;
-          paneId: string;
-          sessionName: string;
-          text: string;
-          windowName: string;
-        }[] = [];
-        for (const [index, line] of lines.entries()) {
-          if (found.length >= perPane) break;
-          if (!matcher(line)) continue;
-          found.push({
-            lineNumber: index + 1,
-            paneId: pane.id,
-            sessionName: pane.session?.name ?? "",
-            text: line,
-            windowName: pane.window?.name ?? "",
-          });
+        for (const { byteClamped, lines, pane } of captures) {
+          capturesByteClamped ||= byteClamped;
+          let foundForPane = 0;
+          for (const [index, line] of lines.entries()) {
+            if (!matcher(line)) continue;
+            if (foundForPane >= perPane) {
+              matchesTruncated = true;
+              break;
+            }
+            if (matches.length >= resultLimit) {
+              matchesTruncated = true;
+              break searchLoop;
+            }
+            const prefix = `${pane.id} ${pane.session?.name ?? ""}:${pane.window?.name ?? ""}:${String(index + 1)}  `;
+            const nextBytes = Buffer.byteLength(`${prefix}${line}\n`, "utf8");
+            if (resultBytes + nextBytes > MAX_RESULT_BYTES) {
+              matchesTruncated = true;
+              break searchLoop;
+            }
+            matches.push({
+              lineNumber: index + 1,
+              paneId: pane.id,
+              sessionName: pane.session?.name ?? "",
+              text: line,
+              windowName: pane.window?.name ?? "",
+            });
+            foundForPane += 1;
+            resultBytes += nextBytes;
+          }
         }
-        return found;
-      });
+      }
 
-      return ok(
-        { matches, panesSearched: panes.length },
+      const answer =
         matches.length === 0
-          ? `No pane of ${String(panes.length)} searched is showing ${pattern}. Try scrollbackLines to look above the visible screen.`
+          ? matchesTruncated
+            ? `Matches for ${pattern} were omitted because no complete result fit the byte ceiling.`
+            : `No pane of ${String(panesSearched)} searched is showing ${pattern}. Try scrollbackLines to look above the visible screen.`
           : matches
               .map(
                 (match) =>
                   `${match.paneId} ${match.sessionName}:${match.windowName}:${String(match.lineNumber)}  ${match.text}`,
               )
-              .join("\n"),
+              .join("\n");
+      const notices = [
+        ...(scrollbackClamped
+          ? [`[scrollbackLines clamped to ${String(effectiveScrollback)}]`]
+          : []),
+        ...(capturesByteClamped ? ["[pane captures shortened to fit the byte ceiling]"] : []),
+        ...(matchesTruncated ? [`[matches truncated at ${String(resultLimit)} lines]`] : []),
+      ];
+      return ok(
+        {
+          capturesByteClamped,
+          effectiveScrollbackLines: effectiveScrollback,
+          matches,
+          matchesTruncated,
+          panesSearched,
+          scrollbackClamped,
+        },
+        [answer, ...notices].join("\n\n"),
       );
     },
   );

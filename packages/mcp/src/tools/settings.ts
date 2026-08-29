@@ -8,6 +8,9 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { mkdtemp, open, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 
 import {
@@ -18,8 +21,9 @@ import {
   requireWritablePane,
   type ToolContext,
 } from "../context.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { fail, ok } from "../results.js";
+import { fail, ok, tailBytes, tailLines } from "../results.js";
 
 /**
  * The six scopes tmux keeps options in.
@@ -56,6 +60,46 @@ function requireTarget(
       `default every ${scope} inherits.`,
     reason: `${scope} scope needs a target: it says which ${scope} to act on.`,
   });
+}
+
+interface StagedBuffer {
+  readonly bytes: Uint8Array | undefined;
+  readonly totalBytes: number;
+}
+
+/** Let tmux write a buffer to disk, then bring at most one bounded copy into memory. */
+async function stageBuffer(context: ToolContext, name: string): Promise<StagedBuffer> {
+  const directory = await mkdtemp(join(tmpdir(), "ltx-mcp-buffer-"));
+  const path = join(directory, "buffer");
+  try {
+    await context.tmux.saveBuffer(name, path);
+    const handle = await open(path, "r");
+    try {
+      const before = await handle.stat();
+      if (!before.isFile()) throw new Error("tmux did not write a regular file");
+      if (before.size > MAX_RESULT_BYTES) {
+        return { bytes: undefined, totalBytes: before.size };
+      }
+
+      const bytes = Buffer.allocUnsafe(before.size);
+      let offset = 0;
+      while (offset < bytes.length) {
+        // eslint-disable-next-line no-await-in-loop -- one bounded file read.
+        const read = await handle.read(bytes, offset, bytes.length - offset, offset);
+        if (read.bytesRead === 0) break;
+        offset += read.bytesRead;
+      }
+      const after = await handle.stat();
+      if (after.size !== before.size || offset !== before.size) {
+        throw new Error("buffer changed while its saved copy was being read");
+      }
+      return { bytes, totalBytes: before.size };
+    } finally {
+      await handle.close();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
 }
 
 /** The three things every scope can do, whichever object holds it. */
@@ -246,16 +290,76 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
     "show_buffer",
     {
       annotations: READ_ONLY,
-      description: "Read one paste buffer by name.",
-      inputSchema: { name: z.string() },
-      outputSchema: { name: z.string(), text: z.string() },
+      description:
+        "Read one paste buffer by name. Large buffers return their size without " +
+        "reading the contents; use save_buffer to keep those outside the response.",
+      inputSchema: {
+        maxLines: z.number().int().positive().optional(),
+        name: z.string(),
+      },
+      outputSchema: {
+        droppedLines: z.number().int(),
+        name: z.string(),
+        omittedBytes: z.number().int(),
+        returnedBytes: z.number().int(),
+        text: z.string(),
+        totalBytes: z.number().int(),
+        truncated: z.boolean(),
+      },
       title: "Show buffer",
     },
-    async ({ name }) => {
+    async ({ maxLines, name }) => {
       try {
-        const lines = await context.tmux.showBuffer(name);
-        const text = lines.join("\n");
-        return ok({ name, text }, text);
+        const staged = await stageBuffer(context, name);
+        if (staged.bytes === undefined) {
+          return ok(
+            {
+              droppedLines: 0,
+              name,
+              omittedBytes: staged.totalBytes,
+              returnedBytes: 0,
+              text: "",
+              totalBytes: staged.totalBytes,
+              truncated: true,
+            },
+            `Buffer ${name} is ${String(staged.totalBytes)} bytes; no content was read because the result ceiling is ${String(MAX_RESULT_BYTES)} bytes. Use save_buffer to write it outside the response.`,
+          );
+        }
+
+        const lines = new TextDecoder().decode(staged.bytes).split("\n");
+        const trimmed = tailLines(lines, effectiveResultLines(context.policy, maxLines));
+        const byteTrimmed = tailBytes(trimmed.lines.join("\n"), MAX_RESULT_BYTES);
+        const returnedBytes = Buffer.byteLength(byteTrimmed.text, "utf8");
+        const omittedBytes = Math.max(
+          byteTrimmed.droppedBytes,
+          staged.totalBytes - returnedBytes,
+          0,
+        );
+        const truncated = trimmed.droppedLines > 0 || omittedBytes > 0;
+        const recovery = "raise maxLines within the server limit or use save_buffer for all of it";
+        const lineNotice =
+          trimmed.droppedLines === 0
+            ? ""
+            : `[${String(trimmed.droppedLines)} earlier lines omitted; ${recovery}]`;
+        const byteNotice =
+          byteTrimmed.droppedBytes === 0
+            ? ""
+            : `[${String(byteTrimmed.droppedBytes)} earlier bytes omitted; ${recovery}]`;
+        const text = [lineNotice, byteNotice, byteTrimmed.text]
+          .filter((part) => part !== "")
+          .join("\n");
+        return ok(
+          {
+            droppedLines: trimmed.droppedLines,
+            name,
+            omittedBytes,
+            returnedBytes,
+            text: byteTrimmed.text,
+            totalBytes: staged.totalBytes,
+            truncated,
+          },
+          text,
+        );
       } catch (error) {
         return fail({
           hint: "list_buffers shows which names exist.",

@@ -11,6 +11,9 @@
 /** How much a tool may return before it starts linking instead of inlining. */
 export const DEFAULT_MAX_RESULT_LINES = 200;
 
+/** Largest text body a read tool may return. */
+export const MAX_RESULT_BYTES = 256 * 1024;
+
 /**
  * How long a blocking wait may run.
  *
@@ -37,6 +40,7 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 const BLOCKING_WAIT_FLOOR_MS = 1_000;
 const BLOCKING_WAIT_LIMIT_MS = 120_000;
+const MAX_RESULT_LINES_LIMIT = 10_000;
 const TASK_WAIT_FLOOR_MS = 1_000;
 const TASK_WAIT_LIMIT_MS = 3_600_000;
 
@@ -145,7 +149,11 @@ export function resolvePolicy(
       DEFAULT_COMMAND_TIMEOUT_MS,
     ),
     liveEnabled: environment.LIBTMUX_MCP_LIVE !== "0",
-    maxResultLines: readInteger(environment.LIBTMUX_MCP_MAX_RESULT_LINES, DEFAULT_MAX_RESULT_LINES),
+    maxResultLines: clamp(
+      readInteger(environment.LIBTMUX_MCP_MAX_RESULT_LINES, DEFAULT_MAX_RESULT_LINES),
+      1,
+      MAX_RESULT_LINES_LIMIT,
+    ),
     safety: readSafety(environment.LIBTMUX_SAFETY),
     tools: readToolAllowlist(environment.LIBTMUX_MCP_TOOLS),
     taskWaitMaxMs: clamp(
@@ -154,6 +162,19 @@ export function resolvePolicy(
       TASK_WAIT_LIMIT_MS,
     ),
   };
+}
+
+/** Keep a caller's requested line count inside the operator's ceiling. */
+export function effectiveResultLines(policy: Policy, requested: number | undefined): number {
+  const configured = Number.isSafeInteger(policy.maxResultLines)
+    ? policy.maxResultLines
+    : DEFAULT_MAX_RESULT_LINES;
+  const ceiling = clamp(configured, 1, MAX_RESULT_LINES_LIMIT);
+  const desired =
+    requested === undefined || !Number.isSafeInteger(requested)
+      ? ceiling
+      : clamp(requested, 1, MAX_RESULT_LINES_LIMIT);
+  return Math.min(desired, ceiling);
 }
 
 /** Whether a tool needing `required` is offered under `active`. */

@@ -48,6 +48,11 @@ export interface Trimmed {
   readonly lines: readonly string[];
 }
 
+export interface TrimmedText {
+  readonly droppedBytes: number;
+  readonly text: string;
+}
+
 /**
  * Keep the last `limit` lines.
  *
@@ -57,6 +62,48 @@ export interface Trimmed {
 export function tailLines(lines: readonly string[], limit: number): Trimmed {
   if (limit <= 0 || lines.length <= limit) return { droppedLines: 0, lines };
   return { droppedLines: lines.length - limit, lines: lines.slice(lines.length - limit) };
+}
+
+/** Keep a UTF-8-safe tail whose encoded form does not exceed `limit`. */
+export function tailBytes(text: string, limit: number): TrimmedText {
+  const total = Buffer.byteLength(text, "utf8");
+  if (total <= limit) return { droppedBytes: 0, text };
+  if (limit <= 0) return { droppedBytes: total, text: "" };
+
+  let keptBytes = 0;
+  let start = text.length;
+  while (start > 0) {
+    const low = text.charCodeAt(start - 1);
+    const high = start > 1 ? text.charCodeAt(start - 2) : 0;
+    const width = low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff ? 2 : 1;
+    const bytes = Buffer.byteLength(text.slice(start - width, start), "utf8");
+    if (keptBytes + bytes > limit) break;
+    keptBytes += bytes;
+    start -= width;
+  }
+  return { droppedBytes: total - keptBytes, text: text.slice(start) };
+}
+
+/** Map in input order while bounding work that is in flight. */
+export async function mapConcurrent<Input, Output>(
+  inputs: readonly Input[],
+  concurrency: number,
+  work: (input: Input) => Promise<Output>,
+): Promise<readonly Output[]> {
+  const outputs = inputs.map(() => undefined as Output);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= inputs.length) return;
+      const input = inputs[index] as Input;
+      // eslint-disable-next-line no-await-in-loop -- each worker owns one bounded lane.
+      outputs[index] = await work(input);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, inputs.length) }, () => worker()));
+  return outputs;
 }
 
 /** Render captured output with a note when it was cut, never silently. */
