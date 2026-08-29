@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { parseControlLine, unescapeOutput } from "../../src/_internal/control/events.js";
+import { parsePaneId, parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import type { TmuxEvent } from "../../src/types.js";
 
 const encoder = new TextEncoder();
@@ -74,50 +75,62 @@ describe("control-mode line parsing", () => {
   });
 
   test("parses each notification into its own shape", () => {
-    expect(event("%window-add @3")).toEqual({ kind: "window-add", windowId: "@3" });
-    expect(event("%window-close @3")).toEqual({ kind: "window-close", windowId: "@3" });
+    expect(event("%window-add @3")).toEqual({
+      kind: "window-add",
+      windowId: parseWindowId("@3"),
+    });
+    expect(event("%window-close @3")).toEqual({
+      kind: "window-close",
+      windowId: parseWindowId("@3"),
+    });
     expect(event("%unlinked-window-add @4")).toEqual({
       kind: "unlinked-window-add",
-      windowId: "@4",
+      windowId: parseWindowId("@4"),
     });
     expect(event("%window-renamed @3 my window")).toEqual({
       kind: "window-renamed",
       name: "my window",
-      windowId: "@3",
+      windowId: parseWindowId("@3"),
     });
     expect(event("%window-pane-changed @3 %7")).toEqual({
       kind: "window-pane-changed",
-      paneId: "%7",
-      windowId: "@3",
+      paneId: parsePaneId("%7"),
+      windowId: parseWindowId("@3"),
     });
     expect(event("%session-changed $0 work")).toEqual({
       kind: "session-changed",
       name: "work",
-      sessionId: "$0",
+      sessionId: parseSessionId("$0"),
     });
     expect(event("%sessions-changed")).toEqual({ kind: "sessions-changed" });
     expect(event("%session-window-changed $0 @2")).toEqual({
       kind: "session-window-changed",
-      sessionId: "$0",
-      windowId: "@2",
+      sessionId: parseSessionId("$0"),
+      windowId: parseWindowId("@2"),
     });
     expect(event("%client-session-changed /dev/pts/3 $1 other")).toEqual({
       client: "/dev/pts/3",
       kind: "client-session-changed",
       name: "other",
-      sessionId: "$1",
+      sessionId: parseSessionId("$1"),
     });
     expect(event("%client-detached /dev/pts/3")).toEqual({
       client: "/dev/pts/3",
       kind: "client-detached",
     });
-    expect(event("%pane-mode-changed %2")).toEqual({ kind: "pane-mode-changed", paneId: "%2" });
+    expect(event("%pane-mode-changed %2")).toEqual({
+      kind: "pane-mode-changed",
+      paneId: parsePaneId("%2"),
+    });
     expect(event("%paste-buffer-changed buffer0")).toEqual({
       buffer: "buffer0",
       kind: "paste-buffer-changed",
     });
-    expect(event("%pause %1")).toEqual({ kind: "pause", paneId: "%1" });
-    expect(event("%continue %1")).toEqual({ kind: "continue", paneId: "%1" });
+    expect(event("%pause %1")).toEqual({ kind: "pause", paneId: parsePaneId("%1") });
+    expect(event("%continue %1")).toEqual({
+      kind: "continue",
+      paneId: parsePaneId("%1"),
+    });
     expect(event("%config-error /etc/tmux.conf:3: bad")).toEqual({
       kind: "config-error",
       message: "/etc/tmux.conf:3: bad",
@@ -137,7 +150,7 @@ describe("control-mode line parsing", () => {
       kind: "layout-change",
       layout: "bb62,80x24,0,0,1",
       visibleLayout: "cc63,80x24,0,0,1",
-      windowId: "@1",
+      windowId: parseWindowId("@1"),
     });
   });
 
@@ -179,7 +192,7 @@ describe("control-mode line parsing", () => {
     expect(event("%output %1 hello world")).toEqual({
       data: "hello world",
       kind: "output",
-      paneId: "%1",
+      paneId: parsePaneId("%1"),
     });
   });
 
@@ -191,7 +204,7 @@ describe("control-mode line parsing", () => {
       age: 512,
       data: "late data",
       kind: "output",
-      paneId: "%1",
+      paneId: parsePaneId("%1"),
     });
   });
 

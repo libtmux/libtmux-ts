@@ -1,9 +1,9 @@
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
 import { describe, expect, test } from "bun:test";
 
+import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import type {
@@ -12,16 +12,18 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 
-class FakeChild extends EventEmitter {
+class FakeChild extends EventEmitter implements ControlChild {
   readonly stdin = new PassThrough();
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
   exitCode: number | null = null;
   signalCode: "SIGKILL" | "SIGTERM" | null = null;
   readonly kills: ("SIGKILL" | "SIGTERM")[] = [];
+  readonly pid: number;
 
-  constructor(readonly pid: number) {
+  constructor(pid: number) {
     super();
+    this.pid = pid;
   }
 
   kill(signal: "SIGKILL" | "SIGTERM"): boolean {
@@ -30,6 +32,12 @@ class FakeChild extends EventEmitter {
     this.emit("close", null);
     return true;
   }
+}
+
+function takeChild(children: FakeChild[]): FakeChild {
+  const child = children.shift();
+  if (child === undefined) throw new Error("no fake control child remains");
+  return child;
 }
 
 class RecordingTransport implements CommandTransport {
@@ -74,7 +82,7 @@ describe("ControlConnection child ownership", () => {
       { pauseAfterSeconds: 3, reconnect: { attempts: 1, delayMs: 1 } },
       false,
       fallback,
-      () => children.shift() as unknown as ChildProcessWithoutNullStreams,
+      () => takeChild(children),
     );
     const reconnectingEvents = control.subscribe();
     const reconnectedEvents = control.subscribe();
@@ -118,7 +126,7 @@ describe("ControlConnection child ownership", () => {
       {},
       false,
       new RecordingTransport(),
-      () => child as unknown as ChildProcessWithoutNullStreams,
+      () => child,
     );
     attach(child);
     await control.ready();

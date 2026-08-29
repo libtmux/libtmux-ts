@@ -1,4 +1,22 @@
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { EventEmitter } from "node:events";
+
+type ControlChildEventChannel = Pick<EventEmitter, "off" | "on">;
+
+type ControlChildInput = ControlChildEventChannel & {
+  destroy: () => void;
+  write: (line: string, callback: (error?: Error | null) => void) => boolean;
+};
+
+/** The process surface control mode owns, independent of how it was spawned. */
+export type ControlChild = Pick<EventEmitter, "off" | "on" | "once"> & {
+  readonly exitCode: number | null;
+  kill: (signal: "SIGKILL" | "SIGTERM") => boolean;
+  readonly pid?: number | undefined;
+  readonly signalCode: NodeJS.Signals | null;
+  readonly stderr: ControlChildEventChannel;
+  readonly stdin: ControlChildInput;
+  readonly stdout: ControlChildEventChannel;
+};
 
 /** Callbacks owned by one control-mode child process. */
 export interface ControlChildListeners {
@@ -11,7 +29,7 @@ export interface ControlChildListeners {
 }
 
 interface ActiveChild {
-  readonly child: ChildProcessWithoutNullStreams;
+  readonly child: ControlChild;
   readonly listeners: ControlChildListeners;
 }
 
@@ -27,22 +45,19 @@ export interface ControlChildLifecycleOptions {
  */
 export class ControlChildLifecycle {
   #active: ActiveChild | undefined;
-  readonly #spawn: () => ChildProcessWithoutNullStreams;
+  readonly #spawn: () => ControlChild;
   readonly #terminationGraceMs: number;
 
-  constructor(
-    spawn: () => ChildProcessWithoutNullStreams,
-    options: ControlChildLifecycleOptions = {},
-  ) {
+  constructor(spawn: () => ControlChild, options: ControlChildLifecycleOptions = {}) {
     this.#spawn = spawn;
     this.#terminationGraceMs = options.terminationGraceMs ?? 2_000;
   }
 
-  active(): ChildProcessWithoutNullStreams | undefined {
+  active(): ControlChild | undefined {
     return this.#active?.child;
   }
 
-  open(listeners: ControlChildListeners): ChildProcessWithoutNullStreams {
+  open(listeners: ControlChildListeners): ControlChild {
     if (this.#active !== undefined) {
       throw new Error("the active control child must be retired before it is replaced");
     }
@@ -66,7 +81,7 @@ export class ControlChildLifecycle {
   }
 
   /** Retire the active generation once and return the process that was owned. */
-  retire(): ChildProcessWithoutNullStreams | undefined {
+  retire(): ControlChild | undefined {
     const active = this.#active;
     if (active === undefined) return undefined;
     this.#active = undefined;

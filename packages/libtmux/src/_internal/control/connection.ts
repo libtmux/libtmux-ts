@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 
 import type { PaneId } from "../../common.js";
 import type {
@@ -15,7 +15,7 @@ import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
-import { ControlChildLifecycle } from "./child.js";
+import { ControlChildLifecycle, type ControlChild } from "./child.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
 import { LineFramer } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
@@ -150,7 +150,7 @@ interface ControlConnectionOptions extends ConnectionOptions {
   readonly pauseAfterSeconds?: number;
 }
 
-type ControlChildSpawner = () => ChildProcessWithoutNullStreams;
+type ControlChildSpawner = () => ControlChild;
 
 /**
  * Answer a command once, from whichever path reaches it first.
@@ -398,7 +398,7 @@ export class ControlConnection implements CommandTransport {
     return sink.stream;
   }
 
-  #spawn(): ChildProcessWithoutNullStreams {
+  #spawn(): ControlChild {
     return spawn(this.#executable, [...this.#argv], {
       // Exactly the environment the connection was given, as the spawning
       // transport does. Overlaying it on `process.env` would make
@@ -406,10 +406,10 @@ export class ControlConnection implements CommandTransport {
       // whole ambient environment to the tmux server.
       env: this.#environment,
       stdio: ["pipe", "pipe", "pipe"],
-    }) as ChildProcessWithoutNullStreams;
+    });
   }
 
-  #openChild(): ChildProcessWithoutNullStreams {
+  #openChild(): ControlChild {
     return this.#children.open({
       close: (code) => {
         const message = this.#reason ?? Buffer.concat(this.#stderr).toString("utf8").trim();
@@ -616,7 +616,7 @@ export class ControlConnection implements CommandTransport {
     });
   }
 
-  async #finishAttach(child: ChildProcessWithoutNullStreams): Promise<void> {
+  async #finishAttach(child: ControlChild): Promise<void> {
     try {
       await this.#requestPauseAfter(child);
     } catch (error) {
@@ -727,7 +727,7 @@ export class ControlConnection implements CommandTransport {
    * observer's stream would make a literal `%pause` command result impossible
    * to distinguish from a notification.
    */
-  async #requestPauseAfter(child: ChildProcessWithoutNullStreams): Promise<void> {
+  async #requestPauseAfter(child: ControlChild): Promise<void> {
     const seconds = this.#pauseAfterSeconds;
     if (seconds === undefined) return;
     const fallback = this.#spawnFallback;
@@ -1019,7 +1019,7 @@ export class ControlConnection implements CommandTransport {
     this.#onAbort = undefined;
   }
 
-  #waitForRetirement(child: ChildProcessWithoutNullStreams): Promise<void> {
+  #waitForRetirement(child: ControlChild): Promise<void> {
     if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
     return new Promise((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined;

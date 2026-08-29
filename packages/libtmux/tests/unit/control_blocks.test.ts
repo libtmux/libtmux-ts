@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 
 import { BlockTracker } from "../../src/_internal/control/blocks.js";
 import { parseControlLine } from "../../src/_internal/control/events.js";
+import { parseWindowId } from "../../src/_internal/runtime/ids.js";
 
 const encoder = new TextEncoder();
 
@@ -89,7 +90,7 @@ describe("block pairing", () => {
 
   test("carries the notification rather than making the caller narrow it again", () => {
     expect(place(new BlockTracker(), "%window-add @3")).toEqual({
-      event: { kind: "window-add", windowId: "@3" },
+      event: { kind: "window-add", windowId: parseWindowId("@3") },
       kind: "notification",
     });
   });

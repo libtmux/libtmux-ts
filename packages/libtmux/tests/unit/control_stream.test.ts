@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { createEventStream } from "../../src/_internal/control/stream.js";
+import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import type { TmuxEvent } from "../../src/types.js";
 
 /**
@@ -14,6 +15,7 @@ import type { TmuxEvent } from "../../src/types.js";
  */
 
 const event: TmuxEvent = { kind: "sessions-changed" };
+const pane0 = parsePaneId("%0");
 
 describe("event stream lifetime", () => {
   test("runs its close hook exactly once, however it is ended", async () => {
@@ -51,9 +53,9 @@ describe("event stream lifetime", () => {
   test("drops the oldest event and counts it when the consumer falls behind", () => {
     const sink = createEventStream(() => Promise.resolve(), 2);
 
-    sink.push({ data: "1", kind: "output", paneId: "%0" });
-    sink.push({ data: "2", kind: "output", paneId: "%0" });
-    sink.push({ data: "3", kind: "output", paneId: "%0" });
+    sink.push({ data: "1", kind: "output", paneId: pane0 });
+    sink.push({ data: "2", kind: "output", paneId: pane0 });
+    sink.push({ data: "3", kind: "output", paneId: pane0 });
 
     expect(sink.stream.dropped).toBe(1);
   });
@@ -100,8 +102,8 @@ describe("event stream lifetime", () => {
   test("answers the match when one arrives before either", async () => {
     const sink = createEventStream(() => Promise.resolve(), 4);
     const armed = sink.stream.find((event) => event.kind === "output", { timeoutMs: 30_000 });
-    sink.push({ data: "hello", kind: "output", paneId: "%0" });
-    expect(await armed).toEqual({ data: "hello", kind: "output", paneId: "%0" });
+    sink.push({ data: "hello", kind: "output", paneId: pane0 });
+    expect(await armed).toEqual({ data: "hello", kind: "output", paneId: pane0 });
   });
 
   test("answers undefined when a caller stops waiting", async () => {
