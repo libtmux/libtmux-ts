@@ -18,7 +18,8 @@ import { randomUUID } from "node:crypto";
 import type { Pane } from "libtmux";
 
 import type { ToolContext } from "./context.js";
-import { effectiveWaitMs } from "./policy.js";
+import { captureGridBounded } from "./grid_capture.js";
+import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";
 
 export interface FramedResult {
   readonly effectiveTimeoutMs: number;
@@ -84,6 +85,19 @@ const SETTLEMENT_POLL_MS = 1_000;
 
 /** How often settlement confirms that a quiet pane still exists. */
 const SETTLEMENT_LIVENESS_MS = 5_000;
+
+/** Read a bounded tail of the rendered grid when no live stream is available. */
+async function fallbackStream(pane: Pane): Promise<string> {
+  const height =
+    pane.height !== null && Number.isSafeInteger(pane.height) && pane.height > 0 ? pane.height : 1;
+  return captureGridBounded(pane, {
+    byteLimit: MAX_RESULT_BYTES,
+    lineLimit: Math.min(Number.MAX_SAFE_INTEGER, FALLBACK_SCROLLBACK + height),
+    start: -FALLBACK_SCROLLBACK,
+  })
+    .then(({ lines }) => lines.join("\n"))
+    .catch(() => "");
+}
 
 /**
  * Wrap a command so its output can be told from the pane's echo of it.
@@ -251,7 +265,7 @@ async function waitForSettlement(
     let stream: string;
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- each capture follows the previous observation.
-      stream = (await pane.capture({ start: -FALLBACK_SCROLLBACK }).catch(() => [])).join("\n");
+      stream = await fallbackStream(pane);
     } else {
       stream = tail.read(cursor).text;
     }
@@ -320,7 +334,7 @@ export async function runFramedCommand(
     let stream: string;
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- each read follows the last.
-      stream = (await pane.capture({ start: -FALLBACK_SCROLLBACK }).catch(() => [])).join("\n");
+      stream = await fallbackStream(pane);
     } else {
       const reading = tail.read(cursor);
       stream = reading.text;
@@ -355,10 +369,7 @@ export async function runFramedCommand(
 
   // Timed out, or the pane died under it — which is a different answer, and the
   // only one where calling again would wait on something that cannot arrive.
-  const partial =
-    tail === undefined
-      ? (await pane.capture({ start: -FALLBACK_SCROLLBACK }).catch(() => [])).join("\n")
-      : tail.read(cursor).text;
+  const partial = tail === undefined ? await fallbackStream(pane) : tail.read(cursor).text;
   const startAt = partial.indexOf(`${id}_S`);
   const afterStart = startAt < 0 ? -1 : partial.indexOf("\n", startAt);
   const output = afterStart < 0 ? partial : partial.slice(afterStart + 1);

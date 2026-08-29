@@ -11,7 +11,7 @@
 /** How much a tool may return before it starts linking instead of inlining. */
 export const DEFAULT_MAX_RESULT_LINES = 200;
 
-/** Largest text body a read tool may return. */
+/** Largest tmux-derived UTF-8 payload per result; fixed notices may add a small overhead. */
 export const MAX_RESULT_BYTES = 256 * 1024;
 
 /**

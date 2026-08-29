@@ -19,9 +19,10 @@ import {
   type ReadablePane,
   type ToolContext,
 } from "../context.js";
-import { effectiveResultLines, effectiveWaitMs } from "../policy.js";
+import { captureGridBounded } from "../grid_capture.js";
+import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
-import { fail, ok, renderOutput, tailLines } from "../results.js";
+import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema } from "../schemas.js";
 import type { PaneTailEndReason } from "../live.js";
 
@@ -211,11 +212,24 @@ async function renderWait(
     });
   }
   const limit = effectiveResultLines(context.policy, maxLines);
-  const trimmed = tailLines(report.output === "" ? [] : report.output.split("\n"), limit);
-  const screen =
+  const output = boundText(
+    report.output === "" ? [] : report.output.split("\n"),
+    limit,
+    MAX_RESULT_BYTES,
+  );
+  const screenBudget = MAX_RESULT_BYTES - output.returnedBytes;
+  const capture =
     report.outcome === "matched" || report.outcome === "cancelled"
-      ? ""
-      : tailLines(await pane.capture().catch(() => []), limit).lines.join("\n");
+      ? undefined
+      : await captureGridBounded(pane, {
+          byteLimit: screenBudget,
+          lineLimit: limit,
+        }).catch(() => undefined);
+  const boundedScreen = boundText(capture?.lines ?? [], limit, screenBudget);
+  const screen = boundedScreen.text;
+  const screenClamped =
+    capture !== undefined &&
+    (capture.byteClamped || capture.range.clamped || boundedScreen.omittedBytes > 0);
 
   // A wait is deliberately blind to what was already on the screen: matching it
   // would let text from an hour ago satisfy a wait that should have failed. But
@@ -240,10 +254,15 @@ async function renderWait(
                 ? "the pane exited before it matched; waiting again cannot help"
                 : `no match in ${String(report.effectiveTimeoutMs)}ms — call again with cursor=${String(report.cursor)} to carry on from here`;
 
-  const body =
+  const outputText = renderBoundedText(output, "read again from the returned cursor");
+  const screenText =
     screen === ""
-      ? renderOutput(trimmed)
-      : `${renderOutput(trimmed)}\n\n[the pane currently shows]\n${screen}`;
+      ? screenClamped
+        ? "[pane screen omitted by the result limits]"
+        : ""
+      : `${screenClamped ? "[pane screen shortened by the result limits]\n" : ""}${screen}`;
+  const body =
+    screenText === "" ? outputText : `${outputText}\n\n[the pane currently shows]\n${screenText}`;
   const missed =
     report.missedBytes === 0
       ? ""
@@ -253,14 +272,17 @@ async function renderWait(
     {
       alreadyOnScreen,
       cursor: report.cursor,
-      droppedLines: trimmed.droppedLines,
+      droppedLines: output.droppedLines,
       effectiveTimeoutMs: report.effectiveTimeoutMs,
       matched: report.matched,
       missedBytes: report.missedBytes,
+      omittedBytes: output.omittedBytes,
       outcome: report.outcome,
-      output: trimmed.lines.join("\n"),
+      output: output.text,
       paneId,
+      returnedBytes: output.returnedBytes + boundedScreen.returnedBytes,
       screen,
+      screenClamped,
       streamFailure: report.streamFailure,
     },
     `${body}${missed}\n\n[${note}]`,
@@ -283,6 +305,7 @@ const waitOutputSchema = {
     .number()
     .int()
     .describe("Retained output lost before this read; non-zero means the result is incomplete."),
+  omittedBytes: z.number().int().describe("Output bytes omitted by the result ceiling."),
   outcome: z
     .enum([
       "matched",
@@ -294,13 +317,15 @@ const waitOutputSchema = {
       "stream_lost",
     ])
     .describe("Why the wait ended. Read this rather than guessing from the output."),
-  output: z.string().describe("Everything the pane printed while waiting, matched or not."),
+  output: z.string().describe("The bounded tail of what the pane printed while waiting."),
   paneId: paneIdSchema,
+  returnedBytes: z.number().int().describe("UTF-8 bytes returned across output and screen."),
   screen: z
     .string()
     .describe(
-      "What the pane shows now. Filled when the wait did not match, so a miss is never blind.",
+      "What the pane shows now after a miss, unless result limits omit it; see screenClamped.",
     ),
+  screenClamped: z.boolean().describe("Whether result limits shortened the pane screen."),
   streamFailure: z
     .enum(["connection_lost", "events_dropped", "expired", "hub_closed", "topology_changed"])
     .nullable()

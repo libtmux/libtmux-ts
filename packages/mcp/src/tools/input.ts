@@ -10,9 +10,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
-import { effectiveResultLines } from "../policy.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD } from "../register.js";
-import { fail, ok, renderOutput, tailLines } from "../results.js";
+import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneIdSchema } from "../schemas.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
@@ -184,6 +184,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
               "Nonzero means the command printed more than was kept, so the output here " +
               "starts partway through it.",
           ),
+        omittedBytes: z.number().int().describe("Output bytes omitted by the result ceiling."),
         foreignOutputSuspected: z
           .boolean()
           .describe(
@@ -200,11 +201,12 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         outcome: z
           .enum(["completed", "timed_out", "pane_died"])
           .describe("Why this returned. Read it rather than inferring from the text."),
-        output: z.string(),
+        output: z.string().describe("The bounded tail of the command's output."),
         outputComplete: z
           .boolean()
-          .describe("False when bounded capture lost the start of the command's output."),
+          .describe("False when capture or result limits omitted any command output."),
         paneId: paneIdSchema,
+        returnedBytes: z.number().int().describe("UTF-8 output bytes returned."),
         stillRunning: z
           .boolean()
           .describe("True when it timed out; the command keeps running in the pane."),
@@ -270,10 +272,13 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         throw error;
       });
       reservation.settleWith(result.settled);
-      const trimmed = tailLines(
+      const bounded = boundText(
         result.output === "" ? [] : result.output.split("\n"),
         effectiveResultLines(context.policy, maxLines),
+        MAX_RESULT_BYTES,
       );
+      const outputComplete =
+        result.outputComplete && bounded.droppedLines === 0 && bounded.omittedBytes === 0;
 
       const headline =
         result.outcome === "completed"
@@ -291,18 +296,21 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           effectiveTimeoutMs: result.effectiveTimeoutMs,
           exitStatus: result.exitStatus,
           foreignOutputSuspected: result.foreignOutputSuspected,
-          droppedLines: trimmed.droppedLines,
+          droppedLines: bounded.droppedLines,
           missedBytes: result.missedBytes,
+          omittedBytes: bounded.omittedBytes,
           outcome: result.outcome,
-          output: trimmed.lines.join("\n"),
-          outputComplete: result.outputComplete,
+          output: bounded.text,
+          outputComplete,
           paneId,
+          returnedBytes: bounded.returnedBytes,
           stillRunning: result.outcome === "timed_out",
         },
-        `${renderOutput(trimmed)}\n\n[${headline}]${
-          result.outputComplete
-            ? ""
-            : "\n[the start of this command's output was outside the retained capture]"
+        `${renderBoundedText(
+          bounded,
+          "raise maxLines within the server limit or pipe large output before running",
+        )}\n\n[${headline}]${
+          outputComplete ? "" : "\n[some command output was omitted by capture or result limits]"
         }${
           result.foreignOutputSuspected
             ? "\n[another writer printed into this pane while the command ran; " +

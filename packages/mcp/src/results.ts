@@ -53,6 +53,13 @@ export interface TrimmedText {
   readonly text: string;
 }
 
+export interface BoundedText {
+  readonly droppedLines: number;
+  readonly omittedBytes: number;
+  readonly returnedBytes: number;
+  readonly text: string;
+}
+
 /**
  * Keep the last `limit` lines.
  *
@@ -82,6 +89,35 @@ export function tailBytes(text: string, limit: number): TrimmedText {
     start -= width;
   }
   return { droppedBytes: total - keptBytes, text: text.slice(start) };
+}
+
+/** Keep a UTF-8 text tail inside both line and byte ceilings. */
+export function boundText(
+  lines: readonly string[],
+  lineLimit: number,
+  byteLimit: number,
+): BoundedText {
+  const lineTrimmed = tailLines(lines, lineLimit);
+  const byteTrimmed = tailBytes(lineTrimmed.lines.join("\n"), byteLimit);
+  return {
+    droppedLines: lineTrimmed.droppedLines,
+    omittedBytes: byteTrimmed.droppedBytes,
+    returnedBytes: Buffer.byteLength(byteTrimmed.text, "utf8"),
+    text: byteTrimmed.text,
+  };
+}
+
+/** Render bounded text without hiding either form of truncation. */
+export function renderBoundedText(result: BoundedText, recovery: string): string {
+  const notices = [
+    result.droppedLines === 0
+      ? ""
+      : `[${String(result.droppedLines)} earlier lines omitted; ${recovery}]`,
+    result.omittedBytes === 0
+      ? ""
+      : `[${String(result.omittedBytes)} earlier bytes omitted; ${recovery}]`,
+  ].filter((part) => part !== "");
+  return [...notices, result.text].filter((part) => part !== "").join("\n");
 }
 
 /** Map in input order while bounding work that is in flight. */

@@ -16,13 +16,15 @@ import {
   requireSession,
   type ToolContext,
 } from "../context.js";
+import { boundedCaptureRange, captureGridBounded, captureRowLimit } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import {
+  boundText,
   fail,
   mapConcurrent,
   ok,
-  renderOutput,
+  renderBoundedText,
   resourceLink,
   tailBytes,
   tailLines,
@@ -35,43 +37,6 @@ const SEED_LINES = 100;
 
 /** How many pane captures a search may have in flight. */
 const SEARCH_CONCURRENCY = 8;
-
-/** tmux stores at most this many UTF-8 bytes in one grid cell. */
-const MAX_GRID_CELL_BYTES = 32;
-
-interface CaptureRange {
-  readonly clamped: boolean;
-  readonly end: number | undefined;
-  readonly start: number | undefined;
-}
-
-/** Preserve the tail of a requested range without asking tmux for an unbounded grid. */
-function boundedCaptureRange(
-  paneHeight: number | null,
-  start: number | undefined,
-  end: number | undefined,
-  limit: number,
-): CaptureRange {
-  const first = start ?? 0;
-  const knownHeight =
-    paneHeight !== null && Number.isSafeInteger(paneHeight) && paneHeight > 0
-      ? paneHeight
-      : undefined;
-  const unknownEnd = end === undefined && knownHeight === undefined;
-  const last = end ?? (knownHeight === undefined ? Math.max(first, 0) : knownHeight - 1);
-  if (last < first || last - first < limit) {
-    return unknownEnd ? { clamped: true, end: last, start: first } : { clamped: false, end, start };
-  }
-  return { clamped: true, end: last, start: last - limit + 1 };
-}
-
-/** Bound rows before tmux serializes a grid into the command response. */
-function captureRowLimit(paneWidth: number | null, lineLimit: number): number {
-  if (paneWidth === null || !Number.isSafeInteger(paneWidth) || paneWidth <= 0) return 0;
-  const rowBytes = paneWidth * MAX_GRID_CELL_BYTES + 1;
-  if (!Number.isSafeInteger(rowBytes) || rowBytes > MAX_RESULT_BYTES) return 0;
-  return Math.min(lineLimit, Math.floor(MAX_RESULT_BYTES / rowBytes));
-}
 
 export function registerCapture(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "readonly")) return;
@@ -130,27 +95,17 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
 
       const limit = effectiveResultLines(context.policy, maxLines);
-      const lineRange = boundedCaptureRange(pane.height, start, end, limit);
-      const rowLimit = captureRowLimit(pane.width, limit);
-      const range =
-        rowLimit === 0
-          ? { clamped: true, end: undefined, start: undefined }
-          : boundedCaptureRange(pane.height, start, end, rowLimit);
-      const captured =
-        rowLimit === 0
-          ? []
-          : await pane.capture({
-              ...(range.end === undefined ? {} : { end: range.end }),
-              ...(joinWrapped === undefined ? {} : { joinWrapped }),
-              ...(range.start === undefined ? {} : { start: range.start }),
-            });
+      const bounded = await captureGridBounded(pane, {
+        byteLimit: MAX_RESULT_BYTES,
+        ...(end === undefined ? {} : { end }),
+        ...(joinWrapped === undefined ? {} : { joinWrapped }),
+        lineLimit: limit,
+        ...(start === undefined ? {} : { start }),
+      });
+      const { lines: captured, range } = bounded;
       const trimmed = tailLines(captured, limit);
       const byteTrimmed = tailBytes(trimmed.lines.join("\n"), MAX_RESULT_BYTES);
-      const byteClamped =
-        rowLimit === 0 ||
-        range.end !== lineRange.end ||
-        range.start !== lineRange.start ||
-        byteTrimmed.droppedBytes > 0;
+      const byteClamped = bounded.byteClamped || byteTrimmed.droppedBytes > 0;
       const structured = {
         byteClamped,
         droppedLines: trimmed.droppedLines,
@@ -165,9 +120,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       };
 
       const rangeNotice = range.clamped
-        ? rowLimit === 0
+        ? bounded.byteClamped && range.start === undefined && range.end === undefined
           ? `[capture omitted: no complete row fits the ${String(MAX_RESULT_BYTES)}-byte result ceiling]`
-          : `[capture range clamped to ${String(rowLimit)} rows: ${String(range.start)} through ${String(range.end)}]`
+          : `[capture range clamped: ${String(range.start)} through ${String(range.end)}]`
         : "";
       const byteNotice =
         byteTrimmed.droppedBytes === 0
@@ -196,7 +151,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
                 resourceLink(
                   paneContentUri(paneId),
                   `pane ${paneId} contents`,
-                  "The whole capture, if the trimmed tail is not enough.",
+                  "The default capture at server limits, if this narrower tail is not enough.",
                 ),
               ],
         structuredContent: structured,
@@ -231,6 +186,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .describe("Wait up to this long for new output before answering. Default 0."),
       },
       outputSchema: {
+        byteClamped: z.boolean().describe("Whether the byte ceiling shortened this result."),
         cursor: paneCursorSchema
           .nullable()
           .describe("Pass this to the next observe call; null means streaming was unavailable."),
@@ -242,6 +198,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             "Output that scrolled past before this read reached it. Non-zero means you fell behind.",
           ),
         paneId: paneIdSchema,
+        omittedBytes: z.number().int().describe("Result bytes omitted after capture or streaming."),
+        rangeClamped: z.boolean().describe("Whether result limits shortened a grid capture."),
+        returnedBytes: z.number().int(),
         seeded: z
           .boolean()
           .describe("True when this call started the watch and returned the screen."),
@@ -277,19 +236,27 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       // say so, so the caller knows the cursor it gets back is not a stream
       // position it can trust for deltas.
       if (tail === undefined) {
-        const captured = await pane.capture();
-        const trimmed = tailLines(captured, effectiveResultLines(context.policy, maxLines));
+        const limit = effectiveResultLines(context.policy, maxLines);
+        const captured = await captureGridBounded(pane, {
+          byteLimit: MAX_RESULT_BYTES,
+          lineLimit: limit,
+        });
+        const bounded = boundText(captured.lines, limit, MAX_RESULT_BYTES);
         return ok(
           {
+            byteClamped: captured.byteClamped || bounded.omittedBytes > 0,
             cursor: null,
-            droppedLines: trimmed.droppedLines,
+            droppedLines: bounded.droppedLines,
             missedBytes: 0,
+            omittedBytes: bounded.omittedBytes,
             paneId,
+            rangeClamped: captured.range.clamped,
+            returnedBytes: bounded.returnedBytes,
             seeded: true,
             streaming: false,
-            text: trimmed.lines.join("\n"),
+            text: bounded.text,
           },
-          renderOutput(trimmed),
+          renderBoundedText(bounded, "use capture_pane with a narrower range"),
         );
       }
 
@@ -301,21 +268,29 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         // repeated on the next call, but it can never disappear between them.
         const seededCursor = tail.cursor;
         const limit = effectiveResultLines(context.policy, maxLines);
-        const captured = await pane.capture({ start: -Math.min(SEED_LINES, limit) });
+        const captured = await captureGridBounded(pane, {
+          byteLimit: MAX_RESULT_BYTES,
+          lineLimit: limit,
+          start: -SEED_LINES,
+        });
         const ended = requireLiveCursor(tail, seededCursor, paneId);
         if (ended !== undefined) return ended;
-        const trimmed = tailLines(captured, limit);
+        const bounded = boundText(captured.lines, limit, MAX_RESULT_BYTES);
         return ok(
           {
+            byteClamped: captured.byteClamped || bounded.omittedBytes > 0,
             cursor: seededCursor,
-            droppedLines: trimmed.droppedLines,
+            droppedLines: bounded.droppedLines,
             missedBytes: 0,
+            omittedBytes: bounded.omittedBytes,
             paneId,
+            rangeClamped: captured.range.clamped,
+            returnedBytes: bounded.returnedBytes,
             seeded: true,
             streaming: true,
-            text: trimmed.lines.join("\n"),
+            text: bounded.text,
           },
-          `${renderOutput(trimmed)}\n\n[watching ${paneId}; pass cursor=${seededCursor} next time]`,
+          `${renderBoundedText(bounded, "use capture_pane with a narrower range")}\n\n[watching ${paneId}; pass cursor=${seededCursor} next time]`,
         );
       }
 
@@ -334,14 +309,15 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         delta = tail.read(cursor);
       }
 
-      const trimmed = tailLines(
+      const bounded = boundText(
         delta.text === "" ? [] : delta.text.split("\n"),
         effectiveResultLines(context.policy, maxLines),
+        MAX_RESULT_BYTES,
       );
       const body =
         delta.text === ""
           ? `[nothing new on ${paneId} since cursor ${String(cursor ?? "start")}]`
-          : renderOutput(trimmed);
+          : renderBoundedText(bounded, "read more often to keep each delta smaller");
       const missed =
         delta.missedBytes === 0
           ? ""
@@ -349,13 +325,17 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
 
       return ok(
         {
+          byteClamped: bounded.omittedBytes > 0,
           cursor: delta.cursor,
-          droppedLines: trimmed.droppedLines,
+          droppedLines: bounded.droppedLines,
           missedBytes: delta.missedBytes,
+          omittedBytes: bounded.omittedBytes,
           paneId,
+          rangeClamped: false,
+          returnedBytes: bounded.returnedBytes,
           seeded: false,
           streaming: true,
-          text: trimmed.lines.join("\n"),
+          text: bounded.text,
         },
         `${body}${missed}`,
       );
@@ -517,7 +497,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             Number.MAX_SAFE_INTEGER,
             visibleRows + effectiveScrollback,
           );
-          const rowLimit = captureRowLimit(pane.width, requestedRows);
+          const rowLimit = captureRowLimit(pane.width, requestedRows, MAX_RESULT_BYTES);
           const range =
             rowLimit === 0
               ? { clamped: true, end: undefined, start: undefined }

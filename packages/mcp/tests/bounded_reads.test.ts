@@ -4,9 +4,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 
-import { resolvePolicy } from "../src/policy.js";
+import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
+import { PaneTail } from "../src/live.js";
+import { registerResources } from "../src/resources.js";
 import { registerCapture } from "../src/tools/capture.js";
+import { registerInput } from "../src/tools/input.js";
 import { registerSettings } from "../src/tools/settings.js";
+import { registerWait } from "../src/tools/wait.js";
 import type { ToolContext } from "../src/context.js";
 import type { Pane, ServerSnapshot } from "libtmux";
 
@@ -19,6 +23,7 @@ interface FakePaneOptions {
   readonly height?: number;
   readonly id: string;
   readonly sessionId?: string;
+  readonly sendKeys?: (keys: string) => Promise<void>;
   readonly width?: number;
 }
 
@@ -27,27 +32,33 @@ function fakePane({
   height = 24,
   id,
   sessionId = "$1",
+  sendKeys = async () => undefined,
   width = 80,
 }: FakePaneOptions): Pane {
   return {
     capture,
+    currentCommand: "sh",
+    dead: false,
     format: { session_id: sessionId },
     height,
     id,
     session: { name: `session-${sessionId}` },
+    sendKeys,
     width,
     window: { name: "window" },
   } as unknown as Pane;
 }
 
 function fakeSelection<T extends { readonly id: string }>(items: readonly T[]): unknown {
+  const select = (where: { readonly id?: string; readonly name?: string }) =>
+    items.find(
+      (item) =>
+        (where.id === undefined || item.id === where.id) &&
+        (where.name === undefined || (item as { readonly name?: string }).name === where.name),
+    );
   return {
-    oneOrUndefined: (where: { readonly id?: string; readonly name?: string }) =>
-      items.find(
-        (item) =>
-          (where.id === undefined || item.id === where.id) &&
-          (where.name === undefined || (item as { readonly name?: string }).name === where.name),
-      ),
+    first: select,
+    oneOrUndefined: select,
     toArray: () => [...items],
   };
 }
@@ -64,17 +75,27 @@ function fakeSnapshot(panes: readonly Pane[]): ServerSnapshot {
 function fakeContext(
   panes: readonly Pane[],
   options: {
+    readonly environment?: Readonly<Record<string, string>>;
+    readonly hub?: unknown;
     readonly maxResultLines?: number;
     readonly tmux?: unknown;
   } = {},
 ): ToolContext {
-  const environment =
-    options.maxResultLines === undefined
+  const environment = {
+    ...options.environment,
+    ...(options.maxResultLines === undefined
       ? {}
-      : { LIBTMUX_MCP_MAX_RESULT_LINES: String(options.maxResultLines) };
+      : { LIBTMUX_MCP_MAX_RESULT_LINES: String(options.maxResultLines) }),
+  };
   return {
-    hub: {},
-    identity: async () => ({ clients: [] }),
+    hub: options.hub ?? {},
+    identity: async () => ({
+      attendedPaneIds: [],
+      callerPaneId: undefined,
+      callerPaneIsOnThisServer: false,
+      clients: [],
+      serverPid: undefined,
+    }),
     policy: resolvePolicy(environment),
     snapshot: async () => fakeSnapshot(panes),
     tmux: options.tmux ?? {},
@@ -108,6 +129,118 @@ describe("bounded result policy", () => {
     expect(resolvePolicy({ LIBTMUX_MCP_MAX_RESULT_LINES: "999999999" }).maxResultLines).toBe(
       10_000,
     );
+  });
+});
+
+describe("bounded pane reads", () => {
+  test("bounds run_command by UTF-8 bytes", async () => {
+    const tail = new PaneTail("%1", MAX_RESULT_BYTES * 2);
+    const pane = fakePane({
+      id: "%1",
+      sendKeys: async (keys) => {
+        const marker = /=(ltx[0-9a-f]+);/u.exec(keys)?.[1];
+        if (marker === undefined) throw new Error("No command marker");
+        tail.append(`${marker}_S\n${"x".repeat(MAX_RESULT_BYTES + 1_000)}\n${marker}_E 0\n`);
+      },
+    });
+    const context = fakeContext([pane], {
+      environment: { LIBTMUX_SAFETY: "mutating" },
+      hub: { tail: async () => tail },
+    });
+
+    await withTools(context, registerInput, async (client) => {
+      const result = structured<{ omittedBytes: number; output: string }>(
+        await client.callTool({
+          arguments: { command: "true", maxLines: 1, paneId: "%1" },
+          name: "run_command",
+        }),
+      );
+
+      expect(Buffer.byteLength(result.output, "utf8")).toBeLessThanOrEqual(MAX_RESULT_BYTES);
+      expect(result.omittedBytes).toBeGreaterThan(0);
+    });
+  });
+
+  test("does not capture an oversized run_command fallback", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["must not be read"];
+      },
+      id: "%1",
+      width: 1_000_000,
+    });
+    const context = fakeContext([pane], {
+      environment: { LIBTMUX_MCP_LIVE: "0", LIBTMUX_SAFETY: "mutating" },
+    });
+
+    await withTools(context, registerInput, async (client) => {
+      const result = structured<{ outcome: string }>(
+        await client.callTool({
+          arguments: { command: "sleep 10", paneId: "%1", timeoutMs: 1_000 },
+          name: "run_command",
+        }),
+      );
+      expect(result.outcome).toBe("timed_out");
+    });
+    expect(captures).toBe(0);
+  });
+
+  test("does not capture an oversized screen for observe or a missed wait", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["must not be read"];
+      },
+      id: "%1",
+      width: 1_000_000,
+    });
+    const tail = new PaneTail("%1");
+    const live = fakeContext([pane], { hub: { tail: async () => tail } });
+
+    await withTools(live, registerWait, async (client) => {
+      const result = structured<{ screenClamped: boolean }>(
+        await client.callTool({
+          arguments: { paneId: "%1", patterns: ["absent"], timeoutMs: 1_000 },
+          name: "wait_for_text",
+        }),
+      );
+      expect(result.screenClamped).toBe(true);
+    });
+    await withTools(
+      fakeContext([pane], { environment: { LIBTMUX_MCP_LIVE: "0" } }),
+      registerCapture,
+      async (client) => {
+        const result = structured<{ byteClamped: boolean }>(
+          await client.callTool({ arguments: { paneId: "%1" }, name: "observe" }),
+        );
+        expect(result.byteClamped).toBe(true);
+      },
+    );
+    expect(captures).toBe(0);
+  });
+
+  test("does not capture an oversized pane-content resource", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["must not be read"];
+      },
+      id: "%1",
+      width: 1_000_000,
+    });
+
+    await withTools(fakeContext([pane]), registerResources, async (client) => {
+      const read = await client.readResource({ uri: "tmux://panes/%251/content" });
+      const content = read.contents[0];
+      expect(content !== undefined && "text" in content ? content.text : "").toContain(
+        "capture omitted",
+      );
+    });
+    expect(captures).toBe(0);
   });
 });
 

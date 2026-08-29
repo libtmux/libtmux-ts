@@ -31,7 +31,10 @@ import {
   windowPlacements,
   type ToolContext,
 } from "./context.js";
+import { captureGridBounded } from "./grid_capture.js";
 import type { LiveListener } from "./live.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "./policy.js";
+import { boundText, renderBoundedText } from "./results.js";
 import {
   paneContentUri,
   paneUri,
@@ -342,7 +345,24 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const found = requirePane(snapshot, target);
       if (isFailure(found)) throw resourceError(found);
       const pane = found;
-      return textResource(uri.href, (await pane.capture()).join("\n"));
+      const limit = effectiveResultLines(context.policy, undefined);
+      const bounded = await captureGridBounded(pane, {
+        byteLimit: MAX_RESULT_BYTES,
+        lineLimit: limit,
+      });
+      const contents = boundText(bounded.lines, limit, MAX_RESULT_BYTES);
+      const omitted = bounded.byteClamped && bounded.lines.length === 0;
+      const rangeNotice = omitted
+        ? `[capture omitted: no complete row fits the ${String(MAX_RESULT_BYTES)}-byte result ceiling]`
+        : bounded.range.clamped || bounded.byteClamped
+          ? "[capture shortened to fit the server result limits]"
+          : "";
+      return textResource(
+        uri.href,
+        [rangeNotice, renderBoundedText(contents, "use capture_pane with a narrower range")]
+          .filter((part) => part !== "")
+          .join("\n"),
+      );
     },
   );
 
