@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
-import { runBoundedCommand, type BoundedCommandResult } from "../../../scripts/bounded_process.js";
+import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process.js";
 
 /**
  * Point every installed agent CLI at one build of this MCP server.

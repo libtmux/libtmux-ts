@@ -72,4 +72,4 @@ async function waitForOwnReservations(runRoot: string): Promise<void> {
   throw new Error(`fixture reservations were not released: ${held.join(", ")}`);
 }
 
-export { reservationsIn, waitForOwnReservations, withTemporaryRunRoot };
+export { waitForOwnReservations, withTemporaryRunRoot };

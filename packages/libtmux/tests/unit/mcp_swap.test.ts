@@ -26,7 +26,7 @@ import {
   writeServer,
   xdgConfigHome,
   type CliInfo,
-} from "../../scripts/mcp_swap.js";
+} from "../../../../scripts/mcp_swap.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
