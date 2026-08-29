@@ -498,19 +498,16 @@ async function applyWindow(
 
   const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;
   let current = await window.refreshed();
-  // Every surplus pane in one invocation. Killing them one at a time costs a
-  // command and a whole snapshot each, and the set is known before any of them
-  // goes: the panes past the wanted count, in the order tmux reports them.
+  // The surplus set is known before any pane goes, so one final snapshot can
+  // resolve all removals.
   const surplus =
     context.pruning && !windowIsShared(current) ? current.panes.toArray().slice(wanted) : [];
   if (surplus.length > 0) {
     await current.server.batch(surplus.map((pane) => pane.plan.killIfWindowUnshared()));
     current = await current.refreshed();
   }
-  // Every missing pane in one invocation too, for the same reason: a window
-  // only read once it is finished does not need a snapshot per split. `-d`
-  // leaves the active pane where it is, so the splits land exactly where they
-  // would have one at a time.
+  // The completed window needs one snapshot rather than one per split. `-d`
+  // keeps the active pane stable while the missing panes are created.
   const present = current.panes.length;
   if (present < wanted) {
     await current.server.batch(

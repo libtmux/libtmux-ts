@@ -973,13 +973,12 @@ await server.cmd("list-keys", ["-T", "copy-mode"]);
 pipeline( commands: readonly (readonly string[])[], options?: CommandOptions, ): Promise<readonly (readonly string[])[]>
 ```
 
-Run several tmux commands in one invocation.
+Run several tmux commands in order.
 
-tmux takes a sequence of commands, which is the difference between building
-a ten-window workspace with one process and doing it with ten. The result is
-positional — `results[i]` holds what `commands[i]` printed, empty for a
-command that prints nothing — so a creating command's `-P -F` lands where
-you asked for it.
+The result is positional: `results[i]` holds what `commands[i]` printed,
+empty for a command that prints nothing. Commands run as separate tmux
+invocations because arbitrary command output has no alias-independent
+delimiter.
 
 Not atomic. tmux runs the commands in order and stops at the first failure,
 leaving everything before it applied; the error names the command that
@@ -1002,13 +1001,12 @@ const [[first], [second]] = await server.pipeline([
 async batch<const T extends readonly PlannedOperation<unknown>[]>( operations: T, options?: CommandOptions, ): Promise<
 ```
 
-Run planned mutations as one invocation, resolving each to what it made.
+Run planned mutations in order, resolving each to what it made.
 
 The batched form of calling them one at a time: the same options go in and
-the same handles come out, positionally and individually typed. What
-changes is the cost. Calling `newWindow` ten times spends ten invocations
-and ten snapshots, because each has to find what it just created; a batch
-spends one of each for the whole group.
+the same handles come out, positionally and individually typed. Calling
+`newWindow` repeatedly takes one snapshot after each mutation; a batch runs
+the mutations in order and resolves all of them from one final snapshot.
 
 Not atomic, for the same reason {@link Server.pipeline} is not: tmux runs
 them in order and stops at the first failure, leaving everything before it
@@ -1490,7 +1488,7 @@ get plan(): WindowPlans
 The same mutations, described instead of run.
 
 Takes what the direct calls take and resolves to what they resolve to,
-for {@link Server.batch} to spend one invocation and one snapshot on.
+for {@link Server.batch} to share one final snapshot.
 
 ```ts
 const [created] = await server.batch([window.plan.split({})]);
@@ -1899,7 +1897,7 @@ get plan(): PanePlans
 The same mutations, described instead of run.
 
 Takes what the direct calls take and resolves to what they resolve to,
-for {@link Server.batch} to spend one invocation and one snapshot on.
+for {@link Server.batch} to share one final snapshot.
 
 ```ts
 const [created] = await server.batch([pane.plan.split({})]);

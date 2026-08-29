@@ -423,9 +423,13 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
-  test("runs a sequence in one invocation, framed per command", async () => {
+  test("returns each pipeline command's output positionally", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
+      await server.setOption(
+        "command-alias[99]",
+        "display-message=display-message -p injected ; display-message",
+      );
 
       const results = await server.pipeline([
         ["new-window", "-d", "-P", "-F", "#{window_id}", "-n", "one"],
@@ -433,13 +437,12 @@ describe("lifecycle mutations", () => {
         ["new-window", "-d", "-P", "-F", "#{window_id}", "-n", "two"],
       ]);
 
-      // Positional: the silent command frames as empty rather than shifting
-      // the creator behind it, which is the whole reason for the framing.
       expect(results).toHaveLength(3);
       expect(results[0]?.[0]).toMatch(/^@\d+$/u);
       expect(results[1]).toEqual([]);
       expect(results[2]?.[0]).toMatch(/^@\d+$/u);
 
+      await server.unsetOption("command-alias[99]");
       const windows = (await server.snapshot()).windows;
       expect(windows.exists({ name: "one" })).toBe(true);
       expect(windows.exists({ name: "two" })).toBe(true);
@@ -489,27 +492,6 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
-  test("splits a sequence past tmux's argument limit rather than failing", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      // tmux refuses an argument vector past 1000 elements (cmd_unpack_argv in
-      // cmd.c, "command too long"), and a sequence shares one vector. 400
-      // commands of three arguments each, plus the framing, is well past it.
-      const commands = Array.from({ length: 400 }, (_, index) => [
-        "display-message",
-        "-p",
-        `line-${String(index)}`,
-      ]);
-
-      const results = await server.pipeline(commands);
-
-      // Split across invocations, but the result is one sequence in order.
-      expect(results).toHaveLength(400);
-      expect(results[0]).toEqual(["line-0"]);
-      expect(results[399]).toEqual(["line-399"]);
-    });
-  }, 40_000);
-
   test("names the failing command wherever it sits in the sequence", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -520,8 +502,6 @@ describe("lifecycle mutations", () => {
         [failing, echo("b")],
         [echo("a"), failing, echo("c")],
         [echo("a"), failing],
-        // Past the chunk boundary, so the failure lands in a later invocation.
-        [...Array.from({ length: 300 }, (_, index) => echo(`x${String(index)}`)), failing],
       ]) {
         // eslint-disable-next-line no-await-in-loop -- one sequence at a time.
         const thrown = await server.pipeline(commands).then(

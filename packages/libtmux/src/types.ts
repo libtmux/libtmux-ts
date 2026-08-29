@@ -814,9 +814,8 @@ export interface ConnectedServer extends Server, AsyncDisposable {
  *
  * Every mutation here is two separable halves: the arguments, which are decided
  * from the options alone, and finding what they produced, which needs a
- * snapshot. Keeping them apart is what lets many mutations share one invocation
- * and one snapshot instead of paying for both per call — the difference between
- * a workspace costing one round trip and costing one per window.
+ * snapshot. Keeping them apart lets many mutations share one final snapshot
+ * instead of taking one after every command.
  *
  * The type parameter is what the command resolves to, so a batch of mixed
  * operations still comes back typed one by one.

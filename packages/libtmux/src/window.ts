@@ -259,7 +259,7 @@ export class Window {
    * The same mutations, described instead of run.
    *
    * Takes what the direct calls take and resolves to what they resolve to,
-   * for {@link Server.batch} to spend one invocation and one snapshot on.
+   * for {@link Server.batch} to share one final snapshot.
    *
    * ```ts
    * const [created] = await server.batch([window.plan.split({})]);

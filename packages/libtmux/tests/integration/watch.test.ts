@@ -1071,9 +1071,6 @@ describe("Server.watch", () => {
       const server = serverFor(fixture);
       const live = await server.connect();
       try {
-        // One transport chains the commands and frames the output with a
-        // marker; the other sends them one at a time and gets tmux's own
-        // framing. A caller must not be able to tell which ran.
         const commands = [
           ["display-message", "-p", "plain"],
           ["display-message", "-p", ""], // prints one blank line
@@ -1082,14 +1079,14 @@ describe("Server.watch", () => {
           ["display-message", "-p", "日本語🚀"],
         ];
 
-        const chained = await server.pipeline(commands);
-        const sent = await live.pipeline(commands);
+        const spawned = await server.pipeline(commands);
+        const connected = await live.pipeline(commands);
 
-        expect(chained).toEqual(sent);
-        expect(chained[1]).toEqual([""]);
-        expect(chained[2]).toEqual([]);
-        expect(chained[3]).toEqual(["a b;c 'd' \"e\""]);
-        expect(chained[4]).toEqual(["日本語🚀"]);
+        expect(spawned).toEqual(connected);
+        expect(spawned[1]).toEqual([""]);
+        expect(spawned[2]).toEqual([]);
+        expect(spawned[3]).toEqual(["a b;c 'd' \"e\""]);
+        expect(spawned[4]).toEqual(["日本語🚀"]);
       } finally {
         await live.close();
       }
