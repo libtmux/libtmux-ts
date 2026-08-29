@@ -149,12 +149,14 @@ describe("lifecycle command arguments", () => {
     );
     expect(share.slice(share.indexOf("-l"), share.indexOf("-l") + 2)).toEqual(["-l", "30%"]);
 
-    for (const boundary of ["0%", "100%"] as const) {
-      const sized = await argumentsFor((transport) =>
-        splitWindow({} as never, runtimeFor(transport), "%0", { size: boundary }),
-      );
-      expect(sized.slice(sized.indexOf("-l"), sized.indexOf("-l") + 2)).toEqual(["-l", boundary]);
-    }
+    await Promise.all(
+      (["0%", "100%"] as const).map(async (boundary) => {
+        const sized = await argumentsFor((transport) =>
+          splitWindow({} as never, runtimeFor(transport), "%0", { size: boundary }),
+        );
+        expect(sized.slice(sized.indexOf("-l"), sized.indexOf("-l") + 2)).toEqual(["-l", boundary]);
+      }),
+    );
 
     // Without it tmux halves the pane, and saying so is tmux's job not ours.
     const halved = await argumentsFor((transport) =>
