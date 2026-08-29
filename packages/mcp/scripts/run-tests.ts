@@ -10,6 +10,8 @@
  * that quietly stops being one, and this is the only test covering a refusal
  * `force` deliberately cannot override.
  */
+import { runSupervisor, sweepStaleRunRoots } from "../../libtmux/src/_internal/test/testkit.js";
+
 const NON_POSIX_SHELL = "fish";
 
 if (Bun.which(NON_POSIX_SHELL) === null) {
@@ -22,11 +24,16 @@ if (Bun.which(NON_POSIX_SHELL) === null) {
   process.exit(1);
 }
 
-const result = Bun.spawnSync({
-  cmd: ["bun", "test", "--no-orphans", "tests", ...Bun.argv.slice(2)],
-  cwd: new URL("..", import.meta.url).pathname,
-  stderr: "inherit",
-  stdout: "inherit",
-});
+// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
+// tmux daemon behind under a name no later run revisits; this is where one
+// still can. Once per suite process, before anything creates a root of its own.
+await sweepStaleRunRoots();
 
-process.exitCode = result.exitCode;
+// Under the same supervisor the library's own real-tmux suite uses. It
+// publishes one run root for every fixture here instead of one per test,
+// forwards SIGINT and SIGTERM to the child, and reaps what it owns afterwards.
+// Without it a Ctrl-C left the servers running and nothing to collect them.
+process.exitCode = await runSupervisor({
+  command: ["bun", "test", "--no-orphans", "tests", ...Bun.argv.slice(2)],
+  cwd: new URL("..", import.meta.url).pathname,
+});

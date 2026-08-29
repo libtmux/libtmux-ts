@@ -13,6 +13,8 @@ export const RUN_ROOT_ENV = "LIBTMUX_TEST_RUN_ROOT";
 
 export interface SupervisorOptions {
   readonly command: readonly [string, ...string[]];
+  /** Where the supervised command runs. Defaults to this process's directory. */
+  readonly cwd?: string;
   readonly graceMs?: number;
   readonly runRoot?: string;
 }
@@ -50,6 +52,7 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
 
   const [executable, ...args] = options.command;
   const child = spawn(executable, args, {
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     env: { ...process.env, [RUN_ROOT_ENV]: runRoot },
     shell: false,
     stdio: "inherit",

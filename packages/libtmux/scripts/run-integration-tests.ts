@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { runSupervisor } from "../src/_internal/test/testkit.js";
+import { runSupervisor, sweepStaleRunRoots } from "../src/_internal/test/testkit.js";
 import { LINUX_HARNESS, NODE22, preflight, testParallelism } from "./preflight.js";
 
 /**
@@ -74,6 +74,11 @@ if (unlisted.length > 0) {
 }
 
 await preflight([LINUX_HARNESS, NODE22]);
+
+// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
+// tmux daemon behind under a name no later run revisits; this is where one
+// still can. Once per suite process, before anything creates a root of its own.
+await sweepStaleRunRoots();
 
 process.exitCode = await runSupervisor({
   command: [
