@@ -5,6 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+  deadlineMs,
   resolveNode22,
   reapStaleRunRoot,
   sweepStaleRunRoots,
@@ -820,13 +821,17 @@ const scenarioRunRoot =
 // spawn a few dozen processes and every one is slower on a busy machine, so a
 // tight bound kills a run that had already passed everything. The one mode that
 // uses this as its mechanism — the injected hang — sets its own.
-const scenarioTimeoutMs = Number.parseInt(
+const scenarioTimeoutBase = Number.parseInt(
   process.env.LIBTMUX_NODE_SCENARIO_TIMEOUT_MS ?? "120000",
   10,
 );
-if (!Number.isSafeInteger(scenarioTimeoutMs) || scenarioTimeoutMs < 100) {
+if (!Number.isSafeInteger(scenarioTimeoutBase) || scenarioTimeoutBase < 100) {
   throw new Error("LIBTMUX_NODE_SCENARIO_TIMEOUT_MS must be at least 100");
 }
+// Read as a base rather than as the bound: a caller sizing this against the
+// scenarios ahead of it is describing an idle machine, and every one of those
+// scenarios is slower on a busy one.
+const scenarioTimeoutMs = deadlineMs(scenarioTimeoutBase);
 let exactCleanupComplete = false;
 
 try {

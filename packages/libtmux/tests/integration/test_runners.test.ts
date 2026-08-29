@@ -124,9 +124,10 @@ describe("outer test controllers", () => {
           LIBTMUX_NODE_FAILURE_MARKER: marker,
           LIBTMUX_NODE_INJECT_FAILURE: mode,
           // The hang this mode injects is ended by the child's own budget, so
-          // the budget has to outlast every scenario ahead of it under load.
-          // Racing them instead kills the child before it creates the fixture
-          // whose cleanup is the thing under test.
+          // the budget has to outlast every scenario ahead of it. The runner
+          // scales what it reads, so this is the idle-machine figure; racing
+          // those scenarios instead kills the child before it creates the
+          // fixture whose cleanup is the thing under test.
           ...(mode === "timeout-after-create" ? { LIBTMUX_NODE_SCENARIO_TIMEOUT_MS: "45000" } : {}),
           LIBTMUX_TEST_RUN_ROOT: root,
         },
