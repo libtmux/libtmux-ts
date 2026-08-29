@@ -197,6 +197,14 @@ constrained machine, lower both with one setting:
 $ LIBTMUX_TEST_PARALLEL=2 bun run --cwd packages/libtmux test:unit
 ```
 
+The formatter and linter take every core instead, and say how many they used.
+Both accept a bound, which costs little — halving the threads on a ten-core
+machine left a full-tree format within forty milliseconds of the default:
+
+```console
+$ bun run format:check --threads=5
+```
+
 A target that has never caught anything proves only that the generator is
 narrow. Break each parser it covers once, and confirm the target goes red for
 that break specifically.
