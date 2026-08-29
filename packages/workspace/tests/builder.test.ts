@@ -589,6 +589,30 @@ windows:
     });
   }, 90_000);
 
+  test.failing(
+    "runs window commands in an implicit pane",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const marker = join(await makeTestDirectory("ltx-ws-marker-"), "implicit");
+        const workspace = parseWorkspaceYaml(
+          [
+            "session_name: implicit",
+            "windows:",
+            "  - window_name: main",
+            `    shell_command_before: "echo implicit >> ${marker}"`,
+          ].join("\n"),
+        );
+
+        await applyWorkspace(server, workspace);
+        await drain(server, "implicit", marker);
+
+        expect(await readMarker(marker)).toContain("implicit");
+      });
+    },
+    90_000,
+  );
+
   test("delivers create-only commands once when layout fails afterward", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
