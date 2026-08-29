@@ -8,14 +8,6 @@ import { isTmuxName } from "libtmux";
 const NAME_MESSAGE = 'must not be empty or hold ":", ".", a control character, or DEL';
 
 /**
- * A tmuxp-shaped workspace description.
- *
- * The field names follow tmuxp's snake_case config vocabulary rather than this
- * package's camelCase API, because the config is data a user already has on
- * disk. Renaming their keys to suit our API would break the very compatibility
- * the format is here to provide.
- */
-/**
  * Every object here is strict, and that is the point.
  *
  * A workspace is applied to a running server, so a key this schema does not
@@ -53,6 +45,14 @@ const windowSchema = z.strictObject({
   window_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }).optional(),
 });
 
+/**
+ * A tmuxp-shaped workspace description.
+ *
+ * The field names follow tmuxp's snake_case config vocabulary rather than this
+ * package's camelCase API, because the config is data a user already has on
+ * disk. Renaming their keys to suit our API would break the very compatibility
+ * the format is here to provide.
+ */
 export const workspaceSchema = z.strictObject({
   options: workspaceOptionsSchema.optional(),
   session_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }),

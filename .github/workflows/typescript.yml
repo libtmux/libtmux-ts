@@ -84,8 +84,10 @@ jobs:
       # failures, which reads exactly like a clean tree.
       - run: bun run typecheck:tooling
       - run: bun run typecheck:readme
-      # The prose around the compiled snippets: that every link resolves, and
-      # that the shell blocks name paths and packages this workspace has.
+      # The prose around the compiled snippets: that every doc comment reaches
+      # a symbol, that every link resolves, and that the shell blocks name
+      # paths and packages this workspace has.
+      - run: bun run docs:comments
       - run: bun run docs:links
       - run: bun run docs:claims
       - run: bun run docs:runnable

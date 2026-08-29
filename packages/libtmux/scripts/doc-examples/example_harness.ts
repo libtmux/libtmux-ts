@@ -230,10 +230,6 @@ export function splitForExecution(
   return { body: body.join("\n"), imports: imports.join("\n") };
 }
 
-/**
- * An example's own imports have to reach the top of the generated module, and a
- * reader's `"libtmux"` is this repository's source.
- */
 /** Names the preamble already brings in, which a block may not import again. */
 const PROVIDED = new Set(["Server", "Session"]);
 

@@ -87,15 +87,6 @@ const EXCUSED = new Map<string, string>([
 ]);
 
 /**
- * Code that can invalidate the ids the shared world hands out.
- *
- * Deliberately generous: a false positive costs one liveness snapshot before
- * the next example, which is cheap; a false negative is caught anyway by the
- * failure-triggered rebuild below, just later and noisily. `newSession` and
- * `newWindow` are included even though they only add scenery, because an
- * example that names a fixed id (`"work"`) can collide with the world's own.
- */
-/**
  * Examples that change the world get one of their own.
  *
  * Sharing is what makes 158 examples cheap, and it works because most of them

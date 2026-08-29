@@ -811,7 +811,6 @@ export class Server {
     return listCommands(runtimeForServer(this));
   }
 
-  /** Store a named paste buffer. */
   /**
    * Fill a paste buffer from data fed through tmux's stdin.
    *

@@ -62,19 +62,6 @@ export interface WindowPlans {
 }
 
 /**
- * This placement, as tmux addresses one.
- *
- * A window linked into two sessions is one window with two placements sharing
- * an id, and a bare `@id` leaves tmux to choose between them — which it does
- * consistently, and consistently without regard for which placement the handle
- * came from. Qualifying with the session is what makes an operation act on the
- * placement it was reached through.
- *
- * Only the operations that address a placement take this. `kill`, `rename`,
- * `selectLayout` and `resize` act on the window itself, wherever it is linked,
- * and naming a session there would suggest a choice that does not exist.
- */
-/**
  * Fill in the destination session the caller left out.
  *
  * tmux reads a destination of `:3` as index 3 of the *current* session, which
@@ -87,6 +74,19 @@ function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOp
   return { ...options, session: options.session ?? window.format.session_id };
 }
 
+/**
+ * This placement, as tmux addresses one.
+ *
+ * A window linked into two sessions is one window with two placements sharing
+ * an id, and a bare `@id` leaves tmux to choose between them — which it does
+ * consistently, and consistently without regard for which placement the handle
+ * came from. Qualifying with the session is what makes an operation act on the
+ * placement it was reached through.
+ *
+ * Only the operations that address a placement take this. `kill`, `rename`,
+ * `selectLayout` and `resize` act on the window itself, wherever it is linked,
+ * and naming a session there would suggest a choice that does not exist.
+ */
 function placementTarget(window: Window): string {
   return `${window.format.session_id}:${window.format.window_index}`;
 }

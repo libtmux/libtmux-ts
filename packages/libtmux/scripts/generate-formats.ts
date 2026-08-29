@@ -555,14 +555,6 @@ function aliasFor(token: string, model: AliasModel): string {
 }
 
 /**
- * Assign each token a property name, dropping the model's prefix where it is
- * unambiguous.
- *
- * Dropping is refused when the shortened name is already some other token's own
- * name: tmux exposes both `pid` and `pane_pid`, so a pane keeps `panePid` and
- * leaves `pid` meaning what tmux means by it.
- */
-/**
  * Member names the handle classes already own.
  *
  * A de-stuttered scalar must never shadow a relation or operation: tmux's
@@ -622,6 +614,14 @@ const RESERVED_MEMBERS: ReadonlySet<string> = new Set([
   "windows",
 ]);
 
+/**
+ * Assign each token a property name, dropping the model's prefix where it is
+ * unambiguous.
+ *
+ * Dropping is refused when the shortened name is already some other token's own
+ * name: tmux exposes both `pid` and `pane_pid`, so a pane keeps `panePid` and
+ * leaves `pid` meaning what tmux means by it.
+ */
 function aliasesForModel(
   fields: readonly GeneratedFormatField[],
   model: AliasModel,
@@ -695,7 +695,6 @@ function renderAliasMapTypes(fields: readonly GeneratedFormatField[]): string[] 
   return lines;
 }
 
-/** The declared shape of every field tmux does not answer with a string. */
 /**
  * The fields tmux has that the Python library does not.
  *
@@ -736,6 +735,7 @@ async function readTmuxFields(
   );
 }
 
+/** The declared shape of every field tmux does not answer with a string. */
 async function readValueTypes(tokens: ReadonlySet<string>): Promise<ReadonlyMap<string, string>> {
   const parsed = JSON.parse(await readFile(valueTypePath, "utf8")) as unknown;
   if (!isRecord(parsed) || !exactKeys(parsed, ["note", "types"]) || !isRecord(parsed.types)) {

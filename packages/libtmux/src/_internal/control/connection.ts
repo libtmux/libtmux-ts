@@ -130,17 +130,17 @@ export class ControlConnection {
   #observerBinding: ControlObserverBinding | undefined;
 
   /**
+   * Commands that target this observer, such as pause and resume requests.
+   */
+  readonly #observerCommands: CommandTransport | undefined;
+
+  /**
    * @param streamEndsConnection
    *   Whether draining the event stream ends the process. A stream opened by
    *   `watch()` is the only holder, so it does; a stream reached through a
    *   connected server owns the process separately, so ending iteration there
    *   must not close its daemon-lifetime observer.
    */
-  /**
-   * Commands that target this observer, such as pause and resume requests.
-   */
-  readonly #observerCommands: CommandTransport | undefined;
-
   constructor(
     connection: TmuxConnection,
     options: ControlConnectionOptions = {},

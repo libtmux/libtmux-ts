@@ -168,6 +168,20 @@ export function modelKindForHandle(value: unknown): GraphModel | undefined {
 }
 
 /**
+ * Whether two captures came from the same running daemon.
+ *
+ * A capture with no daemon listed no rows at all, so it handed out no handles
+ * and cannot reach this. Comparing pid and start time together is what survives
+ * pid reuse.
+ */
+function sameCapturedDaemon(left: NormalizedGraph, right: NormalizedGraph): boolean {
+  const leftDaemon = left.capture.daemon;
+  const rightDaemon = right.capture.daemon;
+  if (leftDaemon === undefined || rightDaemon === undefined) return leftDaemon === rightDaemon;
+  return leftDaemon.pid === rightDaemon.pid && leftDaemon.startTime === rightDaemon.startTime;
+}
+
+/**
  * Whether two handles describe the same thing on the same tmux server.
  *
  * Three things have to agree, and each rules out a different impostor. The
@@ -188,20 +202,6 @@ export function modelKindForHandle(value: unknown): GraphModel | undefined {
  * differs for clients on purpose: this one compares the whole row, that one
  * compares `client_name`. Neither can do the other's job.
  */
-/**
- * Whether two captures came from the same running daemon.
- *
- * A capture with no daemon listed no rows at all, so it handed out no handles
- * and cannot reach this. Comparing pid and start time together is what survives
- * pid reuse.
- */
-function sameCapturedDaemon(left: NormalizedGraph, right: NormalizedGraph): boolean {
-  const leftDaemon = left.capture.daemon;
-  const rightDaemon = right.capture.daemon;
-  if (leftDaemon === undefined || rightDaemon === undefined) return leftDaemon === rightDaemon;
-  return leftDaemon.pid === rightDaemon.pid && leftDaemon.startTime === rightDaemon.startTime;
-}
-
 export function liveHandlesEqual(left: Child, other: unknown): boolean {
   const leftState = stateForValue(left);
   const rightState = stateForValue(other);
