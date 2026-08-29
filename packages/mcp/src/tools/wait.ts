@@ -315,7 +315,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
     maxLines: z.number().int().positive().optional(),
     paneId: z.string(),
     patterns: z
-      .array(z.string())
+      .array(z.string().min(1))
       .optional()
       .describe("Any one of these ends the wait. Omit to wait for any output at all."),
     regex: z

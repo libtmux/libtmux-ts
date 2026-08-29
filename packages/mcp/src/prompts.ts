@@ -63,7 +63,7 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     ({ expect, paneId }) =>
       userPrompt(
         `Watch tmux pane ${paneId} until it prints ${JSON.stringify(expect)}, then tell me what happened.\n\n` +
-          `Use wait_for_text(paneId="${paneId}", patterns=["${expect}"]) — it streams tmux's ` +
+          `Use wait_for_text(paneId=${JSON.stringify(paneId)}, patterns=[${JSON.stringify(expect)}]) — it streams tmux's ` +
           `notifications, so it costs nothing while nothing is happening. Never loop capture_pane.\n\n` +
           `If it returns outcome="timed_out", the output field still holds everything the pane ` +
           `printed and cursor marks where you got to: call again with that cursor rather than ` +
