@@ -18,6 +18,11 @@
 // eslint-disable-next-line no-control-regex -- matching them is the point.
 const FORBIDDEN = /[.:\u0000-\u001f\u007f]/u;
 
+/** Whether every supported server would store this name unchanged. */
+export function isName(value: string): boolean {
+  return value !== "" && value.isWellFormed() && !FORBIDDEN.test(value);
+}
+
 export function assertName(kind: "session" | "window", value: string): string {
   if (value === "") throw new TypeError(`${kind} name must not be empty`);
   if (!value.isWellFormed()) {

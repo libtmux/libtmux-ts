@@ -76,7 +76,7 @@ export type {
   WatchOptions,
   WindowTarget,
 } from "./types.js";
-export { isSplitSize, splitSize } from "./types.js";
+export { isSplitSize, isTmuxName, splitSize } from "./types.js";
 
 export {
   LibTmuxException,

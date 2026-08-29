@@ -9,7 +9,7 @@ page is for looking one thing up.
 
 ## Functions
 
-[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
 
 ### `encodeWhereDocument`
 
@@ -104,6 +104,24 @@ JavaScript's safe integer range.
 ```ts
 import { safeInteger } from "libtmux";
 const pid = safeInteger(42);
+```
+
+### `isTmuxName`
+
+```ts
+function isTmuxName(value: unknown): value is string;
+```
+
+Test whether a value is a name every supported tmux stores unchanged.
+
+The refusal the mutating calls apply, offered ahead of them so a caller
+validating configuration can report the bad field rather than catching a
+`TypeError` from the call it fed.
+
+```ts
+import { isTmuxName } from "libtmux";
+const value: unknown = "work";
+const name = isTmuxName(value) ? value : undefined;
 ```
 
 ### `isSplitSize`

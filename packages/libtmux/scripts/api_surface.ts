@@ -36,7 +36,7 @@ const ROOT_SOURCES = [
   },
   {
     file: "src/types.ts",
-    functions: ["isSplitSize", "splitSize"],
+    functions: ["isSplitSize", "isTmuxName", "splitSize"],
     types: ["SplitCellSize", "SplitPercentage", "SplitSize"],
   },
 ] as const;

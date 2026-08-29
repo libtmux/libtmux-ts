@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import { OWNERSHIP_OPTION } from "./ownership.js";
+import { isTmuxName } from "libtmux";
+
+// The library refuses a name tmux would not store unchanged. Asking it here
+// names the offending field instead of surfacing a TypeError from the call.
+const NAME_MESSAGE = 'must not be empty or hold ":", ".", a control character, or DEL';
 
 /**
  * A tmuxp-shaped workspace description.
@@ -45,12 +50,12 @@ const windowSchema = z.strictObject({
     .transform((panes) => (panes.length === 0 ? panes.concat({}) : panes)),
   shell_command_before: z.union([z.string(), z.array(z.string())]).optional(),
   start_directory: z.string().optional(),
-  window_name: z.string().optional(),
+  window_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }).optional(),
 });
 
 export const workspaceSchema = z.strictObject({
   options: workspaceOptionsSchema.optional(),
-  session_name: z.string().min(1),
+  session_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }),
   start_directory: z.string().optional(),
   // A session always has at least one window, so a workspace with none does not
   // describe a reachable state: applying it would create a session and then try

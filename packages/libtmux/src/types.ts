@@ -18,6 +18,7 @@ import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
+import { isName } from "./_internal/operations/names.js";
 
 /**
  * Option shapes for the public operations.
@@ -187,6 +188,23 @@ export type SplitPercentage = `${ZeroToNinetyNine}%` | "100%";
  * ```
  */
 export type SplitSize = SplitCellSize | SplitPercentage;
+
+/**
+ * Test whether a value is a name every supported tmux stores unchanged.
+ *
+ * The refusal the mutating calls apply, offered ahead of them so a caller
+ * validating configuration can report the bad field rather than catching a
+ * `TypeError` from the call it fed.
+ *
+ * ```ts
+ * import { isTmuxName } from "libtmux";
+ * const value: unknown = "work";
+ * const name = isTmuxName(value) ? value : undefined;
+ * ```
+ */
+export function isTmuxName(value: unknown): value is string {
+  return typeof value === "string" && isName(value);
+}
 
 /**
  * Test whether a value is valid tmux split geometry.

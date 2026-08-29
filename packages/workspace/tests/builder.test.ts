@@ -343,6 +343,17 @@ windows:
     expect(() => parseWorkspaceYaml("windows: []")).toThrow();
   });
 
+  test("rejects a name tmux would not store unchanged, while parsing", () => {
+    // The library refuses these at the call. Catching them here names the
+    // field, rather than surfacing a TypeError from partway through an apply.
+    expect(() => parseWorkspaceYaml("session_name: a:b\nwindows:\n  - window_name: w\n")).toThrow(
+      "session_name",
+    );
+    expect(() =>
+      parseWorkspaceYaml("session_name: work\nwindows:\n  - window_name: a.b\n"),
+    ).toThrow("window_name");
+  });
+
   test("rejects a key it does not know, at every level", () => {
     // A dropped key is a window that quietly loses its name, so a typo has to
     // stop the apply rather than change what gets built.
