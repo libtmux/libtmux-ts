@@ -61,8 +61,9 @@ doc comments that implement it, and `docs/criteria.md` from the table the query
 compiler matches against. Neither is edited by hand. The prose around
 the snippets is checked too — `docs:links` resolves every relative link and
 `#anchor` in every tracked Markdown file, `docs:claims` holds the ` ```console `
-blocks to paths and packages that exist and pins any tmux badge to the CI
-matrix, and `docs:runnable` requires a block marked
+blocks to paths and packages that exist, requires public install examples to
+pin prerelease packages exactly, and pins any tmux badge to the CI matrix.
+`docs:runnable` requires a block marked
 
 ```
 <!-- runs: examples/agent/agent.ts -->

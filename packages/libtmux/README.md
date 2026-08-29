@@ -21,7 +21,7 @@ macOS proof yet. WSL is untested. These are proof boundaries, not declarations
 that the library rejects either platform.
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.0-alpha.6
 ```
 
 > [!WARNING]

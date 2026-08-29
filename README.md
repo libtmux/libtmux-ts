@@ -43,22 +43,22 @@ then query it like data.
 ## Quickstart
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.0-alpha.6
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i libtmux
+$ npm i --save-exact libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ pnpm add libtmux
+$ pnpm add --save-exact libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ yarn add libtmux
+$ yarn add --exact libtmux@0.1.0-alpha.6
 ```
 
 </details>
@@ -149,7 +149,7 @@ Three packages, released together, each usable on its own.
 ### [libtmux](packages/libtmux) — the library
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.0-alpha.6
 ```
 
 ```ts
@@ -178,7 +178,7 @@ A stdio MCP server. Point it at a socket and an agent can list sessions, read a
 pane, send keys, and **wait for output** rather than polling for it.
 
 ```console
-$ npx -y @libtmux/mcp
+$ npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 Add it to any MCP client — this is the whole configuration:
@@ -188,7 +188,7 @@ Add it to any MCP client — this is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.6"],
       "env": { "LIBTMUX_SOCKET_NAME": "agent" }
     }
   }
@@ -199,7 +199,8 @@ Add it to any MCP client — this is the whole configuration:
 <summary>Claude Code, in one command</summary>
 
 ```console
-$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- npx -y @libtmux/mcp
+$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
+    npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 </details>
@@ -229,7 +230,7 @@ Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
 ```console
-$ bun add @libtmux/workspace
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 ```ts
