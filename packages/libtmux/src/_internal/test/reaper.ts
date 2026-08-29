@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import { DAEMON_EXIT_DEADLINE_MS, DAEMON_REAPED_DEADLINE_MS, deadlineMs } from "./deadlines.js";
+import { ownedTestDirectories } from "./temp_root.js";
 import {
   assertExactProcessLaunch,
   controllerEnvironment,
@@ -1206,4 +1207,70 @@ export async function reapOwnedRunRoot(runRoot: string): Promise<ReapReport> {
 
 export async function reapStaleRunRoot(runRoot: string): Promise<ReapReport> {
   return reapRunRootInternal(runRoot, "stale");
+}
+
+/** Whether a directory carries the record that makes it a run root. */
+async function isRunRoot(directory: string): Promise<boolean> {
+  try {
+    return (await lstat(join(directory, OWNER_RECORD_NAME))).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The run roots inside one owned temporary directory.
+ *
+ * Harnesses place a root either at the directory a run made or one level in,
+ * under a name of the harness's choosing, so both depths are examined and the
+ * owner record is what identifies one.
+ */
+async function runRootsIn(directory: string): Promise<readonly string[]> {
+  const found: string[] = [];
+  if (await isRunRoot(directory)) found.push(directory);
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const child = join(directory, entry.name);
+    // eslint-disable-next-line no-await-in-loop -- a bounded probe per entry.
+    if (await isRunRoot(child)) found.push(child);
+  }
+  return found;
+}
+
+/**
+ * Reap every run root whose owner died without cleaning up after itself.
+ *
+ * A harness reaps its own root in a `finally`, which `SIGKILL` skips: the tmux
+ * daemon then outlives the run with nothing left that knows to collect it. Two
+ * were found still serving hours after the processes that started them had
+ * gone, because a root is created under a fresh `mkdtemp` name and no later run
+ * ever looks at the previous one.
+ *
+ * Liveness decides, never age. `reapStaleRunRoot` refuses a root whose recorded
+ * pid and start identity still match a running process, so a root a concurrent
+ * run holds is left alone; anything else it refuses is left for its owner or a
+ * later sweep rather than forced.
+ */
+export async function sweepStaleRunRoots(): Promise<readonly string[]> {
+  const reaped: string[] = [];
+  for (const directory of await ownedTestDirectories()) {
+    // eslint-disable-next-line no-await-in-loop -- one owned directory at a time.
+    for (const runRoot of await runRootsIn(directory)) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- reaping is sequential by design.
+        if ((await reapStaleRunRoot(runRoot)).rootRemoved) reaped.push(runRoot);
+      } catch {
+        continue;
+      }
+    }
+    // eslint-disable-next-line no-await-in-loop -- the husk goes with its root.
+    await rmdir(directory).catch(() => undefined);
+  }
+  return reaped;
 }

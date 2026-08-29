@@ -34,6 +34,7 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   reapStaleRunRoot,
+  sweepStaleRunRoots,
   type FixtureRecord,
   readDaemonIdentity,
   readProcessIdentity,
@@ -523,6 +524,35 @@ describe("run-root recovery", () => {
       expect((await stat(root)).isDirectory()).toBe(true);
     } finally {
       await rm(parent, { force: true, recursive: true });
+    }
+  });
+
+  test("sweeps a stale run root a dead owner left behind", async () => {
+    const parent = await makeTestDirectory("ltx-sweep-stale-");
+    const root = join(parent, "run, root");
+    await prepareRunRoot(root);
+    const ownerPath = join(root, OWNER_RECORD_NAME);
+    const owner = JSON.parse(await readFile(ownerPath, "utf8")) as Record<string, unknown>;
+    owner.owner = {
+      pid: 2_147_483_000,
+      startIdentity: "linux:00000000-0000-4000-8000-000000000000:1",
+    };
+    await writeFile(ownerPath, `${JSON.stringify(owner)}\n`);
+    try {
+      expect(await sweepStaleRunRoots()).toContain(root);
+      await expect(lstat(root)).rejects.toThrow();
+    } finally {
+      await rm(parent, { force: true, recursive: true });
+    }
+  });
+
+  test("leaves a run root with a live owner untouched", async () => {
+    const { parent, root } = await createIsolatedRunRoot("sweep-live");
+    try {
+      expect(await sweepStaleRunRoots()).not.toContain(root);
+      expect((await lstat(root)).isDirectory()).toBe(true);
+    } finally {
+      await removeIsolatedRunRoot(parent, root);
     }
   });
 });

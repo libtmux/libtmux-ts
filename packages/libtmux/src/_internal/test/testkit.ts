@@ -34,6 +34,7 @@ export {
   reapOwnedRunRoot,
   reapStaleRunRoot,
   resolvePidfdInterpreter,
+  sweepStaleRunRoots,
 } from "./reaper.js";
 export type { ReapReport } from "./reaper.js";
 export { TEST_HANDLE_PROTOTYPES } from "./handle_prototypes.js";
