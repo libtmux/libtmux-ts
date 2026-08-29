@@ -149,10 +149,9 @@ describe("parity claims", () => {
     const rows = await manifest();
     const tracked = rows.filter((row) => row.typescriptSymbols.length > 0);
 
-    // Rows that name TypeScript, which is every row except the ones recorded as
-    // deliberately not ported. A floor rather than a fixture: porting more is
-    // the point, and losing coverage silently is the regression.
-    expect(tracked.length).toBeGreaterThanOrEqual(259);
+    // Nineteen inert Python exception classes are now explicitly unsupported.
+    // Keep the remaining ported surface as a floor so further loss stays red.
+    expect(tracked.length).toBeGreaterThanOrEqual(240);
     // The Python surface is pinned by the baseline tag, so this one is exact.
     expect(rows.length).toBe(513);
   });
