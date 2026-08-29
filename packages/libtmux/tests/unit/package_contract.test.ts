@@ -265,7 +265,17 @@ describe("package contract", () => {
   test("pins the complete dependency boundary to the accepted runtime floors", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
-    expect(packageManifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
+    const runtimeManifests = await Promise.all(
+      [
+        "../../package.json",
+        "package.json",
+        "../mcp/package.json",
+        "../workspace/package.json",
+      ].map((path) => readJson<{ engines: Record<string, string> }>(path)),
+    );
+    for (const manifest of runtimeManifests) {
+      expect(manifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
+    }
     // Absent, not empty: an empty `dependencies` object is noise in a manifest.
     expect(packageManifest.dependencies ?? {}).toEqual(expectedDependencies);
     expect(packageManifest.devDependencies).toEqual(expectedDevDependencies);
