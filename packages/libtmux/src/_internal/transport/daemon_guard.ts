@@ -21,24 +21,6 @@ export function daemonCondition(daemon: DaemonGuard): string {
 }
 
 /**
- * Wrap a subcommand so tmux runs it only on `daemon`.
- *
- * `connectionArgs` stay outside the wrapper: they select the server, and
- * `if-shell` is the first thing that server is asked to do.
- */
-export function guardedArgv(
-  connectionArgs: readonly string[],
-  subcommand: readonly string[],
-  daemon: DaemonGuard,
-  refusal: string = uniqueUnknownCommand("daemon-restarted"),
-): readonly string[] {
-  return Object.freeze([
-    ...connectionArgs,
-    ...guardedChain(quoteCommand(subcommand), daemon, refusal),
-  ]);
-}
-
-/**
  * Wrap an already-serialized command list so tmux runs all of it or none.
  *
  * The list stays one list inside the branch, so a failure part-way through
@@ -46,7 +28,7 @@ export function guardedArgv(
  * each command separately would lose that: an error inside an `if-shell` branch
  * does not reach commands outside it.
  */
-export function guardedChain(
+function guardedChain(
   chain: string,
   daemon: DaemonGuard,
   refusal: string = uniqueUnknownCommand("daemon-restarted"),
