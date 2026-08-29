@@ -215,6 +215,15 @@ apart reaps their servers. `test:namespace` is the gate, `makeTestDirectory`
 applies the prefix, and a suite that starts a live server calls
 `assertOwnedSocketPath` before it touches one.
 
+Every real-tmux runner sweeps before it starts. A suite reaps its own run root
+in a `finally`, which `SIGKILL` skips, and each root is created under a fresh
+`mkdtemp` name that no later run would otherwise revisit — so a killed run left
+a tmux daemon serving with nothing left that knew to collect it. The sweep
+reaps a root only when the process recorded as its owner is gone, decided by pid
+and start identity rather than by age, so a root a concurrent run still holds is
+refused. Set `LIBTMUX_TEST_DEADLINE_SCALE` on a machine slower or busier than
+the ones these bounds were tuned on.
+
 Ownership is a prefix rather than a parent directory, deliberately. Nesting
 everything under `/tmp/libtmux-ts-test/` was tried: it cost fifteen bytes of
 the socket path budget, which put the longest fixture path at 104 and failed
