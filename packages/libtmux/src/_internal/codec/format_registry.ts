@@ -403,13 +403,14 @@ function generatedWhereFields(
 function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string {
   const lines = [
     'import type { FormatFieldName } from "./format_field_names.js";',
+    'import type { FormatValueType } from "../field_types.js";',
     "",
     'export type WhereModel = "client" | "pane" | "session" | "window";',
     "",
     "export interface WhereField {",
     "  /** The camelCase key a caller writes in criteria. */",
     "  readonly criteriaName: string;",
-    '  readonly domain: "string";',
+    '  readonly domain: FormatValueType | "string";',
     "  /**",
     "   * The first tmux release that has this field.",
     "   *",
@@ -427,13 +428,13 @@ function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string
   for (const model of criteriaModels) {
     lines.push(`const ${model}Fields: readonly WhereField[] = Object.freeze([`);
     for (const field of generatedWhereFields(registry, model)) {
-      const oneLine = `  Object.freeze({ criteriaName: ${JSON.stringify(field.criteriaName)}, domain: "string", since: ${JSON.stringify(field.since)}, token: ${JSON.stringify(field.token)}, wireName: ${JSON.stringify(field.wireName)} }),`;
+      const oneLine = `  Object.freeze({ criteriaName: ${JSON.stringify(field.criteriaName)}, domain: ${JSON.stringify(field.domain)}, since: ${JSON.stringify(field.since)}, token: ${JSON.stringify(field.token)}, wireName: ${JSON.stringify(field.wireName)} }),`;
       if (oneLine.length <= 100) lines.push(oneLine);
       else {
         lines.push(
           "  Object.freeze({",
           `    criteriaName: ${JSON.stringify(field.criteriaName)},`,
-          '    domain: "string",',
+          `    domain: ${JSON.stringify(field.domain)},`,
           `    since: ${JSON.stringify(field.since)},`,
           `    token: ${JSON.stringify(field.token)},`,
           `    wireName: ${JSON.stringify(field.wireName)},`,

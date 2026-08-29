@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
+import { WHERE_FIELDS_V1, type WhereField } from "../../src/_generated/where_fields.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -35,6 +35,24 @@ function serverFor(fixture: TestServer): Server {
     socketPath: fixture.socketPath,
     tmuxBin: fixture.tmuxExecutable,
   });
+}
+
+function criterionFor(domain: WhereField["domain"]): string {
+  switch (domain) {
+    case "boolean":
+    case "number":
+      return "0";
+    case "time":
+      return "1";
+    case "pane-id":
+      return "%0";
+    case "session-id":
+      return "$0";
+    case "window-id":
+      return "@0";
+    case "string":
+      return "x";
+  }
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
@@ -84,13 +102,19 @@ describe("querying a field the server predates", () => {
       expect(available.length + tooNew.length).toBe(WHERE_FIELDS_V1.pane.length);
 
       for (const field of available) {
-        expect(() => snapshot.panes.where({ [field.criteriaName]: "x" }).count()).not.toThrow();
+        expect(() =>
+          snapshot.panes.where({ [field.criteriaName]: criterionFor(field.domain) }).count(),
+        ).not.toThrow();
       }
 
       for (const field of tooNew) {
         const thrown = ((): unknown => {
           try {
-            snapshot.panes.where({ [field.criteriaName]: "x" }).count();
+            snapshot.panes
+              .where({
+                [field.criteriaName]: criterionFor(field.domain),
+              })
+              .count();
             return undefined;
           } catch (error) {
             return error;

@@ -5,7 +5,8 @@ import {
   encodeFormatValue,
   isFormatCriterionValue,
 } from "../../src/_internal/codec/format_values.js";
-import { FORMAT_VALUE_TYPES } from "../../src/_generated/field_types.js";
+import { FORMAT_VALUE_TYPES, formatValueType } from "../../src/_generated/field_types.js";
+import { WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
 
 describe("decoding what tmux sends", () => {
   test("reads a number field as a number", () => {
@@ -76,6 +77,19 @@ describe("decoding what tmux sends", () => {
 });
 
 describe("encoding what a caller writes", () => {
+  test("publishes each criterion's decoded domain", () => {
+    const mismatches: string[] = [];
+    for (const [model, fields] of Object.entries(WHERE_FIELDS_V1)) {
+      for (const field of fields) {
+        const expected = formatValueType(field.token) ?? "string";
+        if (field.domain !== expected) {
+          mismatches.push(`${model}.${field.criteriaName}: ${field.domain} != ${expected}`);
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
   test("spells a boolean the way tmux does", () => {
     expect(encodeFormatValue("pane_active", true)).toBe("1");
     expect(encodeFormatValue("pane_active", false)).toBe("0");

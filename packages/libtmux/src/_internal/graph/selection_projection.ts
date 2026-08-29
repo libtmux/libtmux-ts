@@ -216,7 +216,7 @@ function snapshotDescriptor(model: WhereModel, value: unknown): ProjectionDescri
       `${model} field`,
     );
     if (
-      field.domain !== "string" ||
+      typeof field.domain !== "string" ||
       typeof field.token !== "string" ||
       typeof field.wireName !== "string" ||
       typeof field.criteriaName !== "string" ||
