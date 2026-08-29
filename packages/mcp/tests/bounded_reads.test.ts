@@ -19,6 +19,7 @@ import { registerDiscovery } from "../src/tools/discovery.js";
 import { registerInput } from "../src/tools/input.js";
 import { registerLayout } from "../src/tools/layout.js";
 import { registerLifecycle } from "../src/tools/lifecycle.js";
+import { registerSearch } from "../src/tools/search.js";
 import { registerSettings } from "../src/tools/settings.js";
 import { registerWait } from "../src/tools/wait.js";
 import { registerWorkspace } from "../src/tools/workspace.js";
@@ -573,7 +574,7 @@ describe("search_panes", () => {
       },
       id: "%1",
     });
-    await withTools(fakeContext([pane]), registerCapture, async (client) => {
+    await withTools(fakeContext([pane]), registerSearch, async (client) => {
       const answer = await client.callTool({ arguments: { pattern: "" }, name: "search_panes" });
 
       expect((answer as { readonly isError?: boolean }).isError).toBe(true);
@@ -590,7 +591,7 @@ describe("search_panes", () => {
       },
       id: "%1",
     });
-    await withTools(fakeContext([pane], { maxResultLines: 7 }), registerCapture, async (client) => {
+    await withTools(fakeContext([pane], { maxResultLines: 7 }), registerSearch, async (client) => {
       const answer = await client.callTool({
         arguments: { pattern: "needle", scrollbackLines: 1_000_000 },
         name: "search_panes",
@@ -618,7 +619,7 @@ describe("search_panes", () => {
       });
     await withTools(
       fakeContext([pane("%1", "$1"), pane("%1", "$2"), pane("%2", "$1")]),
-      registerCapture,
+      registerSearch,
       async (client) => {
         const answer = await client.callTool({
           arguments: { pattern: "needle" },
@@ -653,7 +654,7 @@ describe("search_panes", () => {
       }),
     ];
 
-    await withTools(fakeContext(panes), registerCapture, async (client) => {
+    await withTools(fakeContext(panes), registerSearch, async (client) => {
       const answer = await client.callTool({
         arguments: { pattern: "needle" },
         name: "search_panes",
@@ -682,7 +683,7 @@ describe("search_panes", () => {
       id: "%1",
     });
 
-    await withTools(fakeContext([pane]), registerCapture, async (client) => {
+    await withTools(fakeContext([pane]), registerSearch, async (client) => {
       const answer = await client.callTool({
         arguments: { pattern: "needle" },
         name: "search_panes",
@@ -715,7 +716,7 @@ describe("search_panes", () => {
       id: "%1",
     });
 
-    await withTools(fakeContext([pane]), registerCapture, async (client) => {
+    await withTools(fakeContext([pane]), registerSearch, async (client) => {
       const answer = await client.callTool({
         arguments: { pattern: "needle" },
         name: "search_panes",
@@ -746,7 +747,7 @@ describe("search_panes", () => {
       }),
     );
 
-    await withTools(fakeContext(panes), registerCapture, async (client) => {
+    await withTools(fakeContext(panes), registerSearch, async (client) => {
       const pending = client.callTool({ arguments: { pattern: "needle" }, name: "search_panes" });
       await new Promise((resolve) => setTimeout(resolve, 10));
       release();
@@ -758,7 +759,7 @@ describe("search_panes", () => {
 
   test("reports matches omitted by the result ceiling", async () => {
     const pane = fakePane({ capture: async () => ["n", "n", "n", "n"], id: "%1" });
-    await withTools(fakeContext([pane], { maxResultLines: 3 }), registerCapture, async (client) => {
+    await withTools(fakeContext([pane], { maxResultLines: 3 }), registerSearch, async (client) => {
       const answer = await client.callTool({
         arguments: { maxMatchesPerPane: 999, pattern: "n" },
         name: "search_panes",
@@ -777,7 +778,7 @@ describe("search_panes", () => {
     const panes = Array.from({ length: 6_000 }, (_, index) =>
       fakePane({ capture: async () => ["needle"], id: "%1", sessionId: `$${String(index + 1)}` }),
     );
-    await withTools(fakeContext(panes), registerCapture, async (client) => {
+    await withTools(fakeContext(panes), registerSearch, async (client) => {
       const result = structured<{
         readonly matches: readonly unknown[];
         readonly matchesTruncated: boolean;

@@ -17,6 +17,7 @@ import { registerDiscovery } from "./tools/discovery.js";
 import { registerInput } from "./tools/input.js";
 import { registerLayout } from "./tools/layout.js";
 import { registerLifecycle } from "./tools/lifecycle.js";
+import { registerSearch } from "./tools/search.js";
 import { registerSettings } from "./tools/settings.js";
 import { registerWait } from "./tools/wait.js";
 import { registerWorkspace } from "./tools/workspace.js";
@@ -63,6 +64,7 @@ export function createTmuxMcpServer(
   const offered = offeredTools(mcp, policy);
   registerDiscovery(offered, context);
   registerCapture(offered, context);
+  registerSearch(offered, context);
   registerBuffers(offered, context);
   registerInput(offered, context);
   registerLifecycle(offered, context);
