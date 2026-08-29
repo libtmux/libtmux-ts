@@ -391,7 +391,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to the pane this server runs in. Default false."),
+          .describe("Write even to this server's pane or one a person is watching. Default false."),
         name: z.string(),
         paneId: z.string(),
       },

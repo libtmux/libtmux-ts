@@ -53,7 +53,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to the pane this server runs in. Default false."),
+          .describe("Write even to this server's pane or one a person is watching. Default false."),
         keys: z
           .string()
           .describe("Keys to send. tmux key names like C-c work unless literal is true."),
@@ -101,7 +101,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to the pane this server runs in. Default false."),
+          .describe("Write even to this server's pane or one a person is watching. Default false."),
         paneId: z.string(),
         text: z.string(),
       },
@@ -139,7 +139,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Run even if the pane does not look like it is at a shell prompt."),
+          .describe("Override pane-attention and shell-prompt checks. Default false."),
         maxLines: z.number().int().positive().optional(),
         paneId: z.string(),
         timeoutMs: z

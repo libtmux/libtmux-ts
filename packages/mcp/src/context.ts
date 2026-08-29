@@ -9,7 +9,7 @@
 import type { Pane, ServerSnapshot, Session, Window } from "libtmux";
 import type { Server } from "libtmux/server";
 
-import { isCallerPane, resolveCallerIdentity, type CallerIdentity } from "./caller.js";
+import { isAttended, isCallerPane, resolveCallerIdentity, type CallerIdentity } from "./caller.js";
 import { LiveHub, type PaneTail } from "./live.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
@@ -166,11 +166,11 @@ export function requirePane(
 /**
  * Find a pane this caller is cleared to write into.
  *
- * The one pane worth refusing is the terminal this server is running in:
- * typing into it puts the agent's own keystrokes in front of the person
- * watching, and tmux cannot undo that. `force` is how a caller says it meant
- * that pane. `verb` names the act in the refusal, because "refusing to restart"
- * and "refusing to type into" send a caller to different remedies.
+ * Refuses the terminal this server is running in and panes a person is
+ * watching: typing into either puts irreversible input in front of a person.
+ * `force` is how a caller says it meant that pane. `verb` names the act in the
+ * refusal, because "refusing to restart" and "refusing to type into" send a
+ * caller to different remedies.
  */
 export function requireWritablePane(
   snapshot: ServerSnapshot,
@@ -185,6 +185,12 @@ export function requireWritablePane(
     return fail({
       hint: "That is this server's own terminal. Pick another pane, or pass force to mean it.",
       reason: `Refusing to ${verb} ${paneId}: it is the pane this MCP server runs in.`,
+    });
+  }
+  if (force !== true && isAttended(identity, paneId)) {
+    return fail({
+      hint: "whoami lists who is attached. Pick another pane, or pass force to mean it.",
+      reason: `Refusing to ${verb} ${paneId}: a person is watching that pane.`,
     });
   }
   return pane;

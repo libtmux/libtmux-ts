@@ -2,6 +2,8 @@
 // unpublished and an in-repo consumer reaches across packages for it by path.
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -139,6 +141,59 @@ async function shellPaneId(client: Client): Promise<string> {
     }),
   );
   return built.panes[0]?.id ?? "";
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Attach a terminal client, which tmux distinguishes from control clients. */
+async function withAttendedPane(
+  fixture: TestServer,
+  body: (paneId: string) => Promise<void>,
+): Promise<void> {
+  const command = [
+    fixture.tmuxExecutable,
+    "-S",
+    fixture.socketPath,
+    "attach-session",
+    "-t",
+    fixture.sessionId,
+  ]
+    .map(shellQuote)
+    .join(" ");
+  const terminal = spawn("script", ["-q", "-e", "-c", command, "/dev/null"], {
+    env: { ...fixture.controllerEnvironment, TERM: "xterm-256color" },
+    shell: false,
+    stdio: ["pipe", "ignore", "ignore"],
+  });
+  let attached: { name: string; paneId: string } | undefined;
+  try {
+    const deadline = Date.now() + 5_000;
+    while (attached === undefined && Date.now() < deadline) {
+      // eslint-disable-next-line no-await-in-loop -- each read observes a later attach state.
+      const client = (await serverFor(fixture).snapshot()).clients
+        .toArray()
+        .find((candidate) => candidate.controlMode === false && candidate.paneId !== null);
+      if (client?.paneId !== null && client?.paneId !== undefined) {
+        attached = { name: client.name ?? "", paneId: client.paneId };
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop -- bounded polling must wait before the next read.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (attached === undefined) throw new Error("terminal client did not attach");
+    await body(attached.paneId);
+  } finally {
+    if (attached?.name !== undefined && attached.name !== "") {
+      await fixture.executeText(["detach-client", "-t", attached.name]).catch(() => undefined);
+    }
+    if (terminal.exitCode === null) terminal.kill();
+    await Promise.race([
+      terminal.exitCode === null ? once(terminal, "close") : Promise.resolve(),
+      new Promise((resolve) => setTimeout(resolve, 1_000)),
+    ]);
+  }
 }
 
 describe("handshake", () => {
@@ -687,6 +742,37 @@ describe("staying out of the way", () => {
           TMUX_PANE: paneId,
         },
       );
+    });
+  }, 60_000);
+
+  test("refuses every write path into a pane a person is watching", async () => {
+    await withServer(async (fixture) => {
+      await withAttendedPane(fixture, async (paneId) => {
+        await withClient(fixture, async (client) => {
+          await client.callTool({ arguments: { name: "guard", text: "x" }, name: "load_buffer" });
+
+          const refusesWrite = async (
+            tool: string,
+            args: Record<string, unknown>,
+          ): Promise<void> => {
+            const refused = await client.callTool({ arguments: args, name: tool });
+            expect((refused as { isError?: boolean }).isError).toBe(true);
+            expect(toolText(refused)).toContain("person is watching");
+          };
+
+          await refusesWrite("send_keys", { enter: false, keys: "harmless", paneId });
+          await refusesWrite("paste_text", { paneId, text: "" });
+          await refusesWrite("run_command", { command: "true", paneId });
+          await refusesWrite("paste_buffer", { name: "guard", paneId });
+          await refusesWrite("respawn_pane", { paneId });
+
+          const forced = await client.callTool({
+            arguments: { force: true, paneId, text: "" },
+            name: "paste_text",
+          });
+          expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
+        });
+      });
     });
   }, 60_000);
 

@@ -241,7 +241,9 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to the pane this server runs in. Default false."),
+          .describe(
+            "Restart even in this server's pane or one a person is watching. Default false.",
+          ),
         killFirst: z
           .boolean()
           .optional()
