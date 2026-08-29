@@ -99,7 +99,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       );
       context.topologyChanged();
       return ok(
-        { paneId: pane?.id ?? "", session: view, windowId: pane?.windowId ?? "" },
+        { paneId: pane?.id ?? "", session: view, windowId: pane?.format.window_id ?? "" },
         `Created ${view.name} (${view.id}); its pane is ${pane?.id ?? "unknown"}.` +
           directoryNote(startDirectory, pane?.currentPath),
       );
@@ -334,7 +334,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const window = requireWindow(snapshot, windowId);
       if (isFailure(window)) return window;
       const identity = await context.identity(snapshot);
-      const inside = snapshot.panes.toArray().filter((pane) => pane.windowId === windowId);
+      const inside = snapshot.panes.toArray().filter((pane) => pane.format.window_id === windowId);
       for (const pane of inside) {
         const guard = guardDestructive(
           identity.callerPaneId,
@@ -364,7 +364,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const found = requireSession(snapshot, session);
       if (isFailure(found)) return found;
       const identity = await context.identity(snapshot);
-      const inside = snapshot.panes.toArray().filter((pane) => pane.sessionId === found.id);
+      const inside = snapshot.panes.toArray().filter((pane) => pane.format.session_id === found.id);
       for (const pane of inside) {
         const guard = guardDestructive(
           identity.callerPaneId,

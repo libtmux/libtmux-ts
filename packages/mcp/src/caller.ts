@@ -88,10 +88,10 @@ export async function resolveCallerIdentity(
   const caller = readCallerEnvironment(environment);
   const identity = await tmux.daemonIdentity();
   const clients = snapshot.clients.toArray().map((client): AttachedClient => ({
-    activePaneId: client.paneId ?? undefined,
+    activePaneId: client.pane?.id,
     controlMode: client.controlMode ?? false,
     name: client.name ?? "",
-    sessionName: client.sessionName ?? undefined,
+    sessionName: client.session?.name ?? undefined,
     tty: client.tty ?? undefined,
   }));
 

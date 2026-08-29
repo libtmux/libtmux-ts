@@ -96,11 +96,11 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
       // they were asked for.
       const inOrder = after.windows
         .toArray()
-        .filter((entry) => entry.sessionId === created.id)
+        .filter((entry) => entry.format.session_id === created.id)
         .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))
         .slice(0, windows.length);
       const panes = inOrder
-        .map((target) => after.panes.toArray().find((pane) => pane.windowId === target.id))
+        .map((target) => after.panes.toArray().find((pane) => pane.format.window_id === target.id))
         .filter((pane) => pane !== undefined)
         .map((pane) => paneView(pane, identity));
 

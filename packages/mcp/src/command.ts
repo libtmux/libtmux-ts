@@ -188,12 +188,9 @@ export async function runFramedCommand(
   const budget = effectiveWaitMs(context.policy, timeoutMs, asTask);
   const id = `ltx${randomId()}`;
   const payload = frame(command, id, suppressHistory);
-  const sessionId = pane.sessionId;
+  const sessionId = pane.format.session_id;
 
-  const tail =
-    context.policy.liveEnabled && sessionId !== null
-      ? await context.hub.tail(sessionId, pane.id)
-      : undefined;
+  const tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
 
   // Read the stream position before sending: output printed between the send
   // and the first read would otherwise be attributed to whatever came before.

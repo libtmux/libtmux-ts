@@ -139,7 +139,7 @@ function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult 
     .toArray()
     .map(
       (entry) =>
-        `${entry.id} (${entry.sessionName ?? "?"}:${entry.windowName ?? "?"} ${entry.currentCommand ?? "?"})`,
+        `${entry.id} (${entry.session?.name ?? "?"}:${entry.window?.name ?? "?"} ${entry.currentCommand ?? "?"})`,
     );
   return fail({
     hint:
@@ -244,7 +244,7 @@ export function requireWindow(snapshot: ServerSnapshot, target: string): CallToo
   if (byId !== undefined) return byId;
   const available = snapshot.windows
     .toArray()
-    .map((entry) => `${entry.id} (${entry.sessionName ?? "?"}:${entry.name ?? "?"})`);
+    .map((entry) => `${entry.id} (${entry.session?.name ?? "?"}:${entry.name ?? "?"})`);
   return fail({
     hint:
       available.length === 0

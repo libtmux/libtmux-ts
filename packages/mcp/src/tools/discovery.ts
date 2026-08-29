@@ -162,7 +162,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
       const windows = (
-        target === undefined ? all : all.filter((window) => window.sessionId === target.id)
+        target === undefined ? all : all.filter((window) => window.format.session_id === target.id)
       ).map(windowView);
       return ok(
         { windows },
@@ -195,8 +195,8 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         .toArray()
         .filter(
           (pane) =>
-            (target === undefined || pane.sessionId === target.id) &&
-            (window === undefined || pane.windowId === window),
+            (target === undefined || pane.format.session_id === target.id) &&
+            (window === undefined || pane.format.window_id === window),
         )
         .map((pane) => paneView(pane, identity));
       return ok(

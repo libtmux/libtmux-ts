@@ -64,11 +64,8 @@ async function waitForOutput(
     readonly timeoutMs: number;
   },
 ): Promise<WaitReport> {
-  const sessionId = pane.sessionId;
-  const tail =
-    context.policy.liveEnabled && sessionId !== null
-      ? await context.hub.tail(sessionId, pane.id)
-      : undefined;
+  const sessionId = pane.format.session_id;
+  const tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
   if (tail === undefined) {
     return {
       cursor: 0,
@@ -313,8 +310,8 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
     const pane = requirePane(snapshot, args.paneId);
     if (isFailure(pane)) return pane;
 
-    if (args.cursor !== undefined && pane.sessionId !== null) {
-      const tail = await context.hub.tail(pane.sessionId, pane.id);
+    if (args.cursor !== undefined) {
+      const tail = await context.hub.tail(pane.format.session_id, pane.id);
       const stale =
         tail === undefined ? undefined : requireLiveCursor(tail, args.cursor, args.paneId);
       if (stale !== undefined) return stale;

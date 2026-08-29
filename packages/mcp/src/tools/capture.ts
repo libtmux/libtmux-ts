@@ -161,13 +161,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
-      const sessionId = pane.sessionId;
-      if (sessionId === null) {
-        return fail({
-          hint: "Only a pane in a session can be observed. list_panes shows which are.",
-          reason: `Pane ${paneId} belongs to no session.`,
-        });
-      }
+      const sessionId = pane.format.session_id;
 
       // Whether to seed is a question about the call, not about the server:
       // deciding it on whether a tail happened to exist handed the second
@@ -385,7 +379,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       if (target !== undefined && isFailure(target)) return target;
       const panes = snapshot.panes
         .toArray()
-        .filter((pane) => target === undefined || pane.sessionId === target.id);
+        .filter((pane) => target === undefined || pane.format.session_id === target.id);
       const perPane = maxMatchesPerPane ?? 5;
       const start =
         scrollbackLines === undefined || scrollbackLines === 0 ? undefined : -scrollbackLines;
@@ -411,9 +405,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           found.push({
             lineNumber: index + 1,
             paneId: pane.id,
-            sessionName: pane.sessionName ?? "",
+            sessionName: pane.session?.name ?? "",
             text: line,
-            windowName: pane.windowName ?? "",
+            windowName: pane.window?.name ?? "",
           });
         }
         return found;

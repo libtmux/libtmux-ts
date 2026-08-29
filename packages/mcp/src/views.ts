@@ -92,12 +92,12 @@ export function paneView(pane: ReadablePane, identity: CallerIdentity): PaneView
     index: no(pane.index, 0),
     isAttended: isAttended(identity, pane.id),
     isCallerPane: isCallerPane(identity, pane.id),
-    sessionId: no(pane.sessionId, ""),
-    sessionName: no(pane.sessionName, ""),
+    sessionId: pane.format.session_id,
+    sessionName: no(pane.session?.name, ""),
     title: no(pane.title, ""),
     width: no(pane.width, 0),
-    windowId: no(pane.windowId, ""),
-    windowName: no(pane.windowName, ""),
+    windowId: pane.format.window_id,
+    windowName: no(pane.window?.name, ""),
   };
 }
 
@@ -118,18 +118,18 @@ export function windowView(window: Window): WindowView {
     layout: no(window.layout, ""),
     name: no(window.name, ""),
     panes: no(window.windowPanes, 0),
-    sessionId: no(window.sessionId, ""),
-    sessionName: no(window.sessionName, ""),
+    sessionId: window.format.session_id,
+    sessionName: no(window.session?.name, ""),
     zoomed: no(window.zoomedFlag, false),
   };
 }
 
 export function clientView(client: Client): ClientView {
   return {
-    activePaneId: no(client.paneId, ""),
+    activePaneId: client.pane?.id ?? "",
     controlMode: no(client.controlMode, false),
     name: no(client.name, ""),
-    sessionName: no(client.sessionName, ""),
+    sessionName: no(client.session?.name, ""),
     tty: no(client.tty, ""),
   };
 }

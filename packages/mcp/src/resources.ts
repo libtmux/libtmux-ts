@@ -215,7 +215,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
         ...sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
         windows: snapshot.windows
           .toArray()
-          .filter((window) => window.sessionId === session.id)
+          .filter((window) => window.format.session_id === session.id)
           .map(windowView),
       });
     },
@@ -236,7 +236,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
         {
           resources: (await context.snapshot()).windows.toArray().map((window) => ({
             mimeType: JSON_MIME,
-            name: `${window.sessionName ?? "?"}:${window.name ?? window.id}`,
+            name: `${window.session?.name ?? "?"}:${window.name ?? window.id}`,
             uri: windowUri(window.id),
           })),
         }
@@ -254,7 +254,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
         ...windowView(window),
         panes: snapshot.panes
           .toArray()
-          .filter((pane) => pane.windowId === window.id)
+          .filter((pane) => pane.format.window_id === window.id)
           .map((pane) => paneView(pane, identity)),
       });
     },
@@ -275,7 +275,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
         const snapshot = await context.snapshot();
         return {
           resources: snapshot.panes.toArray().map((pane) => ({
-            description: `${pane.sessionName ?? "?"}:${pane.windowName ?? "?"} running ${pane.currentCommand ?? "?"}`,
+            description: `${pane.session?.name ?? "?"}:${pane.window?.name ?? "?"} running ${pane.currentCommand ?? "?"}`,
             mimeType: JSON_MIME,
             name: pane.id,
             uri: paneUri(pane.id),
@@ -357,7 +357,7 @@ function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
     }
     const snapshot = await context.snapshot();
     const pane = snapshot.panes.oneOrUndefined({ id: paneId });
-    const sessionId = pane?.sessionId;
+    const sessionId = pane?.format.session_id;
     if (pane === undefined || sessionId === null || sessionId === undefined) {
       throw new Error(`No pane ${paneId} to subscribe to`);
     }

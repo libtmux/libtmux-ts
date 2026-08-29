@@ -177,9 +177,9 @@ async function withAttendedPane(
       // eslint-disable-next-line no-await-in-loop -- each read observes a later attach state.
       const client = (await serverFor(fixture).snapshot()).clients
         .toArray()
-        .find((candidate) => candidate.controlMode === false && candidate.paneId !== null);
-      if (client?.paneId !== null && client?.paneId !== undefined) {
-        attached = { name: client.name ?? "", paneId: client.paneId };
+        .find((candidate) => candidate.controlMode === false && candidate.pane !== undefined);
+      if (client?.pane !== undefined) {
+        attached = { name: client.name ?? "", paneId: client.pane.id };
         break;
       }
       // eslint-disable-next-line no-await-in-loop -- bounded polling must wait before the next read.
