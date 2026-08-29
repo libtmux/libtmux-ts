@@ -12,12 +12,13 @@ import { fileURLToPath } from "node:url";
  * it, and went on saying so through five published releases. Nothing was in a
  * position to notice.
  *
- * Four claims are checked, all of them answerable from the tree:
+ * Five claims are checked, all of them answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
  * - a package named in an install command is one this workspace publishes;
  * - a public install example pins prerelease packages to the manifest version;
- * - a tmux badge lists exactly the versions CI runs the suite against.
+ * - a tmux badge lists exactly the versions CI runs the suite against; and
+ * - every published package README states the tested host-platform boundary.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -34,6 +35,19 @@ const installers = new Map<string, number>([
 ]);
 
 const failures: string[] = [];
+
+const packageReadmes = [
+  "README.md",
+  "packages/libtmux/README.md",
+  "packages/mcp/README.md",
+  "packages/workspace/README.md",
+] as const;
+
+const platformClaims = [
+  "Linux is the only supported host for real tmux control.",
+  "The macOS CI lane checks package artifacts without exercising tmux; macOS runtime behavior is unproven.",
+  "WSL is untested.",
+] as const;
 
 /** Every package this workspace publishes, read from the manifests. */
 async function publishedPackages(): Promise<ReadonlyMap<string, string>> {
@@ -207,6 +221,15 @@ for (const file of files) {
         }
       }
     }
+  }
+}
+
+for (const file of packageReadmes) {
+  // eslint-disable-next-line no-await-in-loop -- four public contracts, reported in package order.
+  const markdown = await Bun.file(join(repositoryRoot, file)).text();
+  const prose = markdown.replace(/\s+/gu, " ");
+  for (const claim of platformClaims) {
+    if (!prose.includes(claim)) failures.push(`${file}: missing platform claim: ${claim}`);
   }
 }
 

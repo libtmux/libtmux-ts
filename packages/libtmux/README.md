@@ -14,11 +14,9 @@ criteria, and drive sessions, windows, and panes with a fully typed API.
 
 Requires tmux 3.2a or newer, and Node 22+ or Bun 1.3.14+.
 
-CI builds, packs, installs, and evaluates every emitted package on macOS. The
-real-tmux suites remain Linux-only because their fixture supervisor identifies
-processes through `/proc`; cancellation and process teardown therefore have no
-macOS proof yet. WSL is untested. These are proof boundaries, not declarations
-that the library rejects either platform.
+Linux is the only supported host for real tmux control. The macOS CI lane
+checks package artifacts without exercising tmux; macOS runtime behavior is
+unproven. WSL is untested. This is a proof boundary, not an OS rejection.
 
 ```console
 $ bun add --exact libtmux@0.1.0-alpha.6

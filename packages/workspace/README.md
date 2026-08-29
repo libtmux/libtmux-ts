@@ -43,6 +43,10 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 `libtmux` is a peer of this package in practice: you pass it the `Server`.
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
 
+Linux is the only supported host for real tmux control. The macOS CI lane
+checks package artifacts without exercising tmux; macOS runtime behavior is
+unproven. WSL is untested.
+
 ## Use it
 
 ```ts

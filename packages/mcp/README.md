@@ -61,6 +61,10 @@ $ bun add --exact @libtmux/mcp@0.1.0-alpha.6
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
 
+Linux is the only supported host for real tmux control. The macOS CI lane
+checks package artifacts without exercising tmux; macOS runtime behavior is
+unproven. WSL is untested.
+
 ## Configure your client
 
 This is the whole configuration:
