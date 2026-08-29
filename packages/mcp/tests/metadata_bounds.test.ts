@@ -239,6 +239,28 @@ describe("metadata tool bounds", () => {
 });
 
 describe("metadata resource bounds", () => {
+  test("completes only bounded session ids", async () => {
+    const count = 150;
+    await withMcp(
+      [registerResources],
+      async (client) => {
+        const result = await client.complete({
+          argument: { name: "sessionId", value: "" },
+          ref: { type: "ref/resource", uri: "tmux://sessions/{sessionId}" },
+        });
+
+        expect(result.completion.values).toHaveLength(100);
+        expect(result.completion.values.every((value) => /^\$\d+$/u.test(value))).toBe(true);
+        expect(result.completion.total).toBe(count);
+        expect(result.completion.hasMore).toBe(true);
+        expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThanOrEqual(
+          MAX_RESULT_BYTES,
+        );
+      },
+      fakeContext({ count }),
+    );
+  });
+
   test("paginates one-snapshot resource listings without loss", async () => {
     const count = 32;
     let snapshots = 0;

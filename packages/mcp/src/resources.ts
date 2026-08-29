@@ -183,7 +183,7 @@ function resourceDescriptors(snapshot: ServerSnapshot): Resource[] {
       uri: windowUri(window.id),
     })),
     ...paneEntities(snapshot.panes.toArray()).map((pane) => ({
-      description: `${pane.session?.name ?? "?"}:${pane.window?.name ?? "?"} running ${pane.currentCommand ?? "?"}`,
+      description: `One pane running ${pane.currentCommand ?? "an unknown command"}.`,
       mimeType: JSON_MIME,
       name: pane.id,
       title: "Pane",
@@ -474,8 +474,8 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
         sessionId: async (value) =>
           (await context.snapshot()).sessions
             .toArray()
-            .flatMap((session) => [session.id, session.name ?? ""])
-            .filter((candidate) => candidate !== "" && candidate.startsWith(value)),
+            .map((session) => session.id)
+            .filter((candidate) => candidate.startsWith(value)),
       },
       list: undefined,
     }),

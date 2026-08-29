@@ -11,7 +11,7 @@ import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { ToolContext } from "./context.js";
+import { paneEntities, type ToolContext } from "./context.js";
 import { paneIdSchema } from "./schemas.js";
 
 function userPrompt(text: string): {
@@ -22,8 +22,7 @@ function userPrompt(text: string): {
 
 export function registerPrompts(mcp: McpServer, context: ToolContext): void {
   const completePaneId = async (value: string): Promise<string[]> =>
-    (await context.snapshot()).panes
-      .toArray()
+    paneEntities((await context.snapshot()).panes.toArray())
       .map((pane) => pane.id)
       .filter((candidate) => candidate.startsWith(value));
 

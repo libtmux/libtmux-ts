@@ -192,6 +192,25 @@ describe("linked and grouped placements", () => {
         expect(new Set(uris).size).toBe(uris.length);
         expect(uris.filter((uri) => /^tmux:\/\/windows\/%40\d+$/u.test(uri))).toHaveLength(2);
         expect(uris.filter((uri) => /^tmux:\/\/panes\/%25\d+$/u.test(uri))).toHaveLength(3);
+        expect(
+          resources.find(
+            ({ uri }) => uri === `tmux://panes/${encodeURIComponent(topology.sharedPaneId)}`,
+          )?.description,
+        ).toBe("One pane running sh.");
+
+        for (const ref of [
+          { type: "ref/resource" as const, uri: "tmux://panes/{paneId}" },
+          { name: "run-and-check", type: "ref/prompt" as const },
+        ]) {
+          // eslint-disable-next-line no-await-in-loop -- each protocol surface must deduplicate.
+          const completion = await client.complete({
+            argument: { name: "paneId", value: "%" },
+            ref,
+          });
+          expect(
+            completion.completion.values.filter((value) => value === topology.sharedPaneId),
+          ).toHaveLength(1);
+        }
 
         for (const call of [
           { arguments: { paneId: topology.sharedPaneId }, name: "get_pane" },
