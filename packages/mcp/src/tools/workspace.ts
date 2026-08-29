@@ -10,6 +10,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { TmuxCommandError, type PlannedOperation } from "libtmux";
+
 import type { ToolContext } from "../context.js";
 import { MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
@@ -33,6 +35,35 @@ function directoryOption(
   return effective === undefined ? {} : { startDirectory: effective };
 }
 
+interface WorkspaceFailure {
+  readonly reason: string;
+  readonly windowIndex: number | null;
+  readonly windowName: string | null;
+}
+
+function failedWindow(
+  error: unknown,
+  plans: readonly PlannedOperation<unknown>[],
+  windows: readonly z.infer<typeof windowSpec>[],
+): WorkspaceFailure {
+  const matchingPlans =
+    error instanceof TmuxCommandError
+      ? plans.flatMap(({ argv }, index) =>
+          argv.length === error.args.length &&
+          argv.every((value, argumentIndex) => value === error.args[argumentIndex])
+            ? [index]
+            : [],
+        )
+      : [];
+  const plannedIndex = matchingPlans.length === 1 ? matchingPlans[0]! : -1;
+  const windowIndex = plannedIndex === -1 ? null : plannedIndex + 1;
+  return {
+    reason: error instanceof Error ? error.message : String(error),
+    windowIndex,
+    windowName: windowIndex === null ? null : (windows[windowIndex]?.name ?? null),
+  };
+}
+
 export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "mutating")) return;
 
@@ -53,7 +84,17 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
         windows: z.array(windowSpec).min(1).describe("The windows to create, in order."),
       },
       outputSchema: {
-        panes: z.array(paneViewSchema).describe("One per window, in the order asked for."),
+        complete: z.boolean().describe("Whether every requested window was created."),
+        failure: z
+          .object({
+            reason: z.string(),
+            windowIndex: z.number().int().nonnegative().nullable(),
+            windowName: z.string().nullable(),
+          })
+          .nullable(),
+        panes: z
+          .array(paneViewSchema)
+          .describe("One per surviving window, in the order asked for."),
         sessionId: sessionIdSchema,
       },
       title: "Build a workspace",
@@ -79,16 +120,22 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
         ...directoryOption(first.startDirectory, startDirectory),
       });
 
-      if (rest.length > 0) {
-        await context.tmux.batch(
-          rest.map((window) =>
-            created.plan.newWindow({
-              name: window.name,
-              ...(window.shellCommand === undefined ? {} : { shellCommand: window.shellCommand }),
-              ...directoryOption(window.startDirectory, startDirectory),
-            }),
-          ),
-        );
+      const plans = rest.map((window) =>
+        created.plan.newWindow({
+          name: window.name,
+          ...(window.shellCommand === undefined ? {} : { shellCommand: window.shellCommand }),
+          ...directoryOption(window.startDirectory, startDirectory),
+        }),
+      );
+      let failure: WorkspaceFailure | null = null;
+      try {
+        if (plans.length > 0) await context.tmux.batch(plans);
+      } catch (error) {
+        failure = failedWindow(error, plans, windows);
+      } finally {
+        // The session and any commands before a batch failure already changed
+        // topology, so live tails must be invalidated on both result paths.
+        context.topologyChanged();
       }
 
       const after = await context.snapshot();
@@ -109,10 +156,17 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
         .filter((pane) => pane !== undefined)
         .map((pane) => paneView(pane, identity));
 
-      context.topologyChanged();
       return ok(
-        { panes, sessionId: created.id },
-        `Built ${session} (${created.id}) with ${String(panes.length)} windows:\n${panes.map(paneLine).join("\n")}`,
+        { complete: failure === null, failure, panes, sessionId: created.id },
+        [
+          `${failure === null ? "Built" : "Partially built"} ${session} (${created.id}) with ${String(panes.length)} windows:`,
+          panes.map(paneLine).join("\n"),
+          failure === null
+            ? ""
+            : `[stopped at window ${failure.windowIndex === null ? "unknown" : String(failure.windowIndex)}${failure.windowName === null ? "" : ` (${failure.windowName})`}: ${failure.reason}]`,
+        ]
+          .filter((part) => part !== "")
+          .join("\n"),
       );
     },
   );
