@@ -1,4 +1,5 @@
 import type { CommandOptions, CommandResult, OperationStatus } from "../../common.js";
+import type { TmuxCommand } from "../../engine.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import type { DaemonGuard } from "../transport/daemon_guard.js";
@@ -8,7 +9,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../transport/types.js";
-import { snapshotCommandRequest, TmuxTransportError } from "../transport/types.js";
+import { snapshotInvocationRequest, TmuxTransportError } from "../transport/types.js";
 
 export function connectionArguments(connection: TmuxConnection): string[] {
   const args: string[] = [];
@@ -25,14 +26,41 @@ export function prepareCommandRequest(
   args: readonly string[],
   options: CommandOptions & { readonly daemonGuard?: DaemonGuard; readonly rawOutput?: true } = {},
 ): CommandRequest {
-  if (options.stdin !== undefined && !(args[0] === "load-buffer" && args.at(-1) === "-")) {
-    throw new TypeError(`${args[0] ?? "command"} does not accept stdin`);
+  return prepareInvocationRequest(connection, [args], options);
+}
+
+function prepareCommand(args: readonly string[]): TmuxCommand {
+  const [name, ...rest] = args;
+  if (name === undefined || name === "") throw new TypeError("tmux command must not be empty");
+  return Object.freeze([name, ...rest]);
+}
+
+export function prepareInvocationRequest(
+  connection: TmuxConnection,
+  commands: readonly (readonly string[])[],
+  options: CommandOptions & { readonly daemonGuard?: DaemonGuard; readonly rawOutput?: true } = {},
+): CommandRequest {
+  const [first, ...rest] = commands;
+  if (first === undefined) throw new TypeError("tmux invocation must contain a command");
+  const prepared: readonly [TmuxCommand, ...TmuxCommand[]] = Object.freeze([
+    prepareCommand(first),
+    ...rest.map(prepareCommand),
+  ]);
+  if (
+    options.stdin !== undefined &&
+    !(prepared.length === 1 && prepared[0][0] === "load-buffer" && prepared[0].at(-1) === "-")
+  ) {
+    throw new TypeError(`${prepared[0][0]} does not accept stdin`);
   }
-  return snapshotCommandRequest({
-    args: Object.freeze([...connectionArguments(connection), ...args]),
+  if (options.stdin !== undefined && options.daemonGuard !== undefined) {
+    throw new TypeError("a daemon-guarded invocation cannot carry stdin");
+  }
+  return snapshotInvocationRequest({
+    commands: prepared,
     ...(options.daemonGuard === undefined ? {} : { daemonGuard: options.daemonGuard }),
     environment: connection.environment,
     executable: connection.executable,
+    globalArgs: connectionArguments(connection),
     ...(options.rawOutput === undefined ? {} : { rawOutput: options.rawOutput }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
@@ -70,7 +98,7 @@ export async function executeBatch(
   transport: CommandTransport,
   requests: readonly CommandRequest[],
 ): Promise<readonly BatchOutcome[]> {
-  const queuedRequests = requests.map((request) => snapshotCommandRequest(request));
+  const queuedRequests = requests.map((request) => snapshotInvocationRequest(request));
   const outcomes: BatchOutcome[] = [];
   for (const [index, request] of queuedRequests.entries()) {
     try {

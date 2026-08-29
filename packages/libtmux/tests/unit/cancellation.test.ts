@@ -94,8 +94,9 @@ describe("transport cancellation", () => {
 
     try {
       await transport.execute({
-        args: [],
+        commands: [["display-message"]],
         executable: "/definitely/not/an/executable",
+        globalArgs: [],
         signal: controller.signal,
       });
       throw new Error("expected cancellation");
@@ -111,8 +112,9 @@ describe("transport cancellation", () => {
     const controller = new AbortController();
     const transport = new NodeSpawnTransport({ terminationGraceMs: 30 });
     const execution = transport.execute({
-      args: [ignoreSigtermFixture, markerPath],
+      commands: [[ignoreSigtermFixture, markerPath]],
       executable: process.execPath,
+      globalArgs: [],
       signal: controller.signal,
       stdin: new Uint8Array(16 * 1024 * 1024),
     });
@@ -147,8 +149,9 @@ describe("transport cancellation", () => {
     // startup and well below the fixture's own exit.
     await expect(
       transport.execute({
-        args: [ignoreSigtermFixture, "--exit-after=10000"],
+        commands: [[ignoreSigtermFixture, "--exit-after=10000"]],
         executable: process.execPath,
+        globalArgs: [],
         timeoutMs: 1_500,
       }),
     ).rejects.toMatchObject({
@@ -164,9 +167,10 @@ describe("transport cancellation", () => {
     const controller = new AbortController();
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const execution = transport.execute({
-      args: [ignoreSigtermFixture, `--inherit-pipes=${markerPath}`],
+      commands: [[ignoreSigtermFixture, `--inherit-pipes=${markerPath}`]],
       environment: detachedHolderEnvironment,
       executable: process.execPath,
+      globalArgs: [],
       signal: controller.signal,
     });
     let failure: unknown;
@@ -217,9 +221,10 @@ describe("transport cancellation", () => {
     // startup kills the fixture first, and then the marker this test waits for
     // is never written at all.
     const execution = transport.execute({
-      args: [ignoreSigtermFixture, `--inherit-pipes=${markerPath}`],
+      commands: [[ignoreSigtermFixture, `--inherit-pipes=${markerPath}`]],
       environment: detachedHolderEnvironment,
       executable: process.execPath,
+      globalArgs: [],
       timeoutMs: 2_000,
     });
     let holder: ProcessIdentity | undefined;
@@ -257,8 +262,9 @@ describe("transport cancellation", () => {
       const controller = new AbortController();
       let settlements = 0;
       const execution = transport.execute({
-        args: ["--input-type=module", "--eval", "setTimeout(() => {}, 15)"],
+        commands: [["--input-type=module", "--eval", "setTimeout(() => {}, 15)"]],
         executable: process.execPath,
+        globalArgs: [],
         signal: controller.signal,
       });
       void execution.then(
@@ -287,9 +293,10 @@ describe("transport cancellation", () => {
     const controller = new AbortController();
     const transport = new NodeSpawnTransport({ terminationGraceMs: 20 });
     const execution = transport.execute({
-      args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"],
+      commands: [[echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"]],
       environment: detachedHolderEnvironment,
       executable: process.execPath,
+      globalArgs: [],
       signal: controller.signal,
     });
     let holder: ProcessIdentity | undefined;
@@ -326,9 +333,10 @@ describe("transport cancellation", () => {
     // pipes. Crowding the first turns an honest timeout into what reads as a
     // broken exit result: bounded drainage is what is measured, not fork speed.
     const execution = transport.execute({
-      args: [echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"],
+      commands: [[echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"]],
       environment: detachedHolderEnvironment,
       executable: process.execPath,
+      globalArgs: [],
       timeoutMs: 1_500,
     });
     let holder: ProcessIdentity | undefined;

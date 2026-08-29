@@ -11,6 +11,7 @@ import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
 import { planKillPaneIfUnshared, planSplitWindow } from "../../src/_internal/operations/plans.js";
 import { splitSize } from "../../src/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 
 /**
  * The tmux command line the lifecycle mutations build.
@@ -34,18 +35,13 @@ function recorder(): Recorder {
     execute(request: CommandRequest): Promise<RawCommandResult> {
       requests.push(request);
       return Promise.resolve({
-        cmd: request.args,
+        cmd: [request.executable, ...flattenInvocation(request)],
         returncode: 1,
         signal: null,
         // The transport boundary is bytes; decoding happens above it.
         stderr: new TextEncoder().encode("stopped\n"),
         stdout: new Uint8Array(),
       });
-    },
-    // One command at a time: this fixture records arguments and never
-    // resolves what a group would return.
-    executeGroup(): Promise<readonly RawCommandResult[]> {
-      return Promise.reject(new Error("this fixture runs one command at a time"));
     },
   };
 }
@@ -66,7 +62,7 @@ async function argumentsFor(
   await run(transport).catch(() => undefined);
   const request = transport.requests[0];
   if (request === undefined) throw new Error("no command was issued");
-  return request.args;
+  return request.commands[0];
 }
 
 describe("lifecycle command arguments", () => {

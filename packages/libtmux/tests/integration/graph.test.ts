@@ -45,10 +45,6 @@ function queryHarness(server: TestServer): QueryHarness {
       await server.assertControllerCurrent();
       return rawTransport.execute(request);
     },
-    async executeGroup(requests) {
-      await server.assertControllerCurrent();
-      return rawTransport.executeGroup(requests);
-    },
   };
   const connection = new TmuxConnection({
     environment: server.controllerEnvironment,

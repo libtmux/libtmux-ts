@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../src/server.js";
-import type { TmuxCommandRequest, TmuxCommandResult } from "../../src/engine.js";
+import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
+import { flattenInvocation } from "../../src/engine.js";
 import { singleCommandTransport } from "../support/transport_double.js";
 
-function success(request: TmuxCommandRequest): TmuxCommandResult {
+function success(request: TmuxInvocationRequest): TmuxCommandResult {
   return {
-    cmd: request.args,
+    cmd: [request.executable, ...flattenInvocation(request)],
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
@@ -29,7 +30,7 @@ describe("server utility requests", () => {
   });
 
   test("inherits the server deadline and targets a session name exactly", async () => {
-    const requests: TmuxCommandRequest[] = [];
+    const requests: TmuxInvocationRequest[] = [];
     const engine = singleCommandTransport((request) => {
       requests.push(request);
       return Promise.resolve(success(request));
@@ -39,9 +40,11 @@ describe("server utility requests", () => {
     expect(await server.hasSession("work")).toBe(true);
     expect(await server.isAlive()).toBe(true);
 
-    expect(requests.map(({ args, timeoutMs }) => ({ args, timeoutMs }))).toEqual([
-      { args: ["has-session", "-t", "=work"], timeoutMs: 37 },
-      { args: ["list-sessions"], timeoutMs: 37 },
+    expect(
+      requests.map((request) => ({ commands: request.commands, timeoutMs: request.timeoutMs })),
+    ).toEqual([
+      { commands: [["has-session", "-t", "=work"]], timeoutMs: 37 },
+      { commands: [["list-sessions"]], timeoutMs: 37 },
     ]);
   });
 

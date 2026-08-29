@@ -12,8 +12,8 @@ import {
 } from "../../libtmux/src/_internal/test/run_root.js";
 import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
 import { Server } from "libtmux/server";
-import { asSingleInvocation } from "libtmux/engine";
-import type { TmuxCommandRequest, TmuxCommandResult, TmuxEngine } from "libtmux/engine";
+import { flattenInvocation } from "libtmux/engine";
+import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
 import { applyWorkspace, planWorkspace, WorkspaceApplyError } from "../src/builder.js";
 import { OWNERSHIP_OPTION } from "../src/ownership.js";
 import { parseWorkspaceYaml } from "../src/config.js";
@@ -39,7 +39,7 @@ function serverFor(fixture: TestServer): Server {
  */
 function shellEngine(onInvocation: () => void): TmuxEngine {
   const run = async (
-    request: TmuxCommandRequest,
+    request: TmuxInvocationRequest,
     args: readonly string[],
   ): Promise<TmuxCommandResult> => {
     onInvocation();
@@ -68,21 +68,7 @@ function shellEngine(onInvocation: () => void): TmuxEngine {
 
   return {
     endpoint: "sh://local",
-    execute: (request) => run(request, request.args),
-    async executeGroup(requests) {
-      const [first] = requests;
-      if (first === undefined) return [];
-      const invocation = asSingleInvocation(requests);
-      const result = await run(first, invocation.args);
-      const sections = invocation.sections(result.stdout);
-      return sections.map((stdout, index) => ({
-        cmd: result.cmd,
-        returncode: index === sections.length - 1 ? result.returncode : 0,
-        signal: null,
-        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
-        stdout,
-      }));
-    },
+    execute: (request) => run(request, flattenInvocation(request)),
   };
 }
 

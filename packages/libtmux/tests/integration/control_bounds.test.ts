@@ -47,58 +47,7 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
-describe("control-mode resource bounds", () => {
-  test("refuses a command past the pending bound, and says nothing was sent", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await using live = await server.connect({ maxPendingCommands: 1 });
-
-      // Two commands, neither awaited: tmux answers one at a time, so the
-      // second finds the queue already at its bound.
-      const first = live.cmd("display-message", ["-p", "#{version}"]);
-      const second = live.cmd("display-message", ["-p", "#{version}"]);
-
-      const outcome = await second.then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(outcome).toBeInstanceOf(TmuxTransportError);
-      const failure = outcome as TmuxTransportError;
-      // The whole point of the bound is that this one is safe to retry.
-      expect(failure.delivery).toBe("not_started");
-      expect(failure.kind).toBe("protocol");
-
-      // The queue is still a queue: the command that got in still answers.
-      expect((await first)[0]).toContain(".");
-    });
-  }, 40_000);
-
-  test("fails an oversized response without breaking the connection", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await using live = await server.connect({ maxCommandBytes: 1 });
-
-      const outcome = await live.cmd("display-message", ["-p", "#{version}"]).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(outcome).toBeInstanceOf(TmuxTransportError);
-      const failure = outcome as TmuxTransportError;
-      // tmux ran it; the response is what could not be held. Retrying it is a
-      // caller's decision to make with that in hand.
-      expect(failure.delivery).toBe("replied");
-      expect(failure.kind).toBe("protocol");
-
-      // Consuming the whole block is what keeps the next command aligned with
-      // its own response rather than reading this one's.
-      const after = await live.cmd("display-message", ["-p", "#{version}"]).then(
-        (lines) => lines,
-        () => undefined,
-      );
-      expect(after).toBeUndefined();
-    });
-  }, 40_000);
-
+describe("control-mode event bounds", () => {
   test("carries a command's stdin, which the protocol itself cannot", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -171,13 +120,9 @@ describe("control-mode resource bounds", () => {
     });
   }, 40_000);
 
-  test("rejects a bound that is not a positive integer, before spawning", async () => {
+  test("rejects invalid observer options before spawning", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      await expect(server.connect({ maxPendingCommands: 0 })).rejects.toThrow(
-        /maxPendingCommands/u,
-      );
-      await expect(server.connect({ maxCommandBytes: -1 })).rejects.toThrow(/maxCommandBytes/u);
       await expect(server.connect({ pauseAfterSeconds: 1 } as never)).rejects.toThrow(
         /pauseAfterSeconds belongs to Server\.watch/u,
       );

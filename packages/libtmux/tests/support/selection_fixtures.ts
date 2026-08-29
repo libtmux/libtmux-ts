@@ -28,6 +28,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Pane } from "../../src/pane.js";
 import { Session } from "../../src/session.js";
@@ -71,7 +72,7 @@ export interface SessionProvenanceHarness {
 
 function resultFor(request: CommandRequest): RawCommandResult {
   return {
-    cmd: Object.freeze([request.executable, ...request.args]),
+    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
@@ -86,12 +87,6 @@ function recordingTransport(): RecordingTransport {
     async execute(request) {
       requests.push(request);
       return resultFor(request);
-    },
-    // These fixtures answer one command at a time. Running a group as several
-    // singles would be the very non-atomicity the group exists to remove, so a
-    // fixture that needs one asks for it rather than getting a quiet stand-in.
-    executeGroup(): Promise<readonly RawCommandResult[]> {
-      return Promise.reject(new Error("this fixture runs one command at a time"));
     },
   };
 }

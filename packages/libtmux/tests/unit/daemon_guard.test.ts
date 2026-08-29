@@ -8,6 +8,7 @@ import {
 // Through the public entry an engine author imports, not the internal path,
 // so this fails if the export is dropped from `libtmux/engine`.
 import { guardRequest } from "../../src/engine.js";
+import type { TmuxInvocationRequest } from "../../src/engine.js";
 
 const encoder = new TextEncoder();
 const daemon = { pid: "4242", startTime: "1700000000" };
@@ -70,27 +71,41 @@ describe("daemon guard", () => {
     // Global flags carry their value joined, which is what makes "the
     // subcommand starts at the first argument without a leading dash" exact.
     const guarded = guardRequest({
-      args: ["-S/tmp/ltx", "kill-pane", "-t", "%3"],
+      commands: [
+        ["kill-pane", "-t", "%3"],
+        ["display-message", "-p", "done"],
+      ],
       daemonGuard: daemon,
       executable: "tmux",
+      globalArgs: ["-S/tmp/ltx"],
     });
 
-    expect(guarded.request.args.slice(0, -1)).toEqual(
-      guardedArgv(["-S/tmp/ltx"], ["kill-pane", "-t", "%3"], daemon).slice(0, -1),
-    );
-    expect(guarded.request.args.at(-1)).toMatch(refusalCommand);
+    const [name, flag, condition, chain, refusal] = guarded.request.commands[0];
+    expect(guarded.request.globalArgs).toEqual(["-S/tmp/ltx"]);
+    expect({ chain, condition, flag, name }).toEqual({
+      chain: "'kill-pane' '-t' '%3' ; 'display-message' '-p' 'done'",
+      condition: daemonCondition(daemon),
+      flag: "-F",
+      name: "if-shell",
+    });
+    expect(refusal).toMatch(refusalCommand);
   });
 
   test("leaves an unguarded request alone and rejects guarded stdin", () => {
-    const unguarded = { args: ["-S/tmp/ltx", "list-panes"], executable: "tmux" };
+    const unguarded: TmuxInvocationRequest = {
+      commands: [["list-panes"]],
+      executable: "tmux",
+      globalArgs: ["-S/tmp/ltx"],
+    };
     const prepared = guardRequest(unguarded);
     expect(prepared.request).toBe(unguarded);
     expect(prepared.refusedBy(1, encoder.encode("anything"))).toBe(false);
 
-    const piped = {
-      args: ["kill-pane", "-t", "%1"],
+    const piped: TmuxInvocationRequest = {
+      commands: [["kill-pane", "-t", "%1"]],
       daemonGuard: daemon,
       executable: "tmux",
+      globalArgs: [],
       stdin: encoder.encode("hi"),
     };
     expect(() => guardRequest(piped)).toThrow(/stdin/u);
@@ -98,11 +113,12 @@ describe("daemon guard", () => {
 
   test("binds refusal recognition to this request's nonce", () => {
     const guarded = guardRequest({
-      args: ["kill-pane", "-t", "%3"],
+      commands: [["kill-pane", "-t", "%3"]],
       daemonGuard: daemon,
       executable: "tmux",
+      globalArgs: [],
     });
-    const quoted = guarded.request.args.at(-1);
+    const quoted = guarded.request.commands[0].at(-1);
     if (quoted === undefined) throw new Error("missing refusal command");
     const command = quoted.slice(1, -1);
     const refusal = `unknown command: ${command}`;

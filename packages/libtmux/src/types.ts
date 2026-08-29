@@ -646,7 +646,7 @@ export interface AbortLike {
   removeEventListener(type: "abort", listener: () => void): void;
 }
 
-/** Options shared by persistent command connections and event observers. */
+/** Options shared by connected servers and event observers. */
 export interface ConnectionOptions {
   /**
    * How many events to hold for a consumer that has fallen behind.
@@ -666,9 +666,7 @@ export interface ConnectionOptions {
    * When enabled, a recovered connection reports itself as a `reconnected`
    * event so a consumer can tell that it missed whatever happened in the gap.
    *
-   * Commands in flight when the connection drops are failed, never replayed.
-   * tmux has no idea whether it already ran one, and re-sending `new-window`
-   * after it succeeded creates a second window.
+   * A reconnect restores event delivery; commands use separate tmux clients.
    */
   readonly reconnect?: {
     /** Maximum retries per outage. A positive safe integer. */
@@ -680,27 +678,8 @@ export interface ConnectionOptions {
   readonly target?: string;
 }
 
-/** Options for {@link Server.connect}, a persistent command channel. */
-export interface ConnectOptions extends ConnectionOptions {
-  /**
-   * How many bytes one command's response may occupy before it is refused.
-   *
-   * A control connection reads a command's output into memory before it can
-   * answer, so `list-panes` on a server with a pathological pane title, or a
-   * `capture-pane` of a very long scrollback, is the caller's heap. Exceeding
-   * this fails that one command rather than the process.
-   */
-  readonly maxCommandBytes?: number;
-  /**
-   * How many commands may be awaiting a response at once.
-   *
-   * tmux answers one at a time and in order, so a producer that outruns it
-   * queues without bound. Exceeding this rejects the newest command with
-   * `delivery: "not_started"`, which is the one status that is always safe to
-   * retry.
-   */
-  readonly maxPendingCommands?: number;
-}
+/** Options for {@link Server.connect}. */
+export type ConnectOptions = ConnectionOptions;
 
 /** Timing for a whole-server state wait. */
 export interface WaitForOptions {

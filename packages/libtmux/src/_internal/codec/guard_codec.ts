@@ -4,7 +4,7 @@ import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { LibTmuxException, TmuxObjectDoesNotExist } from "../../exc.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand, type OutputFormatField } from "./format_types.js";
-import { prepareCommandRequest } from "../operations/request.js";
+import { prepareCommandRequest, prepareInvocationRequest } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import type { CapabilityBinding, TmuxCapabilities } from "../runtime/capabilities.js";
 import type { TmuxVersion } from "../runtime/tmux_version.js";
@@ -409,6 +409,49 @@ export interface GuardedListing {
   readonly listExtraArgs?: readonly string[];
 }
 
+function concatenate(parts: readonly Uint8Array[]): Uint8Array {
+  const joined = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.length;
+  }
+  return joined;
+}
+
+/** Assign complete self-framed rows from one stdout stream to their codecs. */
+function demultiplexGuardedOutput(
+  requests: readonly GuardedFormatRequest[],
+  bytes: Uint8Array,
+): readonly Uint8Array[] {
+  const starts = requests.map((request) => bytesFor(request.guards.recordStart));
+  if (new Set(requests.map((request) => request.guards.recordStart)).size !== requests.length) {
+    throw new FormatProtocolError("grouped listings have duplicate record guards");
+  }
+  const sections: Uint8Array[][] = requests.map(() => []);
+  let offset = 0;
+  let previous = 0;
+  while (offset < bytes.length) {
+    const index = starts.findIndex((guard) => bytesAt(bytes, guard, offset));
+    if (index < 0) throw new FormatProtocolError("grouped listing output has unframed bytes");
+    if (index < previous) throw new FormatProtocolError("grouped listing output is out of order");
+    previous = index;
+    const endGuard = bytesFor(requests[index]!.guards.recordEnd);
+    const end = indexOfBytes(bytes, endGuard, offset + starts[index]!.length);
+    if (end < 0) throw new FormatProtocolError("grouped listing output has an incomplete frame");
+    let next = end + endGuard.length;
+    if (next < bytes.length) {
+      if (bytes[next] !== 0x0a) {
+        throw new FormatProtocolError("grouped listing frame has trailing bytes");
+      }
+      next += 1;
+    }
+    sections[index]!.push(bytes.slice(offset, next));
+    offset = next;
+  }
+  return Object.freeze(sections.map(concatenate));
+}
+
 export type GuardedFetchOptions = GuardedExecutionOptions &
   (
     | {
@@ -478,17 +521,14 @@ export async function executeGuardedList(
 export async function executeGuardedListGroup(
   options: GuardedExecutionOptions & { readonly listings: readonly GuardedListing[] },
 ): Promise<readonly (readonly ParsedFormatRow[])[]> {
+  if (options.listings.length === 0) return Object.freeze([]);
   const capabilities = await options.capabilities.bind();
   const prepared = options.listings.map((listing) => {
     const codec = new GuardCodec({ capabilities, listCommand: listing.listCommand });
     const request = codec.prepare();
     return {
       codec,
-      command: prepareCommandRequest(
-        options.connection,
-        [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`],
-        options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
-      ),
+      command: [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`],
       listCommand: listing.listCommand,
       request,
     };
@@ -499,28 +539,29 @@ export async function executeGuardedListGroup(
     throw new FormatProtocolError("capability fingerprint changed before execution");
   }
 
-  let results: readonly RawCommandResult[];
+  let result: RawCommandResult;
   try {
-    results = await options.transport.executeGroup(prepared.map(({ command }) => command));
+    result = await options.transport.execute(
+      prepareInvocationRequest(
+        options.connection,
+        prepared.map(({ command }) => command),
+        options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs },
+      ),
+    );
   } catch (error) {
     if (!(error instanceof TmuxTransportError)) throw error;
     throw transportFailure(prepared[0]?.listCommand ?? "list-sessions", error);
   }
 
-  // A short result list means tmux stopped the group at a failure, and the last
-  // entry is that failure — so reporting it needs no separate signal.
-  for (const [index, result] of results.entries()) {
-    const failure = commandFailure(prepared[index]!.listCommand, result);
-    if (failure !== undefined) throw failure;
-  }
-  if (results.length !== prepared.length) {
-    throw new FormatProtocolError(
-      `tmux answered ${String(results.length)} of ${String(prepared.length)} listings`,
-    );
-  }
+  const failure = commandFailure(prepared[0]!.listCommand, result);
+  if (failure !== undefined) throw failure;
+  const sections = demultiplexGuardedOutput(
+    prepared.map(({ request }) => request),
+    result.stdout,
+  );
 
   return Object.freeze(
-    prepared.map(({ codec, request }, index) => codec.decode(request, results[index]!.stdout)),
+    prepared.map(({ codec, request }, index) => codec.decode(request, sections[index]!)),
   );
 }
 

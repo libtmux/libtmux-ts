@@ -60,6 +60,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
@@ -90,7 +91,7 @@ function epoch(value: number): DaemonEpoch {
 
 function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult {
   return {
-    cmd: Object.freeze([request.executable, ...request.args]),
+    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
@@ -106,12 +107,6 @@ function recordingTransport(onExecute?: () => void): RecordingTransport {
       requests.push(request);
       onExecute?.();
       return resultFor(request);
-    },
-    // One command at a time here. Running a group as several singles would be
-    // the very non-atomicity the group exists to remove, so a fixture that
-    // needs one asks for it rather than getting a quiet stand-in.
-    executeGroup(): Promise<readonly RawCommandResult[]> {
-      return Promise.reject(new Error("this fixture runs one command at a time"));
     },
   };
 }
@@ -589,7 +584,7 @@ describe("logical reference binding", () => {
     expect(Reflect.ownKeys(bound)).toEqual(["connection", "epoch", "kind", "id"]);
     expect(Object.isFrozen(bound)).toBe(true);
     expect(fixture.transport.requests).toHaveLength(1);
-    expect(fixture.transport.requests[0]?.args).toEqual([
+    expect(flattenInvocation(fixture.transport.requests[0]!)).toEqual([
       "-N",
       "-Lhandles",
       "display-message",
@@ -1199,7 +1194,7 @@ describe("authenticated handle materialization", () => {
       expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
     ]);
 
-    expect(fixture.transport.requests.map(({ args }) => args)).toEqual([
+    expect(fixture.transport.requests.map(flattenInvocation)).toEqual([
       ["-Lhandles", "select-window", "-t", "$1:4"],
       ["-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
       ["-Lhandles", "unlink-window", "-t", "$1:4"],

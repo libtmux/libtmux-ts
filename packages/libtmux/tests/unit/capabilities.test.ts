@@ -12,6 +12,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { singleCommandTransport } from "../support/transport_double.js";
 
 const encoder = new TextEncoder();
@@ -26,7 +27,7 @@ function epoch(value: number): DaemonEpoch {
 
 function resultFor(request: CommandRequest, version: string): RawCommandResult {
   return {
-    cmd: Object.freeze([request.executable, ...request.args]),
+    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
@@ -125,7 +126,7 @@ describe("tmux capabilities", () => {
     expect(first).toBe(second);
     expect(first.rawVersion).toBe("3.6a");
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.args).toEqual([
+    expect(flattenInvocation(requests[0]!)).toEqual([
       "-N",
       "-S/tmp/capability.sock",
       "display-message",
@@ -237,7 +238,7 @@ describe("tmux capabilities", () => {
       const transport: CommandTransport = singleCommandTransport(async (request) => {
         requests.push(request);
         return {
-          cmd: Object.freeze([request.executable, ...request.args]),
+          cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
           returncode: reply.returncode,
           signal: null,
           stderr: encoder.encode(reply.stderr),
@@ -259,7 +260,12 @@ describe("tmux capabilities", () => {
         probeError = error;
       }
       expect(requests).toHaveLength(1);
-      expect(requests[0]?.args).toEqual(["-N", "display-message", "-p", "#{version}"]);
+      expect(flattenInvocation(requests[0]!)).toEqual([
+        "-N",
+        "display-message",
+        "-p",
+        "#{version}",
+      ]);
       expect(probeError).toBeInstanceOf(LibTmuxException);
       expect((probeError as Error).message).toContain(reply.diagnostic);
     }

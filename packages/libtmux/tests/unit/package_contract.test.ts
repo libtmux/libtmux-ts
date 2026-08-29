@@ -504,8 +504,8 @@ import {
 } from "libtmux";
 import {
   MAX_PACKED_ARGV_BYTES,
-  type TmuxCommandRequest,
   type TmuxEngine,
+  type TmuxInvocationRequest,
 } from "libtmux/engine";
 import type { DecodedFormatValue, RowWithIdentities } from "libtmux/field-types";
 import { Server as ServerFromSubpath, type DaemonIdentity as ServerDaemonIdentity } from "libtmux/server";
@@ -523,7 +523,7 @@ declare const rootCapture: CaptureOptions;
 declare const rootNewSession: NewSessionOptions;
 declare const daemonIdentity: DaemonIdentity;
 declare const engine: TmuxEngine;
-declare const request: TmuxCommandRequest;
+declare const request: TmuxInvocationRequest;
 declare const abortLike: AbortLike;
 declare const paneIdentityRow: RowWithIdentities<"pane_id">;
 declare const decodedPaneId: DecodedFormatValue<"pane_id">;

@@ -12,12 +12,10 @@
  * normalization; a seam here leaves them responsible for bytes, which is the
  * part that differs.
  *
- * Two obligations do not travel in the bytes, and both have a helper here
- * rather than a description to follow: `asSingleInvocation` keeps a grouped
- * read one tmux command list, and `guardRequest` keeps a command addressed by
+ * Global flags and commands stay distinct in the request, so an engine never
+ * has to infer their boundary. `guardRequest` keeps an invocation addressed by
  * id from running on a daemon that reissued it. `endpoint` says where the
- * engine reaches, which is what tells two servers apart when the socket path
- * cannot.
+ * engine reaches, which tells two servers apart when the socket path cannot.
  *
  * `Server.watch` and `Server.connect` are not available through an engine:
  * both hold a local `tmux -C attach` process, and an engine exists because
@@ -27,9 +25,9 @@
 
 import { guardRequest as guardRequestInternal } from "./_internal/transport/daemon_guard.js";
 import {
-  asSingleInvocation as asSingleInvocationInternal,
+  flattenInvocation as flattenInvocationInternal,
   MAX_PACKED_ARGV_BYTES as MAX_PACKED_ARGV_BYTES_INTERNAL,
-} from "./_internal/transport/group.js";
+} from "./_internal/transport/invocation.js";
 import type { AbortLike } from "./types.js";
 
 /**
@@ -59,36 +57,35 @@ export type DaemonGuard = {
   readonly startTime: string;
 };
 
-export type TmuxCommandRequest = {
-  readonly args: readonly string[];
+/** One nonempty tmux command, before command-list separators are inserted. */
+export type TmuxCommand = readonly [name: string, ...args: string[]];
+
+export type TmuxInvocationRequest = {
+  /** Nonempty commands tmux receives as one ordered command list. */
+  readonly commands: readonly [TmuxCommand, ...TmuxCommand[]];
   /**
-   * Refuse this command unless tmux is still the daemon named here.
+   * Refuse this invocation unless tmux is still the daemon named here.
    *
    * Set when the argv carries a raw tmux id, which a restarted daemon reissues
-   * to something else. A spawning transport honours it by wrapping the command
-   * in `if-shell -F`; a control connection ignores it, because it is bound to
-   * one daemon for its lifetime and a restart drops it — and because
-   * `if-shell` emits one `%begin`/`%end` block when its condition is false and
-   * two when it is true, which a response queue correlating by order cannot
-   * survive.
+   * to something else. A spawning transport honours it by wrapping the whole
+   * command list in `if-shell -F`.
    */
   readonly daemonGuard?: DaemonGuard;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly executable: string;
-  /**
-   * Require the engine to return stdout without a text protocol changing it.
-   *
-   * A control connection falls back to a spawned command for this: control
-   * responses cannot represent every paste-buffer byte.
-   */
+  /** Flags interpreted by the tmux client before the first command. */
+  readonly globalArgs: readonly string[];
+  /** Require the engine to return stdout without a text protocol changing it. */
   readonly rawOutput?: true;
+  /** Cancel the whole invocation, never one command within it. */
   readonly signal?: AbortLike;
   /**
    * Bytes to write to the command's standard input.
    *
    * Caller-facing `CommandOptions` accepts text or bytes. The library
    * encodes text before it reaches the engine seam, so an engine receives only
-   * the normalized `Uint8Array` form.
+   * the normalized `Uint8Array` form. Only an unguarded, one-command
+   * invocation may carry stdin.
    */
   readonly stdin?: Uint8Array;
   /** A positive timer-safe integer when the request has a deadline. */
@@ -97,7 +94,7 @@ export type TmuxCommandRequest = {
 
 /** A daemon-guarded request paired with its exact refusal detector. */
 export type GuardedTmuxRequest = {
-  readonly request: TmuxCommandRequest;
+  readonly request: TmuxInvocationRequest;
   readonly refusedBy: (returncode: number, stderr: Uint8Array) => boolean;
 };
 
@@ -121,11 +118,10 @@ export type TmuxCommandResult = {
  * Two obligations beyond returning bytes, and both are what the layers above
  * assume rather than check:
  *
- * `executeGroup` must run its requests as **one** tmux command list. Running
- * them separately returns the same data and quietly stops a snapshot being one:
- * tmux serializes a client's command queue and nothing else, so separate
- * invocations can observe different topologies. {@link asSingleInvocation}
- * assembles and splits that list, and the built-in engine uses it.
+ * Every request is one tmux invocation and carries its ordered command list.
+ * Keeping that structure at the seam prevents an engine from splitting a
+ * snapshot into several clients or guessing where global flags end.
+ * Environment, stdin, signal, and timeout apply once to the whole invocation.
  *
  * `daemonGuard`, when a request carries one, must reach tmux — or the engine
  * must be bound to one daemon for its lifetime, the way a control connection
@@ -148,26 +144,11 @@ export type TmuxEngine = {
    * be wrong when the reach is unknown.
    */
   readonly endpoint?: string;
-  execute(request: TmuxCommandRequest): Promise<TmuxCommandResult>;
-  /**
-   * Run these commands as one tmux command list.
-   *
-   * tmux drains one client's command queue without returning to its event loop,
-   * so a list submitted together is serialized against every other client and
-   * the results describe one instant. That is what makes a multi-listing
-   * acquisition a snapshot rather than four readings taken near each other.
-   *
-   * A failing command removes the rest of the list, so this resolves with the
-   * results of the commands tmux actually ran: a shorter array than `requests`
-   * means an earlier one failed, and the last entry is that failure. Only the
-   * first request's server-selecting flags are used; the rest contribute their
-   * subcommands.
-   */
-  executeGroup(requests: readonly TmuxCommandRequest[]): Promise<readonly TmuxCommandResult[]>;
+  execute(request: TmuxInvocationRequest): Promise<TmuxCommandResult>;
 };
 
 /**
- * How much of one command a tmux client may hand the server.
+ * How much of one invocation a tmux client may hand the server.
  *
  * `client.c` packs the whole argv into a single imsg and refuses anything over
  * `MAX_IMSGSIZE`, which OpenBSD's imsg — and tmux's bundled copy — fix at 16KB.
@@ -176,18 +157,9 @@ export type TmuxEngine = {
  */
 export const MAX_PACKED_ARGV_BYTES: 16384 = MAX_PACKED_ARGV_BYTES_INTERNAL;
 
-/**
- * One tmux invocation that runs a whole group, and the way back out of it.
- *
- * Exported because an engine that runs tmux somewhere else — over ssh, in a
- * container, through a daemon — has to get this exactly right or its snapshots
- * tear, and the way to get it right is not to write it again. The built-in
- * spawning engine calls this, so what ships is what is under test.
- */
-export const asSingleInvocation: (requests: readonly { readonly args: readonly string[] }[]) => {
-  readonly args: readonly string[];
-  sections(stdout: Uint8Array): readonly Uint8Array[];
-} = asSingleInvocationInternal;
+/** Flatten a validated request into the argv accepted by tmux. */
+export const flattenInvocation: (request: TmuxInvocationRequest) => readonly string[] =
+  flattenInvocationInternal;
 
 /**
  * Prepare a request so tmux itself refuses it on the wrong daemon.
@@ -197,5 +169,5 @@ export const asSingleInvocation: (requests: readonly { readonly args: readonly s
  * request with stdin is rejected because an `if-shell` branch cannot read the
  * spawning client's stdin.
  */
-export const guardRequest: (request: TmuxCommandRequest) => GuardedTmuxRequest =
+export const guardRequest: (request: TmuxInvocationRequest) => GuardedTmuxRequest =
   guardRequestInternal;

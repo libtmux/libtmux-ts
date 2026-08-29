@@ -46,11 +46,6 @@ class CountingSpawnTransport implements CommandTransport {
     this.spawned += 1;
     return this.#inner.execute(request);
   }
-
-  executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    this.spawned += 1;
-    return this.#inner.executeGroup(requests);
-  }
 }
 
 /** A server whose spawning is observable, which `new Server()` does not expose. */
@@ -971,8 +966,8 @@ describe("Server.watch", () => {
         (await live.snapshot()).sessions.count(),
       );
       expect(counted).toBeGreaterThan(0);
-      // The body ran over the connection, so the scope spawned nothing for it.
-      expect(transport.spawned - before).toBe(0);
+      // One version probe and one four-command acquisition cross the engine.
+      expect(transport.spawned - before).toBe(2);
 
       let captured: unknown;
       await server
@@ -992,7 +987,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("runs a sequence over the connection rather than spawning for it", async () => {
+  test("keeps connected commands on process boundaries", async () => {
     await withServer(async (fixture) => {
       const { server, transport } = countingServerFor(fixture);
       const live = await server.connect();
@@ -1005,11 +1000,7 @@ describe("Server.watch", () => {
           ["display-message", "-p", "three"],
         ]);
 
-        // Output alone cannot see this: a sequence run by spawning returns
-        // exactly what one sent over the connection returns, so the only
-        // evidence of which happened is whether anything was spawned. A
-        // connection exists to make that number zero.
-        expect(transport.spawned - before).toBe(0);
+        expect(transport.spawned - before).toBe(3);
       } finally {
         await live.close();
       }

@@ -4,7 +4,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../common.js";
 import { LibTmuxException } from "../../exc.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
-import { snapshotCommandRequest } from "../transport/types.js";
+import { snapshotInvocationRequest } from "../transport/types.js";
 import type { TmuxConnection } from "./connection.js";
 import { parseTmuxVersion, tmuxVersionIsExact, type TmuxVersion } from "./tmux_version.js";
 
@@ -104,11 +104,11 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     if (this.#connection.configFile !== undefined) args.push(`-f${this.#connection.configFile}`);
     if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
     if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);
-    args.push("display-message", "-p", "#{version}");
-    return snapshotCommandRequest({
-      args,
+    return snapshotInvocationRequest({
+      commands: [["display-message", "-p", "#{version}"]],
       environment: this.#connection.environment,
       executable: this.#connection.executable,
+      globalArgs: args,
       // The probe is the first command a server runs, so an unbounded one
       // hangs every caller before any of their own deadlines apply.
       ...(this.#timeoutMs === undefined ? {} : { timeoutMs: this.#timeoutMs }),

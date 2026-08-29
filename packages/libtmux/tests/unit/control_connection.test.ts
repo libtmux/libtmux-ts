@@ -5,13 +5,14 @@ import { describe, expect, test } from "bun:test";
 
 import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
-import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import type {
   CommandRequest,
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 
 class FakeChild extends EventEmitter implements ControlChild {
   readonly stdin = new PassThrough();
@@ -55,16 +56,12 @@ class RecordingTransport implements CommandTransport {
     this.requests.push(request);
     if (this.#outcome instanceof Error) throw this.#outcome;
     return {
-      cmd: request.args,
+      cmd: [request.executable, ...flattenInvocation(request)],
       returncode: this.#outcome,
       signal: null,
       stderr: this.#outcome === 0 ? new Uint8Array() : new TextEncoder().encode("resume refused"),
       stdout: new Uint8Array(),
     };
-  }
-
-  async executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    return Promise.all(requests.map((request) => this.execute(request)));
   }
 }
 
@@ -102,7 +99,7 @@ describe("ControlConnection child ownership", () => {
     attach(old);
     await Promise.all([reconnectingEvents.ready(), reconnectedEvents.ready(), staleEvents.ready()]);
     expect(fallback.requests).toHaveLength(1);
-    expect(fallback.requests[0]?.args).toContain("client-101");
+    expect(fallback.requests[0]?.commands[0]).toContain("client-101");
 
     const reconnecting = reconnectingEvents.find((event) => event.kind === "reconnecting", {
       timeoutMs: 1_000,
@@ -122,61 +119,13 @@ describe("ControlConnection child ownership", () => {
     attach(replacement);
     expect(await reconnected).toEqual({ attempts: 1, kind: "reconnected" });
     expect(fallback.requests).toHaveLength(2);
-    expect(fallback.requests[1]?.args).toContain("client-102");
+    expect(fallback.requests[1]?.commands[0]).toContain("client-102");
     expect(
       await staleEvents.find((event) => event.kind === "pause", { timeoutMs: 10 }),
     ).toBeUndefined();
 
     await control.close();
     expect(replacement.kills).toEqual(["SIGTERM"]);
-  });
-
-  test("keeps exact flow-shaped command output literal", async () => {
-    const child = new FakeChild(103);
-    const control = new ControlConnection(
-      connection(),
-      {},
-      false,
-      new RecordingTransport(),
-      () => child,
-    );
-    attach(child);
-    await control.ready();
-    const result = control.execute({ args: ["show-buffer", "-b", "flow"], executable: "tmux" });
-    child.stdout.write("%begin 2 3 1\n%pause %1\n%continue %1\n%end 2 3 1\n");
-    expect(new TextDecoder().decode((await result).stdout)).toBe("%pause %1\n%continue %1\n");
-    await control.close();
-  });
-
-  test("does not carry output-shaped command bytes into pane output", async () => {
-    const child = new FakeChild(104);
-    const control = new ControlConnection(
-      connection(),
-      {},
-      false,
-      new RecordingTransport(),
-      () => child,
-    );
-    const events = control.subscribe();
-    attach(child);
-    await events.ready();
-    const result = control.execute({ args: ["show-buffer", "-b", "bytes"], executable: "tmux" });
-    child.stdout.write(
-      Buffer.concat([
-        Buffer.from("%begin 2 3 1\n%output %1 "),
-        Buffer.from([0xc3]),
-        Buffer.from("\n%end 2 3 1\n%output %1 pane\n"),
-      ]),
-    );
-
-    await result;
-    expect(await events.find((event) => event.kind === "output", { timeoutMs: 1_000 })).toEqual({
-      data: "pane",
-      kind: "output",
-      paneId: parsePaneId("%1"),
-    });
-    await events.close();
-    await control.close();
   });
 
   test("drops an incomplete pane character across a pause gap", async () => {
@@ -225,7 +174,7 @@ describe("ControlConnection child ownership", () => {
         const ended = events.find(() => false, { timeoutMs: 1_000 });
         child.stdout.write("%pause %1\n");
         await expect(ended).rejects.toThrow();
-        expect(fallback.requests[0]?.args).toContain("%1:continue");
+        expect(fallback.requests[0]?.commands[0]).toContain("%1:continue");
         await control.close();
       }),
     );
@@ -247,25 +196,6 @@ describe("ControlConnection child ownership", () => {
       expect(error.message.length).toBeLessThanOrEqual(64 * 1_024 + 64);
       expect(error.message).toEndWith("tail-marker");
     }
-    await control.close();
-  });
-
-  test("rejects an invalid grouped deadline before writing", async () => {
-    const child = new FakeChild(109);
-    const control = new ControlConnection(connection(), {}, false, undefined, () => child);
-    attach(child);
-    await control.ready();
-
-    await expect(
-      control.executeGroup([
-        { args: ["display-message", "first"], executable: "tmux", timeoutMs: 1_000 },
-        {
-          args: ["display-message", "second"],
-          executable: "tmux",
-          timeoutMs: Number.NaN,
-        },
-      ]),
-    ).rejects.toThrow(/timeoutMs/u);
     await control.close();
   });
 

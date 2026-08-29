@@ -1,6 +1,6 @@
-import type { DaemonGuard, GuardedTmuxRequest } from "../../engine.js";
+import type { DaemonGuard, GuardedTmuxRequest, TmuxCommand } from "../../engine.js";
 import { TmuxTransportError } from "../../exc.js";
-import { subcommandOf } from "./group.js";
+import { validateInvocation } from "./invocation.js";
 import { quoteCommand } from "./lexer.js";
 import { refusedUnknownCommand, uniqueUnknownCommand } from "./refusal.js";
 import type { CommandRequest } from "./types.js";
@@ -50,7 +50,7 @@ export function guardedChain(
   chain: string,
   daemon: DaemonGuard,
   refusal: string = uniqueUnknownCommand("daemon-restarted"),
-): readonly string[] {
+): TmuxCommand {
   return Object.freeze(["if-shell", "-F", daemonCondition(daemon), chain, quoteCommand([refusal])]);
 }
 
@@ -62,6 +62,7 @@ export function guardedChain(
  * daemon restart.
  */
 export function guardRequest(request: CommandRequest): GuardedTmuxRequest {
+  validateInvocation(request);
   const daemon = request.daemonGuard;
   if (daemon === undefined) {
     return Object.freeze({ request, refusedBy: () => false });
@@ -72,18 +73,12 @@ export function guardRequest(request: CommandRequest): GuardedTmuxRequest {
       kind: "protocol",
     });
   }
-  const subcommand = subcommandOf(request.args);
-  if (subcommand.length === 0) {
-    throw new TmuxTransportError("a daemon-guarded request must contain a command", {
-      delivery: "not_started",
-      kind: "protocol",
-    });
-  }
-  const connectionArgs = request.args.slice(0, request.args.length - subcommand.length);
   const refusal = uniqueUnknownCommand("daemon-restarted");
-  const guarded = Object.freeze({
+  const chain = request.commands.map((command) => quoteCommand(command)).join(" ; ");
+  const commands: readonly [TmuxCommand] = Object.freeze([guardedChain(chain, daemon, refusal)]);
+  const guarded: CommandRequest = Object.freeze({
     ...request,
-    args: guardedArgv(connectionArgs, subcommand, daemon, refusal),
+    commands,
   });
   return Object.freeze({
     request: guarded,

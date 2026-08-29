@@ -78,6 +78,7 @@ import { TmuxConnection } from "./_internal/runtime/connection.js";
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
 import { waitForSnapshot } from "./_internal/control/wait_for.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
+import type { CommandTransport } from "./_internal/transport/types.js";
 
 /**
  * Which tmux daemon answered, as tmux itself reports it.
@@ -431,10 +432,10 @@ export class Server {
   /**
    * Bind this server to one control-mode connection and return it.
    *
-   * The returned server has the same API, but its commands travel over an
-   * already-open connection instead of spawning a `tmux` process each. A
-   * snapshot costs four writes rather than four processes, which is what makes
-   * reacting to {@link watch} events affordable in a loop.
+   * The returned server has the same API and shares one control connection for
+   * events and daemon-lifetime tracking. Commands use ordinary tmux processes:
+   * control mode cannot frame arbitrary command output truthfully when aliases
+   * and waiting commands are allowed.
    *
    * ```ts
    * await using live = await server.connect();
@@ -443,8 +444,7 @@ export class Server {
    * }
    * ```
    *
-   * Operations that need stdin or exact bytes use a spawned command against
-   * the same socket because control mode has no channel for either.
+   * A snapshot remains one tmux invocation containing all four listings.
    */
   async connect(options?: ConnectOptions): Promise<ConnectedServer> {
     if (options !== undefined && "pauseAfterSeconds" in options) {
@@ -452,12 +452,8 @@ export class Server {
     }
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "connect");
-    const connection = new ControlConnection(
-      runtime.connection,
-      options,
-      false,
-      new NodeSpawnTransport(),
-    );
+    const commands = runtime.transport;
+    const connection = new ControlConnection(runtime.connection, options, false, commands);
     try {
       await connection.ready();
     } catch (error) {
@@ -467,12 +463,19 @@ export class Server {
         { cause: error },
       );
     }
+    const connectedCommands: CommandTransport = {
+      ...(commands.endpoint === undefined ? {} : { endpoint: commands.endpoint }),
+      execute(request) {
+        connection.assertAvailable();
+        return commands.execute(request);
+      },
+    };
     const boundRuntime = createRuntimeContext({
       connection: runtime.connection,
       connectionAlias: randomUUID() as ConnectionAlias,
       daemonEpoch: 0 as DaemonEpoch,
       ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
-      transport: connection,
+      transport: connectedCommands,
     });
     // A control client proves which daemon it is talking to for as long as it
     // stays up. When it does not, every handle read through it is from a daemon

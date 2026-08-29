@@ -23,6 +23,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { channel } from "node:diagnostics_channel";
 
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
+import { tmuxCommand } from "../transport/invocation.js";
 
 export const RUN_ROOT_ENV = "LIBTMUX_TEST_RUN_ROOT";
 export const OWNER_RECORD_NAME = ".owner.json";
@@ -1037,10 +1038,8 @@ async function validateGenerationAuthority(
   const matchedMarker = `generation-match-${randomUUID()}`;
   const mismatchMarker = `generation-mismatch-${randomUUID()}`;
   const environment = controllerEnvironment(capability, record.generation.name);
-  const args = Object.freeze([
-    "-N",
-    "-S",
-    record.socketPath,
+  const globalArgs = Object.freeze(["-N", "-S", record.socketPath]);
+  const command = Object.freeze([
     "if-shell",
     "-F",
     `#{&&:#{==:#{pid},${String(daemon.pid)}},#{==:#{${record.generation.name}},${record.generation.value}}}`,
@@ -1049,7 +1048,7 @@ async function validateGenerationAuthority(
   ]);
   options.observeRequest?.(
     Object.freeze({
-      args,
+      args: Object.freeze([...globalArgs, ...command]),
       environment,
       executable: record.controller.executablePath,
       purpose: "validation" as const,
@@ -1057,9 +1056,10 @@ async function validateGenerationAuthority(
   );
   await assertControllerCurrent(record.controller);
   const result = await new NodeSpawnTransport({ terminationGraceMs: 100 }).execute({
-    args,
+    commands: [tmuxCommand(command)],
     environment,
     executable: record.controller.executablePath,
+    globalArgs,
     timeoutMs: 1_000,
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
@@ -1831,18 +1831,18 @@ async function discoverLaunchingDaemon(
   const environment = controllerEnvironment(capability, current.record.generation.name);
   await assertControllerCurrent(current.record.controller);
   const result = await new NodeSpawnTransport({ terminationGraceMs: 100 }).execute({
-    args: [
-      "-N",
-      "-S",
-      current.record.socketPath,
-      "if-shell",
-      "-F",
-      generationCondition(current.record),
-      `display-message -p '${success}\t#{pid}\t#{${current.record.generation.name}}'`,
-      `display-message -p '${mismatch}'`,
+    commands: [
+      [
+        "if-shell",
+        "-F",
+        generationCondition(current.record),
+        `display-message -p '${success}\t#{pid}\t#{${current.record.generation.name}}'`,
+        `display-message -p '${mismatch}'`,
+      ],
     ],
     environment,
     executable: current.record.controller.executablePath,
+    globalArgs: ["-N", "-S", current.record.socketPath],
     timeoutMs: 1_000,
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
@@ -1905,18 +1905,18 @@ async function connectedGenerationKill(
   await assertControllerCurrent(record.controller);
   const result = await new NodeSpawnTransport({ terminationGraceMs: 100 })
     .execute({
-      args: [
-        "-N",
-        "-S",
-        record.socketPath,
-        "if-shell",
-        "-F",
-        pidGenerationCondition(record, record.daemon.pid),
-        "kill-server",
-        `display-message -p '${mismatch}'`,
+      commands: [
+        [
+          "if-shell",
+          "-F",
+          pidGenerationCondition(record, record.daemon.pid),
+          "kill-server",
+          `display-message -p '${mismatch}'`,
+        ],
       ],
       environment,
       executable: record.controller.executablePath,
+      globalArgs: ["-N", "-S", record.socketPath],
       timeoutMs: 1_000,
     })
     .catch(() => undefined);

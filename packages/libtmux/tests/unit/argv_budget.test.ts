@@ -4,13 +4,12 @@ import { GuardCodec } from "../../src/_internal/codec/guard_codec.js";
 import { ACQUISITION_LISTINGS } from "../../src/_internal/operations/acquire.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { prepareCommandRequest } from "../../src/_internal/operations/request.js";
+import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import {
-  assembleGroupArgv,
-  createGroupSeparator,
+  flattenInvocation,
   MAX_PACKED_ARGV_BYTES,
   packedArgvBytes,
-} from "../../src/_internal/transport/group.js";
+} from "../../src/_internal/transport/invocation.js";
 import { SUPPORTED_TMUX_VERSIONS } from "../support/tmux_matrix.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 
@@ -36,18 +35,14 @@ function acquisitionArgv(rawVersion: string): readonly string[] {
     // is measured against a real one and not against a default.
     socketPath: "/tmp/ltx-0123456789abcdef-0123456789abcdef/s",
   });
-  const requests = ACQUISITION_LISTINGS.map((listing) => {
+  const commands = ACQUISITION_LISTINGS.map((listing) => {
     const request = new GuardCodec({
       capabilities,
       listCommand: listing.listCommand,
     }).prepare();
-    return prepareCommandRequest(connection, [
-      listing.listCommand,
-      ...(listing.listExtraArgs ?? []),
-      `-F${request.format}`,
-    ]);
+    return [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`];
   });
-  return assembleGroupArgv(requests, createGroupSeparator());
+  return flattenInvocation(prepareInvocationRequest(connection, commands));
 }
 
 describe("acquisition argv budget", () => {

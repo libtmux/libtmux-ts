@@ -13,6 +13,7 @@ import {
 } from "../../dist/_internal/runtime/context.js";
 import { TmuxConnection } from "../../dist/_internal/runtime/connection.js";
 import { createProjectedSelection } from "../../dist/_internal/selection/evaluate.js";
+import { flattenInvocation } from "../../dist/engine.js";
 
 const protocol = "libtmux-where-regex-v1";
 const implementation = process.argv[2];
@@ -68,7 +69,7 @@ const transport = {
   async execute(request) {
     requests.push(request);
     return {
-      cmd: Object.freeze([request.executable, ...request.args]),
+      cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
       returncode: 0,
       signal: null,
       stderr: new Uint8Array(),

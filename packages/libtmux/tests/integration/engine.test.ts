@@ -11,13 +11,13 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { Server } from "../../src/server.js";
-import { asSingleInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
+import { flattenInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
 import { TmuxServerRestarted } from "../../src/exc.js";
 import type {
   DaemonGuard,
-  TmuxCommandRequest,
   TmuxCommandResult,
   TmuxEngine,
+  TmuxInvocationRequest,
 } from "../../src/engine.js";
 
 /**
@@ -60,16 +60,22 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
   };
 
   return {
-    async execute(request: TmuxCommandRequest) {
+    async execute(request: TmuxInvocationRequest) {
       // The obligation an engine is least likely to meet by accident. Dropping
       // it costs nothing until a daemon restarts, and then a handle read before
       // the restart addresses whatever now holds its id. Both halves: the
       // wrapper that makes tmux refuse, and the reply that tells that refusal
       // from the command itself having failed.
       const guarded = guardRequest(request);
+      const args = flattenInvocation(guarded.request);
+      const packed = [guarded.request.executable, ...args].reduce(
+        (total, argument) => total + Buffer.byteLength(argument, "utf8") + 1,
+        0,
+      );
+      if (packed > MAX_PACKED_ARGV_BYTES) throw new Error("invocation is too long for tmux");
       const result = await run(
         guarded.request.executable,
-        guarded.request.args,
+        args,
         guarded.request.environment,
         guarded.request.stdin,
       );
@@ -77,29 +83,6 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
         throw new TmuxServerRestarted("the daemon this handle was read from is gone");
       }
       return result;
-    },
-    async executeGroup(requests: readonly TmuxCommandRequest[]) {
-      const [first] = requests;
-      if (first === undefined) return [];
-      // The helper the built-in engine uses. Running these separately would
-      // return the same rows and stop the snapshot being one instant.
-      const invocation = asSingleInvocation(requests);
-      // The ceiling an engine has to respect, published for exactly this: a
-      // tmux client packs its whole argv into one imsg and refuses past it.
-      const packed = [first.executable, ...invocation.args].reduce(
-        (total, argument) => total + Buffer.byteLength(argument, "utf8") + 1,
-        0,
-      );
-      if (packed > MAX_PACKED_ARGV_BYTES) throw new Error("command list is too long for tmux");
-      const result = await run(first.executable, invocation.args, first.environment, undefined);
-      const sections = invocation.sections(result.stdout);
-      return sections.map((stdout, index) => ({
-        cmd: result.cmd,
-        returncode: index === sections.length - 1 ? result.returncode : 0,
-        signal: null,
-        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
-        stdout,
-      }));
     },
   };
 }
@@ -153,10 +136,9 @@ describe("a supplied engine", () => {
         engine: {
           execute: (request) => {
             guards.push(request.daemonGuard);
-            sent.push(guardRequest(request).request.args);
+            sent.push(flattenInvocation(guardRequest(request).request));
             return shellEngine(() => undefined).execute(request);
           },
-          executeGroup: (requests) => shellEngine(() => undefined).executeGroup(requests),
         },
         environment: fixture.controllerEnvironment,
         socketPath: fixture.socketPath,

@@ -5,13 +5,8 @@ import type { Readable } from "node:stream";
 
 import type { DeliveryStatus } from "../../common.js";
 import type { CommandRequest, RawCommandResult } from "./types.js";
-import {
-  asSingleInvocation,
-  MAX_PACKED_ARGV_BYTES,
-  packedArgvBytes,
-  subcommandOf,
-} from "./group.js";
-import { snapshotCommandRequest, TmuxTransportError } from "./types.js";
+import { flattenInvocation, MAX_PACKED_ARGV_BYTES, packedArgvBytes } from "./invocation.js";
+import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
 import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestarted } from "../../exc.js";
 import { timerDelay } from "../timing.js";
@@ -90,7 +85,7 @@ export class NodeSpawnTransport {
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
-    const guarded = guardRequest(snapshotCommandRequest(request));
+    const guarded = guardRequest(snapshotInvocationRequest(request));
     const submitted = guarded.request;
     if (isAborted(submitted.signal)) {
       throw new TmuxTransportError("command cancelled before spawn", {
@@ -99,10 +94,18 @@ export class NodeSpawnTransport {
       });
     }
     const stdin = submitted.stdin;
+    const args = flattenInvocation(submitted);
+    const packed = packedArgvBytes([submitted.executable, ...args]);
+    if (packed > MAX_PACKED_ARGV_BYTES) {
+      throw new TmuxTransportError(
+        `a tmux invocation of ${String(packed)} bytes exceeds the ${String(MAX_PACKED_ARGV_BYTES)} byte argv limit`,
+        { delivery: "not_started", kind: "protocol" },
+      );
+    }
 
     let child;
     try {
-      child = spawn(submitted.executable, [...submitted.args], {
+      child = spawn(submitted.executable, [...args], {
         env: submitted.environment,
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
@@ -336,73 +339,16 @@ export class NodeSpawnTransport {
     if (guarded.refusedBy(terminal.code, stderr)) {
       throw new TmuxServerRestarted(
         "tmux refused the command: the daemon on this socket is not the one these ids came from",
-        { subcommand: subcommandOf(request.args)[0] ?? "tmux" },
+        { subcommand: request.commands[0][0] },
       );
     }
 
     return {
-      cmd: Object.freeze([submitted.executable, ...submitted.args]),
+      cmd: Object.freeze([submitted.executable, ...args]),
       returncode: terminal.code,
       signal: terminal.signal,
       stderr,
       stdout: stdoutState.status === "fulfilled" ? stdoutState.value : new Uint8Array(),
     };
-  }
-
-  /**
-   * One process, one command list, one stdout — split back apart by marker.
-   *
-   * A spawned tmux writes every command's output to the same pipe, so the
-   * sections need a boundary tmux itself prints. `display-message -p` between
-   * the commands is that boundary: it costs one queue item, cannot fail on a
-   * server that is answering, and its marker is random per group so no listing
-   * can forge one.
-   */
-  async executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    const submittedRequests = Object.freeze(requests.map(snapshotCommandRequest));
-    const [first, ...rest] = submittedRequests;
-    if (first === undefined) return Object.freeze([]);
-    if (rest.length === 0) return Object.freeze([await this.execute(first)]);
-    if (submittedRequests.some((request) => request.stdin !== undefined)) {
-      throw new TmuxTransportError("a command list cannot carry stdin", {
-        delivery: "not_started",
-        kind: "protocol",
-      });
-    }
-
-    const invocation = asSingleInvocation(submittedRequests);
-    const args = invocation.args;
-    const packed = packedArgvBytes([first.executable, ...args]);
-    if (packed > MAX_PACKED_ARGV_BYTES) {
-      // tmux would answer "command too long" from the client, with nothing to
-      // say which command or by how much.
-      throw new TmuxTransportError(
-        `a command list of ${String(packed)} bytes exceeds the ${String(MAX_PACKED_ARGV_BYTES)} tmux packs an argv into`,
-        { delivery: "not_started", kind: "protocol" },
-      );
-    }
-
-    const result = await this.execute(
-      snapshotCommandRequest({
-        args: [...args],
-        ...(first.environment === undefined ? {} : { environment: first.environment }),
-        executable: first.executable,
-        ...(first.signal === undefined ? {} : { signal: first.signal }),
-        ...(first.timeoutMs === undefined ? {} : { timeoutMs: first.timeoutMs }),
-      }),
-    );
-
-    const sections = invocation.sections(result.stdout);
-    // A short list means tmux stopped at a failure: everything before it ran
-    // and printed, and the section that stopped carries the exit status.
-    return Object.freeze(
-      sections.map((stdout, index) => ({
-        cmd: Object.freeze([submittedRequests[index]?.executable ?? first.executable, ...args]),
-        returncode: index === sections.length - 1 ? result.returncode : 0,
-        signal: index === sections.length - 1 ? result.signal : null,
-        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
-        stdout,
-      })),
-    );
   }
 }

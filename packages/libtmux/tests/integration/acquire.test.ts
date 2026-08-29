@@ -3,7 +3,9 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
+import { executeGuardedListGroup } from "../../src/_internal/codec/guard_codec.js";
 import { acquireServerGraph } from "../../src/_internal/operations/acquire.js";
+import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import type { RuntimeContext } from "../../src/_internal/runtime/context.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
@@ -30,10 +32,6 @@ function runtimeFor(
     execute(request) {
       observe(request);
       return raw.execute(request);
-    },
-    executeGroup(requests) {
-      for (const request of requests) observe(request);
-      return raw.executeGroup(requests);
     },
   };
   return createRuntimeContext({
@@ -110,8 +108,9 @@ describe("server graph acquisition", () => {
       const listed: string[] = [];
       const graph = await acquireServerGraph(
         runtimeFor(server, (request) => {
-          const subcommand = request.args.find((arg) => arg.startsWith("list-"));
-          if (subcommand !== undefined) listed.push(subcommand);
+          for (const command of request.commands) {
+            if (command[0].startsWith("list-")) listed.push(command[0]);
+          }
         }),
       );
 
@@ -140,23 +139,54 @@ describe("server graph acquisition", () => {
         daemonEpoch: 0 as DaemonEpoch,
         transport: {
           execute(request) {
-            singles += 1;
+            if (request.commands.length === 1) singles += 1;
+            else groups += 1;
             return raw.execute(request);
-          },
-          executeGroup(requests) {
-            groups += 1;
-            expect(requests).toHaveLength(4);
-            return raw.executeGroup(requests);
           },
         },
       });
 
       await acquireServerGraph(runtime);
 
-      // One group, and the only single command is the version probe. Four
+      // One four-command invocation, and the only single is the version probe. Four
       // separate listings would be four clients with four command queues, which
       // is what let a capture hold rows from two different topologies.
       expect({ groups, singles }).toEqual({ groups: 1, singles: 1 });
+    });
+  }, 30_000);
+
+  test("demultiplexes a later listing after an empty middle listing", async () => {
+    await withServer(async (server) => {
+      const runtime = runtimeFor(server);
+      const [sessions, clients, windows] = await executeGuardedListGroup({
+        capabilities: runtime.capabilities,
+        connection: runtime.connection,
+        listings: [
+          { listCommand: "list-sessions" },
+          { listCommand: "list-clients" },
+          { listCommand: "list-windows", listExtraArgs: ["-a"] },
+        ],
+        transport: runtime.transport,
+      });
+
+      expect(sessions).toHaveLength(1);
+      expect(clients).toEqual([]);
+      expect(windows).toHaveLength(1);
+    });
+  }, 30_000);
+
+  test("returns one result for structural and literal semicolons", async () => {
+    await withServer(async (server) => {
+      const runtime = runtimeFor(server);
+      const result = await runtime.transport.execute(
+        prepareInvocationRequest(runtime.connection, [
+          ["display-message", "-p", "literal;"],
+          ["display-message", "-p", "second"],
+        ]),
+      );
+
+      expect(result.returncode).toBe(0);
+      expect(new TextDecoder().decode(result.stdout)).toBe("literal;\nsecond\n");
     });
   }, 30_000);
 
@@ -168,9 +198,6 @@ describe("server graph acquisition", () => {
         socketPath: server.socketPath,
         tmuxBin: server.tmuxExecutable,
       });
-      // Churned over one control connection rather than a process per command:
-      // a spawned churner is too slow to reliably catch four concurrent
-      // listings mid-change, and a gate that only sometimes fires is not one.
       await using churnConnection = await churnServer.connect();
       let churning = true;
       const churn = (async () => {
