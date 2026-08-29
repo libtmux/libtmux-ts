@@ -14,11 +14,11 @@ criteria, and drive sessions, windows, and panes with a fully typed API.
 
 Requires tmux 3.2a or newer, and Node 22+ or Bun 1.3.14+.
 
-The library is portable; its proof is not. CI runs Linux, and the fixture
-supervisor the real-tmux suites use identifies processes through `/proc`, so
-those suites need Linux until it is ported. macOS is untested rather than
-unsupported — the distinction matters most for cancellation and process
-teardown, where the assumptions are the ones that differ.
+CI builds, packs, installs, and evaluates every emitted package on macOS. The
+real-tmux suites remain Linux-only because their fixture supervisor identifies
+processes through `/proc`; cancellation and process teardown therefore have no
+macOS proof yet. WSL is untested. These are proof boundaries, not declarations
+that the library rejects either platform.
 
 ```console
 $ bun add libtmux

@@ -167,6 +167,45 @@ jobs:
         working-directory: examples
         run: bun run typecheck && bun run test
 
+  # The real-server supervisor below still depends on Linux `/proc`. This lane
+  # proves the platform-neutral package boundary on macOS without claiming that
+  # cancellation and process ownership have crossed that boundary yet.
+  macos-package:
+    name: macOS package canary
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      - name: Point installed-package canaries at Node 22
+        run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Gate the emitted library package
+        working-directory: packages/libtmux
+        run: |
+          bun run typecheck
+          bun run build
+          bun run typecheck:ambient-free
+          bun run test:package
+          bun run test:install
+
+      - name: Gate the emitted MCP package
+        working-directory: packages/mcp
+        run: bun run test:package && bun run test:install
+
+      - name: Gate the emitted workspace package
+        working-directory: packages/workspace
+        run: bun run test:package && bun run test:install
+
   # Every tmux release the package claims to support, not a sample of them.
   # "3.2a or newer" is a claim about 3.3a, 3.5 and 3.6 too, and a matrix of the
   # ends and two favourites proves it for none of them — 3.7 already turned out

@@ -275,18 +275,17 @@ should look for a Node itself.
 
 ## Platforms
 
-Linux is what CI proves. There is no platform-specific code in the library
-itself — `node_spawn_transport.ts` escalates SIGTERM to SIGKILL and
-force-settles a process whose descendants hold the pipe, with no `/proc` and
-no pidfd.
+CI builds, packs, installs, and evaluates every emitted package on macOS. The
+library transport itself uses neither `/proc` nor pidfd:
+`node_spawn_transport.ts` escalates SIGTERM to SIGKILL and force-settles a
+process whose descendants hold the pipe.
 
 The supervisor in `src/_internal/test/run_root.ts` is the Linux part: process
-identity is `linux:<boot id>:<start time>`, read from `/proc`. So macOS is
-untested rather than unsupported, and the honest order of work is to port the
-supervisor and then add the lane. A lane added before that failed forty tests on
-its first run and was removed again; `preflight.ts` now says which requirement
-is missing instead of letting a checkout discover it as ENOENT from a file
-nobody mentioned.
+identity is `linux:<boot id>:<start time>`, read from `/proc`. The real-tmux,
+cancellation, and process-ownership suites therefore remain Linux-only. The
+macOS lane proves only the package boundary until that supervisor is ported.
+WSL is untested. `preflight.ts` says which requirement is missing instead of
+letting a checkout discover it as ENOENT from a file nobody mentioned.
 
 ## Releasing
 
