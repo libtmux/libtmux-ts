@@ -139,6 +139,7 @@ describe("package contract", () => {
       "MultipleObjectsReturned",
       "NoMatchError",
       "ObjectDoesNotExist",
+      "OptionScope",
       "Pane",
       "PaneDirection",
       "QueryValidationError",

@@ -1093,7 +1093,8 @@ await server.unsetHook("after-new-window");
 ```
 
 Window and pane scopes report only what was set on them, never inherited
-values.
+values. `OptionScope` supplies the same lowercase scope values when a named
+constant is clearer than a string literal.
 
 ## Environments
 

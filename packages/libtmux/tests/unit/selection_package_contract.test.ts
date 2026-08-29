@@ -134,6 +134,7 @@ describe("Task 8 package boundary", () => {
         { kind: "MethodSignature", name: "toArray" },
         { kind: "MethodSignature", name: "map" },
         { kind: "MethodSignature", name: "filter" },
+        { kind: "MethodSignature", name: "filter" },
         { kind: "MethodSignature", name: "where" },
         { kind: "MethodSignature", name: "first" },
         { kind: "MethodSignature", name: "one" },
