@@ -77,6 +77,10 @@ function structured<T>(result: unknown): T {
   return (result as { structuredContent: T }).structuredContent;
 }
 
+function cursorOffset(cursor: string): number {
+  return Number(cursor.slice(cursor.lastIndexOf(".") + 1));
+}
+
 /**
  * Talk to the server the way a client does: as a subprocess, over stdio.
  *
@@ -434,11 +438,11 @@ describe("waiting", () => {
           arguments: { paneId, patterns: ["never-printed-by-this"], timeoutMs: 4_000 },
           name: "wait_for_text",
         });
-        const result = structured<{ cursor: number; outcome: string; output: string }>(answer);
+        const result = structured<{ cursor: string; outcome: string; output: string }>(answer);
         // The whole point: a timeout is evidence, not an empty hand.
         expect(result.outcome).toBe("timed_out");
         expect(result.output).toContain("something-else");
-        expect(result.cursor).toBeGreaterThan(0);
+        expect(cursorOffset(result.cursor)).toBeGreaterThan(0);
         expect((answer as { isError?: boolean }).isError ?? false).toBe(false);
       });
     });
@@ -512,10 +516,10 @@ describe("waiting", () => {
 
   test("reports a pane that died mid-wait rather than waiting out the deadline", async () => {
     await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
       await withClient(fixture, async (client) => {
-        // A second window keeps the session alive when the first pane's shell
-        // exits, so what the wait meets is a dead pane rather than a stream
-        // whose whole session went away — two different answers.
+        // Keep both the session and the exited pane: existence alone must not
+        // make a retained dead pane look capable of printing later.
         const built = structured<{ panes: { id: string }[] }>(
           await client.callTool({
             arguments: {
@@ -529,6 +533,9 @@ describe("waiting", () => {
           }),
         );
         const paneId = built.panes[0]?.id ?? "";
+        const pane = (await tmux.snapshot()).panes.first({ id: paneId });
+        if (pane?.window === undefined) throw new Error(`No window for ${paneId}`);
+        await pane.window.setOption("remain-on-exit", "on");
         await client.callTool({ arguments: { keys: "sleep 1; exit", paneId }, name: "send_keys" });
 
         const started = Date.now();
@@ -633,12 +640,31 @@ test("leaves a pane usable straight after a caller cancels a wait on it", async 
 }, 60_000);
 
 describe("observing", () => {
+  test("rejects blocking native regular expressions", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await firstPaneId(client);
+        const search = await client.callTool({
+          arguments: { pattern: "^(a+)+$", regex: true },
+          name: "search_panes",
+        });
+        const wait = await client.callTool({
+          arguments: { paneId, patterns: ["^(a+)+$"], regex: true, timeoutMs: 1_000 },
+          name: "wait_for_text",
+        });
+
+        expect((search as { isError?: boolean }).isError).toBe(true);
+        expect((wait as { isError?: boolean }).isError).toBe(true);
+      });
+    });
+  }, 60_000);
+
   test("charges for the screen once, then only for what is new", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
         const paneId = await shellPaneId(client);
 
-        const first = structured<{ cursor: number; seeded: boolean; streaming: boolean }>(
+        const first = structured<{ cursor: string; seeded: boolean; streaming: boolean }>(
           await client.callTool({ arguments: { paneId }, name: "observe" }),
         );
         expect(first.seeded).toBe(true);
@@ -648,14 +674,14 @@ describe("observing", () => {
           arguments: { keys: "printf 'delta-one\\n'", paneId },
           name: "send_keys",
         });
-        const second = structured<{ cursor: number; seeded: boolean; text: string }>(
+        const second = structured<{ cursor: string; seeded: boolean; text: string }>(
           await client.callTool({
             arguments: { cursor: first.cursor, paneId, waitMs: 10_000 },
             name: "observe",
           }),
         );
         expect(second.seeded).toBe(false);
-        expect(second.cursor).toBeGreaterThan(first.cursor);
+        expect(cursorOffset(second.cursor)).toBeGreaterThan(cursorOffset(first.cursor));
 
         // Nothing happened since, so the delta is empty rather than the screen.
         // This used to pass a cursor a million bytes past the end, which is the
@@ -821,24 +847,26 @@ describe("staying out of the way", () => {
   test("refuses a cursor that belongs to a different stream", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
+        const sourcePaneId = await shellPaneId(client);
         const paneId = await shellPaneId(client);
-        // Opens the tail, so the stream has a real position to be ahead of.
-        await client.callTool({ arguments: { command: "echo one", paneId }, name: "run_command" });
+        const source = structured<{ cursor: string }>(
+          await client.callTool({ arguments: { paneId: sourcePaneId }, name: "observe" }),
+        );
 
         const ahead = await client.callTool({
-          arguments: { cursor: 999_999_999, paneId },
+          arguments: { cursor: source.cursor, paneId },
           name: "observe",
         });
         expect((ahead as { isError?: boolean }).isError).toBe(true);
         // Names the cursor it was given and the remedy, so the next call is the
         // right one rather than the same one.
-        expect(toolText(ahead)).toContain("999999999");
+        expect(toolText(ahead)).toContain(source.cursor);
         expect(toolText(ahead)).toContain("Omit cursor");
 
         // The same hole, where the caller's own timeout used to hide it: a
         // clean "timed_out" reported while the pane was printing.
         const waited = await client.callTool({
-          arguments: { cursor: 999_999_999, paneId, patterns: ["never-x"], timeoutMs: 1_000 },
+          arguments: { cursor: source.cursor, paneId, patterns: ["never-x"], timeoutMs: 1_000 },
           name: "wait_for_text",
         });
         expect((waited as { isError?: boolean }).isError).toBe(true);
@@ -856,7 +884,7 @@ describe("staying out of the way", () => {
         // and told it had not been seeded.
         await client.callTool({ arguments: { command: "echo one", paneId }, name: "run_command" });
 
-        const seeded = structured<{ cursor: number; seeded: boolean }>(
+        const seeded = structured<{ cursor: string; seeded: boolean }>(
           await client.callTool({ arguments: { paneId }, name: "observe" }),
         );
         expect(seeded.seeded).toBe(true);
@@ -1103,6 +1131,7 @@ describe("staying out of the way", () => {
           exitStatus: number | null;
           missedBytes: number;
           outcome: string;
+          outputComplete: boolean;
         }>(
           await client.callTool({
             arguments: {
@@ -1118,12 +1147,44 @@ describe("staying out of the way", () => {
         );
         expect(result.outcome).toBe("completed");
         expect(result.exitStatus).toBe(3);
+        expect(result.outputComplete).toBe(false);
         // And the output is short of what the command printed, which the
         // caller is told rather than left to infer.
         expect(result.missedBytes).toBeGreaterThan(0);
       });
     });
   }, 120_000);
+
+  test("marks a truncated capture fallback as incomplete", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const paneId = await shellPaneId(client);
+          const result = structured<{
+            missedBytes: number;
+            outcome: string;
+            outputComplete: boolean;
+          }>(
+            await client.callTool({
+              arguments: {
+                command: "i=0; while [ $i -lt 700 ]; do echo line-$i; i=$((i+1)); done",
+                maxLines: 5,
+                paneId,
+                timeoutMs: 20_000,
+              },
+              name: "run_command",
+            }),
+          );
+
+          expect(result.outcome).toBe("completed");
+          expect(result.missedBytes).toBe(0);
+          expect(result.outputComplete).toBe(false);
+        },
+        { LIBTMUX_MCP_LIVE: "0" },
+      );
+    });
+  }, 60_000);
 
   test("returns one pane per window even when the names repeat", async () => {
     await withServer(async (fixture) => {
@@ -1635,6 +1696,25 @@ describe("staying out of the way", () => {
         await session.newWindow({ name: "made-elsewhere" });
         await new Promise((resolve) => setTimeout(resolve, 1_500));
         expect(notices).toBeGreaterThan(0);
+
+        const control = (
+          await fixture.executeText([
+            "list-clients",
+            "-F",
+            "#{client_name}\t#{client_control_mode}",
+          ])
+        ).stdout.find((line) => line.endsWith("\t1"));
+        if (control === undefined) throw new Error("No topology control client");
+        await fixture.executeText(["detach-client", "-t", control.slice(0, control.indexOf("\t"))]);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // A later list read re-arms a watcher whose connection died.
+        await client.listResources();
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        notices = 0;
+        await session.newWindow({ name: "made-after-reconnect" });
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        expect(notices).toBeGreaterThan(0);
       });
     });
   }, 60_000);
@@ -1881,6 +1961,29 @@ describe("browsing", () => {
 
         const deadline = Date.now() + 20_000;
         while (updates.length === 0 && Date.now() < deadline) {
+          // eslint-disable-next-line no-await-in-loop -- each check follows the last.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(updates).toContain(uri);
+
+        const control = (
+          await fixture.executeText([
+            "list-clients",
+            "-F",
+            "#{client_name}\t#{client_control_mode}",
+          ])
+        ).stdout.find((line) => line.endsWith("\t1"));
+        if (control === undefined) throw new Error("No subscription control client");
+        await fixture.executeText(["detach-client", "-t", control.slice(0, control.indexOf("\t"))]);
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        updates.length = 0;
+
+        await client.callTool({
+          arguments: { keys: "printf 'after-reconnect\\n'", paneId },
+          name: "send_keys",
+        });
+        const reconnectedDeadline = Date.now() + 20_000;
+        while (updates.length === 0 && Date.now() < reconnectedDeadline) {
           // eslint-disable-next-line no-await-in-loop -- each check follows the last.
           await new Promise((resolve) => setTimeout(resolve, 50));
         }

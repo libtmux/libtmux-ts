@@ -18,6 +18,7 @@ import {
   type CallToolResult,
   type ReadResourceResult,
 } from "@modelcontextprotocol/sdk/types.js";
+import type { TmuxEvent } from "libtmux";
 
 import {
   isFailure,
@@ -26,6 +27,7 @@ import {
   requireWindow,
   type ToolContext,
 } from "./context.js";
+import type { LiveListener } from "./live.js";
 import {
   paneContentUri,
   paneUri,
@@ -116,6 +118,13 @@ function watchTopology(context: ToolContext, announce: () => void): () => void {
       })
       .then((opened) => {
         stop = opened;
+        if (opened !== undefined) {
+          void opened.ended.then(() => {
+            if (stop !== opened) return;
+            stop = undefined;
+            announce();
+          });
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -355,33 +364,83 @@ function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
     if (paneId === undefined) {
       throw new Error(`Only ${PANES_URI}/{paneId}/content can be subscribed to; got ${uri}`);
     }
-    const snapshot = await context.snapshot();
-    const pane = snapshot.panes.oneOrUndefined({ id: paneId });
-    const sessionId = pane?.format.session_id;
-    if (pane === undefined || sessionId === null || sessionId === undefined) {
-      throw new Error(`No pane ${paneId} to subscribe to`);
-    }
-
     // Coalesced hard. A subscriber re-reads the whole pane per notification, so
     // a build printing continuously would cost a capture every time tmux
     // flushed. This bounds that to twice a second however fast the pane talks.
     let pending: ReturnType<typeof setTimeout> | undefined;
-    const stop = await context.hub.listen(sessionId, (event) => {
-      if (event.kind !== "output") return;
-      if (event.paneId !== paneId) return;
+    let reconnect: ReturnType<typeof setTimeout> | undefined;
+    let retry = 0;
+    let stopped = false;
+    let stop: LiveListener | undefined;
+    const announce = (): void => {
       if (pending !== undefined) return;
       pending = setTimeout(() => {
         pending = undefined;
         void mcp.server.sendResourceUpdated({ uri }).catch(() => undefined);
       }, UPDATE_COALESCE_MS);
       pending.unref?.();
-    });
-    if (stop === undefined) throw new Error(`Cannot watch ${paneId}: no control connection`);
+    };
+    const listener = (event: TmuxEvent): void => {
+      if (event.kind !== "output") return;
+      if (event.paneId !== paneId) return;
+      announce();
+    };
+    let open!: (required: boolean) => Promise<void>;
+    const schedule = (): void => {
+      if (stopped || reconnect !== undefined) return;
+      const delay = Math.min(5_000, 250 * 2 ** Math.min(retry, 5));
+      retry += 1;
+      reconnect = setTimeout(() => {
+        reconnect = undefined;
+        void open(false).catch(() => {
+          schedule();
+        });
+      }, delay);
+      reconnect.unref?.();
+    };
+    open = async (required): Promise<void> => {
+      const snapshot = await context.snapshot();
+      const pane = snapshot.panes.first({ id: paneId });
+      const sessionId = pane?.format.session_id;
+      if (pane === undefined || sessionId === null || sessionId === undefined) {
+        announce();
+        if (required) throw new Error(`No pane ${paneId} to subscribe to`);
+        return;
+      }
+      const opened = await context.hub.listen(sessionId, listener);
+      if (opened === undefined) {
+        if (required) throw new Error(`Cannot watch ${paneId}: no control connection`);
+        schedule();
+        return;
+      }
+      if (stopped) {
+        opened();
+        return;
+      }
+      stop = opened;
+      retry = 0;
+      void opened.ended.then(() => {
+        if (stopped || stop !== opened) return;
+        stop = undefined;
+        announce();
+        schedule();
+      });
+    };
 
-    watching.set(uri, () => {
+    const cancel = (): void => {
+      stopped = true;
       if (pending !== undefined) clearTimeout(pending);
-      stop();
-    });
+      if (reconnect !== undefined) clearTimeout(reconnect);
+      stop?.();
+    };
+    watching.set(uri, cancel);
+    try {
+      await open(true);
+    } catch (error) {
+      cancel();
+      watching.delete(uri);
+      throw error;
+    }
     return {};
   });
 

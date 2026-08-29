@@ -29,6 +29,8 @@ export interface FramedResult {
   readonly missedBytes: number;
   readonly outcome: "completed" | "pane_died" | "timed_out";
   readonly output: string;
+  /** False when the start marker was gone and the returned output starts partway through. */
+  readonly outputComplete: boolean;
 }
 
 /** How far back a fallback capture reads, so a marker that scrolled is still found. */
@@ -151,7 +153,14 @@ export function withoutForeignFraming(
 function slice(
   stream: string,
   id: string,
-): { exitStatus: number | null; foreignOutputSuspected: boolean; output: string } | undefined {
+):
+  | {
+      exitStatus: number | null;
+      foreignOutputSuspected: boolean;
+      output: string;
+      outputComplete: boolean;
+    }
+  | undefined {
   const startAt = stream.indexOf(`${id}_S`);
   const endAt = stream.indexOf(`${id}_E`, startAt < 0 ? 0 : startAt);
   if (endAt < 0) return undefined;
@@ -172,6 +181,7 @@ function slice(
     exitStatus: Number.isFinite(parsed) ? parsed : null,
     foreignOutputSuspected: cleaned.foreignOutputSuspected,
     output: cleaned.text,
+    outputComplete: startAt >= 0,
   };
 }
 
@@ -196,7 +206,7 @@ export async function runFramedCommand(
   const payload = frame(command, id, suppressHistory);
   const sessionId = pane.format.session_id;
 
-  const tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
+  let tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
 
   // Read the stream position before sending: output printed between the send
   // and the first read would otherwise be attributed to whatever came before.
@@ -205,7 +215,12 @@ export async function runFramedCommand(
 
   const deadline = Date.now() + budget;
   let missedBytes = 0;
+  let usedFallback = tail === undefined;
   while (Date.now() < deadline && signal?.aborted !== true) {
+    if (tail?.endReason !== undefined) {
+      tail = undefined;
+      usedFallback = true;
+    }
     let stream: string;
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- each read follows the last.
@@ -217,12 +232,29 @@ export async function runFramedCommand(
     }
     const found = slice(stream, id);
     if (found !== undefined) {
-      return { effectiveTimeoutMs: budget, missedBytes, ...found, outcome: "completed" };
+      return {
+        effectiveTimeoutMs: budget,
+        missedBytes,
+        ...found,
+        outcome: "completed",
+        outputComplete: found.outputComplete && !usedFallback,
+      };
     }
     // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
-    await (tail === undefined
-      ? new Promise((resolve) => setTimeout(resolve, FALLBACK_POLL_MS))
-      : tail.changed(Math.min(FALLBACK_POLL_MS * 4, Math.max(1, deadline - Date.now())), signal));
+    if (tail === undefined) {
+      // eslint-disable-next-line no-await-in-loop -- the poll follows its read.
+      await new Promise((resolve) => setTimeout(resolve, FALLBACK_POLL_MS));
+    } else {
+      // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
+      const change = await tail.changed(
+        Math.min(FALLBACK_POLL_MS * 4, Math.max(1, deadline - Date.now())),
+        signal,
+      );
+      if (change === "closed") {
+        tail = undefined;
+        usedFallback = true;
+      }
+    }
   }
 
   // Timed out, or the pane died under it — which is a different answer, and the
@@ -249,6 +281,7 @@ export async function runFramedCommand(
     missedBytes,
     outcome: alive ? "timed_out" : "pane_died",
     output: cleaned.text,
+    outputComplete: startAt >= 0 && missedBytes === 0 && !usedFallback,
   };
 }
 

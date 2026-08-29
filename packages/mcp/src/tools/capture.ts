@@ -18,6 +18,7 @@ import {
 } from "../context.js";
 import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { fail, ok, renderOutput, resourceLink, tailLines } from "../results.js";
+import { paneCursorSchema } from "../schemas.js";
 import { paneContentUri } from "../uris.js";
 
 /** How much of a first observation is seeded from the pane's visible screen. */
@@ -120,10 +121,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         "was written, so a program that draws by moving the cursor (a progress " +
         "bar, a full-screen TUI) reads jumbled here — capture_pane renders those.",
       inputSchema: {
-        cursor: z
-          .number()
-          .int()
-          .nonnegative()
+        cursor: paneCursorSchema
           .optional()
           .describe("The cursor from your previous observe. Omit on the first call."),
         maxLines: z.number().int().positive().optional(),
@@ -136,7 +134,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .describe("Wait up to this long for new output before answering. Default 0."),
       },
       outputSchema: {
-        cursor: z.number().int().describe("Pass this to the next observe call."),
+        cursor: paneCursorSchema
+          .nullable()
+          .describe("Pass this to the next observe call; null means streaming was unavailable."),
         droppedLines: z.number().int(),
         missedBytes: z
           .number()
@@ -184,7 +184,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         const trimmed = tailLines(captured, maxLines ?? context.policy.maxResultLines);
         return ok(
           {
-            cursor: 0,
+            cursor: null,
             droppedLines: trimmed.droppedLines,
             missedBytes: 0,
             paneId,
@@ -200,11 +200,16 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       if (stale !== undefined) return stale;
 
       if (seeding) {
+        // Mark the stream before capturing. Output racing the capture may be
+        // repeated on the next call, but it can never disappear between them.
+        const seededCursor = tail.cursor;
         const captured = await pane.capture({ start: -SEED_LINES });
+        const ended = requireLiveCursor(tail, seededCursor, paneId);
+        if (ended !== undefined) return ended;
         const trimmed = tailLines(captured, maxLines ?? context.policy.maxResultLines);
         return ok(
           {
-            cursor: tail.cursor,
+            cursor: seededCursor,
             droppedLines: trimmed.droppedLines,
             missedBytes: 0,
             paneId,
@@ -212,7 +217,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             streaming: true,
             text: trimmed.lines.join("\n"),
           },
-          `${renderOutput(trimmed)}\n\n[watching ${paneId}; pass cursor=${String(tail.cursor)} next time]`,
+          `${renderOutput(trimmed)}\n\n[watching ${paneId}; pass cursor=${seededCursor} next time]`,
         );
       }
 
@@ -224,7 +229,10 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       // soon as tmux says so.
       while (delta.text === "" && Date.now() < deadline && extra.signal.aborted !== true) {
         // eslint-disable-next-line no-await-in-loop -- each read follows its wait.
-        await tail.changed(deadline - Date.now(), extra.signal);
+        const change = await tail.changed(deadline - Date.now(), extra.signal);
+        if (change === "closed") {
+          return requireLiveCursor(tail, cursor, paneId) ?? fail({ reason: "Live stream ended." });
+        }
         delta = tail.read(cursor);
       }
 
@@ -234,7 +242,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       );
       const body =
         delta.text === ""
-          ? `[nothing new on ${paneId} since cursor ${String(cursor ?? 0)}]`
+          ? `[nothing new on ${paneId} since cursor ${String(cursor ?? "start")}]`
           : renderOutput(trimmed);
       const missed =
         delta.missedBytes === 0
@@ -334,8 +342,13 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         "pane, so you can target one without capturing them all.",
       inputSchema: {
         maxMatchesPerPane: z.number().int().positive().optional(),
-        pattern: z.string().describe("Text, or a regular expression when regex is true."),
-        regex: z.boolean().optional().describe("Treat pattern as a regular expression."),
+        pattern: z.string().describe("Literal text to find."),
+        regex: z
+          .literal(false)
+          .optional()
+          .describe(
+            "Regular expressions are disabled because native matching can block the server.",
+          ),
         scrollbackLines: z
           .number()
           .int()
@@ -358,21 +371,8 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       },
       title: "Search pane contents",
     },
-    async ({ maxMatchesPerPane, pattern, regex, scrollbackLines, session }) => {
-      let matcher: (line: string) => boolean;
-      if (regex === true) {
-        try {
-          const expression = new RegExp(pattern);
-          matcher = (line) => expression.test(line);
-        } catch (error) {
-          return fail({
-            hint: "Set regex to false to search for it as plain text.",
-            reason: `Not a valid regular expression: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
-      } else {
-        matcher = (line) => line.includes(pattern);
-      }
+    async ({ maxMatchesPerPane, pattern, scrollbackLines, session }) => {
+      const matcher = (line: string): boolean => line.includes(pattern);
 
       const snapshot = await context.snapshot();
       const target = session === undefined ? undefined : requireSession(snapshot, session);

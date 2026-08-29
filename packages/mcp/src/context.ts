@@ -205,20 +205,34 @@ export function requireWritablePane(
  */
 export function requireLiveCursor(
   tail: PaneTail,
-  from: number | undefined,
+  from: string | undefined,
   paneId: string,
 ): CallToolResult | undefined {
-  const ahead = tail.ahead(from);
-  if (ahead === 0) return undefined;
+  if (tail.endReason !== undefined) {
+    const lost = tail.endReason === "events_dropped";
+    return fail({
+      hint:
+        "Omit cursor to open a fresh stream, or use capture_pane for the rendered screen. " +
+        "Do not retry with this cursor.",
+      reason: lost
+        ? `The live stream for pane ${paneId} lost events before this read, so its output is incomplete.`
+        : `The live stream for pane ${paneId} ended before this read (${tail.endReason}).`,
+    });
+  }
+  const problem = tail.cursorProblem(from);
+  if (problem === undefined) return undefined;
+  const detail =
+    problem.kind === "ahead"
+      ? `is ${String(problem.bytes)} byte${problem.bytes === 1 ? "" : "s"} past this stream`
+      : problem.kind === "different_stream"
+        ? "belongs to another pane or an earlier stream"
+        : "is not a cursor this server issued";
   return fail({
     hint:
       "Omit cursor to start from what the pane shows now, then pass back the cursor " +
       "you are handed. A cursor does not carry across panes, or across a dropped " +
       "control connection.",
-    reason:
-      `Cursor ${String(from)} is ${String(ahead)} byte${ahead === 1 ? "" : "s"} past everything ` +
-      `pane ${paneId} has ` +
-      `streamed, which is now at ${String(tail.cursor)}.`,
+    reason: `Cursor ${String(from)} ${detail}; pane ${paneId} is now at ${tail.cursor}.`,
   });
 }
 

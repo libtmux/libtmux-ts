@@ -3,13 +3,14 @@ import { spawnSync } from "node:child_process";
 
 import { describe, expect, test } from "bun:test";
 
+import type { ConnectedServer, TmuxEvent, TmuxEventStream } from "libtmux";
 import { Server } from "libtmux/server";
 
 import { readCallerEnvironment } from "../src/caller.js";
 import { describeUnreachable } from "../src/context.js";
 import { buildInstructions, instructionsBudget } from "../src/instructions.js";
 import { frame, randomId, withoutForeignFraming } from "../src/command.js";
-import { PaneTail } from "../src/live.js";
+import { LiveHub, PaneTail } from "../src/live.js";
 import { effectiveWaitMs, resolvePolicy, tierAllows } from "../src/policy.js";
 import { describeStartup } from "../src/startup.js";
 import { fail, ok, renderOutput, tailLines } from "../src/results.js";
@@ -17,6 +18,64 @@ import { TextFilter } from "../src/text.js";
 import { paneContentUri } from "../src/uris.js";
 
 const readableText = (raw: string): string => new TextFilter().push(raw);
+
+class FakeEventStream {
+  readonly #events: TmuxEvent[] = [];
+  #ended = false;
+  #wake: (() => void) | undefined;
+  dropped = 0;
+
+  emit(event: TmuxEvent): void {
+    this.#events.push(event);
+    this.#wake?.();
+  }
+
+  finish(): void {
+    this.#ended = true;
+    this.#wake?.();
+  }
+
+  async *events(): AsyncGenerator<TmuxEvent> {
+    for (;;) {
+      const event = this.#events.shift();
+      if (event !== undefined) {
+        yield event;
+        continue;
+      }
+      if (this.#ended) return;
+      // eslint-disable-next-line no-await-in-loop -- one wake per drained fake queue.
+      await new Promise<void>((resolve) => {
+        this.#wake = resolve;
+      });
+      this.#wake = undefined;
+    }
+  }
+
+  stream(): TmuxEventStream {
+    return {
+      [Symbol.asyncDispose]: async () => undefined,
+      [Symbol.asyncIterator]: () => this.events(),
+      close: async () => {
+        this.finish();
+      },
+      dropped: this.dropped,
+      find: async () => undefined,
+      ready: async () => undefined,
+    } as TmuxEventStream;
+  }
+}
+
+function fakeConnection(events: FakeEventStream, closed: { count: number }): ConnectedServer {
+  const stream = events.stream();
+  Object.defineProperty(stream, "dropped", { get: () => events.dropped });
+  return {
+    close: async () => {
+      closed.count += 1;
+      events.finish();
+    },
+    subscribe: () => stream,
+  } as ConnectedServer;
+}
 
 describe("text filter", () => {
   test("removes the escapes a shell puts between characters", () => {
@@ -63,18 +122,20 @@ describe("pane tail", () => {
 
   test("reports what fell out of the buffer rather than losing it silently", () => {
     const tail = new PaneTail("%1", 8);
+    const start = tail.cursor;
     tail.append("0123456789abcdef");
-    const seen = tail.read(0);
+    const seen = tail.read(start);
     expect(seen.missedBytes).toBe(8);
     expect(seen.text).toBe("89abcdef");
   });
 
   test("counts cursors and retention in UTF-8 bytes", () => {
     const tail = new PaneTail("%1", 7);
+    const start = tail.cursor;
     tail.append("你🙂ab");
 
-    expect(tail.cursor).toBe(9);
-    expect(tail.read(0)).toEqual({ cursor: 9, missedBytes: 3, text: "🙂ab" });
+    expect(tail.cursor).toEndWith(".9");
+    expect(tail.read(start)).toEqual({ cursor: tail.cursor, missedBytes: 3, text: "🙂ab" });
   });
 
   test("round-trips a byte cursor across multibyte output", () => {
@@ -83,15 +144,26 @@ describe("pane tail", () => {
     const mark = tail.cursor;
     tail.append("🙂");
 
-    expect(mark).toBe(3);
+    expect(mark).toEndWith(".3");
     expect(tail.read(mark).text).toBe("🙂");
   });
 
   test("does not decode from the middle of a multibyte character", () => {
     const tail = new PaneTail("%1");
+    const start = tail.cursor;
     tail.append("🙂x");
+    const middle = start.replace(/\.0$/u, ".1");
 
-    expect(tail.read(1)).toEqual({ cursor: 5, missedBytes: 3, text: "x" });
+    expect(tail.read(middle)).toEqual({ cursor: tail.cursor, missedBytes: 3, text: "x" });
+  });
+
+  test("refuses a cursor from another tail even when its offset fits", () => {
+    const first = new PaneTail("%1");
+    first.append("old");
+    const second = new PaneTail("%1");
+    second.append("new-data");
+
+    expect(() => second.read(first.cursor)).toThrow("different pane tail");
   });
 
   test("wakes a waiter when output arrives", async () => {
@@ -99,7 +171,7 @@ describe("pane tail", () => {
     const waiting = tail.changed(5_000);
     tail.append("something\n");
     await waiting;
-    expect(tail.read(0).text).toBe("something\n");
+    expect(tail.read(undefined).text).toBe("something\n");
   });
 
   test("gives up on a waiter as soon as its caller is cancelled", async () => {
@@ -125,7 +197,7 @@ describe("pane tail", () => {
     const tail = new PaneTail("%1");
     const controller = new AbortController();
 
-    expect(await tail.changed(5, controller.signal)).toBe(false);
+    expect(await tail.changed(5, controller.signal)).toBe("timed_out");
     expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
   });
 
@@ -134,8 +206,129 @@ describe("pane tail", () => {
     const controller = new AbortController();
     controller.abort();
 
-    expect(await tail.changed(30, controller.signal)).toBe(true);
+    expect(await tail.changed(30, controller.signal)).toBe("cancelled");
     expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+
+  test("closes and wakes every in-flight waiter", async () => {
+    const tail = new PaneTail("%1");
+    const waiting = tail.changed(30_000);
+
+    tail.close("connection_lost");
+
+    expect(await waiting).toBe("closed");
+    expect(tail.endReason).toBe("connection_lost");
+  });
+});
+
+describe("live hub", () => {
+  test("closes tails when the source drops an event", async () => {
+    const events = new FakeEventStream();
+    const closed = { count: 0 };
+    const connected = fakeConnection(events, closed);
+    const hub = new LiveHub({ connect: async () => connected } as Server);
+    const tail = await hub.tail("$1", "%1");
+    expect(tail).toBeDefined();
+    const waiting = tail?.changed(30_000);
+
+    events.dropped = 1;
+    events.emit({ data: "after-gap", kind: "output", paneId: "%1" } as TmuxEvent);
+
+    expect(await waiting).toBe("closed");
+    expect(tail?.endReason).toBe("events_dropped");
+    expect(tail?.read(undefined).text).toBe("");
+    await hub.close();
+  });
+
+  test("closes and wakes tails when their connection ends", async () => {
+    const events = new FakeEventStream();
+    const hub = new LiveHub({
+      connect: async () => fakeConnection(events, { count: 0 }),
+    } as Server);
+    const tail = await hub.tail("$1", "%1");
+    const waiting = tail?.changed(30_000);
+
+    events.finish();
+
+    expect(await waiting).toBe("closed");
+    expect(tail?.endReason).toBe("connection_lost");
+    await hub.close();
+  });
+
+  test("closes a connection that opens after the hub closed", async () => {
+    const events = new FakeEventStream();
+    const closed = { count: 0 };
+    const connected = fakeConnection(events, closed);
+    let resolve!: (value: ConnectedServer) => void;
+    const opening = new Promise<ConnectedServer>((done) => {
+      resolve = done;
+    });
+    const hub = new LiveHub({ connect: () => opening } as Server);
+    const acquiring = hub.tail("$1", "%1");
+
+    let closeSettled = false;
+    const closing = hub.close().then(() => {
+      closeSettled = true;
+    });
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+    resolve(connected);
+
+    await closing;
+    expect(await acquiring).toBeUndefined();
+    expect(closed.count).toBe(1);
+  });
+
+  test("does not expire a tail while a reader is waiting", async () => {
+    const events = new FakeEventStream();
+    const hub = new LiveHub(
+      { connect: async () => fakeConnection(events, { count: 0 }) } as Server,
+      { lingerMs: 10 },
+    );
+    const tail = await hub.tail("$1", "%1");
+    const waiting = tail?.changed(5_000);
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(tail?.endReason).toBeUndefined();
+    events.emit({ data: "still-watched", kind: "output", paneId: "%1" } as TmuxEvent);
+
+    expect(await waiting).toBe("changed");
+    await hub.close();
+  });
+
+  test("re-arms expiry after acquiring an existing tail", async () => {
+    const events = new FakeEventStream();
+    const closed = { count: 0 };
+    const hub = new LiveHub({ connect: async () => fakeConnection(events, closed) } as Server, {
+      lingerMs: 15,
+    });
+    const tail = await hub.tail("$1", "%1");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(await hub.tail("$1", "%1")).toBe(tail);
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(tail?.endReason).toBe("expired");
+    expect(closed.count).toBeGreaterThan(0);
+    await hub.close();
+  });
+
+  test("invalidates tails when pane placement may have changed", async () => {
+    const events = new FakeEventStream();
+    const hub = new LiveHub({
+      connect: async () => fakeConnection(events, { count: 0 }),
+    } as Server);
+    const tail = await hub.tail("$1", "%1");
+    const cursor = tail?.cursor;
+
+    events.emit({ kind: "layout-change" } as TmuxEvent);
+
+    expect(await tail?.changed(5_000)).toBe("closed");
+    expect(tail?.endReason).toBe("topology_changed");
+    const replacement = await hub.tail("$1", "%1");
+    expect(replacement).not.toBe(tail);
+    expect(replacement?.cursor).not.toBe(cursor);
+    await hub.close();
   });
 });
 

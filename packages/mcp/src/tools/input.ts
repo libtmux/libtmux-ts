@@ -186,6 +186,9 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .enum(["completed", "timed_out", "pane_died"])
           .describe("Why this returned. Read it rather than inferring from the text."),
         output: z.string(),
+        outputComplete: z
+          .boolean()
+          .describe("False when bounded capture lost the start of the command's output."),
         paneId: z.string(),
         stillRunning: z
           .boolean()
@@ -260,10 +263,15 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           missedBytes: result.missedBytes,
           outcome: result.outcome,
           output: trimmed.lines.join("\n"),
+          outputComplete: result.outputComplete,
           paneId,
           stillRunning: result.outcome === "timed_out",
         },
         `${renderOutput(trimmed)}\n\n[${headline}]${
+          result.outputComplete
+            ? ""
+            : "\n[the start of this command's output was outside the retained capture]"
+        }${
           result.foreignOutputSuspected
             ? "\n[another writer printed into this pane while the command ran; " +
               "output attributable to them was removed, what remains may still be theirs]"

@@ -12,6 +12,8 @@
  * here sends; without it the connection is invisible to window sizing.
  */
 
+import { randomUUID } from "node:crypto";
+
 import type { ConnectedServer, TmuxEvent } from "libtmux";
 import type { Server } from "libtmux/server";
 
@@ -22,6 +24,36 @@ const LINGER_MS = 30_000;
 
 /** How much of a pane's output one tail retains. */
 const DEFAULT_TAIL_BYTES = 256 * 1024;
+
+/** The wire shape of a cursor returned by {@link PaneTail}. */
+export const PANE_CURSOR_PATTERN = /^ltxc1\.[0-9a-f]{32}\.(?:0|[1-9][0-9]*)$/u;
+
+export type PaneTailChange = "cancelled" | "changed" | "closed" | "timed_out";
+
+export type PaneTailEndReason =
+  | "connection_lost"
+  | "events_dropped"
+  | "expired"
+  | "hub_closed"
+  | "topology_changed";
+
+export type PaneCursorProblem =
+  | { readonly kind: "ahead"; readonly bytes: number }
+  | { readonly kind: "different_stream" }
+  | { readonly kind: "malformed" };
+
+interface ParsedCursor {
+  readonly generation: string;
+  readonly offset: number;
+}
+
+function parseCursor(cursor: string): ParsedCursor | undefined {
+  if (!PANE_CURSOR_PATTERN.test(cursor)) return undefined;
+  const [, generation, rawOffset] = cursor.split(".");
+  const offset = Number(rawOffset);
+  if (generation === undefined || !Number.isSafeInteger(offset)) return undefined;
+  return { generation, offset };
+}
 
 /**
  * A pane's output as readable text with an absolute UTF-8 byte cursor.
@@ -45,9 +77,11 @@ export class PaneTail {
   /** Absolute byte offset of the first character still held. */
   #base = 0;
   #end = 0;
+  #endReason: PaneTailEndReason | undefined;
   readonly #filter = new TextFilter();
+  readonly #generation = randomUUID().replaceAll("-", "");
   readonly #limit: number;
-  readonly #waiters = new Set<() => void>();
+  readonly #waiters = new Set<(change: PaneTailChange) => void>();
   readonly paneId: string;
 
   constructor(paneId: string, limit: number = DEFAULT_TAIL_BYTES) {
@@ -59,11 +93,17 @@ export class PaneTail {
   }
 
   /** The offset a reader should quote to be told only what comes next. */
-  get cursor(): number {
-    return this.#end;
+  get cursor(): string {
+    return `ltxc1.${this.#generation}.${String(this.#end)}`;
+  }
+
+  /** Why this tail can no longer receive output, if it has ended. */
+  get endReason(): PaneTailEndReason | undefined {
+    return this.#endReason;
   }
 
   append(raw: string): void {
+    if (this.#endReason !== undefined) return;
     const data = this.#filter.push(raw);
     if (data === "") return;
     const bytes = Buffer.from(data, "utf8");
@@ -73,7 +113,16 @@ export class PaneTail {
     this.#trim();
     const waiting = [...this.#waiters];
     this.#waiters.clear();
-    for (const wake of waiting) wake();
+    for (const wake of waiting) wake("changed");
+  }
+
+  /** End this stream and release every reader waiting on it. */
+  close(reason: PaneTailEndReason): void {
+    if (this.#endReason !== undefined) return;
+    this.#endReason = reason;
+    const waiting = [...this.#waiters];
+    this.#waiters.clear();
+    for (const wake of waiting) wake("closed");
   }
 
   /** Keep a UTF-8 boundary at the start while holding no more than the limit. */
@@ -116,44 +165,36 @@ export class PaneTail {
    * what makes a wait cost nothing while nothing is happening. The signal is
    * what lets a caller that has gone away stop it early.
    *
-   * Answers `true` when something woke it and `false` when the timeout simply
-   * elapsed. A caller that has to tell those apart — because what it is waiting
-   * for would never arrive as output — should ask rather than infer it from the
-   * cursor not having moved.
+   * The result distinguishes output, timeout, cancellation, and a stream that
+   * ended. A reader must not infer those states from an unchanged cursor.
    */
-  changed(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
+  changed(timeoutMs: number, signal?: AbortSignal): Promise<PaneTailChange> {
     this.#touched = Date.now();
-    if (signal?.aborted === true) return Promise.resolve(true);
+    if (signal?.aborted === true) return Promise.resolve("cancelled");
+    if (this.#endReason !== undefined) return Promise.resolve("closed");
     return new Promise((resolve) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const finish = (changed: boolean): void => {
+      const finish = (change: PaneTailChange): void => {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
         this.#waiters.delete(wake);
-        signal?.removeEventListener("abort", wake);
-        resolve(changed);
+        signal?.removeEventListener("abort", cancelled);
+        resolve(change);
       };
-      const wake = (): void => {
-        finish(true);
+      const wake = (change: PaneTailChange): void => {
+        finish(change);
       };
-      timer = setTimeout(() => finish(false), timeoutMs);
-      signal?.addEventListener("abort", wake, { once: true });
+      const cancelled = (): void => {
+        finish("cancelled");
+      };
+      timer = setTimeout(() => finish("timed_out"), timeoutMs);
+      signal?.addEventListener("abort", cancelled, { once: true });
       this.#waiters.add(wake);
     });
   }
 
-  /**
-   * How far past this stream's end a cursor sits, or 0 when it is within it.
-   *
-   * A cursor counts bytes inside one tail's lifetime, and a tail does not
-   * outlive its connection: when the event stream ends the link is marked
-   * failed, and the next acquire opens a fresh one whose tails start at zero.
-   * A cursor held across that lands either below the new end, where it reseeds
-   * honestly, or above it — where `read` slices past the buffer and answers ""
-   * with nothing missed, reporting a pane that is printing as quiet.
-   */
   /**
    * How long since anything read this tail.
    *
@@ -161,11 +202,16 @@ export class PaneTail {
    * watching is not a reason to hold a connection open for it.
    */
   idleMs(now: number): number {
-    return now - this.#touched;
+    return this.#waiters.size > 0 ? 0 : now - this.#touched;
   }
 
-  ahead(from: number | undefined): number {
-    return from === undefined ? 0 : Math.max(0, from - this.#end);
+  cursorProblem(from: string | undefined): PaneCursorProblem | undefined {
+    if (from === undefined) return undefined;
+    const parsed = parseCursor(from);
+    if (parsed === undefined) return { kind: "malformed" };
+    if (parsed.generation !== this.#generation) return { kind: "different_stream" };
+    if (parsed.offset > this.#end) return { bytes: parsed.offset - this.#end, kind: "ahead" };
+    return undefined;
   }
 
   /**
@@ -176,13 +222,23 @@ export class PaneTail {
    * a multibyte character also skips to the next boundary instead of returning
    * replacement text. Cursors returned by this class are always boundaries.
    */
-  read(from: number | undefined): {
-    readonly cursor: number;
+  read(from: string | undefined): {
+    readonly cursor: string;
     readonly missedBytes: number;
     readonly text: string;
   } {
     this.#touched = Date.now();
-    const start = from ?? this.#base;
+    const problem = this.cursorProblem(from);
+    if (problem !== undefined) {
+      const reason =
+        problem.kind === "different_stream"
+          ? "cursor belongs to a different pane tail"
+          : problem.kind === "ahead"
+            ? "cursor is past this pane tail"
+            : "malformed pane-tail cursor";
+      throw new RangeError(reason);
+    }
+    const start = from === undefined ? this.#base : (parseCursor(from)?.offset ?? this.#base);
     let missed = Math.max(0, this.#base - start);
     let skip = Math.max(0, start - this.#base);
     const parts: Buffer[] = [];
@@ -206,7 +262,7 @@ export class PaneTail {
       size += part.length;
     }
     return {
-      cursor: this.#end,
+      cursor: this.cursor,
       missedBytes: missed,
       text: Buffer.concat(parts, size).toString("utf8"),
     };
@@ -216,11 +272,27 @@ export class PaneTail {
 interface SessionLink {
   closeTimer: ReturnType<typeof setTimeout> | undefined;
   readonly connected: ConnectedServer;
+  readonly ended: Promise<PaneTailEndReason>;
+  endReason: PaneTailEndReason | undefined;
+  readonly finish: (reason: PaneTailEndReason) => void;
   /** Set when the connection died; a later acquire opens a fresh one. */
   failed: boolean;
   readonly listeners: Set<(event: TmuxEvent) => void>;
   readonly tails: Map<string, PaneTail>;
 }
+
+const TAIL_INVALIDATING_EVENTS = new Set<TmuxEvent["kind"]>([
+  "layout-change",
+  "sessions-changed",
+  "unlinked-window-add",
+  "unlinked-window-close",
+  "window-add",
+  "window-close",
+  "window-pane-changed",
+]);
+
+/** Stop a notification listener and observe why its connection ended. */
+export type LiveListener = (() => void) & { readonly ended: Promise<PaneTailEndReason> };
 
 /**
  * The connections this process holds, and the tails reading them.
@@ -232,6 +304,7 @@ export class LiveHub {
   readonly #links = new Map<string, SessionLink>();
   readonly #opening = new Map<string, Promise<SessionLink>>();
   readonly #tmux: Server;
+  readonly #abort = new AbortController();
   /** How long a tail may go unread, and a link unused, before both are let go. */
   readonly #lingerMs: number;
   #closed = false;
@@ -271,10 +344,21 @@ export class LiveHub {
   }
 
   async #open(sessionId: string): Promise<SessionLink> {
-    const connected = await this.#tmux.connect({ target: sessionId });
+    const connected = await this.#tmux.connect({ signal: this.#abort.signal, target: sessionId });
+    if (this.#closed) {
+      await connected.close().catch(() => undefined);
+      throw new Error("live connections are closed");
+    }
+    let finish!: (reason: PaneTailEndReason) => void;
+    const ended = new Promise<PaneTailEndReason>((resolve) => {
+      finish = resolve;
+    });
     const link: SessionLink = {
       closeTimer: undefined,
       connected,
+      ended,
+      endReason: undefined,
+      finish,
       failed: false,
       listeners: new Set(),
       tails: new Map(),
@@ -293,23 +377,41 @@ export class LiveHub {
    */
   async #pump(sessionId: string, link: SessionLink): Promise<void> {
     const events = link.connected.subscribe();
+    let reason: PaneTailEndReason = "connection_lost";
+    let dropped = events.dropped;
     try {
       for await (const event of events) {
+        if (events.dropped !== dropped) {
+          reason = "events_dropped";
+          dropped = events.dropped;
+          break;
+        }
         if (event.kind === "output") {
           link.tails.get(event.paneId)?.append(event.data);
+        } else if (TAIL_INVALIDATING_EVENTS.has(event.kind)) {
+          for (const tail of link.tails.values()) tail.close("topology_changed");
+          link.tails.clear();
         }
         for (const listener of link.listeners) listener(event);
       }
     } catch {
-      // A dead connection is a state, not an incident: the next acquire opens
-      // a fresh one, and a tool that was reading gets an empty delta it can
-      // tell apart by the cursor not moving.
+      // A dead connection is a state, not an incident. Ending the tails below
+      // wakes readers so none can mistake it for a quiet pane.
     } finally {
-      link.failed = true;
+      if (events.dropped !== dropped) reason = "events_dropped";
+      this.#endLink(link, reason);
       if (this.#links.get(sessionId) === link) this.#links.delete(sessionId);
       await events.close().catch(() => undefined);
       await link.connected.close().catch(() => undefined);
     }
+  }
+
+  #endLink(link: SessionLink, reason: PaneTailEndReason): void {
+    if (link.endReason !== undefined) return;
+    link.endReason = reason;
+    link.failed = true;
+    for (const tail of link.tails.values()) tail.close(reason);
+    link.finish(reason);
   }
 
   /**
@@ -326,8 +428,12 @@ export class LiveHub {
     } catch {
       return undefined;
     }
+    if (link.failed) return undefined;
     const existing = link.tails.get(paneId);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      this.#scheduleClose(sessionId, link);
+      return existing;
+    }
     const tail = new PaneTail(paneId);
     link.tails.set(paneId, tail);
     // Starts the sweep. Without this a tail created and then abandoned would
@@ -362,7 +468,7 @@ export class LiveHub {
    * a session to hold one would change the server as a side effect of reading
    * it.
    */
-  async anchor(listener: (event: TmuxEvent) => void): Promise<(() => void) | undefined> {
+  async anchor(listener: (event: TmuxEvent) => void): Promise<LiveListener | undefined> {
     const snapshot = await this.#tmux.snapshot().catch(() => undefined);
     const session = snapshot?.sessions.toArray()[0];
     if (session === undefined) return undefined;
@@ -382,18 +488,21 @@ export class LiveHub {
   async listen(
     sessionId: string,
     listener: (event: TmuxEvent) => void,
-  ): Promise<(() => void) | undefined> {
+  ): Promise<LiveListener | undefined> {
     let link: SessionLink;
     try {
       link = await this.#link(sessionId);
     } catch {
       return undefined;
     }
+    if (link.failed) return undefined;
     link.listeners.add(listener);
-    return () => {
+    const stop = (): void => {
       link.listeners.delete(listener);
       this.#scheduleClose(sessionId, link);
     };
+    Object.defineProperty(stop, "ended", { enumerable: true, value: link.ended });
+    return stop as LiveListener;
   }
 
   /**
@@ -417,7 +526,10 @@ export class LiveHub {
       link.closeTimer = undefined;
       const now = Date.now();
       for (const [paneId, tail] of link.tails) {
-        if (tail.idleMs(now) >= this.#lingerMs) link.tails.delete(paneId);
+        if (tail.idleMs(now) >= this.#lingerMs) {
+          tail.close("expired");
+          link.tails.delete(paneId);
+        }
       }
       if (link.tails.size > 0 || link.listeners.size > 0) {
         // Come back when the tail used most recently becomes eligible, rather
@@ -431,6 +543,7 @@ export class LiveHub {
         return;
       }
       if (this.#links.get(sessionId) === link) this.#links.delete(sessionId);
+      this.#endLink(link, "expired");
       void link.connected.close().catch(() => undefined);
     }, delayMs);
     // A lingering connection must not be what keeps the process alive.
@@ -439,13 +552,17 @@ export class LiveHub {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#abort.abort();
+    const opening = [...this.#opening.values()];
     const links = [...this.#links.values()];
     this.#links.clear();
     await Promise.all(
       links.map(async (link) => {
         if (link.closeTimer !== undefined) clearTimeout(link.closeTimer);
+        this.#endLink(link, "hub_closed");
         await link.connected.close().catch(() => undefined);
       }),
     );
+    await Promise.allSettled(opening);
   }
 }
