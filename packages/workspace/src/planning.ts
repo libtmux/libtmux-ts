@@ -110,7 +110,7 @@ export async function planWorkspace(
     return Object.freeze({
       createsPanes: freezeEntries(
         workspace.windows.map((window, windowPosition) => ({
-          count: Math.max(window.panes.length, 1),
+          count: window.panes.length,
           windowPosition,
         })),
       ),
@@ -141,7 +141,7 @@ export async function planWorkspace(
 
   for (const [index, desired] of workspace.windows.entries()) {
     const window = current[index];
-    const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;
+    const wanted = desired.panes.length;
     if (window === undefined) {
       createsWindows.push({
         ...(desired.window_name === undefined ? {} : { name: desired.window_name }),

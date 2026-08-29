@@ -267,7 +267,7 @@ async function applyWindow(
     await window.setOption(option, optionValue(value));
   }
 
-  const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;
+  const wanted = desired.panes.length;
   let current = await window.refreshed();
   // The surplus set is known before any pane goes, so one final snapshot can
   // resolve all removals.

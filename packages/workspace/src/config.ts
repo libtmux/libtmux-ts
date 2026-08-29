@@ -39,7 +39,10 @@ const windowSchema = z.strictObject({
   focus: z.boolean().optional(),
   layout: z.string().optional(),
   options: z.record(z.string(), optionValueSchema).optional(),
-  panes: z.array(paneSchema).default([]),
+  panes: z
+    .array(paneSchema)
+    .default([])
+    .transform((panes) => (panes.length === 0 ? panes.concat({}) : panes)),
   shell_command_before: z.union([z.string(), z.array(z.string())]).optional(),
   start_directory: z.string().optional(),
   window_name: z.string().optional(),

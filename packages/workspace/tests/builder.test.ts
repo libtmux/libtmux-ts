@@ -16,7 +16,7 @@ import { flattenInvocation } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
 import { applyWorkspace, planWorkspace, WorkspaceApplyError } from "../src/builder.js";
 import { OWNERSHIP_OPTION } from "../src/ownership.js";
-import { parseWorkspaceYaml } from "../src/config.js";
+import { parseWorkspace, parseWorkspaceYaml } from "../src/config.js";
 
 import {
   assertOwnedSocketPath,
@@ -150,13 +150,18 @@ windows:
 `;
 
 describe("workspace builder", () => {
-  test("parses a tmuxp-shaped workspace", () => {
+  test("parses and normalizes a tmuxp-shaped workspace", () => {
     const workspace = parseWorkspaceYaml(WORKSPACE);
+    const implicit = parseWorkspace({
+      session_name: "implicit",
+      windows: [{}, { panes: [] }],
+    });
 
     expect(workspace.session_name).toBe("project");
     expect(workspace.windows).toHaveLength(2);
     expect(workspace.windows[0]?.window_name).toBe("editor");
     expect(workspace.windows[1]?.panes).toHaveLength(1);
+    expect(implicit.windows.map((window) => window.panes)).toEqual([[{}], [{}]]);
   });
 
   test("gives each initial pane directory precedence over its parents", async () => {
@@ -589,29 +594,25 @@ windows:
     });
   }, 90_000);
 
-  test.failing(
-    "runs window commands in an implicit pane",
-    async () => {
-      await withServer(async (fixture) => {
-        const server = serverFor(fixture);
-        const marker = join(await makeTestDirectory("ltx-ws-marker-"), "implicit");
-        const workspace = parseWorkspaceYaml(
-          [
-            "session_name: implicit",
-            "windows:",
-            "  - window_name: main",
-            `    shell_command_before: "echo implicit >> ${marker}"`,
-          ].join("\n"),
-        );
+  test("runs window commands in an implicit pane", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "implicit");
+      const workspace = parseWorkspaceYaml(
+        [
+          "session_name: implicit",
+          "windows:",
+          "  - window_name: main",
+          `    shell_command_before: "echo implicit >> ${marker}"`,
+        ].join("\n"),
+      );
 
-        await applyWorkspace(server, workspace);
-        await drain(server, "implicit", marker);
+      await applyWorkspace(server, workspace);
+      await drain(server, "implicit", marker);
 
-        expect(await readMarker(marker)).toContain("implicit");
-      });
-    },
-    90_000,
-  );
+      expect(await readMarker(marker)).toContain("implicit");
+    });
+  }, 90_000);
 
   test("delivers create-only commands once when layout fails afterward", async () => {
     await withServer(async (fixture) => {
