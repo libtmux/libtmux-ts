@@ -6,6 +6,7 @@ import { NoMatchError, QueryValidationError } from "../../src/exc.js";
 import { safeInteger } from "../../src/common.js";
 import { compileWhere } from "../../src/_internal/selection/compile.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
+import { foldCase } from "../../src/_internal/selection/scalar.js";
 import { parseSessionId } from "../../src/_internal/runtime/ids.js";
 import {
   decodeWhereDocument,
@@ -169,26 +170,37 @@ describe("scalar and logical criteria", () => {
     ).toEqual([harness.values[0]!]);
   });
 
-  test("uses ECMAScript toLowerCase for non-regex insensitive equality", async () => {
+  test("folds case for every operator the way the regex engine does", async () => {
     const harness = await createSessionHarness(["ſ", "ß", "K"]);
     const selection = createProjectedSelection("session", harness.values, harness.projection);
+    const longS = harness.values[0]!;
 
-    expect(selection.where({ name: { equals: "s", mode: "insensitive" } }).toArray()).toEqual([]);
-    expect(selection.where({ name: { equals: "ss", mode: "insensitive" } }).toArray()).toEqual([]);
+    for (const criteria of [
+      { equals: "s", mode: "insensitive" },
+      { mode: "insensitive", regex: { flags: "", pattern: "^s$" } },
+    ] as const) {
+      expect(selection.where({ name: criteria }).toArray()).toEqual([longS]);
+    }
     const kelvin = selection.where({ name: { equals: "k", mode: "insensitive" } }).toArray();
-    expect(kelvin).toHaveLength(1);
-    expect(kelvin[0]).toBe(harness.values[2]!);
+    expect(kelvin).toEqual([harness.values[2]!]);
+    // Simple folding, as `u`-mode regex defines it: ß and "ss" stay apart.
+    expect(selection.where({ name: { equals: "ss", mode: "insensitive" } }).toArray()).toEqual([]);
+  });
 
-    const nativeRegex = selection
-      .where({
-        name: {
-          mode: "insensitive",
-          regex: { flags: "", pattern: "^s$" },
-        },
-      })
-      .toArray();
-    expect(nativeRegex).toHaveLength(1);
-    expect(nativeRegex[0]).toBe(harness.values[0]!);
+  test("folds exactly the code points the regex engine folds", () => {
+    const divergent: string[] = [];
+    for (let point = 0; point <= 0x2ffff; point += 1) {
+      if (point >= 0xd800 && point <= 0xdfff) continue;
+      const character = String.fromCodePoint(point);
+      const lowered = character.toLowerCase();
+      const uppered = character.toUpperCase().toLowerCase();
+      if (lowered === uppered) continue;
+      if (new RegExp(`^${character}$`, "iu").test(uppered)) divergent.push(character);
+    }
+    expect(divergent).not.toHaveLength(0);
+    for (const character of divergent) {
+      expect(foldCase(character)).toBe(foldCase(character.toUpperCase().toLowerCase()));
+    }
   });
 
   test("ANDs scalar operators only for candidates satisfying every comparison", async () => {
