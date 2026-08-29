@@ -194,6 +194,10 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .nullable()
           .describe("Pass this to the next observe call; null means streaming was unavailable."),
         droppedLines: z.number().int(),
+        effectiveTimeoutMs: z
+          .number()
+          .int()
+          .describe("The wait ceiling applied; zero when this call did not wait on a live stream."),
         missedBytes: z
           .number()
           .int()
@@ -250,6 +254,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             byteClamped: captured.byteClamped || bounded.omittedBytes > 0,
             cursor: null,
             droppedLines: bounded.droppedLines,
+            effectiveTimeoutMs: 0,
             missedBytes: 0,
             omittedBytes: bounded.omittedBytes,
             paneId,
@@ -284,6 +289,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
             byteClamped: captured.byteClamped || bounded.omittedBytes > 0,
             cursor: seededCursor,
             droppedLines: bounded.droppedLines,
+            effectiveTimeoutMs: 0,
             missedBytes: 0,
             omittedBytes: bounded.omittedBytes,
             paneId,
@@ -331,6 +337,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           byteClamped: bounded.omittedBytes > 0,
           cursor: delta.cursor,
           droppedLines: bounded.droppedLines,
+          effectiveTimeoutMs: wait,
           missedBytes: delta.missedBytes,
           omittedBytes: bounded.omittedBytes,
           paneId,

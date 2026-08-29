@@ -231,6 +231,43 @@ describe("bounded pane reads", () => {
     expect(captures).toBe(0);
   });
 
+  test("reports the effective wait on every observe path", async () => {
+    const pane = fakePane({ capture: async () => ["screen"], id: "%1" });
+    const environment = { LIBTMUX_MCP_WAIT_MAX_MS: "1234" };
+
+    await withTools(
+      fakeContext([pane], { environment: { ...environment, LIBTMUX_MCP_LIVE: "0" } }),
+      registerCapture,
+      async (client) => {
+        const result = structured<{ effectiveTimeoutMs: number }>(
+          await client.callTool({ arguments: { paneId: "%1", waitMs: 999_999 }, name: "observe" }),
+        );
+        expect(result.effectiveTimeoutMs).toBe(0);
+      },
+    );
+
+    const tail = new PaneTail("%1");
+    await withTools(
+      fakeContext([pane], { environment, hub: { tail: async () => tail } }),
+      registerCapture,
+      async (client) => {
+        const seeded = structured<{ cursor: string; effectiveTimeoutMs: number }>(
+          await client.callTool({ arguments: { paneId: "%1", waitMs: 999_999 }, name: "observe" }),
+        );
+        expect(seeded.effectiveTimeoutMs).toBe(0);
+
+        tail.append("delta\n");
+        const delta = structured<{ effectiveTimeoutMs: number }>(
+          await client.callTool({
+            arguments: { cursor: seeded.cursor, paneId: "%1", waitMs: 999_999 },
+            name: "observe",
+          }),
+        );
+        expect(delta.effectiveTimeoutMs).toBe(1_234);
+      },
+    );
+  });
+
   test("does not capture an oversized pane-content resource", async () => {
     let captures = 0;
     const pane = fakePane({
