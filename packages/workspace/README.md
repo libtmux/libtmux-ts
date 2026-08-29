@@ -84,8 +84,10 @@ in a key is not expanded.
 If tmux rejects a later operation, `applyWorkspace` throws
 `WorkspaceApplyError`. Its frozen `completed` milestones name the high-level
 work that finished, `failed` names the stage that stopped, and `cause` retains
-the original error. `requiresReplan` is always true: a failed window or batch
-may be partial because tmux command lists are not transactions.
+the original error. `requiresReplan` is always true: callers must rediscover
+tmux structure before deciding what to do next. It does not report whether pane
+commands ran; mutations are not transactions, and transport failure may leave
+delivery indeterminate.
 
 ## The shape
 

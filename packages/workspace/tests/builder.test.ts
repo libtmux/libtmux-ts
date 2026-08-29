@@ -567,26 +567,30 @@ windows:
     });
   }, 90_000);
 
-  test("does not retype a pane's commands into a pane it did not create", async () => {
+  test("delivers create-only commands once when layout fails afterward", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const marker = join(await makeTestDirectory("ltx-ws-marker-"), "ran");
-      const workspace = parseWorkspaceYaml(
-        [
-          "session_name: once",
-          "windows:",
-          "  - window_name: main",
-          "    panes:",
-          `      - "echo ran >> ${marker}"`,
-        ].join("\n"),
+      const workspace = (layout: string) =>
+        parseWorkspaceYaml(
+          [
+            "session_name: once",
+            "windows:",
+            "  - window_name: main",
+            `    layout: ${layout}`,
+            "    panes:",
+            `      - "echo ran >> ${marker}"`,
+          ].join("\n"),
+        );
+
+      await expect(applyWorkspace(server, workspace("not-a-layout"))).rejects.toBeInstanceOf(
+        WorkspaceApplyError,
       );
-
-      await applyWorkspace(server, workspace);
       await drain(server, "once", marker);
-      await applyWorkspace(server, workspace);
-      await drain(server, "once", marker);
+      expect(ranCount(await readMarker(marker))).toBe(1);
 
-      // The pane survived the second apply, so its command was not sent again.
+      await applyWorkspace(server, workspace("even-horizontal"));
+      await drain(server, "once", marker);
       expect(ranCount(await readMarker(marker))).toBe(1);
     });
   }, 90_000);

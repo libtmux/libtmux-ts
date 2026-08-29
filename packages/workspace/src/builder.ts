@@ -310,8 +310,8 @@ async function applyWindow(
     }
   }
 
-  // Layout applies after the pane count settles; tmux rejects a layout that
-  // does not match the number of panes in the window.
+  // Layout requires the final pane count and stays last so its failure cannot
+  // strand new panes before create-only command delivery.
   if (desired.layout !== undefined) await current.selectLayout(desired.layout);
 }
 
