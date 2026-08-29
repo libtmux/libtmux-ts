@@ -544,6 +544,31 @@ export interface TmuxWindowPaneChangedEvent {
   readonly windowId: WindowId;
 }
 
+/**
+ * A subscribed format expanded to a new value.
+ *
+ * tmux evaluates a subscription at most once per second and reports only when
+ * the value differs from the last report for that object; the first evaluation
+ * always reports. `windowId`, `windowIndex` and `paneId` are the object the
+ * value was expanded against, and are absent for a session-scope subscription.
+ *
+ * The value is written raw, so a format expanding to a newline arrives as
+ * further lines this parser cannot attribute. Keep a subscribed format on one
+ * line.
+ */
+export interface TmuxSubscriptionEvent {
+  readonly kind: "subscription-changed";
+  /** The name given when subscribing. */
+  readonly name: string;
+  readonly paneId?: PaneId;
+  readonly sessionId: SessionId;
+  /** The expanded format. Empty when the format expanded to nothing. */
+  readonly value: string;
+  readonly windowId?: WindowId;
+  /** The window's index within the session. */
+  readonly windowIndex?: number;
+}
+
 /** A window's layout changed. */
 export interface TmuxLayoutChangeEvent {
   readonly flags: string;
@@ -668,6 +693,7 @@ export type TmuxEvent =
   | TmuxSessionEvent
   | TmuxSessionWindowChangedEvent
   | TmuxSessionsChangedEvent
+  | TmuxSubscriptionEvent
   | TmuxUnknownEvent
   | TmuxWindowLifecycleEvent
   | TmuxWindowPaneChangedEvent

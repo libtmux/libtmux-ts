@@ -1,4 +1,4 @@
-import type { TmuxEvent } from "../../types.js";
+import type { TmuxEvent, TmuxSubscriptionEvent } from "../../types.js";
 import type { PaneId } from "../../common.js";
 import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
 
@@ -117,10 +117,11 @@ function parsedId<Id extends string>(
   return isId(value) ? value : undefined;
 }
 
-function parseAge(value: string): number | undefined {
+/** A field tmux writes as an unsigned decimal: an age in ms, a window index. */
+function parseUnsigned(value: string): number | undefined {
   if (!/^\d+$/u.test(value)) return undefined;
-  const age = Number(value);
-  return Number.isSafeInteger(age) ? age : undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 /**
@@ -133,6 +134,41 @@ function parseGuard(rest: string): { fromClient: boolean; guard: GuardIdentity }
   const [time, number, flags] = rest.split(" ");
   if (time === undefined || number === undefined || flags === undefined) return undefined;
   return { fromClient: flags === "1", guard: { number, time } };
+}
+
+/**
+ * Parse the body of `%subscription-changed`.
+ *
+ * The fields between the name and the lone `:` are reserved, so the value is
+ * taken from the first ` : ` rather than by counting them. tmux writes the
+ * value raw and it may itself contain ` : `.
+ */
+function parseSubscription(rest: string): TmuxSubscriptionEvent | undefined {
+  const separator = rest.indexOf(" : ");
+  if (separator === -1) return undefined;
+  const [name, sessionId, windowId, windowIndex, paneId] = splitArguments(
+    rest.slice(0, separator),
+    5,
+  );
+  if (name === undefined || sessionId === undefined) return undefined;
+  const parsedSessionId = parsedId(isSessionId, sessionId);
+  if (parsedSessionId === undefined) return undefined;
+  // A dash stands for a field this subscription's scope does not have.
+  const parsedWindowId =
+    windowId === undefined || windowId === "-" ? undefined : parsedId(isWindowId, windowId);
+  const parsedPaneId =
+    paneId === undefined || paneId === "-" ? undefined : parsedId(isPaneId, paneId);
+  const parsedIndex =
+    windowIndex === undefined || windowIndex === "-" ? undefined : parseUnsigned(windowIndex);
+  return {
+    kind: "subscription-changed",
+    name,
+    ...(parsedPaneId === undefined ? {} : { paneId: parsedPaneId }),
+    sessionId: parsedSessionId,
+    value: rest.slice(separator + 3),
+    ...(parsedWindowId === undefined ? {} : { windowId: parsedWindowId }),
+    ...(parsedIndex === undefined ? {} : { windowIndex: parsedIndex }),
+  };
 }
 
 function splitArguments(rest: string, limit: number): readonly string[] {
@@ -199,7 +235,7 @@ export function parseControlLine(
       const markerEnd = ageEnd === -1 ? -1 : line.indexOf(0x20, ageEnd + 1);
       if (paneId === undefined || age === undefined || marker !== ":" || markerEnd === -1) break;
       const parsedPaneId = parsedId(isPaneId, paneId);
-      const parsedAge = parseAge(age);
+      const parsedAge = parseUnsigned(age);
       if (parsedPaneId === undefined || parsedAge === undefined) break;
       return {
         age: parsedAge,
@@ -285,6 +321,11 @@ export function parseControlLine(
       const paneId = parsedId(isPaneId, rest);
       if (paneId === undefined) break;
       return { kind: name, paneId };
+    }
+    case "subscription-changed": {
+      const parsed = parseSubscription(rest);
+      if (parsed === undefined) break;
+      return parsed;
     }
     case "config-error":
     case "message":

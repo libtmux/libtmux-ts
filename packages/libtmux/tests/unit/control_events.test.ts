@@ -19,6 +19,54 @@ function event(line: string): TmuxEvent {
 }
 
 describe("control-mode line parsing", () => {
+  /**
+   * The three shapes tmux emits, from control.c 872, 954 and 1034: a session
+   * subscription carries dashes where a window and pane would be, a window one
+   * carries the window and its index, and a pane one carries all three.
+   */
+  test("reads a subscription report at each scope", () => {
+    expect(event("%subscription-changed clock $0 - - - : 12:30")).toEqual({
+      kind: "subscription-changed",
+      name: "clock",
+      sessionId: parseSessionId("$0"),
+      value: "12:30",
+    });
+    expect(event("%subscription-changed title $0 @3 1 - : editor")).toEqual({
+      kind: "subscription-changed",
+      name: "title",
+      sessionId: parseSessionId("$0"),
+      value: "editor",
+      windowId: parseWindowId("@3"),
+      windowIndex: 1,
+    });
+    expect(event("%subscription-changed cmd $0 @3 1 %7 : bash")).toEqual({
+      kind: "subscription-changed",
+      name: "cmd",
+      paneId: parsePaneId("%7"),
+      sessionId: parseSessionId("$0"),
+      value: "bash",
+      windowId: parseWindowId("@3"),
+      windowIndex: 1,
+    });
+  });
+
+  test("takes a subscription value from the first separator and keeps the rest", () => {
+    // The fields before the lone `:` are reserved, and the value is raw, so it
+    // may hold the separator itself. Counting fields instead of finding the
+    // separator truncates any format expanding to a path or a timestamp.
+    expect(event("%subscription-changed t $0 - - - : 12 : 30 : 00")).toMatchObject({
+      value: "12 : 30 : 00",
+    });
+    expect(event("%subscription-changed t $0 - - - : ")).toMatchObject({ value: "" });
+  });
+
+  test("keeps an unparseable subscription report as an unknown line", () => {
+    // Forward compatibility: a report with no separator is a shape this
+    // release does not know, not a reason to drop the line.
+    expect(event("%subscription-changed t $0 - - -")).toMatchObject({ kind: "unknown" });
+    expect(event("%subscription-changed t @3 - - - : v")).toMatchObject({ kind: "unknown" });
+  });
+
   test("ignores lines that are not notifications", () => {
     expect(parse("")).toBeUndefined();
     expect(parse("plain command output")).toBeUndefined();
