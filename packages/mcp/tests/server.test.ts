@@ -408,7 +408,11 @@ describe("running commands", () => {
       const exercise = async (client: Client): Promise<void> => {
         const paneId = await shellPaneId(client);
         await client.callTool({
-          arguments: { command: "sleep 2", paneId, timeoutMs: 1_000 },
+          arguments: { name: "late", text: "late" },
+          name: "load_buffer",
+        });
+        await client.callTool({
+          arguments: { command: "sleep 4", paneId, timeoutMs: 1_000 },
           name: "run_command",
         });
         const refused = await client.callTool({
@@ -423,15 +427,16 @@ describe("running commands", () => {
             [
               ["send_keys", { keys: "C-c", paneId }],
               ["paste_text", { paneId, text: "late" }],
+              ["paste_buffer", { name: "late", paneId }],
             ] as const
           ).map(async ([name, arguments_]) => {
             const write = await client.callTool({ arguments: arguments_, name });
-            expect((write as { isError?: boolean }).isError).toBe(true);
+            expect((write as { isError?: boolean }).isError, name).toBe(true);
             expect(toolText(write)).toContain("sleep");
           }),
         );
 
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        await new Promise((resolve) => setTimeout(resolve, 3_500));
         const available = structured<{ outcome: string }>(
           await client.callTool({
             arguments: { command: "true", paneId, timeoutMs: 1_000 },
@@ -1703,6 +1708,8 @@ describe("staying out of the way", () => {
         // send_keys types.
         for (const name of [
           "send_keys",
+          "paste_text",
+          "paste_buffer",
           "run_command",
           "new_session",
           "new_window",

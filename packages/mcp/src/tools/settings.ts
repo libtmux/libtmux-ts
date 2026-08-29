@@ -21,6 +21,7 @@ import {
   requireWritablePane,
   type ToolContext,
 } from "../context.js";
+import { activeFramedCommand } from "../command.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { fail, ok, tailBytes, tailLines } from "../results.js";
@@ -489,7 +490,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "paste_buffer",
     {
-      annotations: MUTATING,
+      annotations: OPEN_WORLD,
       description: "Paste a named buffer into a pane.",
       inputSchema: {
         force: z
@@ -507,6 +508,13 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
+      const active = activeFramedCommand(context, paneId);
+      if (active !== undefined && force !== true) {
+        return fail({
+          hint: "Wait for that command to finish, or pass force to accept interleaved input.",
+          reason: `Refusing to paste into ${paneId}: run_command ${active} is still active.`,
+        });
+      }
       await pane.pasteBuffer(name);
       return ok({ name, paneId }, `Pasted buffer ${name} into ${paneId}.`);
     },

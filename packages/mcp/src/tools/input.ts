@@ -10,7 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
-import { MUTATING, offers, OPEN_WORLD } from "../register.js";
+import { offers, OPEN_WORLD } from "../register.js";
 import { fail, ok, renderOutput, tailLines } from "../results.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
@@ -102,7 +102,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "paste_text",
     {
-      annotations: MUTATING,
+      annotations: OPEN_WORLD,
       description:
         "Put text into a pane without tmux interpreting any of it as key names. " +
         "Use for content — a password, a code block, anything with characters a " +
