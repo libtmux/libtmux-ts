@@ -20,22 +20,22 @@ Part of [libtmux for Bun and TypeScript](../../README.md). Built on
 ## Install
 
 ```console
-$ bun add @libtmux/workspace
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i @libtmux/workspace
+$ npm i --save-exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ pnpm add @libtmux/workspace
+$ pnpm add --save-exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ yarn add @libtmux/workspace
+$ yarn add --exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 </details>
@@ -65,6 +65,15 @@ await applyWorkspace(server, {
 ```
 
 `applyWorkspace` resolves to the `Session` it built or converged.
+
+Commands use `create-only` policy by default: `shell_command` and
+`shell_command_before` run only in panes this apply created. Pass
+`{ commands: "always" }` only for commands that are safe to repeat. This
+package converges tmux topology; it does not monitor or restart processes.
+
+Options named in the workspace are set on every apply. Removing an option from
+the file does not unset it because tmux does not record which current value the
+workspace owns.
 
 If tmux rejects a later operation, `applyWorkspace` throws
 `WorkspaceApplyError`. Its frozen `completed` milestones name the high-level
@@ -116,6 +125,11 @@ a session this package creates is stamped with a tmux user option, and surplus
 windows and panes are removed only from a session carrying that stamp. Against
 one it merely found, applying converges additively and leaves the rest alone.
 
+Pruning follows tmux's sharing model. An independently linked surplus window is
+unlinked only from this session. A grouped session shares one window list, so
+its surplus windows are retained. Surplus panes are also retained when their
+window has another placement because killing a pane changes every placement.
+
 Ask before applying, which is the question a converging tool cannot answer
 afterwards:
 
@@ -125,9 +139,15 @@ import { planWorkspace } from "@libtmux/workspace";
 const desired = { session_name: "api", windows: [{ panes: ["vim"] }] };
 const plan = await planWorkspace(server, desired);
 plan.owned; // false for a session this workspace did not create
-plan.killsWindows; // what applying would remove — empty unless it owns them
-plan.retains; // surplus it will leave alone, and why the file did not win
+plan.removesWindows; // ID-keyed kill or unlink actions
+plan.removesPanes; // exact pane IDs, grouped by their window placement
+plan.renamesWindows; // an array, so duplicate current names stay distinct
+plan.retains; // surplus plus the policy or sharing reason
 ```
+
+Plan entries are frozen data carrying tmux IDs, indexes, positions, and names.
+The plan is advisory: acquire a fresh one after any delay or failed apply
+because tmux topology may have changed.
 
 `prune` decides the rest. `"owned"` is the default above; `"never"` never
 removes anything; `"always"` is how you say a session somebody else made is now
@@ -143,10 +163,10 @@ await applyWorkspace(
 
 ## A worked example
 
-[`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) builds a session from a
-declared layout — a window per concern, panes already running what they are
-for, an environment every process inherits, and a teardown that treats "already
-gone" as an answer. The integration suite runs it against a real tmux server.
+[`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) calls
+`applyWorkspace` with a declared layout, inspects the resulting session, and
+tears it down while treating "already gone" as an answer. The integration suite
+runs it against a real tmux server.
 
 ## License
 
