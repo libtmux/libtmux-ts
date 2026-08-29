@@ -34,6 +34,7 @@ const DEFAULT_MAX_PENDING_COMMANDS = 1024;
 const DEFAULT_MAX_COMMAND_BYTES = 64 * 1024 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
+const MAX_TIMER_MS = 2_147_483_647;
 /** How long a closing process is given to leave before it is killed outright. */
 const TERMINATION_GRACE_MS = 2_000;
 
@@ -300,6 +301,7 @@ export class ControlConnection implements CommandTransport {
     const maxPendingCommands = options.maxPendingCommands ?? DEFAULT_MAX_PENDING_COMMANDS;
     const maxCommandBytes = options.maxCommandBytes ?? DEFAULT_MAX_COMMAND_BYTES;
     const pauseAfterSeconds = options.pauseAfterSeconds;
+    const reconnect = options.reconnect;
     for (const [name, value] of [
       ["maxPendingCommands", maxPendingCommands],
       ["maxCommandBytes", maxCommandBytes],
@@ -309,6 +311,18 @@ export class ControlConnection implements CommandTransport {
     ] as const) {
       if (!Number.isInteger(value) || value < 1) {
         throw new TypeError(`${name} must be a positive integer`);
+      }
+    }
+    if (reconnect !== undefined) {
+      if (!Number.isSafeInteger(reconnect.attempts) || reconnect.attempts < 1) {
+        throw new TypeError("reconnect.attempts must be a positive safe integer");
+      }
+      const delayMs = reconnect.delayMs ?? 50;
+      if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > MAX_TIMER_MS) {
+        throw new TypeError("reconnect.delayMs must be a non-negative timer-safe integer");
+      }
+      if (delayMs > 0 && reconnect.attempts > Math.floor(MAX_TIMER_MS / delayMs)) {
+        throw new TypeError("reconnect.delayMs exceeds the timer range across its attempts");
       }
     }
     this.#maxPendingCommands = maxPendingCommands;
@@ -336,7 +350,13 @@ export class ControlConnection implements CommandTransport {
     this.#argv = Object.freeze(argv);
     this.#executable = connection.executable;
     this.#environment = connection.environment;
-    this.#reconnect = options.reconnect;
+    this.#reconnect =
+      reconnect === undefined
+        ? undefined
+        : Object.freeze({
+            attempts: reconnect.attempts,
+            ...(reconnect.delayMs === undefined ? {} : { delayMs: reconnect.delayMs }),
+          });
     this.#children = new ControlChildLifecycle(spawnChild ?? (() => this.#spawn()));
 
     this.#bufferSize = bufferSize;

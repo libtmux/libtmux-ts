@@ -670,7 +670,12 @@ export interface ConnectionOptions {
    * tmux has no idea whether it already ran one, and re-sending `new-window`
    * after it succeeded creates a second window.
    */
-  readonly reconnect?: { readonly attempts: number; readonly delayMs?: number };
+  readonly reconnect?: {
+    /** Maximum retries per outage. A positive safe integer. */
+    readonly attempts: number;
+    /** Nonnegative base milliseconds; retry N waits N times this value. Defaults to 50. */
+    readonly delayMs?: number;
+  };
   /** Session to attach to. Defaults to whichever tmux considers most recent. */
   readonly target?: string;
 }

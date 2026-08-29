@@ -80,13 +80,16 @@ describe("ControlConnection child ownership", () => {
     const replacement = new FakeChild(102);
     const children = [old, replacement];
     const fallback = new RecordingTransport();
+    const reconnect = { attempts: 1, delayMs: 1 };
     const control = new ControlConnection(
       connection(),
-      { pauseAfterSeconds: 3, reconnect: { attempts: 1, delayMs: 1 } },
+      { pauseAfterSeconds: 3, reconnect },
       false,
       fallback,
       () => takeChild(children),
     );
+    reconnect.attempts = 0;
+    reconnect.delayMs = 0;
     const reconnectingEvents = control.subscribe();
     const reconnectedEvents = control.subscribe();
     const staleEvents = control.subscribe();
@@ -188,5 +191,27 @@ describe("ControlConnection child ownership", () => {
     child.exitCode = 0;
     child.emit("close", 0);
     await Promise.all([first, second]);
+  });
+
+  test("rejects invalid reconnect timing before spawning", () => {
+    for (const [field, reconnect] of [
+      ["attempts", { attempts: 0 }],
+      ["attempts", { attempts: Number.NaN }],
+      ["attempts", { attempts: 1.5 }],
+      ["delayMs", { attempts: 1, delayMs: -1 }],
+      ["delayMs", { attempts: 1, delayMs: Number.POSITIVE_INFINITY }],
+      ["delayMs", { attempts: 1, delayMs: 1.5 }],
+      ["delayMs", { attempts: 2, delayMs: 1_073_741_824 }],
+    ] as const) {
+      let spawns = 0;
+      expect(
+        () =>
+          new ControlConnection(connection(), { reconnect }, false, undefined, () => {
+            spawns += 1;
+            return new FakeChild(106);
+          }),
+      ).toThrow(field);
+      expect(spawns).toBe(0);
+    }
   });
 });
