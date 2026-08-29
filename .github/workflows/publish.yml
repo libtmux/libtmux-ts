@@ -6,11 +6,6 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      dry-run:
-        description: "Pack and check without publishing"
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -49,28 +44,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
 
-      - name: Check the npm CLI is new enough for trusted publishing
-        run: |
-          npm --version
-          node --version
-
       - run: bun install --frozen-lockfile
-
-      - name: Refuse a tag that disagrees with the manifests
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "${{ github.event_name }}" != "push" ]; then
-            echo "not a tag run; skipping the version check"
-            exit 0
-          fi
-          for package in libtmux mcp workspace; do
-            version="$(jq -r .version "packages/$package/package.json")"
-            if [ "$version" != "$tag" ]; then
-              echo "::error::packages/$package is $version but the tag says $tag"
-              exit 1
-            fi
-          done
-          echo "every package is $tag"
 
       # `cd`, not `bun --cwd`: that flag does not exist, and bun answers an
       # unknown flag with its usage text and exit code 0 — so every step passed
@@ -82,87 +56,5 @@ jobs:
             ( cd "packages/$package" && bun run test:package && bun run test:install )
           done
 
-      - name: Refuse a tarball with no build output
-        run: |
-          for package in libtmux mcp workspace; do
-            ( cd "packages/$package"
-              npm pack --dry-run --json > /tmp/pack.json
-              count="$(jq -r '.[0].files | map(select(.path | startswith("dist/"))) | length' /tmp/pack.json)"
-              name="$(jq -r .name package.json)"
-              if [ "$count" -lt 1 ]; then
-                echo "::error::$name would ship $count files from dist"
-                exit 1
-              fi
-              echo "$name ships $count files from dist"
-            )
-          done
-
-      # Each package is skipped when its version is already on the registry, so
-      # releasing a version that only changed one of them is not an error, and
-      # a re-run of a partly-finished release completes it rather than failing.
-      - name: Publish
-        env:
-          DRY_RUN: ${{ inputs.dry-run }}
-        run: |
-          dry_run="$DRY_RUN"
-          # `latest` below is stated rather than inherited, and it is only
-          # correct while every version is a prerelease. The first stable
-          # release would publish under `latest` too — which is right — but a
-          # prerelease cut *after* it would then move `latest` backwards onto
-          # an alpha, which is the one thing this must not do. Refuse rather
-          # than guess: whoever cuts that release picks the tag deliberately.
-          for package in libtmux mcp workspace; do
-            version="$(jq -r .version "packages/$package/package.json")"
-            case "$version" in
-              *-*) ;;
-              *)
-                echo "::error::$package is $version, which is not a prerelease. The publish step tags everything latest; decide what a stable release and the prereleases after it should be tagged before releasing one."
-                exit 1
-                ;;
-            esac
-          done
-          for package in libtmux mcp workspace; do
-            name="$(jq -r .name "packages/$package/package.json")"
-            version="$(jq -r .version "packages/$package/package.json")"
-            # A trusted publisher is configured on an existing package, so one
-            # that has never been published cannot authenticate here. Say so
-            # rather than failing the release of everything beside it.
-            #
-            # Only a 404 means that. `npm view` also exits nonzero when the
-            # registry is unreachable, rate-limited, or having an outage, and
-            # treating those the same way would skip a package and report the
-            # release a success having shipped nothing — the same shape as the
-            # `bun --cwd` bug above, where every step passed while doing
-            # nothing. Anything that is not a 404 stops the release.
-            if ! view_error="$(npm view "$name" version 2>&1)"; then
-              if printf '%s' "$view_error" | grep -q 'E404'; then
-                echo "::notice::$name has never been published. Publish it once locally, configure its trusted publisher, and the next tag will carry it."
-                continue
-              fi
-              echo "::error::could not ask the registry about $name: $view_error"
-              exit 1
-            fi
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "$name@$version is already published; skipping"
-              continue
-            fi
-            if [ "$dry_run" = 'true' ]; then
-              echo "would publish $name@$version"
-              ( cd "packages/$package" && npm publish --dry-run --tag latest )
-              continue
-            fi
-            echo "publishing $name@$version"
-            # Always `latest`, stated rather than inherited: every version is a
-            # prerelease for now, so the newest alpha is the one `npm i` should
-            # fetch, and holding the tag back would only serve an older one.
-            #
-            # One tag, and deliberately so. An `alpha` tag beside it was tried
-            # and could not be written: trusted publishing mints its credential
-            # for `npm publish` alone, so `npm dist-tag add` falls back to the
-            # placeholder `NODE_AUTH_TOKEN` that setup-node writes and fails
-            # E401. Making it work needs a real token in the repository, which
-            # is the one thing publishing this way exists to avoid — and the
-            # tag bought nothing, because `latest` already points at the newest
-            # prerelease and every page here says the release is alpha.
-            ( cd "packages/$package" && npm publish --tag latest )
-          done
+      - name: Coordinate release
+        run: bun scripts/publish-release.ts

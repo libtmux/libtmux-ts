@@ -291,18 +291,22 @@ letting a checkout discover it as ENOENT from a file nobody mentioned.
 ## Releasing
 
 A release is a tag, and the tag is refused unless every manifest agrees with
-it. Everything ships as a prerelease under `latest` and no other dist-tag:
-while every version is an alpha, the newest one is what `npm i` should fetch,
-and `latest` is stated rather than inherited so it cannot lag. A second `alpha`
-tag was tried and removed — trusted publishing authenticates `npm publish` and
-nothing else, so writing one needs a token in the repository, which is what
-publishing this way exists to avoid.
+it. A stable release uses `latest`. A prerelease uses `latest` until a stable
+version has held that tag; later prereleases use their first identifier, such
+as `alpha` in `1.1.0-alpha.1`. Manual workflow runs are dry-run only.
 
-That reasoning holds only while every version is a prerelease, so the publish
-workflow refuses a version that is not one rather than tagging it `latest` by
-habit. The first stable release wants `latest`; a prerelease cut after it does
-not, and moving `latest` backwards onto an alpha is the failure the check
-exists to prevent. Whoever cuts that release decides the tag.
+The release coordinator builds all three npm tarballs and reads every package,
+target version, integrity digest, and dist-tag before publishing any of them.
+It publishes those exact tarballs, then checks all three registry artifacts and
+tags again. A partial rerun skips an existing version only when its integrity
+and intended tag match. A different artifact, a missing established package,
+or any registry error other than a target-version 404 stops the release.
+
+npm cannot publish three packages as one transaction. A failure can therefore
+leave a prefix published for the next run to verify and resume. Trusted
+publishing authenticates `npm publish`, not `npm dist-tag add`, so a matching
+artifact with the wrong tag also stops with a manual-repair diagnostic instead
+of adding a long-lived token to the workflow.
 
 ### Stable release gate
 
@@ -318,10 +322,8 @@ exists to prevent. Whoever cuts that release decides the tag.
 - one release candidate has spent 30 days in production-like use without a new
   P0 or P1 finding.
 
-The packages stop sharing a release number after `0.1.0`. Core changes then
-advance `libtmux`; MCP and workspace changes advance their own packages and
-declare the `libtmux` range they were tested against. A consumer package does
-not force an unrelated core major release.
+The three packages keep one release number. A tag names the tested state of the
+library, MCP server, and workspace package together.
 
 `test:package` reads the tarball and `test:install` uses it — a clean
 directory, `npm install` of the packed file, and a Node 22 process that imports

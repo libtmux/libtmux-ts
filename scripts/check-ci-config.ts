@@ -200,6 +200,7 @@ for (const workflow of workflows) {
 const publishPath = join(repositoryRoot, ".github/workflows/publish.yml");
 const publishSource = await Bun.file(publishPath).text();
 const publishDocument = Bun.YAML.parse(publishSource) as {
+  readonly on?: { readonly workflow_dispatch?: unknown };
   readonly jobs?: { readonly publish?: { readonly steps?: unknown } };
 };
 const rawPublishSteps = publishDocument.jobs?.publish?.steps;
@@ -236,6 +237,25 @@ if (
 ) {
   failures.push(
     ".github/workflows/publish.yml: must run test:install after test:package for libtmux, mcp, and workspace",
+  );
+}
+
+const dispatch = publishDocument.on?.workflow_dispatch;
+if (
+  typeof dispatch === "object" &&
+  dispatch !== null &&
+  "inputs" in dispatch &&
+  Object.keys((dispatch as { readonly inputs?: unknown }).inputs ?? {}).length > 0
+) {
+  failures.push(
+    ".github/workflows/publish.yml: workflow_dispatch must not expose a live-publish input",
+  );
+}
+
+const releaseCoordinator = publishSteps.find((step) => step.name === "Coordinate release")?.run;
+if (releaseCoordinator !== "bun scripts/publish-release.ts") {
+  failures.push(
+    ".github/workflows/publish.yml: must delegate dry-run and tag publishing to scripts/publish-release.ts",
   );
 }
 
