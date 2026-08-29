@@ -55,6 +55,60 @@ export interface ApplyWorkspaceOptions {
   readonly prune?: PrunePolicy;
 }
 
+/** A high-level apply operation that finished before a later one failed. */
+export type WorkspaceApplyMilestone =
+  | { readonly kind: "session"; readonly status: "created" | "existing" }
+  | { readonly kind: "session-claimed" }
+  | { readonly kind: "workspace-option"; readonly name: string }
+  | { readonly index: number; readonly kind: "window" }
+  | { readonly kind: "windows-reconciled" };
+
+/** The high-level operation an apply was attempting when it failed. */
+export type WorkspaceApplyStage =
+  | {
+      readonly action:
+        | "claim"
+        | "connect"
+        | "create"
+        | "lookup"
+        | "ownership"
+        | "result"
+        | "snapshot";
+      readonly kind: "session";
+    }
+  | { readonly kind: "workspace-option"; readonly name: string }
+  | { readonly index: number; readonly kind: "window" }
+  | { readonly kind: "windows-reconcile" }
+  | { readonly kind: "focus" };
+
+/**
+ * Applying stopped after tmux may already have changed.
+ *
+ * `completed` records whole high-level milestones. The failed stage itself may
+ * be partial because tmux command lists are not transactions, so callers must
+ * acquire a fresh plan rather than infer the remaining topology from either
+ * list.
+ */
+export class WorkspaceApplyError extends Error {
+  readonly completed: readonly WorkspaceApplyMilestone[];
+  readonly failed: WorkspaceApplyStage;
+  readonly requiresReplan = true;
+
+  constructor(
+    workspace: string,
+    completed: readonly WorkspaceApplyMilestone[],
+    failed: WorkspaceApplyStage,
+    cause: unknown,
+  ) {
+    super(`workspace ${workspace} failed during ${failed.kind}`, { cause });
+    this.name = "WorkspaceApplyError";
+    this.completed = Object.freeze(
+      completed.map((milestone) => Object.freeze({ ...milestone } as WorkspaceApplyMilestone)),
+    );
+    this.failed = Object.freeze({ ...failed } as WorkspaceApplyStage);
+  }
+}
+
 /** What an apply would do, without doing it. */
 export interface WorkspacePlan {
   /** Windows the apply would create, by the position they would take. */
@@ -102,58 +156,85 @@ export async function applyWorkspace(
   workspace: Workspace,
   options: ApplyWorkspaceOptions = {},
 ): Promise<Session> {
-  const commands = options.commands ?? "create-only";
-  const prune = options.prune ?? "owned";
-  const existing = await runningSession(server, workspace.session_name);
-  const created = existing ?? (await createSession(server, workspace));
-  // Stamped on the session this apply created, and read back on every later
-  // one. A name is a lookup, not a claim: without the mark, converging a
-  // hand-made session of the same name would kill windows nobody described.
-  const owned =
-    existing === undefined || (await ownedByWorkspace(existing, workspace.session_name));
-  if (existing === undefined) await claimSession(created, workspace.session_name);
-  const pruning = mayPrune(prune, owned);
+  const completed: WorkspaceApplyMilestone[] = [];
+  let failed: WorkspaceApplyStage = { action: "lookup", kind: "session" };
+  try {
+    const commands = options.commands ?? "create-only";
+    const prune = options.prune ?? "owned";
+    const existing = await runningSession(server, workspace.session_name);
+    failed = { action: "create", kind: "session" };
+    const created = existing ?? (await createSession(server, workspace));
+    completed.push({ kind: "session", status: existing === undefined ? "created" : "existing" });
 
-  // Reconciling re-reads the session after every change, so it runs over one
-  // control connection rather than a process per read. The session has to
-  // exist first: a control client attaches, and there is nothing to attach to
-  // on an empty server.
-  //
-  // A server built with an engine gets no connection: control mode is a
-  // process this one spawns, and an engine means tmux is somewhere it cannot.
-  // The reads are the same either way, so the apply proceeds and pays a
-  // command each rather than reconciling against whichever local tmux answers.
-  await using live =
-    server.engine === undefined ? await server.connect({ target: created.id }) : undefined;
-  const reader = live ?? server;
-  let session = (await reader.snapshot()).sessions.one({ id: created.id });
+    // Stamped on the session this apply created, and read back on every later
+    // one. A name is a lookup, not a claim: without the mark, converging a
+    // hand-made session of the same name would kill windows nobody described.
+    failed = { action: "ownership", kind: "session" };
+    const owned =
+      existing === undefined || (await ownedByWorkspace(existing, workspace.session_name));
+    if (existing === undefined) {
+      failed = { action: "claim", kind: "session" };
+      await claimSession(created, workspace.session_name);
+      completed.push({ kind: "session-claimed" });
+    }
+    const pruning = mayPrune(prune, owned);
 
-  for (const [option, value] of Object.entries(workspace.options ?? {})) {
-    // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
-    await session.setOption(option, optionValue(value));
+    // Reconciling re-reads the session after every change, so it runs over one
+    // control connection rather than a process per read. The session has to
+    // exist first: a control client attaches, and there is nothing to attach to
+    // on an empty server.
+    //
+    // A server built with an engine gets no connection: control mode is a
+    // process this one spawns, and an engine means tmux is somewhere it cannot.
+    // The reads are the same either way, so the apply proceeds and pays a
+    // command each rather than reconciling against whichever local tmux answers.
+    failed = { action: "snapshot", kind: "session" };
+    const usesConnection = server.engine === undefined;
+    if (usesConnection) failed = { action: "connect", kind: "session" };
+    await using live = usesConnection ? await server.connect({ target: created.id }) : undefined;
+    failed = { action: "snapshot", kind: "session" };
+    const reader = live ?? server;
+    let session = (await reader.snapshot()).sessions.one({ id: created.id });
+
+    for (const [option, value] of Object.entries(workspace.options ?? {})) {
+      failed = { kind: "workspace-option", name: option };
+      // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
+      await session.setOption(option, optionValue(value));
+      completed.push({ kind: "workspace-option", name: option });
+    }
+
+    for (const [index, desired] of workspace.windows.entries()) {
+      failed = { index, kind: "window" };
+      // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
+      session = await session.refreshed();
+      // A session created for this workspace had its first window made by tmux,
+      // so that window is this apply's too, and its panes take the commands.
+      const born = existing === undefined && index === 0;
+      // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
+      const placed = await windowAt(session, index, desired, workspace);
+      // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
+      await applyWindow(placed.window, desired, workspace, {
+        commands,
+        pruning,
+        windowIsNew: placed.created || born,
+      });
+      completed.push({ index, kind: "window" });
+    }
+
+    if (pruning) {
+      failed = { kind: "windows-reconcile" };
+      session = await pruneWindows(session, workspace.windows.length);
+      completed.push({ kind: "windows-reconciled" });
+    }
+    failed = { kind: "focus" };
+    await focusRequested(session, workspace);
+    // The returned handle outlives the connection, so hand back one bound to the
+    // caller's server rather than one that stops working when this scope exits.
+    failed = { action: "result", kind: "session" };
+    return (await server.snapshot()).sessions.one({ id: created.id });
+  } catch (error) {
+    throw new WorkspaceApplyError(workspace.session_name, completed, failed, error);
   }
-
-  for (const [index, desired] of workspace.windows.entries()) {
-    // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
-    session = await session.refreshed();
-    // A session created for this workspace had its first window made by tmux,
-    // so that window is this apply's too, and its panes take the commands.
-    const born = existing === undefined && index === 0;
-    // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
-    const placed = await windowAt(session, index, desired, workspace);
-    // eslint-disable-next-line no-await-in-loop -- Window order is observable, so creation is sequential.
-    await applyWindow(placed.window, desired, workspace, {
-      commands,
-      pruning,
-      windowIsNew: placed.created || born,
-    });
-  }
-
-  if (pruning) session = await pruneWindows(session, workspace.windows.length);
-  await focusRequested(session, workspace);
-  // The returned handle outlives the connection, so hand back one bound to the
-  // caller's server rather than one that stops working when this scope exits.
-  return (await server.snapshot()).sessions.one({ id: created.id });
 }
 
 /**

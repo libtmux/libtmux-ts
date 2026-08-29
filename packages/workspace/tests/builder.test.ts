@@ -14,7 +14,7 @@ import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
 import { Server } from "libtmux/server";
 import { asSingleInvocation } from "libtmux/engine";
 import type { TmuxCommandRequest, TmuxCommandResult, TmuxEngine } from "libtmux/engine";
-import { applyWorkspace, planWorkspace } from "../src/builder.js";
+import { applyWorkspace, planWorkspace, WorkspaceApplyError } from "../src/builder.js";
 import { OWNERSHIP_OPTION } from "../src/ownership.js";
 import { parseWorkspaceYaml } from "../src/config.js";
 
@@ -261,6 +261,45 @@ windows:
       expect((await window.showOptions()).get("@window-boolean")).toBe("false");
     });
   });
+
+  test("reports completed milestones and the stage that failed", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const error = await applyWorkspace(
+        server,
+        parseWorkspaceYaml(`
+session_name: partial
+options:
+  "@completed": "yes"
+  not-a-real-option: "no"
+windows:
+  - window_name: main
+`),
+      ).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+
+      expect(error).toBeInstanceOf(WorkspaceApplyError);
+      if (!(error instanceof WorkspaceApplyError)) throw new Error("apply error lost its type");
+      expect(error).toMatchObject({
+        completed: [
+          { kind: "session", status: "created" },
+          { kind: "session-claimed" },
+          { kind: "workspace-option", name: "@completed" },
+        ],
+        failed: { kind: "workspace-option", name: "not-a-real-option" },
+        requiresReplan: true,
+      });
+      expect(error.cause).toBeInstanceOf(Error);
+      expect(Object.isFrozen(error.completed)).toBe(true);
+      expect(error.completed.every((step) => Object.isFrozen(step))).toBe(true);
+      expect(Object.isFrozen(error.failed)).toBe(true);
+
+      const session = (await server.snapshot()).sessions.one({ name: "partial" });
+      expect((await session.showOptions()).get("@completed")).toBe("yes");
+    });
+  }, 60_000);
 
   test("rejects a workspace missing its session name", () => {
     expect(() => parseWorkspaceYaml("windows: []")).toThrow();

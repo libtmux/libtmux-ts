@@ -66,6 +66,12 @@ await applyWorkspace(server, {
 
 `applyWorkspace` resolves to the `Session` it built or converged.
 
+If tmux rejects a later operation, `applyWorkspace` throws
+`WorkspaceApplyError`. Its frozen `completed` milestones name the high-level
+work that finished, `failed` names the stage that stopped, and `cause` retains
+the original error. `requiresReplan` is always true: a failed window or batch
+may be partial because tmux command lists are not transactions.
+
 ## The shape
 
 Config is [tmuxp](https://tmuxp.git-pull.com/)-shaped, so the field names are
