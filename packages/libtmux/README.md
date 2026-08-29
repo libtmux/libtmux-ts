@@ -1086,6 +1086,9 @@ await server.showHooks();
 await server.unsetHook("after-new-window");
 ```
 
+Typed option and hook methods treat names as literal data, including `#`. Use
+`cmd` when deliberately asking tmux to expand a computed name.
+
 Window and pane scopes report only what was set on them, never inherited
 values. `OptionScope` supplies the same lowercase scope values when a named
 constant is clearer than a string literal.

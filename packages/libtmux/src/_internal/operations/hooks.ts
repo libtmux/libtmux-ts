@@ -1,6 +1,6 @@
 import type { HookScope, SetHookOptions } from "../../types.js";
 import { HOOK_SCOPE_FLAG_MAP } from "../../constants.js";
-import { parseNameValueLine } from "./options.js";
+import { literalFormat, parseNameValueLine } from "./options.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
@@ -71,7 +71,7 @@ export async function setHook(
     "set-hook",
     ...(options.append === true ? ["-a"] : []),
     ...scopeArguments(scope, target),
-    name,
+    literalFormat(name),
     command,
   ]);
 }
@@ -83,5 +83,10 @@ export async function unsetHook(
   target: string | null | undefined,
   name: string,
 ): Promise<void> {
-  await runCommand(runtime, ["set-hook", "-u", ...scopeArguments(scope, target), name]);
+  await runCommand(runtime, [
+    "set-hook",
+    "-u",
+    ...scopeArguments(scope, target),
+    literalFormat(name),
+  ]);
 }

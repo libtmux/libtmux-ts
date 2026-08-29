@@ -111,6 +111,19 @@ describe("option reads", () => {
     });
   }, 30_000);
 
+  test("treats option names as literals when setting and unsetting", async () => {
+    await withServer(async (fixture) => {
+      const session = (await serverFor(fixture).snapshot()).sessions.one();
+      const name = "@literal-#{session_name}";
+
+      await session.setOption(name, "value");
+      expect((await session.showOptions()).get(name)).toBe("value");
+
+      await session.unsetOption(name);
+      expect((await session.showOptions()).has(name)).toBe(false);
+    });
+  }, 30_000);
+
   test("sets and unsets hooks at every tmux scope", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -141,6 +154,24 @@ describe("option reads", () => {
       expect((await window.showHooks()).has("window-renamed")).toBe(false);
       await pane.unsetHook("pane-title-changed");
       expect((await pane.showHooks()).has("pane-title-changed")).toBe(false);
+    });
+  }, 30_000);
+
+  test("does not expand formats into hook names when setting or unsetting", async () => {
+    await withServer(async (fixture) => {
+      const session = (await serverFor(fixture).snapshot()).sessions.one();
+      const name = "#{?1,after-new-window,after-kill-pane}";
+
+      await expect(session.setHook(name, "display-message redirected")).rejects.toThrow(
+        /invalid option/u,
+      );
+      expect((await session.showHooks()).has("after-new-window")).toBe(false);
+
+      await session.setHook("after-new-window", "display-message retained");
+      await expect(session.unsetHook(name)).rejects.toThrow(/invalid option/u);
+      expect((await session.showHooks()).get("after-new-window")).toEqual([
+        "display-message retained",
+      ]);
     });
   }, 30_000);
 

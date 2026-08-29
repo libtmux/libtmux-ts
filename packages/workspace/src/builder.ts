@@ -143,7 +143,7 @@ export async function applyWorkspace(
     for (const [option, value] of Object.entries(workspace.options ?? {})) {
       failed = { kind: "workspace-option", name: option };
       // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
-      await session.setOption(literalOptionName(option), optionValue(value));
+      await session.setOption(option, optionValue(value));
       completed.push({ kind: "workspace-option", name: option });
     }
 
@@ -205,11 +205,6 @@ export async function planWorkspace(
   return createWorkspacePlan(server, workspace, prune);
 }
 
-// Workspace keys are data; core option names retain tmux's format-capable surface.
-function literalOptionName(name: string): string {
-  return name.replaceAll("#", "##");
-}
-
 async function createSession(server: Server, workspace: Workspace): Promise<Session> {
   const directory = initialPaneStartDirectory(workspace);
   return server.newSession({
@@ -269,7 +264,7 @@ async function applyWindow(
 ): Promise<void> {
   for (const [option, value] of Object.entries(desired.options ?? {})) {
     // eslint-disable-next-line no-await-in-loop -- Later options may depend on earlier ones.
-    await window.setOption(literalOptionName(option), optionValue(value));
+    await window.setOption(option, optionValue(value));
   }
 
   const wanted = desired.panes.length === 0 ? 1 : desired.panes.length;

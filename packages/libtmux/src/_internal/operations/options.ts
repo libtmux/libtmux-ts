@@ -9,6 +9,11 @@ function scopeArguments(scope: OptionScope): readonly string[] {
   return flag === "" ? [] : [flag];
 }
 
+/** Keep caller-owned names literal in tmux arguments that always expand formats. */
+export function literalFormat(value: string): string {
+  return value.replaceAll("#", "##");
+}
+
 /** What `vis(3)` writes for a byte that cannot be printed, and its byte. */
 const CONTROL_ESCAPES: ReadonlyMap<string, string> = new Map([
   ["0", "\0"],
@@ -168,7 +173,7 @@ export async function setOption(
       ...(options.global === true ? ["-g"] : []),
       ...(options.append === true ? ["-a"] : []),
       ...(target == null ? [] : ["-t", target]),
-      name,
+      literalFormat(name),
       value,
     ],
     options,
@@ -191,7 +196,7 @@ export async function unsetOption(
       ...(options.global === true ? ["-g"] : []),
       "-u",
       ...(target == null ? [] : ["-t", target]),
-      name,
+      literalFormat(name),
     ],
     options,
   );
