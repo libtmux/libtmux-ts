@@ -1,4 +1,4 @@
-import { FORMAT_VALUE_TYPES, type FormatValueType } from "../../_generated/field_types.js";
+import { formatValueType } from "../../_generated/field_types.js";
 
 /**
  * Convert between the text tmux sends and the value it stands for.
@@ -16,7 +16,7 @@ const integer = /^-?\d+$/u;
 
 export function decodeFormatValue(token: string, value: string | null): DecodedValue {
   if (value === null) return null;
-  const type = FORMAT_VALUE_TYPES[token];
+  const type = formatValueType(token);
   // Empty means "not applicable" only for a typed field. `config_files` holds
   // `""` when tmux read no configuration, which is an answer.
   if (type === undefined) return value;
@@ -49,7 +49,7 @@ export function decodeFormatValue(token: string, value: string | null): DecodedV
  * row holds. A value already in wire form passes through unchanged.
  */
 export function encodeFormatValue(token: string, value: unknown): unknown {
-  const type: FormatValueType | undefined = FORMAT_VALUE_TYPES[token];
+  const type = formatValueType(token);
   if (type === undefined) return value;
   if (typeof value === "boolean") return value ? "1" : "0";
   if (typeof value === "number") {

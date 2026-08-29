@@ -151,7 +151,7 @@ export type DecodedFormatValue<Token extends FormatFieldName> = Token extends ke
       : Date
   : string;
 
-export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Object.freeze({
+export const FORMAT_VALUE_TYPES: Readonly<FormatValueTypes> = Object.freeze({
   active_window_index: "number",
   alternate_on: "boolean",
   alternate_saved_x: "number",
@@ -279,3 +279,8 @@ export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Obj
   window_zoomed_flag: "boolean",
   wrap_flag: "boolean",
 });
+
+/** Look up a typed field without widening the generated key set. */
+export function formatValueType(token: string): FormatValueType | undefined {
+  return FORMAT_VALUE_TYPES[token as keyof typeof FORMAT_VALUE_TYPES];
+}

@@ -765,9 +765,14 @@ function renderFieldTypesSource(types: ReadonlyMap<string, string>): string {
     "      : Date",
     "  : string;",
     "",
-    "export const FORMAT_VALUE_TYPES: Readonly<Record<string, FormatValueType>> = Object.freeze({",
+    "export const FORMAT_VALUE_TYPES: Readonly<FormatValueTypes> = Object.freeze({",
     ...entries.map(([token, type]) => `  ${token}: "${type}",`),
     "});",
+    "",
+    "/** Look up a typed field without widening the generated key set. */",
+    "export function formatValueType(token: string): FormatValueType | undefined {",
+    "  return FORMAT_VALUE_TYPES[token as keyof typeof FORMAT_VALUE_TYPES];",
+    "}",
     "",
   ].join("\n")}`;
 }
