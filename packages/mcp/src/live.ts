@@ -525,6 +525,7 @@ export class LiveHub {
    * a silent "nothing new".
    */
   #scheduleClose(sessionId: string, link: SessionLink, delayMs = this.#lingerMs): void {
+    if (this.#closed) return;
     if (link.listeners.size > 0) return;
     if (link.closeTimer !== undefined) return;
     link.closeTimer = setTimeout(() => {

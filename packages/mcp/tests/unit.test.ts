@@ -289,6 +289,22 @@ describe("live hub", () => {
     expect(closed.count).toBe(1);
   });
 
+  test("does not re-arm listener expiry after the hub closed", async () => {
+    const events = new FakeEventStream();
+    const closed = { count: 0 };
+    const hub = new LiveHub({ connect: async () => fakeConnection(events, closed) } as Server, {
+      lingerMs: 5,
+    });
+    const stop = await hub.listen("$1", () => undefined);
+
+    await hub.close();
+    const closedAtShutdown = closed.count;
+    stop?.();
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    expect(closed.count).toBe(closedAtShutdown);
+  });
+
   test("does not expire a tail while a reader is waiting", async () => {
     const events = new FakeEventStream();
     const hub = new LiveHub(

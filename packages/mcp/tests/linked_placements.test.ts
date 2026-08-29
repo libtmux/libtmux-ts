@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "libtmux/server";
@@ -81,10 +82,14 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
-async function withClient(fixture: TestServer, body: (client: Client) => Promise<void>) {
+async function withClient(
+  fixture: TestServer,
+  body: (client: Client) => Promise<void>,
+  options: { readonly live?: boolean } = {},
+): Promise<void> {
   const mcp = createTmuxMcpServer(serverFor(fixture), {
     environment: {
-      LIBTMUX_MCP_LIVE: "0",
+      LIBTMUX_MCP_LIVE: options.live === true ? "1" : "0",
       LIBTMUX_SAFETY: "destructive",
       TMUX: "",
       TMUX_PANE: "",
@@ -152,6 +157,89 @@ function expectedSharedPlacements(topology: SharedTopology): readonly string[] {
 }
 
 describe("linked and grouped placements", () => {
+  test("rebinds a pane subscription after its placement is unlinked", async () => {
+    await withServer(async (fixture) => {
+      const tmux = serverFor(fixture);
+      const initial = await tmux.snapshot();
+      const origin = initial.sessions.one({ name: fixture.sessionName });
+      const shared = origin.windows.one();
+      const paneId = shared.panes.one().id;
+      // MCP has no link/unlink tool, so the fixture creates the placement directly.
+      await origin.newWindow({ name: "origin-keeper" });
+      const survivor = await tmux.newSession({ name: "survivor", windowName: "survivor-keeper" });
+      await shared.link({ index: 9, session: survivor.id });
+
+      await withClient(
+        fixture,
+        async (client) => {
+          const uri = `tmux://panes/${encodeURIComponent(paneId)}/content`;
+          const updates: string[] = [];
+          client.setNotificationHandler(ResourceUpdatedNotificationSchema, (notification) => {
+            updates.push(notification.params.uri);
+          });
+          await client.subscribeResource({ uri });
+
+          const controls = async (): Promise<string[]> =>
+            (
+              await fixture.executeText([
+                "list-clients",
+                "-F",
+                "#{session_id}\t#{client_control_mode}",
+              ])
+            ).stdout
+              .filter((line) => line.endsWith("\t1"))
+              .map((line) => line.slice(0, line.indexOf("\t")));
+          const initialControls = await controls();
+          expect(initialControls).toHaveLength(1);
+          const [boundSessionId] = initialControls;
+          if (boundSessionId === undefined) throw new Error("No subscription control client");
+          const placements = (await tmux.snapshot()).panes
+            .toArray()
+            .filter((pane) => pane.id === paneId);
+          const bound = placements.find((pane) => pane.format.session_id === boundSessionId);
+          const surviving = placements.find((pane) => pane.format.session_id !== boundSessionId);
+          if (bound === undefined || surviving === undefined) {
+            throw new Error("Expected bound and surviving pane placements");
+          }
+          const boundIndex = bound.window?.index ?? Number(bound.format.window_index);
+          await fixture.executeText([
+            "unlink-window",
+            "-t",
+            `${boundSessionId}:${String(boundIndex)}`,
+          ]);
+
+          const deadline = Date.now() + 20_000;
+          let controlSessions = await controls();
+          while (!controlSessions.includes(surviving.format.session_id) && Date.now() < deadline) {
+            // eslint-disable-next-line no-await-in-loop -- each read waits for the rebind it observes.
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            // eslint-disable-next-line no-await-in-loop -- each query observes the preceding delay.
+            controlSessions = await controls();
+          }
+          expect(controlSessions).toContain(surviving.format.session_id);
+
+          const handoffDeadline = Date.now() + 20_000;
+          while (updates.length === 0 && Date.now() < handoffDeadline) {
+            // eslint-disable-next-line no-await-in-loop -- the handoff notice is the ready barrier.
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          expect(updates).toContain(uri);
+          updates.length = 0;
+          await fixture.executeText(["send-keys", "-t", paneId, "-l", "printf 'after-rebind\\n'"]);
+          await fixture.executeText(["send-keys", "-t", paneId, "Enter"]);
+          const outputDeadline = Date.now() + 20_000;
+          while (updates.length === 0 && Date.now() < outputDeadline) {
+            // eslint-disable-next-line no-await-in-loop -- each read waits for the output notice.
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          expect(updates).toContain(uri);
+          await client.unsubscribeResource({ uri });
+        },
+        { live: true },
+      );
+    });
+  }, 60_000);
+
   test("publishes one truthful entity for each shared id", async () => {
     await withServer(async (fixture) => {
       const topology = await makeSharedTopology(fixture);

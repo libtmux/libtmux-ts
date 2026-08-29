@@ -629,6 +629,9 @@ function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
     let retry = 0;
     let stopped = false;
     let stop: LiveListener | undefined;
+    let boundSessionId: string | undefined;
+    let reconciling: Promise<void> | undefined;
+    let reconcileAgain = false;
     const announce = (): void => {
       if (pending !== undefined) return;
       pending = setTimeout(() => {
@@ -637,62 +640,114 @@ function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
       }, UPDATE_COALESCE_MS);
       pending.unref?.();
     };
-    const listener = (event: TmuxEvent): void => {
-      if (event.kind !== "output") return;
-      if (event.paneId !== paneId) return;
-      announce();
+    let requestReconcile!: () => void;
+    const resetRetry = (): void => {
+      retry = 0;
+      if (reconnect === undefined) return;
+      clearTimeout(reconnect);
+      reconnect = undefined;
     };
-    let open!: (required: boolean) => Promise<void>;
     const schedule = (): void => {
-      if (stopped || reconnect !== undefined) return;
+      if (stopped || context.hub.closed || reconnect !== undefined) return;
       const delay = Math.min(5_000, 250 * 2 ** Math.min(retry, 5));
       retry += 1;
       reconnect = setTimeout(() => {
         reconnect = undefined;
-        void open(false).catch(() => {
-          schedule();
-        });
+        requestReconcile();
       }, delay);
       reconnect.unref?.();
     };
-    open = async (required): Promise<void> => {
-      const snapshot = await context.snapshot();
-      const pane = snapshot.panes.first({ id: paneId });
-      const sessionId = pane?.format.session_id;
-      if (pane === undefined || sessionId === null || sessionId === undefined) {
-        announce();
-        if (required) throw new Error(`No pane ${paneId} to subscribe to`);
+    const listener = (event: TmuxEvent): void => {
+      if (event.kind === "output") {
+        if (event.paneId === paneId) announce();
         return;
       }
+      if (STRUCTURAL.has(event.kind)) requestReconcile();
+    };
+    const reconcile = async (required: boolean): Promise<boolean> => {
+      if (stopped) return false;
+      const snapshot = await context.snapshot();
+      if (stopped) return false;
+      const placements = panePlacements(snapshot, paneId);
+      if (placements.length === 0) {
+        const previous = stop;
+        stop = undefined;
+        boundSessionId = undefined;
+        previous?.();
+        resetRetry();
+        announce();
+        if (required) throw new Error(`No pane ${paneId} to subscribe to`);
+        return false;
+      }
+      if (
+        boundSessionId !== undefined &&
+        placements.some((pane) => pane.format.session_id === boundSessionId)
+      ) {
+        resetRetry();
+        return false;
+      }
+      const sessionId = placements[0]?.format.session_id;
+      if (sessionId === undefined) return false;
       const opened = await context.hub.listen(sessionId, listener);
       if (opened === undefined) {
-        if (required) throw new Error(`Cannot watch ${paneId}: no control connection`);
-        schedule();
-        return;
+        throw new Error(`Cannot watch ${paneId}: no control connection`);
       }
       if (stopped) {
         opened();
-        return;
+        return false;
       }
+      const previous = stop;
       stop = opened;
-      retry = 0;
+      boundSessionId = sessionId;
+      previous?.();
+      resetRetry();
+      if (!required) announce();
       void opened.ended.then(() => {
         if (stopped || stop !== opened) return;
         stop = undefined;
+        boundSessionId = undefined;
         announce();
+        schedule();
+      });
+      return true;
+    };
+    const startReconcile = (required: boolean): Promise<void> => {
+      reconcileAgain = true;
+      if (reconciling !== undefined) return reconciling;
+      const running = (async () => {
+        while (reconcileAgain && !stopped) {
+          reconcileAgain = false;
+          // eslint-disable-next-line no-await-in-loop -- topology bursts collapse here in order.
+          const installed = await reconcile(required);
+          // Verify after attaching. An unlink between the first snapshot and
+          // the attach happened before this listener could hear about it.
+          if (installed) reconcileAgain = true;
+        }
+      })().finally(() => {
+        if (reconciling === running) reconciling = undefined;
+      });
+      reconciling = running;
+      return running;
+    };
+    requestReconcile = (): void => {
+      if (stopped || context.hub.closed) return;
+      void startReconcile(false).catch(() => {
         schedule();
       });
     };
 
     const cancel = (): void => {
       stopped = true;
+      reconcileAgain = false;
       if (pending !== undefined) clearTimeout(pending);
       if (reconnect !== undefined) clearTimeout(reconnect);
       stop?.();
+      stop = undefined;
+      boundSessionId = undefined;
     };
     watching.set(uri, cancel);
     try {
-      await open(true);
+      await startReconcile(true);
     } catch (error) {
       cancel();
       watching.delete(uri);
@@ -706,6 +761,13 @@ function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
     watching.delete(request.params.uri);
     return {};
   });
+
+  const closed = mcp.server.onclose;
+  mcp.server.onclose = (): void => {
+    for (const cancel of watching.values()) cancel();
+    watching.clear();
+    closed?.();
+  };
 }
 
 /** The pane a `tmux://panes/{id}/content` URI names, or undefined. */

@@ -80,8 +80,11 @@ export function createTmuxMcpServer(
   // a control client nobody closes stays attached until the daemon does.
   const closed = mcp.server.onclose;
   mcp.server.onclose = (): void => {
-    void context.close();
-    closed?.();
+    try {
+      closed?.();
+    } finally {
+      void context.close();
+    }
   };
 
   return mcp;
