@@ -8,6 +8,7 @@ import {
   reapOwnedRunRoot,
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
+import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { Server } from "../../src/server.js";
 import { TmuxServerRestarted } from "../../src/exc.js";
@@ -186,7 +187,7 @@ describe("handle identity", () => {
 
       // Reading what it captured is still fine: that instant did happen, and
       // answering from a frozen graph reaches no server at all.
-      expect(stale.id).toBe("%0");
+      expect(stale.id).toBe(parsePaneId("%0"));
       expect(stale.window?.name).toBeDefined();
     } finally {
       await server.cmd("kill-server").catch(() => undefined);
@@ -237,7 +238,7 @@ describe("handle identity", () => {
       await server.newSession({ name: "attached" });
       const live = await server.connect({ reconnect: { attempts: 3, delayMs: 25 } });
       const stale = (await live.snapshot()).panes.one();
-      expect(stale.id).toBe("%0");
+      expect(stale.id).toBe(parsePaneId("%0"));
 
       // A control client is bound to one daemon, so it never carries the inline
       // guard a spawned command does — losing the connection is the signal, and

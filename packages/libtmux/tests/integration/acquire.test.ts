@@ -7,6 +7,7 @@ import { acquireServerGraph } from "../../src/_internal/operations/acquire.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import type { RuntimeContext } from "../../src/_internal/runtime/context.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -15,7 +16,7 @@ import {
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandRequest, CommandTransport } from "../../src/_internal/transport/types.js";
-import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import type { ConnectionAlias, DaemonEpoch, WindowId } from "../../src/common.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 import { Server } from "../../src/server.js";
@@ -80,7 +81,7 @@ describe("server graph acquisition", () => {
 
       const graph = await acquireServerGraph(runtimeFor(server));
 
-      expect(graph.sessions.map(({ ref }) => String(ref.id))).toEqual([server.sessionId]);
+      expect(graph.sessions.map(({ ref }) => ref.id)).toEqual([parseSessionId(server.sessionId)]);
       expect(graph.windows.length).toBe(2);
       expect(graph.panes.length).toBe(3);
     });
@@ -192,12 +193,12 @@ describe("server graph acquisition", () => {
         captures += 1;
         // eslint-disable-next-line no-await-in-loop -- each capture races the churn on its own.
         const graph = await acquireServerGraph(runtime);
-        const windows = new Set(graph.windows.map(({ ref }) => String(ref.id)));
+        const windows = new Set(graph.windows.map(({ ref }) => ref.id));
         const paned = new Set(
           graph.records
             .filter((record) => record.model === "pane")
             .map((record) => record.scalars.window_id)
-            .filter((id): id is string => id !== null),
+            .filter((id): id is WindowId => id !== null && id !== ""),
         );
         const agrees = windows.size === paned.size && [...paned].every((id) => windows.has(id));
         if (!agrees) torn += 1;
@@ -227,8 +228,9 @@ describe("server graph acquisition", () => {
         "-n",
         "shared",
       ]);
-      const windowId = created.stdout[0];
-      if (windowId === undefined) throw new Error("tmux did not return the created window id");
+      const rawWindowId = created.stdout[0];
+      if (rawWindowId === undefined) throw new Error("tmux did not return the created window id");
+      const windowId = parseWindowId(rawWindowId);
       await server.executeText(["link-window", "-s", windowId, "-t", "other:9"]);
 
       const graph = await acquireServerGraph(runtimeFor(server));

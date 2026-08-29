@@ -128,7 +128,9 @@ describe("shell execution and pane movement", () => {
         TMUX_PANE: pane.id,
       });
 
-      expect(session.id).toBe(pane.sessionId);
+      const paneSession = pane.session;
+      if (paneSession === undefined) throw new Error("expected the pane to resolve its session");
+      expect(session.id).toBe(paneSession.id);
       expect(session.name).toBe(fixture.sessionName);
     });
   }, 40_000);

@@ -74,10 +74,10 @@ describe("lifecycle mutations", () => {
 
       const window = await session.newWindow({ name: "editor" });
       expect(window.name).toBe("editor");
-      expect(window.sessionId).toBe(session.id);
+      expect(window.session?.id).toBe(session.id);
 
       const pane = await window.split();
-      expect(pane.windowId).toBe(window.id);
+      expect(pane.window?.id).toBe(window.id);
       // The returned pane is live; the window handle predates the split and
       // still reports the instant it was created at.
       expect(window.panes.length).toBe(1);
@@ -155,7 +155,7 @@ describe("lifecycle mutations", () => {
       const server = serverFor(fixture);
       await server.newSession({ name: "other" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
       await window.link({ index: 9, session: "other" });
 
@@ -164,7 +164,7 @@ describe("lifecycle mutations", () => {
 
       // Refreshing resolves the placement it was created at, not the new one.
       expect(later.index).toBe(originalIndex);
-      expect(later.sessionName).toBe(fixture.sessionName);
+      expect(later.session?.name).toBe(fixture.sessionName);
     });
   }, 40_000);
 
@@ -173,7 +173,7 @@ describe("lifecycle mutations", () => {
       const server = serverFor(fixture);
       await server.newSession({ name: "other" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
       await window.move({ index: 9, session: "other" });
 
@@ -311,7 +311,7 @@ describe("lifecycle mutations", () => {
       for (const session of [first.id, joined.id]) {
         expect(
           snapshot.windows
-            .filter((window) => window.sessionId === session)
+            .filter((window) => window.session?.id === session)
             .map((window) => window.name),
         ).toEqual(["shared", "added"]);
       }
@@ -326,7 +326,9 @@ describe("lifecycle mutations", () => {
 
       // Measured rather than assumed: tmux 3.2 ignores a detached session's
       // requested size, so the window this divides is not the same everywhere.
-      const height = (await server.snapshot()).windows.one({ id: pane.windowId }).height ?? 0;
+      const paneWindow = pane.window;
+      if (paneWindow === undefined) throw new Error("expected the pane to resolve its window");
+      const height = (await server.snapshot()).windows.one({ id: paneWindow.id }).height ?? 0;
       expect(height).toBeGreaterThan(8);
 
       const split = await pane.split({ size: "25%" });
@@ -353,13 +355,13 @@ describe("lifecycle mutations", () => {
       expect(logs.name).toBe("logs");
       expect(editor.id).toMatch(/^@\d+$/u);
       expect(editor.id).not.toBe(logs.id);
-      expect(editor.sessionId).toBe(session.id);
+      expect(editor.session?.id).toBe(session.id);
 
       // A mixed batch stays typed per element rather than collapsing to a
       // union, so the pane keeps its own methods.
       const [pane] = await server.batch([editor.plan.split({})]);
       expect(pane.id).toMatch(/^%\d+$/u);
-      expect(pane.windowId).toBe(editor.id);
+      expect(pane.window?.id).toBe(editor.id);
       expect(await pane.capture()).toBeDefined();
 
       const named = (await server.snapshot()).windows.where({

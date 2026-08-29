@@ -8,6 +8,7 @@ import {
   reapOwnedRunRoot,
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
+import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
 import { ControlMode } from "../../src/_internal/test/control_mode.js";
 import { Server } from "../../src/server.js";
@@ -168,8 +169,9 @@ describe("Server.snapshot", () => {
         "-n",
         "shared",
       ]);
-      const windowId = created.stdout[0];
-      if (windowId === undefined) throw new Error("tmux did not return the created window id");
+      const rawWindowId = created.stdout[0];
+      if (rawWindowId === undefined) throw new Error("tmux did not return the created window id");
+      const windowId = parseWindowId(rawWindowId);
       await fixture.executeText(["split-window", "-d", "-t", windowId]);
       await fixture.executeText(["link-window", "-s", windowId, "-t", "other:9"]);
 
@@ -181,41 +183,43 @@ describe("Server.snapshot", () => {
       await Promise.all(
         placements.map(async (placement) => {
           expect(placement.panes.length).toBe(2);
-          expect(placement.session?.id).toBe(placement.sessionId);
+          expect(placement.session).toBeDefined();
           expect(placement.linkedSessions.length).toBe(2);
         }),
+      );
+      expect(new Set(placements.map((placement) => placement.session?.name))).toEqual(
+        new Set(["other", fixture.sessionName]),
       );
 
       const pane = placements[0]!.panes.first();
       expect(pane).toBeDefined();
       expect(pane!.window?.id).toBe(windowId);
-      expect(pane!.session?.id).toBe(pane!.sessionId);
+      expect(pane!.session?.id).toBe(placements[0]!.session?.id);
     });
   }, 30_000);
 
   test("resolves an attached client back to its session, window, and pane", async () => {
     await withServer(async (fixture) => {
+      const fixtureSessionId = parseSessionId(fixture.sessionId);
       const control = await ControlMode.open({
         server: fixture,
-        targetSession: fixture.sessionId,
+        targetSession: fixtureSessionId,
       });
       try {
         const snapshot = await serverFor(fixture).snapshot();
         expect(snapshot.clients.length).toBe(1);
 
         const client = snapshot.clients.one();
-        expect(client.session?.id).toBe(fixture.sessionId);
+        expect(client.session?.id).toBe(fixtureSessionId);
 
         const window = client.window;
-        expect(window?.sessionId).toBe(fixture.sessionId);
+        expect(window?.session?.id).toBe(fixtureSessionId);
 
-        // A client's own ids are nullable because a client need not be
-        // attached; a resolved pane's are not.
-        const clientPaneId = client.paneId;
-        expect(clientPaneId).not.toBeNull();
+        // A client need not be attached, so its resolved pane is optional.
         const pane = client.pane;
-        expect(pane?.id).toBe(clientPaneId ?? undefined);
-        expect(pane?.windowId).toBe(window?.id);
+        expect(pane).toBeDefined();
+        expect(pane?.window?.id).toBe(window?.id);
+        expect(pane?.session?.id).toBe(fixtureSessionId);
       } finally {
         await control.dispose();
       }
@@ -236,8 +240,9 @@ describe("Server.snapshot", () => {
         "-n",
         "shared",
       ]);
-      const windowId = created.stdout[0];
-      if (windowId === undefined) throw new Error("tmux did not return the created window id");
+      const rawWindowId = created.stdout[0];
+      if (rawWindowId === undefined) throw new Error("tmux did not return the created window id");
+      const windowId = parseWindowId(rawWindowId);
       await fixture.executeText(["link-window", "-s", windowId, "-t", "other:9"]);
 
       const snapshot = await serverFor(fixture).snapshot();
