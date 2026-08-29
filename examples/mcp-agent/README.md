@@ -28,6 +28,10 @@ tool calls. `run_command` frames a command so its own echo cannot be mistaken
 for its output, and reports the exit status — which is the difference between
 "the text appeared" and "the command succeeded".
 
+The example opts into the `mutating` safety tier because it creates topology
+and types commands. An MCP server left at its default `readonly` tier does not
+offer those tools.
+
 No subprocess and no socket of its own: the client and server share memory, so
 this is the cheapest way to see the tool surface end to end.
 
