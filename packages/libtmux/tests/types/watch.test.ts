@@ -84,3 +84,13 @@ export const isIterable: AsyncIterable<TmuxEvent> = stream;
 export function acceptsRealAbortSignal(controller: AbortController): TmuxEventStream {
   return server.watch({ signal: controller.signal });
 }
+
+export function connectIsNotAnObserver(): Promise<unknown> {
+  // @ts-expect-error pause-after belongs to Server.watch(), not Server.connect().
+  return server.connect({ pauseAfterSeconds: 1 });
+}
+
+export function watchIsNotACommandChannel(): TmuxEventStream {
+  // @ts-expect-error command response bounds belong to Server.connect().
+  return server.watch({ maxCommandBytes: 1 });
+}

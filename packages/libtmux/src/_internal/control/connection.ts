@@ -1,20 +1,19 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { AbortLike, TmuxEventStream, WatchOptions } from "../../types.js";
+import type { AbortLike, ConnectionOptions, TmuxEventStream, WatchOptions } from "../../types.js";
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { subcommandOf } from "../transport/group.js";
+import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
+import { ControlChildLifecycle } from "./child.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
 import { LineFramer } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
 
 const encoder = new TextEncoder();
-
-/** The exact shape of tmux's two flow-control notifications. */
-const FLOW_CONTROL_LINE = /^%(?:pause|continue) %\d+$/u;
 
 /**
  * Bounds on what one connection may hold in memory.
@@ -138,6 +137,14 @@ interface PendingCommand {
   readonly timer: ReturnType<typeof setTimeout> | undefined;
 }
 
+interface ControlConnectionOptions extends ConnectionOptions {
+  readonly maxCommandBytes?: number;
+  readonly maxPendingCommands?: number;
+  readonly pauseAfterSeconds?: number;
+}
+
+type ControlChildSpawner = () => ChildProcessWithoutNullStreams;
+
 /**
  * Answer a command once, from whichever path reaches it first.
  *
@@ -167,12 +174,14 @@ function settle(command: PendingCommand): boolean {
  * a response to its request without reading the block's command number.
  */
 export class ControlConnection implements CommandTransport {
-  #child: ChildProcessWithoutNullStreams;
+  readonly #children: ControlChildLifecycle;
   readonly #argv: readonly string[];
+  readonly #commandPrefix: readonly string[];
   readonly #executable: string;
   readonly #environment: Readonly<Record<string, string | undefined>>;
   readonly #reconnect: { readonly attempts: number; readonly delayMs?: number } | undefined;
   #attempt = 0;
+  #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   /**
    * Whether the process is gone and a replacement is on its way.
    *
@@ -269,9 +278,10 @@ export class ControlConnection implements CommandTransport {
 
   constructor(
     connection: TmuxConnection,
-    options: WatchOptions = {},
+    options: ControlConnectionOptions = {},
     streamEndsConnection = true,
     stdinFallback?: CommandTransport,
+    spawnChild?: ControlChildSpawner,
   ) {
     this.#spawnFallback = stdinFallback;
     const bufferSize = options.bufferSize ?? DEFAULT_BUFFER_SIZE;
@@ -297,6 +307,7 @@ export class ControlConnection implements CommandTransport {
     this.#maxCommandBytes = maxCommandBytes;
     this.#pauseAfterSeconds = pauseAfterSeconds;
     const globals = connectionArguments(connection);
+    this.#commandPrefix = Object.freeze([...globals]);
     this.#signal = options.signal;
 
     // A bare `tmux -C` is a control client that never attached, and tmux sends
@@ -317,11 +328,16 @@ export class ControlConnection implements CommandTransport {
     this.#executable = connection.executable;
     this.#environment = connection.environment;
     this.#reconnect = options.reconnect;
-    this.#child = this.#spawn();
+    this.#children = new ControlChildLifecycle(spawnChild ?? (() => this.#spawn()));
 
     this.#bufferSize = bufferSize;
     this.#streamEndsConnection = streamEndsConnection;
-    this.#listen();
+    if (this.#signal !== undefined) {
+      this.#onAbort = () => void this.close();
+      if (this.#signal.aborted) this.#onAbort();
+      else this.#signal.addEventListener("abort", this.#onAbort, { once: true });
+    }
+    if (!this.#closed) this.#openChild();
   }
 
   /**
@@ -386,50 +402,39 @@ export class ControlConnection implements CommandTransport {
     }) as ChildProcessWithoutNullStreams;
   }
 
-  #listen(): void {
-    this.#child.stdout.on("data", (chunk: Buffer) => {
-      this.#consume(chunk);
+  #openChild(): ChildProcessWithoutNullStreams {
+    return this.#children.open({
+      close: (code) => {
+        const message = this.#reason ?? Buffer.concat(this.#stderr).toString("utf8").trim();
+        this.#fail(
+          code === 0 || code === null || this.#closed
+            ? undefined
+            : new TmuxTransportError(
+                message === ""
+                  ? `tmux control mode exited with ${String(code)}`
+                  : `tmux control mode could not attach: ${message}`,
+                // The process is gone with commands still queued on it, and
+                // tmux never said which of them it ran.
+                { delivery: "indeterminate", kind: "pipe" },
+              ),
+        );
+      },
+      error: (error) => this.#fail(error),
+      stderr: (chunk) => {
+        // Only ever read to explain an exit, so keep the tail and drop the rest
+        // rather than let a chatty tmux hold the heap.
+        this.#stderr.push(chunk);
+        this.#stderrBytes += chunk.length;
+        while (this.#stderrBytes > MAX_STDERR_BYTES && this.#stderr.length > 1) {
+          this.#stderrBytes -= this.#stderr.shift()?.length ?? 0;
+        }
+      },
+      stdinDrain: () => this.#flushWrites(),
+      // The child callback reports a broken process. This stream listener keeps
+      // Node from throwing the pipe error first.
+      stdinError: () => undefined,
+      stdout: (chunk) => this.#consume(chunk),
     });
-    this.#child.stderr.on("data", (chunk: Buffer) => {
-      // Only ever read to explain an exit, so keep the tail and drop the rest
-      // rather than let a chatty tmux hold the heap.
-      this.#stderr.push(chunk);
-      this.#stderrBytes += chunk.length;
-      while (this.#stderrBytes > MAX_STDERR_BYTES && this.#stderr.length > 1) {
-        this.#stderrBytes -= this.#stderr.shift()?.length ?? 0;
-      }
-    });
-    this.#child.stdin.on("drain", () => {
-      this.#flushWrites();
-    });
-    // A control connection writes to tmux and tmux alone; if that pipe breaks,
-    // the `close` handler is what reports it, and an unhandled 'error' on the
-    // stream would take the process down first.
-    this.#child.stdin.on("error", () => undefined);
-    this.#child.once("error", (error: Error) => {
-      this.#fail(error);
-    });
-    this.#child.once("close", (code) => {
-      const message = this.#reason ?? Buffer.concat(this.#stderr).toString("utf8").trim();
-      this.#fail(
-        code === 0 || code === null || this.#closed
-          ? undefined
-          : new TmuxTransportError(
-              message === ""
-                ? `tmux control mode exited with ${String(code)}`
-                : `tmux control mode could not attach: ${message}`,
-              // The process is gone with commands still queued on it, and tmux
-              // never said which of them it ran.
-              { delivery: "indeterminate", kind: "pipe" },
-            ),
-      );
-    });
-
-    if (this.#signal !== undefined) {
-      this.#onAbort = () => void this.close();
-      if (this.#signal.aborted) this.#onAbort();
-      else this.#signal.addEventListener("abort", this.#onAbort, { once: true });
-    }
   }
 
   #consume(chunk: Buffer): void {
@@ -458,9 +463,11 @@ export class ControlConnection implements CommandTransport {
       this.#writeQueue.push(line);
       return;
     }
-    const accepted = this.#child.stdin.write(line, (error) => {
-      if (error) this.#fail(error);
-    });
+    if (this.#children.active() === undefined) {
+      this.#fail(new Error("tmux control connection has no active process"));
+      return;
+    }
+    const accepted = this.#children.write(line, (error) => this.#fail(error));
     if (!accepted) this.#draining = true;
   }
 
@@ -469,9 +476,11 @@ export class ControlConnection implements CommandTransport {
     while (this.#writeQueue.length > 0) {
       const line = this.#writeQueue.shift();
       if (line === undefined) break;
-      const accepted = this.#child.stdin.write(line, (error) => {
-        if (error) this.#fail(error);
-      });
+      if (this.#children.active() === undefined) {
+        this.#fail(new Error("tmux control connection has no active process"));
+        return;
+      }
+      const accepted = this.#children.write(line, (error) => this.#fail(error));
       if (!accepted) {
         this.#draining = true;
         return;
@@ -538,19 +547,6 @@ export class ControlConnection implements CommandTransport {
    */
   #routeBlockBody(line: Uint8Array): void {
     const text = new TextDecoder().decode(line);
-    // tmux appends notifications to whatever block is open, so a pane that
-    // backs up during a command has its `%pause` land in that command's
-    // output. Swallowed there, the pane is never asked back.
-    //
-    // Matched whole: a pane id is `%1`, indistinguishable from a
-    // notification by its first character.
-    if (FLOW_CONTROL_LINE.test(text)) {
-      const flow = parseControlLine(line);
-      if (flow?.kind === "pause" || flow?.kind === "continue") {
-        this.#routeFlowControl(flow);
-        return;
-      }
-    }
     const block = this.#block;
     if (block === undefined) {
       // Nobody is waiting for this: it is tmux explaining an attach. Keep
@@ -572,25 +568,8 @@ export class ControlConnection implements CommandTransport {
   #closeBlock(fromClient: boolean, failed: boolean): void {
     if (!fromClient) {
       if (!failed) {
-        // A reconnect re-attaches, and the first outcome is the one callers
-        // were told: once attached, this connection has been usable, and a
-        // later outage is reported through the commands and the stream.
-        this.#attachOutcome ??= { kind: "attached" };
-        this.#attached?.resolve();
-        this.#reopening = false;
-        // The flag lives on the tmux client, so a reconnect needs it again.
-        this.#requestPauseAfter();
-        // The outage ends here, not when the replacement process started:
-        // until tmux accepts the attach, the new client is carrying nothing.
-        const recovered = this.#reconnectingAttempt;
-        if (recovered !== undefined) {
-          this.#reconnectingAttempt = undefined;
-          for (const sink of this.#sinks) sink.push({ attempts: recovered, kind: "reconnected" });
-        }
-        // tmux acknowledging the attach is what says the outage is over, so the
-        // budget is per outage: a total for the connection's life would stop a
-        // daily reconnector from recovering after `attempts` days.
-        this.#attempt = 0;
+        const child = this.#children.active();
+        if (child !== undefined) void this.#finishAttach(child);
       }
       // tmux explains a refused attach in a block of its own — "no sessions"
       // on an empty server, "can't find session" for a bad target. Keeping
@@ -630,6 +609,32 @@ export class ControlConnection implements CommandTransport {
     });
   }
 
+  async #finishAttach(child: ChildProcessWithoutNullStreams): Promise<void> {
+    try {
+      await this.#requestPauseAfter(child);
+    } catch (error) {
+      if (this.#children.active() === child) {
+        this.#fail(error instanceof Error ? error : new Error("tmux refused pause-after"));
+      }
+      return;
+    }
+    if (this.#children.active() !== child || this.#closed) return;
+
+    // A reconnect is usable only after tmux accepts the attach and restores
+    // the observer's flow-control flag on the replacement client.
+    this.#attachOutcome ??= { kind: "attached" };
+    this.#attached?.resolve();
+    this.#reopening = false;
+    const recovered = this.#reconnectingAttempt;
+    if (recovered !== undefined) {
+      this.#reconnectingAttempt = undefined;
+      for (const sink of this.#sinks) sink.push({ attempts: recovered, kind: "reconnected" });
+    }
+    // The budget is per outage. A connection that recovered yesterday may use
+    // the same policy again after a new drop today.
+    this.#attempt = 0;
+  }
+
   /**
    * Reopen after an unexpected drop.
    *
@@ -639,25 +644,32 @@ export class ControlConnection implements CommandTransport {
    */
   #tryReconnect(): boolean {
     const policy = this.#reconnect;
-    if (policy === undefined || this.#closed) return false;
+    if (policy === undefined || this.#closed || this.#reconnectTimer !== undefined) return false;
     if (this.#attempt >= policy.attempts) return false;
     this.#attempt += 1;
     const attempt = this.#attempt;
     this.#reconnectingAttempt = attempt;
     for (const sink of this.#sinks) sink.push({ attempts: attempt, kind: "reconnecting" });
-    setTimeout(
+    this.#reconnectTimer = setTimeout(
       () => {
+        this.#reconnectTimer = undefined;
         if (this.#closed) return;
         this.#framer.reset();
         this.#partial.clear();
         this.#block = undefined;
         this.#blocks.reset();
+        this.#diagnostic = [];
+        this.#reason = undefined;
         this.#stderr.length = 0;
         this.#stderrBytes = 0;
+        this.#paused.clear();
         this.#writeQueue.length = 0;
         this.#draining = false;
-        this.#child = this.#spawn();
-        this.#listen();
+        try {
+          this.#openChild();
+        } catch (error) {
+          this.#fail(error instanceof Error ? error : new Error("tmux control mode did not start"));
+        }
       },
       (policy.delayMs ?? 50) * attempt,
     );
@@ -669,13 +681,15 @@ export class ControlConnection implements CommandTransport {
     // Before deciding whether to reconnect: either way this connection is no
     // longer evidence that the daemon its ids came from is the one answering.
     // A deliberate close is not that — the runtime is going away with it.
-    if (!this.#closed) this.#onDaemonLost?.();
+    if (!this.#closed && !this.#reopening) this.#onDaemonLost?.();
+    this.#children.retire();
     if (this.#tryReconnect()) {
       this.#reopening = true;
       this.#failPending(failure);
       return;
     }
     this.#closed = true;
+    this.#releaseAbort();
     const reason = failure ?? new Error("tmux control connection closed");
     this.#attachOutcome ??= { error: reason, kind: "failed" };
     this.#attached?.reject(reason);
@@ -702,16 +716,36 @@ export class ControlConnection implements CommandTransport {
   /**
    * Ask tmux to pause a pane rather than kill this client when it falls behind.
    *
-   * Sent rather than awaited: a tmux that refuses it leaves the connection
-   * working as before.
+   * This travels on a spawned command targeted at the observer. Sharing the
+   * observer's stream would make a literal `%pause` command result impossible
+   * to distinguish from a notification.
    */
-  #requestPauseAfter(): void {
+  async #requestPauseAfter(child: ChildProcessWithoutNullStreams): Promise<void> {
     const seconds = this.#pauseAfterSeconds;
     if (seconds === undefined) return;
-    void this.execute({
-      args: ["refresh-client", "-f", `pause-after=${String(seconds)}`],
+    const fallback = this.#spawnFallback;
+    if (fallback === undefined || child.pid === undefined) {
+      throw new Error("watch observer has no spawning transport");
+    }
+    const result = await fallback.execute({
+      args: [
+        ...this.#commandPrefix,
+        "refresh-client",
+        "-t",
+        `client-${String(child.pid)}`,
+        "-f",
+        `pause-after=${String(seconds)}`,
+      ],
       executable: this.#executable,
-    }).catch(() => undefined);
+      environment: this.#environment,
+      timeoutMs: 30_000,
+    });
+    if (result.returncode !== 0) {
+      throw new TmuxTransportError("tmux refused pause-after", {
+        delivery: "replied",
+        kind: "protocol",
+      });
+    }
   }
 
   /** Publish a pause or resume, and ask a paused pane back. */
@@ -725,10 +759,24 @@ export class ControlConnection implements CommandTransport {
 
   /** Ask tmux to resume a pane it paused. tmux answers with `%continue`. */
   #resumePane(paneId: string): void {
-    void this.execute({
-      args: ["refresh-client", "-A", `${paneId}:continue`],
-      executable: this.#executable,
-    }).catch(() => undefined);
+    const fallback = this.#spawnFallback;
+    const child = this.#children.active();
+    if (fallback === undefined || child?.pid === undefined) return;
+    void fallback
+      .execute({
+        args: [
+          ...this.#commandPrefix,
+          "refresh-client",
+          "-t",
+          `client-${String(child.pid)}`,
+          "-A",
+          `${paneId}:continue`,
+        ],
+        executable: this.#executable,
+        environment: this.#environment,
+        timeoutMs: 30_000,
+      })
+      .catch(() => undefined);
   }
 
   onDaemonLost(notify: () => void): void {
@@ -958,44 +1006,45 @@ export class ControlConnection implements CommandTransport {
     }
   }
 
+  #releaseAbort(): void {
+    if (this.#signal === undefined || this.#onAbort === undefined) return;
+    this.#signal.removeEventListener("abort", this.#onAbort);
+    this.#onAbort = undefined;
+  }
+
+  #waitForRetirement(child: ChildProcessWithoutNullStreams): Promise<void> {
+    if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const settled = (): void => {
+        if (timer !== undefined) clearTimeout(timer);
+        resolve();
+      };
+      child.once("close", settled);
+      child.once("error", settled);
+      // The lifecycle escalates after one grace period. A second bounds close
+      // even when descendants keep inherited pipes open after SIGKILL.
+      timer = setTimeout(resolve, TERMINATION_GRACE_MS * 2);
+      timer.unref?.();
+    });
+  }
+
   async close(): Promise<void> {
-    if (this.#signal !== undefined && this.#onAbort !== undefined) {
-      this.#signal.removeEventListener("abort", this.#onAbort);
-      this.#onAbort = undefined;
-    }
+    this.#releaseAbort();
     if (this.#closed) return;
+    if (this.#reconnectTimer !== undefined) {
+      clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = undefined;
+    }
+    const child = this.#children.active();
+    const retired = child === undefined ? Promise.resolve() : this.#waitForRetirement(child);
     this.#closed = true;
     for (const sink of this.#sinks) sink.cancel();
     // Said before #fail, which cannot tell this from the connection dropping:
     // a subscriber ending because its caller closed is an answer to a wait, not
     // a failure of one.
     this.#fail(undefined);
-    // Ask, then insist. Waiting on `close` alone leaves closing unbounded: a
-    // tmux that never leaves, or one whose descendants hold the inherited pipes
-    // open, hangs the caller.
-    const child = this.#child;
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    await new Promise<void>((resolve) => {
-      let escalation: ReturnType<typeof setTimeout> | undefined;
-      const settled = (): void => {
-        if (escalation !== undefined) clearTimeout(escalation);
-        resolve();
-      };
-      child.once("close", settled);
-      // A process that has already gone emits nothing further, so the same
-      // listener has to survive an `error` from the kill itself.
-      child.once("error", settled);
-      child.kill("SIGTERM");
-      escalation = setTimeout(() => {
-        child.kill("SIGKILL");
-        // Even SIGKILL leaves `close` waiting on inherited pipes, so this is
-        // the last word: the connection is unusable either way, and holding
-        // the caller past here buys nothing.
-        escalation = setTimeout(resolve, TERMINATION_GRACE_MS);
-        escalation.unref?.();
-      }, TERMINATION_GRACE_MS);
-      escalation.unref?.();
-    });
+    await retired;
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
@@ -1005,5 +1054,5 @@ export class ControlConnection implements CommandTransport {
 
 /** Open a control-mode event stream against a server. */
 export function watchServer(connection: TmuxConnection, options?: WatchOptions): TmuxEventStream {
-  return new ControlConnection(connection, options).subscribe();
+  return new ControlConnection(connection, options, true, new NodeSpawnTransport()).subscribe();
 }

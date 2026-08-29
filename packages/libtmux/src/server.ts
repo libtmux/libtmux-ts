@@ -12,6 +12,7 @@ import {
 import type { EnvironmentValue, SetEnvironmentOptions } from "./types.js";
 import type {
   CmdOptions,
+  ConnectOptions,
   ConnectedServer,
   IfShellOptions,
   ManagedServer,
@@ -271,7 +272,7 @@ export class Server {
    */
   async withConnection<T>(
     body: (live: ConnectedServer) => Promise<T>,
-    options?: WatchOptions,
+    options?: ConnectOptions,
   ): Promise<T> {
     const live = await this.connect(options);
     try {
@@ -423,10 +424,13 @@ export class Server {
    * }
    * ```
    *
-   * `loadBuffer` and anything else that feeds a command stdin still needs the
-   * spawning server, since control mode has no channel for it.
+   * Operations that need stdin or exact bytes use a spawned command against
+   * the same socket because control mode has no channel for either.
    */
-  async connect(options?: WatchOptions): Promise<ConnectedServer> {
+  async connect(options?: ConnectOptions): Promise<ConnectedServer> {
+    if (options !== undefined && "pauseAfterSeconds" in options) {
+      throw new TypeError("pauseAfterSeconds belongs to Server.watch(), not Server.connect()");
+    }
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "connect");
     const connection = new ControlConnection(

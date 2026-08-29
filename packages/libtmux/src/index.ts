@@ -19,6 +19,8 @@ export {
 export type {
   AbortLike,
   CaptureOptions,
+  ConnectOptions,
+  ConnectionOptions,
   CmdOptions,
   ConnectedServer,
   ChooseTreeOptions,

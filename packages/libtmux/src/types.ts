@@ -556,8 +556,8 @@ export interface AbortLike {
   removeEventListener(type: "abort", listener: () => void): void;
 }
 
-/** Options for {@link Server.watch}. */
-export interface WatchOptions {
+/** Options shared by persistent command connections and event observers. */
+export interface ConnectionOptions {
   /**
    * How many events to hold for a consumer that has fallen behind.
    *
@@ -566,6 +566,27 @@ export interface WatchOptions {
    * heap until the process dies, which is worse than losing an event.
    */
   readonly bufferSize?: number;
+  /** Abort the connection when this signal fires. */
+  readonly signal?: AbortLike;
+  /**
+   * Reopen the connection when it drops unexpectedly.
+   *
+   * Off by default: a stream that silently reattaches hides a tmux server
+   * going away, and a caller that wants to know cannot get the notice back.
+   * When enabled, a recovered connection reports itself as a `reconnected`
+   * event so a consumer can tell that it missed whatever happened in the gap.
+   *
+   * Commands in flight when the connection drops are failed, never replayed.
+   * tmux has no idea whether it already ran one, and re-sending `new-window`
+   * after it succeeded creates a second window.
+   */
+  readonly reconnect?: { readonly attempts: number; readonly delayMs?: number };
+  /** Session to attach to. Defaults to whichever tmux considers most recent. */
+  readonly target?: string;
+}
+
+/** Options for {@link Server.connect}, a persistent command channel. */
+export interface ConnectOptions extends ConnectionOptions {
   /**
    * How many bytes one command's response may occupy before it is refused.
    *
@@ -584,6 +605,10 @@ export interface WatchOptions {
    * retry.
    */
   readonly maxPendingCommands?: number;
+}
+
+/** Options for {@link Server.watch}, a notification-only observer. */
+export interface WatchOptions extends ConnectionOptions {
   /**
    * Seconds tmux may hold a pane's output before pausing that pane.
    *
@@ -596,23 +621,6 @@ export interface WatchOptions {
    * so the pair records what was missed rather than needing a response.
    */
   readonly pauseAfterSeconds?: number;
-  /** Abort the connection when this signal fires. */
-  readonly signal?: AbortLike;
-  /**
-   * Reopen the connection when it drops unexpectedly.
-   *
-   * Off by default: a stream that silently reattaches hides a tmux server
-   * going away, and a caller that wants to know cannot get the notice back.
-   * When enabled, a recovered connection reports itself as a `reconnected`
-   * event so a consumer can tell that it missed whatever happened in the gap.
-   *
-   * Commands in flight when the connection drops are failed, never replayed.
-   * tmux has no idea whether it already ran one, and re-sending `new-window`
-   * after it succeeded creates a second window.
-   */
-  readonly reconnect?: { readonly attempts: number; readonly delayMs?: number };
-  /** Session to attach to. Defaults to whichever tmux considers most recent. */
-  readonly target?: string;
 }
 
 /**

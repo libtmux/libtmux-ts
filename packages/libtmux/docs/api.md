@@ -134,7 +134,7 @@ await using managed = await Server.open({ transport: "control" });
 #### `Server.withConnection`
 
 ```ts
-async withConnection<T>( body: (live: ConnectedServer) => Promise<T>, options?: WatchOptions, ): Promise<T>
+async withConnection<T>( body: (live: ConnectedServer) => Promise<T>, options?: ConnectOptions, ): Promise<T>
 ```
 
 Run `body` against a connected server, closing it afterwards.
@@ -183,7 +183,7 @@ for await (const event of events) {
 #### `Server.connect`
 
 ```ts
-async connect(options?: WatchOptions): Promise<ConnectedServer>
+async connect(options?: ConnectOptions): Promise<ConnectedServer>
 ```
 
 Bind this server to one control-mode connection and return it.
@@ -193,8 +193,8 @@ already-open connection instead of spawning a `tmux` process each. A
 snapshot costs four writes rather than four processes, which is what makes
 reacting to {@link watch} events affordable in a loop.
 
-`loadBuffer` and anything else that feeds a command stdin still needs the
-spawning server, since control mode has no channel for it.
+Operations that need stdin or exact bytes use a spawned command against
+the same socket because control mode has no channel for either.
 
 ```ts
 await using live = await server.connect();

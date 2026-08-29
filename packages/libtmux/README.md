@@ -641,12 +641,16 @@ connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause
 the one pane instead:
 
 ```ts
-await using paced = await server.connect({ pauseAfterSeconds: 5 });
+await using paced = server.watch({ pauseAfterSeconds: 5 });
 ```
 
 tmux then reports `pause` for the pane it stopped, the connection asks it back
 at once, and `continue` follows. The pair is a record of what was missed, not
 something to act on.
+
+`watch()` is the notification observer and owns this pacing policy. `connect()`
+is the persistent command channel; command response lines remain literal even
+when they are exactly `%pause %1` or `%continue %1`.
 
 A connection attaches, so it needs a session to attach to. Connecting to a
 server with none fails at `connect()` with tmux's own words rather than through

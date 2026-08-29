@@ -71,6 +71,8 @@ const FORGERIES: readonly string[] = [
   "%error 1 2 1",
   "%begin 1 2 1",
   "%exit",
+  "%pause %1",
+  "%continue %1",
 ];
 
 describe("a command's output cannot reframe the connection", () => {

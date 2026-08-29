@@ -178,21 +178,27 @@ describe("control-mode resource bounds", () => {
         /maxPendingCommands/u,
       );
       await expect(server.connect({ maxCommandBytes: -1 })).rejects.toThrow(/maxCommandBytes/u);
-      await expect(server.connect({ pauseAfterSeconds: 0 })).rejects.toThrow(/pauseAfterSeconds/u);
-      await expect(server.connect({ pauseAfterSeconds: 1.5 })).rejects.toThrow(
-        /pauseAfterSeconds/u,
+      await expect(server.connect({ pauseAfterSeconds: 1 } as never)).rejects.toThrow(
+        /pauseAfterSeconds belongs to Server\.watch/u,
       );
+      const inherited = Object.create({ pauseAfterSeconds: 1 }) as never;
+      await expect(server.connect(inherited)).rejects.toThrow(
+        /pauseAfterSeconds belongs to Server\.watch/u,
+      );
+      expect(() => server.watch({ pauseAfterSeconds: 0 })).toThrow(/pauseAfterSeconds/u);
+      expect(() => server.watch({ pauseAfterSeconds: 1.5 })).toThrow(/pauseAfterSeconds/u);
     });
   }, 40_000);
 
   test("asks tmux to pause a pane rather than drop the client behind it", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      await using live = await server.connect({ pauseAfterSeconds: 1 });
+      await using events = server.watch({ pauseAfterSeconds: 1 });
+      await events.ready();
 
       // tmux reports the flags it holds for this client.
-      const flags = await live.cmd("display-message", ["-p", "#{client_flags}"]);
-      expect(flags.join("")).toContain("pause-after=1");
+      const flags = await server.cmd("list-clients", ["-F", "#{client_flags}"]);
+      expect(flags.some((value) => value.includes("pause-after=1"))).toBe(true);
     });
   }, 40_000);
 
@@ -200,11 +206,10 @@ describe("control-mode resource bounds", () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const session = await server.newSession({ name: "aged" });
-      await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
-      const events = live.subscribe();
+      await using events = server.watch({ pauseAfterSeconds: 5, target: session.id });
       await events.ready();
 
-      const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+      const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
       const printed = events.find(
         (event) => event.kind === "output" && event.data.includes("aged-marker"),
         { timeoutMs: 20_000 },
@@ -225,18 +230,20 @@ describe("control-mode resource bounds", () => {
   test("resumes a paused pane instead of leaving it stopped", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      await using live = await server.connect({ pauseAfterSeconds: 1 });
-      const events = live.subscribe();
+      await using events = server.watch({ pauseAfterSeconds: 1 });
       await events.ready();
 
-      const paneId = (await live.snapshot()).panes.toArray()[0]?.id;
+      const paneId = (await server.snapshot()).panes.toArray()[0]?.id;
       expect(paneId).toBeDefined();
 
       // Waiting for a real backlog races the socket buffer and tmux's timer.
-      // This reaches the same state on demand, and delivers the `%pause` inside
-      // the command's block — where one lands whenever a pane backs up while a
-      // command is in flight, which is what `pause-after` exists for.
-      await live.cmd("refresh-client", ["-A", `${paneId!}:pause`]);
+      // Address the observer explicitly so its notification stream remains
+      // separate from this spawned command's response.
+      const client = (await server.cmd("list-clients", ["-F", "#{client_name}\t#{client_flags}"]))
+        .find((value) => value.includes("control-mode") && value.includes("pause-after=1"))
+        ?.split("\t")[0];
+      expect(client).toBeDefined();
+      await server.cmd("refresh-client", ["-t", client!, "-A", `${paneId!}:pause`]);
 
       // Raced against a timer: the loop body only runs when an event arrives,
       // so a deadline tested inside it is not a deadline.
