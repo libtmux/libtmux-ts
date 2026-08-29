@@ -9,7 +9,12 @@
 import type { ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
 
-import { resolveCallerIdentity, type CallerIdentity } from "./caller.js";
+import {
+  readCallerEnvironment,
+  resolveCallerIdentity,
+  type CallerEnvironment,
+  type CallerIdentity,
+} from "./caller.js";
 import { LiveHub } from "./live.js";
 import type { PaneTail } from "./pane_tail.js";
 import type { Policy } from "./policy.js";
@@ -97,13 +102,13 @@ export function createContext(
   tmux: Server,
   policy: Policy,
   topologyChanged: () => void = () => undefined,
-  environment: Readonly<Record<string, string | undefined>> = process.env,
+  caller: CallerEnvironment = readCallerEnvironment(),
 ): ToolContext & { close(): Promise<void> } {
   const hub = new LiveHub(tmux);
   return {
     close: () => hub.close(),
     hub,
-    identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, environment),
+    identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, caller),
     policy,
     snapshot: () => withRecovery(tmux, tmux.snapshot()),
     tmux,

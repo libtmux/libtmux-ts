@@ -376,6 +376,10 @@ await Promise.all([
 ]);
 ```
 
+`environment` configures the MCP tool policy. Caller identity is read separately
+from `process.env` when the factory is constructed; an embedded test can override
+that complete input with `callerEnvironment`.
+
 ## What this does not do
 
 `observe` reports a pane's byte stream in the order it was written. A program

@@ -965,7 +965,7 @@ describe("staying out of the way", () => {
       const tmux = serverFor(fixture);
       const paneId = (await tmux.snapshot()).panes.one().id;
       const serverPid = String((await tmux.daemonIdentity())?.pid ?? "");
-      const callerEnvironment = {
+      const callerEnvironment: Record<string, string> = {
         TMUX: `${fixture.socketPath},${serverPid},0`,
         TMUX_PANE: paneId,
       };

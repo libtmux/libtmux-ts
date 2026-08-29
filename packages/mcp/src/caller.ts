@@ -83,9 +83,8 @@ export interface CallerIdentity {
 export async function resolveCallerIdentity(
   tmux: Server,
   snapshot: ServerSnapshot,
-  environment: Readonly<Record<string, string | undefined>> = process.env,
+  caller: CallerEnvironment = readCallerEnvironment(),
 ): Promise<CallerIdentity> {
-  const caller = readCallerEnvironment(environment);
   const identity = await tmux.daemonIdentity();
   const attachedClients = snapshot.clients.toArray();
   const clients = attachedClients.map((client): AttachedClient => ({

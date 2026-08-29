@@ -42,22 +42,25 @@ const PACKAGE_VERSION: string = manifest.version;
 export function createTmuxMcpServer(
   tmux: Server,
   options: {
+    /** Complete environment identifying the host process's tmux pane. */
+    readonly callerEnvironment?: Readonly<Record<string, string | undefined>>;
+    /** Complete environment from which to resolve MCP tool policy. */
     readonly environment?: Readonly<Record<string, string | undefined>>;
     readonly policy?: Policy;
   } = {},
 ): McpServer {
-  const environment = options.environment ?? process.env;
-  const policy = options.policy ?? resolvePolicy(environment);
+  const caller = readCallerEnvironment(options.callerEnvironment ?? process.env);
+  const policy = options.policy ?? resolvePolicy(options.environment ?? process.env);
   const mcp = new McpServer(
     { name: "libtmux", title: "tmux", version: PACKAGE_VERSION },
     {
-      instructions: buildInstructions(policy, readCallerEnvironment(environment)),
+      instructions: buildInstructions(policy, caller),
     },
   );
 
   // Built after the server so a tool can say the resource list changed; the
   // notifier needs somewhere to send it.
-  const context = createContext(tmux, policy, createListChangedNotifier(mcp), environment);
+  const context = createContext(tmux, policy, createListChangedNotifier(mcp), caller);
 
   // Every tool registers against the filtered view, so the allowlist cannot be
   // half-applied by a module that forgot it.
