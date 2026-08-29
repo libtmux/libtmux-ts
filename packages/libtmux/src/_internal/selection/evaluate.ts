@@ -20,8 +20,10 @@ import { compareTmuxVersions, parseTmuxVersion } from "../runtime/tmux_version.j
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
 import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
+  corpusForSelectionProjection,
   isSelectionProjection,
   originGraphForSelectionProjection,
+  resolverForSelectionProjection,
   selectionProjectionOwnsRecord,
   type ProjectionRecord,
   type SelectionProjection,
@@ -93,6 +95,7 @@ type SelectionState = ProjectedSelectionState;
 
 const emptyQuery: Readonly<Record<string, unknown>> = Object.freeze({});
 const selectionConstructionToken: object = Object.freeze({});
+const validatedProjectionCorpora = new WeakSet<object>();
 
 function invalidSelection(cause?: unknown): never {
   throw new QueryValidationError({
@@ -123,7 +126,6 @@ function snapshotValues<Model>(input: readonly Model[]): readonly Model[] {
     const result: Model[] = [];
     for (let index = 0; index < length; index += 1) {
       const key = String(index);
-      if (!keys.includes(key)) return invalidSelection();
       const descriptor = Object.getOwnPropertyDescriptor(input, key);
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
         return invalidSelection();
@@ -137,24 +139,14 @@ function snapshotValues<Model>(input: readonly Model[]): readonly Model[] {
   }
 }
 
-function referenceKey(reference: GraphRecordRef): string {
-  return `${String(reference.source.length)}:${reference.source}:${String(reference.ordinal)}`;
-}
-
-function buildRecordResolver(
+function validateProjectionCorpus(
   projection: SelectionProjection,
-): (reference: GraphRecordRef) => ProjectionRecord | undefined {
-  const records = new Map<string, ProjectionRecord>();
-  for (const record of projection.records) {
-    if (!selectionProjectionOwnsRecord(projection, record)) return invalidSelection();
-    const key = referenceKey(record.ref);
-    if (records.has(key)) return invalidSelection();
-    records.set(key, record);
-  }
-  return (reference): ProjectionRecord | undefined => {
-    const record = records.get(referenceKey(reference));
-    return record !== undefined && graphRecordRefsEqual(record.ref, reference) ? record : undefined;
-  };
+  corpus: object,
+  resolve: (reference: GraphRecordRef) => ProjectionRecord | undefined,
+): void {
+  if (validatedProjectionCorpora.has(corpus)) return;
+  for (const record of projection.records) validateProjectionRecord(projection, record, resolve);
+  validatedProjectionCorpora.add(corpus);
 }
 
 function validateProjectionRecord(
@@ -162,6 +154,18 @@ function validateProjectionRecord(
   record: ProjectionRecord,
   resolve: (reference: GraphRecordRef) => ProjectionRecord | undefined,
 ): void {
+  if (
+    !Object.isFrozen(record) ||
+    !Object.isFrozen(record.adjacency) ||
+    !Object.isFrozen(record.scalars) ||
+    record.adjacency.some(
+      (adjacency) =>
+        !Object.isFrozen(adjacency) ||
+        (adjacency.cardinality === "many" && !Object.isFrozen(adjacency.targets)),
+    )
+  ) {
+    return invalidSelection();
+  }
   const expectedFields = WHERE_FIELDS_V1[record.model];
   const scalarKeys = Reflect.ownKeys(record.scalars);
   if (
@@ -269,11 +273,14 @@ function projectedEntries<Kind extends ProjectedKind>(
 } {
   if (!isSelectionProjection(projection)) return invalidSelection();
   const projectionGraph = originGraphForSelectionProjection(projection);
-  if (projectionGraph === undefined) return invalidSelection();
+  const corpus = corpusForSelectionProjection(projection);
+  const resolve = resolverForSelectionProjection(projection);
+  if (projectionGraph === undefined || corpus === undefined || resolve === undefined) {
+    return invalidSelection();
+  }
   const copiedValues = snapshotValues(values);
   if (copiedValues.length !== projection.members.length) return invalidSelection();
-  const resolve = buildRecordResolver(projection);
-  for (const record of projection.records) validateProjectionRecord(projection, record, resolve);
+  validateProjectionCorpus(projection, corpus, resolve);
 
   const entries: Array<SelectionEntry<ModelForKind<Kind>>> = [];
   for (const [index, member] of projection.members.entries()) {

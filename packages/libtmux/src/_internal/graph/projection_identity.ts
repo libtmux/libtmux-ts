@@ -68,6 +68,7 @@ interface SelectionProjectionCorpusInput {
 }
 
 type ProjectionRecordIndex = ReadonlyMap<string, ReadonlyMap<number, ProjectionRecord>>;
+export type ProjectionRecordResolver = (reference: GraphRecordRef) => ProjectionRecord | undefined;
 
 const authenticatedSelectionProjectionCorpora = new WeakSet<object>();
 const authenticatedSelectionProjections = new WeakSet<object>();
@@ -75,7 +76,7 @@ const selectionProjectionCorpusIndexes = new WeakMap<object, ProjectionRecordInd
 const selectionProjectionCorpora = new WeakMap<object, SelectionProjectionCorpus>();
 const selectionProjectionOrigins = new WeakMap<object, NormalizedGraph>();
 const selectionProjectionRecordOwners = new WeakMap<object, SelectionProjectionCorpus>();
-const selectionProjectionRecordIndexes = new WeakMap<object, ProjectionRecordIndex>();
+const selectionProjectionRecordResolvers = new WeakMap<object, ProjectionRecordResolver>();
 
 function invalidIdentity(message: string): never {
   throw new Error(message);
@@ -84,10 +85,16 @@ function invalidIdentity(message: string): never {
 function createProjectionRecordIndex(records: readonly ProjectionRecord[]): ProjectionRecordIndex {
   const bySource = new Map<string, Map<number, ProjectionRecord>>();
   for (const record of records) {
+    if (!graphRecordRefsEqual(record.ref, record.ref)) {
+      return invalidIdentity("selection projection record reference is not authentic");
+    }
     let byOrdinal = bySource.get(record.ref.source);
     if (byOrdinal === undefined) {
       byOrdinal = new Map<number, ProjectionRecord>();
       bySource.set(record.ref.source, byOrdinal);
+    }
+    if (byOrdinal.has(record.ref.ordinal)) {
+      return invalidIdentity("selection projection corpus has a duplicate record reference");
     }
     byOrdinal.set(record.ref.ordinal, record);
   }
@@ -98,6 +105,9 @@ export function createSelectionProjectionCorpus(
   input: SelectionProjectionCorpusInput,
 ): SelectionProjectionCorpus {
   const records = Object.freeze(input.records);
+  if (records.some((record) => selectionProjectionRecordOwners.has(record))) {
+    return invalidIdentity("selection projection record already belongs to a corpus");
+  }
   const corpus = Object.freeze({
     capture: input.capture,
     entities: Object.freeze(input.entities),
@@ -140,7 +150,10 @@ export function createSelectionProjectionView(
   authenticatedSelectionProjections.add(projection);
   selectionProjectionOrigins.set(projection, graph);
   selectionProjectionCorpora.set(projection, corpus);
-  selectionProjectionRecordIndexes.set(projection, index);
+  selectionProjectionRecordResolvers.set(projection, (reference) => {
+    if (!graphRecordRefsEqual(reference, reference)) return undefined;
+    return index.get(reference.source)?.get(reference.ordinal);
+  });
   return projection;
 }
 
@@ -155,6 +168,13 @@ export function originGraphForSelectionProjection(value: unknown): NormalizedGra
     return undefined;
   }
   return selectionProjectionOrigins.get(value);
+}
+
+export function corpusForSelectionProjection(
+  value: unknown,
+): SelectionProjectionCorpus | undefined {
+  if (!isSelectionProjection(value)) return undefined;
+  return selectionProjectionCorpora.get(value);
 }
 
 export function selectionProjectionOwnsRecord(
@@ -179,6 +199,12 @@ export function selectionProjectionRecordForRef(
   projection: unknown,
   ref: GraphRecordRef,
 ): ProjectionRecord | undefined {
-  if (!isSelectionProjection(projection) || !graphRecordRefsEqual(ref, ref)) return undefined;
-  return selectionProjectionRecordIndexes.get(projection)?.get(ref.source)?.get(ref.ordinal);
+  return resolverForSelectionProjection(projection)?.(ref);
+}
+
+export function resolverForSelectionProjection(
+  value: unknown,
+): ProjectionRecordResolver | undefined {
+  if (!isSelectionProjection(value)) return undefined;
+  return selectionProjectionRecordResolvers.get(value);
 }

@@ -37,8 +37,10 @@ import { createLogicalRef, createWinlinkRef, type WinlinkRef } from "./refs.js";
 
 export type { ProjectionDescriptor } from "./projection_descriptor.js";
 export {
+  corpusForSelectionProjection,
   isSelectionProjection,
   originGraphForSelectionProjection,
+  resolverForSelectionProjection,
   selectionProjectionOwnsRecord,
   selectionProjectionRecordForRef,
 } from "./projection_identity.js";

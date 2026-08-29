@@ -378,6 +378,30 @@ describe("Selection collection contract", () => {
 });
 
 describe("internal Selection construction", () => {
+  test("rejects non-data value arrays without executing accessors", async () => {
+    const harness = await createSessionHarness(["alpha", "beta"]);
+    const sparse = [...harness.values];
+    Reflect.deleteProperty(sparse, "0");
+    const accessor = [...harness.values];
+    let getterCalls = 0;
+    Object.defineProperty(accessor, "0", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return harness.values[0];
+      },
+    });
+    const symbolKey = [...harness.values];
+    Object.defineProperty(symbolKey, Symbol("private"), { enumerable: true, value: true });
+    const customPrototype = [...harness.values];
+    Object.setPrototypeOf(customPrototype, null);
+
+    for (const values of [sparse, accessor, symbolKey, customPrototype]) {
+      expectInvalidQuery(() => createProjectedSelection("session", values, harness.projection));
+    }
+    expect(getterCalls).toBe(0);
+  });
+
   test("requires authentic model-complete projection membership alignment", async () => {
     const first = await createSessionHarness(["alpha", "beta"]);
     const second = await createSessionHarness(["alpha", "beta"]);
