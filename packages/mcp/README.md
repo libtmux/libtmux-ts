@@ -49,14 +49,14 @@ whole screen again.
 ## Install
 
 ```console
-$ npx -y @libtmux/mcp
+$ npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 Nothing to install ahead of time: the server speaks MCP over stdio, so an MCP
 client launches it as a subprocess. To pin it in a project instead:
 
 ```console
-$ bun add @libtmux/mcp
+$ bun add --exact @libtmux/mcp@0.1.0-alpha.6
 ```
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
@@ -70,7 +70,7 @@ This is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.6"],
       "env": { "LIBTMUX_SOCKET_NAME": "agent" }
     }
   }
@@ -81,7 +81,8 @@ This is the whole configuration:
 <summary>Claude Code</summary>
 
 ```console
-$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- npx -y @libtmux/mcp
+$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
+    npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 </details>
@@ -123,10 +124,10 @@ agent's cleanup can reap the session you are working in.
 | `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool names, when a tier is too coarse |
 
 Two ceilings rather than one, because the two waits cost different things. A
-blocking wait spends the agent's turn and cannot be called off mid-flight, so it
-is held low. A task hands back a handle at once and can be cancelled, so it may
-run for as long as the work does. An over-large timeout is never an error: it is
-clamped, and every result reports the `effectiveTimeoutMs` it actually used.
+blocking wait spends the agent's turn, so it is held low. A task hands back a
+handle at once, so it may run for as long as the work does. Cancelling either
+request stops its wait. An over-large timeout is never an error: it is clamped,
+and every result reports the `effectiveTimeoutMs` it actually used.
 
 ### Safety tiers
 
@@ -137,6 +138,11 @@ tool an agent cannot see is one it cannot spend a turn being denied.
 - `mutating` — the above, plus typing, splitting, creating, and renaming.
 - `destructive` — the above, plus `kill_pane`, `kill_window`, `kill_session`.
 
+These tiers control tool exposure; they are not a sandbox, an authorization
+boundary, or a confidentiality boundary. A listed tool has the tmux socket and
+Unix-user authority of this process. Use a dedicated socket and read the
+[security boundary](../../SECURITY.md) before serving an untrusted client.
+
 A name this list does not hold falls to `readonly`, not to the default —
 `read-only` and `read_only` are how `readonly` is usually mistyped, and
 answering a typo with a wider surface than the one asked for is the wrong
@@ -146,7 +152,7 @@ up:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.0-alpha.2 serving agents at the readonly tier
+libtmux-mcp 0.1.0-alpha.6 serving agents at the readonly tier
 ```
 
 `LIBTMUX_MCP_TOOLS` narrows further when a tier is the wrong shape. A tier
@@ -282,10 +288,10 @@ back the `cursor` it returns:
 
 ```console
 $ observe  paneId=%1
-$ observe  paneId=%1  cursor=4096  waitMs=10000
+$ observe  paneId=%1  cursor=ltxc1.0123456789abcdef0123456789abcdef.4096  waitMs=10000
 ```
 
-The second call is charged only for what arrived after byte 4096.
+The second call is charged only for what arrived after the opaque cursor.
 
 ## Long waits without blocking
 

@@ -38,13 +38,11 @@ wait run out against a syntax error — and `force` does not override that one,
 because forcing it cannot work. The marker is framing, not confinement: code
 with the tmux socket's authority can inspect the pane.
 
-**Two wait ceilings, not one.** A blocking wait spends the agent's turn and
-cannot be cancelled mid-flight, so it is held low. As an MCP task it hands back
-a handle at once and can be cancelled, so it may run as long as the work does.
-`taskSupport` is `optional`, which is what makes shipping tasks safe rather
-than a compatibility break — a client that does not speak tasks has the SDK
-poll on its behalf. Keep the task's `pollInterval` low, because it is the added
-latency of that path.
+**Two wait ceilings, not one.** A blocking wait spends the agent's turn, so it
+is held low. As an MCP task it hands back a handle at once, so it may run as long
+as the work does. Both paths accept request cancellation. `taskSupport` is
+`optional`, so a client without tasks gets the SDK's polling fallback. Keep the
+task's `pollInterval` low because it is added latency on that path.
 
 ## Cancellation
 
