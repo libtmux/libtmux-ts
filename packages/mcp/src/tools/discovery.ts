@@ -19,8 +19,9 @@ import {
   windowPlacements,
   type ToolContext,
 } from "../context.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { ok } from "../results.js";
+import { boundText, ok, renderBoundedText } from "../results.js";
 import { paneIdSchema, windowIdSchema } from "../schemas.js";
 import {
   clientView,
@@ -35,6 +36,63 @@ import {
   windowView,
   windowViewSchema,
 } from "../views.js";
+
+interface ViewLimit<View> {
+  readonly complete: boolean;
+  readonly omittedEntries: number;
+  readonly text: ReturnType<typeof boundText>;
+  readonly views: readonly View[];
+}
+
+/** Keep the leading views whose JSON and readable lines both fit the server limits. */
+function limitViews<View>(
+  views: readonly View[],
+  lineLimit: number,
+  render: (view: View) => string,
+): ViewLimit<View> {
+  const kept: View[] = [];
+  const lines: string[] = [];
+  let structuredBytes = 2;
+  let textBytes = 0;
+
+  for (const view of views) {
+    const serialized = JSON.stringify(view);
+    const rendered = render(view);
+    const renderedLines = rendered.split("\n");
+    const nextStructured =
+      structuredBytes + Buffer.byteLength(serialized, "utf8") + (kept.length === 0 ? 0 : 1);
+    const nextTextBytes =
+      textBytes + Buffer.byteLength(rendered, "utf8") + (lines.length === 0 ? 0 : 1);
+    if (
+      nextStructured > MAX_RESULT_BYTES ||
+      lines.length + renderedLines.length > lineLimit ||
+      nextTextBytes > MAX_RESULT_BYTES
+    ) {
+      break;
+    }
+    kept.push(view);
+    lines.push(...renderedLines);
+    structuredBytes = nextStructured;
+    textBytes = nextTextBytes;
+  }
+
+  return {
+    complete: kept.length === views.length,
+    omittedEntries: views.length - kept.length,
+    text: boundText(lines, lineLimit, MAX_RESULT_BYTES),
+    views: kept,
+  };
+}
+
+function renderViews(result: ViewLimit<unknown>, noun: string, recovery: string): string {
+  const omission =
+    result.omittedEntries === 0
+      ? ""
+      : `[${String(result.omittedEntries)} later ${noun} omitted; ${recovery}]`;
+  return [renderBoundedText(result.text, recovery), omission]
+    .filter((part) => part !== "")
+    .join("\n");
+}
 
 /**
  * A path, safe to put in a result.
@@ -133,7 +191,11 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         "anyone is attached. Metadata only — for what a pane shows, use capture_pane " +
         "or search_panes.",
       inputSchema: {},
-      outputSchema: { sessions: z.array(sessionViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        sessions: z.array(sessionViewSchema),
+      },
       title: "List sessions",
     },
     async () => {
@@ -143,11 +205,20 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         .map((session) =>
           sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
         );
+      const bounded = limitViews(
+        sessions,
+        effectiveResultLines(context.policy, undefined),
+        sessionLine,
+      );
       return ok(
-        { sessions },
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          sessions: bounded.views,
+        },
         sessions.length === 0
           ? "No sessions on this server. Create one with new_session."
-          : sessions.map(sessionLine).join("\n"),
+          : renderViews(bounded, "sessions", "reduce the server topology before listing again"),
       );
     },
   );
@@ -160,7 +231,11 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       inputSchema: {
         session: z.string().optional().describe("Session id ($1) or name. Omit for all sessions."),
       },
-      outputSchema: { windows: z.array(windowViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        windows: z.array(windowViewSchema),
+      },
       title: "List windows",
     },
     async ({ session }) => {
@@ -174,9 +249,20 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const windows = windowEntities(
         target === undefined ? all : all.filter((window) => window.format.session_id === target.id),
       ).map((window) => windowView(window, windowPlacements(snapshot, window.id)));
+      const bounded = limitViews(
+        windows,
+        effectiveResultLines(context.policy, undefined),
+        windowLine,
+      );
       return ok(
-        { windows },
-        windows.length === 0 ? "No windows matched." : windows.map(windowLine).join("\n"),
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          windows: bounded.views,
+        },
+        windows.length === 0
+          ? "No windows matched."
+          : renderViews(bounded, "windows", "filter by session before listing again"),
       );
     },
   );
@@ -193,7 +279,11 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         session: z.string().optional().describe("Session id ($1) or name."),
         window: windowIdSchema.optional(),
       },
-      outputSchema: { panes: z.array(paneViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        panes: z.array(paneViewSchema),
+      },
       title: "List panes",
     },
     async ({ session, window }) => {
@@ -210,9 +300,16 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
               (window === undefined || pane.format.window_id === window),
           ),
       ).map((pane) => paneView(pane, identity, panePlacements(snapshot, pane.id)));
+      const bounded = limitViews(panes, effectiveResultLines(context.policy, undefined), paneLine);
       return ok(
-        { panes },
-        panes.length === 0 ? "No panes matched." : panes.map(paneLine).join("\n"),
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          panes: bounded.views,
+        },
+        panes.length === 0
+          ? "No panes matched."
+          : renderViews(bounded, "panes", "filter by session or window before listing again"),
       );
     },
   );
@@ -343,7 +440,13 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           format: z.string().describe("A tmux format, e.g. '#{pane_pid}'."),
           target: paneIdSchema.optional().describe("Pane id to resolve against."),
         },
-        outputSchema: { value: z.string() },
+        outputSchema: {
+          complete: z.boolean(),
+          droppedLines: z.number().int(),
+          omittedBytes: z.number().int(),
+          returnedBytes: z.number().int(),
+          value: z.string(),
+        },
         title: "Resolve a tmux format",
       },
       async ({ format, target }) => {
@@ -360,7 +463,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
             formatVariables(format),
             value,
           );
-          return ok({ value }, value + emptyNote(unknown));
+          return boundedDisplay(context, value, unknown);
         }
         const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
         const value = lines.join("\n");
@@ -369,8 +472,45 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           formatVariables(format),
           value,
         );
-        return ok({ value }, value + emptyNote(unknown));
+        return boundedDisplay(context, value, unknown);
       },
     );
   }
+}
+
+function boundedDisplay(
+  context: ToolContext,
+  value: string,
+  unknown: readonly string[],
+): ReturnType<typeof ok> {
+  const lineLimit = effectiveResultLines(context.policy, undefined);
+  const diagnostic = emptyNote(unknown).trimStart();
+  const diagnosticLines = diagnostic === "" ? [] : diagnostic.split("\n");
+  const diagnosticBounded = boundText(diagnosticLines, lineLimit, MAX_RESULT_BYTES);
+  const valueBounded = boundText(
+    value === "" ? [] : value.split("\n"),
+    Math.max(0, lineLimit - diagnosticLines.length),
+    Math.max(0, MAX_RESULT_BYTES - diagnosticBounded.returnedBytes),
+  );
+  const recovery = "use a narrower format or resolve its fields separately";
+  const complete =
+    valueBounded.droppedLines === 0 &&
+    valueBounded.omittedBytes === 0 &&
+    diagnosticBounded.droppedLines === 0 &&
+    diagnosticBounded.omittedBytes === 0;
+  return ok(
+    {
+      complete,
+      droppedLines: valueBounded.droppedLines + diagnosticBounded.droppedLines,
+      omittedBytes: valueBounded.omittedBytes + diagnosticBounded.omittedBytes,
+      returnedBytes: valueBounded.returnedBytes + diagnosticBounded.returnedBytes,
+      value: valueBounded.text,
+    },
+    [
+      renderBoundedText(valueBounded, recovery),
+      renderBoundedText(diagnosticBounded, "use fewer format fields"),
+    ]
+      .filter((part) => part !== "")
+      .join("\n\n"),
+  );
 }

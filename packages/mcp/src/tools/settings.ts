@@ -24,7 +24,7 @@ import {
 import { activeFramedCommand } from "../command.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { fail, ok, tailBytes, tailLines } from "../results.js";
+import { boundText, fail, ok, renderBoundedText, tailBytes, tailLines } from "../results.js";
 import { paneIdSchema } from "../schemas.js";
 
 /**
@@ -37,6 +37,64 @@ import { paneIdSchema } from "../schemas.js";
  * readable there.
  */
 const SCOPES = ["server", "session", "global-session", "window", "global-window", "pane"] as const;
+
+interface EntryLimit<Entry> {
+  readonly complete: boolean;
+  readonly entries: readonly Entry[];
+  readonly omittedEntries: number;
+  readonly text: ReturnType<typeof boundText>;
+}
+
+/** Keep a truthful prefix that fits both the structured and text result ceilings. */
+function limitEntries<Entry>(
+  entries: readonly Entry[],
+  lineLimit: number,
+  serialize: (entry: Entry) => string,
+  render: (entry: Entry) => string,
+): EntryLimit<Entry> {
+  const kept: Entry[] = [];
+  const lines: string[] = [];
+  let structuredBytes = 2;
+  let textBytes = 0;
+
+  for (const entry of entries) {
+    const renderedText = render(entry);
+    const rendered = renderedText.split("\n");
+    const serialized = serialize(entry);
+    const nextStructured =
+      structuredBytes + Buffer.byteLength(serialized, "utf8") + (kept.length === 0 ? 0 : 1);
+    const nextTextBytes =
+      textBytes + Buffer.byteLength(renderedText, "utf8") + (lines.length === 0 ? 0 : 1);
+    if (
+      nextStructured > MAX_RESULT_BYTES ||
+      lines.length + rendered.length > lineLimit ||
+      nextTextBytes > MAX_RESULT_BYTES
+    ) {
+      break;
+    }
+    kept.push(entry);
+    lines.push(...rendered);
+    structuredBytes = nextStructured;
+    textBytes = nextTextBytes;
+  }
+
+  return {
+    complete: kept.length === entries.length,
+    entries: kept,
+    omittedEntries: entries.length - kept.length,
+    text: boundText(lines, lineLimit, MAX_RESULT_BYTES),
+  };
+}
+
+function renderEntries(result: EntryLimit<unknown>, noun: string, recovery: string): string {
+  const omission =
+    result.omittedEntries === 0
+      ? ""
+      : `[${String(result.omittedEntries)} later ${noun} omitted; ${recovery}]`;
+  return [renderBoundedText(result.text, recovery), omission]
+    .filter((part) => part !== "")
+    .join("\n");
+}
 
 /** Whether a scope names one object, and so needs a target. */
 function targeted(scope: (typeof SCOPES)[number]): boolean {
@@ -167,7 +225,12 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("Session id/name or pane id, for the matching scope."),
       },
-      outputSchema: { options: z.record(z.string(), z.string()), scope: z.string() },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        options: z.record(z.string(), z.string()),
+        scope: z.string(),
+      },
       title: "Show options",
     },
     async ({ scope, target }) => {
@@ -177,12 +240,21 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       const site = await optionSite(context, chosen, target);
       if (isFailure(site)) return site;
       const read = await site.show();
-      const options = Object.fromEntries(read);
+      const bounded = limitEntries(
+        [...read],
+        effectiveResultLines(context.policy, undefined),
+        ([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`,
+        ([name, value]) => `${name} ${value}`,
+      );
+      const options = Object.fromEntries(bounded.entries);
       return ok(
-        { options, scope: chosen },
-        Object.entries(options)
-          .map(([name, value]) => `${name} ${value}`)
-          .join("\n"),
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          options,
+          scope: chosen,
+        },
+        renderEntries(bounded, "options", "narrow the scope before reading again"),
       );
     },
   );
@@ -199,7 +271,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         session: z.string().optional().describe("Session scope; omit for server scope."),
       },
       outputSchema: {
+        complete: z.boolean(),
         hooks: z.record(z.string(), z.string()),
+        omittedEntries: z.number().int(),
         unset: z
           .number()
           .int()
@@ -220,19 +294,27 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       // tmux reports its whole hook table, roughly a hundred names, nearly all
       // carrying nothing. The question a caller is asking is which hooks run,
       // and a wall of empty strings buries the handful that do.
-      const hooks = Object.fromEntries(
-        [...read]
-          .filter(([, commands]) => commands.some((command) => command !== ""))
-          .map(([name, commands]) => [name, commands.join("\n")] as const),
+      const configured = [...read]
+        .filter(([, commands]) => commands.some((command) => command !== ""))
+        .map(([name, commands]) => [name, commands.join("\n")] as const);
+      const bounded = limitEntries(
+        configured,
+        effectiveResultLines(context.policy, undefined),
+        ([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`,
+        ([name, value]) => `${name} ${value}`,
       );
-      const unset = read.size - Object.keys(hooks).length;
+      const hooks = Object.fromEntries(bounded.entries);
+      const unset = read.size - configured.length;
       return ok(
-        { hooks, unset },
-        Object.keys(hooks).length === 0
+        {
+          complete: bounded.complete,
+          hooks,
+          omittedEntries: bounded.omittedEntries,
+          unset,
+        },
+        configured.length === 0
           ? `No hooks set. ${String(unset)} hook names exist and carry nothing.`
-          : Object.entries(hooks)
-              .map(([name, value]) => `${name} ${value}`)
-              .join("\n"),
+          : renderEntries(bounded, "hooks", "read one session scope at a time"),
       );
     },
   );
@@ -245,7 +327,11 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "The environment tmux gives processes it starts, at server or session " +
         "scope. This is what a new pane will inherit, not what a running one has.",
       inputSchema: { session: z.string().optional() },
-      outputSchema: { environment: z.record(z.string(), z.string().nullable()) },
+      outputSchema: {
+        complete: z.boolean(),
+        environment: z.record(z.string(), z.string().nullable()),
+        omittedEntries: z.number().int(),
+      },
       title: "Show environment",
     },
     async ({ session }) => {
@@ -258,12 +344,20 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         if (isFailure(found)) return found;
         read = await found.showEnvironment();
       }
-      const environment = Object.fromEntries(read);
+      const bounded = limitEntries(
+        [...read],
+        effectiveResultLines(context.policy, undefined),
+        ([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`,
+        ([name, value]) => (value === null ? `-${name}` : `${name}=${value}`),
+      );
+      const environment = Object.fromEntries(bounded.entries);
       return ok(
-        { environment },
-        Object.entries(environment)
-          .map(([name, value]) => (value === null ? `-${name}` : `${name}=${value}`))
-          .join("\n"),
+        {
+          complete: bounded.complete,
+          environment,
+          omittedEntries: bounded.omittedEntries,
+        },
+        renderEntries(bounded, "variables", "read one session scope at a time"),
       );
     },
   );
@@ -276,14 +370,30 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "Names of the paste buffers this server holds. Contents are not listed: a " +
         "tmux buffer stack carries whatever a person copied, which may be anything.",
       inputSchema: {},
-      outputSchema: { buffers: z.array(z.string()) },
+      outputSchema: {
+        buffers: z.array(z.string()),
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+      },
       title: "List buffers",
     },
     async () => {
       const buffers = await context.tmux.listBuffers();
+      const bounded = limitEntries(
+        buffers,
+        effectiveResultLines(context.policy, undefined),
+        (name) => JSON.stringify(name),
+        (name) => name,
+      );
       return ok(
-        { buffers: [...buffers] },
-        buffers.length === 0 ? "No buffers." : buffers.join("\n"),
+        {
+          buffers: bounded.entries,
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+        },
+        buffers.length === 0
+          ? "No buffers."
+          : renderEntries(bounded, "buffers", "remove unused buffers before listing again"),
       );
     },
   );

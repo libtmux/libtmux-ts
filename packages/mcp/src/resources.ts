@@ -81,7 +81,75 @@ function resourceError(failure: CallToolResult): Error {
 }
 
 function jsonResource(uri: string, value: unknown): ReadResourceResult {
-  return { contents: [{ mimeType: JSON_MIME, text: JSON.stringify(value, null, 2), uri }] };
+  const pretty = JSON.stringify(value, null, 2);
+  if (Buffer.byteLength(pretty, "utf8") <= MAX_RESULT_BYTES) {
+    return { contents: [{ mimeType: JSON_MIME, text: pretty, uri }] };
+  }
+  const compact = JSON.stringify(value);
+  if (Buffer.byteLength(compact, "utf8") <= MAX_RESULT_BYTES) {
+    return { contents: [{ mimeType: JSON_MIME, text: compact, uri }] };
+  }
+  const text = JSON.stringify({
+    complete: false,
+    omittedBytes: Buffer.byteLength(compact, "utf8"),
+    reason: `The resource exceeds the ${String(MAX_RESULT_BYTES)}-byte result ceiling.`,
+    value: null,
+  });
+  return { contents: [{ mimeType: JSON_MIME, text, uri }] };
+}
+
+function collectionJson(
+  base: Readonly<Record<string, unknown>>,
+  field: string,
+  items: readonly string[],
+  omittedItems: number,
+  totalItems: number,
+): string {
+  const fields = Object.entries(base)
+    .filter(([name]) => name !== field)
+    .map(([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`);
+  fields.push(
+    `"complete":false`,
+    `${JSON.stringify(field)}:[${items.join(",")}]`,
+    `"omittedItems":${String(omittedItems)}`,
+    `"totalItems":${String(totalItems)}`,
+  );
+  return `{${fields.join(",")}}`;
+}
+
+/** Preserve the normal JSON shape unless a collection needs an explicit bounded envelope. */
+function jsonCollectionResource(
+  uri: string,
+  base: Readonly<Record<string, unknown>>,
+  field: string,
+  items: readonly unknown[],
+): ReadResourceResult {
+  const whole = Object.keys(base).length === 0 ? items : { ...base, [field]: items };
+  const compact = JSON.stringify(whole);
+  if (Buffer.byteLength(compact, "utf8") <= MAX_RESULT_BYTES) return jsonResource(uri, whole);
+
+  const serialized = items.map((item) => JSON.stringify(item));
+  const empty = collectionJson(base, field, [], items.length, items.length);
+  if (Buffer.byteLength(empty, "utf8") > MAX_RESULT_BYTES) {
+    return jsonResource(uri, {
+      complete: false,
+      entityOmitted: true,
+      omittedItems: items.length,
+      reason: `The entity metadata exceeds the ${String(MAX_RESULT_BYTES)}-byte result ceiling.`,
+      totalItems: items.length,
+    });
+  }
+
+  const kept: string[] = [];
+  let bytes = Buffer.byteLength(empty, "utf8");
+  for (const item of serialized) {
+    const next = bytes + Buffer.byteLength(item, "utf8") + (kept.length === 0 ? 0 : 1);
+    if (next > MAX_RESULT_BYTES) break;
+    kept.push(item);
+    bytes = next;
+  }
+  const text = collectionJson(base, field, kept, items.length - kept.length, items.length);
+  return { contents: [{ mimeType: JSON_MIME, text, uri }] };
 }
 
 function textResource(uri: string, text: string): ReadResourceResult {
@@ -154,8 +222,10 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     { description: "Every session on this server.", mimeType: JSON_MIME, title: "Sessions" },
     async () => {
       const snapshot = await context.snapshot();
-      return jsonResource(
+      return jsonCollectionResource(
         SESSIONS_URI,
+        {},
+        "items",
         snapshot.sessions
           .toArray()
           .map((session) =>
@@ -171,8 +241,10 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     { description: "Every window on this server.", mimeType: JSON_MIME, title: "Windows" },
     async () => {
       const snapshot = await context.snapshot();
-      return jsonResource(
+      return jsonCollectionResource(
         WINDOWS_URI,
+        {},
+        "items",
         windowEntities(snapshot.windows.toArray()).map((window) =>
           windowView(window, windowPlacements(snapshot, window.id)),
         ),
@@ -187,8 +259,10 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     async () => {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
-      return jsonResource(
+      return jsonCollectionResource(
         PANES_URI,
+        {},
+        "items",
         paneEntities(snapshot.panes.toArray()).map((pane) =>
           paneView(pane, identity, panePlacements(snapshot, pane.id)),
         ),
@@ -205,7 +279,12 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       title: "Clients",
     },
     async () =>
-      jsonResource(CLIENTS_URI, (await context.snapshot()).clients.toArray().map(clientView)),
+      jsonCollectionResource(
+        CLIENTS_URI,
+        {},
+        "items",
+        (await context.snapshot()).clients.toArray().map(clientView),
+      ),
   );
 
   mcp.registerResource(
@@ -236,12 +315,14 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const found = requireSession(snapshot, target);
       if (isFailure(found)) throw resourceError(found);
       const session = found;
-      return jsonResource(uri.href, {
-        ...sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
-        windows: windowEntities(
+      return jsonCollectionResource(
+        uri.href,
+        sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
+        "windows",
+        windowEntities(
           snapshot.windows.toArray().filter((window) => window.format.session_id === session.id),
         ).map((window) => windowView(window, windowPlacements(snapshot, window.id))),
-      });
+      );
     },
   );
 
@@ -273,12 +354,14 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       if (isFailure(found)) throw resourceError(found);
       const window = found;
       const identity = await context.identity(snapshot);
-      return jsonResource(uri.href, {
-        ...windowView(window, windowPlacements(snapshot, window.id)),
-        panes: paneEntities(
+      return jsonCollectionResource(
+        uri.href,
+        windowView(window, windowPlacements(snapshot, window.id)),
+        "panes",
+        paneEntities(
           snapshot.panes.toArray().filter((pane) => pane.format.window_id === window.id),
         ).map((pane) => paneView(pane, identity, panePlacements(snapshot, pane.id))),
-      });
+      );
     },
   );
 
