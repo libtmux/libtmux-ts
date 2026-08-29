@@ -158,11 +158,6 @@ function splitOnMarker(lines: readonly string[], marker: string): readonly (read
   let current: string[] = [];
   for (const line of lines) {
     if (line === marker) {
-      // Every command's output is trimmed the way a single command's is, so a
-      // command that printed one blank line reads as having printed nothing —
-      // the same answer `cmd` gives, and the same answer this returns when a
-      // connection sends the commands separately.
-      while (current.at(-1) === "") current.pop();
       results.push(current);
       current = [];
       continue;

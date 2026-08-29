@@ -21,7 +21,7 @@ describe("UTF-8 backslash replacement", () => {
     expect(decodeBackslashReplace(Uint8Array.of(0x61, 0xe2, 0x82))).toBe("a\\xe2\\x82");
   });
 
-  test("preserves Python stdout trimming and stderr filtering", () => {
+  test("removes only the transport newline and filters empty stderr", () => {
     const result = adaptRawResult({
       cmd: ["tmux", "display-message"],
       returncode: 1,
@@ -34,7 +34,7 @@ describe("UTF-8 backslash replacement", () => {
       cmd: ["tmux", "display-message"],
       returncode: 1,
       stderr: ["first error", "second error"],
-      stdout: ["first", "", "second"],
+      stdout: ["first", "", "second", ""],
     });
   });
 

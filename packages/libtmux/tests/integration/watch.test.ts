@@ -1061,9 +1061,7 @@ describe("Server.watch", () => {
         const sent = await live.pipeline(commands);
 
         expect(chained).toEqual(sent);
-        // A command that printed one blank line reads as having printed
-        // nothing, which is what `cmd` answers for the same command.
-        expect(chained[1]).toEqual([]);
+        expect(chained[1]).toEqual([""]);
         expect(chained[2]).toEqual([]);
         expect(chained[3]).toEqual(["a b;c 'd' \"e\""]);
         expect(chained[4]).toEqual(["日本語🚀"]);

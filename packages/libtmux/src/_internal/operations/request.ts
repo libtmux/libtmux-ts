@@ -49,7 +49,7 @@ export function prepareCommandRequest(
 
 export function adaptRawResult(raw: RawCommandResult): CommandResult {
   const stdout = decodeBackslashReplace(raw.stdout).split("\n");
-  while (stdout.at(-1) === "") stdout.pop();
+  if (stdout.at(-1) === "") stdout.pop();
   const stderr = decodeBackslashReplace(raw.stderr)
     .split("\n")
     .filter((line) => line !== "");

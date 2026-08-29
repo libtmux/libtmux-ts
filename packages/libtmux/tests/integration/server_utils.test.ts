@@ -269,6 +269,15 @@ describe("server utilities", () => {
     });
   }, 30_000);
 
+  test("keeps a paste buffer's final blank line", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.loadBuffer("trailing-lines", "one\n\n");
+
+      expect(await server.showBuffer("trailing-lines")).toEqual(["one", ""]);
+    });
+  }, 30_000);
+
   const exactBufferCases: readonly {
     readonly name: string;
     readonly data: Uint8Array;
