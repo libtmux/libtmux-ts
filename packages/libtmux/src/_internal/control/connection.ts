@@ -795,21 +795,41 @@ export class ControlConnection implements CommandTransport {
     const fallback = this.#spawnFallback;
     const child = this.#children.active();
     if (fallback === undefined || child?.pid === undefined) return;
-    void fallback
-      .execute({
-        args: [
-          ...this.#commandPrefix,
-          "refresh-client",
-          "-t",
-          `client-${String(child.pid)}`,
-          "-A",
-          `${paneId}:continue`,
-        ],
-        executable: this.#executable,
-        environment: this.#environment,
-        timeoutMs: 30_000,
-      })
-      .catch(() => undefined);
+    const request: CommandRequest = {
+      args: [
+        ...this.#commandPrefix,
+        "refresh-client",
+        "-t",
+        `client-${String(child.pid)}`,
+        "-A",
+        `${paneId}:continue`,
+      ],
+      executable: this.#executable,
+      environment: this.#environment,
+      timeoutMs: 30_000,
+    };
+    const isCurrent = (): boolean =>
+      !this.#closed && this.#children.active() === child && this.#paused.has(paneId);
+    void Promise.resolve()
+      .then(() => fallback.execute(request))
+      .then(
+        (result) => {
+          if (!isCurrent() || result.returncode === 0) return;
+          this.#fail(
+            new TmuxTransportError("tmux refused pane resume", {
+              delivery: "replied",
+              kind: "protocol",
+              signal: result.signal,
+              stderr: result.stderr,
+              stdout: result.stdout,
+            }),
+          );
+        },
+        (error: unknown) => {
+          if (!isCurrent()) return;
+          this.#fail(error instanceof Error ? error : new Error("pane resume command failed"));
+        },
+      );
   }
 
   onDaemonLost(notify: () => void): void {

@@ -45,14 +45,20 @@ function takeChild(children: FakeChild[]): FakeChild {
 
 class RecordingTransport implements CommandTransport {
   readonly requests: CommandRequest[] = [];
+  readonly #outcome: Error | number;
+
+  constructor(outcome: Error | number = 0) {
+    this.#outcome = outcome;
+  }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
     this.requests.push(request);
+    if (this.#outcome instanceof Error) throw this.#outcome;
     return {
       cmd: request.args,
-      returncode: 0,
+      returncode: this.#outcome,
       signal: null,
-      stderr: new Uint8Array(),
+      stderr: this.#outcome === 0 ? new Uint8Array() : new TextEncoder().encode("resume refused"),
       stdout: new Uint8Array(),
     };
   }
@@ -206,8 +212,27 @@ describe("ControlConnection child ownership", () => {
     await control.close();
   });
 
+  test("fails the stream when pane resume fails", async () => {
+    await Promise.all(
+      [1, new Error("resume transport failed")].map(async (outcome, index) => {
+        const child = new FakeChild(106 + index);
+        const fallback = new RecordingTransport(outcome);
+        const control = new ControlConnection(connection(), {}, false, fallback, () => child);
+        const events = control.subscribe();
+        attach(child);
+        await events.ready();
+
+        const ended = events.find(() => false, { timeoutMs: 1_000 });
+        child.stdout.write("%pause %1\n");
+        await expect(ended).rejects.toThrow();
+        expect(fallback.requests[0]?.args).toContain("%1:continue");
+        await control.close();
+      }),
+    );
+  });
+
   test("makes concurrent close callers await child retirement", async () => {
-    const child = new FakeChild(106, false);
+    const child = new FakeChild(108, false);
     const control = new ControlConnection(connection(), {}, false, undefined, () => child);
     attach(child);
     await control.ready();
@@ -241,7 +266,7 @@ describe("ControlConnection child ownership", () => {
         () =>
           new ControlConnection(connection(), { reconnect }, false, undefined, () => {
             spawns += 1;
-            return new FakeChild(107);
+            return new FakeChild(109);
           }),
       ).toThrow(field);
       expect(spawns).toBe(0);
