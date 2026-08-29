@@ -11,6 +11,7 @@ import type { Pane } from "../../pane.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import { quoteCommand } from "../transport/lexer.js";
+import { uniqueUnknownCommand } from "../transport/refusal.js";
 
 function requireIdentity(lines: readonly string[], command: string): string {
   const identity = lines[0];
@@ -161,7 +162,7 @@ function conditionalTargetMutation(
   target: string,
   condition: string,
   command: readonly string[],
-  refusalMarker: string,
+  refusalReason: string,
 ): readonly string[] {
   return [
     "if-shell",
@@ -170,7 +171,7 @@ function conditionalTargetMutation(
     target,
     condition,
     quoteCommand(command),
-    quoteCommand(["list-windows", "-t", refusalMarker]),
+    quoteCommand([uniqueUnknownCommand(refusalReason)]),
   ];
 }
 
@@ -181,7 +182,7 @@ export function planKillPaneIfUnshared(target: string): PlannedOperation<void> {
       target,
       "#{==:#{window_linked},0}",
       ["kill-pane", "-t", target],
-      "libtmux-shared-window",
+      "shared-window",
     ),
     resolve: () => undefined,
   };
@@ -194,7 +195,7 @@ export function planRemoveWindowPlacement(target: string): PlannedOperation<void
       target,
       "#{==:#{session_grouped},0}",
       ["unlink-window", "-k", "-t", target],
-      "libtmux-grouped-session",
+      "grouped-session",
     ),
     resolve: () => undefined,
   };

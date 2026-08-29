@@ -131,6 +131,7 @@ describe("window and pane topology", () => {
       const server = serverFor(fixture);
       const source = (await server.snapshot()).windows.one();
       await server.newSession({ groupWith: fixture.sessionName, name: "remove-grouped" });
+      await server.newSession({ name: "libtmux-grouped-session" });
       const grouped = (await server.snapshot()).windows
         .filter((window) => window.id === source.id && window.session?.name === fixture.sessionName)
         .one();

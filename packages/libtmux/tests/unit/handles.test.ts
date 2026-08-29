@@ -1196,7 +1196,7 @@ describe("authenticated handle materialization", () => {
       "$1:4",
       "#{==:#{session_grouped},0}",
       "'unlink-window' '-k' '-t' '$1:4'",
-      "'list-windows' '-t' 'libtmux-grouped-session'",
+      expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
     ]);
 
     expect(fixture.transport.requests.map(({ args }) => args)).toEqual([
@@ -1211,7 +1211,7 @@ describe("authenticated handle materialization", () => {
         "$1:4",
         "#{==:#{session_grouped},0}",
         "'unlink-window' '-k' '-t' '$1:4'",
-        "'list-windows' '-t' 'libtmux-grouped-session'",
+        expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
       ],
       ["-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
     ]);

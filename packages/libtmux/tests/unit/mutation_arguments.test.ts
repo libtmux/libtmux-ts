@@ -78,7 +78,7 @@ describe("lifecycle command arguments", () => {
       "%4",
       "#{==:#{window_linked},0}",
       "'kill-pane' '-t' '%4'",
-      "'list-windows' '-t' 'libtmux-shared-window'",
+      expect.stringMatching(/^'libtmux-shared-window-[0-9a-f]{32}'$/u),
     ]);
   });
 

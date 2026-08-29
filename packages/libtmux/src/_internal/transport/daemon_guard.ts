@@ -1,19 +1,11 @@
-import { randomUUID } from "node:crypto";
-
 import type { DaemonGuard, GuardedTmuxRequest } from "../../engine.js";
 import { TmuxTransportError } from "../../exc.js";
 import { subcommandOf } from "./group.js";
 import { quoteCommand } from "./lexer.js";
+import { refusedUnknownCommand, uniqueUnknownCommand } from "./refusal.js";
 import type { CommandRequest } from "./types.js";
 
 export type { DaemonGuard } from "../../engine.js";
-
-const RESTART_PREFIX = "libtmux-daemon-restarted-";
-
-/** A fresh command name makes an alias collision a 128-bit guess. */
-function refusalCommand(): string {
-  return `${RESTART_PREFIX}${randomUUID().replaceAll("-", "")}`;
-}
 
 /** A raw tmux id, alone or as the session part of an exact placement. */
 const TMUX_ID = /^[%@$]\d+(?::.*)?$/u;
@@ -38,7 +30,7 @@ export function guardedArgv(
   connectionArgs: readonly string[],
   subcommand: readonly string[],
   daemon: DaemonGuard,
-  refusal: string = refusalCommand(),
+  refusal: string = uniqueUnknownCommand("daemon-restarted"),
 ): readonly string[] {
   return Object.freeze([
     ...connectionArgs,
@@ -57,7 +49,7 @@ export function guardedArgv(
 export function guardedChain(
   chain: string,
   daemon: DaemonGuard,
-  refusal: string = refusalCommand(),
+  refusal: string = uniqueUnknownCommand("daemon-restarted"),
 ): readonly string[] {
   return Object.freeze(["if-shell", "-F", daemonCondition(daemon), chain, quoteCommand([refusal])]);
 }
@@ -88,16 +80,14 @@ export function guardRequest(request: CommandRequest): GuardedTmuxRequest {
     });
   }
   const connectionArgs = request.args.slice(0, request.args.length - subcommand.length);
-  const refusal = refusalCommand();
+  const refusal = uniqueUnknownCommand("daemon-restarted");
   const guarded = Object.freeze({
     ...request,
     args: guardedArgv(connectionArgs, subcommand, daemon, refusal),
   });
-  const expected = `unknown command: ${refusal}`;
   return Object.freeze({
     request: guarded,
     refusedBy: (returncode: number, stderr: Uint8Array): boolean =>
-      returncode !== 0 &&
-      new TextDecoder("utf-8", { fatal: false }).decode(stderr).split(/\r?\n/u).includes(expected),
+      refusedUnknownCommand(refusal, returncode, stderr),
   });
 }
