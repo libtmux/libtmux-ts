@@ -349,7 +349,7 @@ describe("concurrent framing", () => {
   // partway through: the second command's echo, its markers, and its output.
   const contaminated = [
     "AAA-start",
-    ` m=ltxbbb222; printf '%s\\n' "\${m}_S"; ( echo BBB-secret ); s=$?`,
+    ` __ltx_abc123() { printf '%s\\n' "\${1}_S"; ( set --; echo BBB-secret )`,
     "ltxbbb222_S",
     "BBB-secret",
     "ltxbbb222_E 0",

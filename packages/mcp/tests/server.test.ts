@@ -206,6 +206,64 @@ describe("running commands", () => {
     });
   }, 60_000);
 
+  test("does not expose its completion marker to the command", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        const answer = await client.callTool({
+          arguments: {
+            command: `printf '%s\n' "\${m}_E 0" "\${1}_E 0"; printf 'after-forge\n'; exit 7`,
+            paneId,
+          },
+          name: "run_command",
+        });
+        const result = structured<{ exitStatus: number; outcome: string; output: string }>(answer);
+
+        expect(result.outcome).toBe("completed");
+        expect(result.exitStatus).toBe(7);
+        expect(result.output).toContain("after-forge");
+      });
+    });
+  }, 60_000);
+
+  test("does not overwrite shell variables outside the command", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { keys: "m=kept-marker; s=kept-status", paneId },
+          name: "send_keys",
+        });
+        const answer = await client.callTool({
+          arguments: { command: `printf '%s|%s\n' "$m" "$s"`, paneId },
+          name: "run_command",
+        });
+
+        expect(structured<{ output: string }>(answer).output).toBe("kept-marker|kept-status");
+      });
+    });
+  }, 60_000);
+
+  test("frames commands when common shell variables are readonly", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        await client.callTool({
+          arguments: { keys: "readonly m=kept-marker s=kept-status", paneId },
+          name: "send_keys",
+        });
+        const answer = await client.callTool({
+          arguments: { command: "printf 'readonly-ok\\n'", paneId, timeoutMs: 2_000 },
+          name: "run_command",
+        });
+        const result = structured<{ outcome: string; output: string }>(answer);
+
+        expect(result.outcome).toBe("completed");
+        expect(result.output).toBe("readonly-ok");
+      });
+    });
+  }, 60_000);
+
   test("says a command is still running instead of calling it failed", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
@@ -235,8 +293,8 @@ describe("running commands", () => {
           arguments: { command: "echo hi", paneId },
           name: "run_command",
         });
-        // fish rejects `m=x` outright, so framing a command for it produces a
-        // syntax error and a wait that runs to its deadline against one.
+        // fish does not share the wrapper's POSIX subshell grammar, so framing
+        // a command for it produces a syntax error and a wait against one.
         expect((refused as { isError?: boolean }).isError).toBe(true);
         expect(toolText(refused)).toContain("fish");
         expect(toolText(refused)).toContain("send_keys");

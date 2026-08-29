@@ -32,7 +32,8 @@ capture loop:
 **A command's output is never its echo.** A pane repeats what is typed into it,
 so waiting for text that appears in the command matches immediately and reports
 your own command back to you. `run_command` frames what it sends so the marker
-it waits for cannot appear in what it typed, and reports the real exit status.
+it waits for cannot appear in what it typed or in the command's inherited shell
+state, and reports the real exit status.
 
 **A wait that fails is still an answer.** Every wait reports why it ended —
 `matched`, `timed_out`, `pane_died`, `cancelled` — along with everything the pane

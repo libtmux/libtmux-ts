@@ -17,10 +17,9 @@ import { runFramedCommand } from "../command.js";
 /**
  * Shells whose syntax the command framing is written in.
  *
- * `run_command` sends `m=id; printf …; ( … ); s=$?`, which is POSIX shell and
- * nothing else. fish rejects the assignment outright, csh spells the status
- * `$status`, and PowerShell shares neither — so a command framed for them fails
- * to parse and the wait runs to its deadline against a syntax error.
+ * `run_command` uses POSIX subshells, positional parameters, `printf`, and `$?`.
+ * fish, csh, and PowerShell do not share that grammar, so a command framed for
+ * them fails to parse and the wait runs to its deadline against a syntax error.
  */
 const POSIX_SHELLS = new Set(["ash", "bash", "dash", "ksh", "mksh", "sh", "zsh"]);
 

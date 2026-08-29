@@ -6,10 +6,12 @@
  * reports the command's own text as its output. Waiting for a marker does not
  * help by itself: the marker is in the command, so it is echoed too.
  *
- * The fix is to make the marker unspeakable. The command carries `${m}_S`, and
- * the shell prints `<id>_S`; the two are the same string only after expansion,
- * so the literal never appears in what is typed and a match on it is always the
- * printed one. Nothing here depends on the shell beyond `printf` and `$?`.
+ * The wrapper passes the marker as a shell function's positional parameter,
+ * then clears the command subshell's parameters before running it. The literal
+ * marker never appears in what the pane echoes, and the command does not
+ * inherit the value it would need to forge completion. The function has an
+ * independent random name and is removed afterwards. Nothing here depends on
+ * the shell beyond functions, subshells, `set`, `printf`, `unset`, and `$?`.
  */
 
 import { randomUUID } from "node:crypto";
@@ -51,8 +53,9 @@ const FALLBACK_POLL_MS = 60;
 export function frame(command: string, id: string, suppressHistory: boolean): string {
   const multiline = command.includes("\n") || command.includes("\r");
   const prefix = suppressHistory ? " " : "";
-  const open = `${prefix}m=${id}; printf '%s\\n' "\${m}_S"; (`;
-  const close = `); s=$?; printf '%s %s\\n' "\${m}_E" "$s"`;
+  const scope = `__ltx_${randomId()}`;
+  const open = `${prefix}${scope}() { printf '%s\\n' "\${1}_S"; ( set --;`;
+  const close = `); printf '%s %s\\n' "\${1}_E" "$?"; }; ${scope} ${id}; unset -f ${scope}`;
   return multiline
     ? `${open}\n${command.replace(/\s+$/, "")}\n${close}`
     : `${open} ${command} ${close}`;
@@ -61,7 +64,7 @@ export function frame(command: string, id: string, suppressHistory: boolean): st
 /** A framing marker: `<id>_S` or `<id>_E`, as the shell prints it. */
 const MARKER = /\b(ltx[0-9a-f]+)_([SE])\b/u;
 /** A framing command, as the pane echoes it back when somebody types one. */
-const FRAMING_ECHO = /(?:^|\s)m=(ltx[0-9a-f]+);/u;
+const FRAMING_ECHO = /(?:^|\s)__ltx_[0-9a-f]+\(\)/u;
 
 /**
  * Remove another caller's framing, and its output, from this caller's body.
@@ -111,7 +114,7 @@ export function withoutForeignFraming(
   const kept = lines.filter((line, index) => {
     if (drop.has(index)) return false;
     const echo = FRAMING_ECHO.exec(line);
-    if (echo !== null && foreign(echo[1] ?? "")) {
+    if (echo !== null) {
       seen = true;
       return false;
     }
@@ -129,14 +132,15 @@ export function withoutForeignFraming(
 /**
  * Pull the command's own output out of the framed stream.
  *
- * The end marker alone is proof that the command finished, and carries its
- * status; the id is unique, so nothing else can print one. The start marker is
- * only needed to locate where the body begins — and it is printed first, so it
- * is the first thing lost, whether to the tail's byte limit or to a fallback
- * capture that samples the last few hundred lines. Requiring it meant a command
- * that outran either bound ran to its deadline and was reported as still
- * running after it had already finished, which is worse than reporting it
- * finished with output that starts partway through.
+ * The end marker says the wrapper finished and carries its status. Its random
+ * value is unavailable through the command's inherited shell state; this is
+ * framing, not a sandbox against code that can inspect the tmux server itself.
+ * The start marker is only needed to locate where the body begins — and it is
+ * printed first, so it is the first thing lost, whether to the tail's byte
+ * limit or to a fallback capture that samples the last few hundred lines.
+ * Requiring it meant a command that outran either bound ran to its deadline and
+ * was reported as still running after it had already finished, which is worse
+ * than reporting it finished with output that starts partway through.
  */
 function slice(
   stream: string,
