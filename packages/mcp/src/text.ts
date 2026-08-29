@@ -22,7 +22,18 @@ const ESCAPE = 0x1b;
 const BELL = 0x07;
 const BACKSPACE = 0x08;
 
-type State = "control-sequence" | "escape" | "string" | "string-escape" | "text";
+/** An escape sequence's intermediate bytes, which precede its final one. */
+function isIntermediate(code: number): boolean {
+  return code >= 0x20 && code <= 0x2f;
+}
+
+type State =
+  | "control-sequence"
+  | "escape"
+  | "escape-intermediate"
+  | "string"
+  | "string-escape"
+  | "text";
 
 /** Strips escape sequences from a pane's output, across chunk boundaries. */
 export class TextFilter {
@@ -58,14 +69,22 @@ export class TextFilter {
         return this.#pushTextCharacter(character, code, out);
       }
       case "escape": {
-        this.#state =
-          character === "["
-            ? "control-sequence"
-            : // OSC, APC, PM and DCS all run to a string terminator; everything
-              // else is a two-byte sequence that is already whole.
-              character === "]" || character === "_" || character === "^" || character === "P"
-              ? "string"
-              : "text";
+        if (character === "[") this.#state = "control-sequence";
+        // OSC, APC, PM and DCS all run to a string terminator.
+        else if (character === "]" || character === "_" || character === "^" || character === "P") {
+          this.#state = "string";
+        }
+        // An intermediate byte means the final one is still to come. Treating
+        // it as the end emitted the final byte as text, and `ESC ( B` is how
+        // xterm's `sgr0` starts — so a `tput sgr0` left a `B` in the output.
+        else if (isIntermediate(code)) this.#state = "escape-intermediate";
+        else this.#state = "text";
+        return out;
+      }
+      case "escape-intermediate": {
+        // Intermediates may repeat; the first byte that is not one ends the
+        // sequence and is consumed with it.
+        if (!isIntermediate(code)) this.#state = "text";
         return out;
       }
       case "control-sequence": {

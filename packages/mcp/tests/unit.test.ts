@@ -88,6 +88,13 @@ describe("text filter", () => {
     expect(readableText(coloured)).toBe("hello");
   });
 
+  test("drops an escape sequence that carries an intermediate byte", () => {
+    // `ESC ( B` is where xterm's `sgr0` starts, so every `tput sgr0` reaches
+    // here. Ending the sequence at the intermediate left the final byte as text.
+    expect(readableText("(B[mdone")).toBe("done");
+    expect(readableText(")0#8%Gdone")).toBe("done");
+  });
+
   test("keeps a sequence split across two chunks from leaking", () => {
     const filter = new TextFilter();
     // tmux splits notifications wherever it likes, so a stateless filter would
