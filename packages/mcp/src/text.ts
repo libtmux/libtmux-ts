@@ -27,6 +27,8 @@ type State = "control-sequence" | "escape" | "string" | "string-escape" | "text"
 /** Strips escape sequences from a pane's output, across chunk boundaries. */
 export class TextFilter {
   #state: State = "text";
+  /** The readable code points on the line currently being emitted. */
+  readonly #line: string[] = [];
   /** Whether the last byte was a carriage return, which decides the next break. */
   #pendingReturn = false;
 
@@ -87,20 +89,42 @@ export class TextFilter {
     }
     if (character === "\n") {
       this.#pendingReturn = false;
+      this.#line.length = 0;
       return `${out}\n`;
     }
     if (code === BACKSPACE) {
       // A backspace is how a shell erases; dropping the erased character keeps
       // a re-edited command line from reading as both versions at once.
       const flushed = this.#flushReturn(out);
-      return flushed.endsWith("\n") || flushed === "" ? flushed : flushed.slice(0, -1);
+      if (this.#line.length === 0) return flushed;
+      this.#line.pop();
+      const local = flushed.slice(flushed.lastIndexOf("\n") + 1);
+      if (local !== "") return withoutLastCodePoint(flushed);
+      // Text returned by an earlier push cannot be retracted. Emit the corrected
+      // line as a later terminal rewrite instead of corrupting or ignoring it.
+      return `${flushed}\n${this.#line.join("")}`;
     }
-    return this.#flushReturn(out) + character;
+    const flushed = this.#flushReturn(out);
+    this.#line.push(character);
+    return flushed + character;
   }
 
   #flushReturn(out: string): string {
     if (!this.#pendingReturn) return out;
     this.#pendingReturn = false;
+    this.#line.length = 0;
     return `${out}\n`;
   }
+}
+
+function withoutLastCodePoint(value: string): string {
+  if (value === "") return value;
+  const last = value.charCodeAt(value.length - 1);
+  const paired =
+    last >= 0xdc00 &&
+    last <= 0xdfff &&
+    value.length >= 2 &&
+    value.charCodeAt(value.length - 2) >= 0xd800 &&
+    value.charCodeAt(value.length - 2) <= 0xdbff;
+  return value.slice(0, paired ? -2 : -1);
 }

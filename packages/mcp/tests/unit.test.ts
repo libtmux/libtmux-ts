@@ -101,6 +101,16 @@ describe("text filter", () => {
     expect(readableText("cat\b\bar")).toBe("car");
   });
 
+  test("removes a whole Unicode code point on backspace", () => {
+    expect(readableText("🙂\b")).toBe("");
+  });
+
+  test("renders a correction that crosses notification chunks", () => {
+    const filter = new TextFilter();
+    expect(filter.push("cat")).toBe("cat");
+    expect(filter.push("\b\bar")).toBe("\ncar");
+  });
+
   test("drops OSC title sequences whichever terminator they use", () => {
     expect(readableText("]0;titletext")).toBe("text");
     expect(readableText("]0;title\\text")).toBe("text");
