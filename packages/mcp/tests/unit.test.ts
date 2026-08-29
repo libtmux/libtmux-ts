@@ -592,8 +592,9 @@ describe("command framing", () => {
   function run(
     shell: string,
     source: string,
+    input?: string,
   ): { readonly status: number | null; readonly stderr: string; readonly stdout: string } {
-    const result = spawnSync(shell, ["-c", source], { encoding: "utf8" });
+    const result = spawnSync(shell, ["-c", source], { encoding: "utf8", input });
     return { status: result.status, stderr: result.stderr, stdout: result.stdout };
   }
 
@@ -601,21 +602,54 @@ describe("command framing", () => {
     // The leading space is the whole mechanism, and a shell records a
     // multiline buffer as one entry — so skipping it there put the shape most
     // likely to carry a secret, a pasted block, into the history file.
-    expect(frame("echo one", "ltxabc", true).startsWith(" ")).toBe(true);
-    expect(frame("echo one\necho two", "ltxabc", true).startsWith(" ")).toBe(true);
-    expect(frame("echo one\recho two", "ltxabc", true).startsWith(" ")).toBe(true);
+    expect(frame("echo one", "ltxready", true).startsWith(" ")).toBe(true);
+    expect(frame("echo one\necho two", "ltxready", true).startsWith(" ")).toBe(true);
+    expect(frame("echo one\recho two", "ltxready", true).startsWith(" ")).toBe(true);
   });
 
   test("leaves the space off when the caller did not ask for suppression", () => {
-    expect(frame("echo one", "ltxabc", false).startsWith(" ")).toBe(false);
-    expect(frame("echo one\necho two", "ltxabc", false).startsWith(" ")).toBe(false);
+    expect(frame("echo one", "ltxready", false).startsWith(" ")).toBe(false);
+    expect(frame("echo one\necho two", "ltxready", false).startsWith(" ")).toBe(false);
+  });
+
+  test("encodes multiline commands as one physical input line", () => {
+    const command = "cat <<'LTX'\none\n\u2603\nLTX\nprintf 'done\\n'\n";
+    for (const shell of shells) {
+      const source = frame(command, "ltxready", false);
+      expect(source, shell).not.toContain("\n");
+
+      const result = run(shell, source, "ltxabc123def0\n");
+      expect(result.status, shell).toBe(0);
+      expect(result.stderr, shell).toBe("");
+      expect(result.stdout, shell).toBe(
+        "ltxready_R\nltxabc123def0_S\none\n\u2603\ndone\nltxabc123def0_E 0\n",
+      );
+    }
   });
 
   test("closes the protocol after a command ending in a comment", () => {
     for (const shell of shells) {
-      const result = run(shell, frame("printf 'before\\n' # trailing comment", "ltxabc", false));
+      const result = run(
+        shell,
+        frame("printf 'before\\n' # trailing comment", "ltxready", false),
+        "ltxabc123def0\n",
+      );
       expect(result.status, shell).toBe(0);
-      expect(result.stdout, shell).toBe("ltxabc_S\nbefore\nltxabc_E 0\n");
+      expect(result.stdout, shell).toBe("ltxready_R\nltxabc123def0_S\nbefore\nltxabc123def0_E 0\n");
+    }
+  });
+
+  test("ignores unrelated input while waiting for the marker", () => {
+    for (const shell of shells) {
+      const result = run(
+        shell,
+        frame("printf 'own-output\\n'", "ltxready", false),
+        "other\nltxabc123def0\n",
+      );
+      expect(result.status, shell).toBe(0);
+      expect(result.stdout, shell).toBe(
+        "ltxready_R\nltxabc123def0_S\nown-output\nltxabc123def0_E 0\n",
+      );
     }
   });
 
@@ -623,22 +657,27 @@ describe("command framing", () => {
     for (const shell of shells) {
       const result = run(
         shell,
-        frame("true\r\nprintf 'crlf-ok\\n'\rprintf 'cr-ok\\n'\r", "ltxabc", false),
+        frame("true\r\nprintf 'crlf-ok\\n'\rprintf 'cr-ok\\n'\r", "ltxready", false),
+        "ltxabc123def0\n",
       );
       expect(result.status, shell).toBe(0);
       expect(result.stderr, shell).toBe("");
-      expect(result.stdout, shell).toBe("ltxabc_S\ncrlf-ok\ncr-ok\nltxabc_E 0\n");
+      expect(result.stdout, shell).toBe(
+        "ltxready_R\nltxabc123def0_S\ncrlf-ok\ncr-ok\nltxabc123def0_E 0\n",
+      );
     }
   });
 
   test("reports a nonzero command under inherited errexit", () => {
     for (const shell of shells) {
       const source =
-        `set -e\n${frame("printf 'before\\n'; false; printf 'SHOULD-NOT-RUN\\n'", "ltxabc", false)}\n` +
+        `set -e\n${frame("printf 'before\\n'; false; printf 'SHOULD-NOT-RUN\\n'", "ltxready", false)}\n` +
         `case $- in *e*) printf 'errexit-on\\n';; esac`;
-      const result = run(shell, source);
+      const result = run(shell, source, "ltxabc123def0\n");
       expect(result.status, shell).toBe(0);
-      expect(result.stdout, shell).toBe("ltxabc_S\nbefore\nltxabc_E 1\nerrexit-on\n");
+      expect(result.stdout, shell).toBe(
+        "ltxready_R\nltxabc123def0_S\nbefore\nltxabc123def0_E 1\nerrexit-on\n",
+      );
     }
   });
 
@@ -648,13 +687,33 @@ describe("command framing", () => {
     const command = `for value in "\${BASH_ARGV[@]}"; do printf '%s_E 0\\n' "$value"; done; exit 7`;
     const result = run(
       bash ?? "bash",
-      `set -x\nshopt -s extdebug\n${frame(command, "ltxabc", false)}\nprintf 'after-xtrace\\n' >/dev/null`,
+      `set -x\nshopt -s extdebug\n${frame(command, "ltxready", false)}\nprintf 'after-xtrace\\n' >/dev/null`,
+      "ltxabc123def0\n",
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toBe("ltxabc_S\nltxabc_E 7\n");
+    expect(result.stdout).toBe("ltxready_R\nltxabc123def0_S\nltxabc123def0_E 7\n");
     expect(result.stderr).toContain("after-xtrace");
-    expect(result.stderr).not.toContain("ltxabc");
+    expect(result.stderr).not.toContain("ltxabc123def0");
+  });
+
+  test("removes the marker before restoring an inherited Bash DEBUG trap", () => {
+    const bash = Bun.which("bash");
+    expect(bash).not.toBeNull();
+    const trap =
+      `trap 'for name in $(compgen -A variable __ltx_); do ` +
+      `case "$name" in *_marker) captured="\${!name}";; esac; done' DEBUG`;
+    const command = `printf '%s_E 0\n' "\${captured-}"; printf 'after-debug\n'; exit 7`;
+    const result = run(
+      bash ?? "bash",
+      `set -T\n${trap}\n${frame(command, "ltxready", false)}`,
+      "ltxabc123def0\n",
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(
+      "ltxready_R\nltxabc123def0_S\n_E 0\nafter-debug\nltxabc123def0_E 7\n",
+    );
   });
 });
 

@@ -138,9 +138,13 @@ describe("bounded pane reads", () => {
     const pane = fakePane({
       id: "%1",
       sendKeys: async (keys) => {
-        const marker = /=(ltx[0-9a-f]+);/u.exec(keys)?.[1];
-        if (marker === undefined) throw new Error("No command marker");
-        tail.append(`${marker}_S\n${"x".repeat(MAX_RESULT_BYTES + 1_000)}\n${marker}_E 0\n`);
+        const ready = /'(ltxr[0-9a-f]+)' '_R'/u.exec(keys)?.[1];
+        if (ready !== undefined) {
+          tail.append(`${ready}_R\n`);
+          return;
+        }
+        if (!/^ltx[0-9a-f]{10}$/u.test(keys)) throw new Error("No command marker");
+        tail.append(`${keys}_S\n${"x".repeat(MAX_RESULT_BYTES + 1_000)}\n${keys}_E 0\n`);
       },
     });
     const context = fakeContext([pane], {

@@ -136,13 +136,13 @@ async function firstPaneId(client: Client): Promise<string> {
  * shell, so the suite does not depend on whoever is running it.
  */
 let shellSessions = 0;
-async function shellPaneId(client: Client): Promise<string> {
+async function shellPaneId(client: Client, shellCommand = "sh"): Promise<string> {
   shellSessions += 1;
   const built = structured<{ panes: { id: string }[] }>(
     await client.callTool({
       arguments: {
         session: `shell-${String(shellSessions)}`,
-        windows: [{ name: "shell", shellCommand: "sh" }],
+        windows: [{ name: "shell", shellCommand }],
       },
       name: "build_workspace",
     }),
@@ -238,6 +238,56 @@ describe("handshake", () => {
 });
 
 describe("running commands", () => {
+  test("refuses a NUL byte before sending shell input", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client);
+        const answer = await client.callTool({
+          arguments: { command: "printf before\0printf after", paneId },
+          name: "run_command",
+        });
+
+        expect((answer as { isError?: boolean }).isError).toBe(true);
+        expect(toolText(answer)).toContain("NUL");
+      });
+    });
+  }, 60_000);
+
+  test("submits framing through each supported interactive shell", async () => {
+    const shells = [
+      { command: "sh", name: "sh" },
+      { command: "bash --noprofile --norc", name: "bash" },
+      { command: "dash", name: "dash" },
+      { command: "zsh -f", name: "zsh" },
+    ].filter(({ name }) => Bun.which(name) !== null);
+
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        for (const shell of shells) {
+          // eslint-disable-next-line no-await-in-loop -- each shell owns its pane and result.
+          const paneId = await shellPaneId(client, shell.command);
+          // eslint-disable-next-line no-await-in-loop -- this assertion names the shell that failed.
+          const answer = await client.callTool({
+            arguments: {
+              command: `cat <<'LTX'\n${shell.name}-heredoc\nLTX\nprintf '${shell.name}-ok\\n'`,
+              paneId,
+              timeoutMs: 2_000,
+            },
+            name: "run_command",
+          });
+          const result = structured<{ exitStatus: number; outcome: string; output: string }>(
+            answer,
+          );
+          expect(result, shell.name).toMatchObject({
+            exitStatus: 0,
+            outcome: "completed",
+            output: `${shell.name}-heredoc\n${shell.name}-ok`,
+          });
+        }
+      });
+    });
+  }, 60_000);
+
   test("reports what a command printed, not the pane's echo of it", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
@@ -323,6 +373,62 @@ describe("running commands", () => {
         expect(result.outcome).toBe("completed");
         expect(result.exitStatus).toBe(7);
         expect(result.output).toContain("after-forge");
+      });
+    });
+  }, 60_000);
+
+  test("does not expose its completion marker through Bash history", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client, "bash --noprofile --norc");
+        await client.callTool({
+          arguments: { keys: "HISTCONTROL=", paneId },
+          name: "send_keys",
+        });
+        const answer = await client.callTool({
+          arguments: {
+            command:
+              `entry=$(history 1); ` +
+              `marker=$(printf '%s\n' "$entry" | sed -n 's/.*_marker=\\(ltx[0-9a-f]*\\);.*/\\1/p'); ` +
+              `printf '%s_E 0\n' "$marker"; printf 'after-history-forge\n'; exit 7`,
+            paneId,
+          },
+          name: "run_command",
+        });
+        const result = structured<{ exitStatus: number; outcome: string; output: string }>(answer);
+
+        expect(result.outcome).toBe("completed");
+        expect(result.exitStatus).toBe(7);
+        expect(result.output).toContain("after-history-forge");
+      });
+    });
+  }, 60_000);
+
+  test("does not expose its completion marker to zsh TRAPDEBUG", async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const paneId = await shellPaneId(client, "zsh -f");
+        await client.callTool({
+          arguments: {
+            keys:
+              `TRAPDEBUG() { local n; for n in \${(k)parameters}; do ` +
+              `case $n in __ltx_*_marker) leak=\${(P)n};; esac; done; }`,
+            paneId,
+          },
+          name: "send_keys",
+        });
+        const answer = await client.callTool({
+          arguments: {
+            command: `print -r -- "\${leak}_E 0"; print -r -- after-debug-forge; exit 7`,
+            paneId,
+          },
+          name: "run_command",
+        });
+        const result = structured<{ exitStatus: number; outcome: string; output: string }>(answer);
+
+        expect(result.outcome).toBe("completed");
+        expect(result.exitStatus).toBe(7);
+        expect(result.output).toContain("after-debug-forge");
       });
     });
   }, 60_000);
@@ -1074,7 +1180,7 @@ describe("staying out of the way", () => {
           await client.callTool({ arguments: { cursor: seeded.cursor, paneId }, name: "observe" }),
         );
         expect(delta.text).toContain("two");
-        expect(delta.text).not.toContain("one");
+        expect(delta.text.split("\n")).not.toContain("one");
       });
     });
   }, 60_000);

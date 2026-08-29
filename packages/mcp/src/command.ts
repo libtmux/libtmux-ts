@@ -1,17 +1,4 @@
-/**
- * Running a shell command in a pane and knowing exactly what it printed.
- *
- * The problem this solves is the echo. A pane repeats what is typed into it, so
- * a wait for text that also appears in the command matches the echo at once and
- * reports the command's own text as its output. Waiting for a marker does not
- * help by itself: the marker is in the command, so it is echoed too.
- *
- * The wrapper keeps the marker in an outer subshell, then removes it from the
- * command subshell before evaluating the caller's text. It also disables
- * inherited tracing and errexit before the marker exists. The function has no
- * arguments, so Bash's extended debug state cannot retain the marker after the
- * command clears its ordinary parameters. Nothing escapes the outer subshell.
- */
+/** The wrapper reads its marker after parsing, then removes it before running the command. */
 
 import { randomUUID } from "node:crypto";
 
@@ -99,32 +86,38 @@ async function fallbackStream(pane: Pane): Promise<string> {
     .catch(() => "");
 }
 
-/**
- * Wrap a command so its output can be told from the pane's echo of it.
- *
- * The leading space is what keeps the command out of the history file of a
- * shell set to HIST_IGNORE_SPACE or HISTCONTROL=ignorespace. It used to be
- * skipped for a multiline command, which is exactly the shape a here-doc or a
- * pasted block takes — so the one case most likely to carry a secret was the
- * one case that persisted it to disk. Both shells record a multiline buffer as
- * a single history entry, so the space suppresses it the same way; verified
- * against zsh with the option set, where the spaced form is absent from the
- * file and the unspaced form is written in full.
- */
-export function frame(command: string, id: string, suppressHistory: boolean): string {
+/** Build a wrapper whose leading space lets history suppression cover multiline input. */
+export function frame(command: string, ready: string, suppressHistory: boolean): string {
   const prefix = suppressHistory ? " " : "";
   const scope = `__ltx_${randomId()}`;
   const marker = `${scope}_marker`;
+  const markerPattern = `ltx${"[0-9a-f]".repeat(10)}`;
   const options = `${scope}_options`;
+  const payload = `${scope}_payload`;
+  const traps = `${scope}_traps`;
   const normalized = command.replace(/\r\n?/gu, "\n");
-  const quoted = `'${normalized.replaceAll("'", `'\\''`)}'`;
+  if (normalized.includes("\0")) throw new TypeError("command must not contain NUL bytes");
+  const encoded = [...Buffer.from(normalized, "utf8")]
+    .map((byte) => `\\0${byte.toString(8).padStart(3, "0")}`)
+    .join("");
   return (
-    `${prefix}( ${options}=$-; set +x; set +e; ${marker}=${id}; ` +
+    `${prefix}( ${options}=$-; set +x; set +e; ${traps}=; ` +
+    `case "\${BASH_VERSION-}" in ?*) ${traps}=$(trap -p DEBUG RETURN ERR); ` +
+    `set +T; trap - DEBUG RETURN ERR;; esac; ` +
+    `case "\${ZSH_VERSION-}" in ?*) ${traps}=$(typeset -f TRAPDEBUG); ` +
+    `unfunction TRAPDEBUG 2>/dev/null || :;; esac; ` +
+    `${payload}=$(printf '%bX' '${encoded}'); ${payload}=\${${payload}%X}; ` +
+    `printf '%s%s\\n' '${ready}' '_R'; ` +
+    `while IFS= read -r ${marker}; do ` +
+    `case "\${${marker}}" in ${markerPattern}) break;; esac; done; ` +
+    `case "\${${marker}}" in ${markerPattern}) :;; *) exit 125;; esac; ` +
     `${scope}() { printf '%s\\n' "\${${marker}}_S"; ` +
     `( unset ${marker}; set --; ` +
+    `eval "\${${traps}}"; unset ${traps}; ` +
+    `case "\${BASH_VERSION-}:\${${options}}" in ?*:*T*) set -T;; esac; ` +
     `case "\${${options}}" in *e*) set -e;; esac; ` +
     `case "\${${options}}" in *x*) set -x;; esac; ` +
-    `unset ${options}; eval ${quoted} ); ` +
+    `unset ${options}; eval "\${${payload}}" ); ` +
     `printf '%s %s\\n' "\${${marker}}_E" "$?"; }; ${scope} )`
   );
 }
@@ -295,6 +288,14 @@ async function waitForSettlement(
   }
 }
 
+async function sendLiteralLine(pane: Pane, line: string): Promise<void> {
+  await pane.sendKeys(line, { literal: true });
+}
+
+function hasExactLine(stream: string, expected: string): boolean {
+  return stream.split("\n").some((line) => line.replace(/\r$/u, "") === expected);
+}
+
 /**
  * Run `command` in `pane` and wait for it to finish.
  *
@@ -313,7 +314,8 @@ export async function runFramedCommand(
 ): Promise<FramedResult> {
   const budget = effectiveWaitMs(context.policy, timeoutMs, asTask);
   const id = `ltx${randomId()}`;
-  const payload = frame(command, id, suppressHistory);
+  const ready = `ltxr${randomId()}`;
+  const source = frame(command, ready, suppressHistory);
   const sessionId = pane.format.session_id;
 
   let tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
@@ -321,11 +323,11 @@ export async function runFramedCommand(
   // Read the stream position before sending: output printed between the send
   // and the first read would otherwise be attributed to whatever came before.
   const cursor = tail?.cursor;
-  await pane.sendKeys(payload, { literal: true });
-
   const deadline = Date.now() + budget;
   let missedBytes = 0;
+  let readySeen = false;
   let usedFallback = tail === undefined;
+  await sendLiteralLine(pane, source);
   while (Date.now() < deadline && signal?.aborted !== true) {
     if (tail?.endReason !== undefined) {
       tail = undefined;
@@ -340,16 +342,23 @@ export async function runFramedCommand(
       stream = reading.text;
       missedBytes = Math.max(missedBytes, reading.missedBytes);
     }
-    const found = slice(stream, id);
-    if (found !== undefined) {
-      return {
-        effectiveTimeoutMs: budget,
-        missedBytes,
-        ...found,
-        outcome: "completed",
-        outputComplete: found.outputComplete && !usedFallback,
-        settled: Promise.resolve(),
-      };
+    if (!readySeen && hasExactLine(stream, `${ready}_R`)) {
+      readySeen = true;
+      // eslint-disable-next-line no-await-in-loop -- input follows the readiness observation.
+      await sendLiteralLine(pane, id);
+    }
+    if (readySeen) {
+      const found = slice(stream, id);
+      if (found !== undefined) {
+        return {
+          effectiveTimeoutMs: budget,
+          missedBytes,
+          ...found,
+          outcome: "completed",
+          outputComplete: found.outputComplete && !usedFallback,
+          settled: Promise.resolve(),
+        };
+      }
     }
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- the poll follows its read.
@@ -366,6 +375,7 @@ export async function runFramedCommand(
       }
     }
   }
+  if (!readySeen) await pane.sendKeys("C-c", { enter: false });
 
   // Timed out, or the pane died under it — which is a different answer, and the
   // only one where calling again would wait on something that cannot arrive.
@@ -389,21 +399,12 @@ export async function runFramedCommand(
     outcome: alive ? "timed_out" : "pane_died",
     output: cleaned.text,
     outputComplete: startAt >= 0 && missedBytes === 0 && !usedFallback,
-    settled: alive ? waitForSettlement(context, pane, id, cursor, tail) : Promise.resolve(),
+    settled:
+      alive && readySeen ? waitForSettlement(context, pane, id, cursor, tail) : Promise.resolve(),
   };
 }
 
-/**
- * A short id, unique enough that no run matches another's markers.
- *
- * That is a weaker guarantee than it sounds: matching is safe, attribution is
- * not. The body between one run's markers is whatever the pane printed, so
- * uniqueness keeps two runs from reading each other's *markers*, not from
- * reading each other's *output*.
- *
- * Letters and digits only: the id is pasted into a shell word, so anything a
- * shell would treat as syntax cannot appear in it.
- */
+/** An alphanumeric marker line that every supported shell reads without interpretation. */
 export function randomId(): string {
   return randomUUID().replaceAll("-", "").slice(0, 10);
 }
