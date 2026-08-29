@@ -237,6 +237,52 @@ describe("ControlConnection child ownership", () => {
     expect(replacement.kills).toEqual(["SIGTERM"]);
   });
 
+  test("re-issues its subscriptions to a replacement client", async () => {
+    // tmux keeps a subscription on the control client, and a reconnect replaces
+    // that client with one holding none. Without the re-issue the stream
+    // recovers and silently stops reporting, which is the failure this feature
+    // exists to prevent.
+    const old = new FakeChild(101);
+    const replacement = new FakeChild(102);
+    const children = [old, replacement];
+    const fallback = new RecordingTransport();
+    const reconnect = { attempts: 1, delayMs: 1 };
+    const control = new ControlConnection(
+      connection(),
+      {
+        reconnect,
+        subscriptions: [{ format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }],
+      },
+      false,
+      fallback,
+      () => takeChild(children),
+    );
+    reconnect.attempts = 0;
+    reconnect.delayMs = 0;
+    const events = control.subscribe();
+    attach(old);
+    await events.ready();
+    const first = fallback.requests.map((request) => request.commands[0]?.join(" ") ?? "");
+    expect(first.some((command) => command.includes("client-101") && command.includes("-B"))).toBe(
+      true,
+    );
+
+    const reconnected = events.find((event) => event.kind === "reconnected", { timeoutMs: 1_000 });
+    old.emit("error", new Error("broken pipe"));
+    old.emit("close", 1);
+    await nextTurn();
+    await nextTurn();
+    attach(replacement);
+    expect(await reconnected).toEqual({ attempts: 1, kind: "reconnected" });
+
+    const reissued = fallback.requests
+      .map((request) => request.commands[0]?.join(" ") ?? "")
+      .filter((command) => command.includes("client-102") && command.includes("-B"));
+    expect(reissued).toEqual(["refresh-client -t client-102 -B cmd:%*:#{pane_current_command}"]);
+
+    await control.close();
+  });
+
   test("drops an incomplete pane character across a pause gap", async () => {
     const child = new FakeChild(105);
     const control = new ControlConnection(

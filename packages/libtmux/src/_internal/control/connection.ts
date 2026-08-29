@@ -446,7 +446,9 @@ export class ControlConnection {
       }
     } catch (error) {
       if (this.#children.active() === child) {
-        this.#fail(error instanceof Error ? error : new Error("tmux refused pause-after"));
+        this.#fail(
+          error instanceof Error ? error : new Error("tmux refused this client's configuration"),
+        );
       }
       return;
     }
@@ -565,21 +567,41 @@ export class ControlConnection {
     }
   }
 
-  /** Add or replace a subscription, and issue it if there is a client to take it. */
+  /**
+   * Issue one subscription change now, or leave it to the attach in flight.
+   *
+   * A replacement child exists before tmux has accepted its attach, so issuing
+   * against it addresses a client tmux does not know yet — which comes back as
+   * a refusal rather than as the reconnect it is. `#finishAttach` issues every
+   * stored subscription once the attach lands, so waiting loses nothing and
+   * keeps one change from being sent twice.
+   */
+  async #issueWhenAttached(name: string): Promise<void> {
+    const child = this.#children.active();
+    if (this.#closed || this.#reopening || child === undefined) return;
+    if (this.#attachment.kind !== "attached") return;
+    await this.#issueSubscription(child, name);
+  }
+
+  /** Add or replace a subscription, and issue it if a client can take it. */
   async subscribeFormat(subscription: FormatSubscription): Promise<void> {
     const name = assertSubscriptionName(subscription.name);
     assertSubscriptionFormat(subscription.format);
     this.#subscriptions.set(name, subscription);
-    const child = this.#children.active();
-    if (child !== undefined && !this.#closed) await this.#issueSubscription(child, name);
+    await this.#issueWhenAttached(name);
   }
 
-  /** Forget a subscription, and tell tmux to stop reporting it. */
+  /**
+   * Forget a subscription, and tell tmux to stop reporting it.
+   *
+   * A reconnect in flight needs no unsubscribe sent after it: the replacement
+   * client starts with none, and this name is already gone from what
+   * `#finishAttach` will re-issue.
+   */
   async unsubscribeFormat(name: string): Promise<void> {
     assertSubscriptionName(name);
     this.#subscriptions.delete(name);
-    const child = this.#children.active();
-    if (child !== undefined && !this.#closed) await this.#issueSubscription(child, name);
+    await this.#issueWhenAttached(name);
   }
 
   /**
