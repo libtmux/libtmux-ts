@@ -18,13 +18,20 @@ jobs:
   # not become truer on 3.5 than on 3.2a, and paying for them per version is
   # what kept the version matrix down to a sample of the range it claims.
   gates:
+    name: Gates (Bun ${{ matrix.bun-version }})
     runs-on: ubuntu-latest
+    # Runtime compatibility crosses every package, example and executed document.
+    # Keep that axis complete while the tmux job below varies only tmux.
+    strategy:
+      fail-fast: false
+      matrix:
+        bun-version: ["1.3.14", "1.4.0"]
     steps:
       - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: ${{ matrix.bun-version }}
 
       # The emitted-Node lane refuses to substitute the runner's default Node,
       # so the floor is provisioned rather than assumed.
@@ -179,7 +186,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.0
 
       - uses: actions/setup-node@v7
         with:
