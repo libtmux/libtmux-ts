@@ -28,6 +28,7 @@ export type {
   EnvironmentValue,
   HookScope,
   IfShellOptions,
+  JoinOptions,
   MenuEntry,
   MenuItem,
   ManagedServer,
@@ -44,6 +45,7 @@ export type {
   ServerSnapshot,
   SetEnvironmentOptions,
   SetHookOptions,
+  SetOptionOptions,
   SplitOptions,
   TmuxClientDetachedEvent,
   TmuxClientSessionChangedEvent,
@@ -86,7 +88,7 @@ export {
   VersionTooLow,
   WaitTimeout,
 } from "./exc.js";
-export type { DeliveryStatus } from "./common.js";
+export type { CommandOptions, DeliveryStatus } from "./common.js";
 export {
   OptionScope,
   PaneDirection,

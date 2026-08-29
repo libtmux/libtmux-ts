@@ -1,4 +1,12 @@
-import type { Pane, ServerSnapshot, Session, TmuxEvent } from "libtmux";
+import type {
+  CommandOptions,
+  JoinOptions,
+  Pane,
+  ServerSnapshot,
+  Session,
+  SetOptionOptions,
+  TmuxEvent,
+} from "libtmux";
 
 /**
  * A consumer with no ambient types at all.
@@ -17,6 +25,9 @@ declare const snapshot: ServerSnapshot;
 declare const event: TmuxEvent;
 declare const pane: Pane;
 declare const session: Session;
+declare const commandOptions: CommandOptions;
+declare const joinOptions: JoinOptions;
+declare const setOptionOptions: SetOptionOptions;
 
 // @ts-expect-error a criteria key that does not exist
 snapshot.panes.where({ currentCommnd: "vim" });
@@ -46,6 +57,9 @@ if (event.kind === "output") {
 
 // The ordinary surface resolves with no ambient types in scope.
 void session.activePane;
+void commandOptions.stdin;
+void joinOptions.vertical;
+void setOptionOptions.append;
 void pane.toString();
 void snapshot.panes.where({ currentCommand: "vim" }).one();
 void snapshot.sessions.filter((candidate) => candidate.name !== null);

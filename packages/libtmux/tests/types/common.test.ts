@@ -40,7 +40,13 @@ import {
   WINDOW_DIRECTION_FLAG_MAP,
 } from "../../src/constants.js";
 import { OptionScope as RootOptionScope } from "../../src/index.js";
-import type { OptionScope as RootOptionScopeType } from "../../src/index.js";
+import type {
+  CommandOptions as RootCommandOptions,
+  JoinOptions as RootJoinOptions,
+  OptionScope as RootOptionScopeType,
+  SetOptionOptions as RootSetOptionOptions,
+} from "../../src/index.js";
+import type { JoinOptions, SetOptionOptions } from "../../src/types.js";
 
 import type { Equal, Expect } from "./assert.js";
 
@@ -295,7 +301,10 @@ type _OptionFlags = Expect<
 >;
 type _HookFlags = Expect<Equal<typeof HOOK_SCOPE_FLAG_MAP, Readonly<Record<OptionScope, string>>>>;
 type _OptionScope = Expect<Equal<OptionScope, "pane" | "server" | "session" | "window">>;
+type _RootCommandOptions = Expect<Equal<RootCommandOptions, CommandOptions>>;
+type _RootJoinOptions = Expect<Equal<RootJoinOptions, JoinOptions>>;
 type _RootOptionScope = Expect<Equal<RootOptionScopeType, OptionScope>>;
+type _RootSetOptionOptions = Expect<Equal<RootSetOptionOptions, SetOptionOptions>>;
 
 export type {
   _CommandOutcomeKeys,
@@ -307,6 +316,9 @@ export type {
   _PaneRef,
   _ResizeFlags,
   _RootOptionScope,
+  _RootCommandOptions,
+  _RootJoinOptions,
+  _RootSetOptionOptions,
   _SessionRef,
   _WindowFlags,
   _WindowRef,
