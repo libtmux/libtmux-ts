@@ -14,7 +14,7 @@ import type { ToolContext } from "../context.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { boundText, ok, renderBoundedText } from "../results.js";
-import { paneIdSchema, windowIdSchema } from "../schemas.js";
+import { inlineRequestText, paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
 import {
   isFailure,
   paneEntities,
@@ -256,7 +256,9 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       annotations: READ_ONLY,
       description: "Windows on this server, optionally restricted to one session by id or name.",
       inputSchema: {
-        session: z.string().optional().describe("Session id ($1) or name. Omit for all sessions."),
+        session: requestText("session")
+          .optional()
+          .describe("Session id ($1) or name. Omit for all sessions."),
       },
       outputSchema: {
         complete: z.boolean(),
@@ -303,7 +305,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         "Marks the pane this server runs in (isCallerPane) and panes a person is " +
         "watching (isAttended). Metadata only — search_panes reads their contents.",
       inputSchema: {
-        session: z.string().optional().describe("Session id ($1) or name."),
+        session: requestText("session").optional().describe("Session id ($1) or name."),
         window: windowIdSchema.optional(),
       },
       outputSchema: {
@@ -455,7 +457,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           "Resolve a tmux format string against a target, e.g. '#{pane_current_command}'. " +
           "The escape hatch for any field these tools do not project.",
         inputSchema: {
-          format: z.string().describe("A tmux format, e.g. '#{pane_pid}'."),
+          format: inlineRequestText("format").describe("A tmux format, e.g. '#{pane_pid}'."),
           target: paneIdSchema.optional().describe("Pane id to resolve against."),
         },
         outputSchema: {

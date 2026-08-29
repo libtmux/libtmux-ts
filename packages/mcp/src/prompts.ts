@@ -9,10 +9,9 @@
 
 import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 
 import type { ToolContext } from "./context.js";
-import { paneIdSchema } from "./schemas.js";
+import { framedCommandText, inlineRequestText, paneIdSchema, requestText } from "./schemas.js";
 import { paneEntities } from "./target_resolution.js";
 
 function userPrompt(text: string): {
@@ -31,7 +30,7 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     "run-and-check",
     {
       argsSchema: {
-        command: z.string().describe("The shell command to run."),
+        command: framedCommandText("command").describe("The shell command to run."),
         paneId: completable(paneIdSchema.describe("Pane to run it in, e.g. %1."), completePaneId),
       },
       description: "Run a command in a pane and report whether it worked.",
@@ -55,7 +54,9 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     "watch-until",
     {
       argsSchema: {
-        expect: z.string().describe("Text that means the thing you are waiting for happened."),
+        expect: requestText("expect").describe(
+          "Text that means the thing you are waiting for happened.",
+        ),
         paneId: completable(paneIdSchema.describe("Pane to watch."), completePaneId),
       },
       description: "Watch a pane that something else is writing to, until it says a thing.",
@@ -98,8 +99,10 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     "build-workspace",
     {
       argsSchema: {
-        sessionName: z.string().describe("Name for the new session."),
-        windows: z.string().describe("Comma-separated window names, e.g. edit,test,logs."),
+        sessionName: inlineRequestText("sessionName").describe("Name for the new session."),
+        windows: requestText("windows").describe(
+          "Comma-separated window names, e.g. edit,test,logs.",
+        ),
       },
       description: "Build a session with several windows in as few calls as possible.",
       title: "Build a workspace",
@@ -107,7 +110,7 @@ export function registerPrompts(mcp: McpServer, context: ToolContext): void {
     ({ sessionName, windows }) =>
       userPrompt(
         `Build a tmux session called ${JSON.stringify(sessionName)} with windows: ${windows}.\n\n` +
-          `Use build_workspace — it creates the session and every window in one tmux invocation ` +
+          `Use build_workspace — it creates the session and every window with one final snapshot ` +
           `and hands back every pane id, so you do not need new_window per window or a list_panes ` +
           `afterwards. Report the pane id for each window so I can target them.`,
       ),

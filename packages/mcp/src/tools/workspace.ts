@@ -13,10 +13,15 @@ import { z } from "zod";
 import { TmuxCommandError, type PlannedOperation } from "libtmux";
 
 import type { ToolContext } from "../context.js";
-import { effectiveResultLines } from "../policy.js";
+import {
+  effectiveResultLines,
+  MAX_INLINE_REQUEST_BYTES,
+  MAX_REQUEST_BYTES,
+  MAX_REQUEST_ITEMS,
+} from "../policy.js";
 import { MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
-import { sessionIdSchema } from "../schemas.js";
+import { fitsInlineRequest, inlineRequestText, sessionIdSchema } from "../schemas.js";
 import {
   boundedStrings,
   limitViews,
@@ -29,13 +34,64 @@ import {
 const FAILURE_METADATA_BYTES = 8 * 1_024;
 
 const windowSpec = z.object({
-  name: z.string().describe("Window name."),
-  shellCommand: z
-    .string()
+  name: inlineRequestText("name").describe("Window name."),
+  shellCommand: inlineRequestText("shellCommand")
     .optional()
     .describe("Run this instead of a shell. The window closes when it exits."),
-  startDirectory: z.string().optional(),
+  startDirectory: inlineRequestText("startDirectory").optional(),
 });
+
+const workspaceInput = z
+  .object({
+    session: inlineRequestText("session").describe(
+      "Name for the session. It must not already exist.",
+    ),
+    startDirectory: inlineRequestText("startDirectory")
+      .optional()
+      .describe("Default directory for every window."),
+    windows: z
+      .array(windowSpec)
+      .min(1)
+      .max(
+        MAX_REQUEST_ITEMS,
+        `build_workspace accepts at most ${String(MAX_REQUEST_ITEMS)} windows.`,
+      )
+      .describe("The windows to create, in order."),
+  })
+  .refine(
+    (workspace) =>
+      workspace.windows.every((window, index) =>
+        fitsInlineRequest([
+          index === 0 ? workspace.session : undefined,
+          window.name,
+          window.shellCommand,
+          window.startDirectory ?? workspace.startDirectory,
+        ]),
+      ),
+    {
+      message: `workspace operation text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+    },
+  )
+  .refine(
+    (workspace) => {
+      const values = [
+        workspace.session,
+        workspace.startDirectory,
+        ...workspace.windows.flatMap((window) => [
+          window.name,
+          window.shellCommand,
+          window.startDirectory,
+        ]),
+      ];
+      return (
+        values.reduce((bytes, value) => bytes + Buffer.byteLength(value ?? "", "utf8"), 0) <=
+        MAX_REQUEST_BYTES
+      );
+    },
+    {
+      message: `workspace text must not exceed ${String(MAX_REQUEST_BYTES)} UTF-8 bytes in total.`,
+    },
+  );
 
 function directoryOption(
   directory: string | undefined,
@@ -91,15 +147,11 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
       description:
         "Create a session and all of its windows at once, and get back every pane " +
         "id. Use this instead of new_session followed by a new_window per window: " +
-        "it is one tmux invocation rather than one per window, and it saves the " +
-        "list_panes you would otherwise need to learn what it made. Not atomic — " +
+        "it shares one final snapshot, and it saves the list_panes you would " +
+        "otherwise need to learn what it made. Not atomic — " +
         "tmux stops at the first failure and leaves what came before it, so the " +
         "result lists what actually exists.",
-      inputSchema: {
-        session: z.string().describe("Name for the session. It must not already exist."),
-        startDirectory: z.string().optional().describe("Default directory for every window."),
-        windows: z.array(windowSpec).min(1).describe("The windows to create, in order."),
-      },
+      inputSchema: workspaceInput,
       outputSchema: {
         complete: z.boolean().describe("Whether every requested window was created."),
         failure: z

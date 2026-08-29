@@ -14,9 +14,17 @@ import { PaneDirection } from "libtmux/constants";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
+import { MAX_INLINE_REQUEST_BYTES } from "../policy.js";
 import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
-import { paneIdSchema, sessionIdSchema, windowIdSchema } from "../schemas.js";
+import {
+  fitsInlineRequest,
+  inlineRequestText,
+  paneIdSchema,
+  requestText,
+  sessionIdSchema,
+  windowIdSchema,
+} from "../schemas.js";
 import {
   isFailure,
   paneEntities,
@@ -66,31 +74,40 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       description:
         "Create a detached session and return it with its first window and pane, " +
         "so you can start working without listing anything first.",
-      inputSchema: {
-        name: z.string().optional().describe("Session name; tmux picks a number when omitted."),
-        shellCommand: z
-          .string()
-          .optional()
-          .describe("Run this instead of a shell. The session ends when it exits."),
-        height: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe("Rows. Default 24, because a detached session has no client to size it."),
-        startDirectory: z.string().optional(),
-        width: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe(
-            "Columns. Default 80, and a program that formats to its terminal width — ps, " +
-              "git log --graph, docker ps — truncates to that at the source, where no " +
-              "capture option can recover it.",
-          ),
-        windowName: z.string().optional(),
-      },
+      inputSchema: z
+        .object({
+          name: inlineRequestText("name")
+            .optional()
+            .describe("Session name; tmux picks a number when omitted."),
+          shellCommand: inlineRequestText("shellCommand")
+            .optional()
+            .describe("Run this instead of a shell. The session ends when it exits."),
+          height: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Rows. Default 24, because a detached session has no client to size it."),
+          startDirectory: inlineRequestText("startDirectory").optional(),
+          width: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe(
+              "Columns. Default 80, and a program that formats to its terminal width — ps, " +
+                "git log --graph, docker ps — truncates to that at the source, where no " +
+                "capture option can recover it.",
+            ),
+          windowName: inlineRequestText("windowName").optional(),
+        })
+        .refine(
+          ({ name, shellCommand, startDirectory, windowName }) =>
+            fitsInlineRequest([name, shellCommand, startDirectory, windowName]),
+          {
+            message: `new_session text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+          },
+        ),
       outputSchema: {
         paneId: paneIdSchema.describe("The new session's first pane. Target this."),
         session: sessionViewSchema,
@@ -134,12 +151,20 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING_OPEN_WORLD,
       description: "Add a window to a session and return it with its pane.",
-      inputSchema: {
-        name: z.string().optional(),
-        session: z.string().describe("Session id ($1) or name."),
-        shellCommand: z.string().optional(),
-        startDirectory: z.string().optional(),
-      },
+      inputSchema: z
+        .object({
+          name: inlineRequestText("name").optional(),
+          session: requestText("session").describe("Session id ($1) or name."),
+          shellCommand: inlineRequestText("shellCommand").optional(),
+          startDirectory: inlineRequestText("startDirectory").optional(),
+        })
+        .refine(
+          ({ name, shellCommand, startDirectory }) =>
+            fitsInlineRequest([name, shellCommand, startDirectory]),
+          {
+            message: `new_window text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+          },
+        ),
       outputSchema: { paneId: paneIdSchema, window: windowViewSchema },
       title: "New window",
     },
@@ -178,18 +203,24 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       description:
         "Split a pane and return the new one. Direction is where the new pane goes " +
         "relative to the one you split.",
-      inputSchema: {
-        direction: z
-          .enum(["above", "below", "left", "right"])
-          .optional()
-          .describe("Default below."),
-        paneId: paneIdSchema,
-        shellCommand: z.string().optional(),
-        startDirectory: z
-          .string()
-          .optional()
-          .describe("Defaults to the directory the pane being split is in."),
-      },
+      inputSchema: z
+        .object({
+          direction: z
+            .enum(["above", "below", "left", "right"])
+            .optional()
+            .describe("Default below."),
+          paneId: paneIdSchema,
+          shellCommand: inlineRequestText("shellCommand").optional(),
+          startDirectory: inlineRequestText("startDirectory")
+            .optional()
+            .describe("Defaults to the directory the pane being split is in."),
+        })
+        .refine(
+          ({ shellCommand, startDirectory }) => fitsInlineRequest([shellCommand, startDirectory]),
+          {
+            message: `split_pane text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+          },
+        ),
       outputSchema: { pane: paneViewSchema },
       title: "Split pane",
     },
@@ -221,7 +252,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Rename a session. Its id does not change, so targets by id keep working.",
-      inputSchema: { name: z.string(), session: z.string() },
+      inputSchema: { name: inlineRequestText("name"), session: requestText("session") },
       outputSchema: { session: sessionViewSchema },
       title: "Rename session",
     },
@@ -245,7 +276,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Rename a window. Its id does not change.",
-      inputSchema: { name: z.string(), windowId: windowIdSchema },
+      inputSchema: { name: inlineRequestText("name"), windowId: windowIdSchema },
       outputSchema: { window: windowViewSchema },
       title: "Rename window",
     },
@@ -282,7 +313,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("Replace a still-running process. Default false."),
         paneId: paneIdSchema,
-        shellCommand: z.string().optional(),
+        shellCommand: inlineRequestText("shellCommand").optional(),
       },
       outputSchema: { pane: paneViewSchema },
       title: "Respawn pane",
@@ -377,7 +408,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       annotations: DESTRUCTIVE,
       description:
         "Remove a session. Windows and panes shared with another session remain available there.",
-      inputSchema: { force: z.boolean().optional(), session: z.string() },
+      inputSchema: { force: z.boolean().optional(), session: requestText("session") },
       outputSchema: { killed: sessionIdSchema },
       title: "Kill session",
     },

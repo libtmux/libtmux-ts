@@ -23,7 +23,7 @@ import {
   tailBytes,
   tailLines,
 } from "../results.js";
-import { paneCursorSchema, paneIdSchema } from "../schemas.js";
+import { inlineRequestText, paneCursorSchema, paneIdSchema, requestText } from "../schemas.js";
 import {
   isFailure,
   paneEntities,
@@ -377,8 +377,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
                 "leaving it alone.",
             ),
           paneId: paneIdSchema,
-          shellCommand: z
-            .string()
+          shellCommand: inlineRequestText("shellCommand")
             .optional()
             .describe("Omit to stop a pipe this pane already has open."),
         },
@@ -429,7 +428,7 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
         "pane, so you can target one without capturing them all.",
       inputSchema: {
         maxMatchesPerPane: z.number().int().positive().optional(),
-        pattern: z.string().min(1).describe("Non-empty literal text to find."),
+        pattern: requestText("pattern").min(1).describe("Non-empty literal text to find."),
         regex: z
           .literal(false)
           .optional()
@@ -442,7 +441,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
           .nonnegative()
           .optional()
           .describe("How far above the visible screen to search. Default 0."),
-        session: z.string().optional().describe("Restrict to one session by id or name."),
+        session: requestText("session")
+          .optional()
+          .describe("Restrict to one session by id or name."),
       },
       outputSchema: {
         capturesByteClamped: z.boolean(),

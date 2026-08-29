@@ -17,7 +17,7 @@ import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
 import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
 import { fail, ok } from "../results.js";
-import { paneIdSchema, windowIdSchema } from "../schemas.js";
+import { inlineRequestText, paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
 import {
   isFailure,
   panePlacements,
@@ -56,8 +56,7 @@ const LAYOUTS = [
   "tiled",
 ] as const;
 
-const sourceSessionSchema = z
-  .string()
+const sourceSessionSchema = requestText("sourceSession")
   .optional()
   .describe("Source session id or name. Required when the id has several placements.");
 const sourceIndexSchema = z
@@ -194,7 +193,9 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         "Rearrange a window's panes. Takes one of tmux's named layouts, or a layout " +
         "string from an earlier window whose `metadataComplete` is true to reproduce it exactly.",
       inputSchema: {
-        layout: z.string().describe(`One of ${LAYOUTS.join(", ")}, or a tmux layout string.`),
+        layout: inlineRequestText("layout").describe(
+          `One of ${LAYOUTS.join(", ")}, or a tmux layout string.`,
+        ),
         windowId: windowIdSchema,
       },
       outputSchema: { window: windowViewSchema },
@@ -270,7 +271,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       description: "Move a window to another index, or into another session.",
       inputSchema: {
         index: z.number().int().nonnegative().optional(),
-        session: z.string().optional().describe("Destination session id or name."),
+        session: requestText("session").optional().describe("Destination session id or name."),
         sourceIndex: sourceIndexSchema,
         sourceSession: sourceSessionSchema,
         windowId: windowIdSchema,
@@ -366,7 +367,9 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
           windowId: windowIdSchema
             .optional()
             .describe("Window to move it into. Omit to break it out into a window of its own."),
-          windowName: z.string().optional().describe("Name for the window a break-out creates."),
+          windowName: inlineRequestText("windowName")
+            .optional()
+            .describe("Name for the window a break-out creates."),
         },
         outputSchema: { pane: paneViewSchema },
         title: "Move pane",
@@ -469,7 +472,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       description:
         "Give a pane a title. Useful for labelling what an agent put where, since " +
         "the title shows in list_panes and survives the command changing.",
-      inputSchema: { paneId: paneIdSchema, title: z.string() },
+      inputSchema: { paneId: paneIdSchema, title: inlineRequestText("title") },
       outputSchema: { pane: paneViewSchema },
       title: "Set pane title",
     },

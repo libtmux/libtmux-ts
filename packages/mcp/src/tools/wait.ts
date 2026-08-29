@@ -15,7 +15,7 @@ import { captureGridBounded } from "../grid_capture.js";
 import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
-import { paneCursorSchema, paneIdSchema } from "../schemas.js";
+import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
 import { isFailure, requirePane, type ReadablePane } from "../target_resolution.js";
 import type { PaneTailEndReason } from "../live.js";
 
@@ -332,8 +332,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       .describe("Start from a cursor an earlier observe or wait returned."),
     maxLines: z.number().int().positive().optional(),
     paneId: paneIdSchema,
-    patterns: z
-      .array(z.string().min(1))
+    patterns: requestTextArray("pattern", "patterns")
       .optional()
       .describe("Any one of these ends the wait. Omit to wait for any output at all."),
     regex: z

@@ -15,10 +15,10 @@ import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
 import { activeFramedCommand } from "../command.js";
-import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
+import { effectiveResultLines, MAX_INLINE_REQUEST_BYTES, MAX_RESULT_BYTES } from "../policy.js";
 import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { boundText, fail, ok, renderBoundedText, tailBytes, tailLines } from "../results.js";
-import { paneIdSchema } from "../schemas.js";
+import { fitsInlineRequest, inlineRequestText, paneIdSchema, requestText } from "../schemas.js";
 import {
   isFailure,
   requirePane,
@@ -220,8 +220,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description: "Read tmux options at server, session, or pane scope.",
       inputSchema: {
         scope: z.enum(SCOPES).optional().describe("Default server."),
-        target: z
-          .string()
+        target: requestText("target")
           .optional()
           .describe("Session id/name or pane id, for the matching scope."),
       },
@@ -268,7 +267,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "outlive this process and keep firing in somebody's tmux. Put hooks a " +
         "server should keep in its config file.",
       inputSchema: {
-        session: z.string().optional().describe("Session scope; omit for server scope."),
+        session: requestText("session")
+          .optional()
+          .describe("Session scope; omit for server scope."),
       },
       outputSchema: {
         complete: z.boolean(),
@@ -326,7 +327,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description:
         "The environment tmux gives processes it starts, at server or session " +
         "scope. This is what a new pane will inherit, not what a running one has.",
-      inputSchema: { session: z.string().optional() },
+      inputSchema: { session: requestText("session").optional() },
       outputSchema: {
         complete: z.boolean(),
         environment: z.record(z.string(), z.string().nullable()),
@@ -408,7 +409,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "those outside the response.",
       inputSchema: {
         maxLines: z.number().int().positive().optional(),
-        name: z.string(),
+        name: inlineRequestText("name"),
       },
       outputSchema: {
         droppedLines: z.number().int(),
@@ -493,12 +494,16 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description:
         "Set a tmux option at server, session, or pane scope. Changes stay until " +
         "something unsets them, including after this process ends.",
-      inputSchema: {
-        name: z.string(),
-        scope: z.enum(SCOPES).optional().describe("Default server."),
-        target: z.string().optional(),
-        value: z.string(),
-      },
+      inputSchema: z
+        .object({
+          name: inlineRequestText("name"),
+          scope: z.enum(SCOPES).optional().describe("Default server."),
+          target: requestText("target").optional(),
+          value: inlineRequestText("value"),
+        })
+        .refine(({ name, value }) => fitsInlineRequest([name, value]), {
+          message: `set_option text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+        }),
       outputSchema: { name: z.string(), scope: z.string(), value: z.string() },
       title: "Set option",
     },
@@ -522,10 +527,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "inherits. This is how a set_option is undone: without it a wrong value " +
         "set from here could not be taken back from here.",
       inputSchema: {
-        name: z.string(),
+        name: inlineRequestText("name"),
         scope: z.enum(SCOPES).optional().describe("Default server."),
-        target: z
-          .string()
+        target: requestText("target")
           .optional()
           .describe("Session id/name or pane id, required for those scopes."),
       },
@@ -550,11 +554,17 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description:
         "Set a variable in tmux's environment. Affects processes tmux starts after " +
         "this, not ones already running.",
-      inputSchema: {
-        name: z.string(),
-        session: z.string().optional().describe("Session scope; omit for server scope."),
-        value: z.string(),
-      },
+      inputSchema: z
+        .object({
+          name: inlineRequestText("name"),
+          session: requestText("session")
+            .optional()
+            .describe("Session scope; omit for server scope."),
+          value: inlineRequestText("value"),
+        })
+        .refine(({ name, value }) => fitsInlineRequest([name, value]), {
+          message: `set_environment text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+        }),
       outputSchema: { name: z.string(), scope: z.string() },
       title: "Set environment",
     },
@@ -581,7 +591,10 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description:
         "Put text into a named paste buffer, ready for paste_buffer. Use this for " +
         "content too large or too awkward to type with send_keys.",
-      inputSchema: { name: z.string(), text: z.string() },
+      inputSchema: {
+        name: inlineRequestText("name"),
+        text: requestText("text"),
+      },
       outputSchema: { bytes: z.number().int(), name: z.string() },
       title: "Load buffer",
     },
@@ -611,7 +624,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
           .boolean()
           .optional()
           .describe("Write even to this server's pane or one a person is watching. Default false."),
-        name: z.string(),
+        name: inlineRequestText("name"),
         paneId: paneIdSchema,
       },
       outputSchema: { name: z.string(), paneId: paneIdSchema },
@@ -643,11 +656,15 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "the contents, which for anything large means spending your context on " +
         "bytes you only want stored. tmux writes the file itself, on the machine " +
         "tmux runs on. An existing file is replaced unless append is set.",
-      inputSchema: {
-        append: z.boolean().optional().describe("Add to the file rather than replacing it."),
-        name: z.string(),
-        path: z.string().describe("Where tmux writes it, on tmux's own machine."),
-      },
+      inputSchema: z
+        .object({
+          append: z.boolean().optional().describe("Add to the file rather than replacing it."),
+          name: inlineRequestText("name"),
+          path: inlineRequestText("path").describe("Where tmux writes it, on tmux's own machine."),
+        })
+        .refine(({ name, path }) => fitsInlineRequest([name, path]), {
+          message: `save_buffer text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+        }),
       outputSchema: { name: z.string(), path: z.string() },
       title: "Save buffer to a file",
     },
@@ -662,7 +679,7 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Discard a named paste buffer.",
-      inputSchema: { name: z.string() },
+      inputSchema: { name: inlineRequestText("name") },
       outputSchema: { name: z.string() },
       title: "Delete buffer",
     },

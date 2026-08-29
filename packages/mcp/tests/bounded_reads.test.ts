@@ -4,14 +4,29 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 
-import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
+import {
+  MAX_FRAMED_COMMAND_BYTES,
+  MAX_INLINE_REQUEST_BYTES,
+  MAX_REQUEST_BYTES,
+  MAX_RESULT_BYTES,
+  resolvePolicy,
+} from "../src/policy.js";
 import { PaneTail } from "../src/live.js";
 import { registerResources } from "../src/resources.js";
 import { registerCapture } from "../src/tools/capture.js";
 import { registerDiscovery } from "../src/tools/discovery.js";
 import { registerInput } from "../src/tools/input.js";
+import { registerLayout } from "../src/tools/layout.js";
+import { registerLifecycle } from "../src/tools/lifecycle.js";
 import { registerSettings } from "../src/tools/settings.js";
 import { registerWait } from "../src/tools/wait.js";
+import { registerWorkspace } from "../src/tools/workspace.js";
+import {
+  framedCommandText,
+  inlineRequestText,
+  requestText,
+  requestTextArray,
+} from "../src/schemas.js";
 import type { ToolContext } from "../src/context.js";
 import type { Pane, ServerSnapshot } from "libtmux";
 
@@ -157,6 +172,116 @@ describe("bounded result policy", () => {
       expect(result.value).toBe("");
       expect(result.droppedLines).toBe(2);
       expect(result.complete).toBe(false);
+    });
+  });
+});
+
+describe("bounded request policy", () => {
+  test("accepts each byte boundary and rejects its next encoded unit", () => {
+    expect(
+      inlineRequestText("text").safeParse("x".repeat(MAX_INLINE_REQUEST_BYTES - 2)).success,
+    ).toBe(true);
+    expect(
+      inlineRequestText("text").safeParse("x".repeat(MAX_INLINE_REQUEST_BYTES - 1)).success,
+    ).toBe(false);
+    expect(
+      framedCommandText("command").safeParse("é".repeat(MAX_FRAMED_COMMAND_BYTES / 2)).success,
+    ).toBe(true);
+    expect(
+      framedCommandText("command").safeParse(`${"é".repeat(MAX_FRAMED_COMMAND_BYTES / 2)}x`)
+        .success,
+    ).toBe(false);
+    expect(requestText("text").safeParse("é".repeat(MAX_REQUEST_BYTES / 2)).success).toBe(true);
+    expect(requestText("text").safeParse(`${"é".repeat(MAX_REQUEST_BYTES / 2)}x`).success).toBe(
+      false,
+    );
+    expect(requestTextArray("item", "items").safeParse(Array(64).fill("x")).success).toBe(true);
+    expect(requestTextArray("item", "items").safeParse(Array(65).fill("x")).success).toBe(false);
+    expect(
+      requestTextArray("item", "items").safeParse(Array(64).fill("x".repeat(4_097))).success,
+    ).toBe(false);
+  });
+
+  test("rejects oversized UTF-8 payloads before a tool reads them", async () => {
+    const secret = "SECRET-OPERAND";
+    const inline = `${secret}${"'".repeat(2_048)}`;
+    const composite = `${secret}${"x".repeat(4_081)}`;
+    const framed = `${secret}${"é".repeat(1_024)}`;
+    const staged = `${secret}${"é".repeat(131_066)}`;
+    const attempts = [
+      [registerInput, "send_keys", { keys: inline, paneId: "%1" }, "8192 bytes"],
+      [registerInput, "paste_text", { paneId: "%1", text: inline }, "8192 bytes"],
+      [registerInput, "run_command", { command: framed, paneId: "%1" }, "2048 UTF-8 bytes"],
+      [registerSettings, "load_buffer", { name: "probe", text: staged }, "262144 UTF-8 bytes"],
+      [
+        registerLifecycle,
+        "new_session",
+        { name: composite, shellCommand: composite },
+        "combined limit is 8192 bytes",
+      ],
+      [registerSettings, "set_option", { name: "history-limit", value: inline }, "8192 bytes"],
+      [registerSettings, "set_environment", { name: "EDITOR", value: inline }, "8192 bytes"],
+      [registerSettings, "save_buffer", { name: "probe", path: inline }, "8192 bytes"],
+      [registerCapture, "pipe_pane", { paneId: "%1", shellCommand: inline }, "8192 bytes"],
+      [registerDiscovery, "display_message", { format: inline }, "8192 bytes"],
+      [registerLayout, "select_layout", { layout: inline, windowId: "@1" }, "8192 bytes"],
+      [
+        registerWorkspace,
+        "build_workspace",
+        { session: "probe", windows: [{ name: "first", shellCommand: inline }] },
+        "8192 bytes",
+      ],
+    ] as const;
+
+    await Promise.all(
+      attempts.map(async ([register, name, arguments_, want]) => {
+        const context = fakeContext([], { environment: { LIBTMUX_SAFETY: "destructive" } });
+        await withTools(context, register, async (client) => {
+          const answer = await client.callTool({
+            arguments: arguments_,
+            name,
+          });
+          const diagnostic = text(answer);
+          expect(answer.isError, name).toBe(true);
+          expect(diagnostic, name).toContain(want);
+          expect(diagnostic, name).not.toContain(secret);
+        });
+      }),
+    );
+  });
+
+  test("bounds aggregate workspace text before planning operations", async () => {
+    const context = fakeContext([], { environment: { LIBTMUX_SAFETY: "mutating" } });
+    await withTools(context, registerWorkspace, async (client) => {
+      const answer = await client.callTool({
+        arguments: {
+          session: "probe",
+          windows: Array.from({ length: 64 }, (_, index) => ({
+            name: `window-${String(index)}`,
+            shellCommand: "x".repeat(4_096),
+          })),
+        },
+        name: "build_workspace",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(text(answer)).toContain("workspace text must not exceed 262144 UTF-8 bytes");
+    });
+  });
+
+  test("rejects a workspace that fans out past the item ceiling", async () => {
+    const context = fakeContext([], { environment: { LIBTMUX_SAFETY: "mutating" } });
+    await withTools(context, registerWorkspace, async (client) => {
+      const answer = await client.callTool({
+        arguments: {
+          session: "probe",
+          windows: Array.from({ length: 65 }, (_, index) => ({ name: `window-${String(index)}` })),
+        },
+        name: "build_workspace",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(text(answer)).toContain("at most 64 windows");
     });
   });
 });

@@ -8,11 +8,25 @@
  * process to belong to.
  */
 
+import { MAX_PACKED_ARGV_BYTES } from "libtmux/engine";
+
 /** How much a tool may return before it starts linking instead of inlining. */
 export const DEFAULT_MAX_RESULT_LINES = 200;
 
 /** Largest tmux-derived UTF-8 payload per result; fixed notices may add a small overhead. */
 export const MAX_RESULT_BYTES = 256 * 1024;
+
+/** Largest UTF-8 payload a request may stage or collect across repeated items. */
+export const MAX_REQUEST_BYTES = MAX_RESULT_BYTES;
+
+/** Largest quoted request text within one tmux invocation. */
+export const MAX_INLINE_REQUEST_BYTES = MAX_PACKED_ARGV_BYTES / 2;
+
+/** Largest command before its five-byte-per-byte shell framing. */
+export const MAX_FRAMED_COMMAND_BYTES = MAX_PACKED_ARGV_BYTES / 8;
+
+/** Most repeated operations one request may schedule. */
+export const MAX_REQUEST_ITEMS = 64;
 
 /**
  * How long a blocking wait may run.

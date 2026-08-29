@@ -13,7 +13,7 @@ import type { ToolContext } from "../context.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, OPEN_WORLD } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
-import { paneIdSchema } from "../schemas.js";
+import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
 import { isFailure, requireWritablePane } from "../target_resolution.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
@@ -66,9 +66,9 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .boolean()
           .optional()
           .describe("Write even to this server's pane or one a person is watching. Default false."),
-        keys: z
-          .string()
-          .describe("Keys to send. tmux key names like C-c work unless literal is true."),
+        keys: inlineRequestText("keys").describe(
+          "Keys to send. tmux key names like C-c work unless literal is true.",
+        ),
         literal: z
           .boolean()
           .optional()
@@ -117,7 +117,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("Write even to this server's pane or one a person is watching. Default false."),
         paneId: paneIdSchema,
-        text: z.string(),
+        text: inlineRequestText("text"),
       },
       outputSchema: { bytes: z.number().int(), paneId: paneIdSchema },
       title: "Paste text",
@@ -151,7 +151,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         "single-writer: this server reserves it until the command settles, but " +
         "another process with the same tmux socket can still write into it.",
       inputSchema: {
-        command: z.string().describe("The shell command to run."),
+        command: framedCommandText("command").describe("The shell command to run."),
         force: z
           .boolean()
           .optional()
