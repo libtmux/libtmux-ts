@@ -47,7 +47,7 @@ describe("event stream lifetime", () => {
 
     // The hook is what deregisters the subscriber, so a second call must not
     // deregister something else that has since taken its place.
-    expect(closes).toBe(3);
+    expect(closes).toBe(1);
   });
 
   test("runs the close hook when iteration ends on its own", async () => {

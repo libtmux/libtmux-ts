@@ -16,6 +16,7 @@ class BufferedEventStream implements PublicEventStream {
   readonly #bufferSize: number;
   readonly #onClose: () => Promise<void>;
   readonly #onReady: () => Promise<void>;
+  #closeOperation: Promise<void> | undefined;
   #closed = false;
   /**
    * Why iteration stopped, once it has.
@@ -132,11 +133,13 @@ class BufferedEventStream implements PublicEventStream {
     }
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.#closeOperation !== undefined) return this.#closeOperation;
     this.#ended ??= "closed";
     this.#closed = true;
     this.#wake();
-    await this.#onClose();
+    this.#closeOperation = Promise.resolve().then(this.#onClose);
+    return this.#closeOperation;
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
