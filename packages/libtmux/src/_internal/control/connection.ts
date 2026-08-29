@@ -521,7 +521,10 @@ export class ControlConnection implements CommandTransport {
   };
 
   #route(line: Uint8Array): void {
-    const parsed = parseControlLine(line, this.#decodeOutput);
+    // A body can forge `%output`; do not let it mutate a pane's UTF-8 carry.
+    const parsed = this.#blocks.inBlock
+      ? parseControlLine(line)
+      : parseControlLine(line, this.#decodeOutput);
     const position = this.#blocks.position(parsed);
     switch (position.kind) {
       case "begin":

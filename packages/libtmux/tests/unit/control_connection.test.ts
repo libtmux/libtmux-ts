@@ -135,4 +135,35 @@ describe("ControlConnection child ownership", () => {
     expect(new TextDecoder().decode((await result).stdout)).toBe("%pause %1\n%continue %1\n");
     await control.close();
   });
+
+  test("does not carry output-shaped command bytes into pane output", async () => {
+    const child = new FakeChild(104);
+    const control = new ControlConnection(
+      connection(),
+      {},
+      false,
+      new RecordingTransport(),
+      () => child,
+    );
+    const events = control.subscribe();
+    attach(child);
+    await events.ready();
+    const result = control.execute({ args: ["show-buffer", "-b", "bytes"], executable: "tmux" });
+    child.stdout.write(
+      Buffer.concat([
+        Buffer.from("%begin 2 3 1\n%output %1 "),
+        Buffer.from([0xc3]),
+        Buffer.from("\n%end 2 3 1\n%output %1 pane\n"),
+      ]),
+    );
+
+    await result;
+    expect(await events.find((event) => event.kind === "output", { timeoutMs: 1_000 })).toEqual({
+      data: "pane",
+      kind: "output",
+      paneId: "%1",
+    });
+    await events.close();
+    await control.close();
+  });
 });
