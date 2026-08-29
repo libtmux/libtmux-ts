@@ -295,7 +295,13 @@ export function selectDistTag(
   if (!latestKinds.has("stable")) return "latest";
 
   const channel = release.prerelease[0];
-  if (channel === undefined || channel === "latest" || !/^[a-z][a-z0-9-]*$/u.test(channel)) {
+  if (
+    channel === undefined ||
+    channel === "latest" ||
+    channel === "x" ||
+    channel.startsWith("v") ||
+    !/^[a-z][a-z0-9-]*$/u.test(channel)
+  ) {
     throw new Error(`${version} has no safe npm dist-tag prerelease channel`);
   }
   return channel;

@@ -165,7 +165,7 @@ describe("coordinated release", () => {
     );
   });
 
-  test.each(["1.1.0-latest.1", "1.1.0-Alpha.1", "1.1.0--alpha.1"])(
+  test.each(["1.1.0-latest.1", "1.1.0-Alpha.1", "1.1.0--alpha.1", "1.1.0-v1.1", "1.1.0-x.1"])(
     "rejects the unsafe prerelease channel %s after stable",
     (version) => {
       expect(() => selectDistTag(version, ["1.0.0", "1.0.0", "1.0.0"])).toThrow(
