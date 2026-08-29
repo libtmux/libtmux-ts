@@ -9,6 +9,7 @@ import {
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
+import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
 import { MultipleMatchesError } from "../../src/exc.js";
@@ -187,7 +188,7 @@ describe("window and pane topology", () => {
       const moved = (await server.snapshot()).windows
         .filter((candidate) => candidate.id === window.id)
         .one();
-      expect(moved.index).toBe(7);
+      expect(moved.index).toBe(safeInteger(7));
     });
   }, 40_000);
 
@@ -271,7 +272,7 @@ describe("window and pane topology", () => {
       await placement.select();
 
       const session = (await server.snapshot()).sessions.one({ id: window.format.session_id });
-      expect(session.activeWindow?.index).toBe(4);
+      expect(session.activeWindow?.index).toBe(safeInteger(4));
     });
   }, 40_000);
 
@@ -292,7 +293,7 @@ describe("window and pane topology", () => {
       const moved = (await server.snapshot()).windows
         .filter((candidate) => candidate.id === window.id)
         .one();
-      expect(moved.index).toBe(7);
+      expect(moved.index).toBe(safeInteger(7));
       expect(moved.session?.id).toBe(origin.id);
     });
   }, 40_000);
@@ -316,7 +317,7 @@ describe("window and pane topology", () => {
       const moved = (await server.snapshot()).windows
         .filter((candidate) => candidate.id === window.id)
         .one();
-      expect(moved.index).toBe(7);
+      expect(moved.index).toBe(safeInteger(7));
       expect(moved.session?.id).toBe(origin.id);
     });
   }, 40_000);
@@ -467,7 +468,7 @@ describe("window and pane topology", () => {
         expect(pane.height).toBeGreaterThan(0);
       }
       expect((upper.height ?? 0) + (lower.height ?? 0)).toBeLessThanOrEqual(settled.height ?? 0);
-      expect(panes.map((pane) => pane.index)).toEqual([0, 1]);
+      expect(panes.map((pane) => pane.index)).toEqual([safeInteger(0), safeInteger(1)]);
       expect(upper.title).not.toBeNull();
       expect(upper.pipe).toBe(false);
 

@@ -9,6 +9,7 @@ import {
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
+import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { LibTmuxException, TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
@@ -335,7 +336,7 @@ describe("lifecycle mutations", () => {
       const placed = (await server.snapshot()).panes.one({ id: split.id });
 
       // A quarter of the window, rather than the half a default split gives.
-      expect(placed.height).toBe(Math.floor(height / 4));
+      expect(placed.height).toBe(safeInteger(Math.floor(height / 4)));
     });
   }, 40_000);
 

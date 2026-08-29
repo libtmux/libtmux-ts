@@ -1445,9 +1445,9 @@ describe("WhereDocumentV1 serialization", () => {
       where: {
         active: true,
         currentCommand: "zsh",
-        pid: 42,
+        pid: safeInteger(42),
         title: "shell",
-        window: { is: { index: 1 } },
+        window: { is: { index: safeInteger(1) } },
       },
     });
 
@@ -1924,7 +1924,7 @@ describe("typed criteria values", () => {
     );
 
     for (const index of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
-      expectInvalidQuery(() => windows.where({ index }));
+      expectInvalidQuery(() => windows.where({ index: index as never }));
     }
   });
 

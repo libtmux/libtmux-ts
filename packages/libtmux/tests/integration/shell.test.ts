@@ -9,6 +9,7 @@ import {
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
+import { safeInteger } from "../../src/common.js";
 import { TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 import { Session } from "../../src/session.js";
@@ -141,10 +142,10 @@ describe("shell execution and pane movement", () => {
       const pane = (await server.snapshot()).panes.one();
 
       await pane.enterCopyMode();
-      expect((await pane.refreshed()).inMode).toBe(1);
+      expect((await pane.refreshed()).inMode).toBe(safeInteger(1));
 
       await pane.exitCopyMode();
-      expect((await pane.refreshed()).inMode).toBe(0);
+      expect((await pane.refreshed()).inMode).toBe(safeInteger(0));
     });
   }, 40_000);
 

@@ -10,6 +10,7 @@ import {
   runWithCleanup,
 } from "../../src/_internal/test/run_root.js";
 import { TestServer } from "../../src/_internal/test/test_server.js";
+import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
 
@@ -72,11 +73,11 @@ describe("interactive commands", () => {
   test("enters the chooser modes and leaves the pane in a mode", async () => {
     await withAttachedPane(async (pane) => {
       await pane.chooseTree({ sessionsOnly: true });
-      expect((await pane.refreshed()).inMode).toBe(1);
+      expect((await pane.refreshed()).inMode).toBe(safeInteger(1));
 
       await pane.exitCopyMode();
       await pane.chooseBuffer();
-      expect((await pane.refreshed()).inMode).toBe(1);
+      expect((await pane.refreshed()).inMode).toBe(safeInteger(1));
     });
   }, 40_000);
 

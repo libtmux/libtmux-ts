@@ -8,6 +8,7 @@ import type {
   TmuxLogger,
   TmuxWarningSink,
 } from "../../src/common.js";
+import { safeInteger } from "../../src/common.js";
 import { LibTmuxException, QueryValidationError } from "../../src/exc.js";
 import {
   CLIENT_ALIASES,
@@ -925,7 +926,7 @@ describe("authenticated handle materialization", () => {
       originalGraph,
       reconstructedOriginal,
     );
-    expect(handle.width).toBe(80);
+    expect(handle.width).toBe(safeInteger(80));
     expect(handle.format.client_width).toBe("80");
 
     const replacementRow = completeFormatRow({

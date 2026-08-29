@@ -152,7 +152,11 @@ describe("package contract", () => {
       "WaitTimeout",
       "Window",
       "WindowDirection",
+      "isSafeInteger",
+      "isSplitSize",
       "parseLegacyWhere",
+      "safeInteger",
+      "splitSize",
     ]);
     expect(packageManifest.name).toBe("libtmux");
     // A prerelease while the API is still moving. The exact number is not

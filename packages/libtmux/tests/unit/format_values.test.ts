@@ -11,7 +11,7 @@ import { isSafeInteger, safeInteger } from "../../src/common.js";
 
 describe("safe integer proof", () => {
   test("authenticates only exact JavaScript integers", () => {
-    expect(safeInteger(42)).toBe(42);
+    expect(Number(safeInteger(42))).toBe(42);
     expect(isSafeInteger(-42)).toBe(true);
     for (const value of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
       expect(isSafeInteger(value)).toBe(false);
@@ -22,9 +22,9 @@ describe("safe integer proof", () => {
 
 describe("decoding what tmux sends", () => {
   test("reads a number field as a number", () => {
-    expect(decodeFormatValue("pane_pid", "2334787")).toBe(2334787);
-    expect(decodeFormatValue("window_width", "0")).toBe(0);
-    expect(decodeFormatValue("scroll_position", "-1")).toBe(-1);
+    expect(decodeFormatValue("pane_pid", "2334787")).toBe(safeInteger(2_334_787));
+    expect(decodeFormatValue("window_width", "0")).toBe(safeInteger(0));
+    expect(decodeFormatValue("scroll_position", "-1")).toBe(safeInteger(-1));
   });
 
   test("reads a boolean field as a boolean", () => {

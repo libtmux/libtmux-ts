@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
+import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import type {
   CommandRequest,
@@ -161,7 +162,7 @@ describe("ControlConnection child ownership", () => {
     expect(await events.find((event) => event.kind === "output", { timeoutMs: 1_000 })).toEqual({
       data: "pane",
       kind: "output",
-      paneId: "%1",
+      paneId: parsePaneId("%1"),
     });
     await events.close();
     await control.close();
