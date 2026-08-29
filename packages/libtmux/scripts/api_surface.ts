@@ -81,7 +81,9 @@ export type DocumentedPublicMember = PublicMember & { readonly example: string }
 export function requireSymbolExamples(
   members: readonly PublicMember[],
 ): readonly DocumentedPublicMember[] {
-  const missing = members.filter((member) => member.example === undefined);
+  const missing = members.filter(
+    (member) => member.example === undefined || member.example.trim() === "",
+  );
   if (missing.length > 0) {
     throw new Error(
       `${String(missing.length)} of ${String(members.length)} public symbols have no example:\n` +
@@ -117,7 +119,9 @@ export type DocumentedApiDeclaration = ApiDeclaration & { readonly example: stri
 export function requireRootExamples(
   declarations: readonly ApiDeclaration[],
 ): readonly DocumentedApiDeclaration[] {
-  const missing = declarations.filter((entry) => entry.example === undefined);
+  const missing = declarations.filter(
+    (entry) => entry.example === undefined || entry.example.trim() === "",
+  );
   if (missing.length > 0) {
     throw new Error(
       `root API declarations have no example:\n${missing
@@ -270,7 +274,7 @@ function declarationsOf(
 // parameter list ends at the `(` after it. The name alternation carries
 // `[Symbol.iterator]`, which a plain-identifier group drops from the reference.
 const MEMBER =
-  /^ {2}(?:declare )?(?:static )?(?:readonly )?(?:async )?(?:(get|set) )?([a-zA-Z][a-zA-Z0-9_]*|\[[^\]]+\])(<[^(]*>)?\s*([(:])/u;
+  /^ {2}(?:public )?(?:declare )?(?:static )?(?:readonly )?(?:async )?(?:(get|set) )?([a-zA-Z][a-zA-Z0-9_]*|\[[^\]]+\])(<[^(]*>)?\s*([(:])/u;
 
 /** Every documented public member of every exported class in `source`. */
 export function classesOf(source: string, file: string): readonly ApiClass[] {
@@ -321,7 +325,7 @@ export function classesOf(source: string, file: string): readonly ApiClass[] {
     // rather than field by field. The prefixes match MEMBER's own: a predicate
     // narrower than the pattern feeding it is how a member goes quietly exempt.
     const isReadonlyField =
-      !isCall && !isGetter && /^ {2}(?:declare )?(?:static )?readonly /u.test(line);
+      !isCall && !isGetter && /^ {2}(?:public )?(?:declare )?(?:static )?readonly /u.test(line);
     if (!isCall && !isGetter && !isReadonlyField) continue;
 
     const doc = docAbove(lines, index);

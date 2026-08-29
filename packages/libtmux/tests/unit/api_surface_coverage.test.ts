@@ -3,9 +3,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 
 import {
+  classesOf,
+  requireRootExamples,
   requireSymbolExamples,
   readApiSurface,
   readRootApiSurface,
+  type ApiDeclaration,
   type PublicMember,
 } from "../../scripts/api_surface.js";
 import * as index from "../../src/index.js";
@@ -88,20 +91,52 @@ async function rootExports(): Promise<RootExports> {
 
 describe("api surface coverage", () => {
   test("rejects every public member missing an example", () => {
-    const members: readonly PublicMember[] = [
-      {
-        example: undefined,
-        file: "src/window.ts",
-        kind: "method",
-        line: 160,
-        name: "showHooks",
-        owner: "Window",
-        prose: "Read hooks set on this window itself.",
-        signature: "showHooks(): Promise<ReadonlyMap<string, readonly string[]>>",
-      },
-    ];
+    const member = (example: string | undefined): PublicMember => ({
+      example,
+      file: "src/window.ts",
+      kind: "method",
+      line: 160,
+      name: "showHooks",
+      owner: "Window",
+      prose: "Read hooks set on this window itself.",
+      signature: "showHooks(): Promise<ReadonlyMap<string, readonly string[]>>",
+    });
 
-    expect(() => requireSymbolExamples(members)).toThrow("src/window.ts:160  Window.showHooks");
+    for (const example of [undefined, "", " \n "] as const) {
+      expect(() => requireSymbolExamples([member(example)])).toThrow(
+        "src/window.ts:160  Window.showHooks",
+      );
+    }
+  });
+
+  test("rejects every root declaration missing an example", () => {
+    const declaration = (example: string | undefined): ApiDeclaration => ({
+      example,
+      file: "src/common.ts",
+      kind: "function",
+      line: 40,
+      name: "safeInteger",
+      prose: "Authenticate an integer.",
+      signatures: ["function safeInteger(value: number): SafeInteger;"],
+    });
+
+    for (const example of [undefined, "", " \n "] as const) {
+      expect(() => requireRootExamples([declaration(example)])).toThrow(
+        "src/common.ts:40  safeInteger",
+      );
+    }
+  });
+
+  test("collects members with an explicit public modifier", () => {
+    const [entry] = classesOf(
+      `export class Explicit {
+  public async read(): Promise<void> {}
+  public readonly server: unknown;
+}`,
+      "src/explicit.ts",
+    );
+
+    expect(entry?.members.map(({ name }) => name)).toEqual(["read", "server"]);
   });
 
   test("every handle class the package exports is read by the surface", async () => {
