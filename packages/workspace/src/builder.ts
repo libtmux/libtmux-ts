@@ -301,7 +301,7 @@ async function applyWindow(
     if (pane === undefined) throw new Error(`window ${current.name} lost pane ${String(index)}`);
     for (const command of paneCommands(entry, desired)) {
       // eslint-disable-next-line no-await-in-loop -- Commands run in the order written.
-      await pane.sendKeys(command);
+      await pane.sendKeys(command, { literal: true });
     }
   }
 
