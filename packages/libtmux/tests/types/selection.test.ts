@@ -107,7 +107,12 @@ type _ParseLegacyWhere = Expect<Equal<typeof parseLegacyWhere, ExpectedParseLega
 type _CreateProjectedSelection = Expect<
   Equal<typeof createProjectedSelection, ExpectedCreateProjectedSelection>
 >;
-type _RuntimeExports = Expect<Equal<keyof typeof selectionModule, "parseLegacyWhere">>;
+type _RuntimeExports = Expect<
+  Equal<
+    keyof typeof selectionModule,
+    "decodeWhereDocument" | "encodeWhereDocument" | "parseLegacyWhere"
+  >
+>;
 type _RegexData = Expect<
   Equal<RegexCriteriaData, { readonly flags: "" | "m" | "s" | "ms"; readonly pattern: string }>
 >;

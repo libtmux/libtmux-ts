@@ -134,8 +134,8 @@ selection.oneOrUndefined({ name: "work" });
 selection.exists({ name: "work" });
 ```
 
-Criteria are data, so they serialize — the same object can come from a config
-file, an MCP call, or a CLI flag.
+Criteria are data. `encodeWhereDocument` writes a model-tagged query;
+`decodeWhereDocument` validates one read from a config file, MCP call, or CLI.
 
 ## Packages
 

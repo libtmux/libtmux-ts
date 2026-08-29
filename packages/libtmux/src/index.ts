@@ -5,6 +5,8 @@ export { Session, type SessionPlans } from "./session.js";
 export { Window, type WindowPlans } from "./window.js";
 
 export {
+  decodeWhereDocument,
+  encodeWhereDocument,
   parseLegacyWhere,
   type ClientWhere,
   type PaneWhere,

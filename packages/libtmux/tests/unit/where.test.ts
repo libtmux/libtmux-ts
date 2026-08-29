@@ -6,12 +6,15 @@ import { NoMatchError, QueryValidationError } from "../../src/exc.js";
 import { safeInteger } from "../../src/common.js";
 import { compileWhere } from "../../src/_internal/selection/compile.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
+import { parseSessionId } from "../../src/_internal/runtime/ids.js";
 import {
   decodeWhereDocument,
   encodeWhereDocument,
-} from "../../src/_internal/selection/serialization.js";
-import { parseSessionId } from "../../src/_internal/runtime/ids.js";
-import type { PaneWhere, SessionWhere, WhereDocumentV1, WindowWhere } from "../../src/selection.js";
+  type PaneWhere,
+  type SessionWhere,
+  type WhereDocumentV1,
+  type WindowWhere,
+} from "../../src/selection.js";
 import { createRichProjectedHarness, createSessionHarness } from "../support/selection_fixtures.js";
 
 interface RegexCorpusCase {
@@ -1233,7 +1236,7 @@ describe("WhereDocumentV1 serialization", () => {
     });
   });
 
-  test("round-trips canonical JSON through Zod and freezes the decoded clone", () => {
+  test("round-trips canonical JSON and freezes the decoded clone", () => {
     const document: WhereDocumentV1 = {
       version: 1,
       model: "session",

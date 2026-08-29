@@ -7,8 +7,6 @@ import { Window } from "../../src/window.js";
 import {
   decodeWhereDocument,
   encodeWhereDocument,
-} from "../../src/_internal/selection/serialization.js";
-import {
   parseLegacyWhere,
   type ClientWhere,
   type PaneWhere,
@@ -109,6 +107,12 @@ type _DecodeDocument = Expect<
 >;
 type _EncodeDocument = Expect<
   Equal<typeof encodeWhereDocument, (document: WhereDocumentV1) => string>
+>;
+type _RootDecodeDocument = Expect<
+  Equal<typeof import("../../src/index.js").decodeWhereDocument, typeof decodeWhereDocument>
+>;
+type _RootEncodeDocument = Expect<
+  Equal<typeof import("../../src/index.js").encodeWhereDocument, typeof encodeWhereDocument>
 >;
 declare const decodedPaneDocument: Extract<WhereDocumentV1, { readonly model: "pane" }>;
 void decodedPaneDocument.where.title;

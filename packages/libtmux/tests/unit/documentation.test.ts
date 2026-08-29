@@ -88,6 +88,8 @@ describe("generated API reference", () => {
     const rootEntries = [...api.matchAll(/^### (`[^`]+`(?: type)?)$/gmu)].map((match) => match[1]!);
 
     expect(rootEntries).toEqual([
+      "`encodeWhereDocument`",
+      "`decodeWhereDocument`",
       "`parseLegacyWhere`",
       "`isSafeInteger`",
       "`safeInteger`",

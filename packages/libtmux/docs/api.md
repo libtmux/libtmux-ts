@@ -9,7 +9,49 @@ page is for looking one thing up.
 
 ## Functions
 
-[`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+
+### `encodeWhereDocument`
+
+```ts
+function encodeWhereDocument(document: WhereDocumentV1): string;
+```
+
+Serialize a WHERE document as canonical JSON.
+
+Field names and values use tmux's stable wire spellings. The input is
+validated without invoking accessors or conversion hooks.
+
+@throws QueryValidationError when the document or its criteria are invalid.
+
+```ts
+import { encodeWhereDocument } from "libtmux";
+const encoded = encodeWhereDocument({
+  model: "pane",
+  version: 1,
+  where: { title: { contains: "log" } },
+});
+```
+
+### `decodeWhereDocument`
+
+```ts
+function decodeWhereDocument(input: unknown): WhereDocumentV1;
+```
+
+Validate a WHERE document and restore camelCase criteria names.
+
+The returned document is canonical and deeply frozen.
+
+@throws QueryValidationError when the document or its criteria are invalid.
+
+```ts
+import { decodeWhereDocument } from "libtmux/selection";
+const document = decodeWhereDocument(
+  JSON.parse('{"model":"pane","version":1,"where":{"pane_title":"logs"}}'),
+);
+if (document.model === "pane") snapshot.panes.where(document.where);
+```
 
 ### `parseLegacyWhere`
 

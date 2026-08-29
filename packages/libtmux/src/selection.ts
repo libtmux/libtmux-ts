@@ -1,4 +1,8 @@
 import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/legacy.js";
+import {
+  decodeWhereDocument as decodeDocument,
+  encodeWhereDocument as encodeDocument,
+} from "./_internal/selection/serialization.js";
 import type { Client } from "./client.js";
 import type { PaneIdInput, SafeInteger, SessionIdInput, WindowIdInput } from "./common.js";
 import type { Pane } from "./pane.js";
@@ -497,6 +501,46 @@ export type WhereDocumentV1 =
   | { readonly model: "window"; readonly version: 1; readonly where: WindowWhere }
   | { readonly model: "pane"; readonly version: 1; readonly where: PaneWhere }
   | { readonly model: "client"; readonly version: 1; readonly where: ClientWhere };
+
+/**
+ * Serialize a WHERE document as canonical JSON.
+ *
+ * Field names and values use tmux's stable wire spellings. The input is
+ * validated without invoking accessors or conversion hooks.
+ *
+ * @throws QueryValidationError when the document or its criteria are invalid.
+ *
+ * ```ts
+ * import { encodeWhereDocument } from "libtmux";
+ * const encoded = encodeWhereDocument({
+ *   model: "pane",
+ *   version: 1,
+ *   where: { title: { contains: "log" } },
+ * });
+ * ```
+ */
+export function encodeWhereDocument(document: WhereDocumentV1): string {
+  return encodeDocument(document);
+}
+
+/**
+ * Validate a WHERE document and restore camelCase criteria names.
+ *
+ * The returned document is canonical and deeply frozen.
+ *
+ * @throws QueryValidationError when the document or its criteria are invalid.
+ *
+ * ```ts
+ * import { decodeWhereDocument } from "libtmux/selection";
+ * const document = decodeWhereDocument(
+ *   JSON.parse('{"model":"pane","version":1,"where":{"pane_title":"logs"}}'),
+ * );
+ * if (document.model === "pane") snapshot.panes.where(document.where);
+ * ```
+ */
+export function decodeWhereDocument(input: unknown): WhereDocumentV1 {
+  return decodeDocument(input);
+}
 
 /**
  * Convert the Python port's `name__contains` spelling to canonical criteria.

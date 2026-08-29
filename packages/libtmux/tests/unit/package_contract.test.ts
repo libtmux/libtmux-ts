@@ -151,6 +151,8 @@ describe("package contract", () => {
       "WaitTimeout",
       "Window",
       "WindowDirection",
+      "decodeWhereDocument",
+      "encodeWhereDocument",
       "isSafeInteger",
       "isSplitSize",
       "parseLegacyWhere",

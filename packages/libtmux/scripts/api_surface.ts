@@ -26,7 +26,7 @@ export const SOURCES = [
 const ROOT_SOURCES = [
   {
     file: "src/selection.ts",
-    functions: ["parseLegacyWhere"],
+    functions: ["encodeWhereDocument", "decodeWhereDocument", "parseLegacyWhere"],
     types: [],
   },
   {

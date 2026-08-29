@@ -167,8 +167,9 @@ window.name; // "editor" — the instant this was read at
 
 ## Querying
 
-`.where()` takes declarative, serializable criteria. `.filter()` takes an
-ordinary predicate. They are never overloaded into each other.
+`.where()` takes declarative criteria. `encodeWhereDocument` serializes them in
+a model-tagged document. `.filter()` takes an ordinary predicate. They are never
+overloaded into each other.
 
 ```ts
 snapshot.panes.where({ currentCommand: "vim" });
@@ -385,12 +386,19 @@ const raw = panes.one({ active: true, window: { is: { name: "second" } } }).form
 if (raw !== "1") throw new Error(`expected the raw row to hold "1", saw ${JSON.stringify(raw)}`);
 ```
 
-Criteria are camelCase too, and serialize to tmux's stable spellings so a stored
-query stays readable by other tools:
+Criteria are camelCase too. WHERE documents use tmux's stable spellings so a
+stored query stays readable by other tools:
 
 ```ts
-snapshot.panes.where({ title: { contains: "log" } });
-// serializes to {"where":{"pane_title":{"contains":"log"}}}
+import { decodeWhereDocument, encodeWhereDocument } from "libtmux";
+
+const encoded = encodeWhereDocument({
+  model: "pane",
+  version: 1,
+  where: { title: { contains: "log" } },
+});
+const document = decodeWhereDocument(JSON.parse(encoded) as unknown);
+if (document.model === "pane") snapshot.panes.where(document.where);
 ```
 
 A criterion is spelled like the handle accessor it filters, so a pane reads

@@ -70,7 +70,6 @@ describe("Selection collection contract", () => {
     const selection = createProjectedSelection("session", harness.values, harness.projection);
     const internalModule = await import("../../src/_internal/selection/evaluate.js");
 
-    expect(Object.keys(selectionModule)).toEqual(["parseLegacyWhere"]);
     expect(Object.keys(internalModule).sort()).toEqual(["createProjectedSelection"]);
     expect(Reflect.get(selectionModule, "Selection")).toBeUndefined();
     const runtimeConstructor = Reflect.get(selection, "constructor") as Function;
