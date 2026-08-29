@@ -93,6 +93,7 @@ describe("generated API reference", () => {
       "`parseLegacyWhere`",
       "`isSafeInteger`",
       "`safeInteger`",
+      "`isTmuxName`",
       "`isSplitSize`",
       "`splitSize`",
       "`SafeInteger` type",

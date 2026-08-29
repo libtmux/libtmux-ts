@@ -155,6 +155,7 @@ describe("package contract", () => {
       "encodeWhereDocument",
       "isSafeInteger",
       "isSplitSize",
+      "isTmuxName",
       "parseLegacyWhere",
       "safeInteger",
       "splitSize",
