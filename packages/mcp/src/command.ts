@@ -199,7 +199,9 @@ export async function runFramedCommand(
   const source = frame(command, ready, suppressHistory);
   const sessionId = pane.format.session_id;
 
-  let tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
+  let tail = context.policy.liveEnabled
+    ? await context.hub.tail(sessionId, pane.id, signal)
+    : undefined;
   if (isCancelled(signal)) return beforeStartResult(budget, "cancelled");
 
   // Read the stream position before sending: output printed between the send

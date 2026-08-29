@@ -10,6 +10,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { requireActive } from "../abort.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
@@ -247,8 +248,9 @@ export function registerCapture(mcp: McpServer, context: ToolContext): void {
       // then reported streaming:true, which is accurate and so useless for
       // noticing. The capture fallback below is already written for this.
       const tail = context.policy.liveEnabled
-        ? await context.hub.tail(sessionId, paneId)
+        ? await context.hub.tail(sessionId, paneId, extra.signal)
         : undefined;
+      requireActive(extra.signal);
 
       // No control connection: answer with a capture rather than an error, and
       // say so, so the caller knows the cursor it gets back is not a stream

@@ -51,6 +51,10 @@ const IDLE_WAKE_MS = 500;
  */
 const LIVENESS_MS = 5_000;
 
+function isCancelled(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
 /**
  * Wait for a pane to print something matching, and report why the wait ended.
  *
@@ -69,7 +73,20 @@ async function waitForOutput(
   },
 ): Promise<WaitReport> {
   const sessionId = pane.format.session_id;
-  const tail = context.policy.liveEnabled ? await context.hub.tail(sessionId, pane.id) : undefined;
+  const tail = context.policy.liveEnabled
+    ? await context.hub.tail(sessionId, pane.id, options.signal)
+    : undefined;
+  if (isCancelled(options.signal)) {
+    return {
+      cursor: null,
+      effectiveTimeoutMs: options.timeoutMs,
+      matched: null,
+      missedBytes: 0,
+      outcome: "cancelled",
+      output: "",
+      streamFailure: null,
+    };
+  }
   if (tail === undefined) {
     return {
       cursor: null,
@@ -112,7 +129,7 @@ async function waitForOutput(
     }
     // A caller that has gone away is not owed the rest of its deadline, and the
     // connection it was holding is wanted by somebody else.
-    if (options.signal?.aborted === true) {
+    if (isCancelled(options.signal)) {
       return {
         cursor: seen.cursor,
         effectiveTimeoutMs: options.timeoutMs,
@@ -383,7 +400,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
     if (isFailure(pane)) return pane;
 
     if (context.policy.liveEnabled && args.cursor !== undefined) {
-      const tail = await context.hub.tail(pane.format.session_id, pane.id);
+      const tail = await context.hub.tail(pane.format.session_id, pane.id, signal);
       const stale =
         tail === undefined ? undefined : requireLiveCursor(tail, args.cursor, args.paneId);
       if (stale !== undefined) return stale;

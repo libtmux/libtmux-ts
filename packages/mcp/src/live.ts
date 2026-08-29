@@ -273,14 +273,21 @@ export class LiveHub {
    * gone, or one that refuses control mode — so a caller can fall back to
    * capturing rather than fail.
    */
-  async tail(sessionId: string, paneId: string): Promise<PaneTail | undefined> {
+  async tail(
+    sessionId: string,
+    paneId: string,
+    signal?: AbortSignal,
+  ): Promise<PaneTail | undefined> {
     let link: SessionLink;
     try {
-      link = await this.#link(sessionId);
+      link = await this.#link(sessionId, signal);
     } catch {
       return undefined;
     }
-    if (link.failed) return undefined;
+    if (link.failed || signal?.aborted === true) {
+      this.#scheduleClose(sessionId, link, 0);
+      return undefined;
+    }
     const existing = link.tails.get(paneId);
     if (existing !== undefined) {
       this.#scheduleClose(sessionId, link);
