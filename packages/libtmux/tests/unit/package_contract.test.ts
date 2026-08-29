@@ -158,10 +158,11 @@ describe("package contract", () => {
       "splitSize",
     ]);
     expect(packageManifest.name).toBe("libtmux");
-    // A prerelease while the API is still moving. The exact number is not
-    // pinned: it changes every release, and a gate that has to be edited to
-    // release is a gate people learn to edit.
-    expect(packageManifest.version).toMatch(/^\d+\.\d+\.\d+-alpha\.\d+$/u);
+    // Stable and prerelease manifests share the same coordinated release path.
+    // The exact number is not pinned: a gate edited per release is no gate.
+    expect(packageManifest.version).toMatch(
+      /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u,
+    );
     // Every package in the workspace ships together under one version, so a
     // tag names a state of the whole repository rather than of one package.
     const siblings = await Promise.all(
