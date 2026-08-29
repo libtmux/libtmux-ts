@@ -189,7 +189,13 @@ describe("package contract", () => {
     expect(packageManifest.type).toBe("module");
     expect(packageManifest.main).toBe("./dist/index.js");
     expect(packageManifest.types).toBe("./dist/index.d.ts");
-    expect(packageManifest.files).toEqual(["CHANGELOG.md", "dist", "!dist/_internal/test"]);
+    expect(packageManifest.files).toEqual([
+      "CHANGELOG.md",
+      "dist",
+      "!dist/_internal/test",
+      "src",
+      "!src/_internal/test",
+    ]);
     expect(packageManifest.sideEffects).toBe(false);
     expect(packageManifest.trustedDependencies).toEqual([]);
     expect(Object.keys(packageManifest.exports)).toEqual([
@@ -333,7 +339,7 @@ describe("package contract", () => {
     expect(source.compilerOptions?.skipLibCheck).not.toBe(true);
     expect(build.compilerOptions).toMatchObject({
       declaration: true,
-      declarationMap: false,
+      declarationMap: true,
       inlineSources: true,
       noEmit: false,
       outDir: "dist",

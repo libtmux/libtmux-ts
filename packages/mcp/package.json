@@ -25,7 +25,8 @@
     "libtmux-mcp": "dist/server.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "type": "module",
   "main": "./dist/server.js",
