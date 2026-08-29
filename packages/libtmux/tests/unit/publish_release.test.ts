@@ -305,6 +305,29 @@ describe("coordinated release", () => {
     },
   );
 
+  test("rejects a different build at equal tag precedence", async () => {
+    const fixture = await makeReleaseFixture("1.0.0+next");
+    const registry = makeRegistry("1.0.0+current");
+    const { io, publishes } = makeReleaseIO(registry);
+    try {
+      await expect(
+        coordinateRelease(
+          {
+            artifactDirectory: fixture.artifacts,
+            dryRun: false,
+            eventName: "push",
+            refName: "v1.0.0+next",
+            repositoryRoot: fixture.root,
+          },
+          io,
+        ),
+      ).rejects.toThrow("would replace latest 1.0.0+current at equal precedence");
+      expect(publishes).toEqual([]);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   test("rejects a matching artifact with the wrong tag before publishing", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
     const registry = makeRegistry("0.9.0-alpha.1");

@@ -456,12 +456,21 @@ export async function coordinateRelease(
       failures.push(`${artifact.name}: package state was not read`);
     } else if (versionState === undefined) {
       const taggedVersion = packageState.distTags[distTag];
-      if (
-        taggedVersion !== undefined &&
-        compareSemanticVersions(artifact.version, taggedVersion) < 0
-      ) {
+      const tagComparison =
+        taggedVersion === undefined
+          ? undefined
+          : compareSemanticVersions(artifact.version, taggedVersion);
+      if (tagComparison !== undefined && tagComparison < 0) {
         failures.push(
           `${artifact.name}@${artifact.version} would move ${distTag} backward from ${taggedVersion}`,
+        );
+      } else if (
+        tagComparison === 0 &&
+        taggedVersion !== undefined &&
+        artifact.version !== taggedVersion
+      ) {
+        failures.push(
+          `${artifact.name}@${artifact.version} would replace ${distTag} ${taggedVersion} at equal precedence`,
         );
       } else {
         pending.push(artifact);
