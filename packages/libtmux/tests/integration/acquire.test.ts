@@ -75,6 +75,13 @@ class GatedTransport implements CommandTransport {
 
 async function restartServer(controller: Server, sessionName: string): Promise<void> {
   await controller.cmd("kill-server").catch(() => undefined);
+  const deadline = Date.now() + 5_000;
+  // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+  while (await controller.isAlive()) {
+    if (Date.now() > deadline) throw new Error("timed out waiting for tmux to exit");
+    // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
   await controller.cmd("new-session", ["-d", "-s", sessionName], { target: null });
 }
 
