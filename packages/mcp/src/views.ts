@@ -12,7 +12,20 @@ import { z } from "zod";
 import type { Client, Session, Window } from "libtmux";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
-import type { ReadablePane } from "./context.js";
+import { panePlacementIndex, windowPlacementIndex, type ReadablePane } from "./context.js";
+import { paneIdSchema, windowIdSchema } from "./schemas.js";
+
+export const placementViewSchema = z.object({
+  index: z.number().int().describe("The window index in this session."),
+  sessionId: z.string(),
+  sessionName: z.string(),
+});
+export type PlacementView = z.infer<typeof placementViewSchema>;
+
+export const windowPlacementViewSchema = placementViewSchema.extend({
+  active: z.boolean().describe("Whether this placement is current in its session."),
+});
+export type WindowPlacementView = z.infer<typeof windowPlacementViewSchema>;
 
 export const paneViewSchema = z.object({
   active: z.boolean().describe("Whether this is its window's active pane."),
@@ -20,15 +33,16 @@ export const paneViewSchema = z.object({
   cwd: z.string().describe("Its current working directory."),
   dead: z.boolean().describe("Whether its process exited and remain-on-exit kept it."),
   height: z.number().int(),
-  id: z.string().describe("Stable pane id, e.g. %1. Prefer this for targeting."),
+  id: paneIdSchema.describe("Stable pane id. Prefer this for entity-scoped targeting."),
   index: z.number().int(),
   isAttended: z.boolean().describe("A person is currently looking at this pane."),
   isCallerPane: z.boolean().describe("This is the pane this MCP server runs in."),
-  sessionId: z.string(),
-  sessionName: z.string(),
+  placements: z
+    .array(placementViewSchema)
+    .describe("Every session and window index through which this pane is reachable."),
   title: z.string(),
   width: z.number().int(),
-  windowId: z.string(),
+  windowId: windowIdSchema,
   windowName: z.string(),
 });
 export type PaneView = z.infer<typeof paneViewSchema>;
@@ -42,20 +56,19 @@ export const sessionViewSchema = z.object({
 export type SessionView = z.infer<typeof sessionViewSchema>;
 
 export const windowViewSchema = z.object({
-  active: z.boolean(),
-  id: z.string().describe("Stable window id, e.g. @1."),
-  index: z.number().int(),
+  id: windowIdSchema,
   layout: z.string().describe("tmux's layout string; feed it back to select_layout."),
   name: z.string(),
   panes: z.number().int(),
-  sessionId: z.string(),
-  sessionName: z.string(),
+  placements: z
+    .array(windowPlacementViewSchema)
+    .describe("Every session and index where this window is linked."),
   zoomed: z.boolean(),
 });
 export type WindowView = z.infer<typeof windowViewSchema>;
 
 export const clientViewSchema = z.object({
-  activePaneId: z.string(),
+  activePaneId: paneIdSchema.nullable(),
   controlMode: z.boolean().describe("A program rather than a person at a terminal."),
   name: z.string(),
   sessionName: z.string(),
@@ -81,7 +94,11 @@ function no<T>(value: T | null | undefined, fallback: T): T {
  * `false` — a fact about the call site, presented as a fact about the pane.
  * Six tools did, including on this server's own pane.
  */
-export function paneView(pane: ReadablePane, identity: CallerIdentity): PaneView {
+export function paneView(
+  pane: ReadablePane,
+  identity: CallerIdentity,
+  placements: readonly ReadablePane[] = [pane],
+): PaneView {
   return {
     active: no(pane.active, false),
     command: no(pane.currentCommand, ""),
@@ -92,8 +109,11 @@ export function paneView(pane: ReadablePane, identity: CallerIdentity): PaneView
     index: no(pane.index, 0),
     isAttended: isAttended(identity, pane.id),
     isCallerPane: isCallerPane(identity, pane.id),
-    sessionId: pane.format.session_id,
-    sessionName: no(pane.session?.name, ""),
+    placements: placements.map((placement) => ({
+      index: panePlacementIndex(placement),
+      sessionId: placement.format.session_id,
+      sessionName: no(placement.session?.name, ""),
+    })),
     title: no(pane.title, ""),
     width: no(pane.width, 0),
     windowId: pane.format.window_id,
@@ -110,23 +130,25 @@ export function sessionView(session: Session, windows: number): SessionView {
   };
 }
 
-export function windowView(window: Window): WindowView {
+export function windowView(window: Window, placements: readonly Window[] = [window]): WindowView {
   return {
-    active: no(window.active, false),
     id: window.id,
-    index: no(window.index, 0),
     layout: no(window.layout, ""),
     name: no(window.name, ""),
     panes: no(window.windowPanes, 0),
-    sessionId: window.format.session_id,
-    sessionName: no(window.session?.name, ""),
+    placements: placements.map((placement) => ({
+      active: no(placement.active, false),
+      index: windowPlacementIndex(placement),
+      sessionId: placement.format.session_id,
+      sessionName: no(placement.session?.name, ""),
+    })),
     zoomed: no(window.zoomedFlag, false),
   };
 }
 
 export function clientView(client: Client): ClientView {
   return {
-    activePaneId: client.pane?.id ?? "",
+    activePaneId: client.pane?.id ?? null,
     controlMode: no(client.controlMode, false),
     name: no(client.name, ""),
     sessionName: no(client.session?.name, ""),
@@ -145,7 +167,10 @@ export function paneLine(view: PaneView): string {
     .filter((mark) => mark !== "")
     .join(",");
   const suffix = marks === "" ? "" : ` [${marks}]`;
-  return `${view.id}  ${view.sessionName}:${view.windowName}.${String(view.index)}  ${view.command}  ${view.cwd}${suffix}`;
+  const placements = view.placements
+    .map(({ index, sessionName }) => `${sessionName}:${String(index)}`)
+    .join(",");
+  return `${view.id}  ${placements} ${view.windowName}.${String(view.index)}  ${view.command}  ${view.cwd}${suffix}`;
 }
 
 export function sessionLine(view: SessionView): string {
@@ -154,10 +179,10 @@ export function sessionLine(view: SessionView): string {
 }
 
 export function windowLine(view: WindowView): string {
-  const marks = [view.active ? "active" : "", view.zoomed ? "zoomed" : ""]
-    .filter((mark) => mark !== "")
+  const placements = view.placements
+    .map(({ active, index, sessionName }) => `${sessionName}:${String(index)}${active ? "*" : ""}`)
     .join(",");
-  return `${view.id}  ${view.sessionName}:${String(view.index)} ${view.name}  ${String(view.panes)} panes${marks === "" ? "" : ` [${marks}]`}`;
+  return `${view.id}  ${placements} ${view.name}  ${String(view.panes)} panes${view.zoomed ? " [zoomed]" : ""}`;
 }
 
 /**

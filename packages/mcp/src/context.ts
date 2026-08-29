@@ -135,13 +135,74 @@ type PaneWrite = "kill" | "pasteBuffer" | "respawn" | "sendKeys";
  */
 export type ReadablePane = Omit<Pane, PaneWrite>;
 
-function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult {
-  const available = snapshot.panes
+export interface SourcePlacement {
+  readonly sourceIndex?: number;
+  readonly sourceSession?: string;
+}
+
+function compareSession(left: string, right: string): number {
+  return left.localeCompare(right, "en", { numeric: true });
+}
+
+export function windowPlacementIndex(window: Window): number {
+  return window.index ?? Number(window.format.window_index ?? 0);
+}
+
+export function panePlacementIndex(pane: ReadablePane): number {
+  return pane.window?.index ?? Number(pane.format.window_index ?? 0);
+}
+
+function compareWindows(left: Window, right: Window): number {
+  return (
+    compareSession(left.format.session_id, right.format.session_id) ||
+    windowPlacementIndex(left) - windowPlacementIndex(right)
+  );
+}
+
+function comparePanes(left: ReadablePane, right: ReadablePane): number {
+  return (
+    compareSession(left.format.session_id, right.format.session_id) ||
+    panePlacementIndex(left) - panePlacementIndex(right)
+  );
+}
+
+export function windowPlacements(snapshot: ServerSnapshot, windowId: string): readonly Window[] {
+  return snapshot.windows
     .toArray()
-    .map(
-      (entry) =>
-        `${entry.id} (${entry.session?.name ?? "?"}:${entry.window?.name ?? "?"} ${entry.currentCommand ?? "?"})`,
-    );
+    .filter((window) => window.id === windowId)
+    .toSorted(compareWindows);
+}
+
+export function panePlacements(snapshot: ServerSnapshot, paneId: string): readonly ReadablePane[] {
+  return snapshot.panes
+    .toArray()
+    .filter((pane) => pane.id === paneId)
+    .toSorted(comparePanes);
+}
+
+export function windowEntities(windows: readonly Window[]): readonly Window[] {
+  const seen = new Set<string>();
+  return [...windows].toSorted(compareWindows).filter((window) => {
+    if (seen.has(window.id)) return false;
+    seen.add(window.id);
+    return true;
+  });
+}
+
+export function paneEntities(panes: readonly ReadablePane[]): readonly ReadablePane[] {
+  const seen = new Set<string>();
+  return [...panes].toSorted(comparePanes).filter((pane) => {
+    if (seen.has(pane.id)) return false;
+    seen.add(pane.id);
+    return true;
+  });
+}
+
+function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult {
+  const available = paneEntities(snapshot.panes.toArray()).map(
+    (entry) =>
+      `${entry.id} (${entry.session?.name ?? "?"}:${entry.window?.name ?? "?"} ${entry.currentCommand ?? "?"})`,
+  );
   return fail({
     hint:
       available.length === 0
@@ -161,7 +222,7 @@ export function requirePane(
   snapshot: ServerSnapshot,
   paneId: string,
 ): CallToolResult | ReadablePane {
-  return snapshot.panes.oneOrUndefined({ id: paneId }) ?? paneNotFound(snapshot, paneId);
+  return panePlacements(snapshot, paneId)[0] ?? paneNotFound(snapshot, paneId);
 }
 
 /**
@@ -180,7 +241,7 @@ export function requireWritablePane(
   force: boolean | undefined,
   verb = "write into",
 ): CallToolResult | Pane {
-  const pane = snapshot.panes.oneOrUndefined({ id: paneId });
+  const pane = panePlacements(snapshot, paneId)[0] as Pane | undefined;
   if (pane === undefined) return paneNotFound(snapshot, paneId);
   if (force !== true && isCallerPane(identity, paneId)) {
     return fail({
@@ -257,11 +318,11 @@ export function requireSession(snapshot: ServerSnapshot, target: string): CallTo
 }
 
 export function requireWindow(snapshot: ServerSnapshot, target: string): CallToolResult | Window {
-  const byId = snapshot.windows.oneOrUndefined({ id: target });
+  const byId = windowPlacements(snapshot, target)[0];
   if (byId !== undefined) return byId;
-  const available = snapshot.windows
-    .toArray()
-    .map((entry) => `${entry.id} (${entry.session?.name ?? "?"}:${entry.name ?? "?"})`);
+  const available = windowEntities(snapshot.windows.toArray()).map(
+    (entry) => `${entry.id} (${entry.session?.name ?? "?"}:${entry.name ?? "?"})`,
+  );
   return fail({
     hint:
       available.length === 0
@@ -269,6 +330,120 @@ export function requireWindow(snapshot: ServerSnapshot, target: string): CallToo
         : `Windows on this server: ${suggest(available, "list_windows")}`,
     reason: `No window ${target} on this server.`,
   });
+}
+
+function sourceMatches(
+  sessionId: string,
+  sessionName: string | null | undefined,
+  sourceSession: string,
+): boolean {
+  return /^\$\d+$/u.test(sourceSession)
+    ? sessionId === sourceSession
+    : sessionName === sourceSession;
+}
+
+function placementFailure(
+  kind: "pane" | "window",
+  id: string,
+  placements: readonly {
+    readonly index: number;
+    readonly sessionId: string;
+    readonly sessionName: string | null | undefined;
+  }[],
+  source: SourcePlacement,
+): CallToolResult {
+  const choices = placements
+    .map(
+      ({ index, sessionId, sessionName }) =>
+        `${sessionId}:${String(index)} (${sessionName ?? "?"})`,
+    )
+    .join(", ");
+  const selected = [
+    ...(source.sourceSession === undefined
+      ? []
+      : [`sourceSession=${JSON.stringify(source.sourceSession)}`]),
+    ...(source.sourceIndex === undefined ? [] : [`sourceIndex=${String(source.sourceIndex)}`]),
+  ];
+  const incomplete =
+    placements.length > 1 &&
+    (source.sourceSession === undefined || source.sourceIndex === undefined);
+  return fail({
+    hint: `Available source placements: ${choices}. Pass sourceSession and sourceIndex.`,
+    reason:
+      selected.length === 0
+        ? `${kind === "pane" ? "Pane" : "Window"} ${id} names ${String(placements.length)} placements; a source placement is required.`
+        : incomplete
+          ? `${kind === "pane" ? "Pane" : "Window"} ${id} names ${String(placements.length)} placements; sourceSession and sourceIndex are both required.`
+          : `${kind === "pane" ? "Pane" : "Window"} ${id} has no single placement matching ${selected.join(" and ")}.`,
+  });
+}
+
+function resolvePlacement<Model>(
+  kind: "pane" | "window",
+  id: string,
+  placements: readonly Model[],
+  describe: (placement: Model) => {
+    readonly index: number;
+    readonly sessionId: string;
+    readonly sessionName: string | null | undefined;
+  },
+  source: SourcePlacement,
+): CallToolResult | Model {
+  const described = placements.map((placement) => ({ placement, ...describe(placement) }));
+  if (
+    placements.length > 1 &&
+    (source.sourceSession === undefined || source.sourceIndex === undefined)
+  ) {
+    return placementFailure(kind, id, described, source);
+  }
+  const matches = described.filter(
+    ({ index, sessionId, sessionName }) =>
+      (source.sourceSession === undefined ||
+        sourceMatches(sessionId, sessionName, source.sourceSession)) &&
+      (source.sourceIndex === undefined || index === source.sourceIndex),
+  );
+  if (matches.length === 1) return matches[0]!.placement;
+  return placementFailure(kind, id, described, source);
+}
+
+export function requireWindowPlacement(
+  snapshot: ServerSnapshot,
+  windowId: string,
+  source: SourcePlacement,
+): CallToolResult | Window {
+  const placements = windowPlacements(snapshot, windowId);
+  if (placements.length === 0) return requireWindow(snapshot, windowId);
+  return resolvePlacement(
+    "window",
+    windowId,
+    placements,
+    (window) => ({
+      index: windowPlacementIndex(window),
+      sessionId: window.format.session_id,
+      sessionName: window.session?.name,
+    }),
+    source,
+  );
+}
+
+export function requirePanePlacement(
+  snapshot: ServerSnapshot,
+  paneId: string,
+  source: SourcePlacement,
+): CallToolResult | ReadablePane {
+  const placements = panePlacements(snapshot, paneId);
+  if (placements.length === 0) return requirePane(snapshot, paneId);
+  return resolvePlacement(
+    "pane",
+    paneId,
+    placements,
+    (pane) => ({
+      index: panePlacementIndex(pane),
+      sessionId: pane.format.session_id,
+      sessionName: pane.session?.name,
+    }),
+    source,
+  );
 }
 
 /** Whether `requirePane` and its kin returned a failure rather than a handle. */

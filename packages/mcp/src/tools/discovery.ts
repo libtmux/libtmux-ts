@@ -9,9 +9,19 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, requireSession, type ToolContext } from "../context.js";
+import {
+  isFailure,
+  paneEntities,
+  panePlacements,
+  requirePane,
+  requireSession,
+  windowEntities,
+  windowPlacements,
+  type ToolContext,
+} from "../context.js";
 import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
 import { ok } from "../results.js";
+import { paneIdSchema, windowIdSchema } from "../schemas.js";
 import {
   clientView,
   clientViewSchema,
@@ -161,9 +171,9 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       // here while requireSession picked one everywhere else.
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
-      const windows = (
-        target === undefined ? all : all.filter((window) => window.format.session_id === target.id)
-      ).map(windowView);
+      const windows = windowEntities(
+        target === undefined ? all : all.filter((window) => window.format.session_id === target.id),
+      ).map((window) => windowView(window, windowPlacements(snapshot, window.id)));
       return ok(
         { windows },
         windows.length === 0 ? "No windows matched." : windows.map(windowLine).join("\n"),
@@ -181,7 +191,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         "watching (isAttended). Metadata only — search_panes reads their contents.",
       inputSchema: {
         session: z.string().optional().describe("Session id ($1) or name."),
-        window: z.string().optional().describe("Window id (@1)."),
+        window: windowIdSchema.optional(),
       },
       outputSchema: { panes: z.array(paneViewSchema) },
       title: "List panes",
@@ -191,14 +201,15 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
-      const panes = snapshot.panes
-        .toArray()
-        .filter(
-          (pane) =>
-            (target === undefined || pane.format.session_id === target.id) &&
-            (window === undefined || pane.format.window_id === window),
-        )
-        .map((pane) => paneView(pane, identity));
+      const panes = paneEntities(
+        snapshot.panes
+          .toArray()
+          .filter(
+            (pane) =>
+              (target === undefined || pane.format.session_id === target.id) &&
+              (window === undefined || pane.format.window_id === window),
+          ),
+      ).map((pane) => paneView(pane, identity, panePlacements(snapshot, pane.id)));
       return ok(
         { panes },
         panes.length === 0 ? "No panes matched." : panes.map(paneLine).join("\n"),
@@ -213,7 +224,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       description:
         "One pane's metadata: what it runs, where, how big, and whether it is yours " +
         "or watched. Does not read its contents — capture_pane does that.",
-      inputSchema: { paneId: z.string().describe("Pane id, e.g. %1.") },
+      inputSchema: { paneId: paneIdSchema },
       outputSchema: { pane: paneViewSchema },
       title: "Get pane",
     },
@@ -222,7 +233,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
-      const view = paneView(pane, identity);
+      const view = paneView(pane, identity, panePlacements(snapshot, pane.id));
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -238,8 +249,8 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         "mistake tmux cannot undo.",
       inputSchema: {},
       outputSchema: {
-        attendedPaneIds: z.array(z.string()),
-        callerPaneId: z.string().nullable(),
+        attendedPaneIds: z.array(paneIdSchema),
+        callerPaneId: paneIdSchema.nullable(),
         callerPaneIsOnThisServer: z.boolean(),
         clients: z.array(clientViewSchema),
         serverPid: z.string().nullable(),
@@ -250,9 +261,10 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
       const clients = snapshot.clients.toArray().map(clientView);
+      const callerPaneId = paneIdSchema.safeParse(identity.callerPaneId);
       const structured = {
         attendedPaneIds: identity.attendedPaneIds,
-        callerPaneId: identity.callerPaneId ?? null,
+        callerPaneId: callerPaneId.success ? callerPaneId.data : null,
         callerPaneIsOnThisServer: identity.callerPaneIsOnThisServer,
         clients,
         serverPid: identity.serverPid ?? null,
@@ -304,12 +316,12 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           .catch(() => ""),
       ]);
       const structured = {
-        panes: snapshot.panes.count(),
+        panes: paneEntities(snapshot.panes.toArray()).length,
         pid: identity?.pid ?? null,
         sessions: snapshot.sessions.count(),
         socketPath: printable(resolvedSocket === "" ? context.tmux.socketPath : resolvedSocket),
         version: version.raw,
-        windows: snapshot.windows.count(),
+        windows: windowEntities(snapshot.windows.toArray()).length,
       };
       return ok(
         structured,
@@ -329,7 +341,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           "The escape hatch for any field these tools do not project.",
         inputSchema: {
           format: z.string().describe("A tmux format, e.g. '#{pane_pid}'."),
-          target: z.string().optional().describe("Pane id to resolve against."),
+          target: paneIdSchema.optional().describe("Pane id to resolve against."),
         },
         outputSchema: { value: z.string() },
         title: "Resolve a tmux format",

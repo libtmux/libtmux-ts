@@ -22,9 +22,13 @@ import type { TmuxEvent } from "libtmux";
 
 import {
   isFailure,
+  paneEntities,
+  panePlacements,
   requirePane,
   requireSession,
   requireWindow,
+  windowEntities,
+  windowPlacements,
   type ToolContext,
 } from "./context.js";
 import type { LiveListener } from "./live.js";
@@ -162,8 +166,15 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     "windows",
     WINDOWS_URI,
     { description: "Every window on this server.", mimeType: JSON_MIME, title: "Windows" },
-    async () =>
-      jsonResource(WINDOWS_URI, (await context.snapshot()).windows.toArray().map(windowView)),
+    async () => {
+      const snapshot = await context.snapshot();
+      return jsonResource(
+        WINDOWS_URI,
+        windowEntities(snapshot.windows.toArray()).map((window) =>
+          windowView(window, windowPlacements(snapshot, window.id)),
+        ),
+      );
+    },
   );
 
   mcp.registerResource(
@@ -175,7 +186,9 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       return jsonResource(
         PANES_URI,
-        snapshot.panes.toArray().map((pane) => paneView(pane, identity)),
+        paneEntities(snapshot.panes.toArray()).map((pane) =>
+          paneView(pane, identity, panePlacements(snapshot, pane.id)),
+        ),
       );
     },
   );
@@ -222,10 +235,9 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const session = found;
       return jsonResource(uri.href, {
         ...sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
-        windows: snapshot.windows
-          .toArray()
-          .filter((window) => window.format.session_id === session.id)
-          .map(windowView),
+        windows: windowEntities(
+          snapshot.windows.toArray().filter((window) => window.format.session_id === session.id),
+        ).map((window) => windowView(window, windowPlacements(snapshot, window.id))),
       });
     },
   );
@@ -235,17 +247,16 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     new ResourceTemplate("tmux://windows/{windowId}", {
       complete: {
         windowId: async (value) =>
-          (await context.snapshot()).windows
-            .toArray()
+          windowEntities((await context.snapshot()).windows.toArray())
             .map((window) => window.id)
             .filter((candidate) => candidate.startsWith(value)),
       },
       list: async () => (
         watching(),
         {
-          resources: (await context.snapshot()).windows.toArray().map((window) => ({
+          resources: windowEntities((await context.snapshot()).windows.toArray()).map((window) => ({
             mimeType: JSON_MIME,
-            name: `${window.session?.name ?? "?"}:${window.name ?? window.id}`,
+            name: window.name ?? window.id,
             uri: windowUri(window.id),
           })),
         }
@@ -260,18 +271,16 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const window = found;
       const identity = await context.identity(snapshot);
       return jsonResource(uri.href, {
-        ...windowView(window),
-        panes: snapshot.panes
-          .toArray()
-          .filter((pane) => pane.format.window_id === window.id)
-          .map((pane) => paneView(pane, identity)),
+        ...windowView(window, windowPlacements(snapshot, window.id)),
+        panes: paneEntities(
+          snapshot.panes.toArray().filter((pane) => pane.format.window_id === window.id),
+        ).map((pane) => paneView(pane, identity, panePlacements(snapshot, pane.id))),
       });
     },
   );
 
   const completePaneId = async (value: string): Promise<string[]> =>
-    (await context.snapshot()).panes
-      .toArray()
+    paneEntities((await context.snapshot()).panes.toArray())
       .map((pane) => pane.id)
       .filter((candidate) => candidate.startsWith(value));
 
@@ -283,7 +292,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
         watching();
         const snapshot = await context.snapshot();
         return {
-          resources: snapshot.panes.toArray().map((pane) => ({
+          resources: paneEntities(snapshot.panes.toArray()).map((pane) => ({
             description: `${pane.session?.name ?? "?"}:${pane.window?.name ?? "?"} running ${pane.currentCommand ?? "?"}`,
             mimeType: JSON_MIME,
             name: pane.id,
@@ -299,7 +308,10 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const found = requirePane(snapshot, target);
       if (isFailure(found)) throw resourceError(found);
       const pane = found;
-      return jsonResource(uri.href, paneView(pane, await context.identity(snapshot)));
+      return jsonResource(
+        uri.href,
+        paneView(pane, await context.identity(snapshot), panePlacements(snapshot, pane.id)),
+      );
     },
   );
 
@@ -310,7 +322,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       list: async () => (
         watching(),
         {
-          resources: (await context.snapshot()).panes.toArray().map((pane) => ({
+          resources: paneEntities((await context.snapshot()).panes.toArray()).map((pane) => ({
             description: `What ${pane.id} is showing.`,
             mimeType: TEXT_MIME,
             name: `${pane.id} contents`,

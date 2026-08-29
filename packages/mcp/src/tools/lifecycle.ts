@@ -9,19 +9,24 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { ServerSnapshot } from "libtmux";
 import { PaneDirection } from "libtmux/constants";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "../caller.js";
 import {
   isFailure,
+  paneEntities,
+  panePlacements,
   requirePane,
   requireSession,
   requireWritablePane,
   requireWindow,
+  windowPlacements,
   type ToolContext,
 } from "../context.js";
 import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
+import { paneIdSchema, windowIdSchema } from "../schemas.js";
 import {
   directoryNote,
   paneLine,
@@ -40,6 +45,16 @@ const DIRECTIONS = {
   left: PaneDirection.Left,
   right: PaneDirection.Right,
 } as const;
+
+function projectPane(snapshot: ServerSnapshot, paneId: string, identity: CallerIdentity) {
+  const pane = requirePane(snapshot, paneId);
+  return isFailure(pane) ? pane : paneView(pane, identity, panePlacements(snapshot, paneId));
+}
+
+function projectWindow(snapshot: ServerSnapshot, windowId: string) {
+  const window = requireWindow(snapshot, windowId);
+  return isFailure(window) ? window : windowView(window, windowPlacements(snapshot, windowId));
+}
 
 export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "mutating")) return;
@@ -77,9 +92,9 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         windowName: z.string().optional(),
       },
       outputSchema: {
-        paneId: z.string().describe("The new session's first pane. Target this."),
+        paneId: paneIdSchema.describe("The new session's first pane. Target this."),
         session: sessionViewSchema,
-        windowId: z.string(),
+        windowId: windowIdSchema,
       },
       title: "New session",
     },
@@ -94,15 +109,22 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       });
       const snapshot = await context.snapshot();
       const pane = snapshot.panes.first({ session: { is: { id: session.id } } });
+      if (pane === undefined) {
+        context.topologyChanged();
+        return fail({
+          hint: "Use a command that stays running, or omit shellCommand to start a shell.",
+          reason: `Session ${session.id} ended before its first pane could be read.`,
+        });
+      }
       const view = sessionView(
         session,
         snapshot.windows.count({ session: { is: { id: session.id } } }),
       );
       context.topologyChanged();
       return ok(
-        { paneId: pane?.id ?? "", session: view, windowId: pane?.format.window_id ?? "" },
-        `Created ${view.name} (${view.id}); its pane is ${pane?.id ?? "unknown"}.` +
-          directoryNote(startDirectory, pane?.currentPath),
+        { paneId: pane.id, session: view, windowId: pane.format.window_id },
+        `Created ${view.name} (${view.id}); its pane is ${pane.id}.` +
+          directoryNote(startDirectory, pane.currentPath),
       );
     },
   );
@@ -118,7 +140,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         shellCommand: z.string().optional(),
         startDirectory: z.string().optional(),
       },
-      outputSchema: { paneId: z.string(), window: windowViewSchema },
+      outputSchema: { paneId: paneIdSchema, window: windowViewSchema },
       title: "New window",
     },
     async ({ name, session, shellCommand, startDirectory }) => {
@@ -132,12 +154,19 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       });
       const after = await context.snapshot();
       const pane = after.panes.first({ window: { is: { id: window.id } } });
-      const view = windowView(window);
+      if (pane === undefined) {
+        context.topologyChanged();
+        return fail({
+          hint: "Use a command that stays running, or omit shellCommand to start a shell.",
+          reason: `Window ${window.id} ended before its first pane could be read.`,
+        });
+      }
+      const view = windowView(window, windowPlacements(after, window.id));
       context.topologyChanged();
       return ok(
-        { paneId: pane?.id ?? "", window: view },
-        `${windowLine(view)}; its pane is ${pane?.id ?? "unknown"}.` +
-          directoryNote(startDirectory, pane?.currentPath),
+        { paneId: pane.id, window: view },
+        `${windowLine(view)}; its pane is ${pane.id}.` +
+          directoryNote(startDirectory, pane.currentPath),
       );
     },
   );
@@ -154,7 +183,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .enum(["above", "below", "left", "right"])
           .optional()
           .describe("Default below."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         shellCommand: z.string().optional(),
         startDirectory: z
           .string()
@@ -179,7 +208,9 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         ...(shellCommand === undefined ? {} : { shellCommand }),
         ...(inherited === undefined ? {} : { startDirectory: inherited }),
       });
-      const view = paneView(created, await context.identity(snapshot));
+      const after = await context.snapshot();
+      const view = projectPane(after, created.id, await context.identity(after));
+      if (isFailure(view)) return view;
       context.topologyChanged();
       return ok({ pane: view }, paneLine(view) + directoryNote(startDirectory, view.cwd));
     },
@@ -214,7 +245,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Rename a window. Its id does not change.",
-      inputSchema: { name: z.string(), windowId: z.string() },
+      inputSchema: { name: z.string(), windowId: windowIdSchema },
       outputSchema: { window: windowViewSchema },
       title: "Rename window",
     },
@@ -223,7 +254,8 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const window = requireWindow(snapshot, windowId);
       if (isFailure(window)) return window;
       await window.rename(name);
-      const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      const view = projectWindow(await context.snapshot(), windowId);
+      if (isFailure(view)) return view;
       context.topologyChanged();
       return ok({ window: view }, windowLine(view));
     },
@@ -249,7 +281,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .boolean()
           .optional()
           .describe("Replace a still-running process. Default false."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         shellCommand: z.string().optional(),
       },
       outputSchema: { pane: paneViewSchema },
@@ -278,7 +310,8 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         if (guard !== undefined) return guard;
       }
       await pane.respawn(shellCommand, killFirst === undefined ? {} : { kill: killFirst });
-      const view = paneView((await context.snapshot()).panes.one({ id: paneId }), identity);
+      const view = projectPane(await context.snapshot(), paneId, identity);
+      if (isFailure(view)) return view;
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -292,8 +325,8 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       description:
         "Close a pane and the process in it. Refuses the pane this server runs in " +
         "and any pane a person is watching unless you pass force.",
-      inputSchema: { force: z.boolean().optional(), paneId: z.string() },
-      outputSchema: { killed: z.string() },
+      inputSchema: { force: z.boolean().optional(), paneId: paneIdSchema },
+      outputSchema: { killed: paneIdSchema },
       title: "Kill pane",
     },
     async ({ force, paneId }) => {
@@ -316,8 +349,8 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     {
       annotations: DESTRUCTIVE,
       description: "Close a window and every pane in it.",
-      inputSchema: { force: z.boolean().optional(), windowId: z.string() },
-      outputSchema: { killed: z.string() },
+      inputSchema: { force: z.boolean().optional(), windowId: windowIdSchema },
+      outputSchema: { killed: windowIdSchema },
       title: "Kill window",
     },
     async ({ force, windowId }) => {
@@ -325,7 +358,9 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const window = requireWindow(snapshot, windowId);
       if (isFailure(window)) return window;
       const identity = await context.identity(snapshot);
-      const inside = snapshot.panes.toArray().filter((pane) => pane.format.window_id === windowId);
+      const inside = paneEntities(
+        snapshot.panes.toArray().filter((pane) => pane.format.window_id === windowId),
+      );
       for (const pane of inside) {
         const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
@@ -340,7 +375,8 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     "kill_session",
     {
       annotations: DESTRUCTIVE,
-      description: "End a session and everything in it.",
+      description:
+        "Remove a session. Windows and panes shared with another session remain available there.",
       inputSchema: { force: z.boolean().optional(), session: z.string() },
       outputSchema: { killed: z.string() },
       title: "Kill session",
@@ -350,14 +386,19 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const found = requireSession(snapshot, session);
       if (isFailure(found)) return found;
       const identity = await context.identity(snapshot);
-      const inside = snapshot.panes.toArray().filter((pane) => pane.format.session_id === found.id);
+      const inside = paneEntities(
+        snapshot.panes.toArray().filter((pane) => pane.format.session_id === found.id),
+      );
       for (const pane of inside) {
         const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
       }
       await found.kill();
       context.topologyChanged();
-      return ok({ killed: found.id }, `Killed ${found.id} and its ${String(inside.length)} panes.`);
+      return ok(
+        { killed: found.id },
+        `Killed session ${found.id}. Windows and panes shared with other sessions remain there.`,
+      );
     },
   );
 }
