@@ -265,4 +265,30 @@ describe("server utilities", () => {
       expect(await server.listBuffers()).toContainEqual(expect.stringContaining("binary"));
     });
   }, 30_000);
+
+  const exactBufferCases: readonly {
+    readonly name: string;
+    readonly data: Uint8Array;
+  }[] = [
+    { data: new Uint8Array([0x61, 0x00, 0x62]), name: "NUL" },
+    { data: new Uint8Array([0xc3, 0x28, 0x80, 0xff]), name: "invalid UTF-8" },
+    { data: new TextEncoder().encode("left\r\nright\r\n"), name: "CRLF" },
+    { data: new TextEncoder().encode("one\n\n"), name: "trailing LF pair" },
+    { data: new TextEncoder().encode("last line"), name: "no trailing LF" },
+  ];
+
+  for (const { data, name } of exactBufferCases) {
+    test(`reads exact paste-buffer bytes with ${name}`, async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const buffer = `exact-${name.replaceAll(" ", "-")}`;
+        await server.loadBuffer(buffer, data);
+        await using live = await server.connect();
+
+        await expect(
+          Promise.all([server.showBufferBytes(buffer), live.showBufferBytes(buffer)]),
+        ).resolves.toEqual([data, data]);
+      });
+    }, 40_000);
+  }
 });

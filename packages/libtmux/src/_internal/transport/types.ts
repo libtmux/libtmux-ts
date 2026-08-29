@@ -23,6 +23,13 @@ export interface CommandRequest {
   readonly daemonGuard?: DaemonGuard;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly executable: string;
+  /**
+   * Require the transport to return stdout without a text protocol changing it.
+   *
+   * A control connection falls back to a spawned command for this: control
+   * responses cannot represent every paste-buffer byte.
+   */
+  readonly rawOutput?: true;
   readonly signal?: AbortLike;
   readonly stdin?: Uint8Array;
   readonly timeoutMs?: number;
@@ -44,6 +51,7 @@ export function snapshotCommandRequest(request: CommandRequest): CommandRequest 
       ? {}
       : { environment: Object.freeze({ ...request.environment }) }),
     executable: request.executable,
+    ...(request.rawOutput === undefined ? {} : { rawOutput: request.rawOutput }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
     ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
   };

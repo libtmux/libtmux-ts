@@ -754,6 +754,20 @@ export class ControlConnection implements CommandTransport {
         }),
       );
     }
+    if (request.rawOutput === true) {
+      // Control blocks are line-oriented text, so a NUL truncates tmux's
+      // response and invalid UTF-8 has no lossless representation. The request
+      // still names this connection's socket, and the spawning transport reads
+      // the same daemon's pipe byte for byte.
+      const fallback = this.#spawnFallback;
+      if (fallback !== undefined) return fallback.execute(request);
+      return Promise.reject(
+        new TmuxTransportError("control mode cannot return exact command output", {
+          delivery: "not_started",
+          kind: "protocol",
+        }),
+      );
+    }
     if (request.stdin !== undefined) {
       // The request still carries this connection's socket flags, so the
       // spawned command reaches the same server this one is attached to.

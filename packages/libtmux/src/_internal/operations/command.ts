@@ -1,9 +1,57 @@
 import { TmuxCommandError, TmuxServerRestarted } from "../../exc.js";
-import type { CommandOptions } from "../../common.js";
+import type { CommandOptions, CommandResult } from "../../common.js";
 import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { carriesTmuxId } from "../transport/daemon_guard.js";
+import type { RawCommandResult } from "../transport/types.js";
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
+
+interface ExecutedCommand {
+  readonly raw: RawCommandResult;
+  readonly result: CommandResult;
+}
+
+async function executeCommand(
+  runtime: RuntimeContext,
+  args: readonly string[],
+  options: CommandOptions,
+  rawOutput = false,
+): Promise<ExecutedCommand> {
+  // A command with no deadline of its own inherits the server's. Without
+  // either it waits as long as tmux takes, which for a wedged daemon is
+  // forever.
+  const deadline = options.timeoutMs ?? runtime.timeoutMs;
+  const daemon = carriesTmuxId(args) ? lastObservedDaemon(runtime) : undefined;
+  let raw: RawCommandResult;
+  try {
+    raw = await runtime.transport.execute(
+      prepareCommandRequest(runtime.connection, args, {
+        ...options,
+        ...(daemon === undefined ? {} : { daemonGuard: daemon }),
+        ...(deadline === undefined ? {} : { timeoutMs: deadline }),
+        ...(rawOutput ? { rawOutput: true as const } : {}),
+      }),
+    );
+  } catch (error) {
+    // The daemon this runtime believed in is gone. Moving the epoch on is what
+    // makes every other handle from it refuse locally, instead of each one
+    // learning the same thing from tmux one command at a time.
+    if (error instanceof TmuxServerRestarted) invalidateRuntimeEpoch(runtime);
+    throw error;
+  }
+  const result = adaptRawResult(raw);
+  if (result.returncode !== 0) {
+    const target = args.indexOf("-t");
+    throw new TmuxCommandError({
+      args,
+      exitCode: result.returncode,
+      stderr: result.stderr,
+      stdout: result.stdout,
+      ...(target === -1 ? {} : { target: args[target + 1] }),
+    });
+  }
+  return { raw, result };
+}
 
 /**
  * Run one tmux command and return its stdout lines, raising on failure.
@@ -23,38 +71,14 @@ export async function runCommand(
   args: readonly string[],
   options: CommandOptions = {},
 ): Promise<readonly string[]> {
-  // A command with no deadline of its own inherits the server's. Without
-  // either it waits as long as tmux takes, which for a wedged daemon is
-  // forever.
-  const deadline = options.timeoutMs ?? runtime.timeoutMs;
-  const daemon = carriesTmuxId(args) ? lastObservedDaemon(runtime) : undefined;
-  let result;
-  try {
-    result = adaptRawResult(
-      await runtime.transport.execute(
-        prepareCommandRequest(runtime.connection, args, {
-          ...options,
-          ...(daemon === undefined ? {} : { daemonGuard: daemon }),
-          ...(deadline === undefined ? {} : { timeoutMs: deadline }),
-        }),
-      ),
-    );
-  } catch (error) {
-    // The daemon this runtime believed in is gone. Moving the epoch on is what
-    // makes every other handle from it refuse locally, instead of each one
-    // learning the same thing from tmux one command at a time.
-    if (error instanceof TmuxServerRestarted) invalidateRuntimeEpoch(runtime);
-    throw error;
-  }
-  if (result.returncode !== 0) {
-    const target = args.indexOf("-t");
-    throw new TmuxCommandError({
-      args,
-      exitCode: result.returncode,
-      stderr: result.stderr,
-      stdout: result.stdout,
-      ...(target === -1 ? {} : { target: args[target + 1] }),
-    });
-  }
-  return result.stdout;
+  return (await executeCommand(runtime, args, options)).result.stdout;
+}
+
+/** Run one tmux command and return its unmodified stdout bytes. */
+export async function runCommandBytes(
+  runtime: RuntimeContext,
+  args: readonly string[],
+  options: CommandOptions = {},
+): Promise<Uint8Array> {
+  return new Uint8Array((await executeCommand(runtime, args, options, true)).raw.stdout);
 }

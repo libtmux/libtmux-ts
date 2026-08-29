@@ -56,6 +56,7 @@ import {
   saveBuffer,
   setBuffer,
   showBuffer,
+  showBufferBytes,
   sourceFile,
 } from "./_internal/operations/server_utils.js";
 import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
@@ -1002,6 +1003,22 @@ export class Server {
    */
   showBuffer(name: string): Promise<readonly string[]> {
     return showBuffer(runtimeForServer(this), name);
+  }
+
+  /**
+   * Read a named paste buffer without decoding or splitting its bytes.
+   *
+   * Unlike {@link Server.showBuffer}, this preserves NUL, invalid UTF-8, line
+   * endings, and trailing newlines. A connected server runs this read through
+   * the spawning transport because tmux control mode cannot carry those bytes.
+   *
+   * ```ts
+   * const bytes = await server.showBufferBytes("payload");
+   * bytes[0]; // 104
+   * ```
+   */
+  showBufferBytes(name: string): Promise<Uint8Array> {
+    return showBufferBytes(runtimeForServer(this), name);
   }
 
   /**

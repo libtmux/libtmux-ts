@@ -492,6 +492,7 @@ await server.ifShell("[ -d /srv ]", "display-message ok");
 await server.setBuffer("scratch", "text");
 await server.loadBuffer("scratch", await Bun.file("payload.bin").bytes());
 await server.showBuffer("scratch");
+await server.showBufferBytes("scratch");
 await server.listBuffers();
 await server.deleteBuffer("scratch");
 await server.kill();

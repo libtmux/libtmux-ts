@@ -1,5 +1,5 @@
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
-import { runCommand } from "./command.js";
+import { runCommand, runCommandBytes } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 /**
@@ -58,6 +58,11 @@ export async function showBuffer(
   name: string,
 ): Promise<readonly string[]> {
   return runCommand(runtime, ["show-buffer", "-b", name]);
+}
+
+/** Read a named paste buffer without decoding or splitting its bytes. */
+export async function showBufferBytes(runtime: RuntimeContext, name: string): Promise<Uint8Array> {
+  return runCommandBytes(runtime, ["show-buffer", "-b", name]);
 }
 
 /** Every buffer name the server currently holds. */

@@ -23,7 +23,7 @@ export function connectionArguments(connection: TmuxConnection): string[] {
 export function prepareCommandRequest(
   connection: TmuxConnection,
   args: readonly string[],
-  options: CommandOptions & { readonly daemonGuard?: DaemonGuard } = {},
+  options: CommandOptions & { readonly daemonGuard?: DaemonGuard; readonly rawOutput?: true } = {},
 ): CommandRequest {
   if (options.stdin !== undefined && !(args[0] === "load-buffer" && args.at(-1) === "-")) {
     throw new TypeError(`${args[0] ?? "command"} does not accept stdin`);
@@ -33,6 +33,7 @@ export function prepareCommandRequest(
     ...(options.daemonGuard === undefined ? {} : { daemonGuard: options.daemonGuard }),
     environment: connection.environment,
     executable: connection.executable,
+    ...(options.rawOutput === undefined ? {} : { rawOutput: options.rawOutput }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.stdin === undefined
