@@ -1184,8 +1184,9 @@ describe("staying out of the way", () => {
           await client.callTool({ arguments: { session: first.id }, name: "list_panes" }),
         ).panes;
         expect(panes.length).toBeGreaterThan(0);
-        expect(panes.every((pane) => pane.placements.some(({ sessionId }) => sessionId === first.id)))
-          .toBe(true);
+        expect(
+          panes.every((pane) => pane.placements.some(({ sessionId }) => sessionId === first.id)),
+        ).toBe(true);
 
         const windows = structured<{ windows: { placements: { sessionId: string }[] }[] }>(
           await client.callTool({ arguments: { session: first.id }, name: "list_windows" }),
@@ -1281,11 +1282,20 @@ describe("staying out of the way", () => {
           arguments: { enter: true, keys: "exit 7", paneId: made.paneId },
           name: "send_keys",
         });
-        await new Promise((resolve) => setTimeout(resolve, 1_000));
-
-        const pane = structured<{ pane: { dead: boolean } }>(
-          await client.callTool({ arguments: { paneId: made.paneId }, name: "get_pane" }),
-        ).pane;
+        const deadline = Date.now() + 10_000;
+        let pane: { dead: boolean } = { dead: false };
+        while (!pane.dead && Date.now() < deadline) {
+          // eslint-disable-next-line no-await-in-loop -- each call observes a later process state.
+          const answer = await client.callTool({
+            arguments: { paneId: made.paneId },
+            name: "get_pane",
+          });
+          pane = structured<{ pane: { dead: boolean } }>(answer).pane;
+          if (!pane.dead) {
+            // eslint-disable-next-line no-await-in-loop -- bounded polling waits before re-reading.
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        }
         expect(pane.dead).toBe(true);
 
         // The whole timeout used to be spent here waiting for a marker that
