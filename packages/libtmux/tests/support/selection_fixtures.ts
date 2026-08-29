@@ -28,6 +28,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { singleCommandTransport } from "./transport_double.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Pane } from "../../src/pane.js";
@@ -82,13 +83,15 @@ function resultFor(request: CommandRequest): RawCommandResult {
 
 function recordingTransport(): RecordingTransport {
   const requests: CommandRequest[] = [];
-  return {
-    requests,
-    async execute(request) {
+  return Object.assign(
+    singleCommandTransport(async (request) => {
       requests.push(request);
       return resultFor(request);
+    }),
+    {
+      requests,
     },
-  };
+  );
 }
 
 function fixtureRuntime(): {

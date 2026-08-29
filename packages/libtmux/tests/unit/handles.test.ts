@@ -68,6 +68,7 @@ import { Session } from "../../src/session.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Window } from "../../src/window.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "../support/graph_rows.js";
+import { singleCommandTransport } from "../support/transport_double.js";
 
 const encoder = new TextEncoder();
 
@@ -101,14 +102,14 @@ function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult 
 
 function recordingTransport(onExecute?: () => void): RecordingTransport {
   const requests: CommandRequest[] = [];
-  return {
-    requests,
-    async execute(request) {
+  return Object.assign(
+    singleCommandTransport(async (request) => {
       requests.push(request);
       onExecute?.();
       return resultFor(request);
-    },
-  };
+    }),
+    { requests },
+  );
 }
 
 function runtimeFixture(
