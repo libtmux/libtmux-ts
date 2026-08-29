@@ -27,6 +27,7 @@ import { MAX_TIMER_DELAY_MS, timerDelay } from "../timing.js";
  * keeps a peer that never sends LF from growing the carry without bound.
  */
 const MAX_CONTROL_LINE_BYTES = 64 * 1024 * 1024;
+const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
 /** How long a closing process is given to leave before it is killed outright. */
@@ -89,6 +90,7 @@ export class ControlConnection {
   readonly #partial = new Map<string, Uint8Array>();
   readonly #blocks = new BlockTracker();
   #diagnostic: string[] = [];
+  #diagnosticBytes = 0;
   #reason: string | undefined;
   #attached: { resolve: () => void; reject: (error: Error) => void } | undefined;
   #attachment: Promise<void> | undefined;
@@ -394,8 +396,10 @@ export class ControlConnection {
    * first character, so position decides and not shape.
    */
   #routeBlockBody(line: Uint8Array): void {
-    const text = new TextDecoder().decode(line);
-    if (this.#diagnostic.length < 64) this.#diagnostic.push(text);
+    if (this.#diagnostic.length >= 64 || this.#diagnosticBytes >= MAX_DIAGNOSTIC_BYTES) return;
+    const retained = line.subarray(0, MAX_DIAGNOSTIC_BYTES - this.#diagnosticBytes);
+    this.#diagnostic.push(new TextDecoder().decode(retained));
+    this.#diagnosticBytes += retained.length;
   }
 
   #closeBlock(fromClient: boolean, failed: boolean): void {
@@ -407,6 +411,7 @@ export class ControlConnection {
       this.#reason = this.#diagnostic.join("; ");
     }
     this.#diagnostic = [];
+    this.#diagnosticBytes = 0;
   }
 
   async #finishAttach(child: ControlChild): Promise<void> {
@@ -456,6 +461,7 @@ export class ControlConnection {
         this.#partial.clear();
         this.#blocks.reset();
         this.#diagnostic = [];
+        this.#diagnosticBytes = 0;
         this.#reason = undefined;
         this.#stderr.length = 0;
         this.#stderrBytes = 0;

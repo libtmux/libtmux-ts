@@ -199,6 +199,30 @@ describe("ControlConnection child ownership", () => {
     await control.close();
   });
 
+  test("bounds one oversized attach diagnostic line", async () => {
+    const child = new FakeChild(109);
+    const control = new ControlConnection(connection(), {}, false, undefined, () => child);
+    const ready = control.ready();
+    child.stdout.write(
+      Buffer.concat([
+        Buffer.from("%begin 1 2 0\n"),
+        Buffer.alloc(256 * 1_024, "x"),
+        Buffer.from("\n%error 1 2 0\n"),
+      ]),
+    );
+    child.emit("close", 1);
+
+    try {
+      await ready;
+      throw new Error("expected control attachment to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) throw error;
+      expect(error.message.length).toBeLessThanOrEqual(64 * 1_024 + 64);
+    }
+    await control.close();
+  });
+
   test("makes concurrent close callers await child retirement", async () => {
     const child = new FakeChild(110, false);
     const control = new ControlConnection(connection(), {}, false, undefined, () => child);
