@@ -154,7 +154,11 @@ describe("guarded format codec", () => {
     });
     const execute = (
       listings: readonly { readonly listCommand: "list-sessions" | "list-windows" }[],
-      withSessionRow = false,
+      options: {
+        readonly returncode?: number;
+        readonly signal?: string | null;
+        readonly withSessionRow?: boolean;
+      } = {},
     ) =>
       executeGuardedListGroup({
         capabilities: { bind: () => Promise.resolve(capabilities) },
@@ -164,7 +168,7 @@ describe("guarded format codec", () => {
           async execute(request) {
             const format = request.commands[1]?.find((argument) => argument.startsWith("-F"));
             const sessionRow =
-              withSessionRow && format !== undefined
+              options.withSessionRow === true && format !== undefined
                 ? format
                     .slice(2)
                     .replaceAll(/#\{q:(?<token>[^}]+)\}/gu, (_match, token: string) =>
@@ -173,8 +177,8 @@ describe("guarded format codec", () => {
                 : "";
             return {
               cmd: ["tmux"],
-              returncode: 1,
-              signal: null,
+              returncode: options.returncode ?? 1,
+              signal: options.signal ?? null,
               stderr: encoder.encode("no current target\n"),
               stdout: encoder.encode(`ltxI101;202\n${sessionRow}`),
             };
@@ -186,9 +190,21 @@ describe("guarded format codec", () => {
       execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }]),
     ).resolves.toEqual({ daemon: { pid: "101", start_time: "202" }, listings: [[], []] });
     await expect(
-      execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], true),
+      execute(
+        [{ listCommand: "list-sessions" }, { listCommand: "list-windows" }],
+        { withSessionRow: true },
+      ),
     ).rejects.toThrow("no current target");
     await expect(execute([{ listCommand: "list-windows" }])).rejects.toThrow("no current target");
+    for (const result of [
+      { returncode: 0, signal: null },
+      { returncode: 2, signal: null },
+      { returncode: 1, signal: "SIGTERM" },
+    ]) {
+      await expect(
+        execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], result),
+      ).rejects.toThrow("no current target");
+    }
   });
 
   test("requires one valid daemon identity frame even when no listings were requested", async () => {

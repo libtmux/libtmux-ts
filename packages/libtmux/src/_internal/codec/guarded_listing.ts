@@ -177,6 +177,8 @@ export async function executeGuardedListGroup(
   const failure = commandFailure(undefined, result);
   const expectedEmptyFailure =
     failure !== undefined &&
+    result.returncode === 1 &&
+    result.signal === null &&
     decodedStderr(result.stderr) === "no current target" &&
     prepared[0]?.listing.listCommand === "list-sessions";
   if (failure !== undefined && !expectedEmptyFailure) throw failure;
