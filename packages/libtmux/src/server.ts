@@ -316,6 +316,8 @@ export class Server {
    * A snapshot answers what is true now; this answers what changed. The stream
    * holds one `tmux -C attach-session` process for its lifetime, so it reports
    * events without polling and without a command per read.
+   * That process is a tmux-visible attached client until the stream closes; it
+   * affects client listings, attachment state, hooks, and related policy.
    *
    * ```ts
    * await using events = server.watch();
@@ -346,6 +348,8 @@ export class Server {
    * events and daemon-lifetime tracking. Commands use ordinary tmux processes:
    * control mode cannot frame arbitrary command output truthfully when aliases
    * and waiting commands are allowed.
+   * The connection has the attached-client lifecycle described by
+   * {@link watch} until it closes.
    *
    * ```ts
    * await using live = await server.connect();

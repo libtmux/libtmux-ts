@@ -675,6 +675,11 @@ cannot promise positional results.
 A snapshot answers what is true now. `server.watch()` answers what changed, over
 one persistent `tmux -C` connection rather than a command per read.
 
+Each `watch()` or `connect()` owns a real attached tmux client until it closes.
+That client appears in snapshots, increments `session_attached`, and is visible
+to client hooks and attachment-sensitive policy such as `destroy-unattached`.
+Multiple watches or connections create multiple clients.
+
 <!-- static: reads every event until the process is interrupted -->
 
 ```ts

@@ -340,6 +340,8 @@ Stream tmux's control-mode notifications until the stream is disposed.
 A snapshot answers what is true now; this answers what changed. The stream
 holds one `tmux -C attach-session` process for its lifetime, so it reports
 events without polling and without a command per read.
+That process is a tmux-visible attached client until the stream closes; it
+affects client listings, attachment state, hooks, and related policy.
 
 tmux sends a control client no pane output until it attaches, so this
 attaches to a session; a server with no sessions has nothing to watch.
@@ -369,6 +371,8 @@ The returned server has the same API and shares one control connection for
 events and daemon-lifetime tracking. Commands use ordinary tmux processes:
 control mode cannot frame arbitrary command output truthfully when aliases
 and waiting commands are allowed.
+The connection has the attached-client lifecycle described by
+[`watch`](#serverwatch) until it closes.
 
 A snapshot remains one tmux invocation containing all four listings.
 
