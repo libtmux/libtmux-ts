@@ -145,6 +145,79 @@ describe("guarded format codec", () => {
     }
   });
 
+  test("accepts no-current-target only after an empty leading session listing", async () => {
+    const capabilities = deriveTmuxCapabilities({
+      connectionAlias: "codec-test" as ConnectionAlias,
+      daemon,
+      daemonEpoch: 1 as DaemonEpoch,
+      rawVersion: "3.7b",
+    });
+    const execute = (
+      listings: readonly { readonly listCommand: "list-sessions" | "list-windows" }[],
+      withSessionRow = false,
+    ) =>
+      executeGuardedListGroup({
+        capabilities: { bind: () => Promise.resolve(capabilities) },
+        connection: new TmuxConnection({ executable: "tmux" }),
+        listings,
+        transport: {
+          async execute(request) {
+            const format = request.commands[1]?.find((argument) => argument.startsWith("-F"));
+            const sessionRow =
+              withSessionRow && format !== undefined
+                ? format
+                    .slice(2)
+                    .replaceAll(/#\{q:(?<token>[^}]+)\}/gu, (_match, token: string) =>
+                      quoteAsTmuxDoes(valueFor(token, {})),
+                    )
+                : "";
+            return {
+              cmd: ["tmux"],
+              returncode: 1,
+              signal: null,
+              stderr: encoder.encode("no current target\n"),
+              stdout: encoder.encode(`ltxI101;202\n${sessionRow}`),
+            };
+          },
+        },
+      });
+
+    await expect(
+      execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }]),
+    ).resolves.toEqual({ daemon: { pid: "101", start_time: "202" }, listings: [[], []] });
+    await expect(
+      execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], true),
+    ).rejects.toThrow("no current target");
+    await expect(execute([{ listCommand: "list-windows" }])).rejects.toThrow("no current target");
+  });
+
+  test("requires one valid daemon identity frame even when no listings were requested", async () => {
+    const capabilities = deriveTmuxCapabilities({
+      connectionAlias: "codec-test" as ConnectionAlias,
+      daemon,
+      daemonEpoch: 1 as DaemonEpoch,
+      rawVersion: "3.7b",
+    });
+    await expect(
+      executeGuardedListGroup({
+        capabilities: { bind: () => Promise.resolve(capabilities) },
+        connection: new TmuxConnection({ executable: "tmux" }),
+        listings: [],
+        transport: {
+          async execute() {
+            return {
+              cmd: ["tmux"],
+              returncode: 0,
+              signal: null,
+              stderr: new Uint8Array(),
+              stdout: encoder.encode("not-an-identity\n"),
+            };
+          },
+        },
+      }),
+    ).rejects.toThrow("daemon identity frame is invalid");
+  });
+
   test("prepares one request-bound format without a fixed separator or newline boundary", () => {
     const request = codecFor("list-sessions").prepare();
 

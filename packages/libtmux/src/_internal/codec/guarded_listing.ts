@@ -35,6 +35,13 @@ export interface GuardedListing {
 
 export type GuardedListOptions = GuardedExecutionOptions & GuardedListing;
 
+export interface GuardedListGroupResult {
+  readonly daemon: Readonly<{ pid: string; start_time: string }>;
+  readonly listings: readonly (readonly ParsedFormatRow[])[];
+}
+
+const IDENTITY_FORMAT = "ltxI#{pid};#{start_time}";
+
 function decodedStderr(bytes: Uint8Array): string {
   return decodeBackslashReplace(bytes).trimEnd();
 }
@@ -105,11 +112,34 @@ export async function executeGuardedList(
   return codec.decode(guardedRequest, result.stdout);
 }
 
-/** Run several listings in one tmux command queue and decode each section in turn. */
+function splitIdentityFrame(bytes: Uint8Array): {
+  readonly daemon: Readonly<{ pid: string; start_time: string }>;
+  readonly listings: Uint8Array;
+} {
+  const newline = bytes.indexOf(0x0a);
+  if (newline < 0) throw new FormatProtocolError("daemon identity frame is incomplete");
+  let frame: string;
+  try {
+    frame = new TextDecoder("utf-8", { fatal: true }).decode(bytes.slice(0, newline));
+  } catch (error) {
+    throw new FormatProtocolError("daemon identity frame is not UTF-8", { cause: error });
+  }
+  const match = /^ltxI(?<pid>[1-9]\d*);(?<startTime>\d+)$/u.exec(frame);
+  const pid = match?.groups?.["pid"];
+  const start_time = match?.groups?.["startTime"];
+  if (pid === undefined || start_time === undefined) {
+    throw new FormatProtocolError("daemon identity frame is invalid");
+  }
+  return {
+    daemon: Object.freeze({ pid, start_time }),
+    listings: bytes.slice(newline + 1),
+  };
+}
+
+/** Run listings and an always-emitting daemon identity in one tmux command queue. */
 export async function executeGuardedListGroup(
   options: GuardedExecutionOptions & { readonly listings: readonly GuardedListing[] },
-): Promise<readonly (readonly ParsedFormatRow[])[]> {
-  if (options.listings.length === 0) return Object.freeze([]);
+): Promise<GuardedListGroupResult> {
   const capabilities = await options.capabilities.bind(options.signal);
   const prepared = options.listings.map((listing) => {
     const codec = new GuardCodec({ capabilities, listCommand: listing.listCommand });
@@ -117,6 +147,7 @@ export async function executeGuardedListGroup(
     return {
       codec,
       command: [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`],
+      listing,
       request,
     };
   });
@@ -131,7 +162,7 @@ export async function executeGuardedListGroup(
     result = await options.transport.execute(
       prepareInvocationRequest(
         options.connection,
-        prepared.map(({ command }) => command),
+        [["display-message", "-p", IDENTITY_FORMAT], ...prepared.map(({ command }) => command)],
         {
           ...(options.signal === undefined ? {} : { signal: options.signal }),
           ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
@@ -144,12 +175,29 @@ export async function executeGuardedListGroup(
   }
 
   const failure = commandFailure(undefined, result);
-  if (failure !== undefined) throw failure;
+  const expectedEmptyFailure =
+    failure !== undefined &&
+    decodedStderr(result.stderr) === "no current target" &&
+    prepared[0]?.listing.listCommand === "list-sessions";
+  if (failure !== undefined && !expectedEmptyFailure) throw failure;
+
+  const captured = splitIdentityFrame(result.stdout);
   const sections = demultiplexGuardedOutput(
     prepared.map(({ request }) => request),
-    result.stdout,
+    captured.listings,
   );
-  return Object.freeze(
-    prepared.map(({ codec, request }, index) => codec.decode(request, sections[index]!)),
-  );
+  const decoded = Object.freeze({
+    daemon: captured.daemon,
+    listings: Object.freeze(
+      prepared.map(({ codec, request }, index) => codec.decode(request, sections[index]!)),
+    ),
+  });
+  if (failure === undefined) return decoded;
+
+  // `list-sessions` ran earlier in this queue, so its empty section plus this
+  // exact tmux diagnostic proves no target-scoped row can exist.
+  if (decoded.listings.every((rows) => rows.length === 0)) {
+    return decoded;
+  }
+  throw failure;
 }

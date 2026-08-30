@@ -171,8 +171,14 @@ describe("server graph acquisition", () => {
   test("requires one complete daemon identity across every captured row", () => {
     const daemon = { pid: "101", start_time: "202" };
 
-    expect(() => daemonIdentityOf([[], []])).toThrow("captured graph has no daemon identity");
-    expect(daemonIdentityOf([[daemon], [daemon]])).toEqual({ pid: "101", startTime: "202" });
+    expect(daemonIdentityOf(daemon, [[], []])).toEqual({ pid: "101", startTime: "202" });
+    expect(daemonIdentityOf(daemon, [[daemon], [daemon]])).toEqual({
+      pid: "101",
+      startTime: "202",
+    });
+    expect(() => daemonIdentityOf({ pid: null, start_time: null }, [[]])).toThrow(
+      "incomplete daemon identity",
+    );
     for (const rows of [
       [[{ pid: "101", start_time: null }]],
       [[{ pid: null, start_time: "202" }]],
@@ -180,7 +186,7 @@ describe("server graph acquisition", () => {
       [[daemon], [{ pid: "303", start_time: "202" }]],
       [[daemon, { pid: "101", start_time: "404" }]],
     ]) {
-      expect(() => daemonIdentityOf(rows)).toThrow(/daemon identity/u);
+      expect(() => daemonIdentityOf(daemon, rows)).toThrow(/daemon identity/u);
     }
   });
 
@@ -194,6 +200,19 @@ describe("server graph acquisition", () => {
       expect(graph.sessions.map(({ ref }) => ref.id)).toEqual([parseSessionId(server.sessionId)]);
       expect(graph.windows.length).toBe(2);
       expect(graph.panes.length).toBe(3);
+    });
+  }, 30_000);
+
+  test("captures a live daemon whose complete graph has no rows", async () => {
+    await withServer(async (server) => {
+      await server.executeText(["set-option", "-s", "exit-empty", "off"]);
+      await server.executeText(["kill-session", "-t", server.sessionName]);
+
+      const graph = await acquireServerGraph(runtimeFor(server));
+
+      expect(graph.capture.daemon.pid).toBe(String(server.daemonIdentity.pid));
+      expect(graph.capture.daemon.startTime).toMatch(/^\d+$/u);
+      expect(graph.records).toEqual([]);
     });
   }, 30_000);
 
@@ -260,7 +279,7 @@ describe("server graph acquisition", () => {
 
       await acquireServerGraph(runtime);
 
-      // One four-command invocation, and the only single is the version probe. Four
+      // One acquisition invocation, and the only single is the version probe. Four
       // separate listings would be four clients with four command queues, which
       // is what let a capture hold rows from two different topologies.
       expect({ groups, singles }).toEqual({ groups: 1, singles: 1 });
@@ -286,7 +305,7 @@ describe("server graph acquisition", () => {
 
       await server.snapshot({ signal: controller.signal });
 
-      expect(requests.map(({ commands }) => commands.length)).toEqual([1, 4]);
+      expect(requests.map(({ commands }) => commands.length)).toEqual([1, 5]);
       expect(requests[0]?.signal).toBeDefined();
       expect(requests[0]?.signal).not.toBe(controller.signal);
       expect(requests[1]?.signal).toBe(controller.signal);
@@ -296,7 +315,7 @@ describe("server graph acquisition", () => {
   test("demultiplexes a later listing after an empty middle listing", async () => {
     await withServer(async (server) => {
       const runtime = runtimeFor(server);
-      const [sessions, clients, windows] = await executeGuardedListGroup({
+      const { listings } = await executeGuardedListGroup({
         capabilities: runtime.capabilities,
         connection: runtime.connection,
         listings: [
@@ -306,6 +325,7 @@ describe("server graph acquisition", () => {
         ],
         transport: runtime.transport,
       });
+      const [sessions, clients, windows] = listings;
 
       expect(sessions).toHaveLength(1);
       expect(clients).toEqual([]);
