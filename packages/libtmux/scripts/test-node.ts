@@ -8,6 +8,7 @@ import {
   deadlineMs,
   resolveNode22,
   reapStaleRunRoot,
+  RUN_ROOT_ENV,
   sweepStaleRunRoots,
   makeTestDirectory,
 } from "../src/_internal/test/testkit.js";
@@ -809,14 +810,12 @@ const args = parseArguments(process.argv.slice(2));
 const executable = await resolveNode(args.nodeArgument);
 const version = queryMajor(executable, args.expectMajor);
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
-// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
-// tmux daemon behind under a name no later run revisits; this is where one
-// still can. Once per suite process, before anything creates a root of its own.
-await sweepStaleRunRoots();
+// Only a top-level runner owns the namespace sweep. A nested runner inherits
+// its parent's exact root and must not race that owner or an explicit reaper.
+if (process.env[RUN_ROOT_ENV] === undefined) await sweepStaleRunRoots();
 
 const temporaryRoot = await makeTestDirectory("ltx-node-scenarios-");
-const scenarioRunRoot =
-  process.env.LIBTMUX_TEST_RUN_ROOT ?? join(temporaryRoot, "node, task4 root");
+const scenarioRunRoot = process.env[RUN_ROOT_ENV] ?? join(temporaryRoot, "node, task4 root");
 // A liveness bound on the whole run, not a performance target: the scenarios
 // spawn a few dozen processes and every one is slower on a busy machine, so a
 // tight bound kills a run that had already passed everything. The one mode that
@@ -841,7 +840,7 @@ try {
     cwd: tsRoot,
     env: {
       ...process.env,
-      LIBTMUX_TEST_RUN_ROOT: scenarioRunRoot,
+      [RUN_ROOT_ENV]: scenarioRunRoot,
       LIBTMUX_TMUX_FORMAT_SEPARATOR: "NODE_FORMAT_SEPARATOR",
     },
     stdio: ["ignore", "pipe", "pipe"],

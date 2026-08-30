@@ -1,9 +1,8 @@
-import { runSupervisor, sweepStaleRunRoots } from "../src/_internal/test/testkit.js";
+import { RUN_ROOT_ENV, runSupervisor, sweepStaleRunRoots } from "../src/_internal/test/testkit.js";
 
-// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
-// tmux daemon behind under a name no later run revisits; this is where one
-// still can. Once per suite process, before anything creates a root of its own.
-await sweepStaleRunRoots();
+// Only a top-level runner owns the namespace sweep. A nested runner inherits
+// its parent's exact root and must not race that owner or an explicit reaper.
+if (process.env[RUN_ROOT_ENV] === undefined) await sweepStaleRunRoots();
 
 process.exitCode = await runSupervisor({
   command: [
@@ -14,7 +13,5 @@ process.exitCode = await runSupervisor({
     "./tests/support/bun_hooks.ts",
     "tests/integration/differential_substrate.test.ts",
   ],
-  ...(process.env.LIBTMUX_TEST_RUN_ROOT === undefined
-    ? {}
-    : { runRoot: process.env.LIBTMUX_TEST_RUN_ROOT }),
+  ...(process.env[RUN_ROOT_ENV] === undefined ? {} : { runRoot: process.env[RUN_ROOT_ENV] }),
 });

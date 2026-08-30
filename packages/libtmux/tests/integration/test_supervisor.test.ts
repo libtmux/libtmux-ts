@@ -181,7 +181,8 @@ describe("supervisor status and signal semantics", () => {
         cwd: tsRoot,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      expect((await closeChild(reaper)).code).toBe(0);
+      const closed = await closeChild(reaper);
+      expect(closed.code, `${closed.stderr}\n${closed.stdout}`).toBe(0);
       await waitForProcessExit(state.daemonPid);
       await expect(stat(root)).rejects.toMatchObject({ code: "ENOENT" });
       killIfRunning(state.workerPid);
