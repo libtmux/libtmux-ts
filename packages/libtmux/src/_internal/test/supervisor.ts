@@ -179,13 +179,14 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
 export async function withOwnedRunRoot<T>(
   prefix: string,
   body: (runRoot: string) => Promise<T>,
+  tmuxExecutable = "tmux",
 ): Promise<T> {
   const published = process.env[RUN_ROOT_ENV];
   if (published !== undefined) return body(published);
 
   const parent = await makeTestDirectory(prefix);
   const runRoot = join(parent, "run, root");
-  await prepareRunRoot(runRoot);
+  await prepareRunRoot(runRoot, tmuxExecutable);
   let reaped = false;
   try {
     return await runWithCleanup(

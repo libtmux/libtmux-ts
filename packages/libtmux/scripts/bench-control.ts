@@ -8,7 +8,6 @@
  * Run with `bun scripts/bench-control.ts`. Live-runtime support is Linux-only;
  * the tmux and platform used are reported with the results.
  */
-import { rm } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
 
@@ -18,10 +17,10 @@ import { createEventStream } from "../src/_internal/control/stream.js";
 import { parsePaneId } from "../src/_internal/runtime/ids.js";
 import {
   assertOwnedSocketPath,
-  makeTestDirectory,
-  runWithCleanup,
+  sweepStaleRunRoots,
+  TestServer,
+  withOwnedRunRoot,
 } from "../src/_internal/test/testkit.js";
-import { killExactTmux, launchExactTmux } from "../tests/support/tmux_cleanup.js";
 
 interface Row {
   readonly outcome: string;
@@ -37,20 +36,14 @@ const RECONNECT_LOOPS = 5;
 const REPLACEMENT_LOOPS = 3;
 const LIVE_DEADLINE_MS = 30_000;
 
-interface CleanupState {
-  failed: boolean;
-}
-
 interface OwnedBenchmarkDaemon {
-  pid: number | undefined;
+  readonly fixture: TestServer;
   readonly server: Server;
-  readonly socketPath: string;
-  readonly tmuxBin: string;
 }
 
 function serverOn(socketPath: string, tmuxBin: string): Server {
   assertOwnedSocketPath(socketPath);
-  return new Server({ socketPath, tmuxBin });
+  return new Server({ socketPath, timeoutMs: LIVE_DEADLINE_MS, tmuxBin });
 }
 
 async function waitUntil(
@@ -81,51 +74,19 @@ function sameDaemon(left: DaemonIdentity, right: DaemonIdentity): boolean {
   return left.pid === right.pid && left.startTime === right.startTime;
 }
 
-async function startOwnedDaemon(owned: OwnedBenchmarkDaemon, sessionName: string): Promise<void> {
-  if (owned.pid !== undefined) throw new Error("benchmark daemon is already running");
-  owned.pid = await launchExactTmux(owned.socketPath, owned.tmuxBin, sessionName);
-}
-
-async function stopOwnedDaemon(owned: OwnedBenchmarkDaemon, cleanup: CleanupState): Promise<void> {
-  const pid = owned.pid;
-  if (pid === undefined) return;
-  try {
-    await killExactTmux(owned.socketPath, pid);
-    owned.pid = undefined;
-  } catch (error) {
-    cleanup.failed = true;
-    throw error;
-  }
-}
-
 async function withOwnedBenchmarkDaemon<T>(
-  socketPath: string,
+  runRoot: string,
   tmuxBin: string,
   sessionName: string,
-  cleanup: CleanupState,
   body: (owned: OwnedBenchmarkDaemon) => Promise<T>,
 ): Promise<T> {
-  const owned: OwnedBenchmarkDaemon = {
-    pid: undefined,
-    server: serverOn(socketPath, tmuxBin),
-    socketPath,
-    tmuxBin,
-  };
-  return runWithCleanup(
-    async () => {
-      await startOwnedDaemon(owned, sessionName);
-      return body(owned);
-    },
-    () => stopOwnedDaemon(owned, cleanup),
+  return TestServer.run({ runRoot, sessionName, tmuxExecutable: tmuxBin }, async (fixture) =>
+    body({ fixture, server: serverOn(fixture.socketPath, tmuxBin) }),
   );
 }
 
-async function measureOutput(
-  socketPath: string,
-  tmuxBin: string,
-  cleanup: CleanupState,
-): Promise<Row> {
-  return withOwnedBenchmarkDaemon(socketPath, tmuxBin, "output", cleanup, async ({ server }) => {
+async function measureOutput(runRoot: string, tmuxBin: string): Promise<Row> {
+  return withOwnedBenchmarkDaemon(runRoot, tmuxBin, "output", async ({ server }) => {
     const session = (await server.snapshot()).sessions.one({ name: "output" });
     const live = await server.connect({ target: session.id });
     const events = live.subscribe();
@@ -204,12 +165,8 @@ async function measureSlowSubscriber(): Promise<Row> {
   };
 }
 
-async function measureReconnects(
-  socketPath: string,
-  tmuxBin: string,
-  cleanup: CleanupState,
-): Promise<Row> {
-  return withOwnedBenchmarkDaemon(socketPath, tmuxBin, "reconnect", cleanup, async ({ server }) => {
+async function measureReconnects(runRoot: string, tmuxBin: string): Promise<Row> {
+  return withOwnedBenchmarkDaemon(runRoot, tmuxBin, "reconnect", async ({ server }) => {
     const baseline = new Set(await controlClientNames(server));
     const live = await server.connect({ reconnect: { attempts: 5, delayMs: 10 } });
     const events = live.subscribe();
@@ -265,13 +222,8 @@ async function measureReconnects(
   });
 }
 
-async function measureReplacement(
-  socketPath: string,
-  tmuxBin: string,
-  cleanup: CleanupState,
-): Promise<Row> {
-  return withOwnedBenchmarkDaemon(socketPath, tmuxBin, "generation-0", cleanup, async (owned) => {
-    const { server } = owned;
+async function measureReplacement(runRoot: string, tmuxBin: string): Promise<Row> {
+  return withOwnedBenchmarkDaemon(runRoot, tmuxBin, "generation-0", async ({ fixture, server }) => {
     const live = await server.connect({ reconnect: { attempts: 100, delayMs: 20 } });
     const events = live.subscribe();
     let reconnected = 0;
@@ -295,9 +247,7 @@ async function measureReplacement(
         const stale = (await live.snapshot()).panes.one();
         const started = performance.now();
         // eslint-disable-next-line no-await-in-loop -- the replacement is the measured state transition.
-        await stopOwnedDaemon(owned, cleanup);
-        // eslint-disable-next-line no-await-in-loop -- starts the measured successor daemon.
-        await startOwnedDaemon(owned, `generation-${String(loop)}`);
+        await fixture.replace(`generation-${String(loop)}`);
         // eslint-disable-next-line no-await-in-loop -- waits for this generation's observer attach.
         await waitUntil(
           () => reconnected >= loop,
@@ -362,22 +312,23 @@ function render(rows: readonly Row[]): string {
 async function main(): Promise<void> {
   if (process.platform !== "linux") throw new Error("the live control benchmark requires Linux");
   const tmuxBin = process.env.LIBTMUX_TMUX_BIN ?? "tmux";
-  const root = await makeTestDirectory("ltx-benchcontrol-");
-  const cleanup: CleanupState = { failed: false };
-  const rows: Row[] = [];
-  let tmuxVersion = "unknown";
-  try {
-    rows.push(await measureOutput(join(root, "output"), tmuxBin, cleanup));
-    rows.push(await measureSlowSubscriber());
-    rows.push(await measureReconnects(join(root, "reconnect"), tmuxBin, cleanup));
-    rows.push(await measureReplacement(join(root, "replacement"), tmuxBin, cleanup));
-    const versionServer = serverOn(join(root, "version"), tmuxBin);
-    tmuxVersion =
-      (await versionServer.cmd("-V", [], { target: null }).catch(() => ["unknown"]))[0] ??
-      "unknown";
-  } finally {
-    if (!cleanup.failed) await rm(root, { force: true, recursive: true });
-  }
+  await sweepStaleRunRoots();
+  const { rows, tmuxVersion } = await withOwnedRunRoot(
+    "ltx-benchcontrol-",
+    async (runRoot) => {
+      const measured: Row[] = [];
+      measured.push(await measureOutput(runRoot, tmuxBin));
+      measured.push(await measureSlowSubscriber());
+      measured.push(await measureReconnects(runRoot, tmuxBin));
+      measured.push(await measureReplacement(runRoot, tmuxBin));
+      const versionServer = serverOn(join(runRoot, "version"), tmuxBin);
+      const version =
+        (await versionServer.cmd("-V", [], { target: null }).catch(() => ["unknown"]))[0] ??
+        "unknown";
+      return { rows: measured, tmuxVersion: version };
+    },
+    tmuxBin,
+  );
 
   process.stdout.write(`${render(rows)}\n`);
   process.stdout.write(

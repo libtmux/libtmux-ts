@@ -27,7 +27,7 @@ import {
   type LaunchAttemptCapability,
   type ReservationCapability,
 } from "./fixture_launch.js";
-import { reapFixture } from "./reaper.js";
+import { reapFixture, retireFixtureGeneration } from "./reaper.js";
 import { readFixtureRecord, type FixtureRecord, type LaunchGeneration } from "./records.js";
 
 export interface TestServerRequestSnapshot {
@@ -163,29 +163,230 @@ function sameController(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export class TestServer {
+interface LaunchedFixtureGeneration {
   readonly daemonIdentity: ProcessIdentity;
+  readonly observedSocketPath: string;
+  readonly record: Extract<FixtureRecord, { readonly phase: "running" }>;
+  readonly sessionId: string;
+}
+
+async function launchFixtureGeneration(options: {
+  readonly capability: ReservationCapability;
+  readonly entry: EntrySnapshot;
+  readonly record: Extract<FixtureRecord, { readonly phase: "reserved" }>;
+  readonly transport: NodeSpawnTransport;
+}): Promise<LaunchedFixtureGeneration> {
+  const { capability, entry, transport } = options;
+  let record: FixtureRecord = options.record;
+  const controllerExecutable = record.controller.executablePath;
+  const launchExecutable = entry.launchExecutable ?? controllerExecutable;
+  const readyChannel = `ready-${randomUUID()}`;
+  const generation = makeGeneration();
+  const paneCommand = [
+    "env",
+    "-u",
+    shellQuote(generation.name),
+    shellQuote(controllerExecutable),
+    "-N",
+    "-S",
+    shellQuote(record.socketPath),
+    "wait-for",
+    "-S",
+    shellQuote(readyChannel),
+    "&&",
+    "exec",
+    "cat",
+  ].join(" ");
+  const mismatchFrame = `generation-mismatch-${randomUUID()}`;
+  const successFormat = "#{socket_path}\t#{pid}\t#{session_id}";
+  const newSession = [
+    "new-session",
+    "-d",
+    "-P",
+    "-F",
+    shellQuote(successFormat),
+    "-s",
+    shellQuote(entry.sessionName),
+    shellQuote(paneCommand),
+  ].join(" ");
+  const bootstrapGlobalArgs = Object.freeze(["-f", "/dev/null", "-S", record.socketPath]);
+  const bootstrapCommands = Object.freeze({
+    launch: tmuxCommand([
+      "if-shell",
+      "-F",
+      `#{==:#{${generation.name}},${generation.value}}`,
+      newSession,
+      `display-message -p ${shellQuote(mismatchFrame)}`,
+    ]),
+    start: tmuxCommand(["start-server"]),
+  });
+  const bootstrapArgs = flattenInvocation({
+    commands: [bootstrapCommands.start, bootstrapCommands.launch],
+    executable: controllerExecutable,
+    globalArgs: bootstrapGlobalArgs,
+  });
+  const bootstrapArgv = Object.freeze([controllerExecutable, ...bootstrapArgs]);
+  const bootstrapEnvironment = Object.freeze({
+    ...entry.environment,
+    [generation.name]: generation.value,
+  });
+  let attempt: LaunchAttemptCapability | undefined;
+
+  const executeController = async (
+    args: readonly string[],
+    purpose: "ordinary" | "readiness",
+    timeoutMs = deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
+  ): Promise<RawCommandResult> => {
+    const request = observeRequest(entry.requestObserver, {
+      args: ["-N", "-S", record.socketPath, ...args],
+      environment: entry.environment,
+      executable: controllerExecutable,
+      purpose,
+    });
+    await assertPersistedControllerCurrent(record.controller);
+    return transport.execute({
+      commands: [tmuxCommand(args)],
+      environment: request.environment,
+      executable: request.executable,
+      globalArgs: ["-N", "-S", record.socketPath],
+      timeoutMs,
+    });
+  };
+
+  const promote = async (daemonPid: number): Promise<void> => {
+    if (attempt === undefined) throw new Error("fixture launch attempt is missing");
+    record = await promoteFixtureLaunch(attempt, daemonPid, {
+      ...(entry.faultInjection === "partial-identity-record-write"
+        ? { faultInjection: "partial-write" as const }
+        : {}),
+      observeRequest: (request: FixtureControllerRequest) => {
+        observeRequest(entry.requestObserver, request);
+      },
+    });
+  };
+
+  attempt = await beginFixtureLaunch(capability, { bootstrapArgv, generation });
+  record = await readFixtureRecord(capability.reservationPath);
+  const bootstrapRequest = observeRequest(entry.requestObserver, {
+    args: bootstrapArgs,
+    environment: bootstrapEnvironment,
+    executable: launchExecutable,
+    purpose: "bootstrap",
+  });
+  await assertPersistedControllerCurrent(record.controller);
+  let started: RawCommandResult;
+  try {
+    started = await transport.execute({
+      commands: [bootstrapCommands.start, bootstrapCommands.launch],
+      environment: bootstrapRequest.environment,
+      executable: bootstrapRequest.executable,
+      globalArgs: bootstrapGlobalArgs,
+      timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
+    });
+  } catch (error) {
+    if (error instanceof TmuxTransportError && error.delivery === "not_started") {
+      record = await rollbackFixtureLaunchNotStarted(attempt);
+    } else if (error instanceof TmuxTransportError && error.stdout.length > 0) {
+      try {
+        const partial = parseLaunchFrame(error.stdout, record.socketPath);
+        await promote(partial.daemonPid);
+      } catch (recoveryError) {
+        reportSecondaryCleanupFailure(error, recoveryError);
+      }
+    }
+    throw error;
+  }
+  if (new TextDecoder().decode(started.stdout) === `${mismatchFrame}\n`) {
+    throw new Error("tmux bootstrap generation mismatch");
+  }
+  if (started.returncode !== 0) {
+    const primary = commandFailure("tmux bootstrap", started);
+    try {
+      const partial = parseLaunchFrame(started.stdout, record.socketPath);
+      await promote(partial.daemonPid);
+    } catch (recoveryError) {
+      reportSecondaryCleanupFailure(primary, recoveryError);
+    }
+    throw primary;
+  }
+  const { daemonPid, observedSocketPath, sessionId } = parseLaunchFrame(
+    started.stdout,
+    record.socketPath,
+  );
+  if (entry.faultInjection === "identity-record-write") {
+    throw new Error("injected identity-record-write failure");
+  }
+  await promote(daemonPid);
+  if (entry.faultInjection === "after-launch") {
+    throw new Error("injected after-launch failure");
+  }
+  if (entry.faultInjection === "after-identity-record") {
+    throw new Error("injected after-identity-record failure");
+  }
+  if (entry.faultInjection === "before-readiness") {
+    throw new Error("injected before-readiness failure");
+  }
+  const daemonIdentity = await readDaemonIdentity(daemonPid);
+  if (daemonIdentity === undefined) throw new Error("tmux daemon exited after promotion");
+
+  let paneCommandObserved = false;
+  const readinessDeadline = performance.now() + deadlineMs(READINESS_DEADLINE_MS);
+  while (performance.now() < readinessDeadline) {
+    const remainingMs = Math.max(1, Math.ceil(readinessDeadline - performance.now()));
+    // eslint-disable-next-line no-await-in-loop -- each query observes the post-handshake shell transition.
+    const pane = await executeController(
+      ["display-message", "-p", "-t", sessionId, "#{pane_current_command}"],
+      "readiness",
+      Math.min(250, remainingMs),
+    ).catch((error: unknown) => {
+      if (error instanceof TmuxTransportError && error.kind === "timeout") return undefined;
+      throw error;
+    });
+    if (
+      pane !== undefined &&
+      pane.returncode === 0 &&
+      new TextDecoder().decode(pane.stdout).trim() === "cat"
+    ) {
+      paneCommandObserved = true;
+      break;
+    }
+    // eslint-disable-next-line no-await-in-loop -- readiness polling is paced within one deadline.
+    await new Promise((resolve) => setTimeout(resolve, READINESS_POLL_INTERVAL_MS));
+  }
+  if (!paneCommandObserved) throw new Error("tmux pane did not enter its stable readiness hold");
+  const readiness = await executeController(["wait-for", readyChannel], "readiness");
+  if (readiness.returncode !== 0) throw commandFailure("tmux readiness handshake", readiness);
+  if (record.phase !== "running") throw new Error("fixture promotion did not publish authority");
+
+  return { daemonIdentity, observedSocketPath, record, sessionId };
+}
+
+export class TestServer {
+  daemonIdentity: ProcessIdentity;
   readonly logicalSocketName: string;
   readonly observedSocketPath: string;
   readonly readinessSignaledBeforeControllerWait: boolean;
   readonly recordPath: string;
   readonly reservationPath: string;
-  readonly sessionId: string;
-  readonly sessionName: string;
+  sessionId: string;
+  sessionName: string;
   readonly socketPath: string;
   readonly tmuxExecutable: string;
   readonly controllerEnvironment: Readonly<Record<string, string>>;
   readonly #transport: NodeSpawnTransport;
   readonly #controllerIdentity: ControllerIdentity;
+  readonly #launchExecutable: string | undefined;
   readonly #reservationCapability: ReservationCapability;
   readonly #requestObserver: EntrySnapshot["requestObserver"];
   #cleanupPromise: Promise<void> | undefined;
+  #replacing = false;
 
   private constructor(options: {
     controllerIdentity: ControllerIdentity;
     controllerEnvironment: Readonly<Record<string, string>>;
     daemonIdentity: ProcessIdentity;
     logicalSocketName: string;
+    launchExecutable: string | undefined;
     observedSocketPath: string;
     observedPaneCommand: string;
     recordPath: string;
@@ -202,6 +403,7 @@ export class TestServer {
     this.controllerEnvironment = options.controllerEnvironment;
     this.daemonIdentity = options.daemonIdentity;
     this.logicalSocketName = options.logicalSocketName;
+    this.#launchExecutable = options.launchExecutable;
     this.observedSocketPath = options.observedSocketPath;
     this.readinessSignaledBeforeControllerWait = options.observedPaneCommand === "cat";
     this.recordPath = options.recordPath;
@@ -238,208 +440,30 @@ export class TestServer {
       }
       throw mismatch;
     }
-    const controllerExecutable = record.controller.executablePath;
-    const launchExecutable = entry.launchExecutable ?? controllerExecutable;
     const transport = new NodeSpawnTransport({ terminationGraceMs: 100 });
-    const readyChannel = `ready-${randomUUID()}`;
-    const generation = makeGeneration();
-    const paneCommand = [
-      "env",
-      "-u",
-      shellQuote(generation.name),
-      shellQuote(controllerExecutable),
-      "-N",
-      "-S",
-      shellQuote(record.socketPath),
-      "wait-for",
-      "-S",
-      shellQuote(readyChannel),
-      "&&",
-      "exec",
-      "cat",
-    ].join(" ");
-    const mismatchFrame = `generation-mismatch-${randomUUID()}`;
-    const successFormat = "#{socket_path}\t#{pid}\t#{session_id}";
-    const newSession = [
-      "new-session",
-      "-d",
-      "-P",
-      "-F",
-      shellQuote(successFormat),
-      "-s",
-      shellQuote(entry.sessionName),
-      shellQuote(paneCommand),
-    ].join(" ");
-    const bootstrapGlobalArgs = Object.freeze(["-f", "/dev/null", "-S", record.socketPath]);
-    const bootstrapCommands = Object.freeze({
-      launch: tmuxCommand([
-        "if-shell",
-        "-F",
-        `#{==:#{${generation.name}},${generation.value}}`,
-        newSession,
-        `display-message -p ${shellQuote(mismatchFrame)}`,
-      ]),
-      start: tmuxCommand(["start-server"]),
-    });
-    const bootstrapArgs = flattenInvocation({
-      commands: [bootstrapCommands.start, bootstrapCommands.launch],
-      executable: controllerExecutable,
-      globalArgs: bootstrapGlobalArgs,
-    });
-    const bootstrapArgv = Object.freeze([controllerExecutable, ...bootstrapArgs]);
-    const bootstrapEnvironment = Object.freeze({
-      ...entry.environment,
-      [generation.name]: generation.value,
-    });
-    let attempt: LaunchAttemptCapability | undefined;
-
-    const executeController = async (
-      args: readonly string[],
-      purpose: "ordinary" | "readiness",
-      timeoutMs = deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
-    ): Promise<RawCommandResult> => {
-      const request = observeRequest(entry.requestObserver, {
-        args: ["-N", "-S", record.socketPath, ...args],
-        environment: entry.environment,
-        executable: controllerExecutable,
-        purpose,
-      });
-      await assertPersistedControllerCurrent(record.controller);
-      return transport.execute({
-        commands: [tmuxCommand(args)],
-        environment: request.environment,
-        executable: request.executable,
-        globalArgs: ["-N", "-S", record.socketPath],
-        timeoutMs,
-      });
-    };
-
-    const promote = async (daemonPid: number): Promise<void> => {
-      if (attempt === undefined) throw new Error("fixture launch attempt is missing");
-      record = await promoteFixtureLaunch(attempt, daemonPid, {
-        ...(entry.faultInjection === "partial-identity-record-write"
-          ? { faultInjection: "partial-write" as const }
-          : {}),
-        observeRequest: (request: FixtureControllerRequest) => {
-          observeRequest(entry.requestObserver, request);
-        },
-      });
-    };
-
     try {
-      attempt = await beginFixtureLaunch(reserved.capability, { bootstrapArgv, generation });
-      record = await readFixtureRecord(reserved.reservationPath);
-      const bootstrapRequest = observeRequest(entry.requestObserver, {
-        args: bootstrapArgs,
-        environment: bootstrapEnvironment,
-        executable: launchExecutable,
-        purpose: "bootstrap",
+      const launched = await launchFixtureGeneration({
+        capability: reserved.capability,
+        entry,
+        record: reserved.record,
+        transport,
       });
-      await assertPersistedControllerCurrent(record.controller);
-      let started: RawCommandResult;
-      try {
-        started = await transport.execute({
-          commands: [bootstrapCommands.start, bootstrapCommands.launch],
-          environment: bootstrapRequest.environment,
-          executable: bootstrapRequest.executable,
-          globalArgs: bootstrapGlobalArgs,
-          timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
-        });
-      } catch (error) {
-        if (error instanceof TmuxTransportError && error.delivery === "not_started") {
-          record = await rollbackFixtureLaunchNotStarted(attempt);
-        } else if (error instanceof TmuxTransportError && error.stdout.length > 0) {
-          try {
-            const partial = parseLaunchFrame(error.stdout, record.socketPath);
-            await promote(partial.daemonPid);
-          } catch (recoveryError) {
-            reportSecondaryCleanupFailure(error, recoveryError);
-          }
-        }
-        throw error;
-      }
-      if (new TextDecoder().decode(started.stdout) === `${mismatchFrame}\n`) {
-        throw new Error("tmux bootstrap generation mismatch");
-      }
-      if (started.returncode !== 0) {
-        const primary = commandFailure("tmux bootstrap", started);
-        try {
-          const partial = parseLaunchFrame(started.stdout, record.socketPath);
-          await promote(partial.daemonPid);
-        } catch (recoveryError) {
-          reportSecondaryCleanupFailure(primary, recoveryError);
-        }
-        throw primary;
-      }
-      const { daemonPid, observedSocketPath, sessionId } = parseLaunchFrame(
-        started.stdout,
-        record.socketPath,
-      );
-      if (entry.faultInjection === "identity-record-write") {
-        throw new Error("injected identity-record-write failure");
-      }
-      await promote(daemonPid);
-      if (entry.faultInjection === "after-launch") {
-        throw new Error("injected after-launch failure");
-      }
-      if (entry.faultInjection === "after-identity-record") {
-        throw new Error("injected after-identity-record failure");
-      }
-      if (entry.faultInjection === "before-readiness") {
-        throw new Error("injected before-readiness failure");
-      }
-      const daemonIdentity = await readDaemonIdentity(daemonPid);
-      if (daemonIdentity === undefined) throw new Error("tmux daemon exited after promotion");
-
-      let paneCommandObserved = false;
-      const readinessDeadline = performance.now() + deadlineMs(READINESS_DEADLINE_MS);
-      while (performance.now() < readinessDeadline) {
-        const remainingMs = Math.max(1, Math.ceil(readinessDeadline - performance.now()));
-        // eslint-disable-next-line no-await-in-loop -- each query observes the post-handshake shell transition.
-        const pane = await executeController(
-          ["display-message", "-p", "-t", sessionId, "#{pane_current_command}"],
-          "readiness",
-          Math.min(250, remainingMs),
-        ).catch((error: unknown) => {
-          if (error instanceof TmuxTransportError && error.kind === "timeout") return undefined;
-          throw error;
-        });
-        if (
-          pane !== undefined &&
-          pane.returncode === 0 &&
-          new TextDecoder().decode(pane.stdout).trim() === "cat"
-        ) {
-          paneCommandObserved = true;
-          break;
-        }
-        // Paced rather than spun. Every pass is another controller invocation,
-        // and yielding to the event loop starts the next one as soon as the
-        // last returns — so the wait costs processes in proportion to how long
-        // it takes, and each one is another check-then-exec a fixture watching
-        // for controller replacement can lose. Waiting between passes buys the
-        // same wall-clock for a fraction of the invocations.
-        // eslint-disable-next-line no-await-in-loop -- pacing is the point; the handshake is not skippable.
-        await new Promise((resolve) => setTimeout(resolve, READINESS_POLL_INTERVAL_MS));
-      }
-      if (!paneCommandObserved)
-        throw new Error("tmux pane did not enter its stable readiness hold");
-      const readiness = await executeController(["wait-for", readyChannel], "readiness");
-      if (readiness.returncode !== 0) throw commandFailure("tmux readiness handshake", readiness);
-
+      record = launched.record;
       return new TestServer({
         controllerIdentity: record.controller,
         controllerEnvironment: entry.environment,
-        daemonIdentity,
+        daemonIdentity: launched.daemonIdentity,
+        launchExecutable: entry.launchExecutable,
         logicalSocketName: record.logicalSocketName,
-        observedSocketPath,
+        observedSocketPath: launched.observedSocketPath,
         observedPaneCommand: "cat",
         recordPath: reserved.recordPath,
         requestObserver: entry.requestObserver,
         reservationPath: reserved.reservationPath,
-        sessionId,
+        sessionId: launched.sessionId,
         sessionName: entry.sessionName,
         socketPath: record.socketPath,
-        tmuxExecutable: controllerExecutable,
+        tmuxExecutable: record.controller.executablePath,
         transport,
         reservationCapability: reserved.capability,
       });
@@ -465,6 +489,45 @@ export class TestServer {
       () => body(server),
       () => server.dispose(),
     );
+  }
+
+  /** Replace this fixture's daemon while preserving its exact socket path. */
+  async replace(sessionName: string): Promise<void> {
+    if (this.#cleanupPromise !== undefined) throw new Error("disposed fixture cannot be replaced");
+    if (this.#replacing) throw new Error("fixture replacement is already running");
+    this.#replacing = true;
+    try {
+      const reserved = await retireFixtureGeneration(this.#reservationCapability);
+      const launched = await launchFixtureGeneration({
+        capability: this.#reservationCapability,
+        entry: Object.freeze({
+          environment: this.controllerEnvironment,
+          faultInjection: undefined,
+          launchExecutable: this.#launchExecutable,
+          requestObserver: this.#requestObserver,
+          runRoot: this.#reservationCapability.runRoot,
+          sessionName,
+          tmuxExecutable: this.tmuxExecutable,
+        }),
+        record: reserved,
+        transport: this.#transport,
+      });
+      this.daemonIdentity = launched.daemonIdentity;
+      this.sessionId = launched.sessionId;
+      this.sessionName = sessionName;
+    } catch (error) {
+      try {
+        const cleanup = await reapFixture(this.#reservationCapability);
+        if (cleanup.leaks.length > 0) {
+          reportSecondaryCleanupFailure(error, new Error(cleanup.leaks.join("; ")));
+        }
+      } catch (cleanupError) {
+        reportSecondaryCleanupFailure(error, cleanupError);
+      }
+      throw error;
+    } finally {
+      this.#replacing = false;
+    }
   }
 
   async executeRaw(args: readonly string[]): Promise<RawCommandResult> {

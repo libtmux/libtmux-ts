@@ -34,6 +34,7 @@ export {
   reapFixture,
   reapOwnedRunRoot,
   reapStaleRunRoot,
+  retireFixtureGeneration,
   resolvePidfdInterpreter,
   sweepStaleRunRoots,
 } from "./reaper.js";

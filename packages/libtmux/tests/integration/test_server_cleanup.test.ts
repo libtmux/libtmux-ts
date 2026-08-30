@@ -120,6 +120,28 @@ describe("TestServer cleanup", () => {
     });
   }, 30_000);
 
+  test("publishes replacement authority before returning the successor", async () => {
+    await withTemporaryRunRoot("replacement", async (runRoot) => {
+      const server = await TestServer.create({ runRoot, sessionName: "predecessor" });
+      const predecessor = server.daemonIdentity;
+      try {
+        await server.replace("successor");
+        expect(server.daemonIdentity).not.toEqual(predecessor);
+        expect(server.sessionName).toBe("successor");
+        expect((await server.executeText(["display-message", "-p", "#S"])).stdout).toEqual([
+          "successor",
+        ]);
+        const record = await readFixtureRecord(server.reservationPath);
+        expect(record.phase).toBe("running");
+        if (record.phase !== "running") throw new Error("replacement was not promoted");
+        expect(record.daemon).toEqual(server.daemonIdentity);
+      } finally {
+        await server.dispose();
+      }
+      await waitForProcessExit(server.daemonIdentity.pid);
+    });
+  });
+
   test("uses the authenticated daemon executable for the cleanup PID guard", async () => {
     const parent = await makeTestDirectory("ltx4-cleanup-executable-");
     const runRoot = join(parent, "root");
