@@ -14,7 +14,7 @@ const recoveryAuthorityFiles = new Set([
   "packages/libtmux/src/_internal/test/reaper.ts",
 ]);
 const listed =
-  await new Bun.$.Shell()`rg --files --glob "*.ts" --glob "*.mts" --glob "*.cts" --glob "*.tsx" --glob "*.js" --glob "*.mjs" --glob "*.cjs" --glob "*.jsx"`
+  await new Bun.$.Shell()`git ls-files --cached --others --exclude-standard -- "*.ts" "*.mts" "*.cts" "*.tsx" "*.js" "*.mjs" "*.cjs" "*.jsx"`
     .cwd(repositoryRoot)
     .text();
 const failures: string[] = [];
