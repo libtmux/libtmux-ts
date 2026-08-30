@@ -1,29 +1,22 @@
-/**
- * What this suite needs from the machine, checked once and reported once.
- *
- * `run_command` frames a command in POSIX shell and refuses a shell it cannot
- * address. Proving that refusal needs a shell that is genuinely not POSIX, so
- * the suite runs one — and without it the failure was a `TypeError` reading a
- * property of an error result, three layers from the missing package.
- *
- * Named rather than skipped: a test that quietly does not run is a guarantee
- * that quietly stops being one, and this is the only test covering a refusal
- * `force` deliberately cannot override.
- */
+/** Fail once instead of cascading from a missing test shell. */
 import {
   runSupervisor,
   sweepStaleRunRoots,
   testParallelism,
 } from "../../libtmux/src/_internal/test/testkit.js";
 
-const NON_POSIX_SHELL = "fish";
+const REQUIRED_SHELLS = [
+  ["fish", "non-POSIX-shell refusal"],
+  ["zsh", "Zsh trap-state preservation"],
+] as const;
+const missingShells = REQUIRED_SHELLS.filter(([name]) => Bun.which(name) === null);
 
-if (Bun.which(NON_POSIX_SHELL) === null) {
+if (missingShells.length > 0) {
+  const names = missingShells.map(([name]) => name).join(" ");
+  const reasons = missingShells.map(([name, reason]) => `  ${name}: ${reason}`).join("\n");
   process.stderr.write(
-    `This suite needs something this machine does not have:\n` +
-      `  ${NON_POSIX_SHELL}, to prove run_command refuses a shell its framing cannot address.\n` +
-      `  Install it (apt install ${NON_POSIX_SHELL}) — the test is not skipped without it,\n` +
-      `  because a refusal nothing exercises is a refusal nobody knows is gone.\n`,
+    `This suite needs missing test shells:\n${reasons}\n` +
+      `Install them (apt install ${names}); these tests are not skipped.\n`,
   );
   process.exit(1);
 }

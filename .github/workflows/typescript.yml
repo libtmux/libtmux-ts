@@ -67,11 +67,9 @@ jobs:
       - run: echo "$HOME/tmux-builds/tmux-3.2a/bin" >> "$GITHUB_PATH"
       - run: tmux -V
 
-      # A shell the MCP server's framing deliberately cannot address, which is
-      # the only way to prove it refuses one. The suite names it rather than
-      # skipping without it.
-      - name: Install fish
-        run: sudo apt-get install -y fish
+      # fish proves non-POSIX-shell refusal; zsh exercises trap preservation.
+      - name: Install test shells
+        run: sudo apt-get install -y fish zsh
 
       - run: bun install --frozen-lockfile
 
