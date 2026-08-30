@@ -346,18 +346,10 @@ export class LiveHub {
   }
 
   /**
-   * Let go of a session's connection once nothing is using it.
+   * Expire unread tails, then close a session link once none remain.
    *
-   * This used to refuse to run while the link held any tail, and nothing ever
-   * removed one — so for any session a tool had observed, `tails.size` stayed
-   * above zero for the life of the process and the linger could never elapse.
-   * The server accumulated one control-mode client per observed session and
-   * released none of them; tmux counts every one.
-   *
-   * A tail nobody has read within the linger is not being watched, so it goes.
-   * That invalidates its cursor, which is only safe because a cursor from a
-   * replaced tail is now refused with an explanation rather than answered with
-   * a silent "nothing new".
+   * Expiration invalidates the old cursor explicitly, so a later read cannot
+   * mistake the replaced tail for an empty delta.
    */
   #scheduleClose(sessionId: string, link: SessionLink, delayMs = this.#lingerMs): void {
     if (this.#closed) return;
