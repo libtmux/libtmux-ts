@@ -802,7 +802,7 @@ await using live = await server.connect();
 
 for await (const event of live.subscribe()) {
   if (event.kind !== "window-add") continue;
-  const snapshot = await live.snapshot(); // one four-command tmux invocation
+  const snapshot = await live.snapshot(); // one atomic identity-plus-four-listings invocation
   console.log(snapshot.windows.count());
 }
 ```

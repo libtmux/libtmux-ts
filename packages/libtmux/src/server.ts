@@ -358,8 +358,9 @@ export class Server {
    * }
    * ```
    *
-   * A snapshot remains one tmux invocation containing its daemon identity read
-   * and all four listings.
+   * Each snapshot acquisition remains one atomic tmux invocation containing
+   * its daemon identity read and all four listings. The first connected
+   * snapshot also follows the observer authentication and version probes.
    */
   async connect(options?: ConnectOptions): Promise<ConnectedServer> {
     if (options !== undefined && "pauseAfterSeconds" in options) {
