@@ -6,11 +6,17 @@
  * mutable state.
  */
 
-import type { Pane, ServerSnapshot, Session, Window } from "libtmux";
+import type { ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
 
-import { isCallerPane, resolveCallerIdentity, type CallerIdentity } from "./caller.js";
-import { LiveHub, type PaneTail } from "./live.js";
+import {
+  readCallerEnvironment,
+  resolveCallerIdentity,
+  type CallerEnvironment,
+  type CallerIdentity,
+} from "./caller.js";
+import { LiveHub } from "./live.js";
+import type { PaneTail } from "./pane_tail.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -19,15 +25,27 @@ export interface ToolContext {
   readonly hub: LiveHub;
   identity(snapshot: ServerSnapshot): Promise<CallerIdentity>;
   readonly policy: Policy;
-  snapshot(): Promise<ServerSnapshot>;
+  snapshot(signal?: AbortSignal): Promise<ServerSnapshot>;
   readonly tmux: Server;
   /**
-   * Say that this call changed which sessions, windows or panes exist.
+   * Say that this call may have changed the resource catalog's topology.
    *
-   * Called from the success path of every tool that adds, removes or renames
-   * one. Coalesced by the notifier, so calling it freely is the point.
+   * Called once after each structural mutation attempt. Coalesced by the
+   * notifier, so calling it freely is the point.
    */
   topologyChanged(): void;
+}
+
+/** Notify even when tmux may have applied a mutation before rejecting its result. */
+export async function runTopologyMutation<T>(
+  context: Pick<ToolContext, "topologyChanged">,
+  mutation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await mutation();
+  } finally {
+    context.topologyChanged();
+  }
 }
 
 /**
@@ -65,6 +83,14 @@ export function describeUnreachable(tmux: Server, reason: string): string {
   );
 }
 
+/** Whether retrying without an operator configuration change can reach tmux. */
+export function isUnreachableError(error: unknown): boolean {
+  const reason = error instanceof Error ? error.message : String(error);
+  return (
+    reason.startsWith("cannot reach tmux") || reason.includes("version probe returned no version")
+  );
+}
+
 function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
   return work.catch((error: unknown) => {
     const reason = error instanceof Error ? error.message : String(error);
@@ -72,10 +98,7 @@ function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
     // problem: something was configured that is not a usable tmux, and no
     // amount of retrying by an agent will change it. It reached here without
     // the guidance because it does not share the wording.
-    const unreachable =
-      reason.startsWith("cannot reach tmux") ||
-      reason.includes("version probe returned no version");
-    if (!unreachable) throw error;
+    if (!isUnreachableError(error)) throw error;
     throw new Error(describeUnreachable(tmux, reason), { cause: error });
   });
 }
@@ -84,110 +107,18 @@ export function createContext(
   tmux: Server,
   policy: Policy,
   topologyChanged: () => void = () => undefined,
+  caller: CallerEnvironment = readCallerEnvironment(),
 ): ToolContext & { close(): Promise<void> } {
-  const hub = new LiveHub(tmux);
+  const hub = new LiveHub(tmux, { connectTimeoutMs: policy.commandTimeoutMs });
   return {
     close: () => hub.close(),
     hub,
-    identity: (snapshot) => resolveCallerIdentity(tmux, snapshot),
+    identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, caller),
     policy,
-    snapshot: () => withRecovery(tmux, tmux.snapshot()),
+    snapshot: (signal) => withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal })),
     tmux,
     topologyChanged,
   };
-}
-
-/** How many alternatives an error lists before the list stops helping. */
-const SUGGESTION_LIMIT = 12;
-
-/**
- * Name some of what exists, and say when that is not all of it.
- *
- * A list that stops at twelve with no marker reads as the whole list, so an
- * agent that does not find what it asked for concludes it is not there — and
- * on a busy server the twelve shown are rarely the twelve it wants. Naming the
- * remainder and the tool that lists it costs one clause.
- */
-function suggest(all: readonly string[], listing: string): string {
-  const shown = all.slice(0, SUGGESTION_LIMIT);
-  const rest = all.length - shown.length;
-  return rest === 0
-    ? shown.join(", ")
-    : `${shown.join(", ")}, and ${String(rest)} more — ${listing} lists them all`;
-}
-
-/**
- * The pane operations that put input into a pane, or end what runs in it.
- *
- * Named so the type system can withhold them. Resizing and retitling are not
- * here: they rearrange a pane without reaching the program inside it.
- */
-type PaneWrite = "kill" | "pasteBuffer" | "respawn" | "sendKeys";
-
-/**
- * A pane resolved for reading and arranging, but not for writing into.
- *
- * `requirePane` hands this back so that a tool which goes on to type into the
- * pane does not compile. The guard used to be a per-tool convention, and three
- * write tools were shipped without it; withholding the methods is what makes
- * the next one impossible rather than merely discouraged.
- */
-export type ReadablePane = Omit<Pane, PaneWrite>;
-
-function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult {
-  const available = snapshot.panes
-    .toArray()
-    .map(
-      (entry) =>
-        `${entry.id} (${entry.sessionName ?? "?"}:${entry.windowName ?? "?"} ${entry.currentCommand ?? "?"})`,
-    );
-  return fail({
-    hint:
-      available.length === 0
-        ? "This server has no panes. Create one with new_session."
-        : `Panes on this server: ${suggest(available, "list_panes")}`,
-    reason: `No pane ${paneId} on this server.`,
-  });
-}
-
-/**
- * Find a pane, or say what exists instead.
- *
- * A bare "no such pane" costs the agent a turn to discover what it should have
- * asked for. Naming the panes that do exist makes the failed call the last one.
- */
-export function requirePane(
-  snapshot: ServerSnapshot,
-  paneId: string,
-): CallToolResult | ReadablePane {
-  return snapshot.panes.oneOrUndefined({ id: paneId }) ?? paneNotFound(snapshot, paneId);
-}
-
-/**
- * Find a pane this caller is cleared to write into.
- *
- * The one pane worth refusing is the terminal this server is running in:
- * typing into it puts the agent's own keystrokes in front of the person
- * watching, and tmux cannot undo that. `force` is how a caller says it meant
- * that pane. `verb` names the act in the refusal, because "refusing to restart"
- * and "refusing to type into" send a caller to different remedies.
- */
-export function requireWritablePane(
-  snapshot: ServerSnapshot,
-  identity: CallerIdentity,
-  paneId: string,
-  force: boolean | undefined,
-  verb = "write into",
-): CallToolResult | Pane {
-  const pane = snapshot.panes.oneOrUndefined({ id: paneId });
-  if (pane === undefined) return paneNotFound(snapshot, paneId);
-  if (force !== true && isCallerPane(identity, paneId)) {
-    return fail({
-      hint: "That is this server's own terminal. Pick another pane, or pass force to mean it.",
-      reason: `Refusing to ${verb} ${paneId}: it is the pane this MCP server runs in.`,
-    });
-  }
-  return pane;
 }
 
 /**
@@ -199,56 +130,33 @@ export function requireWritablePane(
  */
 export function requireLiveCursor(
   tail: PaneTail,
-  from: number | undefined,
+  from: string | undefined,
   paneId: string,
 ): CallToolResult | undefined {
-  const ahead = tail.ahead(from);
-  if (ahead === 0) return undefined;
+  if (tail.endReason !== undefined) {
+    const lost = tail.endReason === "events_dropped";
+    return fail({
+      hint:
+        "Omit cursor to open a fresh stream, or use capture_pane for the rendered screen. " +
+        "Do not retry with this cursor.",
+      reason: lost
+        ? `The live stream for pane ${paneId} lost events before this read, so its output is incomplete.`
+        : `The live stream for pane ${paneId} ended before this read (${tail.endReason}).`,
+    });
+  }
+  const problem = tail.cursorProblem(from);
+  if (problem === undefined) return undefined;
+  const detail =
+    problem.kind === "ahead"
+      ? `is ${String(problem.bytes)} byte${problem.bytes === 1 ? "" : "s"} past this stream`
+      : problem.kind === "different_stream"
+        ? "belongs to another pane or an earlier stream"
+        : "is not a cursor this server issued";
   return fail({
     hint:
       "Omit cursor to start from what the pane shows now, then pass back the cursor " +
       "you are handed. A cursor does not carry across panes, or across a dropped " +
       "control connection.",
-    reason:
-      `Cursor ${String(from)} is ${String(ahead)} byte${ahead === 1 ? "" : "s"} past everything ` +
-      `pane ${paneId} has ` +
-      `streamed, which is now at ${String(tail.cursor)}.`,
+    reason: `Cursor ${String(from)} ${detail}; pane ${paneId} is now at ${tail.cursor}.`,
   });
-}
-
-export function requireSession(snapshot: ServerSnapshot, target: string): CallToolResult | Session {
-  const byId = snapshot.sessions.oneOrUndefined({ id: target });
-  if (byId !== undefined) return byId;
-  const byName = snapshot.sessions.oneOrUndefined({ name: target });
-  if (byName !== undefined) return byName;
-  const available = snapshot.sessions
-    .toArray()
-    .map((entry) => `${entry.id} (${entry.name ?? "?"})`);
-  return fail({
-    hint:
-      available.length === 0
-        ? "This server has no sessions. Create one with new_session."
-        : `Sessions on this server: ${suggest(available, "list_sessions")}`,
-    reason: `No session ${target} on this server.`,
-  });
-}
-
-export function requireWindow(snapshot: ServerSnapshot, target: string): CallToolResult | Window {
-  const byId = snapshot.windows.oneOrUndefined({ id: target });
-  if (byId !== undefined) return byId;
-  const available = snapshot.windows
-    .toArray()
-    .map((entry) => `${entry.id} (${entry.sessionName ?? "?"}:${entry.name ?? "?"})`);
-  return fail({
-    hint:
-      available.length === 0
-        ? "This server has no windows."
-        : `Windows on this server: ${suggest(available, "list_windows")}`,
-    reason: `No window ${target} on this server.`,
-  });
-}
-
-/** Whether `requirePane` and its kin returned a failure rather than a handle. */
-export function isFailure(value: unknown): value is CallToolResult {
-  return typeof value === "object" && value !== null && "isError" in value;
 }

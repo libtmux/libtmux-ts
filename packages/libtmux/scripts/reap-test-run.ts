@@ -1,4 +1,4 @@
-import { reapStaleRunRoot } from "../src/_internal/test/run_root.js";
+import { reapStaleRunRoot } from "../src/_internal/test/testkit.js";
 
 const argv = process.argv.slice(2);
 if (argv.length !== 2 || argv[0] !== "--run-root" || argv[1] === undefined) {

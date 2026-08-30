@@ -7,12 +7,12 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
 import type { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 /**
  * tmux environments against a real server.

@@ -122,6 +122,7 @@ describe("a refused query", () => {
       { name: { contains: 5 } },
       { name: { equals: { secret: "value" } } },
       { name: { in: [{ secret: 1 }] } },
+      { index: { equals: { secret: "value" } } },
     ]) {
       expect(refusal("window", criteria).message).not.toContain("secret");
     }

@@ -6,44 +6,33 @@
  * prompt or a resource template and nothing else, so a pane id an agent can
  * complete has to be reachable through one of these.
  *
- * Pane content is subscribable. The updates come from the same control-mode
- * connection the wait tools use, so a subscriber costs one attach for the
- * session and no commands at all while it watches.
+ * Pane content is subscribable when live connections are enabled. The updates
+ * come from the same control-mode connection the wait tools use, so a
+ * subscriber costs one attach for the session and no commands while it watches.
  */
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import {
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
-  type CallToolResult,
-  type ReadResourceResult,
-} from "@modelcontextprotocol/sdk/types.js";
+import { type CallToolResult, type ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 
+import type { ToolContext } from "./context.js";
+import { captureGridBounded } from "./grid_capture.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "./policy.js";
+import { JSON_MIME, registerResourceCatalog, TEXT_MIME } from "./resource_catalog.js";
+import { watchTopology } from "./resource_topology.js";
+import { registerResourceSubscriptions } from "./resource_watch.js";
+import { boundText, renderBoundedText } from "./results.js";
 import {
   isFailure,
+  paneEntities,
+  panePlacements,
   requirePane,
   requireSession,
   requireWindow,
-  type ToolContext,
-} from "./context.js";
-import {
-  paneContentUri,
-  paneUri,
-  sessionUri,
-  windowUri,
-  CLIENTS_URI,
-  PANES_URI,
-  SESSIONS_URI,
-  WINDOWS_URI,
-} from "./uris.js";
+  windowEntities,
+  windowPlacements,
+} from "./target_resolution.js";
+import { CLIENTS_URI, PANES_URI, SESSIONS_URI, WINDOWS_URI } from "./uris.js";
 import { clientView, paneView, sessionView, windowView } from "./views.js";
-
-/** The shortest gap between two update notifications for one resource. */
-const UPDATE_COALESCE_MS = 500;
-
-const JSON_MIME = "application/json";
-/** Pane contents are terminal text: neither JSON to parse nor HTML to render. */
-const TEXT_MIME = "text/plain";
 
 /**
  * Read a template variable back as the id that was published.
@@ -72,63 +61,86 @@ function resourceError(failure: CallToolResult): Error {
 }
 
 function jsonResource(uri: string, value: unknown): ReadResourceResult {
-  return { contents: [{ mimeType: JSON_MIME, text: JSON.stringify(value, null, 2), uri }] };
+  const pretty = JSON.stringify(value, null, 2);
+  if (Buffer.byteLength(pretty, "utf8") <= MAX_RESULT_BYTES) {
+    return { contents: [{ mimeType: JSON_MIME, text: pretty, uri }] };
+  }
+  const compact = JSON.stringify(value);
+  if (Buffer.byteLength(compact, "utf8") <= MAX_RESULT_BYTES) {
+    return { contents: [{ mimeType: JSON_MIME, text: compact, uri }] };
+  }
+  const text = JSON.stringify({
+    complete: false,
+    omittedBytes: Buffer.byteLength(compact, "utf8"),
+    reason: `The resource exceeds the ${String(MAX_RESULT_BYTES)}-byte result ceiling.`,
+    value: null,
+  });
+  return { contents: [{ mimeType: JSON_MIME, text, uri }] };
+}
+
+function collectionJson(
+  base: Readonly<Record<string, unknown>>,
+  field: string,
+  items: readonly string[],
+  omittedItems: number,
+  totalItems: number,
+): string {
+  const fields = Object.entries(base)
+    .filter(([name]) => name !== field)
+    .map(([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`);
+  fields.push(
+    `"complete":false`,
+    `${JSON.stringify(field)}:[${items.join(",")}]`,
+    `"omittedItems":${String(omittedItems)}`,
+    `"totalItems":${String(totalItems)}`,
+  );
+  return `{${fields.join(",")}}`;
+}
+
+/** Preserve the normal JSON shape unless a collection needs an explicit bounded envelope. */
+function jsonCollectionResource(
+  uri: string,
+  base: Readonly<Record<string, unknown>>,
+  field: string,
+  items: readonly unknown[],
+): ReadResourceResult {
+  const whole = Object.keys(base).length === 0 ? items : { ...base, [field]: items };
+  const compact = JSON.stringify(whole);
+  if (Buffer.byteLength(compact, "utf8") <= MAX_RESULT_BYTES) return jsonResource(uri, whole);
+
+  const serialized = items.map((item) => JSON.stringify(item));
+  const empty = collectionJson(base, field, [], items.length, items.length);
+  if (Buffer.byteLength(empty, "utf8") > MAX_RESULT_BYTES) {
+    return jsonResource(uri, {
+      complete: false,
+      entityOmitted: true,
+      omittedItems: items.length,
+      reason: `The entity metadata exceeds the ${String(MAX_RESULT_BYTES)}-byte result ceiling.`,
+      totalItems: items.length,
+    });
+  }
+
+  const kept: string[] = [];
+  let bytes = Buffer.byteLength(empty, "utf8");
+  for (const item of serialized) {
+    const next = bytes + Buffer.byteLength(item, "utf8") + (kept.length === 0 ? 0 : 1);
+    if (next > MAX_RESULT_BYTES) break;
+    kept.push(item);
+    bytes = next;
+  }
+  const text = collectionJson(base, field, kept, items.length - kept.length, items.length);
+  return { contents: [{ mimeType: JSON_MIME, text, uri }] };
 }
 
 function textResource(uri: string, text: string): ReadResourceResult {
   return { contents: [{ mimeType: TEXT_MIME, text, uri }] };
 }
 
-/** The notifications that change which sessions, windows or panes exist. */
-const STRUCTURAL = new Set([
-  "session-renamed",
-  "sessions-changed",
-  "unlinked-window-add",
-  "unlinked-window-close",
-  "unlinked-window-renamed",
-  "window-add",
-  "window-close",
-  "window-renamed",
-]);
-
-/**
- * Announce a change somebody else made.
- *
- * Sending `listChanged` from this server's own mutating tools covers what this
- * server did, and this server is not the only thing changing the list: a
- * person in a terminal, or another agent on the same tmux server, changes it
- * too — and a client that believes `listChanged` refreshes only on notice.
- *
- * Anchored on the first read of a browsable list rather than at startup, so a
- * server nobody browses holds no connection for this. If the anchor cannot be
- * opened, because there is no session to attach to, the next read tries again.
- */
-function watchTopology(context: ToolContext, announce: () => void): () => void {
-  let stop: (() => void) | undefined;
-  let starting = false;
-
-  return (): void => {
-    if (stop !== undefined || starting || !context.policy.liveEnabled) return;
-    starting = true;
-    void context.hub
-      .anchor((event) => {
-        if (STRUCTURAL.has(event.kind)) announce();
-      })
-      .then((opened) => {
-        stop = opened;
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        starting = false;
-      });
-  };
-}
-
-export function registerResources(mcp: McpServer, context: ToolContext): void {
+export function registerResources(mcp: McpServer, context: ToolContext): () => Promise<void> {
   // Reading a browsable list is what says somebody is browsing, and so the
   // point at which it is worth holding a connection to hear about changes
   // this server did not make.
-  const watching = watchTopology(context, () => {
+  const topology = watchTopology(context, () => {
     context.topologyChanged();
   });
 
@@ -138,8 +150,10 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     { description: "Every session on this server.", mimeType: JSON_MIME, title: "Sessions" },
     async () => {
       const snapshot = await context.snapshot();
-      return jsonResource(
+      return jsonCollectionResource(
         SESSIONS_URI,
+        {},
+        "items",
         snapshot.sessions
           .toArray()
           .map((session) =>
@@ -153,8 +167,17 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     "windows",
     WINDOWS_URI,
     { description: "Every window on this server.", mimeType: JSON_MIME, title: "Windows" },
-    async () =>
-      jsonResource(WINDOWS_URI, (await context.snapshot()).windows.toArray().map(windowView)),
+    async () => {
+      const snapshot = await context.snapshot();
+      return jsonCollectionResource(
+        WINDOWS_URI,
+        {},
+        "items",
+        windowEntities(snapshot.windows.toArray()).map((window) =>
+          windowView(window, windowPlacements(snapshot, window.id)),
+        ),
+      );
+    },
   );
 
   mcp.registerResource(
@@ -164,9 +187,13 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     async () => {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
-      return jsonResource(
+      return jsonCollectionResource(
         PANES_URI,
-        snapshot.panes.toArray().map((pane) => paneView(pane, identity)),
+        {},
+        "items",
+        paneEntities(snapshot.panes.toArray()).map((pane) =>
+          paneView(pane, identity, panePlacements(snapshot, pane.id)),
+        ),
       );
     },
   );
@@ -180,7 +207,12 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       title: "Clients",
     },
     async () =>
-      jsonResource(CLIENTS_URI, (await context.snapshot()).clients.toArray().map(clientView)),
+      jsonCollectionResource(
+        CLIENTS_URI,
+        {},
+        "items",
+        (await context.snapshot()).clients.toArray().map(clientView),
+      ),
   );
 
   mcp.registerResource(
@@ -190,19 +222,10 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
         sessionId: async (value) =>
           (await context.snapshot()).sessions
             .toArray()
-            .flatMap((session) => [session.id, session.name ?? ""])
-            .filter((candidate) => candidate !== "" && candidate.startsWith(value)),
+            .map((session) => session.id)
+            .filter((candidate) => candidate.startsWith(value)),
       },
-      list: async () => (
-        watching(),
-        {
-          resources: (await context.snapshot()).sessions.toArray().map((session) => ({
-            mimeType: JSON_MIME,
-            name: session.name ?? session.id,
-            uri: sessionUri(session.id),
-          })),
-        }
-      ),
+      list: undefined,
     }),
     { description: "One session with its windows.", mimeType: JSON_MIME, title: "Session" },
     async (uri, { sessionId }) => {
@@ -211,13 +234,14 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const found = requireSession(snapshot, target);
       if (isFailure(found)) throw resourceError(found);
       const session = found;
-      return jsonResource(uri.href, {
-        ...sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
-        windows: snapshot.windows
-          .toArray()
-          .filter((window) => window.sessionId === session.id)
-          .map(windowView),
-      });
+      return jsonCollectionResource(
+        uri.href,
+        sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
+        "windows",
+        windowEntities(
+          snapshot.windows.toArray().filter((window) => window.format.session_id === session.id),
+        ).map((window) => windowView(window, windowPlacements(snapshot, window.id))),
+      );
     },
   );
 
@@ -226,21 +250,11 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     new ResourceTemplate("tmux://windows/{windowId}", {
       complete: {
         windowId: async (value) =>
-          (await context.snapshot()).windows
-            .toArray()
+          windowEntities((await context.snapshot()).windows.toArray())
             .map((window) => window.id)
             .filter((candidate) => candidate.startsWith(value)),
       },
-      list: async () => (
-        watching(),
-        {
-          resources: (await context.snapshot()).windows.toArray().map((window) => ({
-            mimeType: JSON_MIME,
-            name: `${window.sessionName ?? "?"}:${window.name ?? window.id}`,
-            uri: windowUri(window.id),
-          })),
-        }
-      ),
+      list: undefined,
     }),
     { description: "One window with its panes.", mimeType: JSON_MIME, title: "Window" },
     async (uri, { windowId }) => {
@@ -250,19 +264,19 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       if (isFailure(found)) throw resourceError(found);
       const window = found;
       const identity = await context.identity(snapshot);
-      return jsonResource(uri.href, {
-        ...windowView(window),
-        panes: snapshot.panes
-          .toArray()
-          .filter((pane) => pane.windowId === window.id)
-          .map((pane) => paneView(pane, identity)),
-      });
+      return jsonCollectionResource(
+        uri.href,
+        windowView(window, windowPlacements(snapshot, window.id)),
+        "panes",
+        paneEntities(
+          snapshot.panes.toArray().filter((pane) => pane.format.window_id === window.id),
+        ).map((pane) => paneView(pane, identity, panePlacements(snapshot, pane.id))),
+      );
     },
   );
 
   const completePaneId = async (value: string): Promise<string[]> =>
-    (await context.snapshot()).panes
-      .toArray()
+    paneEntities((await context.snapshot()).panes.toArray())
       .map((pane) => pane.id)
       .filter((candidate) => candidate.startsWith(value));
 
@@ -270,18 +284,7 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     "pane",
     new ResourceTemplate("tmux://panes/{paneId}", {
       complete: { paneId: completePaneId },
-      list: async () => {
-        watching();
-        const snapshot = await context.snapshot();
-        return {
-          resources: snapshot.panes.toArray().map((pane) => ({
-            description: `${pane.sessionName ?? "?"}:${pane.windowName ?? "?"} running ${pane.currentCommand ?? "?"}`,
-            mimeType: JSON_MIME,
-            name: pane.id,
-            uri: paneUri(pane.id),
-          })),
-        };
-      },
+      list: undefined,
     }),
     { description: "One pane's metadata.", mimeType: JSON_MIME, title: "Pane" },
     async (uri, { paneId }) => {
@@ -290,7 +293,10 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const found = requirePane(snapshot, target);
       if (isFailure(found)) throw resourceError(found);
       const pane = found;
-      return jsonResource(uri.href, paneView(pane, await context.identity(snapshot)));
+      return jsonResource(
+        uri.href,
+        paneView(pane, await context.identity(snapshot), panePlacements(snapshot, pane.id)),
+      );
     },
   );
 
@@ -298,20 +304,12 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
     "pane-content",
     new ResourceTemplate("tmux://panes/{paneId}/content", {
       complete: { paneId: completePaneId },
-      list: async () => (
-        watching(),
-        {
-          resources: (await context.snapshot()).panes.toArray().map((pane) => ({
-            description: `What ${pane.id} is showing.`,
-            mimeType: TEXT_MIME,
-            name: `${pane.id} contents`,
-            uri: paneContentUri(pane.id),
-          })),
-        }
-      ),
+      list: undefined,
     }),
     {
-      description: "What a pane is showing, as text. Subscribe to be told when it changes.",
+      description: context.policy.liveEnabled
+        ? "What a pane is showing, as text. Subscribe to be told when it changes."
+        : "What a pane is showing, as text.",
       mimeType: TEXT_MIME,
       title: "Pane contents",
     },
@@ -321,106 +319,34 @@ export function registerResources(mcp: McpServer, context: ToolContext): void {
       const found = requirePane(snapshot, target);
       if (isFailure(found)) throw resourceError(found);
       const pane = found;
-      return textResource(uri.href, (await pane.capture()).join("\n"));
+      const limit = effectiveResultLines(context.policy, undefined);
+      const bounded = await captureGridBounded(pane, {
+        byteLimit: MAX_RESULT_BYTES,
+        lineLimit: limit,
+      });
+      const contents = boundText(bounded.lines, limit, MAX_RESULT_BYTES);
+      const omitted = bounded.byteClamped && bounded.lines.length === 0;
+      const rangeNotice = omitted
+        ? `[capture omitted: no complete row fits the ${String(MAX_RESULT_BYTES)}-byte result ceiling]`
+        : bounded.range.clamped || bounded.byteClamped
+          ? "[capture shortened to fit the server result limits]"
+          : "";
+      return textResource(
+        uri.href,
+        [rangeNotice, renderBoundedText(contents, "use capture_pane with a narrower range")]
+          .filter((part) => part !== "")
+          .join("\n"),
+      );
     },
   );
 
-  registerSubscriptions(mcp, context);
-}
-
-/**
- * Tell subscribers when a pane's contents change.
- *
- * `McpServer` handles reads but not subscriptions, so these go on the protocol
- * server underneath it. Updates are driven by the control connection rather than
- * a timer: a subscriber that nothing is writing to costs nothing.
- */
-function registerSubscriptions(mcp: McpServer, context: ToolContext): void {
-  const watching = new Map<string, () => void>();
-
-  mcp.server.registerCapabilities({
-    resources: {
-      listChanged: true,
-      // The subscribe handler needs a control connection and can only throw
-      // without one. A capability is a promise, so it follows the ability.
-      ...(context.policy.liveEnabled ? { subscribe: true } : {}),
-    },
-  });
-
-  mcp.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
-    const uri = request.params.uri;
-    if (watching.has(uri)) return {};
-
-    const paneId = paneIdOfContentUri(uri);
-    if (paneId === undefined) {
-      throw new Error(`Only ${PANES_URI}/{paneId}/content can be subscribed to; got ${uri}`);
-    }
-    const snapshot = await context.snapshot();
-    const pane = snapshot.panes.oneOrUndefined({ id: paneId });
-    const sessionId = pane?.sessionId;
-    if (pane === undefined || sessionId === null || sessionId === undefined) {
-      throw new Error(`No pane ${paneId} to subscribe to`);
-    }
-
-    // Coalesced hard. A subscriber re-reads the whole pane per notification, so
-    // a build printing continuously would cost a capture every time tmux
-    // flushed. This bounds that to twice a second however fast the pane talks.
-    let pending: ReturnType<typeof setTimeout> | undefined;
-    const stop = await context.hub.listen(sessionId, (event) => {
-      if (event.kind !== "output") return;
-      if (event.paneId !== paneId) return;
-      if (pending !== undefined) return;
-      pending = setTimeout(() => {
-        pending = undefined;
-        void mcp.server.sendResourceUpdated({ uri }).catch(() => undefined);
-      }, UPDATE_COALESCE_MS);
-      pending.unref?.();
-    });
-    if (stop === undefined) throw new Error(`Cannot watch ${paneId}: no control connection`);
-
-    watching.set(uri, () => {
-      if (pending !== undefined) clearTimeout(pending);
-      stop();
-    });
-    return {};
-  });
-
-  mcp.server.setRequestHandler(UnsubscribeRequestSchema, (request) => {
-    watching.get(request.params.uri)?.();
-    watching.delete(request.params.uri);
-    return {};
-  });
-}
-
-/** The pane a `tmux://panes/{id}/content` URI names, or undefined. */
-function paneIdOfContentUri(uri: string): string | undefined {
-  const match = /^tmux:\/\/panes\/([^/]+)\/content$/.exec(uri);
-  const encoded = match?.[1];
-  return encoded === undefined ? undefined : decodeURIComponent(encoded);
-}
-
-/**
- * Say the resource list changed, at most once per coalescing window.
- *
- * A client that believes `listChanged` caches the list and refreshes only on
- * notice, so a list this server changed and did not announce is a world the
- * agent goes on acting in after it is gone. Every split, every new window and
- * every dead pane changes it, which is why this is cheap enough to send from
- * each of them: build_workspace makes a session, its windows and their panes
- * in one call, and that is one notice rather than nine.
- *
- * This covers changes this server made. A change somebody else made on the
- * same tmux server still goes unannounced — that needs a control connection
- * held for structural notifications, which is a lifecycle question of its own.
- */
-export function createListChangedNotifier(mcp: McpServer): () => void {
-  let pending: ReturnType<typeof setTimeout> | undefined;
-  return (): void => {
-    if (pending !== undefined) return;
-    pending = setTimeout(() => {
-      pending = undefined;
-      void mcp.server.sendResourceListChanged().catch(() => undefined);
-    }, UPDATE_COALESCE_MS);
-    pending.unref?.();
+  registerResourceCatalog(mcp, context, (signal) => topology.acquire(signal));
+  const disposeSubscriptions = registerResourceSubscriptions(mcp, context);
+  let disposePromise: Promise<void> | undefined;
+  return (): Promise<void> => {
+    disposePromise ??= Promise.all([topology.close(), disposeSubscriptions()]).then(
+      () => undefined,
+    );
+    return disposePromise;
   };
 }

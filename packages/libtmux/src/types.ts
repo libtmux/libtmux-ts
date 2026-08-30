@@ -1,11 +1,24 @@
-import type { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";
+import type {
+  OptionScope as OptionScopeValue,
+  PaneDirection,
+  ResizeAdjustmentDirection,
+  WindowDirection,
+} from "./constants.js";
 import type { Client } from "./client.js";
-import type { CommandOptions } from "./common.js";
+import {
+  isSafeInteger,
+  type CommandOptions,
+  type PaneId,
+  type SafeInteger,
+  type SessionId,
+  type WindowId,
+} from "./common.js";
 import type { Server } from "./server.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
+import { isName } from "./_internal/operations/names.js";
 
 /**
  * Option shapes for the public operations.
@@ -32,6 +45,12 @@ export interface ServerSnapshot {
   readonly panes: Selection<Pane>;
   readonly sessions: Selection<Session>;
   readonly windows: Selection<Window>;
+}
+
+/** Options for {@link Server.snapshot}. */
+export interface SnapshotOptions {
+  /** Abort acquisition and join the command that was running. */
+  readonly signal?: AbortLike;
 }
 
 export interface NewSessionOptions extends CommandOptions {
@@ -69,6 +88,15 @@ export interface NewSessionOptions extends CommandOptions {
    * 3.3 is the first release that honours them.
    */
   readonly height?: number;
+  /**
+   * The session's name, tmux's `-s`.
+   *
+   * Empty names, `:`, `.`, control characters and DEL are refused, because the
+   * supported servers do not agree on them: 3.2a through 3.6b rewrite a
+   * delimiter to `_` and hand back a session the caller did not name, 3.7
+   * fails, and 3.7a onward stores it literally. What is accepted here reads
+   * back unchanged from every supported server.
+   */
   readonly name?: string;
   /**
    * A command for tmux to run in place of the default shell.
@@ -81,6 +109,7 @@ export interface NewSessionOptions extends CommandOptions {
   readonly startDirectory?: string;
   /** Columns for the session's first window. See `height`. */
   readonly width?: number;
+  /** The first window's name. Same rules as `name`. */
   readonly windowName?: string;
 }
 
@@ -101,6 +130,12 @@ export interface NewWindowOptions extends CommandOptions {
    * measures from. Without this the window goes at the first free index.
    */
   readonly direction?: WindowDirection;
+  /**
+   * The window's name.
+   *
+   * Refuses what a session name refuses, and for the same reason: the
+   * supported servers do not store a delimiter identically.
+   */
   readonly name?: string;
   /**
    * A command for tmux to run in place of the default shell.
@@ -111,6 +146,102 @@ export interface NewWindowOptions extends CommandOptions {
    */
   readonly shellCommand?: string;
   readonly startDirectory?: string;
+}
+
+declare const splitCellSizeBrand: unique symbol;
+
+type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+type NonZeroDigit = Exclude<Digit, "0">;
+type ZeroToNinetyNine = "0" | NonZeroDigit | `${NonZeroDigit}${Digit}`;
+
+/**
+ * A nonnegative cell count within tmux's signed 32-bit geometry range.
+ *
+ * ```ts
+ * import { splitSize } from "libtmux";
+ * import type { SplitCellSize } from "libtmux";
+ * const size: SplitCellSize = splitSize(20);
+ * ```
+ */
+export type SplitCellSize = SafeInteger & {
+  readonly [splitCellSizeBrand]: "split-cell-size";
+};
+
+/**
+ * A canonical whole percentage from `0%` through `100%`.
+ *
+ * ```ts
+ * import type { SplitPercentage } from "libtmux";
+ * const size: SplitPercentage = "30%";
+ * void size;
+ * ```
+ */
+export type SplitPercentage = `${ZeroToNinetyNine}%` | "100%";
+
+/**
+ * An authenticated cell count or canonical percentage for a pane split.
+ *
+ * ```ts
+ * import type { SplitSize } from "libtmux";
+ * const size: SplitSize = "30%";
+ * void size;
+ * ```
+ */
+export type SplitSize = SplitCellSize | SplitPercentage;
+
+/**
+ * Test whether a value is a name every supported tmux stores unchanged.
+ *
+ * The refusal the mutating calls apply, offered ahead of them so a caller
+ * validating configuration can report the bad field rather than catching a
+ * `TypeError` from the call it fed.
+ *
+ * ```ts
+ * import { isTmuxName } from "libtmux";
+ * const value: unknown = "work";
+ * const name = isTmuxName(value) ? value : undefined;
+ * ```
+ */
+export function isTmuxName(value: unknown): value is string {
+  return typeof value === "string" && isName(value);
+}
+
+/**
+ * Test whether a value is valid tmux split geometry.
+ *
+ * ```ts
+ * import { isSplitSize } from "libtmux";
+ * const value: unknown = "30%";
+ * const size = isSplitSize(value) ? value : undefined;
+ * ```
+ */
+export function isSplitSize(value: unknown): value is SplitSize {
+  if (typeof value === "number") {
+    return isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
+  }
+  return typeof value === "string" && (value === "100%" || /^(?:0|[1-9]\d?)%$/u.test(value));
+}
+
+/**
+ * Authenticate tmux split geometry or throw.
+ *
+ * @throws TypeError when a cell count is negative, fractional, or above
+ * 2147483647, or when a percentage is not a canonical whole `0%` to `100%`.
+ *
+ * ```ts
+ * import { splitSize } from "libtmux";
+ * const size = splitSize(20);
+ * ```
+ */
+export function splitSize(value: number): SplitCellSize;
+export function splitSize(value: SplitPercentage): SplitPercentage;
+export function splitSize(value: SplitSize): SplitSize;
+export function splitSize(value: number | string): SplitSize {
+  if (isSplitSize(value)) return value;
+  if (typeof value === "number") {
+    throw new TypeError("size must be an integer from 0 to 2147483647 cells");
+  }
+  throw new TypeError("size must be an integer percentage from 0% to 100%");
 }
 
 export interface SplitOptions extends CommandOptions {
@@ -125,10 +256,10 @@ export interface SplitOptions extends CommandOptions {
   /**
    * How big the new pane is, tmux's `-l`.
    *
-   * A number is cells along the split's own axis; a `"30%"` string is that
-   * share of the pane being divided. Without it tmux halves the pane.
+   * `splitSize(20)` authenticates cells along the split's own axis; an exact
+   * `"30%"` literal is that share of the pane. Without it tmux halves the pane.
    */
-  readonly size?: number | `${number}%`;
+  readonly size?: SplitSize;
   /**
    * Which side of this pane the new one takes.
    *
@@ -316,17 +447,16 @@ export interface ChooseTreeOptions extends CommandOptions {
   readonly windowsOnly?: boolean;
 }
 
-/** The tmux option scope a lookup is addressed to. */
-export type OptionScope = "pane" | "server" | "session" | "window";
+export type { OptionScope } from "./constants.js";
 
-/** Hooks live at server or session scope. */
-export type HookScope = "server" | "session";
+/** The server, session, window, or pane table that holds a hook. */
+export type HookScope = OptionScopeValue;
 
 /**
  * The tmux version a server is running.
  *
- * `raw` is tmux's own string, kept verbatim because a build can report things
- * like `master` or a vendor suffix that the parsed fields flatten.
+ * `raw` is tmux's own string, kept verbatim because a development build can
+ * report forms such as `next-3.8` that the parsed fields flatten.
  */
 export interface TmuxVersion {
   readonly major: number;
@@ -391,27 +521,84 @@ export interface TmuxOutputEvent {
   readonly age?: number;
   readonly data: string;
   readonly kind: "output";
-  readonly paneId: string;
+  readonly paneId: PaneId;
 }
 
 /** A window was added, closed, or linked into or out of a session. */
 export interface TmuxWindowLifecycleEvent {
   readonly kind: "window-add" | "window-close" | "unlinked-window-add" | "unlinked-window-close";
-  readonly windowId: string;
+  readonly windowId: WindowId;
 }
 
 /** A window was renamed. */
 export interface TmuxWindowRenamedEvent {
   readonly kind: "window-renamed" | "unlinked-window-renamed";
   readonly name: string;
-  readonly windowId: string;
+  readonly windowId: WindowId;
 }
 
 /** The active pane of a window changed. */
 export interface TmuxWindowPaneChangedEvent {
   readonly kind: "window-pane-changed";
-  readonly paneId: string;
-  readonly windowId: string;
+  readonly paneId: PaneId;
+  readonly windowId: WindowId;
+}
+
+/**
+ * A format tmux expands and reports whenever its value changes.
+ *
+ * ```ts
+ * { format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }
+ * ```
+ *
+ * Reports arrive as {@link TmuxSubscriptionEvent}. tmux evaluates every
+ * subscription at most once per second, so this reports a change rather than
+ * every intermediate value.
+ */
+export interface FormatSubscription {
+  /** A tmux format string. See `FORMATS` in the tmux manual. */
+  readonly format: string;
+  /**
+   * The caller's label, echoed back on every report.
+   *
+   * Refused when it holds `:`, whitespace, or a control character: the
+   * subscribe grammar splits on the colon and the report carries the name
+   * unescaped.
+   */
+  readonly name: string;
+  /**
+   * What the format is expanded against. Omitted expands once per session.
+   *
+   * A window or pane id subscribes to that object; `"all-panes"` and
+   * `"all-windows"` subscribe to each one in the attached session, reporting
+   * separately for each.
+   */
+  readonly scope?: PaneId | WindowId | "all-panes" | "all-windows";
+}
+
+/**
+ * A subscribed format expanded to a new value.
+ *
+ * tmux evaluates a subscription at most once per second and reports only when
+ * the value differs from the last report for that object; the first evaluation
+ * always reports. `windowId`, `windowIndex` and `paneId` are the object the
+ * value was expanded against, and are absent for a session-scope subscription.
+ *
+ * The value is written raw, so a format expanding to a newline arrives as
+ * further lines this parser cannot attribute. Keep a subscribed format on one
+ * line.
+ */
+export interface TmuxSubscriptionEvent {
+  readonly kind: "subscription-changed";
+  /** The name given when subscribing. */
+  readonly name: string;
+  readonly paneId?: PaneId;
+  readonly sessionId: SessionId;
+  /** The expanded format. Empty when the format expanded to nothing. */
+  readonly value: string;
+  readonly windowId?: WindowId;
+  /** The window's index within the session. */
+  readonly windowIndex?: number;
 }
 
 /** A window's layout changed. */
@@ -420,14 +607,14 @@ export interface TmuxLayoutChangeEvent {
   readonly kind: "layout-change";
   readonly layout: string;
   readonly visibleLayout: string;
-  readonly windowId: string;
+  readonly windowId: WindowId;
 }
 
 /** The attached session changed, or a session was renamed. */
 export interface TmuxSessionEvent {
   readonly kind: "session-changed" | "session-renamed";
   readonly name: string;
-  readonly sessionId: string;
+  readonly sessionId: SessionId;
 }
 
 /** The set of sessions changed. Carries no payload; re-read the server. */
@@ -438,8 +625,8 @@ export interface TmuxSessionsChangedEvent {
 /** A session's active window changed. */
 export interface TmuxSessionWindowChangedEvent {
   readonly kind: "session-window-changed";
-  readonly sessionId: string;
-  readonly windowId: string;
+  readonly sessionId: SessionId;
+  readonly windowId: WindowId;
 }
 
 /** Another client switched sessions. */
@@ -447,7 +634,7 @@ export interface TmuxClientSessionChangedEvent {
   readonly client: string;
   readonly kind: "client-session-changed";
   readonly name: string;
-  readonly sessionId: string;
+  readonly sessionId: SessionId;
 }
 
 /** Another client detached. */
@@ -459,7 +646,7 @@ export interface TmuxClientDetachedEvent {
 /** A pane entered or left a mode such as copy mode. */
 export interface TmuxPaneModeChangedEvent {
   readonly kind: "pane-mode-changed";
-  readonly paneId: string;
+  readonly paneId: PaneId;
 }
 
 /** A paste buffer was written or deleted. */
@@ -471,7 +658,7 @@ export interface TmuxPasteBufferEvent {
 /** tmux paused or resumed output for a pane that fell behind. */
 export interface TmuxPaneFlowEvent {
   readonly kind: "continue" | "pause";
-  readonly paneId: string;
+  readonly paneId: PaneId;
 }
 
 /** tmux reported a message, or an error in its configuration. */
@@ -538,6 +725,7 @@ export type TmuxEvent =
   | TmuxSessionEvent
   | TmuxSessionWindowChangedEvent
   | TmuxSessionsChangedEvent
+  | TmuxSubscriptionEvent
   | TmuxUnknownEvent
   | TmuxWindowLifecycleEvent
   | TmuxWindowPaneChangedEvent
@@ -556,8 +744,8 @@ export interface AbortLike {
   removeEventListener(type: "abort", listener: () => void): void;
 }
 
-/** Options for {@link Server.watch}. */
-export interface WatchOptions {
+/** Options shared by connected servers and event observers. */
+export interface ConnectionOptions {
   /**
    * How many events to hold for a consumer that has fallen behind.
    *
@@ -566,24 +754,41 @@ export interface WatchOptions {
    * heap until the process dies, which is worse than losing an event.
    */
   readonly bufferSize?: number;
+  /** Abort the connection when this signal fires. */
+  readonly signal?: AbortLike;
   /**
-   * How many bytes one command's response may occupy before it is refused.
+   * Reopen the connection when it drops unexpectedly.
    *
-   * A control connection reads a command's output into memory before it can
-   * answer, so `list-panes` on a server with a pathological pane title, or a
-   * `capture-pane` of a very long scrollback, is the caller's heap. Exceeding
-   * this fails that one command rather than the process.
-   */
-  readonly maxCommandBytes?: number;
-  /**
-   * How many commands may be awaiting a response at once.
+   * Off by default: a stream that silently reattaches hides a tmux server
+   * going away, and a caller that wants to know cannot get the notice back.
+   * When enabled, a recovered connection reports itself as a `reconnected`
+   * event so a consumer can tell that it missed whatever happened in the gap.
    *
-   * tmux answers one at a time and in order, so a producer that outruns it
-   * queues without bound. Exceeding this rejects the newest command with
-   * `delivery: "not_started"`, which is the one status that is always safe to
-   * retry.
+   * A reconnect restores event delivery; commands use separate tmux clients.
    */
-  readonly maxPendingCommands?: number;
+  readonly reconnect?: {
+    /** Maximum retries per outage. A positive safe integer. */
+    readonly attempts: number;
+    /** Nonnegative base milliseconds; retry N waits N times this value. Defaults to 50. */
+    readonly delayMs?: number;
+  };
+  /** Session to attach to. Defaults to whichever tmux considers most recent. */
+  readonly target?: string;
+}
+
+/** Options for {@link Server.connect}. */
+export type ConnectOptions = ConnectionOptions;
+
+/** Timing for a whole-server state wait. */
+export interface WaitForOptions {
+  /** Maximum time to wait. A positive timer-safe integer; defaults to 30 seconds. */
+  readonly timeoutMs?: number;
+  /** Poll interval for unannounced changes. A positive timer-safe integer; defaults to 250 ms. */
+  readonly pollIntervalMs?: number;
+}
+
+/** Options for {@link Server.watch}, a notification-only observer. */
+export interface WatchOptions extends ConnectionOptions {
   /**
    * Seconds tmux may hold a pane's output before pausing that pane.
    *
@@ -596,23 +801,13 @@ export interface WatchOptions {
    * so the pair records what was missed rather than needing a response.
    */
   readonly pauseAfterSeconds?: number;
-  /** Abort the connection when this signal fires. */
-  readonly signal?: AbortLike;
   /**
-   * Reopen the connection when it drops unexpectedly.
+   * Formats to subscribe to, reported as {@link TmuxSubscriptionEvent}.
    *
-   * Off by default: a stream that silently reattaches hides a tmux server
-   * going away, and a caller that wants to know cannot get the notice back.
-   * When enabled, a recovered connection reports itself as a `reconnected`
-   * event so a consumer can tell that it missed whatever happened in the gap.
-   *
-   * Commands in flight when the connection drops are failed, never replayed.
-   * tmux has no idea whether it already ran one, and re-sending `new-window`
-   * after it succeeded creates a second window.
+   * A subscription belongs to one control client, so these are re-issued after
+   * a reconnect; without that a recovered connection would stop reporting.
    */
-  readonly reconnect?: { readonly attempts: number; readonly delayMs?: number };
-  /** Session to attach to. Defaults to whichever tmux considers most recent. */
-  readonly target?: string;
+  readonly subscriptions?: readonly FormatSubscription[];
 }
 
 /**
@@ -639,18 +834,24 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
    * to stop waiting is not a failure anyone should have to catch. Undefined
    * therefore means the deadline passed or the wait was called off, and only
    * the deadline says the workload really did not print what was waited for.
+   * `timeoutMs`, when set, must be a positive timer-safe integer.
    */
+  find<Match extends TmuxEvent>(
+    matches: (event: TmuxEvent) => event is Match,
+    options?: { readonly timeoutMs?: number },
+  ): Promise<Match | undefined>;
   find(
-    matches: (event: TmuxEvent) => boolean,
+    matches: (event: TmuxEvent) => unknown,
     options?: { readonly timeoutMs?: number },
   ): Promise<TmuxEvent | undefined>;
   /**
-   * Resolve once tmux has accepted the attach, or reject with its reason.
+   * Resolve once tmux has accepted the current attach, or reject with its reason.
    *
    * A control client is told nothing that happened before it attached, so a
    * change made between opening the stream and that moment is never announced
    * to it. Await this before making the change you intend to observe, or the
-   * wait for it can outlive the event.
+   * wait for it can outlive the event. During reconnect this waits for the
+   * replacement client, and rejects if the connection cannot recover.
    */
   ready(): Promise<void>;
   /** Events discarded because the consumer fell behind. */
@@ -675,12 +876,37 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    */
   subscribe(): TmuxEventStream;
   /**
+   * Report a format whenever tmux expands it to a new value.
+   *
+   * Reports arrive on {@link subscribe} as {@link TmuxSubscriptionEvent}.
+   * Re-using a name replaces that subscription. The connection re-issues its
+   * subscriptions after a reconnect, because they belong to the control client
+   * that went away.
+   *
+   * ```ts
+   * await live.subscribeFormat({
+   *   format: "#{pane_current_command}",
+   *   name: "cmd",
+   *   scope: "all-panes",
+   * });
+   * ```
+   *
+   * @throws TypeError when the name holds `:`, whitespace, or a control
+   *   character, or the format holds a line break — each of which tmux would
+   *   either misread or report unattributably.
+   */
+  subscribeFormat(subscription: FormatSubscription): Promise<void>;
+  /** Stop reporting a subscription. Unknown names are accepted. */
+  unsubscribeFormat(name: string): Promise<void>;
+  /**
    * Resolve once the server satisfies `matches`, or reject on timeout.
    *
    * This is the join between a snapshot and the stream: it subscribes first,
    * then reads, so a change landing between those two steps is still seen.
    * Doing it the other way round — read, then subscribe — waits forever on a
-   * condition that already came true.
+   * condition that already came true. Notifications trigger immediate reads;
+   * bounded polling covers state changes tmux does not announce. An unannounced
+   * transition must persist until a sample to be observable.
    *
    * ```ts
    * await live.waitFor((server) => server.windows.exists({ name: "build" }));
@@ -692,7 +918,7 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    */
   waitFor(
     matches: (snapshot: ServerSnapshot) => boolean,
-    options?: { readonly timeoutMs?: number },
+    options?: WaitForOptions,
   ): Promise<ServerSnapshot>;
   [Symbol.asyncDispose](): Promise<void>;
 }
@@ -702,9 +928,8 @@ export interface ConnectedServer extends Server, AsyncDisposable {
  *
  * Every mutation here is two separable halves: the arguments, which are decided
  * from the options alone, and finding what they produced, which needs a
- * snapshot. Keeping them apart is what lets many mutations share one invocation
- * and one snapshot instead of paying for both per call — the difference between
- * a workspace costing one round trip and costing one per window.
+ * snapshot. Keeping them apart lets many mutations share one final snapshot
+ * instead of taking one after every command.
  *
  * The type parameter is what the command resolves to, so a batch of mixed
  * operations still comes back typed one by one.
@@ -713,27 +938,4 @@ export interface PlannedOperation<T> {
   readonly argv: readonly string[];
   /** What `argv` produced, read out of a snapshot taken after it ran. */
   readonly resolve: (snapshot: ServerSnapshot, lines: readonly string[]) => T;
-}
-
-/**
- * Which way a server's commands reach tmux.
- *
- * `spawn` runs a `tmux` process per command and holds nothing open. `control`
- * keeps one connection and writes to it, which costs no processes at all but
- * has to attach first, and so can fail where spawning would not.
- */
-export type TransportMode = "control" | "spawn";
-
-/**
- * A server whose transport was chosen for it, and which knows how to let go.
- *
- * {@link Server.open} returns this whichever transport it selected, so the
- * choice does not change the type a caller holds. `close` releases whatever the
- * server is holding, which for a spawning server is nothing — the same call is
- * correct either way, which is what lets the mode be switched by configuration
- * rather than by editing the code that uses it.
- */
-export interface ManagedServer extends Server, AsyncDisposable {
-  /** Release the connection, if there is one. Safe to call more than once. */
-  close(): Promise<void>;
 }

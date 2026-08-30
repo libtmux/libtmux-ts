@@ -23,12 +23,11 @@ import type {
   RawCommandResult,
 } from "../src/_internal/transport/types.js";
 import type { Server } from "../src/server.js";
+import { TEST_HANDLE_PROTOTYPES, makeTestDirectory } from "../src/_internal/test/testkit.js";
 
-import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
-
-/** Counts commands and the bytes tmux answered with, which is the other cost. */
+/** Counts invocations and the bytes tmux answered with, which is the other cost. */
 class MeasuringTransport implements CommandTransport {
-  calls = 0;
+  invocations = 0;
   bytes = 0;
   readonly #inner: CommandTransport;
 
@@ -37,17 +36,10 @@ class MeasuringTransport implements CommandTransport {
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
-    this.calls += 1;
+    this.invocations += 1;
     const result = await this.#inner.execute(request);
     this.bytes += result.stdout.byteLength;
     return result;
-  }
-
-  async executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    this.calls += 1;
-    const results = await this.#inner.executeGroup(requests);
-    for (const result of results) this.bytes += result.stdout.byteLength;
-    return results;
   }
 }
 
@@ -59,7 +51,7 @@ interface Shape {
 
 interface Row {
   readonly bytes: number;
-  readonly commands: number;
+  readonly invocations: number;
   readonly ms: number;
   readonly panes: number;
   readonly shape: string;
@@ -87,6 +79,7 @@ function serverOn(
       daemonEpoch: 0 as DaemonEpoch,
       transport,
     }),
+    TEST_HANDLE_PROTOTYPES,
   );
   return { server, transport };
 }
@@ -124,24 +117,24 @@ async function measure(shape: Shape, socketPath: string, tmuxBin: string): Promi
     await server.snapshot();
 
     const timings: number[] = [];
-    let commands = 0;
+    let invocations = 0;
     let bytes = 0;
     let panes = 0;
     for (let repeat = 0; repeat < REPEATS; repeat += 1) {
-      const callsBefore = transport.calls;
+      const invocationsBefore = transport.invocations;
       const bytesBefore = transport.bytes;
       const started = performance.now();
       // eslint-disable-next-line no-await-in-loop -- the measurement is sequential by construction.
       const snapshot = await server.snapshot();
       timings.push(performance.now() - started);
-      commands = transport.calls - callsBefore;
+      invocations = transport.invocations - invocationsBefore;
       bytes = transport.bytes - bytesBefore;
       panes = snapshot.panes.count();
     }
     timings.sort((left, right) => left - right);
     return {
       bytes,
-      commands,
+      invocations,
       ms: timings[Math.floor(timings.length / 2)] ?? 0,
       panes,
       shape: `${String(shape.sessions)}x${String(shape.windowsPerSession)}x${String(shape.panesPerWindow)}`,
@@ -169,12 +162,12 @@ async function main(): Promise<void> {
     await rm(root, { force: true, recursive: true });
   }
 
-  const header = ["sessions x windows x panes", "panes", "wall-clock", "commands", "bytes read"];
+  const header = ["sessions x windows x panes", "panes", "wall-clock", "invocations", "bytes read"];
   const body = rows.map((row) => [
     row.shape,
     String(row.panes),
     `${row.ms.toFixed(0)} ms`,
-    String(row.commands),
+    String(row.invocations),
     `${(row.bytes / 1024).toFixed(0)} KiB`,
   ]);
   const widths = header.map((cell, index) =>

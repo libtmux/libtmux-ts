@@ -3,16 +3,19 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { prepareRunRoot, reapOwnedRunRoot } from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+import {
+  prepareRunRoot,
+  reapOwnedRunRoot,
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
 import {
   materializePythonBaseline,
   pythonBaselineRepository,
   queryPythonOracle,
 } from "../differential/python_client.js";
 import { DIFFERENTIAL_PROTOCOL, queryRawTmux } from "../differential/raw_tmux.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 // The oracle runs the real Python library, which this repository does not
 // carry. Without a checkout to authenticate against there is nothing to

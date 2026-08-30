@@ -5,6 +5,8 @@ export { Session, type SessionPlans } from "./session.js";
 export { Window, type WindowPlans } from "./window.js";
 
 export {
+  decodeWhereDocument,
+  encodeWhereDocument,
   parseLegacyWhere,
   type ClientWhere,
   type PaneWhere,
@@ -19,6 +21,8 @@ export {
 export type {
   AbortLike,
   CaptureOptions,
+  ConnectOptions,
+  ConnectionOptions,
   CmdOptions,
   ConnectedServer,
   ChooseTreeOptions,
@@ -26,14 +30,13 @@ export type {
   EnvironmentValue,
   HookScope,
   IfShellOptions,
+  JoinOptions,
   MenuEntry,
   MenuItem,
-  ManagedServer,
   MoveWindowOptions,
   PlannedOperation,
   NewSessionOptions,
   NewWindowOptions,
-  OptionScope,
   PopupOptions,
   RespawnOptions,
   ResizeOptions,
@@ -41,9 +44,14 @@ export type {
   RunShellOptions,
   SendKeysOptions,
   ServerSnapshot,
+  SnapshotOptions,
   SetEnvironmentOptions,
   SetHookOptions,
+  SetOptionOptions,
+  SplitCellSize,
   SplitOptions,
+  SplitPercentage,
+  SplitSize,
   TmuxClientDetachedEvent,
   TmuxClientSessionChangedEvent,
   TmuxEvent,
@@ -62,16 +70,15 @@ export type {
   TmuxSessionsChangedEvent,
   TmuxUnknownEvent,
   TmuxVersion,
-  TransportMode,
   TmuxWindowLifecycleEvent,
   TmuxWindowPaneChangedEvent,
   TmuxWindowRenamedEvent,
   WatchOptions,
   WindowTarget,
 } from "./types.js";
+export { isSplitSize, isTmuxName, splitSize } from "./types.js";
 
 export {
-  DeprecatedError,
   LibTmuxException,
   MultipleMatchesError,
   MultipleObjectsReturned,
@@ -85,5 +92,24 @@ export {
   VersionTooLow,
   WaitTimeout,
 } from "./exc.js";
-export type { DeliveryStatus } from "./common.js";
-export { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "./constants.js";
+export type {
+  CommandOptions,
+  DeliveryStatus,
+  PaneId,
+  PaneIdInput,
+  SafeInteger,
+  SessionId,
+  SessionIdInput,
+  TmuxId,
+  TmuxIdInput,
+  TmuxIdKind,
+  WindowId,
+  WindowIdInput,
+} from "./common.js";
+export { isSafeInteger, safeInteger } from "./common.js";
+export {
+  OptionScope,
+  PaneDirection,
+  ResizeAdjustmentDirection,
+  WindowDirection,
+} from "./constants.js";

@@ -143,8 +143,9 @@ export async function queryRawTmux(request: DifferentialRequest): Promise<Differ
     socketPath: request.socketPath,
   });
   const result = await new NodeSpawnTransport().execute({
-    args: ["-S", submitted.socketPath, "list-sessions", "-F", "#{session_name}"],
+    commands: [["list-sessions", "-F", "#{session_name}"]],
     executable: "tmux",
+    globalArgs: ["-S", submitted.socketPath],
     timeoutMs: 3_000,
   });
   const stdout = new TextDecoder().decode(result.stdout);

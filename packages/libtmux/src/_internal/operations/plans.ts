@@ -1,14 +1,18 @@
 import { PANE_DIRECTION_FLAG_MAP, WINDOW_DIRECTION_FLAG_MAP } from "../../constants.js";
 import { LibTmuxException } from "../../exc.js";
-import type {
-  NewSessionOptions,
-  NewWindowOptions,
-  PlannedOperation,
-  SplitOptions,
+import {
+  splitSize as authenticateSplitSize,
+  type NewSessionOptions,
+  type NewWindowOptions,
+  type PlannedOperation,
+  type SplitOptions,
 } from "../../types.js";
 import type { Pane } from "../../pane.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
+import { quoteCommand } from "../transport/lexer.js";
+import { uniqueUnknownCommand } from "../transport/refusal.js";
+import { assertName } from "./names.js";
 
 function requireIdentity(lines: readonly string[], command: string): string {
   const identity = lines[0];
@@ -33,9 +37,9 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
     "-P",
     "-F",
     "#{session_id}",
-    ...(options.name === undefined ? [] : ["-s", options.name]),
+    ...(options.name === undefined ? [] : ["-s", assertName("session", options.name)]),
     ...(options.groupWith === undefined ? [] : ["-t", options.groupWith]),
-    ...(options.windowName === undefined ? [] : ["-n", options.windowName]),
+    ...(options.windowName === undefined ? [] : ["-n", assertName("window", options.windowName)]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
       "-e",
@@ -60,7 +64,7 @@ function newWindowArgs(sessionId: string | null, options: NewWindowOptions): rea
     "-F",
     "#{window_id}",
     ...(sessionId == null ? [] : ["-t", sessionId]),
-    ...(options.name === undefined ? [] : ["-n", options.name]),
+    ...(options.name === undefined ? [] : ["-n", assertName("window", options.name)]),
     ...(options.direction === undefined ? [] : [WINDOW_DIRECTION_FLAG_MAP[options.direction]]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
@@ -69,6 +73,10 @@ function newWindowArgs(sessionId: string | null, options: NewWindowOptions): rea
     ]),
     ...(options.shellCommand === undefined ? [] : ["--", options.shellCommand]),
   ];
+}
+
+function renderSplitSize(value: NonNullable<SplitOptions["size"]>): string {
+  return String(authenticateSplitSize(value));
 }
 
 function splitWindowArgs(target: string | null, options: SplitOptions): readonly string[] {
@@ -87,7 +95,7 @@ function splitWindowArgs(target: string | null, options: SplitOptions): readonly
         : []
       : PANE_DIRECTION_FLAG_MAP[options.direction]),
     ...(target == null ? [] : ["-t", target]),
-    ...(options.size === undefined ? [] : ["-l", String(options.size)]),
+    ...(options.size === undefined ? [] : ["-l", renderSplitSize(options.size)]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
       "-e",
@@ -117,7 +125,9 @@ export function planNewWindow(
       const identity = requireIdentity(lines, "new-window");
       return found(
         snapshot.windows
-          .filter((window: Window) => window.id === identity && window.sessionId === sessionId)
+          .filter(
+            (window: Window) => window.id === identity && window.format.session_id === sessionId,
+          )
           .first(),
         "new-window",
         identity,
@@ -145,6 +155,49 @@ export function planKill(
 ): PlannedOperation<void> {
   return {
     argv: [command, ...(target == null ? [] : ["-t", target])],
+    resolve: () => undefined,
+  };
+}
+
+function conditionalTargetMutation(
+  target: string,
+  condition: string,
+  command: readonly string[],
+  refusalReason: string,
+): readonly string[] {
+  return [
+    "if-shell",
+    "-F",
+    "-t",
+    target,
+    condition,
+    quoteCommand(command),
+    quoteCommand([uniqueUnknownCommand(refusalReason)]),
+  ];
+}
+
+/** Destroy a pane only while its window has one placement. */
+export function planKillPaneIfUnshared(target: string): PlannedOperation<void> {
+  return {
+    argv: conditionalTargetMutation(
+      target,
+      "#{==:#{window_linked},0}",
+      ["kill-pane", "-t", target],
+      "shared-window",
+    ),
+    resolve: () => undefined,
+  };
+}
+
+/** Remove one ungrouped placement, destroying the window only when it is last. */
+export function planRemoveWindowPlacement(target: string): PlannedOperation<void> {
+  return {
+    argv: conditionalTargetMutation(
+      target,
+      "#{==:#{session_grouped},0}",
+      ["unlink-window", "-k", "-t", target],
+      "grouped-session",
+    ),
     resolve: () => undefined,
   };
 }

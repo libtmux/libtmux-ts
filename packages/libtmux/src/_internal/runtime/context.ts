@@ -6,34 +6,39 @@ import type {
   TmuxWarningSink,
 } from "../../common.js";
 import { LibTmuxException } from "../../exc.js";
-import { Server } from "../../server.js";
+import type { DaemonIdentity, Server } from "../../server.js";
 import { decodeLogicalRef } from "../graph/refs.js";
 import type { CommandTransport } from "../transport/types.js";
-import { LazyCapabilityBinding } from "./capabilities.js";
+import { timerDuration } from "../timing.js";
+import { LazyCapabilityBinding, type TmuxCapabilities } from "./capabilities.js";
 import type { TmuxConnection } from "./connection.js";
+import { registerRuntimeConstructors, type RuntimeConstructors } from "./constructors.js";
+
+export type { DaemonIdentity } from "../../server.js";
 
 interface RuntimeEpochState {
   daemonEpoch: DaemonEpoch;
+  daemonRevision: number;
   /** The daemon the last acquisition reached, so the next one can tell it apart. */
   daemon: DaemonIdentity | undefined;
 }
 
-/**
- * Which tmux daemon answered, as tmux itself reports it.
- *
- * A socket path names a place, not a process: `kill-server` and a restart give
- * a new daemon the same path, and that daemon numbers its panes from `%0`
- * again. The pid alone is not enough — pids are reused — so the start time goes
- * with it.
- */
-export interface DaemonIdentity {
-  readonly pid: string;
-  readonly startTime: string;
+export interface DaemonObservation {
+  readonly daemonEpoch: DaemonEpoch;
+  readonly revision: number;
 }
 
 /** Whether two readings describe the same running daemon. */
 function sameDaemon(left: DaemonIdentity, right: DaemonIdentity): boolean {
   return left.pid === right.pid && left.startTime === right.startTime;
+}
+
+function nextDaemonRevision(state: RuntimeEpochState): number {
+  const revision = state.daemonRevision + 1;
+  if (!Number.isSafeInteger(revision)) {
+    throw new LibTmuxException("daemon observation cannot exceed the safe integer range");
+  }
+  return revision;
 }
 
 const runtimeEpochStates = new WeakMap<RuntimeContext, RuntimeEpochState>();
@@ -99,12 +104,18 @@ function assertLogicalRefRuntime(runtime: RuntimeContext, ref: LogicalRef): void
 }
 
 export function createRuntimeContext(options: RuntimeContextOptions): RuntimeContext {
-  const state: RuntimeEpochState = { daemon: undefined, daemonEpoch: options.daemonEpoch };
+  const timeoutMs =
+    options.timeoutMs === undefined ? undefined : timerDuration("timeoutMs", options.timeoutMs);
+  const state: RuntimeEpochState = {
+    daemon: undefined,
+    daemonEpoch: options.daemonEpoch,
+    daemonRevision: 0,
+  };
   const capabilities = new LazyCapabilityBinding({
     connection: options.connection,
     connectionAlias: options.connectionAlias,
     getDaemonEpoch: (): DaemonEpoch => state.daemonEpoch,
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     transport: options.transport,
   });
   const runtime: RuntimeContext = Object.freeze({
@@ -116,7 +127,7 @@ export function createRuntimeContext(options: RuntimeContextOptions): RuntimeCon
     },
     engine: options.engine,
     logger: options.logger ?? noopLogger,
-    timeoutMs: options.timeoutMs,
+    timeoutMs,
     transport: options.transport,
     warnings: options.warnings ?? noopWarnings,
   });
@@ -124,12 +135,17 @@ export function createRuntimeContext(options: RuntimeContextOptions): RuntimeCon
   return runtime;
 }
 
-export function registerServerRuntime(server: Server, runtime: RuntimeContext): void {
+export function registerServerRuntime(
+  server: Server,
+  runtime: RuntimeContext,
+  constructors: RuntimeConstructors,
+): void {
   epochStateFor(runtime);
   if (serverRuntimes.has(server)) {
     throw new LibTmuxException("Server already has a runtime context");
   }
   serverRuntimes.set(server, runtime);
+  registerRuntimeConstructors(server, constructors);
 }
 
 export function runtimeForServerValue(value: unknown): RuntimeContext | undefined {
@@ -139,10 +155,13 @@ export function runtimeForServerValue(value: unknown): RuntimeContext | undefine
   return serverRuntimes.get(value);
 }
 
-export function createServerWithRuntime(runtime: RuntimeContext): Server {
+export function createServerWithRuntime(
+  runtime: RuntimeContext,
+  constructors: RuntimeConstructors,
+): Server {
   epochStateFor(runtime);
-  const server = Object.create(Server.prototype) as Server;
-  registerServerRuntime(server, runtime);
+  const server = Object.create(constructors.server) as Server;
+  registerServerRuntime(server, runtime, constructors);
   return server;
 }
 
@@ -156,24 +175,48 @@ export function invalidateRuntimeEpoch(runtime: RuntimeContext): DaemonEpoch {
   return state.daemonEpoch;
 }
 
-/**
- * Record which daemon just answered, and say whether it is a different one.
- *
- * Returns true the first time — there is nothing to have changed from. When it
- * *has* changed, the epoch is invalidated, which is what makes every handle
- * from the previous daemon refuse to resolve instead of quietly addressing
- * whatever now holds its id.
- */
+/** Commit an answer unless another daemon transition overtook its observation. */
 export function observeDaemonIdentity(
   runtime: RuntimeContext,
-  daemon: DaemonIdentity,
-): { readonly restarted: boolean } {
+  observation: DaemonObservation,
+  capabilities: Pick<TmuxCapabilities, "daemon" | "daemonEpoch">,
+  captured: DaemonIdentity,
+): boolean {
   const state = epochStateFor(runtime);
   const previous = state.daemon;
-  state.daemon = daemon;
-  if (previous === undefined || sameDaemon(previous, daemon)) return { restarted: false };
-  invalidateRuntimeEpoch(runtime);
-  return { restarted: true };
+  const observationIsCurrent =
+    state.daemonRevision === observation.revision && state.daemonEpoch === observation.daemonEpoch;
+  if (!sameDaemon(capabilities.daemon, captured)) {
+    if (observationIsCurrent && capabilities.daemonEpoch === observation.daemonEpoch) {
+      const daemonRevision = nextDaemonRevision(state);
+      invalidateRuntimeEpoch(runtime);
+      state.daemon = undefined;
+      state.daemonRevision = daemonRevision;
+    }
+    return false;
+  }
+  if (
+    capabilities.daemonEpoch !== observation.daemonEpoch ||
+    state.daemonEpoch !== observation.daemonEpoch
+  ) {
+    return false;
+  }
+  if (state.daemonRevision !== observation.revision) {
+    return previous !== undefined && sameDaemon(previous, captured);
+  }
+  if (previous !== undefined && sameDaemon(previous, captured)) {
+    return true;
+  }
+  const daemonRevision = nextDaemonRevision(state);
+  if (previous !== undefined) invalidateRuntimeEpoch(runtime);
+  state.daemon = captured;
+  state.daemonRevision = daemonRevision;
+  return previous === undefined;
+}
+
+export function beginDaemonObservation(runtime: RuntimeContext): DaemonObservation {
+  const state = epochStateFor(runtime);
+  return Object.freeze({ daemonEpoch: state.daemonEpoch, revision: state.daemonRevision });
 }
 
 /** The daemon the last acquisition reached, if there has been one. */

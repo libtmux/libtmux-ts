@@ -11,8 +11,8 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 import type { SetHookOptions } from "./types.js";
 import type { SetOptionOptions } from "./types.js";
 import type { NewWindowOptions, WindowTarget } from "./types.js";
-import { SESSION_ALIASES, type SessionAliasMap } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
+import { SESSION_ALIASES } from "./_generated/field_aliases.js";
+import type { AliasedFields, RowWithIdentities, SessionAliasMap } from "./field_types.js";
 import { readTmuxEnvironment } from "./_internal/operations/env.js";
 import { detachClient } from "./_internal/operations/shell.js";
 import { panesOfSession, windowsOfSession } from "./_internal/operations/relations.js";
@@ -284,10 +284,8 @@ export class Session {
    * The same mutations, described instead of run.
    *
    * `session.plan.newWindow(…)` takes what `session.newWindow(…)` takes and
-   * resolves to what it resolves to; it just hands the work to
-   * {@link Server.batch} rather than doing it now. A batch spends one
-   * invocation and one snapshot on the whole group, where calling them one at a
-   * time spends both per call.
+   * resolves to what it resolves to; it hands the work to {@link Server.batch}
+   * so the planned mutations share one final snapshot.
    *
    * ```ts
    * const [editor, logs] = await server.batch([
@@ -335,6 +333,8 @@ export class Session {
    * ```ts
    * await session.rename("renamed");
    * ```
+   *
+   * Refuses a name the supported servers would not store identically.
    */
   rename(name: string): Promise<void> {
     return renameSession(runtimeForHandle(this), this.id, name);

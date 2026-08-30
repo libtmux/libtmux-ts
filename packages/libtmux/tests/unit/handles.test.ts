@@ -8,6 +8,7 @@ import type {
   TmuxLogger,
   TmuxWarningSink,
 } from "../../src/common.js";
+import { safeInteger } from "../../src/common.js";
 import { LibTmuxException, QueryValidationError } from "../../src/exc.js";
 import {
   CLIENT_ALIASES,
@@ -16,7 +17,7 @@ import {
   WINDOW_ALIASES,
 } from "../../src/_generated/field_aliases.js";
 import { Client } from "../../src/client.js";
-import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
+import type { RawCompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -26,12 +27,12 @@ import {
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionDescriptor,
-  type ProjectionRecord,
-  type SelectionProjection,
-} from "../../src/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
+import type {
+  ProjectionRecord,
+  SelectionProjection,
+} from "../../src/_internal/graph/projection_identity.js";
 import {
   materializeClientRecord,
   materializeProjectionMembers,
@@ -48,6 +49,7 @@ import {
 } from "../../src/_internal/runtime/context.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
 import {
   entityRefForHandle,
   logicalRefForHandle,
@@ -59,6 +61,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
@@ -66,9 +69,9 @@ import { Session } from "../../src/session.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Window } from "../../src/window.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "../support/graph_rows.js";
+import { singleCommandTransport } from "../support/transport_double.js";
 
 const encoder = new TextEncoder();
-
 interface RecordingTransport extends CommandTransport {
   readonly requests: CommandRequest[];
 }
@@ -89,30 +92,24 @@ function epoch(value: number): DaemonEpoch {
 
 function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult {
   return {
-    cmd: Object.freeze([request.executable, ...request.args]),
+    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\n`),
+    stdout: encoder.encode(`${version}\t101\t202\n`),
   };
 }
 
 function recordingTransport(onExecute?: () => void): RecordingTransport {
   const requests: CommandRequest[] = [];
-  return {
-    requests,
-    async execute(request) {
+  return Object.assign(
+    singleCommandTransport(async (request) => {
       requests.push(request);
       onExecute?.();
       return resultFor(request);
-    },
-    // One command at a time here. Running a group as several singles would be
-    // the very non-atomicity the group exists to remove, so a fixture that
-    // needs one asks for it rather than getting a quiet stand-in.
-    executeGroup(): Promise<readonly RawCommandResult[]> {
-      return Promise.reject(new Error("this fixture runs one command at a time"));
-    },
-  };
+    }),
+    { requests },
+  );
 }
 
 function runtimeFixture(
@@ -152,7 +149,7 @@ function runtimeFixture(
   });
   return {
     runtime,
-    server: createServerWithRuntime(runtime),
+    server: createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
     transport,
   };
 }
@@ -191,11 +188,16 @@ function descriptors(): Readonly<Record<WhereModel, ProjectionDescriptor>> {
 }
 
 function projectionFor(graph: NormalizedGraph, sourceId: string): SelectionProjection {
-  return SelectionProjectionBuilder.create({
+  const source = createGraphSourceId(sourceId);
+  const projection = SelectionProjectionBuilder.createCorpus({
     descriptors: descriptors(),
     graph,
-    source: createGraphSourceId(sourceId),
-  }).seal();
+    sources: [source],
+  })
+    .sealViews()
+    .get(source);
+  if (projection === undefined) throw new Error(`missing projection view ${sourceId}`);
+  return projection;
 }
 
 function projectionRecord(projection: SelectionProjection, index = 0): ProjectionRecord {
@@ -235,7 +237,7 @@ function descriptorFor(value: object, property: PropertyKey): PropertyDescriptor
 
 function assertScalarSnapshot(
   handle: Session | Window | Pane | Client,
-  row: CompleteFormatRow,
+  row: RawCompleteFormatRow,
 ): void {
   const snapshot = snapshotForHandle(handle);
   expect(Object.isFrozen(handle)).toBe(true);
@@ -345,6 +347,7 @@ function validChangedValue(token: (typeof FORMAT_FIELD_TOKENS)[number]): string 
       return "client-other";
     case "pane_id":
       return "%2";
+    case "next_session_id":
     case "session_id":
       return "$2";
     case "window_id":
@@ -537,6 +540,7 @@ describe("server and runtime foundations", () => {
     const capabilities = await fixture.runtime.capabilities.bind();
     const expected = deriveTmuxCapabilities({
       connectionAlias: fixture.runtime.connectionAlias,
+      daemon: { pid: "101", startTime: "202" },
       daemonEpoch: fixture.runtime.daemonEpoch,
       rawVersion: "3.7b",
     });
@@ -587,12 +591,12 @@ describe("logical reference binding", () => {
     expect(Reflect.ownKeys(bound)).toEqual(["connection", "epoch", "kind", "id"]);
     expect(Object.isFrozen(bound)).toBe(true);
     expect(fixture.transport.requests).toHaveLength(1);
-    expect(fixture.transport.requests[0]?.args).toEqual([
+    expect(flattenInvocation(fixture.transport.requests[0]!)).toEqual([
       "-N",
       "-Lhandles",
       "display-message",
       "-p",
-      "#{version}",
+      "#{version}\t#{pid}\t#{start_time}",
     ]);
   });
 
@@ -793,7 +797,7 @@ describe("authenticated handle materialization", () => {
     assertScalarSnapshot(client, rows.client);
     expect(rows.client.config_files).toBe("");
     expect(client.configFiles).toBe("");
-    expect(client.paneZ).toBeNull();
+    expect(client.format.pane_z).toBeNull();
   });
 
   test("defines child snapshot accessors on each concrete prototype", () => {
@@ -924,7 +928,7 @@ describe("authenticated handle materialization", () => {
       originalGraph,
       reconstructedOriginal,
     );
-    expect(handle.width).toBe(80);
+    expect(handle.width).toBe(safeInteger(80));
     expect(handle.format.client_width).toBe("80");
 
     const replacementRow = completeFormatRow({
@@ -1164,6 +1168,57 @@ describe("authenticated handle materialization", () => {
     expect(secondWinlink.windowIndex).toBe("4");
   });
 
+  test("addresses placement mutations by captured window index", async () => {
+    const fixture = runtimeFixture();
+    const graph = await graphFor(fixture.runtime, [
+      source("windows", "list-windows", [
+        completeFormatRow({ session_id: "$1", window_id: "@9", window_index: "4" }),
+        completeFormatRow({ session_id: "$1", window_id: "@8", window_index: "6" }),
+      ]),
+    ]);
+    const projection = projectionFor(graph, "windows");
+    const windows = (await materializeProjectionMembers(fixture.server, projection, graph)).filter(
+      (candidate): candidate is Window => candidate instanceof Window,
+    );
+    const target = windows.find((candidate) => candidate.id === "@9");
+    const other = windows.find((candidate) => candidate.id === "@8");
+    if (target === undefined || other === undefined) throw new Error("expected two windows");
+    fixture.transport.requests.length = 0;
+
+    await target.select();
+    await target.move({ index: 7 });
+    await target.unlink();
+    await target.removePlacement();
+    await target.swapWith(other);
+
+    expect(target.plan.removePlacement().argv).toEqual([
+      "if-shell",
+      "-F",
+      "-t",
+      "$1:4",
+      "#{==:#{session_grouped},0}",
+      "'unlink-window' '-k' '-t' '$1:4'",
+      expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
+    ]);
+
+    expect(fixture.transport.requests.map(flattenInvocation)).toEqual([
+      ["-Lhandles", "select-window", "-t", "$1:4"],
+      ["-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
+      ["-Lhandles", "unlink-window", "-t", "$1:4"],
+      [
+        "-Lhandles",
+        "if-shell",
+        "-F",
+        "-t",
+        "$1:4",
+        "#{==:#{session_grouped},0}",
+        "'unlink-window' '-k' '-t' '$1:4'",
+        expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
+      ],
+      ["-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
+    ]);
+  });
+
   test("materializes an authenticated reachable non-root relation record", async () => {
     const fixture = runtimeFixture({ alias: "reachable-relation" });
     const windowRow = completeFormatRow({
@@ -1184,15 +1239,17 @@ describe("authenticated handle materialization", () => {
         relations: [{ cardinality: "many", name: "windows", targetModel: "window" }],
       },
     };
-    const builder = SelectionProjectionBuilder.create({
+    const sourceId = createGraphSourceId("sessions");
+    const builder = SelectionProjectionBuilder.createCorpus({
       descriptors: relationDescriptors,
       graph,
-      source: createGraphSourceId("sessions"),
+      sources: [sourceId],
     });
     builder.materializeMany(graphRecordRef(graph, "sessions"), "windows", [
       graphRecordRef(graph, "windows"),
     ]);
-    const projection = builder.seal();
+    const projection = builder.sealViews().get(sourceId);
+    if (projection === undefined) throw new Error("missing session projection view");
     const relatedRecord = projection.records.find(({ model }) => model === "window");
     if (relatedRecord === undefined) throw new Error("missing reachable window record");
 

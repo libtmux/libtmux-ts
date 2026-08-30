@@ -58,6 +58,28 @@ describe("framing tmux's byte stream into lines", () => {
     expect(framer.pending).toBe(0);
   });
 
+  test("honors a validated caller-specific carry bound", () => {
+    const framer = new LineFramer(4);
+    expect(framer.push(new Uint8Array(4))).toEqual([]);
+    expect(framer.push(new Uint8Array(1))).toBeUndefined();
+    expect(framer.pending).toBe(0);
+
+    for (const invalid of [0, 1.5, Number.NaN]) {
+      expect(() => new LineFramer(invalid)).toThrow("maxCarryBytes must be a positive integer");
+    }
+  });
+
+  test("holds a fragmented long line without quadratic copying", () => {
+    const framer = new LineFramer();
+    const chunk = new Uint8Array(4 * 1024);
+    const started = performance.now();
+    for (let bytes = 0; bytes < 8 * 1024 * 1024; bytes += chunk.length) framer.push(chunk);
+
+    // A broad liveness bound catches repeated whole-carry copies without timing normal work.
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(framer.pending).toBe(8 * 1024 * 1024);
+  });
+
   test("forgets a partial line on reset", () => {
     const framer = new LineFramer();
     expect(feed(framer, "half a li")).toEqual([]);

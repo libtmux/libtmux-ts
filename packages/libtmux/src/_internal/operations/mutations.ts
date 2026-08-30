@@ -10,7 +10,13 @@ import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";
-import { planKill, planNewSession, planNewWindow, planSplitWindow } from "./plans.js";
+import {
+  planKill,
+  planKillPaneIfUnshared,
+  planNewSession,
+  planNewWindow,
+  planSplitWindow,
+} from "./plans.js";
 import { buildServerSnapshot } from "./snapshot.js";
 
 /**
@@ -62,6 +68,14 @@ export async function killTarget(
   target: string | null,
 ): Promise<void> {
   await runCommand(runtime, planKill(command, target).argv);
+}
+
+/** Destroy a pane only while no other placement exposes its window. */
+export async function killPaneIfWindowUnshared(
+  runtime: RuntimeContext,
+  target: string,
+): Promise<void> {
+  await runCommand(runtime, planKillPaneIfUnshared(target).argv);
 }
 
 export async function killServer(runtime: RuntimeContext): Promise<void> {

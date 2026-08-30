@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolvePidfdInterpreter } from "../../src/_internal/test/run_root.js";
+import { resolvePidfdInterpreter } from "../../src/_internal/test/testkit.js";
 
 function proberFor(capable: ReadonlySet<string>, seen: string[]) {
   return async (executable: string): Promise<boolean> => {

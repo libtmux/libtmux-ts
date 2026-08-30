@@ -1,28 +1,141 @@
 /**
- * Building a whole workspace in one invocation.
+ * Building a whole workspace in one tool call.
  *
  * Calling `new_window` five times spends five tmux invocations and five
- * snapshots, because each has to find what it just made. A batch spends one of
- * each for the group — and, for the agent, one tool call instead of five plus a
- * `list_panes` to learn the ids.
+ * snapshots, because each has to find what it just made. A batch shares one
+ * final snapshot — and, for the agent, one tool call replaces five plus a
+ * `list_panes` call to learn the ids.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { ToolContext } from "../context.js";
+import { TmuxCommandError, type PlannedOperation } from "libtmux";
+
+import { runTopologyMutation, type ToolContext } from "../context.js";
+import {
+  effectiveResultLines,
+  MAX_INLINE_REQUEST_BYTES,
+  MAX_REQUEST_BYTES,
+  MAX_REQUEST_ITEMS,
+} from "../policy.js";
 import { MUTATING_OPEN_WORLD, offers } from "../register.js";
 import { fail, ok } from "../results.js";
-import { paneLine, paneView, paneViewSchema } from "../views.js";
+import { fitsInlineRequest, inlineRequestText, sessionIdSchema } from "../schemas.js";
+import {
+  boundedStrings,
+  limitViews,
+  paneLine,
+  paneView,
+  paneViewSchema,
+  renderViews,
+} from "../views.js";
+
+const FAILURE_METADATA_BYTES = 8 * 1_024;
 
 const windowSpec = z.object({
-  name: z.string().describe("Window name."),
-  shellCommand: z
-    .string()
+  name: inlineRequestText("name").describe("Window name."),
+  shellCommand: inlineRequestText("shellCommand")
     .optional()
     .describe("Run this instead of a shell. The window closes when it exits."),
-  startDirectory: z.string().optional(),
+  startDirectory: inlineRequestText("startDirectory").optional(),
 });
+
+const workspaceInput = z
+  .object({
+    session: inlineRequestText("session").describe(
+      "Name for the session. It must not already exist.",
+    ),
+    startDirectory: inlineRequestText("startDirectory")
+      .optional()
+      .describe("Default directory for every window."),
+    windows: z
+      .array(windowSpec)
+      .min(1)
+      .max(
+        MAX_REQUEST_ITEMS,
+        `build_workspace accepts at most ${String(MAX_REQUEST_ITEMS)} windows.`,
+      )
+      .describe("The windows to create, in order."),
+  })
+  .refine(
+    (workspace) =>
+      workspace.windows.every((window, index) =>
+        fitsInlineRequest([
+          index === 0 ? workspace.session : undefined,
+          window.name,
+          window.shellCommand,
+          window.startDirectory ?? workspace.startDirectory,
+        ]),
+      ),
+    {
+      message: `workspace operation text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+    },
+  )
+  .refine(
+    (workspace) => {
+      const values = [
+        workspace.session,
+        workspace.startDirectory,
+        ...workspace.windows.flatMap((window) => [
+          window.name,
+          window.shellCommand,
+          window.startDirectory,
+        ]),
+      ];
+      return (
+        values.reduce((bytes, value) => bytes + Buffer.byteLength(value ?? "", "utf8"), 0) <=
+        MAX_REQUEST_BYTES
+      );
+    },
+    {
+      message: `workspace text must not exceed ${String(MAX_REQUEST_BYTES)} UTF-8 bytes in total.`,
+    },
+  );
+
+function directoryOption(
+  directory: string | undefined,
+  fallback: string | undefined,
+): { startDirectory?: string } {
+  const effective = directory ?? fallback;
+  return effective === undefined ? {} : { startDirectory: effective };
+}
+
+interface WorkspaceFailure {
+  readonly metadataComplete: boolean;
+  readonly omittedMetadataBytes: number;
+  readonly reason: string;
+  readonly windowIndex: number | null;
+  readonly windowName: string | null;
+}
+
+function failedWindow(
+  error: unknown,
+  plans: readonly PlannedOperation<unknown>[],
+  windows: readonly z.infer<typeof windowSpec>[],
+): WorkspaceFailure {
+  const matchingPlans =
+    error instanceof TmuxCommandError
+      ? plans.flatMap(({ argv }, index) =>
+          argv.length === error.args.length &&
+          argv.every((value, argumentIndex) => value === error.args[argumentIndex])
+            ? [index]
+            : [],
+        )
+      : [];
+  const plannedIndex = matchingPlans.length === 1 ? matchingPlans[0]! : -1;
+  const windowIndex = plannedIndex === -1 ? null : plannedIndex + 1;
+  const reason = error instanceof Error ? error.message : String(error);
+  const windowName = windowIndex === null ? null : (windows[windowIndex]?.name ?? null);
+  const metadata = boundedStrings([reason, windowName ?? ""], FAILURE_METADATA_BYTES);
+  return {
+    metadataComplete: metadata.omittedBytes === 0,
+    omittedMetadataBytes: metadata.omittedBytes,
+    reason: metadata.values[0] ?? "",
+    windowIndex,
+    windowName: windowName === null ? null : (metadata.values[1] ?? ""),
+  };
+}
 
 export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "mutating")) return;
@@ -34,18 +147,28 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
       description:
         "Create a session and all of its windows at once, and get back every pane " +
         "id. Use this instead of new_session followed by a new_window per window: " +
-        "it is one tmux invocation rather than one per window, and it saves the " +
-        "list_panes you would otherwise need to learn what it made. Not atomic — " +
+        "it shares one final snapshot, and it saves the list_panes you would " +
+        "otherwise need to learn what it made. Not atomic — " +
         "tmux stops at the first failure and leaves what came before it, so the " +
         "result lists what actually exists.",
-      inputSchema: {
-        session: z.string().describe("Name for the session. It must not already exist."),
-        startDirectory: z.string().optional().describe("Default directory for every window."),
-        windows: z.array(windowSpec).min(1).describe("The windows to create, in order."),
-      },
+      inputSchema: workspaceInput,
       outputSchema: {
-        panes: z.array(paneViewSchema).describe("One per window, in the order asked for."),
-        sessionId: z.string(),
+        complete: z.boolean().describe("Whether every requested window was created."),
+        failure: z
+          .object({
+            metadataComplete: z.boolean(),
+            omittedMetadataBytes: z.number().int().nonnegative(),
+            reason: z.string(),
+            windowIndex: z.number().int().nonnegative().nullable(),
+            windowName: z.string().nullable(),
+          })
+          .nullable(),
+        omittedPanes: z.number().int().nonnegative(),
+        panes: z
+          .array(paneViewSchema)
+          .describe("One per surviving window, in the order asked for."),
+        resultComplete: z.boolean().describe("Whether every surviving pane fits in this result."),
+        sessionId: sessionIdSchema,
       },
       title: "Build a workspace",
     },
@@ -63,28 +186,29 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
       const [first, ...rest] = windows;
       if (first === undefined) return fail({ reason: "windows must not be empty." });
 
-      const created = await context.tmux.newSession({
-        name: session,
-        windowName: first.name,
-        ...(first.shellCommand === undefined ? {} : { shellCommand: first.shellCommand }),
-        ...((first.startDirectory ?? startDirectory === undefined)
-          ? {}
-          : { startDirectory: first.startDirectory ?? startDirectory }),
-      });
+      const { created, failure } = await runTopologyMutation(context, async () => {
+        const made = await context.tmux.newSession({
+          name: session,
+          windowName: first.name,
+          ...(first.shellCommand === undefined ? {} : { shellCommand: first.shellCommand }),
+          ...directoryOption(first.startDirectory, startDirectory),
+        });
 
-      if (rest.length > 0) {
-        await context.tmux.batch(
-          rest.map((window) =>
-            created.plan.newWindow({
-              name: window.name,
-              ...(window.shellCommand === undefined ? {} : { shellCommand: window.shellCommand }),
-              ...((window.startDirectory ?? startDirectory === undefined)
-                ? {}
-                : { startDirectory: window.startDirectory ?? startDirectory }),
-            }),
-          ),
+        const plans = rest.map((window) =>
+          made.plan.newWindow({
+            name: window.name,
+            ...(window.shellCommand === undefined ? {} : { shellCommand: window.shellCommand }),
+            ...directoryOption(window.startDirectory, startDirectory),
+          }),
         );
-      }
+        let failure: WorkspaceFailure | null = null;
+        try {
+          if (plans.length > 0) await context.tmux.batch(plans);
+        } catch (error) {
+          failure = failedWindow(error, plans, windows);
+        }
+        return { created: made, failure };
+      });
 
       const after = await context.snapshot();
       const identity = await context.identity(after);
@@ -96,18 +220,33 @@ export function registerWorkspace(mcp: McpServer, context: ToolContext): void {
       // they were asked for.
       const inOrder = after.windows
         .toArray()
-        .filter((entry) => entry.sessionId === created.id)
+        .filter((entry) => entry.format.session_id === created.id)
         .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))
         .slice(0, windows.length);
       const panes = inOrder
-        .map((target) => after.panes.toArray().find((pane) => pane.windowId === target.id))
+        .map((target) => after.panes.toArray().find((pane) => pane.format.window_id === target.id))
         .filter((pane) => pane !== undefined)
         .map((pane) => paneView(pane, identity));
+      const bounded = limitViews(panes, effectiveResultLines(context.policy, undefined), paneLine);
 
-      context.topologyChanged();
       return ok(
-        { panes, sessionId: created.id },
-        `Built ${session} (${created.id}) with ${String(panes.length)} windows:\n${panes.map(paneLine).join("\n")}`,
+        {
+          complete: failure === null,
+          failure,
+          omittedPanes: bounded.omittedEntries,
+          panes: bounded.views,
+          resultComplete: bounded.complete,
+          sessionId: created.id,
+        },
+        [
+          `${failure === null ? "Built" : "Partially built"} ${session} (${created.id}) with ${String(panes.length)} windows:`,
+          renderViews(bounded, "panes", "inspect the session with list_panes"),
+          failure === null
+            ? ""
+            : `[stopped at window ${failure.windowIndex === null ? "unknown" : String(failure.windowIndex)}${failure.windowName === null ? "" : ` (${failure.windowName})`}: ${failure.reason}]`,
+        ]
+          .filter((part) => part !== "")
+          .join("\n"),
       );
     },
   );

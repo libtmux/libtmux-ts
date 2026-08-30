@@ -6,26 +6,35 @@ import type { Readable } from "node:stream";
 import type { DeliveryStatus } from "../../common.js";
 import type { CommandRequest, RawCommandResult } from "./types.js";
 import {
-  asSingleInvocation,
+  flattenInvocation,
   MAX_PACKED_ARGV_BYTES,
-  packedArgvBytes,
-  subcommandOf,
-} from "./group.js";
-import { snapshotCommandRequest, TmuxTransportError } from "./types.js";
-import { guardRequest, refusedByGuard } from "./daemon_guard.js";
+  MAX_PACKED_ARGV_COUNT,
+  packedCommandBytes,
+  packedCommandCount,
+} from "./invocation.js";
+import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
+import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestarted } from "../../exc.js";
+import { timerDelay } from "../timing.js";
 
 export interface NodeSpawnTransportOptions {
+  readonly maxOutputBytes?: number;
   readonly postKillGraceMs?: number;
   readonly terminationGraceMs?: number;
 }
+
+const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
 interface ClosedProcess {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
 }
 
-function collect(stream: Readable, chunks: Buffer[]): Promise<Uint8Array> {
+function collect(
+  stream: Readable,
+  chunks: Buffer[],
+  retain: (chunk: Buffer) => boolean,
+): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const cleanup = (): void => {
@@ -42,7 +51,8 @@ function collect(stream: Readable, chunks: Buffer[]): Promise<Uint8Array> {
     };
     const onClose = (): void => finish();
     const onData = (chunk: Buffer | Uint8Array): void => {
-      chunks.push(Buffer.from(chunk));
+      const copy = Buffer.from(chunk);
+      if (retain(copy)) chunks.push(copy);
     };
     const onEnd = (): void => finish();
     const onError = (error: Error): void => {
@@ -67,16 +77,22 @@ function isAborted(signal: AbortLike | undefined): boolean {
 }
 
 export class NodeSpawnTransport {
+  readonly #maxOutputBytes: number;
   readonly #postKillGraceMs: number;
   readonly #terminationGraceMs: number;
 
   constructor(options: NodeSpawnTransportOptions = {}) {
-    this.#postKillGraceMs = options.postKillGraceMs ?? 250;
-    this.#terminationGraceMs = options.terminationGraceMs ?? 100;
+    this.#maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+    if (!Number.isSafeInteger(this.#maxOutputBytes) || this.#maxOutputBytes < 1) {
+      throw new TypeError("maxOutputBytes must be a positive safe integer");
+    }
+    this.#postKillGraceMs = timerDelay("postKillGraceMs", options.postKillGraceMs ?? 250);
+    this.#terminationGraceMs = timerDelay("terminationGraceMs", options.terminationGraceMs ?? 100);
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
-    const submitted = snapshotCommandRequest(guardRequest(request));
+    const guarded = guardRequest(snapshotInvocationRequest(request));
+    const submitted = guarded.request;
     if (isAborted(submitted.signal)) {
       throw new TmuxTransportError("command cancelled before spawn", {
         delivery: "not_started",
@@ -84,10 +100,25 @@ export class NodeSpawnTransport {
       });
     }
     const stdin = submitted.stdin;
+    const args = flattenInvocation(submitted);
+    const count = packedCommandCount(submitted);
+    if (count > MAX_PACKED_ARGV_COUNT) {
+      throw new TmuxTransportError(
+        `a tmux command of ${String(count)} arguments exceeds the ${String(MAX_PACKED_ARGV_COUNT)} argument limit`,
+        { delivery: "not_started", kind: "protocol" },
+      );
+    }
+    const packed = packedCommandBytes(submitted);
+    if (packed > MAX_PACKED_ARGV_BYTES) {
+      throw new TmuxTransportError(
+        `a tmux command of ${String(packed)} packed bytes exceeds the ${String(MAX_PACKED_ARGV_BYTES)} byte limit`,
+        { delivery: "not_started", kind: "protocol" },
+      );
+    }
 
     let child;
     try {
-      child = spawn(submitted.executable, [...submitted.args], {
+      child = spawn(submitted.executable, [...args], {
         env: submitted.environment,
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
@@ -105,7 +136,7 @@ export class NodeSpawnTransport {
 
     let closed = false;
     let drainageDiscarded = false;
-    let interruption: "cancelled" | "timeout" | undefined;
+    let interruption: "cancelled" | "output" | "timeout" | undefined;
     let observedExit: ClosedProcess | undefined;
     let delivery: DeliveryStatus = "not_started";
     let escalationTimer: NodeJS.Timeout | undefined;
@@ -167,9 +198,13 @@ export class NodeSpawnTransport {
       escalationTimer.unref();
     };
 
-    const interrupt = (kind: "cancelled" | "timeout"): void => {
+    const interrupt = (kind: "cancelled" | "output" | "timeout"): void => {
       if (interruption !== undefined) return;
       if (observedExit !== undefined) {
+        if (kind === "output") {
+          interruption = kind;
+          delivery = "indeterminate";
+        }
         discardDrainage();
         armHardSettlement();
         return;
@@ -206,8 +241,18 @@ export class NodeSpawnTransport {
       }
     });
 
-    const stdoutPromise = collect(child.stdout, stdoutChunks);
-    const stderrPromise = collect(child.stderr, stderrChunks);
+    let outputBytes = 0;
+    const retainOutput = (chunk: Buffer): boolean => {
+      if (interruption === "output") return false;
+      if (outputBytes + chunk.byteLength > this.#maxOutputBytes) {
+        interrupt("output");
+        return false;
+      }
+      outputBytes += chunk.byteLength;
+      return true;
+    };
+    const stdoutPromise = collect(child.stdout, stdoutChunks, retainOutput);
+    const stderrPromise = collect(child.stderr, stderrChunks, retainOutput);
     function onClose(code: number | null, signal: NodeJS.Signals | null): void {
       closed = true;
       clearLifecycleTimers();
@@ -242,10 +287,14 @@ export class NodeSpawnTransport {
 
     if (interruption !== undefined) {
       throw new TmuxTransportError(
-        interruption === "timeout" ? "command timed out" : "command cancelled",
+        interruption === "timeout"
+          ? "command timed out"
+          : interruption === "output"
+            ? `command output exceeded ${String(this.#maxOutputBytes)} bytes`
+            : "command cancelled",
         {
           delivery,
-          kind: interruption,
+          kind: interruption === "output" ? "protocol" : interruption,
           ...(observedExit === undefined ? {} : { signal: observedExit.signal }),
           ...(stderrState.status === "fulfilled" ? { stderr: stderrState.value } : {}),
           ...(stdoutState.status === "fulfilled" ? { stdout: stdoutState.value } : {}),
@@ -300,75 +349,19 @@ export class NodeSpawnTransport {
     }
 
     const stderr = stderrState.status === "fulfilled" ? stderrState.value : new Uint8Array();
-    if (request.daemonGuard !== undefined && refusedByGuard(terminal.code, stderr)) {
+    if (guarded.refusedBy(terminal.code, stderr)) {
       throw new TmuxServerRestarted(
         "tmux refused the command: the daemon on this socket is not the one these ids came from",
-        { subcommand: subcommandOf(request.args)[0] ?? "tmux" },
+        { subcommand: request.commands[0][0] },
       );
     }
 
     return {
-      cmd: Object.freeze([submitted.executable, ...submitted.args]),
+      cmd: Object.freeze([submitted.executable, ...args]),
       returncode: terminal.code,
       signal: terminal.signal,
       stderr,
       stdout: stdoutState.status === "fulfilled" ? stdoutState.value : new Uint8Array(),
     };
-  }
-
-  /**
-   * One process, one command list, one stdout — split back apart by marker.
-   *
-   * A spawned tmux writes every command's output to the same pipe, so the
-   * sections need a boundary tmux itself prints. `display-message -p` between
-   * the commands is that boundary: it costs one queue item, cannot fail on a
-   * server that is answering, and its marker is random per group so no listing
-   * can forge one.
-   */
-  async executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    const [first, ...rest] = requests;
-    if (first === undefined) return Object.freeze([]);
-    if (rest.length === 0) return Object.freeze([await this.execute(first)]);
-    if (requests.some((request) => request.stdin !== undefined)) {
-      throw new TmuxTransportError("a command list cannot carry stdin", {
-        delivery: "not_started",
-        kind: "protocol",
-      });
-    }
-
-    const invocation = asSingleInvocation(requests);
-    const args = invocation.args;
-    const packed = packedArgvBytes([first.executable, ...args]);
-    if (packed > MAX_PACKED_ARGV_BYTES) {
-      // tmux would answer "command too long" from the client, with nothing to
-      // say which command or by how much.
-      throw new TmuxTransportError(
-        `a command list of ${String(packed)} bytes exceeds the ${String(MAX_PACKED_ARGV_BYTES)} tmux packs an argv into`,
-        { delivery: "not_started", kind: "protocol" },
-      );
-    }
-
-    const result = await this.execute(
-      snapshotCommandRequest({
-        args: [...args],
-        ...(first.environment === undefined ? {} : { environment: first.environment }),
-        executable: first.executable,
-        ...(first.signal === undefined ? {} : { signal: first.signal }),
-        ...(first.timeoutMs === undefined ? {} : { timeoutMs: first.timeoutMs }),
-      }),
-    );
-
-    const sections = invocation.sections(result.stdout);
-    // A short list means tmux stopped at a failure: everything before it ran
-    // and printed, and the section that stopped carries the exit status.
-    return Object.freeze(
-      sections.map((stdout, index) => ({
-        cmd: Object.freeze([requests[index]?.executable ?? first.executable, ...args]),
-        returncode: index === sections.length - 1 ? result.returncode : 0,
-        signal: index === sections.length - 1 ? result.signal : null,
-        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
-        stdout,
-      })),
-    );
   }
 }

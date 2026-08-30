@@ -1,6 +1,6 @@
-import { CLIENT_ALIASES, type ClientAliasMap } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
-import { paneById, sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
+import { CLIENT_ALIASES } from "./_generated/field_aliases.js";
+import type { AliasedFields, ClientAliasMap, RowWithIdentities } from "./field_types.js";
+import { paneOfPlacement, sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { detachClient, switchClient } from "./_internal/operations/shell.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
@@ -38,7 +38,7 @@ export class Client {
    * ```
    */
   get session(): Session | undefined {
-    return sessionOf(originGraphForHandle(this), this.sessionId);
+    return sessionOf(originGraphForHandle(this), this.format.session_id);
   }
 
   /**
@@ -60,7 +60,7 @@ export class Client {
    * ```
    */
   get pane(): Pane | undefined {
-    return paneById(originGraphForHandle(this), this.paneId);
+    return paneOfPlacement(originGraphForHandle(this), this);
   }
 
   /**

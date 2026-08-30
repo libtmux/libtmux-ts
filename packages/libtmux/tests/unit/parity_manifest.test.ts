@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 
 import { requireBuiltPackage } from "../support/built_package.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 type Status = "planned" | "implemented" | "adapted" | "unsupported";
 type EvidenceApplicability = "required" | `not-applicable: ${string}`;
@@ -871,6 +871,7 @@ describe("Python 0.62.0 parity manifest", () => {
         };
         packageManifest.exports["."] = {
           types: "./dist/unrelated.d.ts",
+          bun: "./src/unrelated.ts",
           import: "./dist/unrelated.js",
           default: "./dist/unrelated.js",
         };

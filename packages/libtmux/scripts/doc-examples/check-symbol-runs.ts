@@ -5,10 +5,17 @@ import { join } from "node:path";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
+  sweepStaleRunRoots,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
-import { readApiSurface } from "../api_surface.js";
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
+import {
+  readApiSurface,
+  readRootApiSurface,
+  requireRootExamples,
+  requireSymbolExamples,
+} from "../api_surface.js";
 import { packageRoot } from "../package_root.js";
 import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { buildWorld, disposeWorld, type World } from "./readme_world.js";
@@ -49,10 +56,6 @@ const EXCUSED = new Map<string, string>([
   // edit above it, and an excuse that stops matching its example either fails
   // the gate for nothing or excuses a different example than it names.
   [
-    "Server.open",
-    "targets tmux's default socket, which this isolated harness deliberately leaves with nothing listening",
-  ],
-  [
     "Server.watch",
     "reads every event until the process is interrupted, like the README recipe it mirrors",
   ],
@@ -83,15 +86,6 @@ const EXCUSED = new Map<string, string>([
   ],
 ]);
 
-/**
- * Code that can invalidate the ids the shared world hands out.
- *
- * Deliberately generous: a false positive costs one liveness snapshot before
- * the next example, which is cheap; a false negative is caught anyway by the
- * failure-triggered rebuild below, just later and noisily. `newSession` and
- * `newWindow` are included even though they only add scenery, because an
- * example that names a fixed id (`"work"`) can collide with the world's own.
- */
 /**
  * Examples that change the world get one of their own.
  *
@@ -156,20 +150,36 @@ function generate(examples: readonly Example[]): string {
 }
 
 const surface = await readApiSurface();
-const members = surface.flatMap((entry) =>
-  entry.members.map((member) => ({ ...member, symbol: `${entry.name}.${member.name}` })),
+const members = requireSymbolExamples(
+  surface.flatMap((entry) =>
+    entry.members.map((member) => ({
+      ...member,
+      owner: entry.name,
+    })),
+  ),
 );
-const examples: SymbolExample[] = members
-  .filter((member) => member.example !== undefined)
-  .map((member) => ({
-    code: member.example ?? "",
-    origin: `${member.file}:${String(member.line)}`,
-    symbol: member.symbol,
-  }));
+const examples: SymbolExample[] = members.map((member) => ({
+  code: member.example,
+  origin: `${member.file}:${String(member.line)}`,
+  symbol: `${member.owner}.${member.name}`,
+}));
 for (const entry of surface) {
   examples.push(...fencedBlocks(entry.prose, (line) => `${entry.file}:${String(line)}`));
 }
+const root = requireRootExamples(await readRootApiSurface());
+examples.push(
+  ...root.map((entry) => ({
+    code: entry.example,
+    origin: `${entry.file}:${String(entry.line)}`,
+    symbol: entry.name,
+  })),
+);
 if (examples.length === 0) throw new Error("no symbol examples were found to run");
+
+// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
+// tmux daemon behind under a name no later run revisits; this is where one
+// still can. Once per suite process, before anything creates a root of its own.
+await sweepStaleRunRoots();
 
 const isolated = await mkdtemp(join(tmpdir(), "ltx-symbol-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;

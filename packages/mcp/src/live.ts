@@ -15,150 +15,52 @@
 import type { ConnectedServer, TmuxEvent } from "libtmux";
 import type { Server } from "libtmux/server";
 
-import { TextFilter } from "./text.js";
+import { requireActive, waitForAbort } from "./abort.js";
+import { PaneTail, type PaneTailEndReason } from "./pane_tail.js";
 
 /** How long an idle connection is kept before it is closed. */
 const LINGER_MS = 30_000;
-
-/** How much of a pane's output one tail retains. */
-const DEFAULT_TAIL_BYTES = 256 * 1024;
-
-/**
- * A pane's output as readable text with an absolute cursor.
- *
- * The cursor counts characters seen since the tail opened, so a reader that
- * says where it got to is told exactly what arrived after that and nothing
- * else. Anchoring on a live stream rather than on a grid line is what makes
- * this survive `history-limit` trimming, which invalidates a grid anchor
- * silently.
- *
- * What is stored has already been through {@link TextFilter}: the raw form is
- * escape sequences a reader cannot use, and filtering on the way in is what
- * keeps the filter's state in step with the stream.
- */
-export class PaneTail {
-  #buffer = "";
-  /** When something last read this tail, for deciding whether it is still wanted. */
-  #touched = Date.now();
-  /** Absolute offset of the first character still held. */
-  #base = 0;
-  #end = 0;
-  readonly #filter = new TextFilter();
-  readonly #limit: number;
-  #waiters: (() => void)[] = [];
-  readonly paneId: string;
-
-  constructor(paneId: string, limit: number = DEFAULT_TAIL_BYTES) {
-    this.paneId = paneId;
-    this.#limit = limit;
-  }
-
-  /** The offset a reader should quote to be told only what comes next. */
-  get cursor(): number {
-    return this.#end;
-  }
-
-  append(raw: string): void {
-    const data = this.#filter.push(raw);
-    if (data === "") return;
-    this.#buffer += data;
-    this.#end += data.length;
-    if (this.#buffer.length > this.#limit) {
-      const excess = this.#buffer.length - this.#limit;
-      this.#buffer = this.#buffer.slice(excess);
-      this.#base += excess;
-    }
-    const waiting = this.#waiters;
-    this.#waiters = [];
-    for (const wake of waiting) wake();
-  }
-
-  /**
-   * Resolve when more output arrives, when `timeoutMs` passes, or when `signal`
-   * aborts.
-   *
-   * Lets a reader wait on the stream itself rather than re-asking it, which is
-   * what makes a wait cost nothing while nothing is happening. The signal is
-   * what lets a caller that has gone away stop it early.
-   *
-   * Answers `true` when something woke it and `false` when the timeout simply
-   * elapsed. A caller that has to tell those apart — because what it is waiting
-   * for would never arrive as output — should ask rather than infer it from the
-   * cursor not having moved.
-   */
-  changed(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
-    this.#touched = Date.now();
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.#waiters = this.#waiters.filter((entry) => entry !== wake);
-        resolve(false);
-      }, timeoutMs);
-      const wake = (): void => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", wake);
-        resolve(true);
-      };
-      signal?.addEventListener("abort", wake, { once: true });
-      this.#waiters.push(wake);
-    });
-  }
-
-  /**
-   * How far past this stream's end a cursor sits, or 0 when it is within it.
-   *
-   * A cursor counts bytes inside one tail's lifetime, and a tail does not
-   * outlive its connection: when the event stream ends the link is marked
-   * failed, and the next acquire opens a fresh one whose tails start at zero.
-   * A cursor held across that lands either below the new end, where it reseeds
-   * honestly, or above it — where `read` slices past the buffer and answers ""
-   * with nothing missed, reporting a pane that is printing as quiet.
-   */
-  /**
-   * How long since anything read this tail.
-   *
-   * Reading is what keeps a tail alive; a pane writing into one nobody is
-   * watching is not a reason to hold a connection open for it.
-   */
-  idleMs(now: number): number {
-    return now - this.#touched;
-  }
-
-  ahead(from: number | undefined): number {
-    return from === undefined ? 0 : Math.max(0, from - this.#end);
-  }
-
-  /**
-   * What arrived after `from`.
-   *
-   * `missedBytes` is what fell out of the buffer before this read reached it —
-   * the difference between "the pane printed nothing" and "it printed more than
-   * was kept", which are the same empty answer otherwise.
-   */
-  read(from: number | undefined): {
-    readonly cursor: number;
-    readonly missedBytes: number;
-    readonly text: string;
-  } {
-    this.#touched = Date.now();
-    const start = from ?? this.#base;
-    const missed = Math.max(0, this.#base - start);
-    const offset = Math.max(0, start - this.#base);
-    return {
-      cursor: this.#end,
-      missedBytes: missed,
-      text: this.#buffer.slice(offset),
-    };
-  }
-}
+/** How long a control client may take to reach its first ready block. */
+const CONNECT_TIMEOUT_MS = 30_000;
 
 interface SessionLink {
   closeTimer: ReturnType<typeof setTimeout> | undefined;
   readonly connected: ConnectedServer;
+  endReason: PaneTailEndReason | undefined;
   /** Set when the connection died; a later acquire opens a fresh one. */
   failed: boolean;
-  readonly listeners: Set<(event: TmuxEvent) => void>;
+  readonly listeners: Set<LiveListenerEntry>;
   readonly tails: Map<string, PaneTail>;
 }
+
+interface LiveListenerEntry {
+  active: boolean;
+  readonly finish: (reason: LiveListenerEndReason) => void;
+  readonly notify: (event: TmuxEvent) => void;
+}
+
+interface OpeningLink {
+  readonly abort: AbortController;
+  readonly promise: Promise<SessionLink>;
+  waiters: number;
+}
+
+const TAIL_INVALIDATING_EVENTS = new Set<TmuxEvent["kind"]>([
+  "layout-change",
+  "sessions-changed",
+  "unlinked-window-add",
+  "unlinked-window-close",
+  "window-add",
+  "window-close",
+  "window-pane-changed",
+]);
+
+/** Stop a notification listener and observe why its connection ended. */
+export type LiveListenerEndReason = PaneTailEndReason | "listener_stopped";
+export type LiveListener = (() => void) & {
+  readonly active: boolean;
+  readonly ended: Promise<LiveListenerEndReason>;
+};
 
 /**
  * The connections this process holds, and the tails reading them.
@@ -167,15 +69,30 @@ interface SessionLink {
  * again, and reconnecting between those costs a tmux client attach each time.
  */
 export class LiveHub {
+  readonly #connecting = new Set<Promise<void>>();
+  readonly #finalizing = new Set<Promise<void>>();
   readonly #links = new Map<string, SessionLink>();
-  readonly #opening = new Map<string, Promise<SessionLink>>();
+  readonly #opening = new Map<string, OpeningLink>();
   readonly #tmux: Server;
+
+  /** Whether this hub has begun its terminal close. */
+  get closed(): boolean {
+    return this.#closed;
+  }
+  readonly #abort = new AbortController();
+  /** Maximum time allowed for one control connection to become ready. */
+  readonly #connectTimeoutMs: number;
+  #closePromise: Promise<void> | undefined;
   /** How long a tail may go unread, and a link unused, before both are let go. */
   readonly #lingerMs: number;
   #closed = false;
 
-  constructor(tmux: Server, options: { readonly lingerMs?: number } = {}) {
+  constructor(
+    tmux: Server,
+    options: { readonly connectTimeoutMs?: number; readonly lingerMs?: number } = {},
+  ) {
     this.#tmux = tmux;
+    this.#connectTimeoutMs = options.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
     this.#lingerMs = options.lingerMs ?? LINGER_MS;
   }
 
@@ -186,8 +103,9 @@ export class LiveHub {
    * session at once would otherwise each spawn a client, and tmux would count
    * both.
    */
-  async #link(sessionId: string): Promise<SessionLink> {
+  async #link(sessionId: string, signal?: AbortSignal): Promise<SessionLink> {
     if (this.#closed) throw new Error("live connections are closed");
+    requireActive(signal);
     const existing = this.#links.get(sessionId);
     if (existing !== undefined && !existing.failed) {
       if (existing.closeTimer !== undefined) {
@@ -196,29 +114,100 @@ export class LiveHub {
       }
       return existing;
     }
-    const pending = this.#opening.get(sessionId);
-    if (pending !== undefined) return pending;
-
-    const opening = this.#open(sessionId);
-    this.#opening.set(sessionId, opening);
+    let opening = this.#opening.get(sessionId);
+    if (opening?.abort.signal.aborted === true) opening = undefined;
+    if (opening === undefined) {
+      const abort = new AbortController();
+      let tracked!: OpeningLink;
+      const promise = this.#open(sessionId, abort).finally(() => {
+        if (this.#opening.get(sessionId) === tracked) this.#opening.delete(sessionId);
+      });
+      tracked = { abort, promise, waiters: 0 };
+      opening = tracked;
+      this.#opening.set(sessionId, opening);
+    }
+    opening.waiters += 1;
     try {
-      return await opening;
+      return await waitForAbort(opening.promise, signal);
     } finally {
-      this.#opening.delete(sessionId);
+      opening.waiters -= 1;
+      if (signal?.aborted === true && opening.waiters === 0) {
+        if (this.#opening.get(sessionId) === opening) {
+          this.#opening.delete(sessionId);
+          opening.abort.abort();
+        }
+        void opening.promise.then(
+          (link) => {
+            this.#scheduleClose(sessionId, link, 0);
+          },
+          () => undefined,
+        );
+      }
     }
   }
 
-  async #open(sessionId: string): Promise<SessionLink> {
-    const connected = await this.#tmux.connect({ target: sessionId });
+  async #open(sessionId: string, opening: AbortController): Promise<SessionLink> {
+    const lifecycle = Promise.withResolvers<void>();
+    this.#connecting.add(lifecycle.promise);
+    let lifecycleFinished = false;
+    const finishLifecycle = (): void => {
+      if (lifecycleFinished) return;
+      lifecycleFinished = true;
+      this.#connecting.delete(lifecycle.promise);
+      lifecycle.resolve();
+    };
+    const abort = (): void => {
+      opening.abort();
+    };
+    this.#abort.signal.addEventListener("abort", abort, { once: true });
+    const deadline = setTimeout(abort, this.#connectTimeoutMs);
+    deadline.unref?.();
+    let connecting: Promise<ConnectedServer> | undefined;
+    let connected: ConnectedServer;
+    try {
+      connecting = this.#tmux.connect({ signal: opening.signal, target: sessionId });
+      connected = await waitForAbort(connecting, opening.signal);
+    } catch (error) {
+      if (connecting !== undefined) {
+        void connecting.then(
+          async (late) => {
+            await late.close().catch(() => undefined);
+            finishLifecycle();
+          },
+          () => {
+            finishLifecycle();
+          },
+        );
+      } else {
+        finishLifecycle();
+      }
+      throw error;
+    } finally {
+      clearTimeout(deadline);
+      this.#abort.signal.removeEventListener("abort", abort);
+    }
+    const stillOwned = this.#opening.get(sessionId)?.abort === opening;
+    if (this.#closed || opening.signal.aborted || !stillOwned) {
+      await connected.close().catch(() => undefined);
+      finishLifecycle();
+      throw new Error(this.#closed ? "live connections are closed" : "live connection cancelled");
+    }
     const link: SessionLink = {
       closeTimer: undefined,
       connected,
+      endReason: undefined,
       failed: false,
       listeners: new Set(),
       tails: new Map(),
     };
     this.#links.set(sessionId, link);
-    void this.#pump(sessionId, link);
+    const finalizing = this.#pump(sessionId, link);
+    this.#finalizing.add(finalizing);
+    void finalizing.then(
+      () => this.#finalizing.delete(finalizing),
+      () => this.#finalizing.delete(finalizing),
+    );
+    finishLifecycle();
     return link;
   }
 
@@ -231,23 +220,50 @@ export class LiveHub {
    */
   async #pump(sessionId: string, link: SessionLink): Promise<void> {
     const events = link.connected.subscribe();
+    let reason: PaneTailEndReason = "connection_lost";
+    let dropped = events.dropped;
     try {
       for await (const event of events) {
+        if (events.dropped !== dropped) {
+          reason = "events_dropped";
+          dropped = events.dropped;
+          break;
+        }
+        // The map key is the attached session; rehoming makes this link stale.
+        if (event.kind === "session-changed") {
+          reason = "topology_changed";
+          break;
+        }
         if (event.kind === "output") {
           link.tails.get(event.paneId)?.append(event.data);
+        } else if (TAIL_INVALIDATING_EVENTS.has(event.kind)) {
+          for (const tail of link.tails.values()) tail.close("topology_changed");
+          link.tails.clear();
         }
-        for (const listener of link.listeners) listener(event);
+        for (const listener of link.listeners) listener.notify(event);
       }
     } catch {
-      // A dead connection is a state, not an incident: the next acquire opens
-      // a fresh one, and a tool that was reading gets an empty delta it can
-      // tell apart by the cursor not moving.
+      // A dead connection is a state, not an incident. Ending the tails below
+      // wakes readers so none can mistake it for a quiet pane.
     } finally {
-      link.failed = true;
+      if (events.dropped !== dropped) reason = "events_dropped";
+      this.#endLink(link, reason);
       if (this.#links.get(sessionId) === link) this.#links.delete(sessionId);
       await events.close().catch(() => undefined);
       await link.connected.close().catch(() => undefined);
     }
+  }
+
+  #endLink(link: SessionLink, reason: PaneTailEndReason): void {
+    if (link.endReason !== undefined) return;
+    link.endReason = reason;
+    link.failed = true;
+    for (const tail of link.tails.values()) tail.close(reason);
+    for (const listener of link.listeners) {
+      listener.active = false;
+      listener.finish(reason);
+    }
+    link.listeners.clear();
   }
 
   /**
@@ -257,15 +273,26 @@ export class LiveHub {
    * gone, or one that refuses control mode — so a caller can fall back to
    * capturing rather than fail.
    */
-  async tail(sessionId: string, paneId: string): Promise<PaneTail | undefined> {
+  async tail(
+    sessionId: string,
+    paneId: string,
+    signal?: AbortSignal,
+  ): Promise<PaneTail | undefined> {
     let link: SessionLink;
     try {
-      link = await this.#link(sessionId);
+      link = await this.#link(sessionId, signal);
     } catch {
       return undefined;
     }
+    if (link.failed || signal?.aborted === true) {
+      this.#scheduleClose(sessionId, link, 0);
+      return undefined;
+    }
     const existing = link.tails.get(paneId);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      this.#scheduleClose(sessionId, link);
+      return existing;
+    }
     const tail = new PaneTail(paneId);
     link.tails.set(paneId, tail);
     // Starts the sweep. Without this a tail created and then abandoned would
@@ -280,84 +307,65 @@ export class LiveHub {
   }
 
   /**
-   * Hold one connection for the notifications that are not about a pane.
-   *
-   * tmux's structural notifications — a window added, closed or renamed, the
-   * session list changing — are global rather than session-scoped, so one
-   * connection hears about the whole server. What it is anchored to only
-   * decides where it is attached, not what it is told.
-   *
-   * The anchor is told not to detach when that session is destroyed. Under
-   * tmux's default the connection would simply drop, and this is the one
-   * connection whose whole purpose is to still be there; with the flag set,
-   * tmux re-anchors the client to another session and names it in a
-   * `%session-changed`. `refresh-client -f` sets client flags and nothing
-   * else — it is not `-C`, which is what makes a persistent connection start
-   * resizing the panes of whoever is attached.
-   *
-   * With no session on the server there is nothing to anchor to and this
-   * returns undefined: a control client cannot attach to nothing, and creating
-   * a session to hold one would change the server as a side effect of reading
-   * it.
-   */
-  async anchor(listener: (event: TmuxEvent) => void): Promise<(() => void) | undefined> {
-    const snapshot = await this.#tmux.snapshot().catch(() => undefined);
-    const session = snapshot?.sessions.toArray()[0];
-    if (session === undefined) return undefined;
-    const stop = await this.listen(session.id, listener);
-    if (stop === undefined) return undefined;
-    await this.#links
-      .get(session.id)
-      ?.connected.cmd("refresh-client", ["-f", "no-detach-on-destroy"], { target: null })
-      .catch(() => undefined);
-    return stop;
-  }
-
-  /**
    * Call `listener` for every notification on a session until the returned
    * function is called.
    */
   async listen(
     sessionId: string,
     listener: (event: TmuxEvent) => void,
-  ): Promise<(() => void) | undefined> {
+    signal?: AbortSignal,
+  ): Promise<LiveListener | undefined> {
     let link: SessionLink;
     try {
-      link = await this.#link(sessionId);
+      link = await this.#link(sessionId, signal);
     } catch {
       return undefined;
     }
-    link.listeners.add(listener);
-    return () => {
-      link.listeners.delete(listener);
+    if (link.failed || signal?.aborted === true) {
+      this.#scheduleClose(sessionId, link, 0);
+      return undefined;
+    }
+    let finish!: (reason: LiveListenerEndReason) => void;
+    const ended = new Promise<LiveListenerEndReason>((resolve) => {
+      finish = resolve;
+    });
+    const entry: LiveListenerEntry = { active: true, finish, notify: listener };
+    link.listeners.add(entry);
+    const stop = (): void => {
+      if (!entry.active) return;
+      entry.active = false;
+      link.listeners.delete(entry);
+      finish("listener_stopped");
       this.#scheduleClose(sessionId, link);
     };
+    Object.defineProperties(stop, {
+      active: { enumerable: true, get: () => entry.active },
+      ended: { enumerable: true, value: ended },
+    });
+    return stop as LiveListener;
   }
 
   /**
-   * Let go of a session's connection once nothing is using it.
+   * Expire unread tails, then close a session link once none remain.
    *
-   * This used to refuse to run while the link held any tail, and nothing ever
-   * removed one — so for any session a tool had observed, `tails.size` stayed
-   * above zero for the life of the process and the linger could never elapse.
-   * The server accumulated one control-mode client per observed session and
-   * released none of them; tmux counts every one.
-   *
-   * A tail nobody has read within the linger is not being watched, so it goes.
-   * That invalidates its cursor, which is only safe because a cursor from a
-   * replaced tail is now refused with an explanation rather than answered with
-   * a silent "nothing new".
+   * Expiration invalidates the old cursor explicitly, so a later read cannot
+   * mistake the replaced tail for an empty delta.
    */
   #scheduleClose(sessionId: string, link: SessionLink, delayMs = this.#lingerMs): void {
+    if (this.#closed) return;
     if (link.listeners.size > 0) return;
     if (link.closeTimer !== undefined) return;
     link.closeTimer = setTimeout(() => {
       link.closeTimer = undefined;
       const now = Date.now();
       for (const [paneId, tail] of link.tails) {
-        if (tail.idleMs(now) >= this.#lingerMs) link.tails.delete(paneId);
+        if (tail.idleMs(now) >= this.#lingerMs) {
+          tail.close("expired");
+          link.tails.delete(paneId);
+        }
       }
-      if (link.tails.size > 0 || link.listeners.size > 0) {
+      if (link.listeners.size > 0) return;
+      if (link.tails.size > 0) {
         // Come back when the tail used most recently becomes eligible, rather
         // than a whole linger from now. The timer is armed when a tail is
         // created and a tail is read just after that, so it is always a little
@@ -369,21 +377,35 @@ export class LiveHub {
         return;
       }
       if (this.#links.get(sessionId) === link) this.#links.delete(sessionId);
+      this.#endLink(link, "expired");
       void link.connected.close().catch(() => undefined);
     }, delayMs);
     // A lingering connection must not be what keeps the process alive.
     link.closeTimer.unref?.();
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    this.#closePromise ??= this.#close();
+    return this.#closePromise;
+  }
+
+  async #close(): Promise<void> {
     this.#closed = true;
+    this.#abort.abort();
+    const connecting = [...this.#connecting];
+    const finalizing = [...this.#finalizing];
+    const opening = [...this.#opening.values()];
     const links = [...this.#links.values()];
     this.#links.clear();
     await Promise.all(
       links.map(async (link) => {
         if (link.closeTimer !== undefined) clearTimeout(link.closeTimer);
+        this.#endLink(link, "hub_closed");
         await link.connected.close().catch(() => undefined);
       }),
     );
+    await Promise.allSettled(opening.map(({ promise }) => promise));
+    await Promise.allSettled(connecting);
+    await Promise.allSettled(finalizing);
   }
 }

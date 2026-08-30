@@ -195,35 +195,6 @@ export interface TmuxTransportErrorOptions extends ExceptionOptions {
   readonly stdout?: Uint8Array;
 }
 
-export class DeprecatedError extends LibTmuxException {
-  constructor({
-    deprecated,
-    replacement,
-    version,
-  }: {
-    deprecated: string;
-    replacement: string;
-    version: string;
-  }) {
-    super(
-      `${deprecated} was deprecated in ${version} and has been removed. Use ${replacement} instead.`,
-    );
-  }
-}
-
-export class TmuxSessionExists extends LibTmuxException {}
-export class TmuxCommandNotFound extends LibTmuxException {}
-
-export class NotInsideTmux extends LibTmuxException {
-  constructor(variable?: string, options: { readonly reason?: string } = {}) {
-    super(
-      variable === undefined
-        ? "Not inside a tmux pane"
-        : `Not inside a tmux pane: $${variable} is ${options.reason ?? "unset or empty"}`,
-    );
-  }
-}
-
 export class ObjectDoesNotExist extends LibTmuxException {
   readonly query: Query | undefined;
 
@@ -309,95 +280,7 @@ export class VersionTooLow extends LibTmuxException {
   }
 }
 
-export class BadSessionName extends LibTmuxException {
-  constructor(reason: string, session_name?: string) {
-    super(
-      `Bad session name: ${reason}${session_name === undefined ? "" : ` (session name: ${session_name})`}`,
-    );
-  }
-}
-
-export class OptionError extends LibTmuxException {}
-export class UnknownOption extends OptionError {}
-export class UnknownColorOption extends UnknownOption {
-  constructor() {
-    super("Server.colors must equal 88 or 256");
-  }
-}
-export class InvalidOption extends OptionError {}
-export class AmbiguousOption extends OptionError {}
 export class WaitTimeout extends LibTmuxException {}
-
-export class VariableUnpackingError extends LibTmuxException {
-  constructor(variable?: unknown) {
-    const value =
-      variable === undefined
-        ? "None"
-        : typeof variable === "object"
-          ? Object.prototype.toString.call(variable)
-          : String(variable as string | number | bigint | boolean | symbol);
-    super(`Unexpected variable: ${value}`);
-  }
-}
-
-export class PaneError extends LibTmuxException {}
-export class PaneNotFound extends PaneError {
-  constructor(pane_id?: string) {
-    super(pane_id === undefined ? "Pane not found" : `Pane not found: ${pane_id}`);
-  }
-}
-
-export class WindowError extends LibTmuxException {}
-export class MultipleActiveWindows extends WindowError {
-  constructor(count: number) {
-    super(`Multiple active windows: ${count} found`);
-  }
-}
-export class NoActiveWindow extends WindowError {
-  constructor() {
-    super("No active windows found");
-  }
-}
-export class NoWindowsExist extends WindowError {
-  constructor() {
-    super("No windows exist for object");
-  }
-}
-
-const adjustmentDirectionInstances = new WeakSet<object>();
-
-export class AdjustmentDirectionRequiresAdjustment extends LibTmuxException {
-  constructor(options: ExceptionOptions = {}) {
-    super("adjustment_direction requires adjustment", options);
-    adjustmentDirectionInstances.add(this);
-  }
-}
-export class WindowAdjustmentDirectionRequiresAdjustment extends WindowError {
-  constructor(options: ExceptionOptions = {}) {
-    super("adjustment_direction requires adjustment", options);
-    adjustmentDirectionInstances.add(this);
-  }
-}
-export class PaneAdjustmentDirectionRequiresAdjustment extends WindowError {
-  constructor(options: ExceptionOptions = {}) {
-    super("adjustment_direction requires adjustment", options);
-    adjustmentDirectionInstances.add(this);
-  }
-}
-
-Object.defineProperty(AdjustmentDirectionRequiresAdjustment, Symbol.hasInstance, {
-  value(this: Function, value: unknown): boolean {
-    if (this === AdjustmentDirectionRequiresAdjustment) {
-      return typeof value === "object" && value !== null && adjustmentDirectionInstances.has(value);
-    }
-    return Function.prototype[Symbol.hasInstance].call(this, value);
-  },
-});
-export class RequiresDigitOrPercentage extends LibTmuxException {
-  constructor() {
-    super("Requires digit (int or str digit) or a percentage.");
-  }
-}
 
 export class NoMatchError extends ObjectDoesNotExist {}
 export class MultipleMatchesError extends MultipleObjectsReturned {}

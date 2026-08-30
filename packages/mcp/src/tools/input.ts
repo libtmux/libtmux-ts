@@ -9,18 +9,21 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requireWritablePane, type ToolContext } from "../context.js";
-import { MUTATING, offers, OPEN_WORLD } from "../register.js";
-import { fail, ok, renderOutput, tailLines } from "../results.js";
-import { runFramedCommand } from "../command.js";
+import type { ToolContext } from "../context.js";
+import type { Policy } from "../policy.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
+import { offers, OPEN_WORLD } from "../register.js";
+import { boundText, fail, ok, renderBoundedText } from "../results.js";
+import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
+import { isFailure, requireWritablePane } from "../target_resolution.js";
+import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
 /**
  * Shells whose syntax the command framing is written in.
  *
- * `run_command` sends `m=id; printf …; ( … ); s=$?`, which is POSIX shell and
- * nothing else. fish rejects the assignment outright, csh spells the status
- * `$status`, and PowerShell shares neither — so a command framed for them fails
- * to parse and the wait runs to its deadline against a syntax error.
+ * `run_command` uses POSIX subshells, positional parameters, `printf`, and `$?`.
+ * fish, csh, and PowerShell do not share that grammar, so a command framed for
+ * them fails to parse and the wait runs to its deadline against a syntax error.
  */
 const POSIX_SHELLS = new Set(["ash", "bash", "dash", "ksh", "mksh", "sh", "zsh"]);
 
@@ -36,6 +39,27 @@ const OTHER_SHELLS = new Set(["csh", "elvish", "fish", "ion", "nu", "pwsh", "tcs
 /** tmux reports a login shell as `-zsh`; the leading dash is not part of it. */
 function shellName(command: string): string {
   return command.replace(/^-/, "");
+}
+
+function commandFollowups(policy: Policy, paneId: string): string[] {
+  const offered = (name: string): boolean => policy.tools === undefined || policy.tools.has(name);
+  return [
+    policy.liveEnabled && offered("wait_for_text")
+      ? `wait_for_text on ${paneId} keeps waiting for it`
+      : "",
+    offered("send_keys") ? `send_keys with keys="C-c", enter=false, and force=true stops it` : "",
+  ].filter((text) => text !== "");
+}
+
+function busyPane(policy: Policy, paneId: string, active: string): ReturnType<typeof fail> {
+  const followups = commandFollowups(policy, paneId);
+  return fail({
+    hint:
+      followups.length === 0
+        ? "Wait for that command to finish before writing to the pane."
+        : `Wait for that command to finish, or ${followups.join(", or ")}.`,
+    reason: `Refusing to write into ${paneId}: run_command ${active} is still active.`,
+  });
 }
 
 export function registerInput(mcp: McpServer, context: ToolContext): void {
@@ -54,19 +78,19 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to the pane this server runs in. Default false."),
-        keys: z
-          .string()
-          .describe("Keys to send. tmux key names like C-c work unless literal is true."),
+          .describe("Write even to this server's pane or one a person is watching. Default false."),
+        keys: inlineRequestText("keys").describe(
+          "Keys to send. tmux key names like C-c work unless literal is true.",
+        ),
         literal: z
           .boolean()
           .optional()
           .describe("Send the text as-is, without resolving key names."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
       },
       outputSchema: {
         attended: z.boolean().describe("A person is watching the pane this was sent to."),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         sent: z.boolean(),
       },
       title: "Send keys",
@@ -76,6 +100,8 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
       if (isFailure(pane)) return pane;
+      const active = activeFramedCommand(context, paneId);
+      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
 
       await pane.sendKeys(keys, {
         ...(enter === undefined ? {} : { enter }),
@@ -92,7 +118,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "paste_text",
     {
-      annotations: MUTATING,
+      annotations: OPEN_WORLD,
       description:
         "Put text into a pane without tmux interpreting any of it as key names. " +
         "Use for content — a password, a code block, anything with characters a " +
@@ -102,11 +128,11 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to the pane this server runs in. Default false."),
-        paneId: z.string(),
-        text: z.string(),
+          .describe("Write even to this server's pane or one a person is watching. Default false."),
+        paneId: paneIdSchema,
+        text: inlineRequestText("text"),
       },
-      outputSchema: { bytes: z.number().int(), paneId: z.string() },
+      outputSchema: { bytes: z.number().int(), paneId: paneIdSchema },
       title: "Paste text",
     },
     async ({ enter, force, paneId, text }) => {
@@ -114,6 +140,8 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
+      const active = activeFramedCommand(context, paneId);
+      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
       await pane.sendKeys(text, { enter: enter ?? false, literal: true });
       return ok(
         { bytes: Buffer.byteLength(text, "utf8"), paneId },
@@ -133,16 +161,16 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         "what the command printed, and it knows when the command actually ended " +
         "rather than guessing from the screen. The command runs in a subshell, so " +
         "cd and export do not persist to a later call. A pane is effectively " +
-        "single-writer: the check that it is at a shell prompt is one look taken " +
-        "before sending, not a lock, so two callers sharing a pane interleave.",
+        "single-writer: this server reserves it until the command settles, but " +
+        "another process with the same tmux socket can still write into it.",
       inputSchema: {
-        command: z.string().describe("The shell command to run."),
+        command: framedCommandText("command").describe("The shell command to run."),
         force: z
           .boolean()
           .optional()
-          .describe("Run even if the pane does not look like it is at a shell prompt."),
+          .describe("Override pane-attention and shell-prompt checks. Default false."),
         maxLines: z.number().int().positive().optional(),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         timeoutMs: z
           .number()
           .int()
@@ -170,6 +198,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
               "Nonzero means the command printed more than was kept, so the output here " +
               "starts partway through it.",
           ),
+        omittedBytes: z.number().int().describe("Output bytes omitted by the result ceiling."),
         foreignOutputSuspected: z
           .boolean()
           .describe(
@@ -184,13 +213,17 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .nullable()
           .describe("The command's exit status; null if it did not finish."),
         outcome: z
-          .enum(["completed", "timed_out", "pane_died"])
+          .enum(["completed", "timed_out", "pane_died", "cancelled"])
           .describe("Why this returned. Read it rather than inferring from the text."),
-        output: z.string(),
-        paneId: z.string(),
+        output: z.string().describe("The bounded tail of the command's output."),
+        outputComplete: z
+          .boolean()
+          .describe("False when capture or result limits omitted any command output."),
+        paneId: paneIdSchema,
+        returnedBytes: z.number().int().describe("UTF-8 output bytes returned."),
         stillRunning: z
           .boolean()
-          .describe("True when it timed out; the command keeps running in the pane."),
+          .describe("Whether the command may still be running after this call returned."),
       },
       title: "Run a command and wait",
     },
@@ -202,6 +235,10 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "run in");
       if (isFailure(pane)) return pane;
+      const active = activeFramedCommand(context, paneId);
+      if (active !== undefined && force !== true) {
+        return busyPane(context.policy, paneId, active);
+      }
       if (pane.dead === true) {
         // Not a `force` case: a dead pane has no process to read the command,
         // so forcing it would spend the whole timeout waiting for a marker
@@ -215,7 +252,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         });
       }
       const running = shellName(pane.currentCommand ?? "");
-      if (force !== true && OTHER_SHELLS.has(running)) {
+      if (OTHER_SHELLS.has(running)) {
         // Not a `force` case: forcing it would send POSIX syntax to a shell
         // that cannot parse it, and the wait would run to its deadline against
         // an error message.
@@ -235,36 +272,71 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         });
       }
 
-      const result = await runFramedCommand(context, pane, command, timeoutMs, false, extra.signal);
-      const trimmed = tailLines(
-        result.output === "" ? [] : result.output.split("\n"),
-        maxLines ?? context.policy.maxResultLines,
-      );
+      const reservation = reserveFramedCommand(context, paneId, command);
 
-      const headline =
-        result.outcome === "completed"
-          ? `exit ${String(result.exitStatus ?? -1)}`
-          : result.outcome === "pane_died"
+      const result = await runFramedCommand(context, pane, command, timeoutMs, extra.signal).catch(
+        (error: unknown) => {
+          reservation.release();
+          throw error;
+        },
+      );
+      reservation.settleWith(result.settled);
+      const bounded = boundText(
+        result.output === "" ? [] : result.output.split("\n"),
+        effectiveResultLines(context.policy, maxLines),
+        MAX_RESULT_BYTES,
+      );
+      const outputComplete =
+        result.outputComplete && bounded.droppedLines === 0 && bounded.omittedBytes === 0;
+      const stillRunning =
+        result.commandStarted && (result.outcome === "timed_out" || result.outcome === "cancelled");
+      const followups = stillRunning ? commandFollowups(context.policy, paneId) : [];
+
+      let headline: string;
+      switch (result.outcome) {
+        case "completed":
+          headline = `exit ${String(result.exitStatus)}`;
+          break;
+        case "pane_died":
+          headline = result.commandStarted
             ? "the pane exited while the command ran"
-            : // Not "call again": a second call mints a fresh marker and sends a
-              // whole new command, so it cannot resume this wait even in
-              // principle — and the shell guard refuses it anyway, because the
-              // pane is now running the first command rather than a shell.
-              `still running after ${String(result.effectiveTimeoutMs)}ms — wait_for_text on ${paneId} keeps waiting for it, or send_keys C-c stops it`;
+            : "the pane exited before the command started";
+          break;
+        case "cancelled":
+          headline = stillRunning
+            ? `request cancelled after the command started; it may still be running${followups.length === 0 ? "" : ` — ${followups.join(", or ")}`}`
+            : "request cancelled before the command started";
+          break;
+        case "timed_out":
+          // Not "call again": a second call mints a fresh marker and sends a
+          // whole new command, so it cannot resume this wait even in principle.
+          headline = stillRunning
+            ? `still running after ${String(result.effectiveTimeoutMs)}ms${followups.length === 0 ? "" : ` — ${followups.join(", or ")}`}`
+            : `did not start within ${String(result.effectiveTimeoutMs)}ms`;
+          break;
+      }
 
       return ok(
         {
           effectiveTimeoutMs: result.effectiveTimeoutMs,
           exitStatus: result.exitStatus,
           foreignOutputSuspected: result.foreignOutputSuspected,
-          droppedLines: trimmed.droppedLines,
+          droppedLines: bounded.droppedLines,
           missedBytes: result.missedBytes,
+          omittedBytes: bounded.omittedBytes,
           outcome: result.outcome,
-          output: trimmed.lines.join("\n"),
+          output: bounded.text,
+          outputComplete,
           paneId,
-          stillRunning: result.outcome === "timed_out",
+          returnedBytes: bounded.returnedBytes,
+          stillRunning,
         },
-        `${renderOutput(trimmed)}\n\n[${headline}]${
+        `${renderBoundedText(
+          bounded,
+          "raise maxLines within the server limit or pipe large output before running",
+        )}\n\n[${headline}]${
+          outputComplete ? "" : "\n[some command output was omitted by capture or result limits]"
+        }${
           result.foreignOutputSuspected
             ? "\n[another writer printed into this pane while the command ran; " +
               "output attributable to them was removed, what remains may still be theirs]"

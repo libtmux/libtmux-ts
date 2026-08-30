@@ -1,4 +1,6 @@
-import type { TmuxEvent } from "../../types.js";
+import type { TmuxEvent, TmuxSubscriptionEvent } from "../../types.js";
+import type { PaneId } from "../../common.js";
+import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
 
 /**
  * Framing tmux writes around a command's response.
@@ -104,9 +106,23 @@ export function completeUtf8Length(bytes: Uint8Array): number {
 }
 
 /** Decode one `%output` payload; the connection supplies a pane-aware one. */
-export type OutputDecoder = (paneId: string, payload: Uint8Array) => string;
+export type OutputDecoder = (paneId: PaneId, payload: Uint8Array) => string;
 
 const decodeWhole: OutputDecoder = (_paneId, payload) => decoder.decode(payload);
+
+function parsedId<Id extends string>(
+  isId: (value: unknown) => value is Id,
+  value: string,
+): Id | undefined {
+  return isId(value) ? value : undefined;
+}
+
+/** A field tmux writes as an unsigned decimal: an age in ms, a window index. */
+function parseUnsigned(value: string): number | undefined {
+  if (!/^\d+$/u.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
 
 /**
  * Read `<time> <command number> <flags>`; flags 1 means this client's command.
@@ -118,6 +134,41 @@ function parseGuard(rest: string): { fromClient: boolean; guard: GuardIdentity }
   const [time, number, flags] = rest.split(" ");
   if (time === undefined || number === undefined || flags === undefined) return undefined;
   return { fromClient: flags === "1", guard: { number, time } };
+}
+
+/**
+ * Parse the body of `%subscription-changed`.
+ *
+ * The fields between the name and the lone `:` are reserved, so the value is
+ * taken from the first ` : ` rather than by counting them. tmux writes the
+ * value raw and it may itself contain ` : `.
+ */
+function parseSubscription(rest: string): TmuxSubscriptionEvent | undefined {
+  const separator = rest.indexOf(" : ");
+  if (separator === -1) return undefined;
+  const [name, sessionId, windowId, windowIndex, paneId] = splitArguments(
+    rest.slice(0, separator),
+    5,
+  );
+  if (name === undefined || sessionId === undefined) return undefined;
+  const parsedSessionId = parsedId(isSessionId, sessionId);
+  if (parsedSessionId === undefined) return undefined;
+  // A dash stands for a field this subscription's scope does not have.
+  const parsedWindowId =
+    windowId === undefined || windowId === "-" ? undefined : parsedId(isWindowId, windowId);
+  const parsedPaneId =
+    paneId === undefined || paneId === "-" ? undefined : parsedId(isPaneId, paneId);
+  const parsedIndex =
+    windowIndex === undefined || windowIndex === "-" ? undefined : parseUnsigned(windowIndex);
+  return {
+    kind: "subscription-changed",
+    name,
+    ...(parsedPaneId === undefined ? {} : { paneId: parsedPaneId }),
+    sessionId: parsedSessionId,
+    value: rest.slice(separator + 3),
+    ...(parsedWindowId === undefined ? {} : { windowId: parsedWindowId }),
+    ...(parsedIndex === undefined ? {} : { windowIndex: parsedIndex }),
+  };
 }
 
 function splitArguments(rest: string, limit: number): readonly string[] {
@@ -169,7 +220,8 @@ export function parseControlLine(
       // The payload is raw bytes, so it is sliced before decoding.
       const payloadStart = line.indexOf(0x20, space + 1);
       if (space === -1 || payloadStart === -1) break;
-      const paneId = decoder.decode(line.subarray(space + 1, payloadStart));
+      const paneId = parsedId(isPaneId, decoder.decode(line.subarray(space + 1, payloadStart)));
+      if (paneId === undefined) break;
       return {
         data: decodeOutput(paneId, unescapeOutput(line.subarray(payloadStart + 1))),
         kind: "output",
@@ -182,68 +234,99 @@ export function parseControlLine(
       const ageEnd = offset === -1 ? -1 : line.indexOf(0x20, offset + 1);
       const markerEnd = ageEnd === -1 ? -1 : line.indexOf(0x20, ageEnd + 1);
       if (paneId === undefined || age === undefined || marker !== ":" || markerEnd === -1) break;
+      const parsedPaneId = parsedId(isPaneId, paneId);
+      const parsedAge = parseUnsigned(age);
+      if (parsedPaneId === undefined || parsedAge === undefined) break;
       return {
-        age: Number(age),
-        data: decodeOutput(paneId, unescapeOutput(line.subarray(markerEnd + 1))),
+        age: parsedAge,
+        data: decodeOutput(parsedPaneId, unescapeOutput(line.subarray(markerEnd + 1))),
         kind: "output",
-        paneId,
+        paneId: parsedPaneId,
       };
     }
     case "window-add":
     case "window-close":
     case "unlinked-window-add":
-    case "unlinked-window-close":
-      return { kind: name, windowId: rest };
+    case "unlinked-window-close": {
+      const windowId = parsedId(isWindowId, rest);
+      if (windowId === undefined) break;
+      return { kind: name, windowId };
+    }
     case "window-renamed":
     case "unlinked-window-renamed": {
       const [windowId, windowName] = splitArguments(rest, 2);
       if (windowId === undefined || windowName === undefined) break;
-      return { kind: name, name: windowName, windowId };
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      if (parsedWindowId === undefined) break;
+      return { kind: name, name: windowName, windowId: parsedWindowId };
     }
     case "window-pane-changed": {
       const [windowId, paneId] = splitArguments(rest, 2);
       if (windowId === undefined || paneId === undefined) break;
-      return { kind: name, paneId, windowId };
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      const parsedPaneId = parsedId(isPaneId, paneId);
+      if (parsedWindowId === undefined || parsedPaneId === undefined) break;
+      return { kind: name, paneId: parsedPaneId, windowId: parsedWindowId };
     }
     case "layout-change": {
       const [windowId, layout, visibleLayout, flags] = splitArguments(rest, 4);
       if (windowId === undefined || layout === undefined) break;
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      if (parsedWindowId === undefined) break;
       return {
         flags: flags ?? "",
         kind: name,
         layout,
         visibleLayout: visibleLayout ?? layout,
-        windowId,
+        windowId: parsedWindowId,
       };
     }
     case "session-changed":
     case "session-renamed": {
       const [sessionId, sessionName] = splitArguments(rest, 2);
       if (sessionId === undefined || sessionName === undefined) break;
-      return { kind: name, name: sessionName, sessionId };
+      const parsedSessionId = parsedId(isSessionId, sessionId);
+      if (parsedSessionId === undefined) break;
+      return { kind: name, name: sessionName, sessionId: parsedSessionId };
     }
     case "sessions-changed":
       return { kind: name };
     case "session-window-changed": {
       const [sessionId, windowId] = splitArguments(rest, 2);
       if (sessionId === undefined || windowId === undefined) break;
-      return { kind: name, sessionId, windowId };
+      const parsedSessionId = parsedId(isSessionId, sessionId);
+      const parsedWindowId = parsedId(isWindowId, windowId);
+      if (parsedSessionId === undefined || parsedWindowId === undefined) break;
+      return { kind: name, sessionId: parsedSessionId, windowId: parsedWindowId };
     }
     case "client-session-changed": {
       const [client, sessionId, sessionName] = splitArguments(rest, 3);
       if (client === undefined || sessionId === undefined || sessionName === undefined) break;
-      return { client, kind: name, name: sessionName, sessionId };
+      const parsedSessionId = parsedId(isSessionId, sessionId);
+      if (parsedSessionId === undefined) break;
+      return { client, kind: name, name: sessionName, sessionId: parsedSessionId };
     }
     case "client-detached":
       return { client: rest, kind: name };
-    case "pane-mode-changed":
-      return { kind: name, paneId: rest };
+    case "pane-mode-changed": {
+      const paneId = parsedId(isPaneId, rest);
+      if (paneId === undefined) break;
+      return { kind: name, paneId };
+    }
     case "paste-buffer-changed":
     case "paste-buffer-deleted":
       return { buffer: rest, kind: name };
     case "continue":
-    case "pause":
-      return { kind: name, paneId: rest };
+    case "pause": {
+      const paneId = parsedId(isPaneId, rest);
+      if (paneId === undefined) break;
+      return { kind: name, paneId };
+    }
+    case "subscription-changed": {
+      const parsed = parseSubscription(rest);
+      if (parsed === undefined) break;
+      return parsed;
+    }
     case "config-error":
     case "message":
       return { kind: name, message: rest };

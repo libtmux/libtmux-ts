@@ -9,7 +9,7 @@ import type {
 import { QueryValidationError } from "../../exc.js";
 import type { ListCommand } from "../codec/format_types.js";
 import type { DaemonIdentity } from "../runtime/context.js";
-import type { CompleteFormatRow } from "../codec/schemas.js";
+import type { CompleteFormatRow, RawCompleteFormatRow } from "../codec/schemas.js";
 import type { WinlinkRef } from "./refs.js";
 
 declare const graphSourceIdBrand: unique symbol;
@@ -45,7 +45,7 @@ export interface GraphCapture {
 
 export interface CapturedRowSet {
   readonly listCommand: ListCommand;
-  readonly rows: readonly CompleteFormatRow[];
+  readonly rows: readonly RawCompleteFormatRow[];
   readonly source: GraphSourceId;
 }
 
@@ -101,6 +101,10 @@ export interface NormalizedGraph extends NormalizedGraphNominal {
 
 const authenticatedGraphRecordRefs = new WeakSet<object>();
 const authenticatedNormalizedGraphs = new WeakSet<object>();
+const normalizedGraphRecordIndexes = new WeakMap<
+  object,
+  ReadonlyMap<string, ReadonlyMap<number, GraphRecord>>
+>();
 
 interface NormalizedGraphData {
   readonly capture: GraphCapture;
@@ -137,10 +141,15 @@ export function createGraphRecordRef(source: GraphSourceId, ordinal: number): Gr
   return ref;
 }
 
+/** Whether this ref was minted by {@link createGraphRecordRef}. */
+export function isGraphRecordRef(value: unknown): value is GraphRecordRef {
+  return typeof value === "object" && value !== null && authenticatedGraphRecordRefs.has(value);
+}
+
 export function graphRecordRefsEqual(left: GraphRecordRef, right: GraphRecordRef): boolean {
   return (
-    authenticatedGraphRecordRefs.has(left) &&
-    authenticatedGraphRecordRefs.has(right) &&
+    isGraphRecordRef(left) &&
+    isGraphRecordRef(right) &&
     left.source === right.source &&
     left.ordinal === right.ordinal
   );
@@ -158,9 +167,25 @@ export function createNormalizedGraph(data: NormalizedGraphData): NormalizedGrap
     records: data.records,
   }) as unknown as NormalizedGraph;
   authenticatedNormalizedGraphs.add(graph);
+  const bySource = new Map<string, Map<number, GraphRecord>>();
+  for (const record of data.records) {
+    if (!isGraphRecordRef(record.ref)) continue;
+    let byOrdinal = bySource.get(record.ref.source);
+    if (byOrdinal === undefined) {
+      byOrdinal = new Map<number, GraphRecord>();
+      bySource.set(record.ref.source, byOrdinal);
+    }
+    if (!byOrdinal.has(record.ref.ordinal)) byOrdinal.set(record.ref.ordinal, record);
+  }
+  normalizedGraphRecordIndexes.set(graph, bySource);
   return graph;
 }
 
 export function isNormalizedGraph(value: unknown): value is NormalizedGraph {
   return typeof value === "object" && value !== null && authenticatedNormalizedGraphs.has(value);
+}
+
+export function graphRecordForRef(graph: unknown, ref: GraphRecordRef): GraphRecord | undefined {
+  if (!isNormalizedGraph(graph) || !isGraphRecordRef(ref)) return undefined;
+  return normalizedGraphRecordIndexes.get(graph)?.get(ref.source)?.get(ref.ordinal);
 }

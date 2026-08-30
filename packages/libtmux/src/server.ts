@@ -1,5 +1,5 @@
 import type { CommandOptions } from "./common.js";
-import { runPipeline, runPipelineSequentially } from "./_internal/operations/pipeline.js";
+import { runPipeline } from "./_internal/operations/pipeline.js";
 import type { TmuxVersion } from "./types.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "./_internal/runtime/tmux_version.js";
 import {
@@ -12,30 +12,31 @@ import {
 import type { EnvironmentValue, SetEnvironmentOptions } from "./types.js";
 import type {
   CmdOptions,
+  ConnectOptions,
   ConnectedServer,
   IfShellOptions,
-  ManagedServer,
   NewSessionOptions,
   PlannedOperation,
   RunShellOptions,
   ServerSnapshot,
+  SnapshotOptions,
   SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
-  TransportMode,
   WatchOptions,
 } from "./types.js";
 import { randomUUID } from "node:crypto";
 
 import { runRawCommand } from "./_internal/operations/raw.js";
 
-import type { Client } from "./client.js";
+import { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch } from "./common.js";
-import { LibTmuxException, WaitTimeout } from "./exc.js";
-import type { Pane } from "./pane.js";
+import type { DaemonGuard, TmuxEngine } from "./engine.js";
+import { LibTmuxException } from "./exc.js";
+import { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
-import type { Session } from "./session.js";
-import type { Window } from "./window.js";
+import { Session } from "./session.js";
+import { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killServer, newSession } from "./_internal/operations/mutations.js";
 import {
@@ -56,35 +57,54 @@ import {
   saveBuffer,
   setBuffer,
   showBuffer,
+  showBufferBytes,
   sourceFile,
 } from "./_internal/operations/server_utils.js";
 import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
 import {
   createRuntimeContext,
-  invalidateRuntimeEpoch,
-  createServerWithRuntime,
   lastObservedDaemon,
   registerServerRuntime,
   runtimeForServer,
   runtimeForServerValue,
-  type DaemonIdentity,
   type RuntimeContext,
 } from "./_internal/runtime/context.js";
 import { TmuxConnection } from "./_internal/runtime/connection.js";
+import type { RuntimeConstructors } from "./_internal/runtime/constructors.js";
 
-export type { DaemonIdentity } from "./_internal/runtime/context.js";
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
+import { createConnectedServer } from "./_internal/control/connected_server.js";
+import { observerBoundTransport } from "./_internal/control/observer_transport.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
+
+/**
+ * Which tmux daemon answered, as tmux itself reports it.
+ *
+ * A socket path names a place, not a process: `kill-server` and a restart give
+ * a new daemon the same path, and that daemon numbers its panes from `%0`
+ * again. The pid alone is not enough — pids are reused — so the start time goes
+ * with it.
+ */
+export type DaemonIdentity = DaemonGuard;
 
 export interface ServerOptions {
   readonly colors?: 88 | 256;
   readonly configFile?: string;
+  /**
+   * The complete environment passed to every spawned `tmux` process.
+   *
+   * This replaces `process.env`; it is not overlaid on it. Include inherited
+   * entries such as `PATH` explicitly when tmux or its shell needs them. Leave
+   * this unset to inherit the current process environment unchanged.
+   */
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly socketName?: string;
   readonly socketPath?: string;
   /**
    * Default deadline, in milliseconds, for every command this server runs.
+   *
+   * Must be a positive timer-safe integer.
    *
    * A single call can override it. Without either, a command waits as long as
    * tmux takes; a long-lived process that cannot bound its work cannot recover
@@ -93,46 +113,16 @@ export interface ServerOptions {
   readonly timeoutMs?: number;
   readonly tmuxBin?: string;
   /**
-   * Which way commands reach tmux, for {@link Server.open}.
-   *
-   * Read from `LIBTMUX_TRANSPORT` when this is not set, so a script that hard-codes
-   * nothing can still be pointed at a connection from the outside. `new Server()`
-   * ignores it: attaching is asynchronous and can fail, and a constructor that
-   * appeared to honour it would either hide the wait or defer the failure to
-   * whichever command happened to run first.
-   */
-  readonly transport?: TransportMode;
-  /**
    * Run this server's commands somewhere other than a local `tmux`.
    *
    * The built-in engine spawns a process per command; supplying one moves every
    * layer above it — snapshots, queries, handles — to a tmux reached however
    * you reach it. See `libtmux/engine` for what an engine owes its caller.
    *
-   * `LIBTMUX_TRANSPORT` is ignored when this is given: the variable comes from
-   * whoever started the process and would move every command to *this*
-   * machine's tmux. Naming `transport: "control"` here as well is refused
-   * instead, because control mode is a process this one spawns and an engine
-   * says tmux is not somewhere it can. {@link Server.watch} and
-   * {@link Server.connect} refuse for the same reason.
+   * {@link Server.watch} and {@link Server.connect} refuse when an engine is
+   * present because their observer is a local tmux process.
    */
-  readonly engine?: CommandTransport;
-}
-
-/** What `LIBTMUX_TRANSPORT` may say, and what it selects. */
-function transportFrom(
-  options: ServerOptions | undefined,
-  environment: Readonly<Record<string, string | undefined>>,
-): TransportMode {
-  if (options?.transport !== undefined) return options.transport;
-  const named = environment.LIBTMUX_TRANSPORT;
-  if (named === undefined || named === "") return "spawn";
-  if (named !== "control" && named !== "spawn") {
-    throw new TypeError(
-      `LIBTMUX_TRANSPORT must be "control" or "spawn", not ${JSON.stringify(named)}`,
-    );
-  }
-  return named;
+  readonly engine?: TmuxEngine;
 }
 
 /**
@@ -207,49 +197,7 @@ export class Server {
       ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       transport: options?.engine ?? new NodeSpawnTransport(),
     });
-    registerServerRuntime(this, runtime);
-  }
-
-  /**
-   * Build a server with its transport already chosen.
-   *
-   * The same API either way: what changes is whether a command spawns a process
-   * or travels over a connection this holds open. The mode comes from
-   * `transport`, or from `LIBTMUX_TRANSPORT` when that is not set — so a script
-   * can be pointed at a connection without editing it, and a test can force
-   * either mode around code that names neither.
-   *
-   * Asynchronous because attaching is: a control connection has to reach tmux
-   * before it can carry anything, and a server with no sessions has nothing to
-   * attach to. `close` is safe on both, and does nothing on a spawning server.
-   *
-   * ```ts
-   * await using managed = await Server.open({ transport: "control" });
-   * (await managed.snapshot()).sessions.count();
-   * ```
-   */
-  static async open(options?: ServerOptions): Promise<ManagedServer> {
-    const environment = options?.environment ?? process.env;
-    // Named together, these contradict: control mode is a process this one
-    // spawns, and an engine says tmux is not somewhere this process spawns.
-    // Refused rather than resolved, the way socketName and socketPath are.
-    if (options?.engine !== undefined && options.transport === "control") {
-      throw new TypeError('transport: "control" and engine are mutually exclusive');
-    }
-    const server = new Server(options);
-    // An engine ignores `LIBTMUX_TRANSPORT` rather than obeying it. The
-    // variable is set by whoever started the process; the engine is written by
-    // the caller, about where their tmux is. Obeying the variable would move
-    // every command to this machine's tmux, and report success.
-    if (options?.engine === undefined && transportFrom(options, environment) === "control") {
-      return server.connect();
-    }
-    // Nothing is held, so releasing it is a no-op — but the call has to exist,
-    // or switching modes by configuration would mean editing the caller.
-    return Object.defineProperties(server, {
-      close: { value: async (): Promise<void> => undefined },
-      [Symbol.asyncDispose]: { value: async (): Promise<void> => undefined },
-    }) as ManagedServer;
+    registerServerRuntime(this, runtime, runtimeConstructors);
   }
 
   /**
@@ -270,7 +218,7 @@ export class Server {
    */
   async withConnection<T>(
     body: (live: ConnectedServer) => Promise<T>,
-    options?: WatchOptions,
+    options?: ConnectOptions,
   ): Promise<T> {
     const live = await this.connect(options);
     try {
@@ -337,22 +285,6 @@ export class Server {
   }
 
   /**
-   * The engine this server was built with, if it was given one.
-   *
-   * `undefined` means tmux is a process this one can spawn, which is what
-   * {@link Server.watch} and {@link Server.connect} need and what a caller
-   * choosing between a connection and a command per read has to know.
-   *
-   * ```ts
-   * const reader = server.engine === undefined ? await server.connect() : server;
-   * (await reader.snapshot()).windows.count();
-   * ```
-   */
-  get engine(): CommandTransport | undefined {
-    return runtimeForServerValue(this)?.engine;
-  }
-
-  /**
    * The tmux executable this server runs.
    *
    * ```ts
@@ -410,10 +342,10 @@ export class Server {
   /**
    * Bind this server to one control-mode connection and return it.
    *
-   * The returned server has the same API, but its commands travel over an
-   * already-open connection instead of spawning a `tmux` process each. A
-   * snapshot costs four writes rather than four processes, which is what makes
-   * reacting to {@link watch} events affordable in a loop.
+   * The returned server has the same API and shares one control connection for
+   * events and daemon-lifetime tracking. Commands use ordinary tmux processes:
+   * control mode cannot frame arbitrary command output truthfully when aliases
+   * and waiting commands are allowed.
    *
    * ```ts
    * await using live = await server.connect();
@@ -422,18 +354,23 @@ export class Server {
    * }
    * ```
    *
-   * `loadBuffer` and anything else that feeds a command stdin still needs the
-   * spawning server, since control mode has no channel for it.
+   * A snapshot remains one tmux invocation containing all four listings.
    */
-  async connect(options?: WatchOptions): Promise<ConnectedServer> {
+  async connect(options?: ConnectOptions): Promise<ConnectedServer> {
+    if (options !== undefined && "pauseAfterSeconds" in options) {
+      throw new TypeError("pauseAfterSeconds belongs to Server.watch(), not Server.connect()");
+    }
+    for (const removed of ["maxCommandBytes", "maxPendingCommands"] as const) {
+      if (options !== undefined && removed in options) {
+        throw new TypeError(
+          `${removed} was removed; Server.connect() observes events and commands use the server engine`,
+        );
+      }
+    }
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "connect");
-    const connection = new ControlConnection(
-      runtime.connection,
-      options,
-      false,
-      new NodeSpawnTransport(),
-    );
+    const commands = runtime.transport;
+    const connection = new ControlConnection(runtime.connection, options, false, commands);
     try {
       await connection.ready();
     } catch (error) {
@@ -443,104 +380,19 @@ export class Server {
         { cause: error },
       );
     }
+    const connectedCommands: CommandTransport = observerBoundTransport({
+      commands,
+      connection: runtime.connection,
+      observer: connection,
+    });
     const boundRuntime = createRuntimeContext({
       connection: runtime.connection,
       connectionAlias: randomUUID() as ConnectionAlias,
       daemonEpoch: 0 as DaemonEpoch,
       ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
-      transport: connection,
+      transport: connectedCommands,
     });
-    // A control client proves which daemon it is talking to for as long as it
-    // stays up. When it does not, every handle read through it is from a daemon
-    // this connection can no longer vouch for.
-    connection.onDaemonLost(() => {
-      invalidateRuntimeEpoch(boundRuntime);
-    });
-    const bound = createServerWithRuntime(boundRuntime) as ConnectedServer;
-
-    /**
-     * The waits this connection has outstanding, so closing it can answer them.
-     *
-     * Closing on purpose — a caller cancelling, a scope ending — rejects every
-     * wait in flight, and a wait nobody is holding any more becomes an
-     * unhandled rejection the caller cannot even catch. Marking each one
-     * handled first silences exactly those, and only those: a daemon that dies
-     * never comes through here, so a real failure stays as loud as it was, and
-     * so does a wait somebody forgot to await that later times out.
-     *
-     * Held as records rather than as the promises themselves. Attaching
-     * `.finally` to a promise to clean up after it marks that promise handled
-     * at the moment it is created, which would silence every wait always and
-     * leave this looking like it worked.
-     */
-    const waiting = new Set<{ promise?: Promise<ServerSnapshot> }>();
-    const closeWaits = (): Promise<void> => {
-      for (const entry of waiting) entry.promise?.catch(() => undefined);
-      return connection.close();
-    };
-
-    Object.defineProperties(bound, {
-      close: { value: closeWaits },
-      subscribe: { value: () => connection.subscribe() },
-      waitFor: {
-        value: (
-          matches: (snapshot: ServerSnapshot) => boolean,
-          options: { readonly timeoutMs?: number } = {},
-        ): Promise<ServerSnapshot> => {
-          const entry: { promise?: Promise<ServerSnapshot> } = {};
-          const run = async (): Promise<ServerSnapshot> => {
-            // Subscribe before reading, or a change that lands between the read
-            // and the subscription is never seen and the wait hangs on a
-            // condition that is already true.
-            const events = connection.subscribe();
-            let deadlinePassed = false;
-            const deadline = setTimeout(() => {
-              deadlinePassed = true;
-              void events.close();
-            }, options.timeoutMs ?? 30_000);
-            try {
-              let snapshot = await bound.snapshot();
-              if (matches(snapshot)) return snapshot;
-              for await (const _event of events) {
-                snapshot = await bound.snapshot();
-                if (matches(snapshot)) return snapshot;
-              }
-            } finally {
-              clearTimeout(deadline);
-              await events.close();
-              // Inside the body on purpose: cleaning up from outside attaches
-              // a handler, which marks the promise handled the moment it exists
-              // and silences every wait rather than the closed ones.
-              waiting.delete(entry);
-            }
-            // Waiting out a deadline and losing the connection are different
-            // outcomes, and only one of them says anything about the condition.
-            throw deadlinePassed
-              ? new WaitTimeout("the awaited tmux state did not arrive before the deadline")
-              : new LibTmuxException(
-                  "the tmux event stream ended before the awaited state arrived",
-                );
-          };
-          const promise = run();
-          entry.promise = promise;
-          waiting.add(entry);
-          return promise;
-        },
-      },
-      // A chained line draws one response block per command from tmux, and this
-      // connection pairs one block with one request, so the sequence goes down
-      // it one command at a time. That costs the same here: the process is
-      // already running and these are writes on its socket.
-      pipeline: {
-        value: (
-          commands: readonly (readonly string[])[],
-          options?: CommandOptions,
-        ): Promise<readonly (readonly string[])[]> =>
-          runPipelineSequentially(boundRuntime, commands, options),
-      },
-      [Symbol.asyncDispose]: { value: closeWaits },
-    });
-    return bound;
+    return createConnectedServer(boundRuntime, runtimeConstructors, connection);
   }
 
   /**
@@ -555,8 +407,8 @@ export class Server {
    * now.windows.count();
    * ```
    */
-  snapshot(): Promise<ServerSnapshot> {
-    return buildServerSnapshot(this, runtimeForServer(this));
+  snapshot(options: SnapshotOptions = {}): Promise<ServerSnapshot> {
+    return buildServerSnapshot(this, runtimeForServer(this), options.signal);
   }
 
   /**
@@ -817,8 +669,8 @@ export class Server {
    * Whether this server is at least `minimum`, written the way tmux writes it.
    *
    * This is how a caller gates on a feature that arrived in a known release
-   * without parsing `#{version}` themselves. A `master` build compares above
-   * every tagged release.
+   * without parsing `#{version}` themselves. Development builds such as
+   * `next-3.8` compare above every tagged release.
    *
    * ```ts
    * if (await server.versionAtLeast("3.3")) {
@@ -916,6 +768,10 @@ export class Server {
   /**
    * Whether a session with this name exists.
    *
+   * The name is matched exactly. tmux normally accepts a unique prefix as a
+   * session target, which would make checking `work` answer yes for
+   * `workspace`; this method does not.
+   *
    * ```ts
    * if (!(await server.hasSession("work"))) {
    *   await server.newSession({ name: "work" });
@@ -955,13 +811,11 @@ export class Server {
     return listCommands(runtimeForServer(this));
   }
 
-  /** Store a named paste buffer. */
   /**
    * Fill a paste buffer from data fed through tmux's stdin.
    *
    * Use this over {@link Server.setBuffer} for anything large or binary: that
    * one passes its data as a command-line argument, and this one does not.
-   * Control mode has no channel for stdin, so this needs the spawning server.
    *
    * ```ts
    * await server.loadBuffer("payload", new Uint8Array([0x68, 0x69]));
@@ -990,11 +844,6 @@ export class Server {
   /**
    * Read a named paste buffer's contents.
    *
-   * Over a control connection this stops at the first NUL byte: tmux writes a
-   * command's output to a control client as a C string. The buffer is unharmed
-   * — `saveBuffer` and a spawning server both read it whole — and a pane's own
-   * output is unaffected, being escaped before it is written.
-   *
    * ```ts
    * const lines = await server.showBuffer("greeting");
    * lines[0]; // "hello"
@@ -1002,6 +851,21 @@ export class Server {
    */
   showBuffer(name: string): Promise<readonly string[]> {
     return showBuffer(runtimeForServer(this), name);
+  }
+
+  /**
+   * Read a named paste buffer without decoding or splitting its bytes.
+   *
+   * Unlike {@link Server.showBuffer}, this preserves NUL, invalid UTF-8, line
+   * endings, and trailing newlines.
+   *
+   * ```ts
+   * const bytes = await server.showBufferBytes("payload");
+   * bytes[0]; // 104
+   * ```
+   */
+  showBufferBytes(name: string): Promise<Uint8Array> {
+    return showBufferBytes(runtimeForServer(this), name);
   }
 
   /**
@@ -1053,6 +917,10 @@ export class Server {
   /**
    * Whether the tmux server is reachable.
    *
+   * A missing daemon, socket, or tmux executable answers false. Cancellation,
+   * a command deadline, or an engine programming error still raises: none says
+   * whether the server is alive.
+   *
    * ```ts
    * if (await server.isAlive()) {
    *   await server.snapshot();
@@ -1102,13 +970,12 @@ export class Server {
     return runRawCommand(runtimeForServer(this), null, command, args, options);
   }
   /**
-   * Run several tmux commands in one invocation.
+   * Run several tmux commands in order.
    *
-   * tmux takes a sequence of commands, which is the difference between building
-   * a ten-window workspace with one process and doing it with ten. The result is
-   * positional — `results[i]` holds what `commands[i]` printed, empty for a
-   * command that prints nothing — so a creating command's `-P -F` lands where
-   * you asked for it.
+   * The result is positional: `results[i]` holds what `commands[i]` printed,
+   * empty for a command that prints nothing. Commands run as separate tmux
+   * invocations because arbitrary command output has no alias-independent
+   * delimiter.
    *
    * ```ts
    * const [[first], [second]] = await server.pipeline([
@@ -1122,8 +989,6 @@ export class Server {
    * failed. Take a {@link Server.snapshot} afterwards if you need to know what
    * survived.
    *
-   * A connected server sends these one at a time instead, which costs the same
-   * over a connection that is already open.
    */
   pipeline(
     commands: readonly (readonly string[])[],
@@ -1133,13 +998,12 @@ export class Server {
   }
 
   /**
-   * Run planned mutations as one invocation, resolving each to what it made.
+   * Run planned mutations in order, resolving each to what it made.
    *
    * The batched form of calling them one at a time: the same options go in and
-   * the same handles come out, positionally and individually typed. What
-   * changes is the cost. Calling `newWindow` ten times spends ten invocations
-   * and ten snapshots, because each has to find what it just created; a batch
-   * spends one of each for the whole group.
+   * the same handles come out, positionally and individually typed. Calling
+   * `newWindow` repeatedly takes one snapshot after each mutation; a batch runs
+   * the mutations in order and resolves all of them from one final snapshot.
    *
    * ```ts
    * const [editor, logs] = await server.batch([
@@ -1195,3 +1059,11 @@ export class Server {
     return address !== undefined && address === serverAddress(otherRuntime);
   }
 }
+
+const runtimeConstructors: RuntimeConstructors = Object.freeze({
+  client: Client.prototype,
+  pane: Pane.prototype,
+  server: Server.prototype,
+  session: Session.prototype,
+  window: Window.prototype,
+});

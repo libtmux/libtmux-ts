@@ -1,51 +1,45 @@
 import { types as nodeTypes } from "node:util";
 
-import { Client } from "../../client.js";
-import {
-  MultipleMatchesError,
-  NoMatchError,
-  QueryValidationError,
-  VersionTooLow,
-} from "../../exc.js";
-import { Pane } from "../../pane.js";
+import type { Client } from "../../client.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../exc.js";
+import type { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
-import { Session } from "../../session.js";
-import { Window } from "../../window.js";
-import {
-  WHERE_FIELDS_V1,
-  WHERE_RELATIONS_V1,
-  type WhereModel,
-} from "../../_generated/where_fields.js";
-import { compareTmuxVersions, parseTmuxVersion } from "../runtime/tmux_version.js";
+import type { Session } from "../../session.js";
+import type { Window } from "../../window.js";
+import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
 import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
+  corpusForSelectionProjection,
   isSelectionProjection,
   originGraphForSelectionProjection,
+  resolverForSelectionProjection,
   selectionProjectionOwnsRecord,
   type ProjectionRecord,
   type SelectionProjection,
-} from "../graph/selection_projection.js";
+} from "../graph/projection_identity.js";
 import type { ModelForKind } from "../runtime/model_kind.js";
 import {
   entityRefForHandle,
   graphRecordRefForHandle,
+  modelKindForHandle,
   originGraphForHandle,
   snapshotForHandle,
   winlinkRefForHandle,
 } from "../runtime/live_handle.js";
 import { compileWhere, type CompiledWhere } from "./compile.js";
+import { refuseFieldsNewerThanServer } from "./version_gate.js";
 
 type ProjectedKind = "client" | "pane" | "session" | "window";
 type ProjectedModel = Client | Pane | Session | Window;
 
 interface SelectionEntry<Model> {
-  readonly record: ProjectionRecord | null;
+  readonly record: ProjectionRecord;
   readonly value: Model;
 }
 
 /** Which scalar carries a model's own id, for the models that can share one. */
-const ID_SCALARS: Readonly<Partial<Record<string, string>>> = Object.freeze({
+const ID_SCALARS: Readonly<Partial<Record<ProjectedKind, string>>> = Object.freeze({
   pane: "pane_id",
   window: "window_id",
 });
@@ -57,7 +51,7 @@ const ID_SCALARS: Readonly<Partial<Record<string, string>>> = Object.freeze({
  * message still describes those.
  */
 function sharedPlacementHint<Model>(
-  kind: string,
+  kind: ProjectedKind,
   entries: readonly SelectionEntry<Model>[],
 ): string | undefined {
   const scalar = ID_SCALARS[kind];
@@ -65,9 +59,9 @@ function sharedPlacementHint<Model>(
   const ids = new Set<string>();
   const sessions: string[] = [];
   for (const entry of entries) {
-    const id = entry.record?.scalars[scalar];
+    const id = entry.record.scalars[scalar];
     // The winlink is the placement: which session holds this one.
-    const session = entry.record?.winlink?.sessionId;
+    const session = entry.record.winlink?.sessionId;
     if (typeof id !== "string" || session === undefined) return undefined;
     ids.add(id);
     const named = String(session);
@@ -89,10 +83,9 @@ interface ProjectedSelectionState {
   readonly resolve: (reference: GraphRecordRef) => ProjectionRecord | undefined;
 }
 
-type SelectionState = ProjectedSelectionState;
-
 const emptyQuery: Readonly<Record<string, unknown>> = Object.freeze({});
 const selectionConstructionToken: object = Object.freeze({});
+const validatedProjectionCorpora = new WeakSet<object>();
 
 function invalidSelection(cause?: unknown): never {
   throw new QueryValidationError({
@@ -123,7 +116,6 @@ function snapshotValues<Model>(input: readonly Model[]): readonly Model[] {
     const result: Model[] = [];
     for (let index = 0; index < length; index += 1) {
       const key = String(index);
-      if (!keys.includes(key)) return invalidSelection();
       const descriptor = Object.getOwnPropertyDescriptor(input, key);
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
         return invalidSelection();
@@ -137,24 +129,14 @@ function snapshotValues<Model>(input: readonly Model[]): readonly Model[] {
   }
 }
 
-function referenceKey(reference: GraphRecordRef): string {
-  return `${String(reference.source.length)}:${reference.source}:${String(reference.ordinal)}`;
-}
-
-function buildRecordResolver(
+function validateProjectionCorpus(
   projection: SelectionProjection,
-): (reference: GraphRecordRef) => ProjectionRecord | undefined {
-  const records = new Map<string, ProjectionRecord>();
-  for (const record of projection.records) {
-    if (!selectionProjectionOwnsRecord(projection, record)) return invalidSelection();
-    const key = referenceKey(record.ref);
-    if (records.has(key)) return invalidSelection();
-    records.set(key, record);
-  }
-  return (reference): ProjectionRecord | undefined => {
-    const record = records.get(referenceKey(reference));
-    return record !== undefined && graphRecordRefsEqual(record.ref, reference) ? record : undefined;
-  };
+  corpus: object,
+  resolve: (reference: GraphRecordRef) => ProjectionRecord | undefined,
+): void {
+  if (validatedProjectionCorpora.has(corpus)) return;
+  for (const record of projection.records) validateProjectionRecord(projection, record, resolve);
+  validatedProjectionCorpora.add(corpus);
 }
 
 function validateProjectionRecord(
@@ -162,6 +144,18 @@ function validateProjectionRecord(
   record: ProjectionRecord,
   resolve: (reference: GraphRecordRef) => ProjectionRecord | undefined,
 ): void {
+  if (
+    !Object.isFrozen(record) ||
+    !Object.isFrozen(record.adjacency) ||
+    !Object.isFrozen(record.scalars) ||
+    record.adjacency.some(
+      (adjacency) =>
+        !Object.isFrozen(adjacency) ||
+        (adjacency.cardinality === "many" && !Object.isFrozen(adjacency.targets)),
+    )
+  ) {
+    return invalidSelection();
+  }
   const expectedFields = WHERE_FIELDS_V1[record.model];
   const scalarKeys = Reflect.ownKeys(record.scalars);
   if (
@@ -211,16 +205,7 @@ function validateProjectionRecord(
 function hasProjectedClass(model: ProjectedKind, value: unknown): value is ProjectedModel {
   if ((typeof value !== "object" && typeof value !== "function") || value === null) return false;
   if (nodeTypes.isProxy(value)) return false;
-  switch (model) {
-    case "client":
-      return value instanceof Client;
-    case "pane":
-      return value instanceof Pane;
-    case "session":
-      return value instanceof Session;
-    case "window":
-      return value instanceof Window;
-  }
+  return modelKindForHandle(value) === model;
 }
 
 function authenticateProjectedValue(
@@ -269,11 +254,14 @@ function projectedEntries<Kind extends ProjectedKind>(
 } {
   if (!isSelectionProjection(projection)) return invalidSelection();
   const projectionGraph = originGraphForSelectionProjection(projection);
-  if (projectionGraph === undefined) return invalidSelection();
+  const corpus = corpusForSelectionProjection(projection);
+  const resolve = resolverForSelectionProjection(projection);
+  if (projectionGraph === undefined || corpus === undefined || resolve === undefined) {
+    return invalidSelection();
+  }
   const copiedValues = snapshotValues(values);
   if (copiedValues.length !== projection.members.length) return invalidSelection();
-  const resolve = buildRecordResolver(projection);
-  for (const record of projection.records) validateProjectionRecord(projection, record, resolve);
+  validateProjectionCorpus(projection, corpus, resolve);
 
   const entries: Array<SelectionEntry<ModelForKind<Kind>>> = [];
   for (const [index, member] of projection.members.entries()) {
@@ -293,10 +281,14 @@ function projectedEntries<Kind extends ProjectedKind>(
 
 class SelectionImpl<Model> implements Selection<Model> {
   readonly #entries: readonly SelectionEntry<Model>[];
-  readonly #state: SelectionState;
+  readonly #state: ProjectedSelectionState;
   readonly #values: readonly Model[];
 
-  constructor(token: object, entries: readonly SelectionEntry<Model>[], state: SelectionState) {
+  constructor(
+    token: object,
+    entries: readonly SelectionEntry<Model>[],
+    state: ProjectedSelectionState,
+  ) {
     if (token !== selectionConstructionToken) invalidSelection();
     this.#entries = entries;
     this.#state = state;
@@ -441,7 +433,6 @@ class SelectionImpl<Model> implements Selection<Model> {
     const state = this.#state;
     const entries: SelectionEntry<Model>[] = [];
     for (const entry of this.#entries) {
-      if (entry.record === null) continue;
       if (!compiled.matches(entry.record, state.resolve)) continue;
       entries.push(entry);
       if (entries.length >= limit) break;
@@ -452,59 +443,6 @@ class SelectionImpl<Model> implements Selection<Model> {
 
 Object.freeze(SelectionImpl.prototype);
 Object.freeze(SelectionImpl);
-
-/**
- * Refuse a query naming a field the server is too old to have.
- *
- * tmux answers for the fields its release knows and says nothing about the
- * rest, so a criterion on a newer field matched against an older server
- * matches nothing — which is indistinguishable from "no object has this", and
- * is a different statement. The typed row already draws that line: it answers
- * `null` for a field the server does not have, and `false` for one it has and
- * is off. This is the same line, drawn for queries.
- *
- * Checked once per query rather than once per candidate, and against the
- * version the graph recorded when it was acquired — so a stored query replayed
- * against an old server is answered the same way an inline one is.
- */
-function refuseFieldsNewerThanServer(
-  model: WhereModel,
-  query: Readonly<Record<string, unknown>>,
-  serverVersion: string | undefined,
-): void {
-  // A graph normalized from stored bytes predates this and cannot say which
-  // tmux answered. Refusing on a guess would be worse than the silence.
-  if (serverVersion === undefined) return;
-  const actual = parseTmuxVersion(serverVersion);
-
-  const walk = (scope: WhereModel, node: Readonly<Record<string, unknown>>): void => {
-    const relations = WHERE_RELATIONS_V1[scope];
-    for (const [key, value] of Object.entries(node)) {
-      if (key === "AND" || key === "OR" || key === "NOT") {
-        for (const branch of value as readonly Readonly<Record<string, unknown>>[]) {
-          walk(scope, branch);
-        }
-        continue;
-      }
-      const relation = relations.find((candidate) => candidate.name === key);
-      if (relation !== undefined) {
-        for (const quantified of Object.values(value as Readonly<Record<string, unknown>>)) {
-          walk(relation.targetModel, quantified as Readonly<Record<string, unknown>>);
-        }
-        continue;
-      }
-      const field = WHERE_FIELDS_V1[scope].find((candidate) => candidate.wireName === key);
-      if (field === undefined) continue;
-      if (compareTmuxVersions(actual, parseTmuxVersion(field.since)) >= 0) continue;
-      throw new VersionTooLow({
-        criteriaName: field.criteriaName,
-        serverVersion,
-        since: field.since,
-      });
-    }
-  };
-  walk(model, query);
-}
 
 export function createProjectedSelection<Kind extends ProjectedKind>(
   model: Kind,

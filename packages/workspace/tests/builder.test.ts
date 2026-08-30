@@ -1,27 +1,24 @@
 // The library's real-tmux fixture harness reaches into its internals, so it is
 // unpublished and an in-repo consumer reaches across packages for it by path.
-import { rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
 import {
-  prepareRunRoot,
-  reapOwnedRunRoot,
   runWithCleanup,
-} from "../../libtmux/src/_internal/test/run_root.js";
-import { TestServer } from "../../libtmux/src/_internal/test/test_server.js";
-import { Server } from "libtmux/server";
-import { asSingleInvocation } from "libtmux/engine";
-import type { TmuxCommandRequest, TmuxCommandResult, TmuxEngine } from "libtmux/engine";
-import { applyWorkspace, planWorkspace } from "../src/builder.js";
-import { OWNERSHIP_OPTION } from "../src/ownership.js";
-import { parseWorkspaceYaml } from "../src/config.js";
-
-import {
+  withOwnedRunRoot,
+  TestServer,
   assertOwnedSocketPath,
   makeTestDirectory,
-} from "../../libtmux/src/_internal/test/temp_root.js";
+} from "../../libtmux/src/_internal/test/testkit.js";
+
+import { Server } from "libtmux/server";
+import { flattenInvocation } from "libtmux/engine";
+import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
+import { applyWorkspace, planWorkspace, WorkspaceApplyError } from "../src/builder.js";
+import { OWNERSHIP_OPTION } from "../src/ownership.js";
+import { parseWorkspace, parseWorkspaceYaml } from "../src/config.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -39,7 +36,7 @@ function serverFor(fixture: TestServer): Server {
  */
 function shellEngine(onInvocation: () => void): TmuxEngine {
   const run = async (
-    request: TmuxCommandRequest,
+    request: TmuxInvocationRequest,
     args: readonly string[],
   ): Promise<TmuxCommandResult> => {
     onInvocation();
@@ -68,48 +65,19 @@ function shellEngine(onInvocation: () => void): TmuxEngine {
 
   return {
     endpoint: "sh://local",
-    execute: (request) => run(request, request.args),
-    async executeGroup(requests) {
-      const [first] = requests;
-      if (first === undefined) return [];
-      const invocation = asSingleInvocation(requests);
-      const result = await run(first, invocation.args);
-      const sections = invocation.sections(result.stdout);
-      return sections.map((stdout, index) => ({
-        cmd: result.cmd,
-        returncode: index === sections.length - 1 ? result.returncode : 0,
-        signal: null,
-        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
-        stdout,
-      }));
-    },
+    execute: (request) => run(request, flattenInvocation(request)),
   };
 }
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await makeTestDirectory("ltx-workspace-");
-  const published = process.env.LIBTMUX_TEST_RUN_ROOT;
-  const runRoot = published ?? join(parent, "run, root");
-  if (published === undefined) await prepareRunRoot(runRoot);
-  let done = false;
-  try {
+  return withOwnedRunRoot("ltx-workspace-", async (runRoot) => {
+    const fixture = await TestServer.create({ runRoot, sessionName: "ws" });
+    assertOwnedSocketPath(fixture.socketPath);
     await runWithCleanup(
-      async () => {
-        const fixture = await TestServer.create({ runRoot, sessionName: "ws" });
-        assertOwnedSocketPath(fixture.socketPath);
-        await runWithCleanup(
-          () => body(fixture),
-          () => fixture.dispose(),
-        );
-      },
-      async () => {
-        if (published === undefined) await reapOwnedRunRoot(runRoot);
-        done = true;
-      },
+      () => body(fixture),
+      () => fixture.dispose(),
     );
-  } finally {
-    if (done) await rm(parent, { force: true, recursive: true });
-  }
+  });
 }
 
 async function readMarker(path: string): Promise<readonly string[]> {
@@ -164,17 +132,226 @@ windows:
 `;
 
 describe("workspace builder", () => {
-  test("parses a tmuxp-shaped workspace", () => {
+  test("parses and normalizes a tmuxp-shaped workspace", () => {
     const workspace = parseWorkspaceYaml(WORKSPACE);
+    const implicit = parseWorkspace({
+      session_name: "implicit",
+      windows: [{}, { panes: [] }],
+    });
 
     expect(workspace.session_name).toBe("project");
     expect(workspace.windows).toHaveLength(2);
     expect(workspace.windows[0]?.window_name).toBe("editor");
     expect(workspace.windows[1]?.panes).toHaveLength(1);
+    expect(implicit.windows.map((window) => window.panes)).toEqual([[{}], [{}]]);
   });
+
+  test("gives each initial pane directory precedence over its parents", async () => {
+    const root = await makeTestDirectory("ltx-workspace-cwd-");
+    const workspaceDirectory = join(root, "workspace");
+    const windowDirectory = join(root, "window");
+    const paneDirectory = join(root, "pane");
+    await Promise.all(
+      [workspaceDirectory, windowDirectory, paneDirectory].map((path) => mkdir(path)),
+    );
+
+    try {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        await applyWorkspace(server, {
+          session_name: "directories",
+          start_directory: workspaceDirectory,
+          windows: [
+            {
+              panes: [{ start_directory: paneDirectory }],
+              start_directory: windowDirectory,
+              window_name: "initial",
+            },
+            {
+              panes: [{}],
+              start_directory: windowDirectory,
+              window_name: "window",
+            },
+            {
+              panes: [{ start_directory: paneDirectory }],
+              start_directory: windowDirectory,
+              window_name: "later-pane",
+            },
+            { panes: [{}], window_name: "workspace" },
+          ],
+        });
+
+        const panes = (await server.snapshot()).panes;
+        expect(panes.one({ window: { is: { name: "initial" } } }).format.pane_current_path).toBe(
+          paneDirectory,
+        );
+        expect(panes.one({ window: { is: { name: "window" } } }).format.pane_current_path).toBe(
+          windowDirectory,
+        );
+        expect(panes.one({ window: { is: { name: "later-pane" } } }).format.pane_current_path).toBe(
+          paneDirectory,
+        );
+        expect(panes.one({ window: { is: { name: "workspace" } } }).format.pane_current_path).toBe(
+          workspaceDirectory,
+        );
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  test("applies finite numeric and boolean YAML option values", async () => {
+    const workspace = parseWorkspaceYaml(`
+session_name: scalar-options
+options:
+  "@number": 42
+  "@boolean": true
+  status: false
+windows:
+  - options:
+      "@window-number": 7
+      "@window-boolean": false
+    window_name: main
+`);
+
+    expect(workspace.options).toEqual({ "@boolean": true, "@number": 42, status: false });
+    expect(workspace.windows[0]?.options).toEqual({
+      "@window-boolean": false,
+      "@window-number": 7,
+    });
+    expect(() =>
+      parseWorkspaceYaml(`
+session_name: invalid-number
+options:
+  "@number": .inf
+windows:
+  - window_name: main
+`),
+    ).toThrow();
+
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await applyWorkspace(server, workspace);
+      expect((await session.showOptions()).get("@number")).toBe("42");
+      expect((await session.showOptions()).get("@boolean")).toBe("on");
+      expect((await session.showOptions()).get("status")).toBe("off");
+
+      const window = (await server.snapshot()).windows.one({
+        name: "main",
+        session: { is: { name: "scalar-options" } },
+      });
+      expect((await window.showOptions()).get("@window-number")).toBe("7");
+      expect((await window.showOptions()).get("@window-boolean")).toBe("off");
+    });
+  });
+
+  test("rejects the reserved ownership option while parsing", () => {
+    expect(() =>
+      parseWorkspaceYaml(`
+session_name: reserved
+options:
+  "${OWNERSHIP_OPTION}": another-workspace
+windows:
+  - window_name: main
+`),
+    ).toThrow(`${OWNERSHIP_OPTION} is reserved for workspace ownership`);
+  });
+
+  test("treats option names as literals before ownership matching", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await applyWorkspace(
+        server,
+        parseWorkspaceYaml(`
+session_name: workspace
+options:
+  "@libtmux-#{session_name}": literal
+windows:
+  - window_name: main
+    options:
+      "@literal-#{window_name}": literal
+`),
+      );
+      const sessionOptions = await session.showOptions();
+
+      expect(sessionOptions.get(OWNERSHIP_OPTION)).toBe("workspace");
+      expect(sessionOptions.get("@libtmux-#{session_name}")).toBe("literal");
+      expect((await session.windows.one().showOptions()).get("@literal-#{window_name}")).toBe(
+        "literal",
+      );
+    });
+  });
+
+  test("snapshots a workspace before the first server await", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const options: Record<string, string> = {};
+      const workspace = {
+        options,
+        session_name: "captured",
+        windows: [{ panes: [], window_name: "main" }],
+      };
+
+      const applying = applyWorkspace(server, workspace);
+      options[OWNERSHIP_OPTION] = "forged";
+
+      const session = await applying;
+      expect((await session.showOptions()).get(OWNERSHIP_OPTION)).toBe("captured");
+    });
+  });
+
+  test("reports completed milestones and the stage that failed", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const error = await applyWorkspace(
+        server,
+        parseWorkspaceYaml(`
+session_name: partial
+options:
+  "@completed": "yes"
+  not-a-real-option: "no"
+windows:
+  - window_name: main
+`),
+      ).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+
+      expect(error).toBeInstanceOf(WorkspaceApplyError);
+      if (!(error instanceof WorkspaceApplyError)) throw new Error("apply error lost its type");
+      expect(error).toMatchObject({
+        completed: [
+          { kind: "session", status: "created" },
+          { kind: "session-claimed" },
+          { kind: "workspace-option", name: "@completed" },
+        ],
+        failed: { kind: "workspace-option", name: "not-a-real-option" },
+        requiresReplan: true,
+      });
+      expect(error.cause).toBeInstanceOf(Error);
+      expect(Object.isFrozen(error.completed)).toBe(true);
+      expect(error.completed.every((step) => Object.isFrozen(step))).toBe(true);
+      expect(Object.isFrozen(error.failed)).toBe(true);
+
+      const session = (await server.snapshot()).sessions.one({ name: "partial" });
+      expect((await session.showOptions()).get("@completed")).toBe("yes");
+    });
+  }, 60_000);
 
   test("rejects a workspace missing its session name", () => {
     expect(() => parseWorkspaceYaml("windows: []")).toThrow();
+  });
+
+  test("rejects a name tmux would not store unchanged, while parsing", () => {
+    // The library refuses these at the call. Catching them here names the
+    // field, rather than surfacing a TypeError from partway through an apply.
+    expect(() => parseWorkspaceYaml("session_name: a:b\nwindows:\n  - window_name: w\n")).toThrow(
+      "session_name",
+    );
+    expect(() =>
+      parseWorkspaceYaml("session_name: work\nwindows:\n  - window_name: a.b\n"),
+    ).toThrow("window_name");
   });
 
   test("rejects a key it does not know, at every level", () => {
@@ -214,16 +391,31 @@ describe("workspace builder", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      // Reconciling holds a control connection open when it can, which is a
-      // process this one spawns. An engine says tmux is not somewhere this
-      // process can spawn it, so the apply has to do without rather than
-      // attach to whichever local tmux answers.
       const session = await applyWorkspace(server, parseWorkspaceYaml(WORKSPACE));
 
       expect(session.windows.map((window) => window.name)).toEqual(["editor", "server"]);
       const snapshot = await server.snapshot();
       expect(snapshot.panes.count({ window: { is: { name: "editor" } } })).toBe(2);
       expect(invocations).toBeGreaterThan(0);
+    });
+  }, 120_000);
+
+  test("reconciles without opening an unused event observer", async () => {
+    await withServer(async (fixture) => {
+      class ObserverFreeServer extends Server {
+        override connect(..._args: Parameters<Server["connect"]>): ReturnType<Server["connect"]> {
+          throw new Error("workspace reconciliation must not connect");
+        }
+      }
+      const server = new ObserverFreeServer({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      const session = await applyWorkspace(server, parseWorkspaceYaml(WORKSPACE));
+
+      expect(session.windows.map((window) => window.name)).toEqual(["editor", "server"]);
     });
   }, 120_000);
 
@@ -235,7 +427,7 @@ describe("workspace builder", () => {
       expect(session.name).toBe("project");
 
       const snapshot = await server.snapshot();
-      const windows = snapshot.windows.filter((window) => window.sessionId === session.id);
+      const windows = snapshot.windows.filter((window) => window.format.session_id === session.id);
 
       // Exactly the two described windows: the first was adopted, not created.
       expect(windows.length).toBe(2);
@@ -348,7 +540,7 @@ describe("workspace builder", () => {
         session: { is: { name: "focused" } },
       });
       expect(active.name).toBe("second");
-      expect(active.panes.one({ active: true }).index).toBe(1);
+      expect(Number(active.panes.one({ active: true }).index)).toBe(1);
     });
   }, 90_000);
 
@@ -373,26 +565,72 @@ describe("workspace builder", () => {
     });
   }, 90_000);
 
-  test("does not retype a pane's commands into a pane it did not create", async () => {
+  test("types a shell command literally when its text names a tmux key", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "ran");
+      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "literal");
       const workspace = parseWorkspaceYaml(
         [
-          "session_name: once",
+          "session_name: literal",
           "windows:",
           "  - window_name: main",
+          `    shell_command_before: "Up() { echo literal >> ${marker}; }"`,
           "    panes:",
-          `      - "echo ran >> ${marker}"`,
+          '      - shell_command: "Up"',
         ].join("\n"),
       );
 
       await applyWorkspace(server, workspace);
-      await drain(server, "once", marker);
-      await applyWorkspace(server, workspace);
-      await drain(server, "once", marker);
+      await drain(server, "literal", marker);
 
-      // The pane survived the second apply, so its command was not sent again.
+      expect(await readMarker(marker)).toContain("literal");
+    });
+  }, 90_000);
+
+  test("runs window commands in an implicit pane", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "implicit");
+      const workspace = parseWorkspaceYaml(
+        [
+          "session_name: implicit",
+          "windows:",
+          "  - window_name: main",
+          `    shell_command_before: "echo implicit >> ${marker}"`,
+        ].join("\n"),
+      );
+
+      await applyWorkspace(server, workspace);
+      await drain(server, "implicit", marker);
+
+      expect(await readMarker(marker)).toContain("implicit");
+    });
+  }, 90_000);
+
+  test("delivers create-only commands once when layout fails afterward", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "ran");
+      const workspace = (layout: string) =>
+        parseWorkspaceYaml(
+          [
+            "session_name: once",
+            "windows:",
+            "  - window_name: main",
+            `    layout: ${layout}`,
+            "    panes:",
+            `      - "echo ran >> ${marker}"`,
+          ].join("\n"),
+        );
+
+      await expect(applyWorkspace(server, workspace("not-a-layout"))).rejects.toBeInstanceOf(
+        WorkspaceApplyError,
+      );
+      await drain(server, "once", marker);
+      expect(ranCount(await readMarker(marker))).toBe(1);
+
+      await applyWorkspace(server, workspace("even-horizontal"));
+      await drain(server, "once", marker);
       expect(ranCount(await readMarker(marker))).toBe(1);
     });
   }, 90_000);
@@ -438,7 +676,7 @@ describe("workspace builder", () => {
 
       const plan = await planWorkspace(server, workspace);
       expect(plan.owned).toBe(false);
-      expect(plan.killsWindows).toEqual([]);
+      expect(plan.removesWindows).toEqual([]);
       expect(plan.retains).not.toBeEmpty();
 
       await applyWorkspace(server, workspace);
@@ -468,7 +706,9 @@ describe("workspace builder", () => {
       const smaller = { ...workspace, windows: [workspace.windows[0]!] };
       const plan = await planWorkspace(server, smaller);
       expect(plan.owned).toBe(true);
-      expect(plan.killsWindows).toEqual(["two"]);
+      expect(
+        plan.removesWindows.map(({ action, window }) => ({ action, name: window.name })),
+      ).toEqual([{ action: "kill", name: "two" }]);
       expect(plan.retains).toEqual([]);
 
       await applyWorkspace(server, smaller);
@@ -476,6 +716,158 @@ describe("workspace builder", () => {
       expect(after.windows.count()).toBe(1);
     });
   }, 60_000);
+
+  test("keeps duplicate window renames distinct in a plan", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "duplicate-plan", windowName: "same" });
+      await session.newWindow({ name: "same" });
+      const ids = (await server.snapshot()).sessions
+        .one({ id: session.id })
+        .windows.map(({ id }) => id);
+      const firstId = ids[0];
+      const secondId = ids[1];
+      if (firstId === undefined || secondId === undefined) {
+        throw new Error("expected two duplicate-name windows");
+      }
+
+      const plan = await planWorkspace(
+        server,
+        {
+          session_name: "duplicate-plan",
+          windows: [
+            { panes: [{}], window_name: "first" },
+            { panes: [{}], window_name: "second" },
+          ],
+        },
+        { prune: "always" },
+      );
+
+      expect(
+        plan.renamesWindows.map(({ from, to, window }) => ({
+          from,
+          id: window.id,
+          position: window.position,
+          to,
+        })),
+      ).toEqual([
+        { from: "same", id: firstId, position: 0, to: "first" },
+        { from: "same", id: secondId, position: 1, to: "second" },
+      ]);
+    });
+  }, 60_000);
+
+  test("unlinks a surplus window that another session uses", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const workspace = {
+        session_name: "linked-workspace",
+        windows: [
+          { panes: [{}], window_name: "kept" },
+          { panes: [{}], window_name: "shared" },
+        ],
+      };
+      await applyWorkspace(server, workspace);
+      const peer = await server.newSession({ name: "linked-peer" });
+      const surplus = (await server.snapshot()).sessions
+        .one({ name: workspace.session_name })
+        .windows.at(1);
+      if (surplus === undefined) throw new Error("expected a surplus window");
+      await surplus.link({ session: peer.id });
+
+      const smaller = { ...workspace, windows: [workspace.windows[0]!] };
+      const plan = await planWorkspace(server, smaller);
+      expect(plan.removesWindows.map(({ action, window }) => [action, window.id])).toEqual([
+        ["unlink", surplus.id],
+      ]);
+
+      await applyWorkspace(server, smaller);
+      const after = await server.snapshot();
+      expect(after.sessions.one({ name: workspace.session_name }).windows.count()).toBe(1);
+      expect(after.sessions.one({ id: peer.id }).windows.exists({ id: surplus.id })).toBe(true);
+    });
+  }, 60_000);
+
+  test("retains surplus windows shared by a session group", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const workspace = {
+        session_name: "grouped-workspace",
+        windows: [
+          { panes: [{}], window_name: "kept" },
+          { panes: [{}], window_name: "shared" },
+        ],
+      };
+      await applyWorkspace(server, workspace);
+      const peer = await server.newSession({
+        groupWith: workspace.session_name,
+        name: "group-peer",
+      });
+      const surplus = (await server.snapshot()).sessions
+        .one({ name: workspace.session_name })
+        .windows.at(1);
+      if (surplus === undefined) throw new Error("expected a surplus window");
+
+      const smaller = { ...workspace, windows: [workspace.windows[0]!] };
+      const plan = await planWorkspace(server, smaller);
+      expect(plan.removesWindows).toEqual([]);
+      expect(plan.retains).toContainEqual({
+        kind: "window",
+        reason: "grouped-session",
+        window: expect.objectContaining({ id: surplus.id }),
+      });
+
+      await applyWorkspace(server, smaller);
+      const after = await server.snapshot();
+      expect(
+        after.sessions.one({ name: workspace.session_name }).windows.exists({ id: surplus.id }),
+      ).toBe(true);
+      expect(after.sessions.one({ id: peer.id }).windows.exists({ id: surplus.id })).toBe(true);
+    });
+  }, 60_000);
+
+  for (const sharing of ["link", "group"] as const) {
+    test(`retains surplus panes in a ${sharing === "link" ? "linked" : "grouped"} window`, async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const workspace = {
+          session_name: `${sharing}-pane-workspace`,
+          windows: [{ panes: [{}, {}], window_name: "shared" }],
+        };
+        await applyWorkspace(server, workspace);
+        const session = (await server.snapshot()).sessions.one({ name: workspace.session_name });
+        const window = session.windows.one();
+        const originalPaneIds = window.panes.map(({ id }) => id);
+
+        // Workspace data cannot create shared topology, so the public core API sets up this fixture.
+        if (sharing === "link") {
+          const peer = await server.newSession({ name: "pane-link-peer" });
+          await window.link({ session: peer.id });
+        } else {
+          await server.newSession({ groupWith: session.id, name: "pane-group-peer" });
+        }
+
+        const smaller = {
+          ...workspace,
+          windows: [{ ...workspace.windows[0]!, panes: [{}] }],
+        };
+        const plan = await planWorkspace(server, smaller);
+        expect(plan.removesPanes).toEqual([]);
+        expect(plan.retains).toContainEqual({
+          count: 1,
+          kind: "panes",
+          reason: "shared-window",
+          window: expect.objectContaining({ id: window.id }),
+        });
+
+        await applyWorkspace(server, smaller);
+        const placements = (await server.snapshot()).windows.where({ id: window.id });
+        expect(placements.map((placement) => placement.panes.map(({ id }) => id))).toEqual(
+          placements.map(() => originalPaneIds),
+        );
+      });
+    }, 60_000);
+  }
 
   test("prunes a session it did not create only when told to in so many words", async () => {
     await withServer(async (fixture) => {
@@ -500,7 +892,7 @@ describe("workspace builder", () => {
       const session = await applyWorkspace(server, parseWorkspaceYaml(WORKSPACE));
       const snapshot = await server.snapshot();
       const server_window = snapshot.windows
-        .filter((window) => window.sessionId === session.id)
+        .filter((window) => window.format.session_id === session.id)
         .where({ name: "server" })
         .one();
 
@@ -550,7 +942,7 @@ describe("workspace builder", () => {
       });
 
       expect(plan.createsSession).toBe(true);
-      expect(plan.createsWindows).toEqual([0]);
+      expect(plan.createsWindows).toEqual([{ position: 0, name: "editor" }]);
     } finally {
       await rm(parent, { force: true, recursive: true });
     }

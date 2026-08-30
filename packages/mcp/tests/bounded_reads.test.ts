@@ -1,0 +1,927 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
+
+import {
+  MAX_FRAMED_COMMAND_BYTES,
+  MAX_INLINE_REQUEST_BYTES,
+  MAX_REQUEST_BYTES,
+  MAX_RESULT_BYTES,
+  resolvePolicy,
+} from "../src/policy.js";
+import { PaneTail } from "../src/pane_tail.js";
+import { registerResources } from "../src/resources.js";
+import { registerBuffers } from "../src/tools/buffers.js";
+import { registerCapture } from "../src/tools/capture.js";
+import { registerDiscovery } from "../src/tools/discovery.js";
+import { registerInput } from "../src/tools/input.js";
+import { registerLayout } from "../src/tools/layout.js";
+import { registerLifecycle } from "../src/tools/lifecycle.js";
+import { registerSearch } from "../src/tools/search.js";
+import { registerSettings } from "../src/tools/settings.js";
+import { registerWait } from "../src/tools/wait.js";
+import { registerWorkspace } from "../src/tools/workspace.js";
+import {
+  framedCommandText,
+  inlineRequestText,
+  requestText,
+  requestTextArray,
+} from "../src/schemas.js";
+import type { ToolContext } from "../src/context.js";
+import {
+  TmuxCommandError,
+  TmuxServerRestarted,
+  TmuxTransportError,
+  type Pane,
+  type ServerSnapshot,
+} from "libtmux";
+
+interface FakePaneOptions {
+  readonly capture?: (options: {
+    readonly end?: number;
+    readonly joinWrapped?: boolean;
+    readonly start?: number;
+  }) => Promise<readonly string[]>;
+  readonly height?: number;
+  readonly id: string;
+  readonly sessionId?: string;
+  readonly sendKeys?: (keys: string) => Promise<void>;
+  readonly width?: number;
+}
+
+function fakePane({
+  capture = async () => [],
+  height = 24,
+  id,
+  sessionId = "$1",
+  sendKeys = async () => undefined,
+  width = 80,
+}: FakePaneOptions): Pane {
+  return {
+    capture,
+    currentCommand: "sh",
+    dead: false,
+    format: { session_id: sessionId },
+    height,
+    id,
+    session: { name: `session-${sessionId}` },
+    sendKeys,
+    width,
+    window: { name: "window" },
+  } as unknown as Pane;
+}
+
+function commandFailure(target: string, diagnostic: string): TmuxCommandError {
+  return new TmuxCommandError({
+    args: ["capture-pane", "-p", "-t", target],
+    exitCode: 1,
+    stderr: [diagnostic],
+    target,
+  });
+}
+
+function fakeSelection<T extends { readonly id: string }>(items: readonly T[]): unknown {
+  const select = (where: { readonly id?: string; readonly name?: string }) =>
+    items.find(
+      (item) =>
+        (where.id === undefined || item.id === where.id) &&
+        (where.name === undefined || (item as { readonly name?: string }).name === where.name),
+    );
+  return {
+    first: select,
+    oneOrUndefined: select,
+    toArray: () => [...items],
+  };
+}
+
+function fakeSnapshot(panes: readonly Pane[]): ServerSnapshot {
+  return {
+    clients: fakeSelection([]),
+    panes: fakeSelection(panes),
+    sessions: fakeSelection([]),
+    windows: fakeSelection([]),
+  } as ServerSnapshot;
+}
+
+function fakeContext(
+  panes: readonly Pane[],
+  options: {
+    readonly environment?: Readonly<Record<string, string>>;
+    readonly hub?: unknown;
+    readonly maxResultLines?: number;
+    readonly tmux?: unknown;
+  } = {},
+): ToolContext {
+  const environment = {
+    ...options.environment,
+    ...(options.maxResultLines === undefined
+      ? {}
+      : { LIBTMUX_MCP_MAX_RESULT_LINES: String(options.maxResultLines) }),
+  };
+  return {
+    hub: options.hub ?? {},
+    identity: async () => ({
+      attendedPaneIds: [],
+      callerPaneId: undefined,
+      callerPaneIsOnThisServer: false,
+      clients: [],
+      serverPid: undefined,
+    }),
+    policy: resolvePolicy(environment),
+    snapshot: async () => fakeSnapshot(panes),
+    tmux: options.tmux ?? {},
+    topologyChanged: () => undefined,
+  } as unknown as ToolContext;
+}
+
+async function withTools(
+  context: ToolContext,
+  register: (mcp: McpServer, context: ToolContext) => void,
+  body: (client: Client) => Promise<void>,
+): Promise<void> {
+  const mcp = new McpServer({ name: "bounded-read-test", version: "0" });
+  register(mcp, context);
+  const client = new Client({ name: "bounded-read-test", version: "0" });
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await Promise.all([mcp.connect(serverSide), client.connect(clientSide)]);
+  try {
+    await body(client);
+  } finally {
+    await client.close();
+  }
+}
+
+function structured<T>(result: unknown): T {
+  return (result as { readonly structuredContent: T }).structuredContent;
+}
+
+function text(result: unknown): string {
+  const content = (result as { readonly content: readonly { readonly text?: string }[] }).content;
+  return content.map((entry) => entry.text ?? "").join("\n");
+}
+
+describe("bounded result policy", () => {
+  test("hard-clamps an operator line ceiling", () => {
+    expect(resolvePolicy({ LIBTMUX_MCP_MAX_RESULT_LINES: "999999999" }).maxResultLines).toBe(
+      10_000,
+    );
+  });
+
+  test("keeps display diagnostics inside a one-line result", async () => {
+    const context = fakeContext([], {
+      environment: { LIBTMUX_SAFETY: "mutating" },
+      maxResultLines: 1,
+      tmux: {
+        cmd: async (_command: string, args: readonly string[]) =>
+          args.includes("-a") ? ["known=value"] : ["one", "two"],
+      },
+    });
+
+    await withTools(context, registerDiscovery, async (client) => {
+      const answer = await client.callTool({
+        arguments: { format: "#{known}#{missing}" },
+        name: "display_message",
+      });
+      const result = structured<{ complete: boolean; droppedLines: number; value: string }>(answer);
+
+      expect(result.value).toBe("");
+      expect(result.droppedLines).toBe(2);
+      expect(result.complete).toBe(false);
+    });
+  });
+});
+
+describe("bounded request policy", () => {
+  test("accepts each byte boundary and rejects its next encoded unit", () => {
+    expect(
+      inlineRequestText("text").safeParse("x".repeat(MAX_INLINE_REQUEST_BYTES - 2)).success,
+    ).toBe(true);
+    expect(
+      inlineRequestText("text").safeParse("x".repeat(MAX_INLINE_REQUEST_BYTES - 1)).success,
+    ).toBe(false);
+    // A byte budget derived from a share of the argv budget has to stay whole:
+    // a fractional one reaches the caller in the refusal message.
+    expect(Number.isSafeInteger(MAX_INLINE_REQUEST_BYTES)).toBe(true);
+    expect(Number.isSafeInteger(MAX_FRAMED_COMMAND_BYTES)).toBe(true);
+    // Two-byte characters cannot land on an odd limit alone, and the limit is a
+    // share of the argv budget rather than a round number, so pad the last byte.
+    const atFramedLimit =
+      "é".repeat(Math.floor(MAX_FRAMED_COMMAND_BYTES / 2)) +
+      (MAX_FRAMED_COMMAND_BYTES % 2 === 0 ? "" : "x");
+    expect(framedCommandText("command").safeParse(atFramedLimit).success).toBe(true);
+    expect(framedCommandText("command").safeParse(`${atFramedLimit}x`).success).toBe(false);
+    expect(requestText("text").safeParse("é".repeat(MAX_REQUEST_BYTES / 2)).success).toBe(true);
+    expect(requestText("text").safeParse(`${"é".repeat(MAX_REQUEST_BYTES / 2)}x`).success).toBe(
+      false,
+    );
+    expect(requestTextArray("item", "items").safeParse(Array(64).fill("x")).success).toBe(true);
+    expect(requestTextArray("item", "items").safeParse(Array(65).fill("x")).success).toBe(false);
+    expect(
+      requestTextArray("item", "items").safeParse(Array(64).fill("x".repeat(4_097))).success,
+    ).toBe(false);
+  });
+
+  test("rejects oversized UTF-8 payloads before a tool reads them", async () => {
+    const secret = "SECRET-OPERAND";
+    const inline = `${secret}${"'".repeat(2_048)}`;
+    const composite = `${secret}${"x".repeat(4_081)}`;
+    const framed = `${secret}${"é".repeat(1_024)}`;
+    const staged = `${secret}${"é".repeat(131_066)}`;
+    const attempts = [
+      [
+        registerInput,
+        "send_keys",
+        { keys: inline, paneId: "%1" },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerInput,
+        "paste_text",
+        { paneId: "%1", text: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerInput,
+        "run_command",
+        { command: framed, paneId: "%1" },
+        `${String(MAX_FRAMED_COMMAND_BYTES)} UTF-8 bytes`,
+      ],
+      [registerBuffers, "load_buffer", { name: "probe", text: staged }, "262144 UTF-8 bytes"],
+      [
+        registerLifecycle,
+        "new_session",
+        { name: composite, shellCommand: composite },
+        `combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerSettings,
+        "set_option",
+        { name: "history-limit", value: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerSettings,
+        "set_environment",
+        { name: "EDITOR", value: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerBuffers,
+        "save_buffer",
+        { name: "probe", path: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerCapture,
+        "pipe_pane",
+        { paneId: "%1", shellCommand: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerDiscovery,
+        "display_message",
+        { format: inline },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerLayout,
+        "select_layout",
+        { layout: inline, windowId: "@1" },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+      [
+        registerWorkspace,
+        "build_workspace",
+        { session: "probe", windows: [{ name: "first", shellCommand: inline }] },
+        `${String(MAX_INLINE_REQUEST_BYTES)} bytes`,
+      ],
+    ] as const;
+
+    await Promise.all(
+      attempts.map(async ([register, name, arguments_, want]) => {
+        const context = fakeContext([], { environment: { LIBTMUX_SAFETY: "destructive" } });
+        await withTools(context, register, async (client) => {
+          const answer = await client.callTool({
+            arguments: arguments_,
+            name,
+          });
+          const diagnostic = text(answer);
+          expect(answer.isError, name).toBe(true);
+          expect(diagnostic, name).toContain(want);
+          expect(diagnostic, name).not.toContain(secret);
+        });
+      }),
+    );
+  });
+
+  test("bounds aggregate workspace text before planning operations", async () => {
+    const context = fakeContext([], { environment: { LIBTMUX_SAFETY: "mutating" } });
+    await withTools(context, registerWorkspace, async (client) => {
+      const answer = await client.callTool({
+        arguments: {
+          session: "probe",
+          windows: Array.from({ length: 64 }, (_, index) => ({
+            name: `window-${String(index)}`,
+            shellCommand: "x".repeat(4_096),
+          })),
+        },
+        name: "build_workspace",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(text(answer)).toContain("workspace text must not exceed 262144 UTF-8 bytes");
+    });
+  });
+
+  test("rejects a workspace that fans out past the item ceiling", async () => {
+    const context = fakeContext([], { environment: { LIBTMUX_SAFETY: "mutating" } });
+    await withTools(context, registerWorkspace, async (client) => {
+      const answer = await client.callTool({
+        arguments: {
+          session: "probe",
+          windows: Array.from({ length: 65 }, (_, index) => ({ name: `window-${String(index)}` })),
+        },
+        name: "build_workspace",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(text(answer)).toContain("at most 64 windows");
+    });
+  });
+});
+
+describe("bounded pane reads", () => {
+  test("bounds run_command by UTF-8 bytes", async () => {
+    const tail = new PaneTail("%1", MAX_RESULT_BYTES * 2);
+    const pane = fakePane({
+      id: "%1",
+      sendKeys: async (keys) => {
+        const ready = /'(ltxr[0-9a-f]+)' '_R'/u.exec(keys)?.[1];
+        if (ready !== undefined) {
+          tail.append(`${ready}_R\n`);
+          return;
+        }
+        if (!/^ltx[0-9a-f]{10}$/u.test(keys)) throw new Error("No command marker");
+        tail.append(`${keys}_S\n${"x".repeat(MAX_RESULT_BYTES + 1_000)}\n${keys}_E 0 ${keys}_D\n`);
+      },
+    });
+    const context = fakeContext([pane], {
+      environment: { LIBTMUX_SAFETY: "mutating" },
+      hub: { tail: async () => tail },
+    });
+
+    await withTools(context, registerInput, async (client) => {
+      const result = structured<{ omittedBytes: number; output: string }>(
+        await client.callTool({
+          arguments: { command: "true", maxLines: 1, paneId: "%1" },
+          name: "run_command",
+        }),
+      );
+
+      expect(Buffer.byteLength(result.output, "utf8")).toBeLessThanOrEqual(MAX_RESULT_BYTES);
+      expect(result.omittedBytes).toBeGreaterThan(0);
+    });
+  });
+
+  test("does not capture an oversized run_command fallback", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["must not be read"];
+      },
+      id: "%1",
+      width: 1_000_000,
+    });
+    const context = fakeContext([pane], {
+      environment: { LIBTMUX_MCP_LIVE: "0", LIBTMUX_SAFETY: "mutating" },
+    });
+
+    await withTools(context, registerInput, async (client) => {
+      const result = structured<{ outcome: string }>(
+        await client.callTool({
+          arguments: { command: "sleep 10", paneId: "%1", timeoutMs: 1_000 },
+          name: "run_command",
+        }),
+      );
+      expect(result.outcome).toBe("timed_out");
+    });
+    expect(captures).toBe(0);
+  });
+
+  test("does not capture an oversized screen for observe or a missed wait", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["must not be read"];
+      },
+      id: "%1",
+      width: 1_000_000,
+    });
+    const tail = new PaneTail("%1");
+    const live = fakeContext([pane], { hub: { tail: async () => tail } });
+
+    await withTools(live, registerWait, async (client) => {
+      const result = structured<{ screenClamped: boolean }>(
+        await client.callTool({
+          arguments: { paneId: "%1", patterns: ["absent"], timeoutMs: 1_000 },
+          name: "wait_for_text",
+        }),
+      );
+      expect(result.screenClamped).toBe(true);
+    });
+    await withTools(
+      fakeContext([pane], { environment: { LIBTMUX_MCP_LIVE: "0" } }),
+      registerCapture,
+      async (client) => {
+        const result = structured<{ byteClamped: boolean }>(
+          await client.callTool({ arguments: { paneId: "%1" }, name: "observe" }),
+        );
+        expect(result.byteClamped).toBe(true);
+      },
+    );
+    expect(captures).toBe(0);
+  });
+
+  test("reports the effective wait on every observe path", async () => {
+    const pane = fakePane({ capture: async () => ["screen"], id: "%1" });
+    const environment = { LIBTMUX_MCP_WAIT_MAX_MS: "1234" };
+
+    await withTools(
+      fakeContext([pane], { environment: { ...environment, LIBTMUX_MCP_LIVE: "0" } }),
+      registerCapture,
+      async (client) => {
+        const result = structured<{ effectiveTimeoutMs: number }>(
+          await client.callTool({ arguments: { paneId: "%1", waitMs: 999_999 }, name: "observe" }),
+        );
+        expect(result.effectiveTimeoutMs).toBe(0);
+      },
+    );
+
+    const tail = new PaneTail("%1");
+    await withTools(
+      fakeContext([pane], { environment, hub: { tail: async () => tail } }),
+      registerCapture,
+      async (client) => {
+        const seeded = structured<{ cursor: string; effectiveTimeoutMs: number }>(
+          await client.callTool({ arguments: { paneId: "%1", waitMs: 999_999 }, name: "observe" }),
+        );
+        expect(seeded.effectiveTimeoutMs).toBe(0);
+
+        tail.append("delta\n");
+        const delta = structured<{ effectiveTimeoutMs: number }>(
+          await client.callTool({
+            arguments: { cursor: seeded.cursor, paneId: "%1", waitMs: 999_999 },
+            name: "observe",
+          }),
+        );
+        expect(delta.effectiveTimeoutMs).toBe(1_234);
+      },
+    );
+  });
+
+  test("does not capture an oversized pane-content resource", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["must not be read"];
+      },
+      id: "%1",
+      width: 1_000_000,
+    });
+
+    await withTools(fakeContext([pane]), registerResources, async (client) => {
+      const read = await client.readResource({ uri: "tmux://panes/%251/content" });
+      const content = read.contents[0];
+      expect(content !== undefined && "text" in content ? content.text : "").toContain(
+        "capture omitted",
+      );
+    });
+    expect(captures).toBe(0);
+  });
+});
+
+describe("capture_pane", () => {
+  test("keeps a caller maxLines below the operator ceiling", async () => {
+    const pane = fakePane({
+      capture: async () => Array.from({ length: 12 }, (_, index) => `line-${String(index)}`),
+      id: "%1",
+    });
+    await withTools(fakeContext([pane], { maxResultLines: 4 }), registerCapture, async (client) => {
+      const answer = await client.callTool({
+        arguments: { maxLines: 999, paneId: "%1" },
+        name: "capture_pane",
+      });
+      const result = structured<{ readonly droppedLines: number; readonly text: string }>(answer);
+
+      expect(result.text.split("\n")).toHaveLength(4);
+      expect(result.droppedLines).toBe(8);
+    });
+  });
+
+  test("bounds a history range before capture and reports the effective range", async () => {
+    let seen: { readonly end?: number; readonly start?: number } | undefined;
+    const pane = fakePane({
+      capture: async (options) => {
+        seen = options;
+        return ["tail"];
+      },
+      id: "%1",
+    });
+    await withTools(
+      fakeContext([pane], { maxResultLines: 10 }),
+      registerCapture,
+      async (client) => {
+        const answer = await client.callTool({
+          arguments: { end: -1, maxLines: 5, paneId: "%1", start: -1_000_000 },
+          name: "capture_pane",
+        });
+        const result = structured<{
+          readonly effectiveEnd: number | null;
+          readonly effectiveStart: number | null;
+          readonly rangeClamped: boolean;
+        }>(answer);
+
+        expect(seen).toMatchObject({ end: -1, start: -5 });
+        expect(result).toMatchObject({
+          effectiveEnd: -1,
+          effectiveStart: -5,
+          rangeClamped: true,
+        });
+      },
+    );
+  });
+
+  test("does not link a custom capture to the default visible resource", async () => {
+    const pane = fakePane({ capture: async () => ["a", "b", "c"], id: "%1" });
+    await withTools(fakeContext([pane], { maxResultLines: 2 }), registerCapture, async (client) => {
+      const answer = await client.callTool({
+        arguments: { joinWrapped: true, paneId: "%1", start: -2 },
+        name: "capture_pane",
+      });
+      const content = (answer as { readonly content: readonly { readonly type: string }[] })
+        .content;
+
+      expect(content.some((entry) => entry.type === "resource_link")).toBe(false);
+    });
+  });
+
+  test("bounds the default visible range before capture", async () => {
+    let seen: { readonly end?: number; readonly start?: number } | undefined;
+    const pane = fakePane({
+      capture: async (options) => {
+        seen = options;
+        return ["tail"];
+      },
+      height: 100,
+      id: "%1",
+    });
+    await withTools(fakeContext([pane], { maxResultLines: 4 }), registerCapture, async (client) => {
+      const answer = await client.callTool({ arguments: { paneId: "%1" }, name: "capture_pane" });
+      const result = structured<{ readonly rangeClamped: boolean }>(answer);
+      const content = (answer as { readonly content: readonly { readonly type: string }[] })
+        .content;
+
+      expect(seen).toMatchObject({ end: 99, start: 96 });
+      expect(result.rangeClamped).toBe(true);
+      expect(content.some((entry) => entry.type === "resource_link")).toBe(true);
+    });
+  });
+
+  test("does not read a row whose width cannot fit the byte ceiling", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["must not be read"];
+      },
+      height: 1,
+      id: "%1",
+      width: 1_000_000,
+    });
+    await withTools(fakeContext([pane]), registerCapture, async (client) => {
+      const answer = await client.callTool({ arguments: { paneId: "%1" }, name: "capture_pane" });
+      const result = structured<{ readonly byteClamped: boolean; readonly text: string }>(answer);
+
+      expect(captures).toBe(0);
+      expect(result).toMatchObject({ byteClamped: true, text: "" });
+    });
+  });
+});
+
+describe("search_panes", () => {
+  test("rejects an empty literal before capturing every pane", async () => {
+    let captures = 0;
+    const pane = fakePane({
+      capture: async () => {
+        captures += 1;
+        return ["anything"];
+      },
+      id: "%1",
+    });
+    await withTools(fakeContext([pane]), registerSearch, async (client) => {
+      const answer = await client.callTool({ arguments: { pattern: "" }, name: "search_panes" });
+
+      expect((answer as { readonly isError?: boolean }).isError).toBe(true);
+      expect(captures).toBe(0);
+    });
+  });
+
+  test("clamps scrollback before capture and reports the clamp", async () => {
+    let seenStart: number | undefined;
+    const pane = fakePane({
+      capture: async (options) => {
+        seenStart = options.start;
+        return [];
+      },
+      id: "%1",
+    });
+    await withTools(fakeContext([pane], { maxResultLines: 7 }), registerSearch, async (client) => {
+      const answer = await client.callTool({
+        arguments: { pattern: "needle", scrollbackLines: 1_000_000 },
+        name: "search_panes",
+      });
+      const result = structured<{
+        readonly effectiveScrollbackLines: number;
+        readonly scrollbackClamped: boolean;
+      }>(answer);
+
+      expect(seenStart).toBe(-7);
+      expect(result).toMatchObject({ effectiveScrollbackLines: 7, scrollbackClamped: true });
+    });
+  });
+
+  test("captures each linked pane once", async () => {
+    const calls = new Map<string, number>();
+    const pane = (id: string, sessionId: string): Pane =>
+      fakePane({
+        capture: async () => {
+          calls.set(id, (calls.get(id) ?? 0) + 1);
+          return ["needle"];
+        },
+        id,
+        sessionId,
+      });
+    await withTools(
+      fakeContext([pane("%1", "$1"), pane("%1", "$2"), pane("%2", "$1")]),
+      registerSearch,
+      async (client) => {
+        const answer = await client.callTool({
+          arguments: { pattern: "needle" },
+          name: "search_panes",
+        });
+        const result = structured<{
+          readonly matches: readonly { readonly paneId: string }[];
+          readonly panesSearched: number;
+        }>(answer);
+
+        expect(calls).toEqual(
+          new Map([
+            ["%1", 1],
+            ["%2", 1],
+          ]),
+        );
+        expect(result.panesSearched).toBe(2);
+        expect(result.matches.map((match) => match.paneId)).toEqual(["%1", "%2"]);
+      },
+    );
+  });
+
+  test("separates a vanished pane from panes it searched", async () => {
+    const staleDiagnostic = "stale pane diagnostic must stay private";
+    const panes = [
+      fakePane({ capture: async () => ["needle"], id: "%1" }),
+      fakePane({
+        capture: async () => {
+          throw commandFailure("%2", staleDiagnostic);
+        },
+        id: "%2",
+      }),
+    ];
+
+    await withTools(fakeContext(panes), registerSearch, async (client) => {
+      const answer = await client.callTool({
+        arguments: { pattern: "needle" },
+        name: "search_panes",
+      });
+      const result = structured<{
+        readonly matches: readonly { readonly paneId: string }[];
+        readonly panesFailed: number;
+        readonly panesSearched: number;
+      }>(answer);
+
+      expect(answer.isError ?? false).toBe(false);
+      expect(result).toMatchObject({ panesFailed: 1, panesSearched: 1 });
+      expect(result.matches.map(({ paneId }) => paneId)).toEqual(["%1"]);
+      expect(text(answer)).toContain("1 pane capture failed");
+      expect(text(answer)).not.toContain(staleDiagnostic);
+      expect(text(answer)).not.toContain("%2");
+    });
+  });
+
+  test("fails when no attempted pane can be searched", async () => {
+    const diagnostic = "all stale diagnostic must stay private";
+    const pane = fakePane({
+      capture: async () => {
+        throw commandFailure("%1", diagnostic);
+      },
+      id: "%1",
+    });
+
+    await withTools(fakeContext([pane]), registerSearch, async (client) => {
+      const answer = await client.callTool({
+        arguments: { pattern: "needle" },
+        name: "search_panes",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(answer).not.toHaveProperty("structuredContent");
+      expect(text(answer)).toContain("No pane could be searched");
+      expect(text(answer)).not.toContain(diagnostic);
+      expect(text(answer)).not.toContain("%1");
+    });
+  });
+
+  test.each([
+    ["a command error for another target", commandFailure("%9", "wrong target")],
+    [
+      "a transport error",
+      new TmuxTransportError("transport failed", {
+        delivery: "not_started",
+        kind: "spawn",
+      }),
+    ],
+    ["a server restart", new TmuxServerRestarted("server restarted")],
+    ["an unknown error", new Error("unexpected capture failure")],
+  ])("propagates %s", async (_label, failure) => {
+    const pane = fakePane({
+      capture: async () => {
+        throw failure;
+      },
+      id: "%1",
+    });
+
+    await withTools(fakeContext([pane]), registerSearch, async (client) => {
+      const answer = await client.callTool({
+        arguments: { pattern: "needle" },
+        name: "search_panes",
+      });
+
+      expect(answer.isError).toBe(true);
+      expect(answer).not.toHaveProperty("structuredContent");
+    });
+  });
+
+  test("runs no more than eight captures at once", async () => {
+    let active = 0;
+    let maximum = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const panes = Array.from({ length: 20 }, (_, index) =>
+      fakePane({
+        capture: async () => {
+          active += 1;
+          maximum = Math.max(maximum, active);
+          await gate;
+          active -= 1;
+          return [];
+        },
+        id: `%${String(index + 1)}`,
+      }),
+    );
+
+    await withTools(fakeContext(panes), registerSearch, async (client) => {
+      const pending = client.callTool({ arguments: { pattern: "needle" }, name: "search_panes" });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      release();
+      await pending;
+
+      expect(maximum).toBeLessThanOrEqual(8);
+    });
+  });
+
+  test("reports matches omitted by the result ceiling", async () => {
+    const pane = fakePane({ capture: async () => ["n", "n", "n", "n"], id: "%1" });
+    await withTools(fakeContext([pane], { maxResultLines: 3 }), registerSearch, async (client) => {
+      const answer = await client.callTool({
+        arguments: { maxMatchesPerPane: 999, pattern: "n" },
+        name: "search_panes",
+      });
+      const result = structured<{
+        readonly matches: readonly unknown[];
+        readonly matchesTruncated: boolean;
+      }>(answer);
+
+      expect(result.matches).toHaveLength(3);
+      expect(result.matchesTruncated).toBe(true);
+    });
+  });
+
+  test("bounds linked placement metadata before returning a match", async () => {
+    const panes = Array.from({ length: 6_000 }, (_, index) =>
+      fakePane({ capture: async () => ["needle"], id: "%1", sessionId: `$${String(index + 1)}` }),
+    );
+    await withTools(fakeContext(panes), registerSearch, async (client) => {
+      const result = structured<{
+        readonly matches: readonly unknown[];
+        readonly matchesTruncated: boolean;
+      }>(
+        await client.callTool({
+          arguments: { pattern: "needle" },
+          name: "search_panes",
+        }),
+      );
+
+      expect(Buffer.byteLength(JSON.stringify(result.matches), "utf8")).toBeLessThanOrEqual(
+        MAX_RESULT_BYTES,
+      );
+      expect(result.matchesTruncated).toBe(true);
+    });
+  });
+});
+
+describe("show_buffer", () => {
+  test("does not allocate an oversized buffer and reports the omitted bytes", async () => {
+    const tmux = {
+      cmd: async () => {
+        throw new Error("show_buffer must not list every buffer");
+      },
+      saveBuffer: async (_name: string, path: string) =>
+        writeFile(path, Buffer.alloc(300_000, "x")),
+    };
+    await withTools(fakeContext([], { tmux }), registerBuffers, async (client) => {
+      const answer = await client.callTool({
+        arguments: { name: "large" },
+        name: "show_buffer",
+      });
+      const result = structured<{
+        readonly omittedBytes: number;
+        readonly returnedBytes: number;
+        readonly text: string;
+        readonly totalBytes: number;
+        readonly truncated: boolean;
+      }>(answer);
+      expect(result).toMatchObject({
+        omittedBytes: 300_000,
+        returnedBytes: 0,
+        text: "",
+        totalBytes: 300_000,
+        truncated: true,
+      });
+      expect(text(answer)).toContain("save_buffer requires the mutating tier");
+    });
+  });
+
+  test("tail-limits a readable buffer to the operator ceiling", async () => {
+    const tmux = {
+      cmd: async () => {
+        throw new Error("show_buffer must not list every buffer");
+      },
+      saveBuffer: async (_name: string, path: string) => writeFile(path, "one\ntwo\nthree"),
+    };
+    await withTools(
+      fakeContext([], { maxResultLines: 2, tmux }),
+      registerBuffers,
+      async (client) => {
+        const answer = await client.callTool({
+          arguments: { maxLines: 999, name: "short" },
+          name: "show_buffer",
+        });
+        const result = structured<{
+          readonly droppedLines: number;
+          readonly text: string;
+          readonly truncated: boolean;
+        }>(answer);
+
+        expect(result).toMatchObject({ droppedLines: 1, text: "two\nthree", truncated: true });
+        expect(text(answer)).toContain("save_buffer requires the mutating tier");
+      },
+    );
+  });
+
+  test("keeps a changed buffer response inside the byte ceiling", async () => {
+    const tmux = {
+      cmd: async () => {
+        throw new Error("show_buffer must not list every buffer");
+      },
+      saveBuffer: async (_name: string, path: string) =>
+        writeFile(path, new Uint8Array(100_000).fill(0xff)),
+    };
+    await withTools(fakeContext([], { tmux }), registerBuffers, async (client) => {
+      const answer = await client.callTool({
+        arguments: { name: "racing" },
+        name: "show_buffer",
+      });
+      const result = structured<{ readonly text: string; readonly truncated: boolean }>(answer);
+
+      expect(Buffer.byteLength(result.text, "utf8")).toBeLessThanOrEqual(256 * 1024);
+      expect(result.truncated).toBe(true);
+    });
+  });
+});

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { parseControlLine, unescapeOutput } from "../../src/_internal/control/events.js";
+import { parsePaneId, parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import type { TmuxEvent } from "../../src/types.js";
 
 const encoder = new TextEncoder();
@@ -18,6 +19,54 @@ function event(line: string): TmuxEvent {
 }
 
 describe("control-mode line parsing", () => {
+  /**
+   * The three shapes tmux emits, from control.c 872, 954 and 1034: a session
+   * subscription carries dashes where a window and pane would be, a window one
+   * carries the window and its index, and a pane one carries all three.
+   */
+  test("reads a subscription report at each scope", () => {
+    expect(event("%subscription-changed clock $0 - - - : 12:30")).toEqual({
+      kind: "subscription-changed",
+      name: "clock",
+      sessionId: parseSessionId("$0"),
+      value: "12:30",
+    });
+    expect(event("%subscription-changed title $0 @3 1 - : editor")).toEqual({
+      kind: "subscription-changed",
+      name: "title",
+      sessionId: parseSessionId("$0"),
+      value: "editor",
+      windowId: parseWindowId("@3"),
+      windowIndex: 1,
+    });
+    expect(event("%subscription-changed cmd $0 @3 1 %7 : bash")).toEqual({
+      kind: "subscription-changed",
+      name: "cmd",
+      paneId: parsePaneId("%7"),
+      sessionId: parseSessionId("$0"),
+      value: "bash",
+      windowId: parseWindowId("@3"),
+      windowIndex: 1,
+    });
+  });
+
+  test("takes a subscription value from the first separator and keeps the rest", () => {
+    // The fields before the lone `:` are reserved, and the value is raw, so it
+    // may hold the separator itself. Counting fields instead of finding the
+    // separator truncates any format expanding to a path or a timestamp.
+    expect(event("%subscription-changed t $0 - - - : 12 : 30 : 00")).toMatchObject({
+      value: "12 : 30 : 00",
+    });
+    expect(event("%subscription-changed t $0 - - - : ")).toMatchObject({ value: "" });
+  });
+
+  test("keeps an unparseable subscription report as an unknown line", () => {
+    // Forward compatibility: a report with no separator is a shape this
+    // release does not know, not a reason to drop the line.
+    expect(event("%subscription-changed t $0 - - -")).toMatchObject({ kind: "unknown" });
+    expect(event("%subscription-changed t @3 - - - : v")).toMatchObject({ kind: "unknown" });
+  });
+
   test("ignores lines that are not notifications", () => {
     expect(parse("")).toBeUndefined();
     expect(parse("plain command output")).toBeUndefined();
@@ -74,50 +123,62 @@ describe("control-mode line parsing", () => {
   });
 
   test("parses each notification into its own shape", () => {
-    expect(event("%window-add @3")).toEqual({ kind: "window-add", windowId: "@3" });
-    expect(event("%window-close @3")).toEqual({ kind: "window-close", windowId: "@3" });
+    expect(event("%window-add @3")).toEqual({
+      kind: "window-add",
+      windowId: parseWindowId("@3"),
+    });
+    expect(event("%window-close @3")).toEqual({
+      kind: "window-close",
+      windowId: parseWindowId("@3"),
+    });
     expect(event("%unlinked-window-add @4")).toEqual({
       kind: "unlinked-window-add",
-      windowId: "@4",
+      windowId: parseWindowId("@4"),
     });
     expect(event("%window-renamed @3 my window")).toEqual({
       kind: "window-renamed",
       name: "my window",
-      windowId: "@3",
+      windowId: parseWindowId("@3"),
     });
     expect(event("%window-pane-changed @3 %7")).toEqual({
       kind: "window-pane-changed",
-      paneId: "%7",
-      windowId: "@3",
+      paneId: parsePaneId("%7"),
+      windowId: parseWindowId("@3"),
     });
     expect(event("%session-changed $0 work")).toEqual({
       kind: "session-changed",
       name: "work",
-      sessionId: "$0",
+      sessionId: parseSessionId("$0"),
     });
     expect(event("%sessions-changed")).toEqual({ kind: "sessions-changed" });
     expect(event("%session-window-changed $0 @2")).toEqual({
       kind: "session-window-changed",
-      sessionId: "$0",
-      windowId: "@2",
+      sessionId: parseSessionId("$0"),
+      windowId: parseWindowId("@2"),
     });
     expect(event("%client-session-changed /dev/pts/3 $1 other")).toEqual({
       client: "/dev/pts/3",
       kind: "client-session-changed",
       name: "other",
-      sessionId: "$1",
+      sessionId: parseSessionId("$1"),
     });
     expect(event("%client-detached /dev/pts/3")).toEqual({
       client: "/dev/pts/3",
       kind: "client-detached",
     });
-    expect(event("%pane-mode-changed %2")).toEqual({ kind: "pane-mode-changed", paneId: "%2" });
+    expect(event("%pane-mode-changed %2")).toEqual({
+      kind: "pane-mode-changed",
+      paneId: parsePaneId("%2"),
+    });
     expect(event("%paste-buffer-changed buffer0")).toEqual({
       buffer: "buffer0",
       kind: "paste-buffer-changed",
     });
-    expect(event("%pause %1")).toEqual({ kind: "pause", paneId: "%1" });
-    expect(event("%continue %1")).toEqual({ kind: "continue", paneId: "%1" });
+    expect(event("%pause %1")).toEqual({ kind: "pause", paneId: parsePaneId("%1") });
+    expect(event("%continue %1")).toEqual({
+      kind: "continue",
+      paneId: parsePaneId("%1"),
+    });
     expect(event("%config-error /etc/tmux.conf:3: bad")).toEqual({
       kind: "config-error",
       message: "/etc/tmux.conf:3: bad",
@@ -137,7 +198,7 @@ describe("control-mode line parsing", () => {
       kind: "layout-change",
       layout: "bb62,80x24,0,0,1",
       visibleLayout: "cc63,80x24,0,0,1",
-      windowId: "@1",
+      windowId: parseWindowId("@1"),
     });
   });
 
@@ -154,11 +215,32 @@ describe("control-mode line parsing", () => {
     });
   });
 
+  test("does not authenticate malformed notification identities", () => {
+    const malformed = [
+      "%output @1 text",
+      "%extended-output $1 1 : text",
+      "%window-add $1",
+      "%window-renamed %1 name",
+      "%window-pane-changed @1 @2",
+      "%layout-change %1 layout visible *",
+      "%session-changed @1 name",
+      "%session-window-changed $1 $2",
+      "%client-session-changed /dev/pts/3 @1 name",
+      "%pane-mode-changed @1",
+      "%pause $1",
+      "%continue @1",
+    ];
+
+    for (const line of malformed) {
+      expect(event(line).kind, line).toBe("unknown");
+    }
+  });
+
   test("parses output, preserving spaces in the payload", () => {
     expect(event("%output %1 hello world")).toEqual({
       data: "hello world",
       kind: "output",
-      paneId: "%1",
+      paneId: parsePaneId("%1"),
     });
   });
 
@@ -170,8 +252,19 @@ describe("control-mode line parsing", () => {
       age: 512,
       data: "late data",
       kind: "output",
-      paneId: "%1",
+      paneId: parsePaneId("%1"),
     });
+  });
+
+  test("does not publish malformed extended-output ages as numbers", () => {
+    for (const age of ["NaN", "Infinity", "-1", "+1", "1.5", "1e3", "9007199254740992"]) {
+      const parsed = event(`%extended-output %1 ${age} : late data`);
+      expect(parsed, age).toEqual({
+        args: ["%1", age, ":", "late", "data"],
+        kind: "unknown",
+        name: "extended-output",
+      });
+    }
   });
 });
 

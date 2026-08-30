@@ -20,28 +20,32 @@ Part of [libtmux for Bun and TypeScript](../../README.md). Built on
 ## Install
 
 ```console
-$ bun add @libtmux/workspace
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i @libtmux/workspace
+$ npm i --save-exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ pnpm add @libtmux/workspace
+$ pnpm add --save-exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ yarn add @libtmux/workspace
+$ yarn add --exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 </details>
 
 `libtmux` is a peer of this package in practice: you pass it the `Server`.
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
+
+Linux is the only supported host for real tmux control. The macOS CI lane
+checks package artifacts without exercising tmux; macOS runtime behavior is
+unproven. WSL is untested.
 
 ## Use it
 
@@ -66,6 +70,25 @@ await applyWorkspace(server, {
 
 `applyWorkspace` resolves to the `Session` it built or converged.
 
+Commands use `create-only` policy by default: `shell_command` and
+`shell_command_before` run only in panes this apply created. Pass
+`{ commands: "always" }` only for commands that are safe to repeat. This
+package converges tmux topology; it does not monitor or restart processes.
+
+Options named in the workspace are set on every apply. Removing an option from
+the file does not unset it because tmux does not record which current value the
+workspace owns. `@libtmux-workspace` is reserved for ownership bookkeeping and
+is rejected in workspace options. Option names are literal; tmux format syntax
+in a key is not expanded.
+
+If tmux rejects a later operation, `applyWorkspace` throws
+`WorkspaceApplyError`. Its frozen `completed` milestones name the high-level
+work that finished, `failed` names the stage that stopped, and `cause` retains
+the original error. `requiresReplan` is always true: callers must rediscover
+tmux structure before deciding what to do next. It does not report whether pane
+commands ran; mutations are not transactions, and transport failure may leave
+delivery indeterminate.
+
 ## The shape
 
 Config is [tmuxp](https://tmuxp.git-pull.com/)-shaped, so the field names are
@@ -77,7 +100,7 @@ the ones people already know — `session_name`, `windows`, `panes`,
 | ---------------------- | ----------------------- | ----------------------------------------------- |
 | `session_name`         | workspace               | The session to build or converge                |
 | `start_directory`      | workspace, window, pane | Working directory, inherited downward           |
-| `options`              | workspace, window       | tmux options set on that scope                  |
+| `options`              | workspace, window       | String, finite number, or boolean tmux values   |
 | `window_name`          | window                  | Renamed if it differs                           |
 | `layout`               | window                  | Applied once the pane count settles             |
 | `panes`                | window                  | A string is shorthand for `{ shell_command }`   |
@@ -88,6 +111,9 @@ the ones people already know — `session_name`, `windows`, `panes`,
 Because the config is data, it can come from a YAML file, an HTTP request, or a
 literal. `parseWorkspace` validates one you already parsed; `parseWorkspaceYaml`
 is a convenience that needs Bun's YAML parser and says so when it is missing.
+
+`start_directory` resolves pane, then window, then workspace. The same order
+applies to the first pane tmux creates with the session.
 
 ## Converging, not just creating
 
@@ -107,6 +133,11 @@ a session this package creates is stamped with a tmux user option, and surplus
 windows and panes are removed only from a session carrying that stamp. Against
 one it merely found, applying converges additively and leaves the rest alone.
 
+Pruning follows tmux's sharing model. An independently linked surplus window is
+unlinked only from this session. A grouped session shares one window list, so
+its surplus windows are retained. Surplus panes are also retained when their
+window has another placement because killing a pane changes every placement.
+
 Ask before applying, which is the question a converging tool cannot answer
 afterwards:
 
@@ -116,9 +147,17 @@ import { planWorkspace } from "@libtmux/workspace";
 const desired = { session_name: "api", windows: [{ panes: ["vim"] }] };
 const plan = await planWorkspace(server, desired);
 plan.owned; // false for a session this workspace did not create
-plan.killsWindows; // what applying would remove — empty unless it owns them
-plan.retains; // surplus it will leave alone, and why the file did not win
+plan.removesWindows; // ID-keyed kill or unlink actions
+plan.removesPanes; // exact pane IDs, grouped by their window placement
+plan.renamesWindows; // an array, so duplicate current names stay distinct
+plan.retains; // surplus plus the policy or sharing reason
 ```
+
+Plan entries are frozen data carrying tmux IDs, indexes, positions, and names.
+The plan covers session, window, and pane membership, not options, layouts,
+focus, or pane commands. It is advisory: acquire a fresh one after any delay or
+failed apply because tmux structure may have changed.
+Planning accepts `prune`; command policy is apply-only.
 
 `prune` decides the rest. `"owned"` is the default above; `"never"` never
 removes anything; `"always"` is how you say a session somebody else made is now
@@ -134,10 +173,10 @@ await applyWorkspace(
 
 ## A worked example
 
-[`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) builds a session from a
-declared layout — a window per concern, panes already running what they are
-for, an environment every process inherits, and a teardown that treats "already
-gone" as an answer. The integration suite runs it against a real tmux server.
+[`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) calls
+`applyWorkspace` with a declared layout, inspects the resulting session, and
+tears it down while treating "already gone" as an answer. The integration suite
+runs it against a real tmux server.
 
 ## License
 

@@ -7,12 +7,13 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+  TestServer,
+  assertOwnedSocketPath,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
 import { Server } from "../../src/server.js";
 import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
-
-import { assertOwnedSocketPath, makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -47,74 +48,7 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
-describe("control-mode resource bounds", () => {
-  test("refuses a command past the pending bound, and says nothing was sent", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await using live = await server.connect({ maxPendingCommands: 1 });
-
-      // Two commands, neither awaited: tmux answers one at a time, so the
-      // second finds the queue already at its bound.
-      const first = live.cmd("display-message", ["-p", "#{version}"]);
-      const second = live.cmd("display-message", ["-p", "#{version}"]);
-
-      const outcome = await second.then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(outcome).toBeInstanceOf(TmuxTransportError);
-      const failure = outcome as TmuxTransportError;
-      // The whole point of the bound is that this one is safe to retry.
-      expect(failure.delivery).toBe("not_started");
-      expect(failure.kind).toBe("protocol");
-
-      // The queue is still a queue: the command that got in still answers.
-      expect((await first)[0]).toContain(".");
-    });
-  }, 40_000);
-
-  test("fails an oversized response without breaking the connection", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await using live = await server.connect({ maxCommandBytes: 1 });
-
-      const outcome = await live.cmd("display-message", ["-p", "#{version}"]).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(outcome).toBeInstanceOf(TmuxTransportError);
-      const failure = outcome as TmuxTransportError;
-      // tmux ran it; the response is what could not be held. Retrying it is a
-      // caller's decision to make with that in hand.
-      expect(failure.delivery).toBe("replied");
-      expect(failure.kind).toBe("protocol");
-
-      // Consuming the whole block is what keeps the next command aligned with
-      // its own response rather than reading this one's.
-      const after = await live.cmd("display-message", ["-p", "#{version}"]).then(
-        (lines) => lines,
-        () => undefined,
-      );
-      expect(after).toBeUndefined();
-    });
-  }, 40_000);
-
-  test("carries a command's stdin, which the protocol itself cannot", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await using live = await server.connect();
-
-      // tmux's control protocol has no channel for stdin, so this is the one
-      // command shape the connection has to hand elsewhere. Choosing a
-      // transport must not decide which commands exist.
-      await live.loadBuffer("payload", new TextEncoder().encode("from-stdin"));
-
-      // Read it back through the connection to prove it reached this server,
-      // not merely that the call resolved.
-      expect((await live.showBuffer("payload")).join("")).toContain("from-stdin");
-    });
-  }, 40_000);
-
+describe("control-mode event bounds", () => {
   test("names a connection that broke under a command in its own terms", async () => {
     const directory = await makeTestDirectory("ltx-broken-");
     const socketPath = join(directory, "s");
@@ -150,49 +84,37 @@ describe("control-mode resource bounds", () => {
     }
   }, 40_000);
 
-  test("carries run-shell output, which tmux writes after the block", async () => {
+  test("rejects invalid observer options before spawning", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      await using live = await server.connect();
-
-      // tmux writes `run-shell`'s closing guard when the command returns, not
-      // when the job finishes, so its output arrives as bare lines belonging to
-      // no command.
-      const command = "echo first; echo second";
-      // A newline would reach the same fallback for the other reason.
-      expect(command.includes("\n")).toBe(false);
-
-      const spawned = await server.runShell(command);
-      expect(await live.runShell(command)).toEqual(spawned);
-      // 3.3a and 3.4 suppress a clientless run-shell's output entirely, which
-      // is the difference LIBTMUX_TMUX_BUILDS exists to surface. Where this
-      // tmux answers at all, both transports have to answer with the output.
-      if (spawned.length > 0) expect(await live.runShell(command)).toEqual(["first", "second"]);
-    });
-  }, 40_000);
-
-  test("rejects a bound that is not a positive integer, before spawning", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await expect(server.connect({ maxPendingCommands: 0 })).rejects.toThrow(
-        /maxPendingCommands/u,
+      await expect(server.connect({ pauseAfterSeconds: 1 } as never)).rejects.toThrow(
+        /pauseAfterSeconds belongs to Server\.watch/u,
       );
-      await expect(server.connect({ maxCommandBytes: -1 })).rejects.toThrow(/maxCommandBytes/u);
-      await expect(server.connect({ pauseAfterSeconds: 0 })).rejects.toThrow(/pauseAfterSeconds/u);
-      await expect(server.connect({ pauseAfterSeconds: 1.5 })).rejects.toThrow(
-        /pauseAfterSeconds/u,
+      const inherited = Object.create({ pauseAfterSeconds: 1 }) as never;
+      await expect(server.connect(inherited)).rejects.toThrow(
+        /pauseAfterSeconds belongs to Server\.watch/u,
       );
+      await Promise.all(
+        (["maxCommandBytes", "maxPendingCommands"] as const).map((removed) =>
+          expect(server.connect({ [removed]: 1 } as never)).rejects.toThrow(
+            new RegExp(`${removed} was removed`, "u"),
+          ),
+        ),
+      );
+      expect(() => server.watch({ pauseAfterSeconds: 0 })).toThrow(/pauseAfterSeconds/u);
+      expect(() => server.watch({ pauseAfterSeconds: 1.5 })).toThrow(/pauseAfterSeconds/u);
     });
   }, 40_000);
 
   test("asks tmux to pause a pane rather than drop the client behind it", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      await using live = await server.connect({ pauseAfterSeconds: 1 });
+      await using events = server.watch({ pauseAfterSeconds: 1 });
+      await events.ready();
 
       // tmux reports the flags it holds for this client.
-      const flags = await live.cmd("display-message", ["-p", "#{client_flags}"]);
-      expect(flags.join("")).toContain("pause-after=1");
+      const flags = await server.cmd("list-clients", ["-F", "#{client_flags}"]);
+      expect(flags.some((value) => value.includes("pause-after=1"))).toBe(true);
     });
   }, 40_000);
 
@@ -200,11 +122,10 @@ describe("control-mode resource bounds", () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const session = await server.newSession({ name: "aged" });
-      await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
-      const events = live.subscribe();
+      await using events = server.watch({ pauseAfterSeconds: 5, target: session.id });
       await events.ready();
 
-      const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+      const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
       const printed = events.find(
         (event) => event.kind === "output" && event.data.includes("aged-marker"),
         { timeoutMs: 20_000 },
@@ -225,18 +146,20 @@ describe("control-mode resource bounds", () => {
   test("resumes a paused pane instead of leaving it stopped", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      await using live = await server.connect({ pauseAfterSeconds: 1 });
-      const events = live.subscribe();
+      await using events = server.watch({ pauseAfterSeconds: 1 });
       await events.ready();
 
-      const paneId = (await live.snapshot()).panes.toArray()[0]?.id;
+      const paneId = (await server.snapshot()).panes.toArray()[0]?.id;
       expect(paneId).toBeDefined();
 
       // Waiting for a real backlog races the socket buffer and tmux's timer.
-      // This reaches the same state on demand, and delivers the `%pause` inside
-      // the command's block — where one lands whenever a pane backs up while a
-      // command is in flight, which is what `pause-after` exists for.
-      await live.cmd("refresh-client", ["-A", `${paneId!}:pause`]);
+      // Address the observer explicitly so its notification stream remains
+      // separate from this spawned command's response.
+      const client = (await server.cmd("list-clients", ["-F", "#{client_name}\t#{client_flags}"]))
+        .find((value) => value.includes("control-mode") && value.includes("pause-after=1"))
+        ?.split("\t")[0];
+      expect(client).toBeDefined();
+      await server.cmd("refresh-client", ["-t", client!, "-A", `${paneId!}:pause`]);
 
       // Raced against a timer: the loop body only runs when an event arrives,
       // so a deadline tested inside it is not a deadline.

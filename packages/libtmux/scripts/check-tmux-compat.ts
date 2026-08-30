@@ -15,6 +15,8 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { runBoundedCommand } from "../../../scripts/bounded_process.js";
+
 const GATES = ["test:integration", "test:node", "test:differential"] as const;
 
 interface Candidate {
@@ -23,9 +25,14 @@ interface Candidate {
 }
 
 async function version(executable: string): Promise<string | undefined> {
-  const child = Bun.spawn([executable, "-V"], { stderr: "pipe", stdout: "pipe" });
-  const [code, out] = await Promise.all([child.exited, new Response(child.stdout).text()]);
-  return code === 0 ? out.trim() : undefined;
+  const result = await runBoundedCommand([executable, "-V"], {
+    env: { ...process.env },
+    maxOutputBytes: 4 * 1024,
+    timeoutMilliseconds: 5_000,
+  }).catch(() => undefined);
+  return result?.termination === "exited" && result.exitCode === 0
+    ? result.stdout.trim()
+    : undefined;
 }
 
 async function candidates(): Promise<readonly Candidate[]> {
@@ -69,7 +76,23 @@ if (builds.length === 0) {
   process.exit(1);
 }
 
+// The gates import what the build emits, and none of them builds it in time:
+// test:node does, but it runs after test:integration, which needs it already
+// there. On a clean checkout that failed as a missing dist module rather than
+// as anything about tmux. The build does not vary by tmux, so it happens once.
+const emitted = Bun.spawn(["bun", "run", "build"], { stderr: "inherit", stdout: "ignore" });
+if ((await emitted.exited) !== 0) {
+  process.stderr.write("the library build failed, so no tmux was checked\n");
+  process.exit(1);
+}
+
 let failed = false;
+// The tmux on PATH is added as a candidate so a machine without
+// LIBTMUX_TMUX_BUILDS still checks something. When it is a build the range
+// already covers, running it again costs a whole suite per gate and proves
+// nothing new, so what has been checked is tracked by the version tmux reports
+// rather than by the path it was reached through.
+const checked = new Set<string>();
 for (const build of builds) {
   // eslint-disable-next-line no-await-in-loop -- one build at a time.
   const reported = await version(build.executable);
@@ -78,6 +101,11 @@ for (const build of builds) {
     failed = true;
     continue;
   }
+  if (checked.has(reported)) {
+    process.stdout.write(`${reported.padEnd(12)} ${build.label.padEnd(18)} already checked\n`);
+    continue;
+  }
+  checked.add(reported);
   for (const gate of GATES) {
     // Gates run one at a time: two tmux suites at once contend for the same
     // machine and turn a real failure into a timing question.

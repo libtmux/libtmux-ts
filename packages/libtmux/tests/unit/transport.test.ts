@@ -10,17 +10,63 @@ import {
 } from "../../src/_internal/operations/request.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
+import {
+  flattenInvocation,
+  MAX_PACKED_ARGV_BYTES,
+} from "../../src/_internal/transport/invocation.js";
+import type { CommandRequest } from "../../src/_internal/transport/types.js";
+import { TmuxTransportError } from "../../src/exc.js";
 
 const echoFixture = fileURLToPath(new URL("../fixtures/echo_argv.mjs", import.meta.url));
 const malformedFixture = fileURLToPath(new URL("../fixtures/malformed_utf8.mjs", import.meta.url));
 
 describe("NodeSpawnTransport", () => {
+  test("rejects invalid timer values before spawning", async () => {
+    const invalidTimeout = [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648];
+    const invalidDelay = [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648];
+
+    await Promise.all(
+      invalidTimeout.map((timeoutMs) =>
+        expect(
+          new NodeSpawnTransport().execute({
+            commands: [["display-message"]],
+            executable: "/definitely/not/an/executable",
+            globalArgs: [],
+            timeoutMs,
+          }),
+        ).rejects.toThrow(/timeoutMs/u),
+      ),
+    );
+    for (const postKillGraceMs of invalidDelay) {
+      expect(() => new NodeSpawnTransport({ postKillGraceMs })).toThrow(/postKillGraceMs/u);
+    }
+    for (const terminationGraceMs of invalidDelay) {
+      expect(() => new NodeSpawnTransport({ terminationGraceMs })).toThrow(/terminationGraceMs/u);
+    }
+    expect(
+      () => new NodeSpawnTransport({ postKillGraceMs: 0, terminationGraceMs: 0 }),
+    ).not.toThrow();
+
+    await expect(
+      new NodeSpawnTransport().execute({
+        commands: [
+          ["display-message", "first"],
+          ["display-message", "second"],
+        ],
+        executable: "/definitely/not/an/executable",
+        globalArgs: [],
+        timeoutMs: Number.NaN,
+      }),
+    ).rejects.toThrow(/timeoutMs/u);
+  });
+
   test("passes hostile-looking values as distinct literal arguments", async () => {
-    const values = ["with space", "-leading", 'a"quote', "a\\backslash", "雪", ";"];
+    const values = ["with space", "-leading", 'a"quote', "a\\backslash", "雪"];
     const transport = new NodeSpawnTransport();
     const raw = await transport.execute({
-      args: [echoFixture, ...values],
+      commands: [[echoFixture, ...values]],
       executable: process.execPath,
+      globalArgs: [],
     });
 
     expect(JSON.parse(decodeBackslashReplace(raw.stdout))).toEqual(values);
@@ -31,8 +77,9 @@ describe("NodeSpawnTransport", () => {
   test("returns raw bytes for nonzero exits instead of throwing", async () => {
     const transport = new NodeSpawnTransport();
     const raw = await transport.execute({
-      args: [echoFixture, "--exit-code=7", "kept"],
+      commands: [[echoFixture, "--exit-code=7", "kept"]],
       executable: process.execPath,
+      globalArgs: [],
     });
 
     expect(raw.returncode).toBe(7);
@@ -44,12 +91,32 @@ describe("NodeSpawnTransport", () => {
   test("drains stdout and stderr concurrently", async () => {
     const transport = new NodeSpawnTransport();
     const raw = await transport.execute({
-      args: [echoFixture, "--dual-streams", "1048576"],
+      commands: [[echoFixture, "--dual-streams", "1048576"]],
       executable: process.execPath,
+      globalArgs: [],
     });
 
     expect(raw.stdout.byteLength).toBe(1_048_576);
     expect(raw.stderr.byteLength).toBe(1_048_576);
+  });
+
+  test("terminates output beyond its retained-byte budget", async () => {
+    expect(() => new NodeSpawnTransport({ maxOutputBytes: 0 })).toThrow(/maxOutputBytes/u);
+    const transport = new NodeSpawnTransport({ maxOutputBytes: 1_024 });
+
+    try {
+      await transport.execute({
+        commands: [[echoFixture, "--dual-streams", "1048576"]],
+        executable: process.execPath,
+        globalArgs: [],
+      });
+      throw new Error("expected the output budget to stop the command");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TmuxTransportError);
+      if (!(error instanceof TmuxTransportError)) throw error;
+      expect(error).toMatchObject({ delivery: "indeterminate", kind: "protocol" });
+      expect(error.stdout.byteLength + error.stderr.byteLength).toBeLessThanOrEqual(1_024);
+    }
   });
 
   test("captures stdin bytes when execution begins", async () => {
@@ -57,8 +124,9 @@ describe("NodeSpawnTransport", () => {
     const transport = new NodeSpawnTransport();
 
     const execution = transport.execute({
-      args: [echoFixture, "--echo-stdin"],
+      commands: [[echoFixture, "--echo-stdin"]],
       executable: process.execPath,
+      globalArgs: [],
       stdin,
     });
     stdin[0] = 0x7a;
@@ -68,10 +136,14 @@ describe("NodeSpawnTransport", () => {
   });
 
   test("keeps submitted argv correlated with the raw result", async () => {
-    const args = [echoFixture, "submitted"];
+    const args: [string, string] = [echoFixture, "submitted"];
     const transport = new NodeSpawnTransport();
 
-    const execution = transport.execute({ args, executable: process.execPath });
+    const execution = transport.execute({
+      commands: [args],
+      executable: process.execPath,
+      globalArgs: [],
+    });
     args[1] = "mutated-after-spawn";
 
     const raw = await execution;
@@ -82,11 +154,40 @@ describe("NodeSpawnTransport", () => {
   test("adapts malformed bytes produced by a child", async () => {
     const transport = new NodeSpawnTransport();
     const raw = await transport.execute({
-      args: [malformedFixture],
+      commands: [[malformedFixture]],
       executable: process.execPath,
+      globalArgs: [],
     });
 
     expect(adaptRawResult(raw).stdout).toEqual(["valid:€", "bad:\\xff\\xc3("]);
+  });
+
+  test("keeps command boundaries distinct from literal trailing semicolons", () => {
+    expect(
+      flattenInvocation({
+        commands: [["display-message", "-p", "literal;"], ["list-sessions"]],
+        executable: "tmux",
+        globalArgs: ["-Ltest"],
+      }),
+    ).toEqual(["-Ltest", "display-message", "-p", "literal\\;", ";", "list-sessions"]);
+  });
+
+  test("rejects invalid invocation bytes and size before spawn", async () => {
+    const transport = new NodeSpawnTransport();
+    await expect(
+      transport.execute({
+        commands: [["bad\0command"]],
+        executable: "/definitely/not/tmux",
+        globalArgs: [],
+      }),
+    ).rejects.toMatchObject({ delivery: "not_started", kind: "protocol" });
+    await expect(
+      transport.execute({
+        commands: [["display-message", "x".repeat(MAX_PACKED_ARGV_BYTES)]],
+        executable: "/definitely/not/tmux",
+        globalArgs: [],
+      }),
+    ).rejects.toBeInstanceOf(TmuxTransportError);
   });
 });
 
@@ -101,9 +202,10 @@ describe("request preparation and batching", () => {
     });
 
     expect(prepareCommandRequest(connection, ["display-message", ";", "hello world"])).toEqual({
-      args: ["-8", "-f/tmp/tmux.conf", "-S/tmp/tmux.sock", "display-message", ";", "hello world"],
+      commands: [["display-message", ";", "hello world"]],
       environment: { TERM: "screen-256color" },
       executable: "/usr/bin/tmux",
+      globalArgs: ["-8", "-f/tmp/tmux.conf", "-S/tmp/tmux.sock"],
     });
   });
 
@@ -124,7 +226,8 @@ describe("request preparation and batching", () => {
 
     expect(request.stdin).toEqual(Uint8Array.of(0x61, 0x62));
     expect(Object.isFrozen(request)).toBe(true);
-    expect(Object.isFrozen(request.args)).toBe(true);
+    expect(Object.isFrozen(request.commands)).toBe(true);
+    expect(Object.isFrozen(request.commands[0])).toBe(true);
   });
 
   test("does not expose writable prepared stdin", async () => {
@@ -141,9 +244,10 @@ describe("request preparation and batching", () => {
 
   test("returns correlated success failure success and continues after failure", async () => {
     const transport = new NodeSpawnTransport();
-    const requests = [0, 9, 0].map((exitCode, index) => ({
-      args: [echoFixture, `--exit-code=${exitCode}`, `request-${index}`],
+    const requests = [0, 9, 0].map<CommandRequest>((exitCode, index) => ({
+      commands: [[echoFixture, `--exit-code=${exitCode}`, `request-${index}`]],
       executable: process.execPath,
+      globalArgs: [],
     }));
 
     const outcomes = await executeBatch(transport, requests);
@@ -159,17 +263,22 @@ describe("request preparation and batching", () => {
 
   test("captures the independent request sequence before awaiting", async () => {
     const transport = new NodeSpawnTransport();
-    const secondRequest = {
-      args: [echoFixture, "second-original"],
+    const secondRequest: CommandRequest = {
+      commands: [[echoFixture, "second-original"]],
       executable: process.execPath,
+      globalArgs: [],
     };
-    const requests = [
-      { args: [echoFixture, "first"], executable: process.execPath },
+    const requests: CommandRequest[] = [
+      { commands: [[echoFixture, "first"]], executable: process.execPath, globalArgs: [] },
       secondRequest,
     ];
 
     const execution = executeBatch(transport, requests);
-    requests[1] = { args: [echoFixture, "second-replacement"], executable: process.execPath };
+    requests[1] = {
+      commands: [[echoFixture, "second-replacement"]],
+      executable: process.execPath,
+      globalArgs: [],
+    };
     const outcomes = await execution;
 
     expect(outcomes[1]?.request).not.toBe(secondRequest);
@@ -182,17 +291,17 @@ describe("request preparation and batching", () => {
 
   test("captures every nested batch argv before awaiting", async () => {
     const transport = new NodeSpawnTransport();
-    const secondArgs = [echoFixture, "second-original"];
-    const requests = [
-      { args: [echoFixture, "first"], executable: process.execPath },
-      { args: secondArgs, executable: process.execPath },
+    const secondArgs: [string, string] = [echoFixture, "second-original"];
+    const requests: CommandRequest[] = [
+      { commands: [[echoFixture, "first"]], executable: process.execPath, globalArgs: [] },
+      { commands: [secondArgs], executable: process.execPath, globalArgs: [] },
     ];
 
     const execution = executeBatch(transport, requests);
     secondArgs[1] = "second-mutated";
     const outcomes = await execution;
 
-    expect(outcomes[1]?.request.args).toEqual([echoFixture, "second-original"]);
+    expect(outcomes[1]?.request.commands[0]).toEqual([echoFixture, "second-original"]);
     expect(JSON.parse(decodeBackslashReplace(outcomes[1]!.rawResult!.stdout))).toEqual([
       "second-original",
     ]);
@@ -202,11 +311,12 @@ describe("request preparation and batching", () => {
   test("captures every nested batch stdin before awaiting", async () => {
     const transport = new NodeSpawnTransport();
     const secondStdin = Uint8Array.of(0x61, 0x62);
-    const requests = [
-      { args: [echoFixture, "first"], executable: process.execPath },
+    const requests: CommandRequest[] = [
+      { commands: [[echoFixture, "first"]], executable: process.execPath, globalArgs: [] },
       {
-        args: [echoFixture, "--echo-stdin"],
+        commands: [[echoFixture, "--echo-stdin"]],
         executable: process.execPath,
+        globalArgs: [],
         stdin: secondStdin,
       },
     ];

@@ -25,16 +25,16 @@ describe("constants", () => {
     expect(PaneDirection).toEqual({ Above: "ABOVE", Below: "BELOW", Left: "LEFT", Right: "RIGHT" });
   });
 
-  test("preserves Python option-scope member names and values", () => {
+  test("uses the same option-scope values as operations", () => {
     expect(OptionScope).toEqual({
-      Pane: "PANE",
-      Server: "SERVER",
-      Session: "SESSION",
-      Window: "WINDOW",
+      Pane: "pane",
+      Server: "server",
+      Session: "session",
+      Window: "window",
     });
   });
 
-  test("preserves Python flag maps and default option sentinel", () => {
+  test("maps every direction and scope to its tmux flag", () => {
     expect(RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP).toEqual({
       DOWN: "-D",
       LEFT: "-L",
@@ -48,8 +48,8 @@ describe("constants", () => {
       LEFT: ["-h", "-b"],
       RIGHT: ["-h"],
     });
-    expect(OPTION_SCOPE_FLAG_MAP).toEqual({ PANE: "-p", SERVER: "-s", SESSION: "", WINDOW: "-w" });
-    expect(HOOK_SCOPE_FLAG_MAP).toEqual({ PANE: "-p", SERVER: "-g", SESSION: "", WINDOW: "-w" });
+    expect(OPTION_SCOPE_FLAG_MAP).toEqual({ pane: "-p", server: "-s", session: "", window: "-w" });
+    expect(HOOK_SCOPE_FLAG_MAP).toEqual({ pane: "-p", server: "-g", session: "", window: "-w" });
     expect(DEFAULT_OPTION_SCOPE).toBe(DEFAULT_OPTION_SCOPE);
   });
 });

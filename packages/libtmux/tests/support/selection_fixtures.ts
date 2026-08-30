@@ -8,16 +8,15 @@ import {
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionDescriptor,
-  type SelectionProjection,
-} from "../../src/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
+import type { SelectionProjection } from "../../src/_internal/graph/projection_identity.js";
 import {
   materializeClientRecord,
   materializeProjectionMembers,
 } from "../../src/_internal/graph/materialize.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
 import {
   createRuntimeContext,
   createServerWithRuntime,
@@ -28,6 +27,8 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { singleCommandTransport } from "./transport_double.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Pane } from "../../src/pane.js";
 import { Session } from "../../src/session.js";
@@ -36,7 +37,6 @@ import { completeFormatRow, type MutableCompleteFormatRow } from "./graph_rows.j
 
 const encoder = new TextEncoder();
 let runtimeOrdinal = 0;
-
 interface RecordingTransport extends CommandTransport {
   readonly requests: CommandRequest[];
 }
@@ -71,29 +71,25 @@ export interface SessionProvenanceHarness {
 
 function resultFor(request: CommandRequest): RawCommandResult {
   return {
-    cmd: Object.freeze([request.executable, ...request.args]),
+    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode("3.7b\n"),
+    stdout: encoder.encode("3.7b\t101\t202\n"),
   };
 }
 
 function recordingTransport(): RecordingTransport {
   const requests: CommandRequest[] = [];
-  return {
-    requests,
-    async execute(request) {
+  return Object.assign(
+    singleCommandTransport(async (request) => {
       requests.push(request);
       return resultFor(request);
+    }),
+    {
+      requests,
     },
-    // These fixtures answer one command at a time. Running a group as several
-    // singles would be the very non-atomicity the group exists to remove, so a
-    // fixture that needs one asks for it rather than getting a quiet stand-in.
-    executeGroup(): Promise<readonly RawCommandResult[]> {
-      return Promise.reject(new Error("this fixture runs one command at a time"));
-    },
-  };
+  );
 }
 
 function fixtureRuntime(): {
@@ -187,11 +183,17 @@ function refAt(refs: readonly GraphRecordRef[], index: number): GraphRecordRef {
 }
 
 function builderFor(graph: NormalizedGraph, rootSource: string): SelectionProjectionBuilder {
-  return SelectionProjectionBuilder.create({
+  return SelectionProjectionBuilder.createCorpus({
     descriptors,
     graph,
-    source: createGraphSourceId(rootSource),
+    sources: [createGraphSourceId(rootSource)],
   });
+}
+
+function sealView(builder: SelectionProjectionBuilder, rootSource: string): SelectionProjection {
+  const projection = builder.sealViews().get(createGraphSourceId(rootSource));
+  if (projection === undefined) throw new Error(`missing projection view ${rootSource}`);
+  return projection;
 }
 
 /** A client attached to nothing this graph lists: every relation resolves to null. */
@@ -246,9 +248,13 @@ export async function createSessionHarness(
   ]);
   const builder = builderFor(graph, "sessions-root");
   for (const session of sourceRefs(graph, "sessions-root")) hydrateEmptySession(builder, session);
-  const projection = builder.seal();
+  const projection = sealView(builder, "sessions-root");
   const values = requireSessions(
-    await materializeProjectionMembers(createServerWithRuntime(runtime), projection, graph),
+    await materializeProjectionMembers(
+      createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
+      projection,
+      graph,
+    ),
   );
   return { graph, projection, runtime, transport, values };
 }
@@ -262,9 +268,21 @@ export function createIncompleteSessionProjection(
 function richSources(): readonly CapturedRowSet[] {
   return [
     source("sessions-rich", "list-sessions", [
-      completeFormatRow({ session_id: "$1", session_name: "one" }),
-      completeFormatRow({ session_id: "$2", session_name: "two" }),
-      completeFormatRow({ session_id: "$3", session_name: "empty" }),
+      completeFormatRow({
+        session_id: "$1",
+        session_last_attached: "0",
+        session_name: "one",
+      }),
+      completeFormatRow({
+        session_id: "$2",
+        session_last_attached: "",
+        session_name: "two",
+      }),
+      completeFormatRow({
+        session_id: "$3",
+        session_last_attached: "1",
+        session_name: "empty",
+      }),
     ]),
     source("windows-rich", "list-windows", [
       completeFormatRow({
@@ -388,9 +406,13 @@ async function projectedHarness<Model extends Session | Window | Pane>(
 ): Promise<ProjectedHarness<Model>> {
   const builder = builderFor(graph, rootSource);
   hydrateRichProjection(builder, graph, rootSource);
-  const projection = builder.seal();
+  const projection = sealView(builder, rootSource);
   const values = requireModel(
-    await materializeProjectionMembers(createServerWithRuntime(runtime), projection, graph),
+    await materializeProjectionMembers(
+      createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
+      projection,
+      graph,
+    ),
   );
   return { graph, projection, runtime, transport, values };
 }
@@ -452,9 +474,13 @@ export async function createWindowAssociationHarness(): Promise<ProjectedHarness
   builder.materializeOne(sessionTwo, "activeWindow", windowTwo);
   builder.materializeOne(sessionTwo, "activePane", null);
 
-  const projection = builder.seal();
+  const projection = sealView(builder, "windows-association");
   const values = requireWindows(
-    await materializeProjectionMembers(createServerWithRuntime(runtime), projection, graph),
+    await materializeProjectionMembers(
+      createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
+      projection,
+      graph,
+    ),
   );
   return { graph, projection, runtime, transport, values };
 }
@@ -512,9 +538,13 @@ export async function createSessionProvenanceHarness(): Promise<SessionProvenanc
     builder.materializeMany(secondWindow, "linkedSessions", [secondSession]);
     builder.materializeMany(secondWindow, "panes", []);
     builder.materializeOne(secondWindow, "activePane", null);
-    const projection = builder.seal();
+    const projection = sealView(builder, "sessions-provenance");
     const values = requireSessions(
-      await materializeProjectionMembers(createServerWithRuntime(runtime), projection, sourceGraph),
+      await materializeProjectionMembers(
+        createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
+        projection,
+        sourceGraph,
+      ),
     );
     return { projection, values };
   };
@@ -536,10 +566,10 @@ export async function createClientHarness(names: readonly string[]): Promise<Cli
       names.map((name) => completeFormatRow({ client_name: name })),
     ),
   ]);
-  const server = createServerWithRuntime(runtime);
+  const server = createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES);
   const clientBuilder = builderFor(graph, "clients-root");
   for (const ref of sourceRefs(graph, "clients-root")) hydrateDetachedClient(clientBuilder, ref);
-  const projection = clientBuilder.seal();
+  const projection = sealView(clientBuilder, "clients-root");
   const values = await Promise.all(
     sourceRefs(graph, "clients-root").map((ref) => materializeClientRecord(server, graph, ref)),
   );

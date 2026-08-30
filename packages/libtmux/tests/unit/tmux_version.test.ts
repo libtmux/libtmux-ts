@@ -24,12 +24,14 @@ describe("tmux versions", () => {
     expect(Object.isFrozen(version)).toBe(true);
   });
 
-  test("orders raw master builds above every tagged release", () => {
+  test("orders development builds above every tagged release", () => {
     const latestTagged = parseTmuxVersion("99.9z");
 
     expect(compareTmuxVersions(parseTmuxVersion("master"), latestTagged)).toBeGreaterThan(0);
     expect(compareTmuxVersions(parseTmuxVersion("3.6a-master"), latestTagged)).toBeGreaterThan(0);
+    expect(compareTmuxVersions(parseTmuxVersion("next-3.8"), latestTagged)).toBeGreaterThan(0);
     expect(parseTmuxVersion("3.6a-master").raw).toBe("3.6a-master");
+    expect(parseTmuxVersion("next-3.8")).toMatchObject({ major: 3, minor: 8, suffix: "" });
   });
 
   test("carries ordinary version floors into later patch releases", () => {
@@ -48,7 +50,18 @@ describe("tmux versions", () => {
   });
 
   test("rejects noncanonical or incomplete versions", () => {
-    for (const value of ["3", "3.7aa", "3.7-rc1", "v3.7", "tmux 3.7", "3.7 ", " 3.7"]) {
+    for (const value of [
+      "3",
+      "3.7aa",
+      "3.7-rc1",
+      "v3.7",
+      "tmux 3.7",
+      "3.7 ",
+      " 3.7",
+      "masterpiece",
+      "3.7-master-junk",
+      "next-3.8-junk",
+    ]) {
       expect(() => parseTmuxVersion(value)).toThrow("invalid tmux version");
     }
   });

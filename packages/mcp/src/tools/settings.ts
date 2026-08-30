@@ -1,5 +1,5 @@
 /**
- * Options, hooks, environment, and buffers.
+ * Options, hooks, and environment.
  *
  * Hooks are readable but not writable here on purpose: a hook outlives the
  * process that set it, so an agent that sets one leaves behaviour behind in
@@ -10,16 +10,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import {
-  isFailure,
-  requirePane,
-  requireSession,
-  requireWindow,
-  requireWritablePane,
-  type ToolContext,
-} from "../context.js";
+import type { ToolContext } from "../context.js";
+import { effectiveResultLines, MAX_INLINE_REQUEST_BYTES } from "../policy.js";
 import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { fail, ok } from "../results.js";
+import { fail, limitEntries, ok, renderEntries } from "../results.js";
+import { fitsInlineRequest, inlineRequestText, requestText } from "../schemas.js";
+import { isFailure, requirePane, requireSession, requireWindow } from "../target_resolution.js";
 
 /**
  * The six scopes tmux keeps options in.
@@ -116,12 +112,16 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description: "Read tmux options at server, session, or pane scope.",
       inputSchema: {
         scope: z.enum(SCOPES).optional().describe("Default server."),
-        target: z
-          .string()
+        target: requestText("target")
           .optional()
           .describe("Session id/name or pane id, for the matching scope."),
       },
-      outputSchema: { options: z.record(z.string(), z.string()), scope: z.string() },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        options: z.record(z.string(), z.string()),
+        scope: z.string(),
+      },
       title: "Show options",
     },
     async ({ scope, target }) => {
@@ -131,12 +131,21 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       const site = await optionSite(context, chosen, target);
       if (isFailure(site)) return site;
       const read = await site.show();
-      const options = Object.fromEntries(read);
+      const bounded = limitEntries(
+        [...read],
+        effectiveResultLines(context.policy, undefined),
+        ([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`,
+        ([name, value]) => `${name} ${value}`,
+      );
+      const options = Object.fromEntries(bounded.entries);
       return ok(
-        { options, scope: chosen },
-        Object.entries(options)
-          .map(([name, value]) => `${name} ${value}`)
-          .join("\n"),
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          options,
+          scope: chosen,
+        },
+        renderEntries(bounded, "options", "narrow the scope before reading again"),
       );
     },
   );
@@ -150,10 +159,14 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "outlive this process and keep firing in somebody's tmux. Put hooks a " +
         "server should keep in its config file.",
       inputSchema: {
-        session: z.string().optional().describe("Session scope; omit for server scope."),
+        session: requestText("session")
+          .optional()
+          .describe("Session scope; omit for server scope."),
       },
       outputSchema: {
+        complete: z.boolean(),
         hooks: z.record(z.string(), z.string()),
+        omittedEntries: z.number().int(),
         unset: z
           .number()
           .int()
@@ -174,19 +187,27 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       // tmux reports its whole hook table, roughly a hundred names, nearly all
       // carrying nothing. The question a caller is asking is which hooks run,
       // and a wall of empty strings buries the handful that do.
-      const hooks = Object.fromEntries(
-        [...read]
-          .filter(([, commands]) => commands.some((command) => command !== ""))
-          .map(([name, commands]) => [name, commands.join("\n")] as const),
+      const configured = [...read]
+        .filter(([, commands]) => commands.some((command) => command !== ""))
+        .map(([name, commands]) => [name, commands.join("\n")] as const);
+      const bounded = limitEntries(
+        configured,
+        effectiveResultLines(context.policy, undefined),
+        ([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`,
+        ([name, value]) => `${name} ${value}`,
       );
-      const unset = read.size - Object.keys(hooks).length;
+      const hooks = Object.fromEntries(bounded.entries);
+      const unset = read.size - configured.length;
       return ok(
-        { hooks, unset },
-        Object.keys(hooks).length === 0
+        {
+          complete: bounded.complete,
+          hooks,
+          omittedEntries: bounded.omittedEntries,
+          unset,
+        },
+        configured.length === 0
           ? `No hooks set. ${String(unset)} hook names exist and carry nothing.`
-          : Object.entries(hooks)
-              .map(([name, value]) => `${name} ${value}`)
-              .join("\n"),
+          : renderEntries(bounded, "hooks", "read one session scope at a time"),
       );
     },
   );
@@ -198,8 +219,12 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description:
         "The environment tmux gives processes it starts, at server or session " +
         "scope. This is what a new pane will inherit, not what a running one has.",
-      inputSchema: { session: z.string().optional() },
-      outputSchema: { environment: z.record(z.string(), z.string().nullable()) },
+      inputSchema: { session: requestText("session").optional() },
+      outputSchema: {
+        complete: z.boolean(),
+        environment: z.record(z.string(), z.string().nullable()),
+        omittedEntries: z.number().int(),
+      },
       title: "Show environment",
     },
     async ({ session }) => {
@@ -212,56 +237,21 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         if (isFailure(found)) return found;
         read = await found.showEnvironment();
       }
-      const environment = Object.fromEntries(read);
-      return ok(
-        { environment },
-        Object.entries(environment)
-          .map(([name, value]) => (value === null ? `-${name}` : `${name}=${value}`))
-          .join("\n"),
+      const bounded = limitEntries(
+        [...read],
+        effectiveResultLines(context.policy, undefined),
+        ([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`,
+        ([name, value]) => (value === null ? `-${name}` : `${name}=${value}`),
       );
-    },
-  );
-
-  mcp.registerTool(
-    "list_buffers",
-    {
-      annotations: READ_ONLY,
-      description:
-        "Names of the paste buffers this server holds. Contents are not listed: a " +
-        "tmux buffer stack carries whatever a person copied, which may be anything.",
-      inputSchema: {},
-      outputSchema: { buffers: z.array(z.string()) },
-      title: "List buffers",
-    },
-    async () => {
-      const buffers = await context.tmux.listBuffers();
+      const environment = Object.fromEntries(bounded.entries);
       return ok(
-        { buffers: [...buffers] },
-        buffers.length === 0 ? "No buffers." : buffers.join("\n"),
+        {
+          complete: bounded.complete,
+          environment,
+          omittedEntries: bounded.omittedEntries,
+        },
+        renderEntries(bounded, "variables", "read one session scope at a time"),
       );
-    },
-  );
-
-  mcp.registerTool(
-    "show_buffer",
-    {
-      annotations: READ_ONLY,
-      description: "Read one paste buffer by name.",
-      inputSchema: { name: z.string() },
-      outputSchema: { name: z.string(), text: z.string() },
-      title: "Show buffer",
-    },
-    async ({ name }) => {
-      try {
-        const lines = await context.tmux.showBuffer(name);
-        const text = lines.join("\n");
-        return ok({ name, text }, text);
-      } catch (error) {
-        return fail({
-          hint: "list_buffers shows which names exist.",
-          reason: `Could not read buffer ${name}: ${error instanceof Error ? error.message : String(error)}`,
-        });
-      }
     },
   );
 
@@ -270,16 +260,21 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "set_option",
     {
-      annotations: MUTATING,
+      annotations: OPEN_WORLD,
       description:
         "Set a tmux option at server, session, or pane scope. Changes stay until " +
-        "something unsets them, including after this process ends.",
-      inputSchema: {
-        name: z.string(),
-        scope: z.enum(SCOPES).optional().describe("Default server."),
-        target: z.string().optional(),
-        value: z.string(),
-      },
+        "something unsets them, including after this process ends. Format-valued " +
+        "options such as status-right may contain #() jobs that run host shell commands.",
+      inputSchema: z
+        .object({
+          name: inlineRequestText("name"),
+          scope: z.enum(SCOPES).optional().describe("Default server."),
+          target: requestText("target").optional(),
+          value: inlineRequestText("value"),
+        })
+        .refine(({ name, value }) => fitsInlineRequest([name, value]), {
+          message: `set_option text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+        }),
       outputSchema: { name: z.string(), scope: z.string(), value: z.string() },
       title: "Set option",
     },
@@ -303,10 +298,9 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         "inherits. This is how a set_option is undone: without it a wrong value " +
         "set from here could not be taken back from here.",
       inputSchema: {
-        name: z.string(),
+        name: inlineRequestText("name"),
         scope: z.enum(SCOPES).optional().describe("Default server."),
-        target: z
-          .string()
+        target: requestText("target")
           .optional()
           .describe("Session id/name or pane id, required for those scopes."),
       },
@@ -331,11 +325,17 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
       description:
         "Set a variable in tmux's environment. Affects processes tmux starts after " +
         "this, not ones already running.",
-      inputSchema: {
-        name: z.string(),
-        session: z.string().optional().describe("Session scope; omit for server scope."),
-        value: z.string(),
-      },
+      inputSchema: z
+        .object({
+          name: inlineRequestText("name"),
+          session: requestText("session")
+            .optional()
+            .describe("Session scope; omit for server scope."),
+          value: inlineRequestText("value"),
+        })
+        .refine(({ name, value }) => fitsInlineRequest([name, value]), {
+          message: `set_environment text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+        }),
       outputSchema: { name: z.string(), scope: z.string() },
       title: "Set environment",
     },
@@ -352,97 +352,6 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
         { name, scope: session === undefined ? "server" : "session" },
         `Set ${name} for new processes.`,
       );
-    },
-  );
-
-  mcp.registerTool(
-    "load_buffer",
-    {
-      annotations: MUTATING,
-      description:
-        "Put text into a named paste buffer, ready for paste_buffer. Use this for " +
-        "content too large or too awkward to type with send_keys.",
-      inputSchema: { name: z.string(), text: z.string() },
-      outputSchema: { bytes: z.number().int(), name: z.string() },
-      title: "Load buffer",
-    },
-    async ({ name, text }) => {
-      // tmux drops an empty `set-buffer` silently: it exits zero and creates
-      // nothing. Reporting a load would name a buffer that does not exist, and
-      // the caller would find out one call later against `paste_buffer`.
-      if (text === "") {
-        return fail({
-          hint: "Write at least one byte, or skip the load when the content is empty.",
-          reason: `tmux stores no buffer for empty text, so ${name} was not created.`,
-        });
-      }
-      await context.tmux.loadBuffer(name, text);
-      const bytes = Buffer.byteLength(text, "utf8");
-      return ok({ bytes, name }, `Loaded ${String(bytes)} bytes into buffer ${name}.`);
-    },
-  );
-
-  mcp.registerTool(
-    "paste_buffer",
-    {
-      annotations: MUTATING,
-      description: "Paste a named buffer into a pane.",
-      inputSchema: {
-        force: z
-          .boolean()
-          .optional()
-          .describe("Write even to the pane this server runs in. Default false."),
-        name: z.string(),
-        paneId: z.string(),
-      },
-      outputSchema: { name: z.string(), paneId: z.string() },
-      title: "Paste buffer",
-    },
-    async ({ force, name, paneId }) => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
-      if (isFailure(pane)) return pane;
-      await pane.pasteBuffer(name);
-      return ok({ name, paneId }, `Pasted buffer ${name} into ${paneId}.`);
-    },
-  );
-
-  mcp.registerTool(
-    "save_buffer",
-    {
-      annotations: OPEN_WORLD,
-      description:
-        "Write a buffer to a file instead of reading it back. show_buffer returns " +
-        "the contents, which for anything large means spending your context on " +
-        "bytes you only want stored. tmux writes the file itself, on the machine " +
-        "tmux runs on. An existing file is replaced unless append is set.",
-      inputSchema: {
-        append: z.boolean().optional().describe("Add to the file rather than replacing it."),
-        name: z.string(),
-        path: z.string().describe("Where tmux writes it, on tmux's own machine."),
-      },
-      outputSchema: { name: z.string(), path: z.string() },
-      title: "Save buffer to a file",
-    },
-    async ({ append, name, path }) => {
-      await context.tmux.saveBuffer(name, path, append === undefined ? {} : { append });
-      return ok({ name, path }, `Wrote buffer ${name} to ${path}.`);
-    },
-  );
-
-  mcp.registerTool(
-    "delete_buffer",
-    {
-      annotations: MUTATING,
-      description: "Discard a named paste buffer.",
-      inputSchema: { name: z.string() },
-      outputSchema: { name: z.string() },
-      title: "Delete buffer",
-    },
-    async ({ name }) => {
-      await context.tmux.deleteBuffer(name);
-      return ok({ name }, `Deleted buffer ${name}.`);
     },
   );
 }

@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -18,17 +19,24 @@ jobs:
   # not become truer on 3.5 than on 3.2a, and paying for them per version is
   # what kept the version matrix down to a sample of the range it claims.
   gates:
+    name: Gates (Bun ${{ matrix.bun-version }})
     runs-on: ubuntu-latest
+    # Runtime compatibility crosses every package, example and executed document.
+    # Keep that axis complete while the tmux job below varies only tmux.
+    strategy:
+      fail-fast: false
+      matrix:
+        bun-version: ["1.3.14", "1.4.0"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: ${{ matrix.bun-version }}
 
       # The emitted-Node lane refuses to substitute the runner's default Node,
       # so the floor is provisioned rather than assumed.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
 
@@ -40,7 +48,7 @@ jobs:
       # something newer without the version job saying so.
       - name: Setup tmux build cache for tmux 3.2a
         id: tmux-build-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/tmux-builds/tmux-3.2a
           key: tmux-3.2a
@@ -59,11 +67,9 @@ jobs:
       - run: echo "$HOME/tmux-builds/tmux-3.2a/bin" >> "$GITHUB_PATH"
       - run: tmux -V
 
-      # A shell the MCP server's framing deliberately cannot address, which is
-      # the only way to prove it refuses one. The suite names it rather than
-      # skipping without it.
-      - name: Install fish
-        run: sudo apt-get install -y fish
+      # fish proves non-POSIX-shell refusal; zsh exercises trap preservation.
+      - name: Install test shells
+        run: sudo apt-get install -y fish zsh
 
       - run: bun install --frozen-lockfile
 
@@ -76,8 +82,10 @@ jobs:
       # failures, which reads exactly like a clean tree.
       - run: bun run typecheck:tooling
       - run: bun run typecheck:readme
-      # The prose around the compiled snippets: that every link resolves, and
-      # that the shell blocks name paths and packages this workspace has.
+      # The prose around the compiled snippets: that every doc comment reaches
+      # a symbol, that every link resolves, and that the shell blocks name
+      # paths and packages this workspace has.
+      - run: bun run docs:comments
       - run: bun run docs:links
       - run: bun run docs:claims
       - run: bun run docs:runnable
@@ -141,11 +149,11 @@ jobs:
       # gate that only runs while releasing finds them after the release.
       - name: Gate the MCP server
         working-directory: packages/mcp
-        run: bun run typecheck && bun run test && bun run test:package
+        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
 
       - name: Gate the workspace builder
         working-directory: packages/workspace
-        run: bun run typecheck && bun run test && bun run test:package
+        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
 
       # The recipes above the library package, reaching across it to the
       # workspace builder and the MCP server. After those gates because each
@@ -159,6 +167,45 @@ jobs:
       - name: Gate the examples
         working-directory: examples
         run: bun run typecheck && bun run test
+
+  # The real-server supervisor below still depends on Linux `/proc`. This lane
+  # proves the platform-neutral package boundary on macOS without claiming that
+  # cancellation and process ownership have crossed that boundary yet.
+  macos-package:
+    name: macOS package canary
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      - name: Point installed-package canaries at Node 22
+        run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Gate the emitted library package
+        working-directory: packages/libtmux
+        run: |
+          bun run typecheck
+          bun run build
+          bun run typecheck:ambient-free
+          bun run test:package
+          bun run test:install
+
+      - name: Gate the emitted MCP package
+        working-directory: packages/mcp
+        run: bun run test:package && bun run test:install
+
+      - name: Gate the emitted workspace package
+        working-directory: packages/workspace
+        run: bun run test:package && bun run test:install
 
   # Every tmux release the package claims to support, not a sample of them.
   # "3.2a or newer" is a claim about 3.3a, 3.5 and 3.6 too, and a matrix of the
@@ -175,13 +222,13 @@ jobs:
       matrix:
         tmux-version: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.0
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "22"
 
@@ -191,7 +238,7 @@ jobs:
       # The differential corpus compares this port against the pinned Python
       # release, which it runs through uv.
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
@@ -216,7 +263,7 @@ jobs:
 
       - name: Setup tmux build cache for tmux ${{ matrix.tmux-version }}
         id: tmux-build-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/tmux-builds/tmux-${{ matrix.tmux-version }}
           key: tmux-${{ matrix.tmux-version }}

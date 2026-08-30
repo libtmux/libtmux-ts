@@ -1,13 +1,30 @@
 import { describe, expect, test } from "bun:test";
 
-import { decodeFormatValue, encodeFormatValue } from "../../src/_internal/codec/format_values.js";
-import { FORMAT_VALUE_TYPES } from "../../src/_generated/field_types.js";
+import {
+  decodeFormatValue,
+  encodeFormatValue,
+  isFormatCriterionValue,
+} from "../../src/_internal/codec/format_values.js";
+import { FORMAT_VALUE_TYPES, formatValueType } from "../../src/_generated/field_types.js";
+import { WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
+import { isSafeInteger, safeInteger } from "../../src/common.js";
+
+describe("safe integer proof", () => {
+  test("authenticates only exact JavaScript integers", () => {
+    expect(Number(safeInteger(42))).toBe(42);
+    expect(isSafeInteger(-42)).toBe(true);
+    for (const value of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
+      expect(isSafeInteger(value)).toBe(false);
+      expect(() => safeInteger(value)).toThrow(/safe integer/u);
+    }
+  });
+});
 
 describe("decoding what tmux sends", () => {
   test("reads a number field as a number", () => {
-    expect(decodeFormatValue("pane_pid", "2334787")).toBe(2334787);
-    expect(decodeFormatValue("window_width", "0")).toBe(0);
-    expect(decodeFormatValue("scroll_position", "-1")).toBe(-1);
+    expect(decodeFormatValue("pane_pid", "2334787")).toBe(safeInteger(2_334_787));
+    expect(decodeFormatValue("window_width", "0")).toBe(safeInteger(0));
+    expect(decodeFormatValue("scroll_position", "-1")).toBe(safeInteger(-1));
   });
 
   test("reads a boolean field as a boolean", () => {
@@ -19,7 +36,7 @@ describe("decoding what tmux sends", () => {
     expect(decodeFormatValue("session_created", "1786878571")).toEqual(new Date(1786878571000));
   });
 
-  test("leaves a string field exactly as tmux sent it", () => {
+  test("leaves string and identity fields exactly as tmux sent them", () => {
     expect(decodeFormatValue("pane_current_command", "zsh")).toBe("zsh");
     expect(decodeFormatValue("pane_id", "%0")).toBe("%0");
     expect(decodeFormatValue("session_id", "$0")).toBe("$0");
@@ -35,6 +52,9 @@ describe("decoding what tmux sends", () => {
     expect(decodeFormatValue("pane_pid", "not a pid")).toBeNull();
     expect(decodeFormatValue("pane_active", "2")).toBeNull();
     expect(decodeFormatValue("session_created", "nonsense")).toBeNull();
+    expect(decodeFormatValue("pane_id", "@1")).toBeNull();
+    expect(decodeFormatValue("session_id", "%1")).toBeNull();
+    expect(decodeFormatValue("window_id", "$1")).toBeNull();
   });
 
   test("answers null for a time that has not happened", () => {
@@ -45,12 +65,43 @@ describe("decoding what tmux sends", () => {
     expect(decodeFormatValue("pane_pid", "9007199254740993")).toBeNull();
   });
 
+  test("refuses noncanonical integer text for numbers and times", () => {
+    for (const value of ["01", "-0"]) {
+      expect(decodeFormatValue("pane_pid", value)).toBeNull();
+      expect(decodeFormatValue("session_created", value)).toBeNull();
+    }
+  });
+
+  test("refuses a timestamp outside the Date range", () => {
+    expect(decodeFormatValue("session_created", "8640000000000")).toEqual(
+      new Date(8_640_000_000_000_000),
+    );
+    expect(decodeFormatValue("session_created", "8640000000001")).toBeNull();
+    expect(isFormatCriterionValue("session_created", "8640000000000")).toBe(true);
+    expect(isFormatCriterionValue("session_created", "-8640000000000")).toBe(true);
+    expect(isFormatCriterionValue("session_created", "8640000000001")).toBe(false);
+    expect(isFormatCriterionValue("session_created", "-8640000000001")).toBe(false);
+  });
+
   test("passes through a field it has no declaration for", () => {
     expect(decodeFormatValue("not_a_tmux_field", "whatever")).toBe("whatever");
   });
 });
 
 describe("encoding what a caller writes", () => {
+  test("publishes each criterion's decoded domain", () => {
+    const mismatches: string[] = [];
+    for (const [model, fields] of Object.entries(WHERE_FIELDS_V1)) {
+      for (const field of fields) {
+        const expected = formatValueType(field.token) ?? "string";
+        if (field.domain !== expected) {
+          mismatches.push(`${model}.${field.criteriaName}: ${field.domain} != ${expected}`);
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
   test("spells a boolean the way tmux does", () => {
     expect(encodeFormatValue("pane_active", true)).toBe("1");
     expect(encodeFormatValue("pane_active", false)).toBe("0");
@@ -73,17 +124,15 @@ describe("encoding what a caller writes", () => {
   /**
    * The `where` types promise a text domain; this is what makes it a fact.
    *
-   * `ScalarCriteria`'s text side is not a taste — it is exactly what this
-   * function can emit for that kind of field, which is what lets a serialized
-   * query decode back into the same type it was authored in. If the encoder
-   * ever emits something outside it, the types start describing documents this
-   * library does not produce, and that has to fail here rather than in a
-   * consumer's editor.
+   * `ScalarCriteria`'s text side is not a taste — it is the lexical shape this
+   * function can emit for that kind of field. Raw numeric text cannot carry a
+   * safe-range proof, so runtime validation still owns magnitude and canonical
+   * spelling. An encoder value outside the lexical type breaks the contract.
    */
   test("emits only the text the where types admit, for every declared field", () => {
     const flag = /^[01]$/u;
-    // What `${number}` accepts: TypeScript's numeric literal grammar, which is
-    // what `String` of a safe integer produces.
+    // What `${bigint}` accepts: signed integer text, which is what `String` of
+    // a safe integer produces.
     const numeric = /^-?\d+$/u;
 
     const offenders: string[] = [];
@@ -93,10 +142,25 @@ describe("encoding what a caller writes", () => {
           ? [true, false]
           : type === "time"
             ? [new Date(0), new Date(1_700_000_000_000), new Date(2_000_000_000_000)]
-            : [0, -1, 1, 2_334_787, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER];
+            : type === "number"
+              ? [0, -1, 1, 2_334_787, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER]
+              : type === "pane-id"
+                ? ["%0", "%42"]
+                : type === "session-id"
+                  ? ["$0", "$42"]
+                  : ["@0", "@42"];
       for (const sample of samples) {
         const encoded = encodeFormatValue(token, sample);
-        const shape = type === "boolean" ? flag : numeric;
+        const shape =
+          type === "boolean"
+            ? flag
+            : type === "number" || type === "time"
+              ? numeric
+              : type === "pane-id"
+                ? /^%\d+$/u
+                : type === "session-id"
+                  ? /^\$\d+$/u
+                  : /^@\d+$/u;
         if (typeof encoded !== "string" || !shape.test(encoded)) {
           offenders.push(`${token} (${type}): ${String(sample)} -> ${JSON.stringify(encoded)}`);
         }
@@ -110,7 +174,10 @@ describe("encoding what a caller writes", () => {
     const samples: Readonly<Record<string, string>> = {
       boolean: "1",
       number: "42",
+      "pane-id": "%42",
+      "session-id": "$42",
       time: "1786878571",
+      "window-id": "@42",
     };
     for (const [token, type] of Object.entries(FORMAT_VALUE_TYPES)) {
       const wire = samples[type];

@@ -12,11 +12,13 @@ import { fileURLToPath } from "node:url";
  * it, and went on saying so through five published releases. Nothing was in a
  * position to notice.
  *
- * Three claims are checked, all of them answerable from the tree:
+ * Five claims are checked, all of them answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
  * - a package named in an install command is one this workspace publishes;
- * - a tmux badge lists exactly the versions CI runs the suite against.
+ * - a public install example pins prerelease packages to the manifest version;
+ * - a tmux badge lists exactly the versions CI runs the suite against; and
+ * - every published package README states the tested host-platform boundary.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -34,9 +36,22 @@ const installers = new Map<string, number>([
 
 const failures: string[] = [];
 
-/** Every package name this workspace publishes, read from the manifests. */
-async function publishedPackages(): Promise<ReadonlySet<string>> {
-  const names = new Set<string>();
+const packageReadmes = [
+  "README.md",
+  "packages/libtmux/README.md",
+  "packages/mcp/README.md",
+  "packages/workspace/README.md",
+] as const;
+
+const platformClaims = [
+  "Linux is the only supported host for real tmux control.",
+  "The macOS CI lane checks package artifacts without exercising tmux; macOS runtime behavior is unproven.",
+  "WSL is untested.",
+] as const;
+
+/** Every package this workspace publishes, read from the manifests. */
+async function publishedPackages(): Promise<ReadonlyMap<string, string>> {
+  const packages = new Map<string, string>();
   const listing = await Array.fromAsync(
     new Bun.Glob("packages/*/package.json").scan({ cwd: repositoryRoot }),
   );
@@ -45,10 +60,61 @@ async function publishedPackages(): Promise<ReadonlySet<string>> {
     const parsed = (await Bun.file(join(repositoryRoot, manifest)).json()) as {
       name?: string;
       private?: boolean;
+      version?: string;
     };
-    if (parsed.name !== undefined && parsed.private !== true) names.add(parsed.name);
+    if (parsed.name === undefined || parsed.private === true) continue;
+    if (parsed.version === undefined) throw new Error(`${manifest} has no version`);
+    packages.set(parsed.name, parsed.version);
   }
-  return names;
+  return packages;
+}
+
+interface FencedBlock {
+  readonly body: string;
+  readonly line: number;
+}
+
+/** Fenced examples, including JSON client configuration that launches `npx`. */
+function fencedBlocks(markdown: string): readonly FencedBlock[] {
+  const blocks: FencedBlock[] = [];
+  const lines = markdown.split("\n");
+  let body: string[] | undefined;
+  let line = 0;
+
+  for (const [index, raw] of lines.entries()) {
+    if (/^\s*```/u.test(raw)) {
+      if (body === undefined) {
+        body = [];
+        line = index + 2;
+      } else {
+        blocks.push({ body: body.join("\n"), line });
+        body = undefined;
+      }
+      continue;
+    }
+    body?.push(raw);
+  }
+  return blocks;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function packageReferences(body: string, name: string): readonly RegExpMatchArray[] {
+  const escaped = escapeRegExp(name);
+  const pattern = new RegExp(
+    `(?<![a-z0-9@._/-])${escaped}(?:@[^\\s"'\\],}]+)?(?![a-z0-9._/-])`,
+    "giu",
+  );
+  return [...body.matchAll(pattern)];
+}
+
+const installerInBlock =
+  /(?:^|[\s"'`])(?:bun\s+add|npm\s+(?:i|install)|pnpm\s+add|yarn\s+add|bunx|npx)(?=$|[\s"'`])/mu;
+
+function isPublicReadme(file: string): boolean {
+  return file === "README.md" || file.endsWith("/README.md");
 }
 
 /** Shell lines from ` ```console ` blocks, with `\` continuations joined. */
@@ -95,6 +161,7 @@ const files = listed
   .filter((file) => !lstatSync(join(repositoryRoot, file)).isSymbolicLink());
 
 let checkedCommands = 0;
+let checkedPrereleasePins = 0;
 
 for (const file of files) {
   // eslint-disable-next-line no-await-in-loop -- one document at a time; failures are reported in file order.
@@ -138,6 +205,32 @@ for (const file of files) {
       }
     }
   }
+
+  if (isPublicReadme(file)) {
+    for (const block of fencedBlocks(markdown)) {
+      if (!installerInBlock.test(block.body)) continue;
+      for (const [name, version] of packages) {
+        if (!version.includes("-")) continue;
+        for (const match of packageReferences(block.body, name)) {
+          checkedPrereleasePins += 1;
+          if (match[0] === `${name}@${version}`) continue;
+          const prefix = block.body.slice(0, match.index).split("\n").length - 1;
+          failures.push(
+            `${file}:${String(block.line + prefix)}: public install example uses ${match[0]}; pin ${name}@${version}`,
+          );
+        }
+      }
+    }
+  }
+}
+
+for (const file of packageReadmes) {
+  // eslint-disable-next-line no-await-in-loop -- four public contracts, reported in package order.
+  const markdown = await Bun.file(join(repositoryRoot, file)).text();
+  const prose = markdown.replace(/\s+/gu, " ");
+  for (const claim of platformClaims) {
+    if (!prose.includes(claim)) failures.push(`${file}: missing platform claim: ${claim}`);
+  }
 }
 
 // The tmux badge is the one version claim a reader takes at face value, so it
@@ -175,5 +268,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(badges)} tmux badges against CI's ${tested.join(", ")}\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}\n`,
 );

@@ -1,6 +1,7 @@
 import * as clientModule from "../../src/client.js";
-import type { CompleteFormatRow, RowWithIdentities } from "../../src/_internal/codec/schemas.js";
+import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import type { TmuxEngine } from "../../src/engine.js";
+import type { RowWithIdentities } from "../../src/field_types.js";
 import type {
   GraphEntityRef,
   GraphRecordRef,
@@ -14,7 +15,7 @@ import {
 import type {
   ProjectionRecord,
   SelectionProjection,
-} from "../../src/_internal/graph/selection_projection.js";
+} from "../../src/_internal/graph/projection_identity.js";
 import {
   bindLogicalRef,
   createRuntimeContext,
@@ -26,6 +27,7 @@ import {
 } from "../../src/_internal/runtime/context.js";
 import type { LazyCapabilityBinding } from "../../src/_internal/runtime/capabilities.js";
 import type { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import type { RuntimeConstructors } from "../../src/_internal/runtime/constructors.js";
 import {
   entityRefForHandle,
   logicalRefForHandle,
@@ -35,7 +37,6 @@ import {
 import type {
   ModelForKind,
   ModelKind,
-  ModelKindOf,
   NominalModel,
 } from "../../src/_internal/runtime/model_kind.js";
 import * as paneModule from "../../src/pane.js";
@@ -46,13 +47,24 @@ import type {
   ConnectionAlias,
   DaemonEpoch,
   LogicalRef,
+  PaneId,
+  SafeInteger,
+  SessionId,
   TmuxLogger,
   TmuxWarningSink,
+  WindowId,
 } from "../../src/common.js";
 import { Client } from "../../src/client.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
-import type { TransportMode } from "../../src/types.js";
+import {
+  isSplitSize,
+  splitSize,
+  type SplitCellSize,
+  type SplitOptions,
+  type SplitPercentage,
+  type SplitSize,
+} from "../../src/types.js";
 import { Session } from "../../src/session.js";
 import { Window } from "../../src/window.js";
 import type { CommandTransport } from "../../src/_internal/transport/types.js";
@@ -70,7 +82,6 @@ type ExpectedServerOptions = {
   readonly socketPath?: string;
   readonly timeoutMs?: number;
   readonly tmuxBin?: string;
-  readonly transport?: TransportMode;
 };
 
 type ExpectedRuntimeContextOptions = {
@@ -98,10 +109,42 @@ type ExpectedRuntimeContext = {
 
 type Child = Client | Pane | Session | Window;
 type ProjectedChild = Client | Pane | Session | Window;
-
 type _ServerOptions = Expect<Equal<ServerOptions, ExpectedServerOptions>>;
 type _ServerConstructor = Expect<
   Equal<ConstructorParameters<typeof Server>, [options?: ServerOptions]>
+>;
+type _ServerHasNoOpenSelector = Expect<
+  Equal<"open" extends keyof typeof Server ? true : false, false>
+>;
+type _ServerHasNoEngineAccessor = Expect<
+  Equal<"engine" extends keyof Server ? true : false, false>
+>;
+const cells = splitSize(20);
+const percentage = splitSize("30%");
+// @ts-expect-error authenticate dynamic text with isSplitSize first.
+splitSize("banana");
+
+type _SplitSize = Expect<Equal<SplitOptions["size"], SplitSize | undefined>>;
+type _SplitCellProof = Expect<Equal<typeof cells, SplitCellSize>>;
+type _SplitPercentageProof = Expect<Equal<typeof percentage, SplitPercentage>>;
+type _SplitSizeGuard = Expect<Equal<typeof isSplitSize, (value: unknown) => value is SplitSize>>;
+type _SplitSizeRefusesBareNumber = Expect<
+  Equal<number extends SplitOptions["size"] ? true : false, false>
+>;
+type _SplitSizeTakesBoundaries = Expect<
+  Equal<"0%" | "9%" | "10%" | "99%" | "100%" extends SplitOptions["size"] ? true : false, true>
+>;
+type _SplitSizeRefusesOverflow = Expect<
+  Equal<"101%" extends SplitOptions["size"] ? true : false, false>
+>;
+type _SplitSizeRefusesHex = Expect<
+  Equal<"0x1%" extends SplitOptions["size"] ? true : false, false>
+>;
+type _SplitSizeRefusesLeadingZero = Expect<
+  Equal<"01%" extends SplitOptions["size"] ? true : false, false>
+>;
+type _SplitSizeRefusesNegativeZero = Expect<
+  Equal<"-0%" extends SplitOptions["size"] ? true : false, false>
 >;
 type _ServerFields = Expect<
   Equal<
@@ -132,32 +175,59 @@ type _WindowSnapshot = Expect<
 >;
 
 type _SessionAliases = Expect<
-  Equal<Pick<Session, "id" | "name">, { readonly id: string; readonly name: string | null }>
+  Equal<Pick<Session, "id" | "name">, { readonly id: SessionId; readonly name: string | null }>
 >;
-// `window_index` is a number tmux guarantees on a listed row, so it decodes
-// without becoming nullable; `window_id` keeps its `@` and stays text.
+// `window_index` is guaranteed and authenticated before graph construction;
+// `window_id` keeps its `@` and stays text.
 type _WindowAliases = Expect<
   Equal<
     Pick<Window, "id" | "index" | "name">,
-    { readonly id: string; readonly index: number; readonly name: string | null }
+    { readonly id: WindowId; readonly index: SafeInteger; readonly name: string | null }
   >
 >;
 type _PaneAliases = Expect<
   Equal<
     Pick<Pane, "id" | "currentCommand">,
-    { readonly id: string; readonly currentCommand: string | null }
+    { readonly id: PaneId; readonly currentCommand: string | null }
+  >
+>;
+type _WindowPlacementIds = Expect<
+  Equal<Pick<Window["format"], "session_id">, { readonly session_id: SessionId }>
+>;
+type _PanePlacementIds = Expect<
+  Equal<
+    Pick<Pane["format"], "session_id" | "window_id">,
+    { readonly session_id: SessionId; readonly window_id: WindowId }
   >
 >;
 // A de-stuttered scalar never shadows a relation or an operation.
 type _ClientSessionIsRelation = Expect<Equal<Client["session"], Session | undefined>>;
 type _ClientSessionScalar = Expect<Equal<Client["clientSession"], string | null>>;
 // tmux exposes both `pid` and `pane_pid`, so the pane keeps the longer name.
-// Both decode to a number; the text tmux sent stays on `format`.
-type _PanePid = Expect<Equal<Pane["panePid"], number | null>>;
-type _ServerPid = Expect<Equal<Pane["pid"], number | null>>;
+// Both decode to authenticated integers; the text stays on `format`.
+type _PanePid = Expect<Equal<Pane["panePid"], SafeInteger | null>>;
+type _ServerPid = Expect<Equal<Pane["pid"], SafeInteger | null>>;
 type _PaneRawPid = Expect<Equal<Pane["format"]["pane_pid"], string | null>>;
 type _PaneActive = Expect<Equal<Pane["active"], boolean | null>>;
 type _SessionCreated = Expect<Equal<Session["created"], Date | null>>;
+
+declare const typedSession: Session;
+declare const typedPane: Pane;
+declare const typedWindow: Window;
+declare const typedClient: Client;
+// The scalar aliases are model-scoped; the complete tmux row remains the
+// deliberate escape hatch for a caller that really needs a cross-model token.
+void typedSession.name;
+void typedSession.format.pane_pid;
+// @ts-expect-error pane fields are not session handle properties.
+void typedSession.panePid;
+// @ts-expect-error session fields are not pane handle properties.
+void typedPane.sessionName;
+// @ts-expect-error client fields are not window handle properties.
+void typedWindow.clientPid;
+// @ts-expect-error pane fields are not client handle properties.
+void typedClient.paneZ;
+void typedPane.panePid;
 
 type _ServerEquals = Expect<Equal<Server["equals"], (other: unknown) => boolean>>;
 type _ClientEquals = Expect<Equal<Client["equals"], (other: unknown) => boolean>>;
@@ -190,11 +260,6 @@ type _ServerForKind = Expect<Equal<ModelForKind<"server">, Server>>;
 type _SessionForKind = Expect<Equal<ModelForKind<"session">, Session>>;
 type _WindowForKind = Expect<Equal<ModelForKind<"window">, Window>>;
 type _AllNominalModels = Expect<Equal<NominalModel<ModelKind>, Child | Server>>;
-type _ClientKind = Expect<Equal<ModelKindOf<Client>, "client">>;
-type _PaneKind = Expect<Equal<ModelKindOf<Pane>, "pane">>;
-type _ServerKind = Expect<Equal<ModelKindOf<Server>, "server">>;
-type _SessionKind = Expect<Equal<ModelKindOf<Session>, "session">>;
-type _WindowKind = Expect<Equal<ModelKindOf<Window>, "window">>;
 
 type StructuralSession = RowWithIdentities<"session_id"> & {
   readonly equals: (other: unknown) => boolean;
@@ -208,9 +273,6 @@ type StructuralServer = {
   readonly socketPath: string | undefined;
   readonly tmuxBin: string;
 };
-type _StructuralSessionKind = Expect<Equal<ModelKindOf<StructuralSession>, never>>;
-type _StructuralServerKind = Expect<Equal<ModelKindOf<StructuralServer>, never>>;
-
 type _BindLogicalRef = Expect<
   Equal<typeof bindLogicalRef, (runtime: RuntimeContext, value: unknown) => Promise<LogicalRef>>
 >;
@@ -220,7 +282,10 @@ type _CreateRuntimeContext = Expect<
   Equal<typeof createRuntimeContext, (options: RuntimeContextOptions) => RuntimeContext>
 >;
 type _CreateServerWithRuntime = Expect<
-  Equal<typeof createServerWithRuntime, (runtime: RuntimeContext) => Server>
+  Equal<
+    typeof createServerWithRuntime,
+    (runtime: RuntimeContext, constructors: RuntimeConstructors) => Server
+  >
 >;
 type _InvalidateRuntimeEpoch = Expect<
   Equal<typeof invalidateRuntimeEpoch, (runtime: RuntimeContext) => DaemonEpoch>
@@ -339,7 +404,6 @@ export type {
   _BindLogicalRef,
   _ClientEquals,
   _ClientForKind,
-  _ClientKind,
   _ClientModule,
   _ClientSnapshot,
   _CreateRuntimeContext,
@@ -353,7 +417,6 @@ export type {
   _ModelKind,
   _PaneEquals,
   _PaneForKind,
-  _PaneKind,
   _PaneModule,
   _PaneSnapshot,
   _RuntimeForServer,
@@ -363,20 +426,15 @@ export type {
   _ServerEquals,
   _ServerFields,
   _ServerForKind,
-  _ServerKind,
   _ServerModule,
   _ServerOptions,
   _SessionEquals,
   _SessionForKind,
-  _SessionKind,
   _SessionModule,
   _SessionSnapshot,
   _SnapshotForHandle,
-  _StructuralServerKind,
-  _StructuralSessionKind,
   _WindowEquals,
   _WindowForKind,
-  _WindowKind,
   _WindowModule,
   _WindowSnapshot,
   _WinlinkRefForHandle,
@@ -404,6 +462,7 @@ export const cancellable: readonly Promise<unknown>[] = [
   cancelWindow.split({ signal: abort }),
   cancelWindow.move({ signal: abort }),
   cancelSession.newWindow({ signal: abort }),
+  cancelServer.snapshot({ signal: abort }),
   cancelServer.newSession({ signal: abort }),
   cancelServer.runShell("true", { signal: abort }),
   cancelServer.ifShell("true", "true", { signal: abort }),

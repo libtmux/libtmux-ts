@@ -7,9 +7,9 @@ Two ways to get there, both in [`workspace.ts`](workspace.ts):
 
 - `buildSimpleWorkspace` — a handful of windows, decided in code. Reach for
   this when the layout is fixed and small enough to read in one function.
-- `buildWorkspace` — the same shape from a declared `WorkspaceLayout`. Reach
-  for this once the windows and panes come from configuration rather than a
-  function body, or once there is more than one workspace to build.
+- `buildWorkspace` — applies `DEVELOPMENT_WORKSPACE` through
+  `@libtmux/workspace`. Reach for the workspace package once topology comes from
+  configuration or must converge across repeated runs.
 
 `removeWorkspace` tears one down, treating "already gone" as an answer rather
 than an error worth propagating.
@@ -49,16 +49,14 @@ const [logs, shell] = await server.batch([
 await logs.selectLayout("even-horizontal");
 ```
 
-`server.batch` plans every window first and creates them in one invocation, so
-this costs one tmux command and one snapshot rather than one round trip per
-window.
+`server.batch` plans every window first and resolves all of them from one final
+snapshot rather than taking one after each command.
 
 ## The declarative way
 
-`buildWorkspace` takes a `WorkspaceLayout` instead: a name, an environment, and
-a list of windows and panes. It reads the first window to name the session,
-sends every environment variable, window, and pane as one command pipeline,
-then resolves a single snapshot for the result. See
+`DEVELOPMENT_WORKSPACE` is tmuxp-shaped data: a session name and its windows and
+panes. `buildWorkspace` passes it to `applyWorkspace`, which adopts tmux's
+initial window and pane and reconciles an existing owned session. See
 [`workspace.ts`](workspace.ts) for the full function.
 
 This page's first snippet is a literal excerpt of `workspace.ts`, which

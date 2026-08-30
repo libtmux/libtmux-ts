@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { createEventStream } from "../../src/_internal/control/stream.js";
+import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import type { TmuxEvent } from "../../src/types.js";
 
 /**
@@ -14,8 +15,25 @@ import type { TmuxEvent } from "../../src/types.js";
  */
 
 const event: TmuxEvent = { kind: "sessions-changed" };
+const pane0 = parsePaneId("%0");
 
 describe("event stream lifetime", () => {
+  test("rejects invalid deadlines without consuming the stream", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 4);
+
+    await Promise.all(
+      [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648].map((timeoutMs) =>
+        expect(sink.stream.find(() => false, { timeoutMs })).rejects.toThrow(/timeoutMs/u),
+      ),
+    );
+
+    const armed = sink.stream.find((candidate) => candidate.kind === "sessions-changed", {
+      timeoutMs: 1_000,
+    });
+    sink.push(event);
+    expect(await armed).toEqual(event);
+  });
+
   test("runs its close hook exactly once, however it is ended", async () => {
     let closes = 0;
     const sink = createEventStream(() => {
@@ -29,7 +47,7 @@ describe("event stream lifetime", () => {
 
     // The hook is what deregisters the subscriber, so a second call must not
     // deregister something else that has since taken its place.
-    expect(closes).toBe(3);
+    expect(closes).toBe(1);
   });
 
   test("runs the close hook when iteration ends on its own", async () => {
@@ -48,14 +66,69 @@ describe("event stream lifetime", () => {
     expect(closed).toBe(true);
   });
 
-  test("drops the oldest event and counts it when the consumer falls behind", () => {
+  test("drops the oldest event and counts it when the consumer falls behind", async () => {
     const sink = createEventStream(() => Promise.resolve(), 2);
 
-    sink.push({ data: "1", kind: "output", paneId: "%0" });
-    sink.push({ data: "2", kind: "output", paneId: "%0" });
-    sink.push({ data: "3", kind: "output", paneId: "%0" });
+    for (const data of ["1", "2", "3", "4", "5"]) {
+      sink.push({ data, kind: "output", paneId: pane0 });
+    }
+    sink.finish(undefined);
 
-    expect(sink.stream.dropped).toBe(1);
+    const seen: string[] = [];
+    for await (const event of sink.stream) if (event.kind === "output") seen.push(event.data);
+
+    // The bound keeps the newest in order; anything else is a ring that lost
+    // its head, which a count alone cannot tell apart.
+    expect(seen).toEqual(["4", "5"]);
+    expect(sink.stream.dropped).toBe(3);
+  });
+
+  test("keeps order when it grows after the head has moved", async () => {
+    // Capacity leaves room for a second growth step, and the drain before it
+    // moves the head off zero — the only arrangement where relaying the slots
+    // in place rather than from the head reorders them.
+    const sink = createEventStream(() => Promise.resolve(), 8);
+    const push = (data: string): void => {
+      sink.push({ data, kind: "output", paneId: pane0 });
+    };
+    for (const data of ["1", "2", "3", "4"]) push(data);
+    const iterator = sink.stream[Symbol.asyncIterator]();
+    expect(await iterator.next()).toMatchObject({ value: { data: "1" } });
+    for (const data of ["5", "6"]) push(data);
+    sink.finish(undefined);
+
+    const seen: string[] = [];
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- draining one at a time is the point.
+      const step = await iterator.next();
+      if (step.done === true) break;
+      if (step.value.kind === "output") seen.push(step.value.data);
+    }
+    expect(seen).toEqual(["2", "3", "4", "5", "6"]);
+    expect(sink.stream.dropped).toBe(0);
+  });
+
+  test("keeps order across the wrap after a partial drain", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 3);
+    const push = (data: string): void => {
+      sink.push({ data, kind: "output", paneId: pane0 });
+    };
+    push("1");
+    push("2");
+    const iterator = sink.stream[Symbol.asyncIterator]();
+    expect(await iterator.next()).toMatchObject({ value: { data: "1" } });
+    for (const data of ["3", "4", "5", "6"]) push(data);
+    sink.finish(undefined);
+
+    const seen: string[] = [];
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- draining one at a time is the point.
+      const step = await iterator.next();
+      if (step.done === true) break;
+      if (step.value.kind === "output") seen.push(step.value.data);
+    }
+    expect(seen).toEqual(["4", "5", "6"]);
+    expect(sink.stream.dropped).toBe(2);
   });
 
   test("refuses a second iteration rather than splitting the events", async () => {
@@ -100,8 +173,8 @@ describe("event stream lifetime", () => {
   test("answers the match when one arrives before either", async () => {
     const sink = createEventStream(() => Promise.resolve(), 4);
     const armed = sink.stream.find((event) => event.kind === "output", { timeoutMs: 30_000 });
-    sink.push({ data: "hello", kind: "output", paneId: "%0" });
-    expect(await armed).toEqual({ data: "hello", kind: "output", paneId: "%0" });
+    sink.push({ data: "hello", kind: "output", paneId: pane0 });
+    expect(await armed).toEqual({ data: "hello", kind: "output", paneId: pane0 });
   });
 
   test("answers undefined when a caller stops waiting", async () => {

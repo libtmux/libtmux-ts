@@ -1,5 +1,6 @@
 import { Client } from "../../src/client.js";
-import type { SelectionProjection } from "../../src/_internal/graph/selection_projection.js";
+import type { PaneId, WindowId } from "../../src/common.js";
+import type { SelectionProjection } from "../../src/_internal/graph/projection_identity.js";
 import type { ModelForKind } from "../../src/_internal/runtime/model_kind.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import { Pane } from "../../src/pane.js";
@@ -46,6 +47,10 @@ type ExpectedSelection<Model> = {
     transform: (value: Model, index: number, values: readonly Model[]) => Result,
     thisArg?: unknown,
   ): Result[];
+  filter<Narrowed extends Model>(
+    predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed,
+    thisArg?: unknown,
+  ): Selection<Narrowed>;
   filter(
     predicate: (value: Model, index: number, values: readonly Model[]) => unknown,
     thisArg?: unknown,
@@ -102,7 +107,12 @@ type _ParseLegacyWhere = Expect<Equal<typeof parseLegacyWhere, ExpectedParseLega
 type _CreateProjectedSelection = Expect<
   Equal<typeof createProjectedSelection, ExpectedCreateProjectedSelection>
 >;
-type _RuntimeExports = Expect<Equal<keyof typeof selectionModule, "parseLegacyWhere">>;
+type _RuntimeExports = Expect<
+  Equal<
+    keyof typeof selectionModule,
+    "decodeWhereDocument" | "encodeWhereDocument" | "parseLegacyWhere"
+  >
+>;
 type _RegexData = Expect<
   Equal<RegexCriteriaData, { readonly flags: "" | "m" | "s" | "ms"; readonly pattern: string }>
 >;
@@ -113,6 +123,9 @@ declare const sessions: Selection<Session>;
 declare const windows: Selection<Window>;
 declare const mixed: Selection<Session | Window>;
 declare const session: Session;
+declare const dynamicPaneId: string;
+declare const paneId: PaneId;
+declare const windowId: WindowId;
 
 void sessions.length;
 void sessions.at(-1);
@@ -126,6 +139,14 @@ void sessions.oneOrUndefined();
 void sessions.exists();
 void sessions.count();
 void panes.where({ id: "%1" });
+void panes.where({ id: dynamicPaneId });
+void panes.where({ id: paneId });
+// @ts-expect-error A branded window id cannot cross into a pane criterion.
+void panes.where({ id: windowId });
+// @ts-expect-error Equality preserves the id brand.
+void panes.where({ id: { equals: windowId } });
+// @ts-expect-error Membership preserves the id brand.
+void panes.where({ id: { in: [windowId] } });
 void windows.where({ name: "editor" });
 void clients.first();
 void clients.one();
@@ -148,7 +169,7 @@ type _CallbackResult = Expect<Equal<typeof callbackFiltered, Selection<Session>>
 const narrowed = mixed.filter(
   (value: Session | Window): value is Session => value instanceof Session,
 );
-type _NoTypeGuardNarrowing = Expect<Equal<typeof narrowed, Selection<Session | Window>>>;
+type _TypeGuardNarrowing = Expect<Equal<typeof narrowed, Selection<Session>>>;
 
 const thisArgument = { prefix: "m" };
 sessions.filter(function (this: typeof thisArgument, value: Session) {

@@ -2,16 +2,23 @@ import { describe, expect, test } from "bun:test";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 
 import {
+  executeGuardedList,
+  executeGuardedListGroup,
+} from "../../src/_internal/codec/guarded_listing.js";
+import {
   FormatProtocolError,
   GuardCodec,
   type FormatGuards,
   type GuardedFormatRequest,
 } from "../../src/_internal/codec/guard_codec.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
+import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxException } from "../../src/exc.js";
 
 const encoder = new TextEncoder();
+const daemon = Object.freeze({ pid: "101", startTime: "202" });
 const guards: FormatGuards = Object.freeze({
   field: ";",
   recordEnd: "ltxE6c22",
@@ -28,6 +35,7 @@ function valueFor(token: string, overrides: Readonly<Record<string, string>>): s
   if (token === "session_id") return "$7";
   if (token === "window_id") return "@8";
   if (token === "pane_id") return "%9";
+  if (token === "next_session_id") return "$10";
   if (token === "client_name") return "/dev/pts/42";
   return `value:${token}`;
 }
@@ -48,6 +56,7 @@ function codecFor(
   return new GuardCodec({
     capabilities: deriveTmuxCapabilities({
       connectionAlias: "codec-test" as ConnectionAlias,
+      daemon,
       daemonEpoch: 1 as DaemonEpoch,
       rawVersion: version,
     }),
@@ -72,6 +81,70 @@ function replaceMarkerWithBytes(
 }
 
 describe("guarded format codec", () => {
+  test("refuses execution when the codec capability fingerprint changes", async () => {
+    const capabilities = ["before", "after"].map((fingerprint) =>
+      Object.freeze({
+        fingerprint,
+        rawVersion: "3.7b",
+        tmuxVersion: parseTmuxVersion("3.7b"),
+      }),
+    );
+    let bindings = 0;
+    let executions = 0;
+
+    await expect(
+      executeGuardedList({
+        capabilities: {
+          bind: () => Promise.resolve(capabilities[bindings++]!),
+        },
+        connection: new TmuxConnection({ executable: "tmux" }),
+        listCommand: "list-clients",
+        transport: {
+          execute() {
+            executions += 1;
+            throw new Error("transport must not execute");
+          },
+        },
+      }),
+    ).rejects.toThrow("capability fingerprint changed before execution");
+    expect(bindings).toBe(2);
+    expect(executions).toBe(0);
+  });
+
+  test("does not invent a failing subcommand for one aggregate result", async () => {
+    const capabilities = deriveTmuxCapabilities({
+      connectionAlias: "codec-test" as ConnectionAlias,
+      daemon,
+      daemonEpoch: 1 as DaemonEpoch,
+      rawVersion: "3.7b",
+    });
+
+    try {
+      await executeGuardedListGroup({
+        capabilities: { bind: () => Promise.resolve(capabilities) },
+        connection: new TmuxConnection({ executable: "tmux" }),
+        listings: [{ listCommand: "list-sessions" }, { listCommand: "list-windows" }],
+        transport: {
+          async execute() {
+            return {
+              cmd: ["tmux", "list-sessions", ";", "list-windows"],
+              returncode: 1,
+              signal: null,
+              stderr: encoder.encode("one command failed\n"),
+              stdout: new Uint8Array(),
+            };
+          },
+        },
+      });
+      throw new Error("expected the command list to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(LibTmuxException);
+      if (!(error instanceof LibTmuxException)) throw error;
+      expect(error.message).toBe("one command failed");
+      expect(error.subcommand).toBeUndefined();
+    }
+  });
+
   test("prepares one request-bound format without a fixed separator or newline boundary", () => {
     const request = codecFor("list-sessions").prepare();
 
@@ -86,6 +159,7 @@ describe("guarded format codec", () => {
     expect(request.capabilityFingerprint).toBe(
       deriveTmuxCapabilities({
         connectionAlias: "codec-test" as ConnectionAlias,
+        daemon,
         daemonEpoch: 1 as DaemonEpoch,
         rawVersion: "3.7b",
       }).fingerprint,
@@ -141,6 +215,7 @@ describe("guarded format codec", () => {
       new GuardCodec({
         capabilities: deriveTmuxCapabilities({
           connectionAlias: alias as ConnectionAlias,
+          daemon,
           daemonEpoch: epoch as DaemonEpoch,
           rawVersion: version,
         }),
@@ -252,6 +327,15 @@ describe("guarded format codec", () => {
         FormatProtocolError,
       );
     }
+  });
+
+  test("rejects a malformed populated identity outside the primary key", () => {
+    const codec = codecFor("list-sessions");
+    const request = codec.prepare();
+
+    expect(() =>
+      codec.decode(request, encoder.encode(`${frame(request, { next_session_id: "@1" })}\n`)),
+    ).toThrow(FormatProtocolError);
   });
 
   test("detects literal unknown format tokens", () => {

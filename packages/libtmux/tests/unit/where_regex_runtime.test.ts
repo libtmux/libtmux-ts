@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { resolveNode22 } from "../../src/_internal/test/node22.js";
+import { resolveNode22 } from "../../src/_internal/test/testkit.js";
 import { requireBuiltPackage } from "../support/built_package.js";
 
 interface RuntimeReport {

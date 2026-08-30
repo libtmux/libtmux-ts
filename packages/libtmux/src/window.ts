@@ -1,21 +1,26 @@
 import type { CmdOptions, PlannedOperation } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
-import type { SetOptionOptions } from "./types.js";
+import type { SetHookOptions, SetOptionOptions } from "./types.js";
 import type {
   MoveWindowOptions,
   ResizeWindowOptions,
   RespawnOptions,
   SplitOptions,
 } from "./types.js";
-import { WINDOW_ALIASES, type WindowAliasMap } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
+import { WINDOW_ALIASES } from "./_generated/field_aliases.js";
+import type { AliasedFields, RowWithIdentities, WindowAliasMap } from "./field_types.js";
 import {
   linkedSessionsOfWindow,
   panesOfPlacement,
   sessionOf,
 } from "./_internal/operations/relations.js";
 import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
-import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
+import {
+  planKill,
+  planRemoveWindowPlacement,
+  planSplitWindow,
+} from "./_internal/operations/plans.js";
+import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import {
   setOption,
   showOptions,
@@ -28,6 +33,7 @@ import {
   moveWindow,
   renameWindow,
   resizeWindow,
+  removeWindowPlacement,
   rotateWindow,
   selectLayout,
   selectTarget,
@@ -51,7 +57,21 @@ import type { Server } from "./server.js";
 /** What {@link Window.plan} offers, one entry per mutation it can describe. */
 export interface WindowPlans {
   readonly kill: () => PlannedOperation<void>;
+  readonly removePlacement: () => PlannedOperation<void>;
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
+}
+
+/**
+ * Fill in the destination session the caller left out.
+ *
+ * tmux reads a destination of `:3` as index 3 of the *current* session, which
+ * is whichever one it happens to consider current — not this window's. Naming
+ * the window's own is what makes "the window stays in its own session when
+ * omitted" true, and it is the only reading under which omitting the session is
+ * a smaller request rather than a different one.
+ */
+function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOptions {
+  return { ...options, session: options.session ?? window.format.session_id };
 }
 
 /**
@@ -67,21 +87,8 @@ export interface WindowPlans {
  * `selectLayout` and `resize` act on the window itself, wherever it is linked,
  * and naming a session there would suggest a choice that does not exist.
  */
-/**
- * Fill in the destination session the caller left out.
- *
- * tmux reads a destination of `:3` as index 3 of the *current* session, which
- * is whichever one it happens to consider current — not this window's. Naming
- * the window's own is what makes "the window stays in its own session when
- * omitted" true, and it is the only reading under which omitting the session is
- * a smaller request rather than a different one.
- */
-function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOptions {
-  return { ...options, session: options.session ?? window.sessionId };
-}
-
 function placementTarget(window: Window): string {
-  return `${window.sessionId}:${window.id}`;
+  return `${window.format.session_id}:${window.format.window_index}`;
 }
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
@@ -120,7 +127,7 @@ export class Window {
    * ```
    */
   get session(): Session | undefined {
-    return sessionOf(originGraphForHandle(this), this.sessionId);
+    return sessionOf(originGraphForHandle(this), this.format.session_id);
   }
 
   /**
@@ -147,6 +154,40 @@ export class Window {
    */
   get linkedSessions(): Selection<Session> {
     return linkedSessionsOfWindow(originGraphForHandle(this), this.id);
+  }
+
+  /**
+   * Read hooks set on this window itself.
+   *
+   * ```ts
+   * const hooks = await window.showHooks();
+   * hooks.get("window-renamed")?.[0];
+   * ```
+   */
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
+    return showHooks(runtimeForHandle(this), "window", this.id);
+  }
+
+  /**
+   * Bind a tmux command to a window-scoped hook.
+   *
+   * ```ts
+   * await window.setHook("window-renamed", "display-message 'renamed'");
+   * ```
+   */
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForHandle(this), "window", this.id, name, command, options);
+  }
+
+  /**
+   * Remove every command bound to a window-scoped hook.
+   *
+   * ```ts
+   * await window.unsetHook("window-renamed");
+   * ```
+   */
+  unsetHook(name: string): Promise<void> {
+    return unsetHook(runtimeForHandle(this), "window", this.id, name);
   }
 
   /**
@@ -218,7 +259,7 @@ export class Window {
    * The same mutations, described instead of run.
    *
    * Takes what the direct calls take and resolves to what they resolve to,
-   * for {@link Server.batch} to spend one invocation and one snapshot on.
+   * for {@link Server.batch} to share one final snapshot.
    *
    * ```ts
    * const [created] = await server.batch([window.plan.split({})]);
@@ -228,6 +269,7 @@ export class Window {
   get plan(): WindowPlans {
     return {
       kill: () => planKill("kill-window", this.id),
+      removePlacement: () => planRemoveWindowPlacement(placementTarget(this)),
       split: (options?: SplitOptions) => planSplitWindow(this.id, options),
     };
   }
@@ -317,6 +359,8 @@ export class Window {
    * ```ts
    * await window.rename("editor");
    * ```
+   *
+   * Refuses a name the supported servers would not store identically.
    */
   rename(name: string): Promise<void> {
     return renameWindow(runtimeForHandle(this), this.id, name);
@@ -357,11 +401,28 @@ export class Window {
    * unlinking.
    *
    * ```ts
-   * await window.unlink();
+   * const destination = await server.newSession({ name: "unlink-example" });
+   * await window.link({ session: destination.id });
+   * const placement = (await server.snapshot()).windows.one({
+   *   id: window.id,
+   *   session: { is: { id: destination.id } },
+   * });
+   * await placement.unlink();
    * ```
    */
   unlink(): Promise<void> {
     return unlinkWindow(runtimeForHandle(this), placementTarget(this));
+  }
+
+  /**
+   * Remove this placement, destroying an unshared window but refusing a group.
+   *
+   * ```ts
+   * await window.removePlacement();
+   * ```
+   */
+  removePlacement(): Promise<void> {
+    return removeWindowPlacement(runtimeForHandle(this), placementTarget(this));
   }
 
   /**

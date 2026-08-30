@@ -6,7 +6,7 @@ import type { BunConnectionOptions } from "node:tls";
 
 import { describe, expect, test } from "bun:test";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 interface PackageManifest {
   author: string;
@@ -41,8 +41,7 @@ interface TypeScriptConfig {
 }
 
 const expectedScripts = {
-  build:
-    "bun run generate:check && rm -rf dist && tsc -p tsconfig.build.json && bun scripts/normalize-source-map.ts dist/index.js.map",
+  build: "bun run generate:check && rm -rf dist && tsc -p tsconfig.build.json",
   format: "oxfmt --write .",
   "format:check": "oxfmt --check .",
   generate: "bun scripts/generate-formats.ts --write",
@@ -59,7 +58,8 @@ const expectedScripts = {
   "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
   "test:compat": "bun scripts/check-tmux-compat.ts",
   "test:coverage": "bun run build && bun scripts/check-coverage.ts",
-  "test:package": "bun run build && bun scripts/check-package.ts",
+  "test:package":
+    "bun run build && bun ../../scripts/check-source-maps.ts && bun scripts/check-package.ts && bun ../../scripts/check-package-analysis.ts",
   "test:readme": "bun scripts/doc-examples/check-readme-runs.ts",
   "test:symbols": "bun scripts/doc-examples/check-symbol-runs.ts",
   "test:install": "bun run build && bun scripts/check-install.ts",
@@ -80,7 +80,7 @@ const expectedScripts = {
 const expectedDependencies = {};
 
 const expectedDevDependencies = {
-  "@types/bun": "1.3.14",
+  "@types/bun": "1.4.0",
   // Held at the floor deliberately: `engines.node` is ">=22", and types
   // describing a newer Node would compile calls the floor cannot run. The root
   // `overrides` pins it for the whole workspace, so a manifest naming anything
@@ -98,6 +98,37 @@ const tsRoot = new URL("../..", import.meta.url);
 const tsRootPath = fileURLToPath(tsRoot);
 const bunTlsCompatibility: BunConnectionOptions = { key: [{ pem: "test key" }] };
 void bunTlsCompatibility;
+
+const canonicalNumber = /^(?:0|[1-9][0-9]*)$/u;
+const semverIdentifier = /^[0-9A-Za-z-]+$/u;
+const digits = /^[0-9]+$/u;
+
+function hasValidIdentifiers(value: string, canonicalNumeric: boolean): boolean {
+  return value
+    .split(".")
+    .every(
+      (identifier) =>
+        semverIdentifier.test(identifier) &&
+        (!canonicalNumeric || !digits.test(identifier) || canonicalNumber.test(identifier)),
+    );
+}
+
+function isSemVer(value: string): boolean {
+  const buildSeparator = value.indexOf("+");
+  const release = buildSeparator < 0 ? value : value.slice(0, buildSeparator);
+  const build = buildSeparator < 0 ? undefined : value.slice(buildSeparator + 1);
+  if (build !== undefined && !hasValidIdentifiers(build, false)) return false;
+
+  const prereleaseSeparator = release.indexOf("-");
+  const core = prereleaseSeparator < 0 ? release : release.slice(0, prereleaseSeparator);
+  const prerelease = prereleaseSeparator < 0 ? undefined : release.slice(prereleaseSeparator + 1);
+  if (prerelease !== undefined && !hasValidIdentifiers(prerelease, true)) return false;
+
+  const coreIdentifiers = core.split(".");
+  return (
+    coreIdentifiers.length === 3 && coreIdentifiers.every((part) => canonicalNumber.test(part))
+  );
+}
 
 async function readJson<T>(relativePath: string): Promise<T> {
   return JSON.parse(await readFile(new URL(relativePath, tsRoot), "utf8")) as T;
@@ -126,18 +157,27 @@ async function runBoundedCommand(command: readonly string[], cwd: string) {
 }
 
 describe("package contract", () => {
+  test("recognizes strict SemVer syntax without an ambiguous expression", () => {
+    for (const version of ["0.0.0", "1.2.3-alpha.1", "1.2.3-alpha-1+build.7"]) {
+      expect(isSemVer(version)).toBe(true);
+    }
+    for (const version of ["01.2.3", "1.2", "1.2.3-01", "1.2.3-", "1.2.3+build+again"]) {
+      expect(isSemVer(version)).toBe(false);
+    }
+  });
+
   test("publishes only ESM root and package metadata entrypoints", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
     // The root entrypoint is the surface a consumer actually imports.
     expect(Object.keys(await import("../../src/index.js")).toSorted()).toEqual([
       "Client",
-      "DeprecatedError",
       "LibTmuxException",
       "MultipleMatchesError",
       "MultipleObjectsReturned",
       "NoMatchError",
       "ObjectDoesNotExist",
+      "OptionScope",
       "Pane",
       "PaneDirection",
       "QueryValidationError",
@@ -151,13 +191,19 @@ describe("package contract", () => {
       "WaitTimeout",
       "Window",
       "WindowDirection",
+      "decodeWhereDocument",
+      "encodeWhereDocument",
+      "isSafeInteger",
+      "isSplitSize",
+      "isTmuxName",
       "parseLegacyWhere",
+      "safeInteger",
+      "splitSize",
     ]);
     expect(packageManifest.name).toBe("libtmux");
-    // A prerelease while the API is still moving. The exact number is not
-    // pinned: it changes every release, and a gate that has to be edited to
-    // release is a gate people learn to edit.
-    expect(packageManifest.version).toMatch(/^\d+\.\d+\.\d+-alpha\.\d+$/u);
+    // Stable and prerelease manifests share the same coordinated release path.
+    // The exact number is not pinned: a gate edited per release is no gate.
+    expect(isSemVer(packageManifest.version)).toBe(true);
     // Every package in the workspace ships together under one version, so a
     // tag names a state of the whole repository rather than of one package.
     const siblings = await Promise.all(
@@ -187,7 +233,13 @@ describe("package contract", () => {
     expect(packageManifest.type).toBe("module");
     expect(packageManifest.main).toBe("./dist/index.js");
     expect(packageManifest.types).toBe("./dist/index.d.ts");
-    expect(packageManifest.files).toEqual(["CHANGELOG.md", "dist", "!dist/_internal/test"]);
+    expect(packageManifest.files).toEqual([
+      "CHANGELOG.md",
+      "dist",
+      "!dist/_internal/test",
+      "src",
+      "!src/_internal/test",
+    ]);
     expect(packageManifest.sideEffects).toBe(false);
     expect(packageManifest.trustedDependencies).toEqual([]);
     expect(Object.keys(packageManifest.exports)).toEqual([
@@ -197,6 +249,8 @@ describe("package contract", () => {
       "./exc",
       "./constants",
       "./formats",
+      "./types",
+      "./field-types",
       "./server",
       "./session",
       "./window",
@@ -207,43 +261,63 @@ describe("package contract", () => {
     ]);
     expect(packageManifest.exports["."]).toEqual({
       types: "./dist/index.d.ts",
+      bun: "./src/index.ts",
       import: "./dist/index.js",
       default: "./dist/index.js",
     });
-    expect(Object.keys(packageManifest.exports["."]!)).toEqual(["types", "import", "default"]);
     expect(packageManifest.exports["./package.json"]).toBe("./package.json");
     expect(packageManifest.exports["./common"]).toEqual({
       types: "./dist/common.d.ts",
+      bun: "./src/common.ts",
       import: "./dist/common.js",
       default: "./dist/common.js",
     });
     expect(packageManifest.exports["./exc"]).toEqual({
       types: "./dist/exc.d.ts",
+      bun: "./src/exc.ts",
       import: "./dist/exc.js",
       default: "./dist/exc.js",
     });
     expect(packageManifest.exports["./constants"]).toEqual({
       types: "./dist/constants.d.ts",
+      bun: "./src/constants.ts",
       import: "./dist/constants.js",
       default: "./dist/constants.js",
     });
     expect(packageManifest.exports["./formats"]).toEqual({
       types: "./dist/formats.d.ts",
+      bun: "./src/formats.ts",
       import: "./dist/formats.js",
       default: "./dist/formats.js",
     });
-    for (const model of ["server", "session", "window", "pane", "client", "selection"]) {
+    expect(packageManifest.exports["./types"]).toEqual({
+      types: "./dist/types.d.ts",
+      bun: "./src/types.ts",
+      import: "./dist/types.js",
+      default: "./dist/types.js",
+    });
+    expect(packageManifest.exports["./field-types"]).toEqual({
+      types: "./dist/field_types.d.ts",
+      bun: "./src/field_types.ts",
+      import: "./dist/field_types.js",
+      default: "./dist/field_types.js",
+    });
+    for (const model of ["server", "session", "window", "pane", "client", "selection", "engine"]) {
       expect(packageManifest.exports[`./${model}`]).toEqual({
         types: `./dist/${model}.d.ts`,
+        bun: `./src/${model}.ts`,
         import: `./dist/${model}.js`,
         default: `./dist/${model}.js`,
       });
     }
+    for (const target of Object.values(packageManifest.exports)) {
+      if (typeof target !== "string") {
+        expect(Object.keys(target)).toEqual(["types", "bun", "import", "default"]);
+      }
+    }
 
     const serializedExports = JSON.stringify(packageManifest.exports);
     expect(serializedExports).not.toContain("require");
-    expect(serializedExports).not.toContain("bun");
-    expect(serializedExports).not.toContain("src/");
     expect(Object.keys(packageManifest.exports)).not.toContain("./*");
     expect(Object.keys(packageManifest.exports)).not.toContain("./dist/*");
   });
@@ -251,7 +325,23 @@ describe("package contract", () => {
   test("pins the complete dependency boundary to the accepted runtime floors", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
-    expect(packageManifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
+    const [rootManifest, mcpManifest, workspaceManifest] = await Promise.all([
+      readJson<{ engines: Record<string, string> }>("../../package.json"),
+      readJson<{
+        dependencies?: Record<string, string>;
+        engines: Record<string, string>;
+      }>("../mcp/package.json"),
+      readJson<{
+        engines: Record<string, string>;
+        peerDependencies?: Record<string, string>;
+      }>("../workspace/package.json"),
+    ]);
+    const runtimeManifests = [rootManifest, packageManifest, mcpManifest, workspaceManifest];
+    for (const manifest of runtimeManifests) {
+      expect(manifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
+    }
+    expect(mcpManifest.dependencies?.libtmux).toBe(packageManifest.version);
+    expect(workspaceManifest.peerDependencies?.libtmux).toBe(packageManifest.version);
     // Absent, not empty: an empty `dependencies` object is noise in a manifest.
     expect(packageManifest.dependencies ?? {}).toEqual(expectedDependencies);
     expect(packageManifest.devDependencies).toEqual(expectedDevDependencies);
@@ -309,8 +399,8 @@ describe("package contract", () => {
     expect(source.compilerOptions?.skipLibCheck).not.toBe(true);
     expect(build.compilerOptions).toMatchObject({
       declaration: true,
-      declarationMap: false,
-      inlineSources: true,
+      declarationMap: true,
+      inlineSources: false,
       noEmit: false,
       outDir: "dist",
       sourceMap: true,
@@ -426,8 +516,11 @@ describe("package contract", () => {
           {
             exports: {
               ".": { types: "./types/index.d.ts" },
+              "./engine": { types: "./types/engine.d.ts" },
+              "./field-types": { types: "./types/field_types.d.ts" },
               "./formats": { types: "./types/formats.d.ts" },
               "./server": { types: "./types/server.d.ts" },
+              "./types": { types: "./types/types.d.ts" },
             },
             name: "libtmux",
             type: "module",
@@ -454,12 +547,27 @@ import {
   Session,
   Window,
   type CaptureOptions,
+  type DaemonIdentity,
   type NewSessionOptions,
+  type PaneId,
+  type PaneIdInput,
   type Selection,
   type ServerSnapshot,
+  type SessionId,
+  type SessionIdInput,
   type SessionWhere,
+  type WindowId,
+  type WindowIdInput,
 } from "libtmux";
-import { Server as ServerFromSubpath } from "libtmux/server";
+import {
+  MAX_PACKED_ARGV_BYTES,
+  MAX_PACKED_ARGV_COUNT,
+  type TmuxEngine,
+  type TmuxInvocationRequest,
+} from "libtmux/engine";
+import type { DecodedFormatValue, RowWithIdentities } from "libtmux/field-types";
+import { Server as ServerFromSubpath, type DaemonIdentity as ServerDaemonIdentity } from "libtmux/server";
+import type { AbortLike } from "libtmux/types";
 
 // The root entrypoint must be usable exactly as a published consumer sees it.
 declare const rootServer: Server;
@@ -471,6 +579,25 @@ declare const rootClient: Client;
 declare const rootCriteria: SessionWhere;
 declare const rootCapture: CaptureOptions;
 declare const rootNewSession: NewSessionOptions;
+declare const daemonIdentity: DaemonIdentity;
+declare const engine: TmuxEngine;
+declare const request: TmuxInvocationRequest;
+declare const abortLike: AbortLike;
+declare const paneIdentityRow: RowWithIdentities<"pane_id">;
+declare const decodedPaneId: DecodedFormatValue<"pane_id">;
+const exactPackedArgvLimit: 16364 = MAX_PACKED_ARGV_BYTES;
+const exactPackedArgvCount: 1000 = MAX_PACKED_ARGV_COUNT;
+const daemonIdentityFromServer: ServerDaemonIdentity = daemonIdentity;
+const paneIdFromRequiredRow: PaneId = paneIdentityRow.pane_id;
+const paneIdFromDecoder: PaneId = decodedPaneId;
+const sessionId: SessionId = rootSnapshot.sessions.one().id;
+const windowId: WindowId = rootWindow.id;
+const paneId: PaneId = rootPane.id;
+const rawSessionId: SessionIdInput = "$1";
+const rawWindowId: WindowIdInput = "@1";
+const rawPaneId: PaneIdInput = "%1";
+// @ts-expect-error A pane ID already read from the package is not session input.
+const wrongSessionId: SessionIdInput = rootPane.id;
 void [
   rootServer.snapshot,
   rootSnapshot.sessions,
@@ -479,6 +606,20 @@ void [
   rootPane.capture(rootCapture),
   rootClient.session,
   rootServer.newSession(rootNewSession),
+  engine.execute(request),
+  abortLike.aborted,
+  exactPackedArgvLimit,
+  exactPackedArgvCount,
+  daemonIdentityFromServer,
+  paneIdFromRequiredRow,
+  paneIdFromDecoder,
+  sessionId,
+  windowId,
+  paneId,
+  rawSessionId,
+  rawWindowId,
+  rawPaneId,
+  wrongSessionId,
   LibTmuxException,
   NoMatchError,
   ServerFromSubpath,

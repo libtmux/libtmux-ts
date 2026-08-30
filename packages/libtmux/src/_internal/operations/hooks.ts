@@ -1,11 +1,12 @@
 import type { HookScope, SetHookOptions } from "../../types.js";
-import { parseNameValueLine } from "./options.js";
+import { HOOK_SCOPE_FLAG_MAP } from "../../constants.js";
+import { literalFormat, parseNameValueLine } from "./options.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 function scopeArguments(scope: HookScope, target: string | null | undefined): readonly string[] {
-  if (scope === "server") return ["-g"];
-  return target == null ? [] : ["-t", target];
+  const flag = HOOK_SCOPE_FLAG_MAP[scope];
+  return [...(flag === "" ? [] : [flag]), ...(target == null ? [] : ["-t", target])];
 }
 
 /** `after-new-window[1]`, which is how tmux names one element of a hook. */
@@ -66,13 +67,17 @@ export async function setHook(
   command: string,
   options: SetHookOptions = {},
 ): Promise<void> {
-  await runCommand(runtime, [
-    "set-hook",
-    ...(options.append === true ? ["-a"] : []),
-    ...scopeArguments(scope, target),
-    name,
-    command,
-  ]);
+  await runCommand(
+    runtime,
+    [
+      "set-hook",
+      ...(options.append === true ? ["-a"] : []),
+      ...scopeArguments(scope, target),
+      literalFormat(name),
+      command,
+    ],
+    options,
+  );
 }
 
 /** Remove every command bound to a hook name at one scope. */
@@ -82,5 +87,10 @@ export async function unsetHook(
   target: string | null | undefined,
   name: string,
 ): Promise<void> {
-  await runCommand(runtime, ["set-hook", "-u", ...scopeArguments(scope, target), name]);
+  await runCommand(runtime, [
+    "set-hook",
+    "-u",
+    ...scopeArguments(scope, target),
+    literalFormat(name),
+  ]);
 }

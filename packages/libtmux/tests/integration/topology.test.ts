@@ -7,14 +7,15 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
+import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
 import { MultipleMatchesError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -82,7 +83,7 @@ describe("window and pane topology", () => {
       const server = serverFor(fixture);
       const other = await server.newSession({ name: "other" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
 
       await window.link({ index: 9, session: "other" });
@@ -95,14 +96,48 @@ describe("window and pane topology", () => {
       // Unlinking through the original placement leaves the linked one, which
       // is the harder direction: tmux resolves a bare window id to the later
       // placement, so a count alone cannot tell the two apart.
-      const original = linked.filter((candidate) => candidate.sessionId !== other.id).one();
+      const original = linked.filter((candidate) => candidate.session?.id !== other.id).one();
       await original.unlink();
 
       const afterUnlink = (await server.snapshot()).windows.filter(
         (candidate) => candidate.id === window.id,
       );
       expect(afterUnlink.length).toBe(1);
-      expect(afterUnlink.one().sessionId).toBe(other.id);
+      expect(afterUnlink.one().session?.id).toBe(other.id);
+    });
+  }, 40_000);
+
+  test("removes an ungrouped placement without widening its target", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const other = await server.newSession({ name: "remove-other" });
+      const source = (await server.snapshot()).windows
+        .filter((window) => window.session?.name === fixture.sessionName)
+        .one();
+      await source.link({ session: other.id });
+
+      const linked = (await server.snapshot()).windows.where({ id: source.id });
+      await linked.one({ session: { is: { name: fixture.sessionName } } }).removePlacement();
+
+      const survivor = (await server.snapshot()).windows.where({ id: source.id }).one();
+      expect(survivor.session?.id).toBe(other.id);
+      await survivor.removePlacement();
+      expect((await server.snapshot()).windows.exists({ id: source.id })).toBe(false);
+    });
+  }, 40_000);
+
+  test("refuses to remove one placement from a session group", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const source = (await server.snapshot()).windows.one();
+      await server.newSession({ groupWith: fixture.sessionName, name: "remove-grouped" });
+      await server.newSession({ name: "libtmux-grouped-session" });
+      const grouped = (await server.snapshot()).windows
+        .filter((window) => window.id === source.id && window.session?.name === fixture.sessionName)
+        .one();
+
+      await expect(grouped.removePlacement()).rejects.toThrow(/libtmux-grouped-session/u);
+      expect((await server.snapshot()).windows.count({ id: source.id })).toBe(2);
     });
   }, 40_000);
 
@@ -111,7 +146,7 @@ describe("window and pane topology", () => {
       const server = serverFor(fixture);
       const other = await server.newSession({ name: "elsewhere", windowName: "kept" });
       const shared = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
       // A second window in the origin session, made active, so that selecting
       // the shared one there is a change rather than already true.
@@ -126,8 +161,10 @@ describe("window and pane topology", () => {
       const linked = (await server.snapshot()).windows.filter(
         (candidate) => candidate.id === shared.id,
       );
-      const here = linked.filter((candidate) => candidate.sessionId !== other.id).one();
-      const there = linked.filter((candidate) => candidate.sessionId === other.id).one();
+      const here = linked.filter((candidate) => candidate.session?.id !== other.id).one();
+      const there = linked.filter((candidate) => candidate.session?.id === other.id).one();
+      const hereSession = here.session;
+      if (hereSession === undefined) throw new Error("expected the window to resolve its session");
 
       await there.select();
       let snapshot = await server.snapshot();
@@ -137,7 +174,7 @@ describe("window and pane topology", () => {
       // origin session's active window, and leave the other session's alone.
       await here.select();
       snapshot = await server.snapshot();
-      expect(snapshot.sessions.one({ id: here.sessionId }).activeWindow?.id).toBe(shared.id);
+      expect(snapshot.sessions.one({ id: hereSession.id }).activeWindow?.id).toBe(shared.id);
       expect(snapshot.sessions.one({ id: other.id }).activeWindow?.id).toBe(shared.id);
     });
   }, 40_000);
@@ -152,7 +189,7 @@ describe("window and pane topology", () => {
       const moved = (await server.snapshot()).windows
         .filter((candidate) => candidate.id === window.id)
         .one();
-      expect(moved.index).toBe(7);
+      expect(moved.index).toBe(safeInteger(7));
     });
   }, 40_000);
 
@@ -207,9 +244,10 @@ describe("window and pane topology", () => {
       // Created later, so it is the session tmux considers current.
       await server.newSession({ name: "newer" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
-      const origin = window.sessionId;
+      const origin = window.session;
+      if (origin === undefined) throw new Error("expected the window to resolve its session");
 
       // A window can hold two placements in one session, at two indexes; that
       // is what an omitted destination session asks for here.
@@ -219,7 +257,23 @@ describe("window and pane topology", () => {
         (candidate) => candidate.id === window.id,
       );
       expect(placements.length).toBe(2);
-      expect(placements.map((candidate) => candidate.sessionId)).toEqual([origin, origin]);
+      expect(placements.map((candidate) => candidate.session?.id)).toEqual([origin.id, origin.id]);
+    });
+  }, 40_000);
+
+  test("selects one of two placements of a window in one session", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.link({ index: 4 });
+      const placement = (await server.snapshot()).windows
+        .filter((candidate) => candidate.id === window.id && candidate.index === 4)
+        .one();
+
+      await placement.select();
+
+      const session = (await server.snapshot()).sessions.one({ id: window.format.session_id });
+      expect(session.activeWindow?.index).toBe(safeInteger(4));
     });
   }, 40_000);
 
@@ -230,17 +284,18 @@ describe("window and pane topology", () => {
       // an unnamed destination goes there rather than staying put.
       await server.newSession({ name: "newer" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
-      const origin = window.sessionId;
+      const origin = window.session;
+      if (origin === undefined) throw new Error("expected the window to resolve its session");
 
       await window.move({ index: 7 });
 
       const moved = (await server.snapshot()).windows
         .filter((candidate) => candidate.id === window.id)
         .one();
-      expect(moved.index).toBe(7);
-      expect(moved.sessionId).toBe(origin);
+      expect(moved.index).toBe(safeInteger(7));
+      expect(moved.session?.id).toBe(origin.id);
     });
   }, 40_000);
 
@@ -253,17 +308,18 @@ describe("window and pane topology", () => {
       // session it considers current, so an index-only move lands elsewhere.
       await using live = await server.connect();
       const window = (await live.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
-      const origin = window.sessionId;
+      const origin = window.session;
+      if (origin === undefined) throw new Error("expected the window to resolve its session");
 
       await window.move({ index: 7 });
 
       const moved = (await server.snapshot()).windows
         .filter((candidate) => candidate.id === window.id)
         .one();
-      expect(moved.index).toBe(7);
-      expect(moved.sessionId).toBe(origin);
+      expect(moved.index).toBe(safeInteger(7));
+      expect(moved.session?.id).toBe(origin.id);
     });
   }, 40_000);
 
@@ -274,12 +330,13 @@ describe("window and pane topology", () => {
       // with no destination takes its session from there.
       await server.newSession({ name: "newer" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
-      const origin = window.sessionId;
+      const origin = window.session;
+      if (origin === undefined) throw new Error("expected the window to resolve its session");
       await window.split();
       const pane = (await server.snapshot()).panes
-        .filter((candidate) => candidate.windowId === window.id)
+        .filter((candidate) => candidate.window?.id === window.id)
         .toArray()
         .at(-1);
       if (pane === undefined) throw new Error("expected a pane to break out");
@@ -287,7 +344,7 @@ describe("window and pane topology", () => {
       await pane.breakOut("broken-out");
 
       const broken = (await server.snapshot()).windows.one({ name: "broken-out" });
-      expect(broken.sessionId).toBe(origin);
+      expect(broken.session?.id).toBe(origin.id);
     });
   }, 40_000);
 
@@ -412,7 +469,7 @@ describe("window and pane topology", () => {
         expect(pane.height).toBeGreaterThan(0);
       }
       expect((upper.height ?? 0) + (lower.height ?? 0)).toBeLessThanOrEqual(settled.height ?? 0);
-      expect(panes.map((pane) => pane.index)).toEqual([0, 1]);
+      expect(panes.map((pane) => pane.index)).toEqual([safeInteger(0), safeInteger(1)]);
       expect(upper.title).not.toBeNull();
       expect(upper.pipe).toBe(false);
 
@@ -468,7 +525,7 @@ describe("window and pane topology", () => {
       const active = session.activePane;
       expect(active).toBeDefined();
       expect(session.activeWindow?.id).toBe(session.windows.where({ active: "1" }).one().id);
-      expect(active?.windowId).toBe(session.activeWindow?.id);
+      expect(active?.window?.id).toBe(session.activeWindow?.id);
     });
   }, 30_000);
 
@@ -679,8 +736,7 @@ describe("window and pane topology", () => {
       const origin = (await server.snapshot()).panes.one();
       await origin.split();
       const window = (await server.snapshot()).windows.one();
-      const order = async (): Promise<readonly string[]> =>
-        (await window.panes.toArray()).map((pane) => pane.id);
+      const order = async () => (await window.panes.toArray()).map((pane) => pane.id);
       const before = await order();
 
       await window.rotate();

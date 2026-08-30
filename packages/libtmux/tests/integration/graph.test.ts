@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { executeGuardedFetch, executeGuardedList } from "../../src/_internal/codec/guard_codec.js";
+import { executeGuardedList } from "../../src/_internal/codec/guarded_listing.js";
 import {
   createGraphSourceId,
   type CapturedRowSet,
@@ -15,22 +15,20 @@ import {
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
-import {
-  SelectionProjectionBuilder,
-  type ProjectionDescriptor,
-} from "../../src/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
 import { LazyCapabilityBinding } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "../../src/_internal/transport/types.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 interface QueryHarness {
   readonly capabilities: LazyCapabilityBinding;
@@ -44,10 +42,6 @@ function queryHarness(server: TestServer): QueryHarness {
     async execute(request) {
       await server.assertControllerCurrent();
       return rawTransport.execute(request);
-    },
-    async executeGroup(requests) {
-      await server.assertControllerCurrent();
-      return rawTransport.executeGroup(requests);
     },
   };
   const connection = new TmuxConnection({
@@ -171,18 +165,11 @@ describe("real normalized graph hydration", () => {
         `${server.sessionId}:${linkedIndex}`,
       ]);
 
-      const [capabilities, sessions, windows, panes, targeted] = await Promise.all([
+      const [capabilities, sessions, windows, panes] = await Promise.all([
         harness.capabilities.bind(),
         executeGuardedList({ ...harness, listCommand: "list-sessions" }),
         executeGuardedList({ ...harness, listCommand: "list-windows", listExtraArgs: ["-a"] }),
         executeGuardedList({ ...harness, listCommand: "list-panes", listExtraArgs: ["-a"] }),
-        executeGuardedFetch({
-          ...harness,
-          identityField: "window_id",
-          identityValue: windowId,
-          listCommand: "list-windows",
-          listExtraArgs: ["-t", windowId],
-        }),
       ]);
       const capture: GraphCapture = {
         capabilityFingerprint: capabilities.fingerprint,
@@ -235,10 +222,11 @@ describe("real normalized graph hydration", () => {
         linkedPaneId,
       ]);
 
-      const builder = SelectionProjectionBuilder.create({
+      const source = createGraphSourceId("windows");
+      const builder = SelectionProjectionBuilder.createCorpus({
         descriptors: descriptors(),
         graph,
-        source: createGraphSourceId("windows"),
+        sources: [source],
       });
       for (const windowRecord of windowRecords) {
         builder.materializeOne(windowRecord, "containingSession", sessionRecord);
@@ -250,30 +238,13 @@ describe("real normalized graph hydration", () => {
           builder.materializeOne(paneRecord, "containingWindow", windowRecord);
         }
       }
-      const projection = builder.seal();
+      const projection = builder.sealViews().get(source);
+      if (projection === undefined) throw new Error("missing window projection view");
 
       expect(projection.members).toEqual(sourceRecords(graph, "windows"));
       expect(projection.records.filter(({ model }) => model === "window")).toHaveLength(2);
       expect(projection.records.filter(({ model }) => model === "pane")).toHaveLength(2);
       expect(Object.isFrozen(projection.records[0]?.scalars)).toBe(true);
-
-      const targetedGraph = normalizeGraph({
-        capture,
-        sources: [
-          {
-            listCommand: "list-windows",
-            rows: [targeted],
-            source: createGraphSourceId("targeted"),
-          },
-        ],
-      });
-      expect(targetedGraph.records).toHaveLength(1);
-      const targetedWindowIndex = targeted.window_index;
-      if (targetedWindowIndex === null) throw new Error("missing targeted window index");
-      expect(targetedGraph.records[0]?.winlink?.windowIndex).toBe(targetedWindowIndex);
-      expect(windowRecords.map((ref) => graphRecord(graph, ref).winlink?.windowIndex)).toContain(
-        targetedWindowIndex,
-      );
 
       await server.executeText(["unlink-window", "-t", `${server.sessionId}:${linkedIndex}`]);
       const afterUnlink = await executeGuardedList({

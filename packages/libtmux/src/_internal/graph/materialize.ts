@@ -1,13 +1,15 @@
-import { Client } from "../../client.js";
+import type { Client } from "../../client.js";
 import { LibTmuxException, QueryValidationError } from "../../exc.js";
-import { Pane } from "../../pane.js";
+import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
-import { Session } from "../../session.js";
-import { Window } from "../../window.js";
+import type { Session } from "../../session.js";
+import type { Window } from "../../window.js";
 import { runtimeForServer, type RuntimeContext } from "../runtime/context.js";
+import { runtimePrototype } from "../runtime/constructors.js";
 import { initializeLiveHandle } from "../runtime/live_handle.js";
 import {
-  graphRecordRefsEqual,
+  graphRecordForRef,
+  isGraphRecordRef,
   isNormalizedGraph,
   type GraphRecord,
   type GraphRecordRef,
@@ -16,9 +18,10 @@ import {
 import {
   originGraphForSelectionProjection,
   selectionProjectionOwnsRecord,
+  selectionProjectionRecordForRef,
   type ProjectionRecord,
   type SelectionProjection,
-} from "./selection_projection.js";
+} from "./projection_identity.js";
 
 type Child = Client | Pane | Session | Window;
 type ProjectedChild = Client | Pane | Session | Window;
@@ -50,10 +53,10 @@ function requireProjectionGraph(
 }
 
 function resolveGraphRecord(graph: NormalizedGraph, ref: GraphRecordRef): GraphRecord {
-  if (!graphRecordRefsEqual(ref, ref)) {
+  if (!isGraphRecordRef(ref)) {
     return invalidMaterialization("graph record reference is not authentic");
   }
-  const record = graph.records.find((candidate) => graphRecordRefsEqual(candidate.ref, ref));
+  const record = graphRecordForRef(graph, ref);
   if (record === undefined) {
     return invalidMaterialization("graph record reference does not exist in the normalized graph");
   }
@@ -126,13 +129,13 @@ function createProjectedHandle(
 ): ProjectedChild {
   switch (record.model) {
     case "pane":
-      return initialize<Pane>(Pane.prototype, server, graph, record);
+      return initialize<Pane>(runtimePrototype(server, "pane"), server, graph, record);
     case "session":
-      return initialize<Session>(Session.prototype, server, graph, record);
+      return initialize<Session>(runtimePrototype(server, "session"), server, graph, record);
     case "window":
-      return initialize<Window>(Window.prototype, server, graph, record);
+      return initialize<Window>(runtimePrototype(server, "window"), server, graph, record);
     case "client":
-      return initialize<Client>(Client.prototype, server, graph, record);
+      return initialize<Client>(runtimePrototype(server, "client"), server, graph, record);
   }
 }
 
@@ -140,16 +143,14 @@ function createClientHandle(server: Server, graph: NormalizedGraph, record: Grap
   if (record.model !== "client") {
     return invalidMaterialization("Client materialization requires a Client graph record");
   }
-  return initialize<Client>(Client.prototype, server, graph, record);
+  return initialize<Client>(runtimePrototype(server, "client"), server, graph, record);
 }
 
 function projectionRecordForMember(
   projection: SelectionProjection,
   member: GraphRecordRef,
 ): ProjectionRecord {
-  const record = projection.records.find((candidate) =>
-    graphRecordRefsEqual(candidate.ref, member),
-  );
+  const record = selectionProjectionRecordForRef(projection, member);
   if (record === undefined || !selectionProjectionOwnsRecord(projection, record)) {
     return invalidMaterialization("projection member has no owned projection record");
   }

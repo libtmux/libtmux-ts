@@ -3,10 +3,9 @@ import type { Server } from "libtmux/server";
 /**
  * Drive tmux the way an agent does: act, then wait for the result.
  *
- * One control connection carries both halves. Commands travel over it instead
- * of spawning a `tmux` process each, and the notifications that say what
- * happened arrive on the same connection, so reacting in a loop costs nothing
- * per iteration.
+ * One control observer carries notifications while commands use the server's
+ * engine. Keeping the observer open makes event-driven waits persistent; it
+ * does not turn command output into a control-mode protocol.
  */
 export async function runAndWait(server: Server, command: string, marker: string): Promise<string> {
   // A connection attaches, so the session has to exist first. On a server with

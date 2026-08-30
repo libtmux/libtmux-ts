@@ -1,4 +1,23 @@
-import type { Server, TmuxEvent, TmuxEventStream } from "../../src/index.js";
+import type {
+  PaneId,
+  Server,
+  SessionId,
+  TmuxEvent,
+  TmuxEventStream,
+  TmuxOutputEvent,
+  TmuxWindowLifecycleEvent,
+  WindowId,
+} from "../../src/index.js";
+import type { Equal, Expect } from "./assert.js";
+
+type _OutputPaneId = Expect<Equal<Extract<TmuxEvent, { kind: "output" }>["paneId"], PaneId>>;
+type _WindowLifecycleId = Expect<Equal<TmuxWindowLifecycleEvent["windowId"], WindowId>>;
+type _SessionWindowIds = Expect<
+  Equal<
+    Pick<Extract<TmuxEvent, { kind: "session-window-changed" }>, "sessionId" | "windowId">,
+    { readonly sessionId: SessionId; readonly windowId: WindowId }
+  >
+>;
 
 /**
  * The disposal and narrowing guarantees `watch()` advertises, checked by tsc.
@@ -77,10 +96,46 @@ export function exhaustive(event: TmuxEvent): never | void {
 declare const stream: TmuxEventStream;
 export const isIterable: AsyncIterable<TmuxEvent> = stream;
 
+export async function findNarrowsWithTypePredicate(): Promise<void> {
+  const event = await stream.find(
+    (candidate): candidate is TmuxOutputEvent => candidate.kind === "output",
+  );
+  type _FindNarrows = Expect<Equal<typeof event, TmuxOutputEvent | undefined>>;
+
+  if (event !== undefined) {
+    void event.data;
+    // @ts-expect-error output events have no window id.
+    void event.windowId;
+  }
+}
+
+export async function findWithTruthyPredicate(): Promise<void> {
+  const matchesOutput = (candidate: TmuxEvent): string =>
+    candidate.kind === "output" ? "yes" : "";
+  const event = await stream.find(matchesOutput);
+  type _FindRemainsBroad = Expect<Equal<typeof event, TmuxEvent | undefined>>;
+  void event;
+}
+
 /**
  * `signal` is typed structurally so the declarations need no DOM library; a
  * real AbortSignal has to keep satisfying it.
  */
 export function acceptsRealAbortSignal(controller: AbortController): TmuxEventStream {
   return server.watch({ signal: controller.signal });
+}
+
+export function connectIsNotAnObserver(): Promise<unknown> {
+  // @ts-expect-error pause-after belongs to Server.watch(), not Server.connect().
+  return server.connect({ pauseAfterSeconds: 1 });
+}
+
+export function connectHasNoCommandResponseBounds(): Promise<unknown> {
+  // @ts-expect-error connected commands use the server engine, not the event observer.
+  return server.connect({ maxCommandBytes: 1 });
+}
+
+export function watchIsNotACommandChannel(): TmuxEventStream {
+  // @ts-expect-error command response bounds were removed with the control command lane.
+  return server.watch({ maxCommandBytes: 1 });
 }

@@ -1,5 +1,10 @@
 import { fencedBlocks, typecheckExamples, type Example } from "./example_harness.js";
-import { readApiSurface } from "../api_surface.js";
+import {
+  readApiSurface,
+  readRootApiSurface,
+  requireRootExamples,
+  requireSymbolExamples,
+} from "../api_surface.js";
 
 /**
  * Require a working example on every public method and getter, and compile it.
@@ -16,27 +21,21 @@ import { readApiSurface } from "../api_surface.js";
  */
 
 const surface = await readApiSurface();
-const members = surface.flatMap((entry) =>
-  entry.members.map((member) => ({ ...member, owner: entry.name })),
+const members = requireSymbolExamples(
+  surface.flatMap((entry) => entry.members.map((member) => ({ ...member, owner: entry.name }))),
 );
 
-const missing = members.filter((member) => member.example === undefined);
-if (missing.length > 0) {
-  process.stderr.write(
-    `${String(missing.length)} of ${String(members.length)} public symbols have no example:\n`,
-  );
-  for (const member of missing) {
-    process.stderr.write(
-      `  ${member.file}:${String(member.line)}  ${member.owner}.${member.name}\n`,
-    );
-  }
-  process.exit(1);
-}
-
 const examples: Example[] = members.map((member): Example => ({
-  code: member.example ?? "",
+  code: member.example,
   origin: `${member.file}:${String(member.line)}`,
 }));
+const root = requireRootExamples(await readRootApiSurface());
+examples.push(
+  ...root.map((entry) => ({
+    code: entry.example,
+    origin: `${entry.file}:${String(entry.line)}`,
+  })),
+);
 
 // Class-level and interface-level examples are compiled too, so a type's own
 // documentation cannot drift from its members'.
@@ -47,5 +46,7 @@ for (const entry of surface) {
 await typecheckExamples(examples, "symbol");
 
 process.stdout.write(
-  `symbol examples: ${String(members.length)} public symbols, ${String(examples.length)} compiled examples\n`,
+  `symbol examples: ${String(members.length)} public members, ${String(
+    root.length,
+  )} root declarations, ${String(examples.length)} compiled examples\n`,
 );

@@ -7,11 +7,11 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { Server } from "../../src/server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -111,10 +111,26 @@ describe("option reads", () => {
     });
   }, 30_000);
 
-  test("sets and unsets hooks at session and server scope", async () => {
+  test("treats option names as literals when setting and unsetting", async () => {
+    await withServer(async (fixture) => {
+      const session = (await serverFor(fixture).snapshot()).sessions.one();
+      const name = "@literal-#{session_name}";
+
+      await session.setOption(name, "value");
+      expect((await session.showOptions()).get(name)).toBe("value");
+
+      await session.unsetOption(name);
+      expect((await session.showOptions()).has(name)).toBe(false);
+    });
+  }, 30_000);
+
+  test("sets and unsets hooks at every tmux scope", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const session = (await server.snapshot()).sessions.one();
+      const snapshot = await server.snapshot();
+      const session = snapshot.sessions.one();
+      const window = snapshot.windows.one();
+      const pane = snapshot.panes.one();
 
       // Read back under the name it was set with: tmux prints the element as
       // `after-new-window[0]`, and keyed by that nothing here composes.
@@ -126,8 +142,36 @@ describe("option reads", () => {
       await server.setHook("after-kill-pane", "display-message global");
       expect((await server.showHooks()).get("after-kill-pane")).toEqual(["display-message global"]);
 
+      await window.setHook("window-renamed", "display-message window");
+      expect((await window.showHooks()).get("window-renamed")).toEqual(["display-message window"]);
+
+      await pane.setHook("pane-title-changed", "display-message pane");
+      expect((await pane.showHooks()).get("pane-title-changed")).toEqual(["display-message pane"]);
+
       await session.unsetHook("after-new-window");
       expect((await session.showHooks()).has("after-new-window")).toBe(false);
+      await window.unsetHook("window-renamed");
+      expect((await window.showHooks()).has("window-renamed")).toBe(false);
+      await pane.unsetHook("pane-title-changed");
+      expect((await pane.showHooks()).has("pane-title-changed")).toBe(false);
+    });
+  }, 30_000);
+
+  test("does not expand formats into hook names when setting or unsetting", async () => {
+    await withServer(async (fixture) => {
+      const session = (await serverFor(fixture).snapshot()).sessions.one();
+      const name = "#{?1,after-new-window,after-kill-pane}";
+
+      await expect(session.setHook(name, "display-message redirected")).rejects.toThrow(
+        /invalid option/u,
+      );
+      expect((await session.showHooks()).has("after-new-window")).toBe(false);
+
+      await session.setHook("after-new-window", "display-message retained");
+      await expect(session.unsetHook(name)).rejects.toThrow(/invalid option/u);
+      expect((await session.showHooks()).get("after-new-window")).toEqual([
+        "display-message retained",
+      ]);
     });
   }, 30_000);
 

@@ -9,6 +9,7 @@
     "test": "bun test --no-orphans ."
   },
   "dependencies": {
+    "@libtmux/workspace": "workspace:*",
     "libtmux": "workspace:*"
   }
 }

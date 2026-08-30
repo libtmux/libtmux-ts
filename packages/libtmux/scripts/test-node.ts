@@ -4,9 +4,14 @@ import { access, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { resolveNode22 } from "../src/_internal/test/node22.js";
-import { reapStaleRunRoot } from "../src/_internal/test/run_root.js";
-import { makeTestDirectory } from "../src/_internal/test/temp_root.js";
+import {
+  deadlineMs,
+  resolveNode22,
+  reapStaleRunRoot,
+  RUN_ROOT_ENV,
+  sweepStaleRunRoots,
+  makeTestDirectory,
+} from "../src/_internal/test/testkit.js";
 
 interface Arguments {
   readonly expectMajor: number;
@@ -74,8 +79,7 @@ function scenarioSource(tsRoot: string, executable: string): string {
   const echoFixture = moduleUrl("tests/fixtures/echo_argv.mjs");
   const ignoreFixture = moduleUrl("tests/fixtures/ignore_sigterm.mjs");
   const malformedFixture = moduleUrl("tests/fixtures/malformed_utf8.mjs");
-  const runRootModule = moduleUrl("dist/_internal/test/run_root.js");
-  const controlModeModule = moduleUrl("dist/_internal/test/control_mode.js");
+  const testkitModule = moduleUrl("dist/_internal/test/testkit.js");
 
   return `import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -87,15 +91,14 @@ import { FormatProtocolError, GuardCodec } from ${moduleUrl("dist/_internal/code
 import { adaptRawResult, executeBatch, prepareCommandRequest } from ${moduleUrl("dist/_internal/operations/request.js")};
 import { deriveTmuxCapabilities } from ${moduleUrl("dist/_internal/runtime/capabilities.js")};
 import { FORMAT_FIELD_TOKENS } from ${moduleUrl("dist/_generated/format_fields.js")};
+import { FORMAT_VALUE_TYPES } from ${moduleUrl("dist/_generated/field_types.js")};
 import { TmuxConnection } from ${moduleUrl("dist/_internal/runtime/connection.js")};
-import { ControlMode } from ${controlModeModule};
+import { ControlMode, prepareRunRoot, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup, TestServer } from ${testkitModule};
 import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_spawn_transport.js")};
 // From the package root, not the internal module: a caller deciding whether a
 // timed-out mutation is safe to retry has to be able to name this type, so the
 // emitted lane proves it is reachable the way a consumer reaches it.
 import { TmuxTransportError } from ${moduleUrl("dist/index.js")};
-import { prepareRunRoot, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup } from ${runRootModule};
-import { TestServer } from ${moduleUrl("dist/_internal/test/test_server.js")};
 import { FORMAT_SEPARATOR } from ${moduleUrl("dist/formats.js")};
 import { ParsedFormatRow } from ${moduleUrl("dist/_internal/codec/format_types.js")};
 
@@ -104,10 +107,15 @@ const echoFixture = fileURLToPath(${echoFixture});
 const ignoreFixture = fileURLToPath(${ignoreFixture});
 const malformedFixture = fileURLToPath(${malformedFixture});
 const transport = new NodeSpawnTransport({ terminationGraceMs: 30 });
+function request(args, options = {}) {
+  return { commands: [args], executable, globalArgs: [], ...options };
+}
 assert.equal(FORMAT_SEPARATOR, "NODE_FORMAT_SEPARATOR");
+const codecDaemon = { pid: "101", startTime: "202" };
 const nodeFormatCodec = new GuardCodec({
   capabilities: deriveTmuxCapabilities({
     connectionAlias: "node-format-scenario",
+    daemon: codecDaemon,
     daemonEpoch: 1,
     rawVersion: "3.7b",
   }),
@@ -118,6 +126,7 @@ assert.equal(nodeFormatRequest.format.includes(FORMAT_SEPARATOR), false);
 const baselineCodec = new GuardCodec({
   capabilities: deriveTmuxCapabilities({
     connectionAlias: "node-baseline-scenario",
+    daemon: codecDaemon,
     daemonEpoch: 1,
     rawVersion: "3.2a",
   }),
@@ -125,10 +134,10 @@ const baselineCodec = new GuardCodec({
 });
 const baselineRequest = baselineCodec.prepare();
 const baselineValues = baselineRequest.fields.map(({ token }) => {
-  if (token === "session_id") return "$1";
+  if (FORMAT_VALUE_TYPES[token] === "session-id") return "$1";
   if (token === "session_group") return "";
-  if (token === "window_id") return "@2";
-  if (token === "pane_id") return "%3";
+  if (FORMAT_VALUE_TYPES[token] === "window-id") return "@2";
+  if (FORMAT_VALUE_TYPES[token] === "pane-id") return "%3";
   return "node:" + token;
 });
 const baselineFrame = new TextEncoder().encode(
@@ -251,20 +260,21 @@ async function settleWithin(promise, milliseconds) {
   }
 }
 const values = ["with space", "-leading", 'a"quote', "a\\\\backslash", "雪", ";"];
-const literal = await transport.execute({ executable, args: [echoFixture, ...values] });
-assert.deepEqual(JSON.parse(decodeBackslashReplace(literal.stdout)), values);
+const literal = await transport.execute(request([echoFixture, ...values]));
+assert.deepEqual(
+  JSON.parse(decodeBackslashReplace(literal.stdout)),
+  [...values.slice(0, -1), "\\\\;"],
+);
 
 const stdin = Uint8Array.of(0x61, 0x62);
-const immutableInput = transport.execute({
-  executable,
-  args: [echoFixture, "--echo-stdin"],
-  stdin,
-});
+const immutableInput = transport.execute(
+  request([echoFixture, "--echo-stdin"], { stdin }),
+);
 stdin[0] = 0x7a;
 assert.deepEqual([...((await immutableInput).stdout)], [0x61, 0x62]);
 
 const submittedArgs = [echoFixture, "submitted"];
-const correlatedExecution = transport.execute({ executable, args: submittedArgs });
+const correlatedExecution = transport.execute(request(submittedArgs));
 submittedArgs[1] = "mutated-after-spawn";
 const correlated = await correlatedExecution;
 assert.deepEqual(JSON.parse(decodeBackslashReplace(correlated.stdout)), ["submitted"]);
@@ -279,18 +289,17 @@ prepared.stdin[0] = 0x7a;
 await Promise.resolve();
 assert.deepEqual([...prepared.stdin], [0x61, 0x62]);
 
-const nonzero = await transport.execute({ executable, args: [echoFixture, "--exit-code=7"] });
+const nonzero = await transport.execute(request([echoFixture, "--exit-code=7"]));
 assert.equal(nonzero.returncode, 7);
 assert.ok(nonzero.stdout instanceof Uint8Array);
 assert.ok(nonzero.stderr instanceof Uint8Array);
 
-const malformed = await transport.execute({ executable, args: [malformedFixture] });
+const malformed = await transport.execute(request([malformedFixture]));
 assert.deepEqual(adaptRawResult(malformed).stdout, ["valid:€", "bad:\\\\xff\\\\xc3("]);
 
-const requests = [0, 5, 0].map((code, index) => ({
-  executable,
-  args: [echoFixture, \`--exit-code=\${code}\`, \`node-request-\${index}\`],
-}));
+const requests = [0, 5, 0].map((code, index) =>
+  request([echoFixture, \`--exit-code=\${code}\`, \`node-request-\${index}\`]),
+);
 const batch = await executeBatch(transport, requests);
 assert.deepEqual(batch.map(({ delivery, index, status }) => ({ delivery, index, status })), [
   { delivery: "replied", index: 0, status: "complete" },
@@ -301,9 +310,9 @@ assert.deepEqual(batch.map(({ delivery, index, status }) => ({ delivery, index, 
 const laterArgs = [echoFixture, "second-original"];
 const laterStdin = Uint8Array.of(0x61, 0x62);
 const mutableBatchExecution = executeBatch(transport, [
-  { executable, args: [echoFixture, "first"] },
-  { executable, args: laterArgs },
-  { executable, args: [echoFixture, "--echo-stdin"], stdin: laterStdin },
+  request([echoFixture, "first"]),
+  request(laterArgs),
+  request([echoFixture, "--echo-stdin"], { stdin: laterStdin }),
 ]);
 laterArgs[1] = "second-mutated";
 laterStdin[0] = 0x7a;
@@ -316,12 +325,12 @@ assert.deepEqual([...immutableBatch[2].rawResult.stdout], [0x61, 0x62]);
 
 const controller = new AbortController();
 const markerPath = fileURLToPath(new URL("./sigterm-ready", import.meta.url));
-const cancelled = transport.execute({
-  executable,
-  args: [ignoreFixture, markerPath],
-  signal: controller.signal,
-  stdin: new Uint8Array(8 * 1024 * 1024),
-});
+const cancelled = transport.execute(
+  request([ignoreFixture, markerPath], {
+    signal: controller.signal,
+    stdin: new Uint8Array(8 * 1024 * 1024),
+  }),
+);
 await waitForFile(markerPath);
 controller.abort();
 await assert.rejects(cancelled, (error) => {
@@ -332,11 +341,9 @@ await assert.rejects(cancelled, (error) => {
   return true;
 });
 
-const timedOut = transport.execute({
-  executable,
-  args: [ignoreFixture, "--exit-after=2000"],
-  timeoutMs: 500,
-});
+const timedOut = transport.execute(
+  request([ignoreFixture, "--exit-after=2000"], { timeoutMs: 500 }),
+);
 await assert.rejects(timedOut, (error) => {
   assert.ok(error instanceof TmuxTransportError);
   assert.equal(error.delivery, "indeterminate");
@@ -347,11 +354,11 @@ await assert.rejects(timedOut, (error) => {
 
 const partialPipeMarker = fileURLToPath(new URL("./partial-pipe-holder", import.meta.url));
 const partialController = new AbortController();
-const partialExecution = transport.execute({
-  executable,
-  args: [ignoreFixture, "--inherit-pipes=" + partialPipeMarker],
-  signal: partialController.signal,
-});
+const partialExecution = transport.execute(
+  request([ignoreFixture, "--inherit-pipes=" + partialPipeMarker], {
+    signal: partialController.signal,
+  }),
+);
 await waitForFile(partialPipeMarker);
 const partialHolder = await readHolderIdentity(partialPipeMarker);
 partialController.abort();
@@ -372,14 +379,14 @@ try {
 }
 
 const timeoutPipeMarker = fileURLToPath(new URL("./timeout-pipe-holder", import.meta.url));
-const heldPipeTimeout = transport.execute({
-  executable,
-  args: [ignoreFixture, "--inherit-pipes=" + timeoutPipeMarker],
-  // The deadline has to outlast a loaded machine's node startup: one that beats
-  // the spawn times out a process that never held a pipe, which is a different
-  // scenario.
-  timeoutMs: 4_000,
-});
+const heldPipeTimeout = transport.execute(
+  request([ignoreFixture, "--inherit-pipes=" + timeoutPipeMarker], {
+    // The deadline has to outlast a loaded machine's node startup: one that beats
+    // the spawn times out a process that never held a pipe, which is a different
+    // scenario.
+    timeoutMs: 4_000,
+  }),
+);
 // Given an outcome the moment it exists. Nothing below may be the first thing
 // to await it: a rejection landing while this waits on the marker is unhandled
 // and takes the whole run down instead of failing the assertion it belongs to.
@@ -402,11 +409,11 @@ try {
 
 const exitCancelController = new AbortController();
 const exitCancelMarker = fileURLToPath(new URL("./exit-cancel", import.meta.url));
-const exitCancelled = transport.execute({
-  executable,
-  args: [echoFixture, "--exit-with-inherited-pipe", exitCancelMarker, "1500"],
-  signal: exitCancelController.signal,
-});
+const exitCancelled = transport.execute(
+  request([echoFixture, "--exit-with-inherited-pipe", exitCancelMarker, "1500"], {
+    signal: exitCancelController.signal,
+  }),
+);
 // Given an outcome the moment it exists. Nothing below may be the first thing
 // to await it: if the cancel lands before the exit is delivered this rejects,
 // and a rejection with no handler yet takes the whole run down instead of
@@ -445,14 +452,14 @@ try {
 
 const exitTimeoutMarker = fileURLToPath(new URL("./exit-timeout", import.meta.url));
 const exitTimeoutAt = performance.now();
-const exitTimed = transport.execute({
-  executable,
-  // The deadline has to land after the child exits and before the holder lets
-  // the pipe go, with room on both sides: on a loaded machine a tight first half
-  // becomes a real timeout, which is a different scenario.
-  args: [echoFixture, "--exit-with-inherited-pipe", exitTimeoutMarker, "8000"],
-  timeoutMs: 2_000,
-});
+const exitTimed = transport.execute(
+  request([echoFixture, "--exit-with-inherited-pipe", exitTimeoutMarker, "8000"], {
+    // The deadline has to land after the child exits and before the holder lets
+    // the pipe go, with room on both sides: on a loaded machine a tight first half
+    // becomes a real timeout, which is a different scenario.
+    timeoutMs: 2_000,
+  }),
+);
 // Given an outcome the moment it exists: nothing below may be the first to
 // await it, or a rejection landing while this waits on the marker is unhandled
 // and takes the whole run down instead of failing its own assertion.
@@ -555,7 +562,7 @@ async function runLateRootSiblingProbe() {
     '  return realRmdir.call(fs.promises, path, ...args);',
     '};',
     'syncBuiltinESMExports();',
-    'const { prepareRunRoot, reapOwnedRunRoot } = await import(' + JSON.stringify(${runRootModule}) + ');',
+    'const { prepareRunRoot, reapOwnedRunRoot } = await import(' + JSON.stringify(${testkitModule}) + ');',
     'await prepareRunRoot(runRoot);',
     'const ownerText = await fs.promises.readFile(ownerPath, "utf8");',
     'const ownerBefore = await fs.promises.lstat(ownerPath);',
@@ -690,9 +697,9 @@ async function runControlTimerProbe(mode) {
       ];
   const source = [
     'import { writeFile } from "node:fs/promises";',
-    'import { ControlMode } from ' + JSON.stringify(${controlModeModule}) + ';',
-    'import { prepareRunRoot, reapOwnedRunRoot } from ' + JSON.stringify(${runRootModule}) + ';',
-    'import { TestServer } from ' + JSON.stringify(${moduleUrl("dist/_internal/test/test_server.js")}) + ';',
+    'import { ControlMode, prepareRunRoot, reapOwnedRunRoot, TestServer } from ' +
+      JSON.stringify(${testkitModule}) +
+      ';',
     ...body,
     'await writeFile(' + JSON.stringify(marker) + ', "done");',
     '',
@@ -749,7 +756,7 @@ setInterval(() => undefined, 1000);\`,
 );
 await writeFile(
   supervisorPath,
-  \`import { runSupervisor } from ${runRootModule};
+  \`import { runSupervisor } from ${testkitModule};
 process.exitCode = await runSupervisor({
   command: [\${JSON.stringify(executable)}, \${JSON.stringify(holderPath)}],
   graceMs: 100,
@@ -803,20 +810,27 @@ const args = parseArguments(process.argv.slice(2));
 const executable = await resolveNode(args.nodeArgument);
 const version = queryMajor(executable, args.expectMajor);
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
+// Only a top-level runner owns the namespace sweep. A nested runner inherits
+// its parent's exact root and must not race that owner or an explicit reaper.
+if (process.env[RUN_ROOT_ENV] === undefined) await sweepStaleRunRoots();
+
 const temporaryRoot = await makeTestDirectory("ltx-node-scenarios-");
-const scenarioRunRoot =
-  process.env.LIBTMUX_TEST_RUN_ROOT ?? join(temporaryRoot, "node, task4 root");
+const scenarioRunRoot = process.env[RUN_ROOT_ENV] ?? join(temporaryRoot, "node, task4 root");
 // A liveness bound on the whole run, not a performance target: the scenarios
 // spawn a few dozen processes and every one is slower on a busy machine, so a
 // tight bound kills a run that had already passed everything. The one mode that
 // uses this as its mechanism — the injected hang — sets its own.
-const scenarioTimeoutMs = Number.parseInt(
+const scenarioTimeoutBase = Number.parseInt(
   process.env.LIBTMUX_NODE_SCENARIO_TIMEOUT_MS ?? "120000",
   10,
 );
-if (!Number.isSafeInteger(scenarioTimeoutMs) || scenarioTimeoutMs < 100) {
+if (!Number.isSafeInteger(scenarioTimeoutBase) || scenarioTimeoutBase < 100) {
   throw new Error("LIBTMUX_NODE_SCENARIO_TIMEOUT_MS must be at least 100");
 }
+// Read as a base rather than as the bound: a caller sizing this against the
+// scenarios ahead of it is describing an idle machine, and every one of those
+// scenarios is slower on a busy one.
+const scenarioTimeoutMs = deadlineMs(scenarioTimeoutBase);
 let exactCleanupComplete = false;
 
 try {
@@ -826,7 +840,7 @@ try {
     cwd: tsRoot,
     env: {
       ...process.env,
-      LIBTMUX_TEST_RUN_ROOT: scenarioRunRoot,
+      [RUN_ROOT_ENV]: scenarioRunRoot,
       LIBTMUX_TMUX_FORMAT_SEPARATOR: "NODE_FORMAT_SEPARATOR",
     },
     stdio: ["ignore", "pipe", "pipe"],

@@ -3,9 +3,10 @@ import type { Selection } from "../../selection.js";
 import type { Server } from "../../server.js";
 import { materializeProjectionMembers } from "../graph/materialize.js";
 import { createGraphSourceId, type GraphSourceId, type NormalizedGraph } from "../graph/model.js";
+import type { SelectionProjection } from "../graph/projection_identity.js";
 import type { ModelForKind } from "../runtime/model_kind.js";
 import { createProjectedSelection } from "../selection/evaluate.js";
-import { hydrateProjection } from "./hydrate.js";
+import { hydrateProjectionViews } from "./hydrate.js";
 
 export type ProjectedModel = "client" | "pane" | "session" | "window";
 
@@ -47,6 +48,24 @@ const settled = new WeakMap<
   Map<ProjectedModel, Selection<ModelForKind<ProjectedModel>>>
 >();
 
+const projectionViews = new WeakMap<
+  NormalizedGraph,
+  ReadonlyMap<GraphSourceId, SelectionProjection>
+>();
+
+function projectionForModel(graph: NormalizedGraph, model: ProjectedModel) {
+  let views = projectionViews.get(graph);
+  if (views === undefined) {
+    views = hydrateProjectionViews(graph, Object.values(MEMBER_SOURCES));
+    projectionViews.set(graph, views);
+  }
+  const projection = views.get(MEMBER_SOURCES[model]);
+  if (projection === undefined) {
+    throw new LibTmuxException(`${model} projection is unavailable for this graph`);
+  }
+  return projection;
+}
+
 /** Read a model's handles for a graph whose selections are already built. */
 export function settledSelectionOfModel<Model extends ProjectedModel>(
   graph: NormalizedGraph,
@@ -66,7 +85,7 @@ async function buildSelection<Model extends ProjectedModel>(
   graph: NormalizedGraph,
   model: Model,
 ): Promise<Selection<ModelForKind<Model>>> {
-  const projection = hydrateProjection(graph, MEMBER_SOURCES[model]);
+  const projection = projectionForModel(graph, model);
   const members = await materializeProjectionMembers(server, projection, graph);
   // The projection's members are exactly this model's records, so every
   // materialized handle is that model; the union materialize returns cannot

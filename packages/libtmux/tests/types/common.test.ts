@@ -8,6 +8,7 @@ import type {
   LogicalRef,
   DeliveryStatus,
   OperationStatus,
+  SafeInteger,
   TmuxLogger,
   TmuxLogContext,
   TmuxWarning,
@@ -19,14 +20,10 @@ import type {
   WindowId,
   WindowRef,
 } from "../../src/common.js";
+import { isSafeInteger, safeInteger } from "../../src/common.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
 import * as exception from "../../src/exc.js";
-import {
-  AdjustmentDirectionRequiresAdjustment,
-  MultipleMatchesError,
-  NoMatchError,
-  QueryValidationError,
-} from "../../src/exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
 import {
   OptionScope,
   DEFAULT_OPTION_SCOPE,
@@ -39,6 +36,32 @@ import {
   WindowDirection,
   WINDOW_DIRECTION_FLAG_MAP,
 } from "../../src/constants.js";
+import {
+  isSafeInteger as rootIsSafeInteger,
+  isSplitSize as rootIsSplitSize,
+  OptionScope as RootOptionScope,
+  safeInteger as rootSafeInteger,
+  splitSize as rootSplitSize,
+} from "../../src/index.js";
+import type {
+  CommandOptions as RootCommandOptions,
+  HookScope,
+  JoinOptions as RootJoinOptions,
+  OptionScope as RootOptionScopeType,
+  SetOptionOptions as RootSetOptionOptions,
+  SafeInteger as RootSafeInteger,
+  SplitCellSize as RootSplitCellSize,
+  SplitPercentage as RootSplitPercentage,
+  SplitSize as RootSplitSize,
+} from "../../src/index.js";
+import { isSplitSize, splitSize } from "../../src/types.js";
+import type {
+  JoinOptions,
+  SetOptionOptions,
+  SplitCellSize,
+  SplitPercentage,
+  SplitSize,
+} from "../../src/types.js";
 
 import type { Equal, Expect } from "./assert.js";
 
@@ -114,13 +137,25 @@ const invalidQuery = new QueryValidationError({
 void noMatch.query;
 void multipleMatches.count;
 void invalidQuery.code;
-type _NoPublicAdjustmentInstanceHook = Expect<
+type _ExceptionNamespace = Expect<
   Equal<
-    Extract<keyof typeof AdjustmentDirectionRequiresAdjustment, typeof Symbol.hasInstance>,
-    never
+    keyof typeof exception,
+    | "LibTmuxException"
+    | "MultipleMatchesError"
+    | "MultipleObjectsReturned"
+    | "NoMatchError"
+    | "ObjectDoesNotExist"
+    | "QueryValidationError"
+    | "TmuxCommandError"
+    | "TmuxObjectDoesNotExist"
+    | "TmuxServerRestarted"
+    | "TmuxTransportError"
+    | "VersionTooLow"
+    | "WaitTimeout"
   >
 >;
 void OptionScope.Server;
+void RootOptionScope.Server;
 void PaneDirection.Above;
 void ResizeAdjustmentDirection.Up;
 void WindowDirection.Before;
@@ -130,62 +165,6 @@ void WINDOW_DIRECTION_FLAG_MAP;
 void PANE_DIRECTION_FLAG_MAP;
 void OPTION_SCOPE_FLAG_MAP;
 void HOOK_SCOPE_FLAG_MAP;
-
-const allExceptions = [
-  new exception.AdjustmentDirectionRequiresAdjustment({
-    cause: exceptionCause,
-    subcommand: "resize-pane",
-  }),
-  new exception.AmbiguousOption("ambiguous", { cause: exceptionCause, subcommand: "show-options" }),
-  new exception.BadSessionName("reason", "session-name"),
-  new exception.DeprecatedError({ deprecated: "old", replacement: "new", version: "0" }),
-  new exception.InvalidOption("invalid", { cause: exceptionCause }),
-  new exception.LibTmuxException("base", { cause: exceptionCause, subcommand: "list-sessions" }),
-  new exception.MultipleActiveWindows(2),
-  new exception.MultipleObjectsReturned({
-    cause: exceptionCause,
-    count: 2,
-    message: "Multiple objects",
-    query: { pane_id: "%3" },
-    subcommand: "list-panes",
-  }),
-  new exception.NoActiveWindow(),
-  new exception.NotInsideTmux("TMUX_PANE", { reason: "not a pane id" }),
-  new exception.NoWindowsExist(),
-  new exception.ObjectDoesNotExist({
-    cause: exceptionCause,
-    message: "No objects",
-    query: { window_id: "@2" },
-    subcommand: "list-windows",
-  }),
-  new exception.OptionError("option", { subcommand: "show-options" }),
-  new exception.PaneAdjustmentDirectionRequiresAdjustment({
-    cause: exceptionCause,
-    subcommand: "resize-pane",
-  }),
-  new exception.PaneError(),
-  new exception.PaneNotFound("%3"),
-  new exception.RequiresDigitOrPercentage(),
-  new exception.TmuxCommandNotFound("missing", { cause: exceptionCause }),
-  new exception.TmuxObjectDoesNotExist({
-    list_cmd: "list-panes",
-    list_extra_args: ["-t", "%3"],
-    obj_id: "%3",
-    obj_key: "pane_id",
-  }),
-  new exception.TmuxSessionExists("exists", { subcommand: "new-session" }),
-  new exception.UnknownColorOption(),
-  new exception.UnknownOption("unknown", { cause: exceptionCause }),
-  new exception.VariableUnpackingError("value"),
-  new exception.VersionTooLow(),
-  new exception.WaitTimeout(),
-  new exception.WindowAdjustmentDirectionRequiresAdjustment({
-    cause: exceptionCause,
-    subcommand: "resize-window",
-  }),
-  new exception.WindowError(),
-];
-void allExceptions;
 
 type _DeliveryStatus = Expect<
   Equal<DeliveryStatus, "not_started" | "written" | "replied" | "indeterminate">
@@ -291,15 +270,49 @@ type _OptionFlags = Expect<
   Equal<typeof OPTION_SCOPE_FLAG_MAP, Readonly<Record<OptionScope, string>>>
 >;
 type _HookFlags = Expect<Equal<typeof HOOK_SCOPE_FLAG_MAP, Readonly<Record<OptionScope, string>>>>;
+type _HookScope = Expect<Equal<HookScope, OptionScope>>;
+type _OptionScope = Expect<Equal<OptionScope, "pane" | "server" | "session" | "window">>;
+type _RootCommandOptions = Expect<Equal<RootCommandOptions, CommandOptions>>;
+type _RootJoinOptions = Expect<Equal<RootJoinOptions, JoinOptions>>;
+type _RootOptionScope = Expect<Equal<RootOptionScopeType, OptionScope>>;
+type _RootSetOptionOptions = Expect<Equal<RootSetOptionOptions, SetOptionOptions>>;
+type _SafeIntegerGuard = Expect<
+  Equal<typeof isSafeInteger, (value: unknown) => value is SafeInteger>
+>;
+type _SafeIntegerProof = Expect<Equal<typeof safeInteger, (value: number) => SafeInteger>>;
+type _RootSafeInteger = Expect<Equal<RootSafeInteger, SafeInteger>>;
+type _RootSafeIntegerGuard = Expect<Equal<typeof rootIsSafeInteger, typeof isSafeInteger>>;
+type _RootSafeIntegerProof = Expect<Equal<typeof rootSafeInteger, typeof safeInteger>>;
+type _RootSplitCellSize = Expect<Equal<RootSplitCellSize, SplitCellSize>>;
+type _RootSplitPercentage = Expect<Equal<RootSplitPercentage, SplitPercentage>>;
+type _RootSplitSize = Expect<Equal<RootSplitSize, SplitSize>>;
+type _RootSplitSizeGuard = Expect<Equal<typeof rootIsSplitSize, typeof isSplitSize>>;
+type _RootSplitSizeProof = Expect<Equal<typeof rootSplitSize, typeof splitSize>>;
 
 export type {
   _CommandOutcomeKeys,
   _DeliveryStatus,
-  _NoPublicAdjustmentInstanceHook,
+  _ExceptionNamespace,
+  _HookScope,
   _OperationStatus,
+  _OptionScope,
   _PaneFlags,
   _PaneRef,
   _ResizeFlags,
+  _RootOptionScope,
+  _RootCommandOptions,
+  _RootJoinOptions,
+  _RootSetOptionOptions,
+  _RootSafeInteger,
+  _RootSafeIntegerGuard,
+  _RootSafeIntegerProof,
+  _RootSplitCellSize,
+  _RootSplitPercentage,
+  _RootSplitSize,
+  _RootSplitSizeGuard,
+  _RootSplitSizeProof,
+  _SafeIntegerGuard,
+  _SafeIntegerProof,
   _SessionRef,
   _WindowFlags,
   _WindowRef,

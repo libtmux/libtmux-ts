@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
 import { chmod, readFile, stat, unlink, writeFile } from "node:fs/promises";
 
-import { OWNER_RECORD_NAME, RUN_ROOT_ENV } from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+import { OWNER_RECORD_NAME, RUN_ROOT_ENV, TestServer } from "../../src/_internal/test/testkit.js";
 
 interface Arguments {
   readonly exitCode: number;

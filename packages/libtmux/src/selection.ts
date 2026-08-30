@@ -1,10 +1,33 @@
-import type { ModelKindOf } from "./_internal/runtime/model_kind.js";
 import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/legacy.js";
+import {
+  decodeWhereDocument as decodeDocument,
+  encodeWhereDocument as encodeDocument,
+} from "./_internal/selection/serialization.js";
+import type { Client } from "./client.js";
+import type { PaneIdInput, SafeInteger, SessionIdInput, WindowIdInput } from "./common.js";
+import type { Pane } from "./pane.js";
+import type { Server } from "./server.js";
+import type { Session } from "./session.js";
+import type { Window } from "./window.js";
+
+type ModelKindOf<Model> = Model extends Client
+  ? "client"
+  : Model extends Pane
+    ? "pane"
+    : Model extends Server
+      ? "server"
+      : Model extends Session
+        ? "session"
+        : Model extends Window
+          ? "window"
+          : never;
 
 /**
  * A field's criteria accept its decoded shape as well as the text tmux sends:
  * `where({ active: true })` and `where({ active: "1" })` are the same query,
  * and serialize identically.
+ * A `null` criterion matches any wire value that the field decoder treats as
+ * absent or invalid, rather than one particular wire spelling.
  *
  * The text side exists because the wire does. `encodeFormatValue` lowers every
  * criterion to tmux's text before a query is serialized, and
@@ -14,13 +37,12 @@ import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/lega
  * difference from an ORM, whose query AST never round-trips through a type the
  * caller also authors.
  *
- * `Raw` is therefore not a taste. It is **exactly the encoder's output
- * domain**: `"0" | "1"` for a flag because that is what `encodeFormatValue`
- * emits for a boolean, `${number}` for a number and a time because that is
- * `String` of a safe integer. Text outside it is text this library could never
- * have written, which is why `where({ index: "banana" })` is refused and why
- * there is no escape hatch admitting it — one would break the round trip the
- * text side exists for. `format_values.test.ts` holds the two in step.
+ * `Raw` is therefore not a taste. `"0" | "1"` is the exact wire domain for a
+ * flag, while an integer uses `${bigint}` intersected with a decimal prefix.
+ * That rules out fractions, exponents, radix prefixes, leading zeroes, `-0`,
+ * `NaN`, and prose. TypeScript cannot bound an integer's magnitude, so the
+ * query validator also requires safe range at runtime. `format_values.test.ts`
+ * holds the layers in step.
  *
  * The substring operations stay `string` deliberately: `contains` asks about
  * the characters tmux sent, and a numeric field's text has characters like any
@@ -48,8 +70,13 @@ type StringFilter<Value = never, Raw extends string = string> = StringFilterFiel
     | { readonly startsWith: string }
   );
 
-/** The text tmux sends for a field it reports as a number, or as a timestamp. */
-type RawNumber = `${number}`;
+type NonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+
+/** The decimal text tmux sends for a field it reports as a number or timestamp. */
+type RawNumber =
+  | "0"
+  | (`${bigint}` & `${NonZeroDigit}${string}`)
+  | (`${bigint}` & `-${NonZeroDigit}${string}`);
 
 /** The text tmux sends for a flag: it writes these two and nothing else. */
 type RawFlag = "0" | "1";
@@ -80,31 +107,31 @@ export interface SessionWhere {
   readonly OR?: readonly SessionWhere[];
   readonly NOT?: readonly SessionWhere[];
   readonly active?: ScalarCriteria<boolean, RawFlag>;
-  readonly activeWindowIndex?: ScalarCriteria<number, RawNumber>;
+  readonly activeWindowIndex?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly activity?: ScalarCriteria<Date, RawNumber>;
   readonly activityFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly alert?: ScalarCriteria;
   readonly alerts?: ScalarCriteria;
-  readonly attached?: ScalarCriteria<number, RawNumber>;
+  readonly attached?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly attachedList?: ScalarCriteria;
   readonly bellFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly created?: ScalarCriteria<Date, RawNumber>;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
   readonly group?: ScalarCriteria;
-  readonly groupAttached?: ScalarCriteria<number, RawNumber>;
+  readonly groupAttached?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly groupAttachedList?: ScalarCriteria;
   readonly groupList?: ScalarCriteria;
   readonly groupManyAttached?: ScalarCriteria<boolean, RawFlag>;
-  readonly groupSize?: ScalarCriteria<number, RawNumber>;
+  readonly groupSize?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly grouped?: ScalarCriteria<boolean, RawFlag>;
-  readonly id?: ScalarCriteria;
+  readonly id?: ScalarCriteria<SessionIdInput, never>;
   readonly lastAttached?: ScalarCriteria<Date, RawNumber>;
-  readonly lastWindowIndex?: ScalarCriteria<number, RawNumber>;
+  readonly lastWindowIndex?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly manyAttached?: ScalarCriteria<boolean, RawFlag>;
   readonly marked?: ScalarCriteria<boolean, RawFlag>;
   readonly name?: ScalarCriteria;
   readonly path?: ScalarCriteria;
-  readonly sessionWindows?: ScalarCriteria<number, RawNumber>;
+  readonly sessionWindows?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly silenceFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly stack?: ScalarCriteria;
   readonly windows?: ManyRelation<WindowWhere>;
@@ -118,38 +145,38 @@ export interface WindowWhere {
   readonly OR?: readonly WindowWhere[];
   readonly NOT?: readonly WindowWhere[];
   readonly active?: ScalarCriteria<boolean, RawFlag>;
-  readonly activeClients?: ScalarCriteria<number, RawNumber>;
+  readonly activeClients?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly activeClientsList?: ScalarCriteria;
-  readonly activeSessions?: ScalarCriteria<number, RawNumber>;
+  readonly activeSessions?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly activeSessionsList?: ScalarCriteria;
   readonly activity?: ScalarCriteria<Date, RawNumber>;
   readonly activityFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly bellFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly bigger?: ScalarCriteria<boolean, RawFlag>;
-  readonly cellHeight?: ScalarCriteria<number, RawNumber>;
-  readonly cellWidth?: ScalarCriteria<number, RawNumber>;
+  readonly cellHeight?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly cellWidth?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly endFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly flags?: ScalarCriteria;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
-  readonly height?: ScalarCriteria<number, RawNumber>;
-  readonly id?: ScalarCriteria;
-  readonly index?: ScalarCriteria<number, RawNumber>;
+  readonly height?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly id?: ScalarCriteria<WindowIdInput, never>;
+  readonly index?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly lastFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly layout?: ScalarCriteria;
   readonly linked?: ScalarCriteria<boolean, RawFlag>;
   readonly linkedSessionsList?: ScalarCriteria;
   readonly markedFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly name?: ScalarCriteria;
-  readonly offsetX?: ScalarCriteria<number, RawNumber>;
-  readonly offsetY?: ScalarCriteria<number, RawNumber>;
+  readonly offsetX?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly offsetY?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly rawFlags?: ScalarCriteria;
   readonly silenceFlag?: ScalarCriteria<boolean, RawFlag>;
-  readonly stackIndex?: ScalarCriteria<number, RawNumber>;
+  readonly stackIndex?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly startFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly visibleLayout?: ScalarCriteria;
-  readonly width?: ScalarCriteria<number, RawNumber>;
-  readonly windowLinkedSessions?: ScalarCriteria<number, RawNumber>;
-  readonly windowPanes?: ScalarCriteria<number, RawNumber>;
+  readonly width?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly windowLinkedSessions?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly windowPanes?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly zoomedFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly session?: OneRelation<SessionWhere>;
   readonly linkedSessions?: ManyRelation<SessionWhere>;
@@ -163,14 +190,14 @@ export interface PaneWhere {
   readonly NOT?: readonly PaneWhere[];
   readonly active?: ScalarCriteria<boolean, RawFlag>;
   readonly alternateOn?: ScalarCriteria<boolean, RawFlag>;
-  readonly alternateSavedX?: ScalarCriteria<number, RawNumber>;
-  readonly alternateSavedY?: ScalarCriteria<number, RawNumber>;
+  readonly alternateSavedX?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly alternateSavedY?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly atBottom?: ScalarCriteria<boolean, RawFlag>;
   readonly atLeft?: ScalarCriteria<boolean, RawFlag>;
   readonly atRight?: ScalarCriteria<boolean, RawFlag>;
   readonly atTop?: ScalarCriteria<boolean, RawFlag>;
   readonly bg?: ScalarCriteria;
-  readonly bottom?: ScalarCriteria<number, RawNumber>;
+  readonly bottom?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly bracketPasteFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly currentCommand?: ScalarCriteria;
   readonly currentPath?: ScalarCriteria;
@@ -180,31 +207,31 @@ export interface PaneWhere {
   readonly cursorFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly cursorShape?: ScalarCriteria;
   readonly cursorVeryVisible?: ScalarCriteria<boolean, RawFlag>;
-  readonly cursorX?: ScalarCriteria<number, RawNumber>;
-  readonly cursorY?: ScalarCriteria<number, RawNumber>;
+  readonly cursorX?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly cursorY?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly dead?: ScalarCriteria<boolean, RawFlag>;
   readonly deadSignal?: ScalarCriteria;
-  readonly deadStatus?: ScalarCriteria<number, RawNumber>;
+  readonly deadStatus?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly deadTime?: ScalarCriteria<Date, RawNumber>;
   readonly fg?: ScalarCriteria;
   readonly flags?: ScalarCriteria;
   readonly floatingFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly format?: ScalarCriteria<boolean, RawFlag>;
-  readonly height?: ScalarCriteria<number, RawNumber>;
+  readonly height?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly historyAllBytes?: ScalarCriteria;
-  readonly historyBytes?: ScalarCriteria<number, RawNumber>;
-  readonly historyLimit?: ScalarCriteria<number, RawNumber>;
-  readonly historySize?: ScalarCriteria<number, RawNumber>;
-  readonly id?: ScalarCriteria;
-  readonly inMode?: ScalarCriteria<number, RawNumber>;
-  readonly index?: ScalarCriteria<number, RawNumber>;
+  readonly historyBytes?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly historyLimit?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly historySize?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly id?: ScalarCriteria<PaneIdInput, never>;
+  readonly inMode?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly index?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly inputOff?: ScalarCriteria<boolean, RawFlag>;
   readonly insertFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly keyMode?: ScalarCriteria;
   readonly keypadCursorFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly keypadFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly last?: ScalarCriteria<boolean, RawFlag>;
-  readonly left?: ScalarCriteria<number, RawNumber>;
+  readonly left?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly marked?: ScalarCriteria<boolean, RawFlag>;
   readonly markedSet?: ScalarCriteria<boolean, RawFlag>;
   readonly mode?: ScalarCriteria;
@@ -215,14 +242,14 @@ export interface PaneWhere {
   readonly mouseStandardFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly originFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly path?: ScalarCriteria;
-  readonly pbProgress?: ScalarCriteria<number, RawNumber>;
+  readonly pbProgress?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly pbState?: ScalarCriteria;
-  readonly pid?: ScalarCriteria<number, RawNumber>;
+  readonly pid?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly pipe?: ScalarCriteria<boolean, RawFlag>;
-  readonly pipePid?: ScalarCriteria<number, RawNumber>;
-  readonly right?: ScalarCriteria<number, RawNumber>;
-  readonly scrollRegionLower?: ScalarCriteria<number, RawNumber>;
-  readonly scrollRegionUpper?: ScalarCriteria<number, RawNumber>;
+  readonly pipePid?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly right?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly scrollRegionLower?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly scrollRegionUpper?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly searchString?: ScalarCriteria;
   readonly startCommand?: ScalarCriteria;
   readonly startPath?: ScalarCriteria;
@@ -230,14 +257,14 @@ export interface PaneWhere {
   readonly synchronizedOutputFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly tabs?: ScalarCriteria;
   readonly title?: ScalarCriteria;
-  readonly top?: ScalarCriteria<number, RawNumber>;
+  readonly top?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly tty?: ScalarCriteria;
   readonly unseenChanges?: ScalarCriteria<boolean, RawFlag>;
-  readonly width?: ScalarCriteria<number, RawNumber>;
+  readonly width?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly wrapFlag?: ScalarCriteria<boolean, RawFlag>;
-  readonly x?: ScalarCriteria<number, RawNumber>;
-  readonly y?: ScalarCriteria<number, RawNumber>;
-  readonly z?: ScalarCriteria<number, RawNumber>;
+  readonly x?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly y?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly z?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly zoomedFlag?: ScalarCriteria<boolean, RawFlag>;
   readonly window?: OneRelation<WindowWhere>;
   readonly session?: OneRelation<SessionWhere>;
@@ -248,30 +275,30 @@ export interface ClientWhere {
   readonly OR?: readonly ClientWhere[];
   readonly NOT?: readonly ClientWhere[];
   readonly activity?: ScalarCriteria<Date, RawNumber>;
-  readonly cellHeight?: ScalarCriteria<number, RawNumber>;
-  readonly cellWidth?: ScalarCriteria<number, RawNumber>;
+  readonly cellHeight?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly cellWidth?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly clientSession?: ScalarCriteria;
   readonly controlMode?: ScalarCriteria<boolean, RawFlag>;
   readonly created?: ScalarCriteria<Date, RawNumber>;
-  readonly discarded?: ScalarCriteria<number, RawNumber>;
+  readonly discarded?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly flags?: ScalarCriteria;
-  readonly height?: ScalarCriteria<number, RawNumber>;
+  readonly height?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly keyTable?: ScalarCriteria;
   readonly lastSession?: ScalarCriteria;
   readonly modeFormat?: ScalarCriteria;
   readonly name?: ScalarCriteria;
-  readonly pid?: ScalarCriteria<number, RawNumber>;
+  readonly pid?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly prefix?: ScalarCriteria<boolean, RawFlag>;
   readonly readonly?: ScalarCriteria<boolean, RawFlag>;
   readonly termfeatures?: ScalarCriteria;
   readonly termname?: ScalarCriteria;
   readonly termtype?: ScalarCriteria;
   readonly tty?: ScalarCriteria;
-  readonly uid?: ScalarCriteria<number, RawNumber>;
+  readonly uid?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly user?: ScalarCriteria;
   readonly utf8?: ScalarCriteria<boolean, RawFlag>;
-  readonly width?: ScalarCriteria<number, RawNumber>;
-  readonly written?: ScalarCriteria<number, RawNumber>;
+  readonly width?: ScalarCriteria<SafeInteger, RawNumber>;
+  readonly written?: ScalarCriteria<SafeInteger, RawNumber>;
   readonly session?: OneRelation<SessionWhere>;
   readonly window?: OneRelation<WindowWhere>;
   readonly pane?: OneRelation<PaneWhere>;
@@ -373,6 +400,17 @@ export interface Selection<Model> extends Iterable<Model> {
    * snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true);
    * ```
    */
+  filter<Narrowed extends Model>(
+    predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed,
+    thisArg?: unknown,
+  ): Selection<Narrowed>;
+  /**
+   * Keep the members an ordinary predicate accepts without changing their type.
+   *
+   * ```ts
+   * snapshot.panes.filter((entry) => entry.active === true);
+   * ```
+   */
   filter(
     predicate: (value: Model, index: number, values: readonly Model[]) => unknown,
     thisArg?: unknown,
@@ -464,6 +502,61 @@ export type WhereDocumentV1 =
   | { readonly model: "pane"; readonly version: 1; readonly where: PaneWhere }
   | { readonly model: "client"; readonly version: 1; readonly where: ClientWhere };
 
+/**
+ * Serialize a WHERE document as canonical JSON.
+ *
+ * Field names and values use tmux's stable wire spellings. The input is
+ * validated without invoking accessors or conversion hooks.
+ *
+ * @throws QueryValidationError when the document or its criteria are invalid.
+ *
+ * ```ts
+ * import { encodeWhereDocument } from "libtmux";
+ * const encoded = encodeWhereDocument({
+ *   model: "pane",
+ *   version: 1,
+ *   where: { title: { contains: "log" } },
+ * });
+ * ```
+ */
+export function encodeWhereDocument(document: WhereDocumentV1): string {
+  return encodeDocument(document);
+}
+
+/**
+ * Validate a WHERE document and restore camelCase criteria names.
+ *
+ * The returned document is canonical and deeply frozen.
+ *
+ * @throws QueryValidationError when the document or its criteria are invalid.
+ *
+ * ```ts
+ * import { decodeWhereDocument } from "libtmux/selection";
+ * const document = decodeWhereDocument(
+ *   JSON.parse('{"model":"pane","version":1,"where":{"pane_title":"logs"}}'),
+ * );
+ * if (document.model === "pane") snapshot.panes.where(document.where);
+ * ```
+ */
+export function decodeWhereDocument(input: unknown): WhereDocumentV1 {
+  return decodeDocument(input);
+}
+
+/**
+ * Convert the Python port's `name__contains` spelling to canonical criteria.
+ *
+ * Accepts one own data property on a plain object and never invokes accessors
+ * or conversion hooks. The returned document and its criteria are frozen.
+ *
+ * @throws QueryValidationError when the model is not `session` or `window`, or
+ * the input is not exactly one string-valued `name__contains` property.
+ *
+ * ```ts
+ * import { parseLegacyWhere } from "libtmux";
+ * const document = parseLegacyWhere("window", { name__contains: "log" });
+ * snapshot.windows.where(document.where);
+ * ```
+ */
 export function parseLegacyWhere<Model extends "session" | "window">(
   model: Model,
   input: unknown,

@@ -11,6 +11,7 @@ import type {
   WindowIdInput,
 } from "../../common.js";
 import { QueryValidationError } from "../../exc.js";
+import { snapshotPlainDataRecord } from "./data_snapshot.js";
 import type { GraphEntityRef } from "./model.js";
 
 type LogicalRefForKind<Kind extends TmuxIdKind> = Extract<LogicalRef, { readonly kind: Kind }>;
@@ -72,53 +73,22 @@ function readStrictDataRecord(
   expectedKeys: readonly string[],
   label: string,
 ): Readonly<Record<string, unknown>> {
-  if (typeof value !== "object" || value === null) {
-    return invalidReference(`${label} must be an object`);
-  }
+  const snapshot = snapshotPlainDataRecord(value, expectedKeys);
+  if (snapshot.ok) return snapshot.value;
 
-  let isArray: boolean;
-  let prototype: object | null;
-  let ownKeys: readonly PropertyKey[];
-  let descriptors: readonly (PropertyDescriptor | undefined)[];
-  let finalPrototype: object | null;
-  let finalOwnKeys: readonly PropertyKey[];
-  try {
-    isArray = Array.isArray(value);
-    prototype = Object.getPrototypeOf(value);
-    ownKeys = Reflect.ownKeys(value);
-    descriptors = expectedKeys.map((key) => Object.getOwnPropertyDescriptor(value, key));
-    finalPrototype = Object.getPrototypeOf(value);
-    finalOwnKeys = Reflect.ownKeys(value);
-  } catch (error) {
-    return invalidReference(`${label} could not be inspected`, error);
-  }
-
-  if (isArray) return invalidReference(`${label} must be an object`);
-  if (
-    prototype !== finalPrototype ||
-    (prototype !== Object.prototype && prototype !== null) ||
-    (finalPrototype !== Object.prototype && finalPrototype !== null)
-  ) {
-    return invalidReference(`${label} has an invalid prototype`);
-  }
-  if (
-    ownKeys.length !== expectedKeys.length ||
-    ownKeys.some((key) => typeof key !== "string" || !expectedKeys.includes(key)) ||
-    ownKeys.length !== finalOwnKeys.length ||
-    ownKeys.some((key) => !finalOwnKeys.includes(key))
-  ) {
-    return invalidReference(`${label} has invalid keys`);
-  }
-
-  const record: Record<string, unknown> = {};
-  for (const [index, key] of expectedKeys.entries()) {
-    const descriptor = descriptors[index];
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+  switch (snapshot.failure.reason) {
+    case "not-object":
+    case "array":
+      return invalidReference(`${label} must be an object`);
+    case "inspection":
+      return invalidReference(`${label} could not be inspected`, snapshot.failure.cause);
+    case "prototype":
+      return invalidReference(`${label} has an invalid prototype`);
+    case "keys":
+      return invalidReference(`${label} has invalid keys`);
+    case "property":
       return invalidReference(`${label} must contain enumerable data properties`);
-    }
-    record[key] = descriptor.value;
   }
-  return record;
 }
 
 function parseConnection(value: unknown): ConnectionAlias {

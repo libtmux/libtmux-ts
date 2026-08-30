@@ -1,29 +1,34 @@
-import { deadlineMs, READINESS_DEADLINE_MS, READINESS_POLL_INTERVAL_MS } from "./deadlines.js";
+import {
+  FIXTURE_BOOTSTRAP_DEADLINE_MS,
+  READINESS_DEADLINE_MS,
+  READINESS_POLL_INTERVAL_MS,
+  deadlineMs,
+} from "./deadlines.js";
 import { randomUUID } from "node:crypto";
 
 import { adaptRawResult } from "../operations/request.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
+import { flattenInvocation, tmuxCommand } from "../transport/invocation.js";
 import { TmuxTransportError, type RawCommandResult } from "../transport/types.js";
 import {
   assertControllerCurrent as assertPersistedControllerCurrent,
+  readDaemonIdentity,
+  resolveControllerIdentity,
+  type ControllerIdentity,
+  type ProcessIdentity,
+} from "./process_identity.js";
+import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
+import {
   beginFixtureLaunch,
   promoteFixtureLaunch,
-  readDaemonIdentity,
-  readFixtureRecord,
-  reapFixture,
-  reportSecondaryCleanupFailure,
   reserveFixture,
-  resolveControllerIdentity,
   rollbackFixtureLaunchNotStarted,
-  runWithCleanup,
-  type ControllerIdentity,
   type FixtureControllerRequest,
-  type FixtureRecord,
   type LaunchAttemptCapability,
-  type LaunchGeneration,
-  type ProcessIdentity,
   type ReservationCapability,
-} from "./run_root.js";
+} from "./fixture_launch.js";
+import { reapFixture } from "./reaper.js";
+import { readFixtureRecord, type FixtureRecord, type LaunchGeneration } from "./records.js";
 
 export interface TestServerRequestSnapshot {
   readonly args: readonly string[];
@@ -265,20 +270,23 @@ export class TestServer {
       shellQuote(entry.sessionName),
       shellQuote(paneCommand),
     ].join(" ");
-    const bootstrapArgv = Object.freeze([
-      controllerExecutable,
-      "-f",
-      "/dev/null",
-      "-S",
-      record.socketPath,
-      "start-server",
-      ";",
-      "if-shell",
-      "-F",
-      `#{==:#{${generation.name}},${generation.value}}`,
-      newSession,
-      `display-message -p ${shellQuote(mismatchFrame)}`,
-    ]);
+    const bootstrapGlobalArgs = Object.freeze(["-f", "/dev/null", "-S", record.socketPath]);
+    const bootstrapCommands = Object.freeze({
+      launch: tmuxCommand([
+        "if-shell",
+        "-F",
+        `#{==:#{${generation.name}},${generation.value}}`,
+        newSession,
+        `display-message -p ${shellQuote(mismatchFrame)}`,
+      ]),
+      start: tmuxCommand(["start-server"]),
+    });
+    const bootstrapArgs = flattenInvocation({
+      commands: [bootstrapCommands.start, bootstrapCommands.launch],
+      executable: controllerExecutable,
+      globalArgs: bootstrapGlobalArgs,
+    });
+    const bootstrapArgv = Object.freeze([controllerExecutable, ...bootstrapArgs]);
     const bootstrapEnvironment = Object.freeze({
       ...entry.environment,
       [generation.name]: generation.value,
@@ -288,7 +296,7 @@ export class TestServer {
     const executeController = async (
       args: readonly string[],
       purpose: "ordinary" | "readiness",
-      timeoutMs = 3_000,
+      timeoutMs = deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
     ): Promise<RawCommandResult> => {
       const request = observeRequest(entry.requestObserver, {
         args: ["-N", "-S", record.socketPath, ...args],
@@ -298,9 +306,10 @@ export class TestServer {
       });
       await assertPersistedControllerCurrent(record.controller);
       return transport.execute({
-        args: request.args,
+        commands: [tmuxCommand(args)],
         environment: request.environment,
         executable: request.executable,
+        globalArgs: ["-N", "-S", record.socketPath],
         timeoutMs,
       });
     };
@@ -321,7 +330,7 @@ export class TestServer {
       attempt = await beginFixtureLaunch(reserved.capability, { bootstrapArgv, generation });
       record = await readFixtureRecord(reserved.reservationPath);
       const bootstrapRequest = observeRequest(entry.requestObserver, {
-        args: bootstrapArgv.slice(1),
+        args: bootstrapArgs,
         environment: bootstrapEnvironment,
         executable: launchExecutable,
         purpose: "bootstrap",
@@ -330,10 +339,11 @@ export class TestServer {
       let started: RawCommandResult;
       try {
         started = await transport.execute({
-          args: bootstrapRequest.args,
+          commands: [bootstrapCommands.start, bootstrapCommands.launch],
           environment: bootstrapRequest.environment,
           executable: bootstrapRequest.executable,
-          timeoutMs: 3_000,
+          globalArgs: bootstrapGlobalArgs,
+          timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
         });
       } catch (error) {
         if (error instanceof TmuxTransportError && error.delivery === "not_started") {
@@ -466,10 +476,11 @@ export class TestServer {
     });
     await this.assertControllerCurrent();
     return this.#transport.execute({
-      args: request.args,
+      commands: [tmuxCommand(args)],
       environment: request.environment,
       executable: request.executable,
-      timeoutMs: 3_000,
+      globalArgs: ["-N", "-S", this.socketPath],
+      timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
     });
   }
 

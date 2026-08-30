@@ -22,10 +22,9 @@ socket of its own. Requires tmux 3.2a or newer.
 
 ## What it shows
 
-One control connection carries both halves. Commands travel over it instead of
-spawning a `tmux` process each, and the notifications that say what happened
-arrive on the same connection — so reacting in a loop costs nothing per
-iteration.
+One control observer carries notifications while commands use the server's
+engine. Keeping that observer open makes event-driven waits persistent without
+turning command output into a control-mode protocol.
 
 Waiting for a marker is the part worth copying. A pane echoes what is typed
 into it, so waiting for text that also appears in the command you sent matches

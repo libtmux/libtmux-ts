@@ -1,13 +1,12 @@
 import { z } from "zod";
 
-/**
- * A tmuxp-shaped workspace description.
- *
- * The field names follow tmuxp's snake_case config vocabulary rather than this
- * package's camelCase API, because the config is data a user already has on
- * disk. Renaming their keys to suit our API would break the very compatibility
- * the format is here to provide.
- */
+import { OWNERSHIP_OPTION } from "./ownership.js";
+import { isTmuxName } from "libtmux";
+
+// The library refuses a name tmux would not store unchanged. Asking it here
+// names the offending field instead of surfacing a TypeError from the call.
+const NAME_MESSAGE = 'must not be empty or hold ":", ".", a control character, or DEL';
+
 /**
  * Every object here is strict, and that is the point.
  *
@@ -25,19 +24,38 @@ const paneSchema = z.union([
   }),
 ]);
 
+const optionValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+
+const workspaceOptionsSchema = z
+  .record(z.string(), optionValueSchema)
+  .refine((options) => !Object.hasOwn(options, OWNERSHIP_OPTION), {
+    message: `${OWNERSHIP_OPTION} is reserved for workspace ownership`,
+  });
+
 const windowSchema = z.strictObject({
   focus: z.boolean().optional(),
   layout: z.string().optional(),
-  options: z.record(z.string(), z.string()).optional(),
-  panes: z.array(paneSchema).default([]),
+  options: z.record(z.string(), optionValueSchema).optional(),
+  panes: z
+    .array(paneSchema)
+    .default([])
+    .transform((panes) => (panes.length === 0 ? panes.concat({}) : panes)),
   shell_command_before: z.union([z.string(), z.array(z.string())]).optional(),
   start_directory: z.string().optional(),
-  window_name: z.string().optional(),
+  window_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }).optional(),
 });
 
+/**
+ * A tmuxp-shaped workspace description.
+ *
+ * The field names follow tmuxp's snake_case config vocabulary rather than this
+ * package's camelCase API, because the config is data a user already has on
+ * disk. Renaming their keys to suit our API would break the very compatibility
+ * the format is here to provide.
+ */
 export const workspaceSchema = z.strictObject({
-  options: z.record(z.string(), z.string()).optional(),
-  session_name: z.string().min(1),
+  options: workspaceOptionsSchema.optional(),
+  session_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }),
   start_directory: z.string().optional(),
   // A session always has at least one window, so a workspace with none does not
   // describe a reachable state: applying it would create a session and then try
@@ -48,6 +66,7 @@ export const workspaceSchema = z.strictObject({
 export type Workspace = z.infer<typeof workspaceSchema>;
 export type WorkspaceWindow = z.infer<typeof windowSchema>;
 export type WorkspacePane = z.infer<typeof paneSchema>;
+export type WorkspaceOptionValue = z.infer<typeof optionValueSchema>;
 
 /** Validate a parsed workspace, rejecting anything the schema does not allow. */
 export function parseWorkspace(value: unknown): Workspace {
@@ -104,4 +123,28 @@ export function paneStartDirectory(
 ): string | undefined {
   if (typeof pane !== "string" && pane.start_directory !== undefined) return pane.start_directory;
   return window.start_directory ?? workspace.start_directory;
+}
+
+/** A window's directory, inherited from its workspace when it has none. */
+export function windowStartDirectory(
+  window: WorkspaceWindow,
+  workspace: Workspace,
+): string | undefined {
+  return window.start_directory ?? workspace.start_directory;
+}
+
+/** The directory tmux needs when it creates the session's first pane. */
+export function initialPaneStartDirectory(workspace: Workspace): string | undefined {
+  const window = workspace.windows[0];
+  if (window === undefined) return workspace.start_directory;
+  const pane = window.panes[0];
+  return pane === undefined
+    ? windowStartDirectory(window, workspace)
+    : paneStartDirectory(pane, window, workspace);
+}
+
+/** Convert a YAML scalar to the string tmux accepts for an option value. */
+export function optionValue(value: WorkspaceOptionValue): string {
+  if (typeof value === "boolean") return value ? "on" : "off";
+  return String(value);
 }

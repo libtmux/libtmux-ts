@@ -2,19 +2,17 @@ import {
   beginFixtureLaunch,
   promoteFixtureLaunch,
   rollbackFixtureLaunchNotStarted,
-  type ControllerIdentity,
-  type DaemonIdentity,
   type FixtureRecord,
   type LaunchAttemptCapability,
   type LaunchGeneration,
-  type ProcessIdentity,
   type ReservationCapability,
   type SocketIdentity,
-} from "../../src/_internal/test/run_root.js";
-import type {
-  TestServerOptions,
-  TestServerRequestSnapshot,
-} from "../../src/_internal/test/test_server.js";
+  type ControllerIdentity,
+  type DaemonIdentity,
+  type ProcessIdentity,
+  type TestServerOptions,
+  type TestServerRequestSnapshot,
+} from "../../src/_internal/test/testkit.js";
 
 declare const capability: ReservationCapability;
 declare const attempt: LaunchAttemptCapability;

@@ -9,22 +9,39 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { isFailure, requirePane, requireSession, type ToolContext } from "../context.js";
-import { offers, READ_ONLY } from "../register.js";
-import { ok } from "../results.js";
+import type { CallerIdentity } from "../caller.js";
+import type { ToolContext } from "../context.js";
+import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
+import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
+import { boundText, ok, renderBoundedText } from "../results.js";
+import { inlineRequestText, paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
+import {
+  isFailure,
+  paneEntities,
+  panePlacements,
+  requirePane,
+  requireSession,
+  windowEntities,
+  windowPlacements,
+} from "../target_resolution.js";
 import {
   clientView,
   clientViewSchema,
+  limitViews,
   paneLine,
   paneView,
   paneViewSchema,
+  renderViews,
   sessionLine,
   sessionView,
   sessionViewSchema,
   windowLine,
   windowView,
   windowViewSchema,
+  type ClientView,
 } from "../views.js";
+
+const PROJECTED_RESULT_BYTES = MAX_RESULT_BYTES - 1_024;
 
 /**
  * A path, safe to put in a result.
@@ -43,6 +60,84 @@ function printable(value: string | null | undefined): string | null {
       code < 0x20 || code === 0x7f ? `\\x${code.toString(16).padStart(2, "0")}` : character;
   }
   return escaped;
+}
+
+interface WhoamiProjection extends Readonly<Record<string, unknown>> {
+  readonly attendedPaneIds: readonly string[];
+  readonly callerPaneId: string | null;
+  readonly callerPaneIsOnThisServer: boolean;
+  readonly clients: readonly ClientView[];
+  readonly complete: boolean;
+  readonly omittedAttendedPaneIds: number;
+  readonly omittedClients: number;
+  readonly serverPid: string | null;
+}
+
+function whoamiLines(value: WhoamiProjection): readonly string[] {
+  const watched =
+    value.attendedPaneIds.length === 0
+      ? value.omittedAttendedPaneIds === 0
+        ? "Nobody is attached; no pane is being watched."
+        : `${String(value.omittedAttendedPaneIds)} watched pane ids omitted by the result ceiling.`
+      : `Watched by a person: ${value.attendedPaneIds.join(", ")}${
+          value.omittedAttendedPaneIds === 0
+            ? ""
+            : `, and ${String(value.omittedAttendedPaneIds)} more`
+        }`;
+  return [
+    value.callerPaneId === null
+      ? "This server does not run inside a tmux pane, so it has no pane of its own."
+      : value.callerPaneIsOnThisServer
+        ? `Running inside pane ${value.callerPaneId} on this server — do not write to it.`
+        : `Running inside pane ${value.callerPaneId}, but on a different tmux server than this one.`,
+    watched,
+    value.omittedClients === 0
+      ? ""
+      : `${String(value.omittedClients)} attached clients omitted by the result ceiling.`,
+  ].filter((line) => line !== "");
+}
+
+function largestFittingPrefix(length: number, fits: (count: number) => boolean): number {
+  let low = 0;
+  let high = length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+function boundedWhoami(
+  identity: CallerIdentity,
+  callerPaneId: string | null,
+  clients: readonly ClientView[],
+): WhoamiProjection {
+  const build = (attendedCount: number, clientCount: number): WhoamiProjection => {
+    const omittedAttendedPaneIds = identity.attendedPaneIds.length - attendedCount;
+    const omittedClients = clients.length - clientCount;
+    return {
+      attendedPaneIds: identity.attendedPaneIds.slice(0, attendedCount),
+      callerPaneId,
+      callerPaneIsOnThisServer: identity.callerPaneIsOnThisServer,
+      clients: clients.slice(0, clientCount),
+      complete: omittedAttendedPaneIds === 0 && omittedClients === 0,
+      omittedAttendedPaneIds,
+      omittedClients,
+      serverPid: identity.serverPid ?? null,
+    };
+  };
+  const fits = (value: WhoamiProjection): boolean =>
+    Buffer.byteLength(JSON.stringify(value), "utf8") <= PROJECTED_RESULT_BYTES &&
+    Buffer.byteLength(whoamiLines(value).join("\n"), "utf8") <= PROJECTED_RESULT_BYTES;
+  // Pane ids carry the safety decision, so retain them before client metadata.
+  const attendedCount = largestFittingPrefix(identity.attendedPaneIds.length, (count) =>
+    fits(build(count, 0)),
+  );
+  const clientCount = largestFittingPrefix(clients.length, (count) =>
+    fits(build(attendedCount, count)),
+  );
+  return build(attendedCount, clientCount);
 }
 
 /**
@@ -123,7 +218,11 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         "anyone is attached. Metadata only — for what a pane shows, use capture_pane " +
         "or search_panes.",
       inputSchema: {},
-      outputSchema: { sessions: z.array(sessionViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        sessions: z.array(sessionViewSchema),
+      },
       title: "List sessions",
     },
     async () => {
@@ -133,11 +232,20 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         .map((session) =>
           sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
         );
+      const bounded = limitViews(
+        sessions,
+        effectiveResultLines(context.policy, undefined),
+        sessionLine,
+      );
       return ok(
-        { sessions },
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          sessions: bounded.views,
+        },
         sessions.length === 0
           ? "No sessions on this server. Create one with new_session."
-          : sessions.map(sessionLine).join("\n"),
+          : renderViews(bounded, "sessions", "reduce the server topology before listing again"),
       );
     },
   );
@@ -148,9 +256,15 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       annotations: READ_ONLY,
       description: "Windows on this server, optionally restricted to one session by id or name.",
       inputSchema: {
-        session: z.string().optional().describe("Session id ($1) or name. Omit for all sessions."),
+        session: requestText("session")
+          .optional()
+          .describe("Session id ($1) or name. Omit for all sessions."),
       },
-      outputSchema: { windows: z.array(windowViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        windows: z.array(windowViewSchema),
+      },
       title: "List windows",
     },
     async ({ session }) => {
@@ -161,12 +275,23 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       // here while requireSession picked one everywhere else.
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
-      const windows = (
-        target === undefined ? all : all.filter((window) => window.sessionId === target.id)
-      ).map(windowView);
+      const windows = windowEntities(
+        target === undefined ? all : all.filter((window) => window.format.session_id === target.id),
+      ).map((window) => windowView(window, windowPlacements(snapshot, window.id)));
+      const bounded = limitViews(
+        windows,
+        effectiveResultLines(context.policy, undefined),
+        windowLine,
+      );
       return ok(
-        { windows },
-        windows.length === 0 ? "No windows matched." : windows.map(windowLine).join("\n"),
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          windows: bounded.views,
+        },
+        windows.length === 0
+          ? "No windows matched."
+          : renderViews(bounded, "windows", "filter by session before listing again"),
       );
     },
   );
@@ -180,10 +305,14 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         "Marks the pane this server runs in (isCallerPane) and panes a person is " +
         "watching (isAttended). Metadata only — search_panes reads their contents.",
       inputSchema: {
-        session: z.string().optional().describe("Session id ($1) or name."),
-        window: z.string().optional().describe("Window id (@1)."),
+        session: requestText("session").optional().describe("Session id ($1) or name."),
+        window: windowIdSchema.optional(),
       },
-      outputSchema: { panes: z.array(paneViewSchema) },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int(),
+        panes: z.array(paneViewSchema),
+      },
       title: "List panes",
     },
     async ({ session, window }) => {
@@ -191,17 +320,25 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
-      const panes = snapshot.panes
-        .toArray()
-        .filter(
-          (pane) =>
-            (target === undefined || pane.sessionId === target.id) &&
-            (window === undefined || pane.windowId === window),
-        )
-        .map((pane) => paneView(pane, identity));
+      const panes = paneEntities(
+        snapshot.panes
+          .toArray()
+          .filter(
+            (pane) =>
+              (target === undefined || pane.format.session_id === target.id) &&
+              (window === undefined || pane.format.window_id === window),
+          ),
+      ).map((pane) => paneView(pane, identity, panePlacements(snapshot, pane.id)));
+      const bounded = limitViews(panes, effectiveResultLines(context.policy, undefined), paneLine);
       return ok(
-        { panes },
-        panes.length === 0 ? "No panes matched." : panes.map(paneLine).join("\n"),
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          panes: bounded.views,
+        },
+        panes.length === 0
+          ? "No panes matched."
+          : renderViews(bounded, "panes", "filter by session or window before listing again"),
       );
     },
   );
@@ -213,7 +350,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       description:
         "One pane's metadata: what it runs, where, how big, and whether it is yours " +
         "or watched. Does not read its contents — capture_pane does that.",
-      inputSchema: { paneId: z.string().describe("Pane id, e.g. %1.") },
+      inputSchema: { paneId: paneIdSchema },
       outputSchema: { pane: paneViewSchema },
       title: "Get pane",
     },
@@ -222,7 +359,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
       const identity = await context.identity(snapshot);
-      const view = paneView(pane, identity);
+      const view = paneView(pane, identity, panePlacements(snapshot, pane.id));
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -238,10 +375,13 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
         "mistake tmux cannot undo.",
       inputSchema: {},
       outputSchema: {
-        attendedPaneIds: z.array(z.string()),
-        callerPaneId: z.string().nullable(),
+        attendedPaneIds: z.array(paneIdSchema),
+        callerPaneId: paneIdSchema.nullable(),
         callerPaneIsOnThisServer: z.boolean(),
         clients: z.array(clientViewSchema),
+        complete: z.boolean(),
+        omittedAttendedPaneIds: z.number().int().nonnegative(),
+        omittedClients: z.number().int().nonnegative(),
         serverPid: z.string().nullable(),
       },
       title: "Who and where am I",
@@ -250,24 +390,13 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
       const clients = snapshot.clients.toArray().map(clientView);
-      const structured = {
-        attendedPaneIds: identity.attendedPaneIds,
-        callerPaneId: identity.callerPaneId ?? null,
-        callerPaneIsOnThisServer: identity.callerPaneIsOnThisServer,
+      const callerPaneId = paneIdSchema.safeParse(identity.callerPaneId);
+      const structured = boundedWhoami(
+        identity,
+        callerPaneId.success ? callerPaneId.data : null,
         clients,
-        serverPid: identity.serverPid ?? null,
-      };
-      const lines = [
-        identity.callerPaneId === undefined
-          ? "This server does not run inside a tmux pane, so it has no pane of its own."
-          : identity.callerPaneIsOnThisServer
-            ? `Running inside pane ${identity.callerPaneId} on this server — do not write to it.`
-            : `Running inside pane ${identity.callerPaneId}, but on a different tmux server than this one.`,
-        identity.attendedPaneIds.length === 0
-          ? "Nobody is attached; no pane is being watched."
-          : `Watched by a person: ${identity.attendedPaneIds.join(", ")}`,
-      ];
-      return ok(structured, lines.join("\n"));
+      );
+      return ok(structured, whoamiLines(structured).join("\n"));
     },
   );
 
@@ -304,12 +433,12 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           .catch(() => ""),
       ]);
       const structured = {
-        panes: snapshot.panes.count(),
+        panes: paneEntities(snapshot.panes.toArray()).length,
         pid: identity?.pid ?? null,
         sessions: snapshot.sessions.count(),
         socketPath: printable(resolvedSocket === "" ? context.tmux.socketPath : resolvedSocket),
         version: version.raw,
-        windows: snapshot.windows.count(),
+        windows: windowEntities(snapshot.windows.toArray()).length,
       };
       return ok(
         structured,
@@ -319,44 +448,89 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
     },
   );
 
-  mcp.registerTool(
-    "display_message",
-    {
-      annotations: READ_ONLY,
-      description:
-        "Resolve a tmux format string against a target, e.g. '#{pane_current_command}'. " +
-        "The escape hatch for any field these tools do not project.",
-      inputSchema: {
-        format: z.string().describe("A tmux format, e.g. '#{pane_pid}'."),
-        target: z.string().optional().describe("Pane id to resolve against."),
+  if (offers(context.policy, "mutating")) {
+    mcp.registerTool(
+      "display_message",
+      {
+        annotations: OPEN_WORLD,
+        description:
+          "Resolve a tmux format string against a target, e.g. '#{pane_current_command}'. " +
+          "The escape hatch for any field these tools do not project.",
+        inputSchema: {
+          format: inlineRequestText("format").describe("A tmux format, e.g. '#{pane_pid}'."),
+          target: paneIdSchema.optional().describe("Pane id to resolve against."),
+        },
+        outputSchema: {
+          complete: z.boolean(),
+          droppedLines: z.number().int(),
+          omittedBytes: z.number().int(),
+          returnedBytes: z.number().int(),
+          value: z.string(),
+        },
+        title: "Resolve a tmux format",
       },
-      outputSchema: { value: z.string() },
-      title: "Resolve a tmux format",
-    },
-    async ({ format, target }) => {
-      const snapshot = await context.snapshot();
-      if (target !== undefined) {
-        const pane = requirePane(snapshot, target);
-        if (isFailure(pane)) return pane;
-        const lines = await pane.displayMessage(format);
+      async ({ format, target }) => {
+        const snapshot = await context.snapshot();
+        if (target !== undefined) {
+          const pane = requirePane(snapshot, target);
+          if (isFailure(pane)) return pane;
+          const lines = await pane.displayMessage(format);
+          const value = lines.join("\n");
+          // displayMessage takes a format, not flags, so the enumeration goes
+          // through the command with the same pane as its target.
+          const unknown = await unknownFields(
+            () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
+            formatVariables(format),
+            value,
+          );
+          return boundedDisplay(context, value, unknown);
+        }
+        const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
         const value = lines.join("\n");
-        // displayMessage takes a format, not flags, so the enumeration goes
-        // through the command with the same pane as its target.
         const unknown = await unknownFields(
-          () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
+          () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
           formatVariables(format),
           value,
         );
-        return ok({ value }, value + emptyNote(unknown));
-      }
-      const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
-      const value = lines.join("\n");
-      const unknown = await unknownFields(
-        () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
-        formatVariables(format),
-        value,
-      );
-      return ok({ value }, value + emptyNote(unknown));
+        return boundedDisplay(context, value, unknown);
+      },
+    );
+  }
+}
+
+function boundedDisplay(
+  context: ToolContext,
+  value: string,
+  unknown: readonly string[],
+): ReturnType<typeof ok> {
+  const lineLimit = effectiveResultLines(context.policy, undefined);
+  const diagnostic = emptyNote(unknown).trimStart();
+  const diagnosticLines = diagnostic === "" ? [] : diagnostic.split("\n");
+  const diagnosticBounded = boundText(diagnosticLines, lineLimit, MAX_RESULT_BYTES);
+  const valueBounded = boundText(
+    value === "" ? [] : value.split("\n"),
+    Math.max(0, lineLimit - diagnosticLines.length),
+    Math.max(0, MAX_RESULT_BYTES - diagnosticBounded.returnedBytes),
+  );
+  const recovery = "use a narrower format or resolve its fields separately";
+  const complete =
+    valueBounded.droppedLines === 0 &&
+    valueBounded.omittedBytes === 0 &&
+    diagnosticBounded.droppedLines === 0 &&
+    diagnosticBounded.omittedBytes === 0;
+  return ok(
+    {
+      complete,
+      droppedLines: valueBounded.droppedLines + diagnosticBounded.droppedLines,
+      omittedBytes: valueBounded.omittedBytes + diagnosticBounded.omittedBytes,
+      returnedBytes: valueBounded.returnedBytes + diagnosticBounded.returnedBytes,
+      value: valueBounded.text,
     },
+    [
+      renderBoundedText(valueBounded, recovery),
+      renderBoundedText(diagnosticBounded, "use fewer format fields"),
+    ]
+      .filter((part) => part !== "")
+      .join("\n\n"),
   );
 }

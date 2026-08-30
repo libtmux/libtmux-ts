@@ -16,6 +16,7 @@ import {
   parseJsonc,
   parseServerTables,
   PUBLISHED_PACKAGE,
+  preflight,
   readServer,
   removeServerTable,
   renderServerTable,
@@ -25,9 +26,9 @@ import {
   writeServer,
   xdgConfigHome,
   type CliInfo,
-} from "../../scripts/mcp_swap.js";
+} from "../../../../scripts/mcp_swap.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 
@@ -121,6 +122,28 @@ describe("source specs", () => {
     }
     // Anything else is somebody else's entry, and saying so is the point.
     expect(classifySpec({ args: [], command: "some-other-server", env: {} })).toBe("unknown");
+  });
+});
+
+describe("server preflight", () => {
+  test("accepts one complete initialize reply", async () => {
+    const source = `
+      const request = JSON.parse((await Bun.stdin.text()).trim());
+      console.log(JSON.stringify({ id: request.id, jsonrpc: "2.0", result: { serverInfo: {} } }));
+    `;
+
+    expect(
+      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, 1_000),
+    ).toBeUndefined();
+  });
+
+  test("bounds a server that never replies", async () => {
+    expect(
+      await preflight(
+        { args: ["-e", "await Bun.sleep(60_000)"], command: process.execPath, env: {} },
+        20,
+      ),
+    ).toBe("initialize exceeded 20ms");
   });
 });
 

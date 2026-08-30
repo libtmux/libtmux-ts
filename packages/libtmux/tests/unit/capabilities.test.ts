@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException } from "../../src/exc.js";
+import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   deriveTmuxCapabilities,
@@ -12,6 +12,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { singleCommandTransport } from "../support/transport_double.js";
 
 const encoder = new TextEncoder();
@@ -26,11 +27,11 @@ function epoch(value: number): DaemonEpoch {
 
 function resultFor(request: CommandRequest, version: string): RawCommandResult {
   return {
-    cmd: Object.freeze([request.executable, ...request.args]),
+    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
     returncode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\n`),
+    stdout: encoder.encode(`${version}\t101\t202\n`),
   };
 }
 
@@ -49,7 +50,11 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 
 describe("tmux capabilities", () => {
   test("marks the break-pane quirk on 3.7 exactly, not on the releases that fixed it", () => {
-    const base = { connectionAlias: alias("daemon-a"), daemonEpoch: epoch(1) };
+    const base = {
+      connectionAlias: alias("daemon-a"),
+      daemon: { pid: "101", startTime: "202" },
+      daemonEpoch: epoch(1),
+    };
     const v37 = deriveTmuxCapabilities({ ...base, rawVersion: "3.7" });
     const v37a = deriveTmuxCapabilities({ ...base, rawVersion: "3.7a" });
     const v37b = deriveTmuxCapabilities({ ...base, rawVersion: "3.7b" });
@@ -61,25 +66,36 @@ describe("tmux capabilities", () => {
     expect(Object.isFrozen(v37.quirks)).toBe(true);
   });
 
-  test("fingerprints version, connection alias, and daemon epoch", () => {
+  test("fingerprints version, identity, connection alias, and daemon epoch", () => {
+    const daemon = { pid: "101", startTime: "202" };
     const original = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-a"),
+      daemon,
       daemonEpoch: epoch(1),
       rawVersion: "3.7b",
     });
     const changedVersion = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-a"),
+      daemon,
       daemonEpoch: epoch(1),
       rawVersion: "3.7a",
     });
     const changedAlias = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-b"),
+      daemon,
       daemonEpoch: epoch(1),
       rawVersion: "3.7b",
     });
     const changedEpoch = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-a"),
+      daemon,
       daemonEpoch: epoch(2),
+      rawVersion: "3.7b",
+    });
+    const changedDaemon = deriveTmuxCapabilities({
+      connectionAlias: alias("daemon-a"),
+      daemon: { pid: "303", startTime: "404" },
+      daemonEpoch: epoch(1),
       rawVersion: "3.7b",
     });
 
@@ -88,12 +104,14 @@ describe("tmux capabilities", () => {
         original.fingerprint,
         changedVersion.fingerprint,
         changedAlias.fingerprint,
+        changedDaemon.fingerprint,
         changedEpoch.fingerprint,
       ]).size,
-    ).toBe(4);
+    ).toBe(5);
     expect(
       deriveTmuxCapabilities({
         connectionAlias: alias("daemon-a"),
+        daemon,
         daemonEpoch: epoch(1),
         rawVersion: "3.7b",
       }).fingerprint,
@@ -123,14 +141,15 @@ describe("tmux capabilities", () => {
     const second = await binding.bind();
 
     expect(first).toBe(second);
+    expect(first.daemon).toEqual({ pid: "101", startTime: "202" });
     expect(first.rawVersion).toBe("3.6a");
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.args).toEqual([
+    expect(flattenInvocation(requests[0]!)).toEqual([
       "-N",
       "-S/tmp/capability.sock",
       "display-message",
       "-p",
-      "#{version}",
+      "#{version}\t#{pid}\t#{start_time}",
     ]);
 
     currentEpoch = epoch(10);
@@ -183,6 +202,77 @@ describe("tmux capabilities", () => {
     expect(thirdSnapshot).not.toBe(firstSnapshot);
   });
 
+  test("keeps a shared probe alive for an uncancelled waiter", async () => {
+    const entered = deferred();
+    const release = deferred();
+    let request: CommandRequest | undefined;
+    const transport: CommandTransport = singleCommandTransport(async (current) => {
+      request = current;
+      entered.resolve();
+      await release.promise;
+      return resultFor(current, "3.7b");
+    });
+    const binding = new LazyCapabilityBinding({
+      connection: new TmuxConnection({ executable: "/usr/bin/tmux", socketName: "shared-probe" }),
+      connectionAlias: alias("shared-probe"),
+      getDaemonEpoch: () => epoch(30),
+      transport,
+    });
+    const controller = new AbortController();
+    const cancelled = binding.bind(controller.signal);
+    const waiting = binding.bind();
+
+    await entered.promise;
+    controller.abort();
+    release.resolve();
+    const outcomes = await Promise.allSettled([cancelled, waiting]);
+
+    expect(outcomes.map(({ status }) => status)).toEqual(["rejected", "fulfilled"]);
+    expect(request?.signal?.aborted).toBe(false);
+  });
+
+  test("joins the capability request after its last waiter cancels", async () => {
+    const entered = deferred();
+    const release = deferred();
+    const aborted = deferred();
+    let request: CommandRequest | undefined;
+    const transport: CommandTransport = singleCommandTransport(async (current) => {
+      request = current;
+      entered.resolve();
+      current.signal?.addEventListener("abort", aborted.resolve, { once: true });
+      await release.promise;
+      throw new TmuxTransportError("command cancelled", {
+        delivery: "indeterminate",
+        kind: "cancelled",
+      });
+    });
+    const binding = new LazyCapabilityBinding({
+      connection: new TmuxConnection({ executable: "/usr/bin/tmux", socketName: "last-waiter" }),
+      connectionAlias: alias("last-waiter"),
+      getDaemonEpoch: () => epoch(31),
+      transport,
+    });
+    const controller = new AbortController();
+    let outcome: unknown = "pending";
+    const pending = binding.bind(controller.signal).catch((error: unknown) => {
+      outcome = error;
+      throw error;
+    });
+
+    try {
+      await entered.promise;
+      controller.abort();
+      expect(request?.signal?.aborted).toBe(true);
+      await aborted.promise;
+      expect(outcome).toBe("pending");
+      release.resolve();
+      await expect(pending).rejects.toMatchObject({ kind: "cancelled" });
+    } finally {
+      release.resolve();
+      await pending.catch(() => undefined);
+    }
+  });
+
   test("rejects an epoch change during the daemon probe without caching it", async () => {
     let currentEpoch = epoch(4);
     let calls = 0;
@@ -204,7 +294,7 @@ describe("tmux capabilities", () => {
     expect(calls).toBe(2);
   });
 
-  test("maps malformed, ambiguous, and failed connected-daemon version replies", async () => {
+  test("maps malformed, ambiguous, and failed connected-daemon capability replies", async () => {
     const replies = [
       {
         diagnostic: "tmux version probe returned no version",
@@ -222,7 +312,19 @@ describe("tmux capabilities", () => {
         diagnostic: "invalid tmux version",
         returncode: 0,
         stderr: "",
-        stdout: "#{version}\n",
+        stdout: "#{version}\t101\t202\n",
+      },
+      {
+        diagnostic: "tmux capability probe returned an invalid daemon identity",
+        returncode: 0,
+        stderr: "",
+        stdout: "3.7b\t101\n",
+      },
+      {
+        diagnostic: "tmux capability probe returned an invalid daemon identity",
+        returncode: 0,
+        stderr: "",
+        stdout: "3.7b\tone\t202\n",
       },
       {
         diagnostic: "cannot reach tmux: no server running",
@@ -237,7 +339,7 @@ describe("tmux capabilities", () => {
       const transport: CommandTransport = singleCommandTransport(async (request) => {
         requests.push(request);
         return {
-          cmd: Object.freeze([request.executable, ...request.args]),
+          cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
           returncode: reply.returncode,
           signal: null,
           stderr: encoder.encode(reply.stderr),
@@ -259,7 +361,12 @@ describe("tmux capabilities", () => {
         probeError = error;
       }
       expect(requests).toHaveLength(1);
-      expect(requests[0]?.args).toEqual(["-N", "display-message", "-p", "#{version}"]);
+      expect(flattenInvocation(requests[0]!)).toEqual([
+        "-N",
+        "display-message",
+        "-p",
+        "#{version}\t#{pid}\t#{start_time}",
+      ]);
       expect(probeError).toBeInstanceOf(LibTmuxException);
       expect((probeError as Error).message).toContain(reply.diagnostic);
     }

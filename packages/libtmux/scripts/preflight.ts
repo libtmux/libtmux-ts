@@ -1,4 +1,4 @@
-import { resolveNode22 } from "../src/_internal/test/node22.js";
+import { resolveNode22 } from "../src/_internal/test/testkit.js";
 
 /**
  * What a suite needs from the machine, checked once and reported once.

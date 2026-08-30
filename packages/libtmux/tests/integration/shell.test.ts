@@ -7,13 +7,14 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
+import { safeInteger } from "../../src/common.js";
 import { TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 import { Session } from "../../src/session.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -128,7 +129,9 @@ describe("shell execution and pane movement", () => {
         TMUX_PANE: pane.id,
       });
 
-      expect(session.id).toBe(pane.sessionId);
+      const paneSession = pane.session;
+      if (paneSession === undefined) throw new Error("expected the pane to resolve its session");
+      expect(session.id).toBe(paneSession.id);
       expect(session.name).toBe(fixture.sessionName);
     });
   }, 40_000);
@@ -139,10 +142,10 @@ describe("shell execution and pane movement", () => {
       const pane = (await server.snapshot()).panes.one();
 
       await pane.enterCopyMode();
-      expect((await pane.refreshed()).inMode).toBe(1);
+      expect((await pane.refreshed()).inMode).toBe(safeInteger(1));
 
       await pane.exitCopyMode();
-      expect((await pane.refreshed()).inMode).toBe(0);
+      expect((await pane.refreshed()).inMode).toBe(safeInteger(0));
     });
   }, 40_000);
 

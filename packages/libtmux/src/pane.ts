@@ -9,12 +9,13 @@ import type {
   ResizeOptions,
   RespawnOptions,
   SendKeysOptions,
+  SetHookOptions,
   SetOptionOptions,
   PlannedOperation,
   SplitOptions,
 } from "./types.js";
-import { PANE_ALIASES, type PaneAliasMap } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities } from "./_internal/codec/schemas.js";
+import { PANE_ALIASES } from "./_generated/field_aliases.js";
+import type { AliasedFields, PaneAliasMap, RowWithIdentities } from "./field_types.js";
 import {
   chooseBuffer,
   chooseTree,
@@ -25,7 +26,12 @@ import {
   sendPrefix,
 } from "./_internal/operations/interactive.js";
 import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
-import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
+import {
+  killPaneIfWindowUnshared,
+  killTarget,
+  splitWindow,
+} from "./_internal/operations/mutations.js";
+import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
 import {
   setOption,
@@ -47,7 +53,7 @@ import {
   setPaneTitle,
   swapPanes,
 } from "./_internal/operations/topology.js";
-import { planKill, planSplitWindow } from "./_internal/operations/plans.js";
+import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Session } from "./session.js";
@@ -63,6 +69,7 @@ import type { Server } from "./server.js";
 /** What {@link Pane.plan} offers, one entry per mutation it can describe. */
 export interface PanePlans {
   readonly kill: () => PlannedOperation<void>;
+  readonly killIfWindowUnshared: () => PlannedOperation<void>;
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
@@ -101,7 +108,41 @@ export class Pane {
    * ```
    */
   get session(): Session | undefined {
-    return sessionOf(originGraphForHandle(this), this.sessionId);
+    return sessionOf(originGraphForHandle(this), this.format.session_id);
+  }
+
+  /**
+   * Read hooks set on this pane itself.
+   *
+   * ```ts
+   * const hooks = await pane.showHooks();
+   * hooks.get("pane-title-changed")?.[0];
+   * ```
+   */
+  showHooks(): Promise<ReadonlyMap<string, readonly string[]>> {
+    return showHooks(runtimeForHandle(this), "pane", this.id);
+  }
+
+  /**
+   * Bind a tmux command to a pane-scoped hook.
+   *
+   * ```ts
+   * await pane.setHook("pane-title-changed", "display-message 'title changed'");
+   * ```
+   */
+  setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
+    return setHook(runtimeForHandle(this), "pane", this.id, name, command, options);
+  }
+
+  /**
+   * Remove every command bound to a pane-scoped hook.
+   *
+   * ```ts
+   * await pane.unsetHook("pane-title-changed");
+   * ```
+   */
+  unsetHook(name: string): Promise<void> {
+    return unsetHook(runtimeForHandle(this), "pane", this.id, name);
   }
 
   /**
@@ -181,10 +222,21 @@ export class Pane {
   }
 
   /**
+   * Destroy this pane only if its window has one placement.
+   *
+   * ```ts
+   * await pane.killIfWindowUnshared();
+   * ```
+   */
+  killIfWindowUnshared(): Promise<void> {
+    return killPaneIfWindowUnshared(runtimeForHandle(this), this.id);
+  }
+
+  /**
    * The same mutations, described instead of run.
    *
    * Takes what the direct calls take and resolves to what they resolve to,
-   * for {@link Server.batch} to spend one invocation and one snapshot on.
+   * for {@link Server.batch} to share one final snapshot.
    *
    * ```ts
    * const [created] = await server.batch([pane.plan.split({})]);
@@ -194,6 +246,7 @@ export class Pane {
   get plan(): PanePlans {
     return {
       kill: () => planKill("kill-pane", this.id),
+      killIfWindowUnshared: () => planKillPaneIfUnshared(this.id),
       split: (options?: SplitOptions) => planSplitWindow(this.id, options),
     };
   }
@@ -357,7 +410,7 @@ export class Pane {
    * ```
    */
   breakOut(windowName?: string): Promise<void> {
-    return breakPane(runtimeForHandle(this), this.id, windowName, this.sessionId);
+    return breakPane(runtimeForHandle(this), this.id, windowName, this.format.session_id);
   }
 
   /**

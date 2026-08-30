@@ -5,8 +5,11 @@
     "outDir": "dist",
     "noEmit": false,
     "declaration": true,
+    "declarationMap": true,
+    "inlineSources": false,
+    "sourceMap": true,
     "isolatedDeclarations": false,
-    "skipLibCheck": true,
+    "skipLibCheck": false,
     "types": ["node"]
   },
   "include": ["src/**/*.ts"]

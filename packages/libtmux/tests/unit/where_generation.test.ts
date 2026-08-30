@@ -9,7 +9,7 @@ import { runTypeScriptApi } from "../support/typescript_api.js";
 
 import { generateFormats } from "../../scripts/generate-formats.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const markerStart = "// <libtmux-generated-where-types>";
 const markerEnd = "// </libtmux-generated-where-types>";

@@ -9,6 +9,14 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
+import {
+  planKillPaneIfUnshared,
+  planNewSession,
+  planNewWindow,
+  planSplitWindow,
+} from "../../src/_internal/operations/plans.js";
+import { splitSize } from "../../src/types.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 
 /**
  * The tmux command line the lifecycle mutations build.
@@ -32,18 +40,13 @@ function recorder(): Recorder {
     execute(request: CommandRequest): Promise<RawCommandResult> {
       requests.push(request);
       return Promise.resolve({
-        cmd: request.args,
+        cmd: [request.executable, ...flattenInvocation(request)],
         returncode: 1,
         signal: null,
         // The transport boundary is bytes; decoding happens above it.
         stderr: new TextEncoder().encode("stopped\n"),
         stdout: new Uint8Array(),
       });
-    },
-    // One command at a time: this fixture records arguments and never
-    // resolves what a group would return.
-    executeGroup(): Promise<readonly RawCommandResult[]> {
-      return Promise.reject(new Error("this fixture runs one command at a time"));
     },
   };
 }
@@ -64,10 +67,22 @@ async function argumentsFor(
   await run(transport).catch(() => undefined);
   const request = transport.requests[0];
   if (request === undefined) throw new Error("no command was issued");
-  return request.args;
+  return request.commands[0];
 }
 
 describe("lifecycle command arguments", () => {
+  test("guards a pane kill against a shared window", () => {
+    expect(planKillPaneIfUnshared("%4").argv).toEqual([
+      "if-shell",
+      "-F",
+      "-t",
+      "%4",
+      "#{==:#{window_linked},0}",
+      "'kill-pane' '-t' '%4'",
+      expect.stringMatching(/^'libtmux-shared-window-[0-9a-f]{32}'$/u),
+    ]);
+  });
+
   test("separates a window's shell command from tmux's own flags", async () => {
     const args = await argumentsFor((transport) =>
       newWindow({} as never, runtimeFor(transport), "$0", { shellCommand: "-n" }),
@@ -139,7 +154,7 @@ describe("lifecycle command arguments", () => {
 
   test("sizes a split in cells or in a share of the pane", async () => {
     const cells = await argumentsFor((transport) =>
-      splitWindow({} as never, runtimeFor(transport), "%0", { size: 20 }),
+      splitWindow({} as never, runtimeFor(transport), "%0", { size: splitSize(20) }),
     );
     expect(cells.slice(cells.indexOf("-l"), cells.indexOf("-l") + 2)).toEqual(["-l", "20"]);
 
@@ -148,10 +163,54 @@ describe("lifecycle command arguments", () => {
     );
     expect(share.slice(share.indexOf("-l"), share.indexOf("-l") + 2)).toEqual(["-l", "30%"]);
 
+    await Promise.all(
+      (["0%", "100%"] as const).map(async (boundary) => {
+        const sized = await argumentsFor((transport) =>
+          splitWindow({} as never, runtimeFor(transport), "%0", { size: boundary }),
+        );
+        expect(sized.slice(sized.indexOf("-l"), sized.indexOf("-l") + 2)).toEqual(["-l", boundary]);
+      }),
+    );
+
     // Without it tmux halves the pane, and saying so is tmux's job not ours.
     const halved = await argumentsFor((transport) =>
       splitWindow({} as never, runtimeFor(transport), "%0", {}),
     );
     expect(halved).not.toContain("-l");
+  });
+
+  test("refuses split sizes tmux cannot interpret as an integer geometry", () => {
+    for (const size of [1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
+      expect(() => splitSize(size)).toThrow(/size/u);
+      expect(() => planSplitWindow("%0", { size: size as never })).toThrow(/size/u);
+    }
+    for (const size of [
+      "01%",
+      "-0%",
+      "-1%",
+      "0x1%",
+      "0o1%",
+      "0b1%",
+      "1.5%",
+      "101%",
+      "NaN%",
+    ] as const) {
+      expect(() => splitSize(size as never)).toThrow(/size/u);
+      expect(() => planSplitWindow("%0", { size: size as never })).toThrow(/size/u);
+    }
+  });
+
+  test("refuses names the supported tmux range does not carry identically", () => {
+    // 3.2a through 3.6b rewrite a delimiter to `_`, 3.7 rejects the name, and
+    // 3.7a onward stores it literally, so one call means three things.
+    expect(() => planNewSession({ name: "a:b" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a.b" })).toThrow("session name");
+    expect(() => planNewSession({ name: "" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a\u0007b" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a\u007fb" })).toThrow("session name");
+    expect(() => planNewSession({ name: "a\ud800b" })).toThrow("unpaired surrogate");
+    expect(() => planNewSession({ windowName: "a:b" })).toThrow("window name");
+    expect(() => planNewWindow(null, { name: "a.b" })).toThrow("window name");
+    expect(planNewSession({ name: "work" }).argv).toContain("work");
   });
 });

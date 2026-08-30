@@ -1,9 +1,8 @@
 /**
  * Turning an argv back into something tmux's own lexer will read.
  *
- * Two places need it: a control connection writes commands as text, and an
- * `if-shell` branch is a string tmux parses when the branch is taken. Both go
- * through one implementation, because a quoting bug in either is a command
+ * An `if-shell` branch is a string tmux parses when the branch is taken. All
+ * branch builders share this implementation because a quoting bug is command
  * injection into tmux.
  */
 

@@ -1,7 +1,13 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { runSupervisor } from "../src/_internal/test/run_root.js";
+import {
+  RUN_ROOT_ENV,
+  runSupervisor,
+  sweepStaleRunRoots,
+  testParallelism,
+} from "../src/_internal/test/testkit.js";
+
 import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
 
 /**
@@ -14,8 +20,17 @@ import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
  * loaded.
  */
 const SUITES: readonly string[] = [
-  "tests/integration/test_server.test.ts",
-  "tests/integration/supervisor_cleanup.test.ts",
+  "tests/integration/test_server_bootstrap.test.ts",
+  "tests/integration/test_server_controller_identity.test.ts",
+  "tests/integration/test_server_recovery.test.ts",
+  "tests/integration/test_server_cleanup.test.ts",
+  "tests/integration/control_mode.test.ts",
+  "tests/integration/fixture_reaper.test.ts",
+  "tests/integration/run_root_recovery.test.ts",
+  "tests/integration/fixture_escrow_recovery.test.ts",
+  "tests/integration/process_identity_reaping.test.ts",
+  "tests/integration/test_supervisor.test.ts",
+  "tests/integration/test_runners.test.ts",
   "tests/integration/graph.test.ts",
   "tests/integration/contract.test.ts",
   "tests/integration/control_bounds.test.ts",
@@ -66,11 +81,15 @@ if (unlisted.length > 0) {
 
 await preflight([LINUX_HARNESS, NODE22]);
 
+// Only a top-level runner owns the namespace sweep. A nested runner inherits
+// its parent's exact root and must not race that owner or an explicit reaper.
+if (process.env[RUN_ROOT_ENV] === undefined) await sweepStaleRunRoots();
+
 process.exitCode = await runSupervisor({
   command: [
     "bun",
     "test",
-    "--parallel=4",
+    `--parallel=${String(testParallelism())}`,
     "--no-orphans",
     // Bun's default bound is sized for a unit test, not for one that starts a
     // tmux server, waits for a shell, and reaps it again. A liveness bound for
@@ -82,7 +101,5 @@ process.exitCode = await runSupervisor({
     "./tests/support/bun_hooks.ts",
     ...SUITES,
   ],
-  ...(process.env.LIBTMUX_TEST_RUN_ROOT === undefined
-    ? {}
-    : { runRoot: process.env.LIBTMUX_TEST_RUN_ROOT }),
+  ...(process.env[RUN_ROOT_ENV] === undefined ? {} : { runRoot: process.env[RUN_ROOT_ENV] }),
 });

@@ -9,15 +9,24 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { MAX_RESULT_BYTES } from "./policy.js";
+
 /** What a failed call gives back so the next call can be a better one. */
 export interface ToolFailure {
   readonly hint?: string;
   readonly reason: string;
 }
 
+function resultText(text: string): string {
+  const bounded = tailBytes(text, MAX_RESULT_BYTES);
+  return bounded.droppedBytes === 0
+    ? text
+    : `[${String(bounded.droppedBytes)} earlier bytes omitted by the result ceiling]\n${bounded.text}`;
+}
+
 export function ok<T extends Record<string, unknown>>(structured: T, text: string): CallToolResult {
   return {
-    content: [{ text, type: "text" }],
+    content: [{ text: resultText(text), type: "text" }],
     structuredContent: structured,
   };
 }
@@ -38,7 +47,7 @@ export function ok<T extends Record<string, unknown>>(structured: T, text: strin
 export function fail(failure: ToolFailure): CallToolResult {
   const text = failure.hint === undefined ? failure.reason : `${failure.reason}\n\n${failure.hint}`;
   return {
-    content: [{ text, type: "text" }],
+    content: [{ text: resultText(text), type: "text" }],
     isError: true,
   };
 }
@@ -48,6 +57,25 @@ export interface Trimmed {
   readonly lines: readonly string[];
 }
 
+export interface TrimmedText {
+  readonly droppedBytes: number;
+  readonly text: string;
+}
+
+export interface BoundedText {
+  readonly droppedLines: number;
+  readonly omittedBytes: number;
+  readonly returnedBytes: number;
+  readonly text: string;
+}
+
+export interface EntryLimit<Entry> {
+  readonly complete: boolean;
+  readonly entries: readonly Entry[];
+  readonly omittedEntries: number;
+  readonly text: BoundedText;
+}
+
 /**
  * Keep the last `limit` lines.
  *
@@ -55,8 +83,131 @@ export interface Trimmed {
  * that printed ten thousand lines is being asked about the last twenty of them.
  */
 export function tailLines(lines: readonly string[], limit: number): Trimmed {
-  if (limit <= 0 || lines.length <= limit) return { droppedLines: 0, lines };
+  if (limit <= 0) return { droppedLines: lines.length, lines: [] };
+  if (lines.length <= limit) return { droppedLines: 0, lines };
   return { droppedLines: lines.length - limit, lines: lines.slice(lines.length - limit) };
+}
+
+/** Keep a UTF-8-safe tail whose encoded form does not exceed `limit`. */
+export function tailBytes(text: string, limit: number): TrimmedText {
+  const total = Buffer.byteLength(text, "utf8");
+  if (total <= limit) return { droppedBytes: 0, text };
+  if (limit <= 0) return { droppedBytes: total, text: "" };
+
+  let keptBytes = 0;
+  let start = text.length;
+  while (start > 0) {
+    const low = text.charCodeAt(start - 1);
+    const high = start > 1 ? text.charCodeAt(start - 2) : 0;
+    const width = low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff ? 2 : 1;
+    const bytes = Buffer.byteLength(text.slice(start - width, start), "utf8");
+    if (keptBytes + bytes > limit) break;
+    keptBytes += bytes;
+    start -= width;
+  }
+  return { droppedBytes: total - keptBytes, text: text.slice(start) };
+}
+
+/** Keep a UTF-8 text tail inside both line and byte ceilings. */
+export function boundText(
+  lines: readonly string[],
+  lineLimit: number,
+  byteLimit: number,
+): BoundedText {
+  const lineTrimmed = tailLines(lines, lineLimit);
+  const byteTrimmed = tailBytes(lineTrimmed.lines.join("\n"), byteLimit);
+  return {
+    droppedLines: lineTrimmed.droppedLines,
+    omittedBytes: byteTrimmed.droppedBytes,
+    returnedBytes: Buffer.byteLength(byteTrimmed.text, "utf8"),
+    text: byteTrimmed.text,
+  };
+}
+
+/** Render bounded text without hiding either form of truncation. */
+export function renderBoundedText(result: BoundedText, recovery: string): string {
+  const notices = [
+    result.droppedLines === 0
+      ? ""
+      : `[${String(result.droppedLines)} earlier lines omitted; ${recovery}]`,
+    result.omittedBytes === 0
+      ? ""
+      : `[${String(result.omittedBytes)} earlier bytes omitted; ${recovery}]`,
+  ].filter((part) => part !== "");
+  return [...notices, result.text].filter((part) => part !== "").join("\n");
+}
+
+/** Keep a truthful prefix that fits both the structured and text result ceilings. */
+export function limitEntries<Entry>(
+  entries: readonly Entry[],
+  lineLimit: number,
+  serialize: (entry: Entry) => string,
+  render: (entry: Entry) => string,
+): EntryLimit<Entry> {
+  const kept: Entry[] = [];
+  const lines: string[] = [];
+  let structuredBytes = 2;
+  let textBytes = 0;
+
+  for (const entry of entries) {
+    const renderedText = render(entry);
+    const rendered = renderedText.split("\n");
+    const serialized = serialize(entry);
+    const nextStructured =
+      structuredBytes + Buffer.byteLength(serialized, "utf8") + (kept.length === 0 ? 0 : 1);
+    const nextTextBytes =
+      textBytes + Buffer.byteLength(renderedText, "utf8") + (lines.length === 0 ? 0 : 1);
+    if (
+      nextStructured > MAX_RESULT_BYTES ||
+      lines.length + rendered.length > lineLimit ||
+      nextTextBytes > MAX_RESULT_BYTES
+    ) {
+      break;
+    }
+    kept.push(entry);
+    lines.push(...rendered);
+    structuredBytes = nextStructured;
+    textBytes = nextTextBytes;
+  }
+
+  return {
+    complete: kept.length === entries.length,
+    entries: kept,
+    omittedEntries: entries.length - kept.length,
+    text: boundText(lines, lineLimit, MAX_RESULT_BYTES),
+  };
+}
+
+export function renderEntries(result: EntryLimit<unknown>, noun: string, recovery: string): string {
+  const omission =
+    result.omittedEntries === 0
+      ? ""
+      : `[${String(result.omittedEntries)} later ${noun} omitted; ${recovery}]`;
+  return [renderBoundedText(result.text, recovery), omission]
+    .filter((part) => part !== "")
+    .join("\n");
+}
+
+/** Map in input order while bounding work that is in flight. */
+export async function mapConcurrent<Input, Output>(
+  inputs: readonly Input[],
+  concurrency: number,
+  work: (input: Input) => Promise<Output>,
+): Promise<readonly Output[]> {
+  const outputs = inputs.map(() => undefined as Output);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= inputs.length) return;
+      const input = inputs[index] as Input;
+      // eslint-disable-next-line no-await-in-loop -- each worker owns one bounded lane.
+      outputs[index] = await work(input);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, inputs.length) }, () => worker()));
+  return outputs;
 }
 
 /** Render captured output with a note when it was cut, never silently. */

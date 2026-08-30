@@ -3,15 +3,17 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
+import { waitForProcessExit } from "../support/converge.js";
+
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { Server } from "../../src/server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -55,6 +57,9 @@ describe("server utilities", () => {
 
       expect(await server.hasSession(fixture.sessionName)).toBe(true);
       expect(await server.hasSession("definitely-absent")).toBe(false);
+
+      await server.newSession({ name: "prefix-long" });
+      expect(await server.hasSession("prefix")).toBe(false);
     });
   }, 40_000);
 
@@ -126,6 +131,17 @@ describe("server utilities", () => {
       // A socket that was never created is a negative answer, not a failure.
       expect(await absent.isAlive()).toBe(false);
       await expect(absent.raiseIfDead()).rejects.toThrow(/list-sessions failed/);
+    });
+  }, 40_000);
+
+  test("terminates the exact server it drives", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      await server.kill();
+      await waitForProcessExit(fixture.daemonIdentity.pid);
+
+      expect(await server.isAlive()).toBe(false);
     });
   }, 40_000);
 
@@ -265,4 +281,39 @@ describe("server utilities", () => {
       expect(await server.listBuffers()).toContainEqual(expect.stringContaining("binary"));
     });
   }, 30_000);
+
+  test("keeps a paste buffer's final blank line", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.loadBuffer("trailing-lines", "one\n\n");
+
+      expect(await server.showBuffer("trailing-lines")).toEqual(["one", ""]);
+    });
+  }, 30_000);
+
+  const exactBufferCases: readonly {
+    readonly name: string;
+    readonly data: Uint8Array;
+  }[] = [
+    { data: new Uint8Array([0x61, 0x00, 0x62]), name: "NUL" },
+    { data: new Uint8Array([0xc3, 0x28, 0x80, 0xff]), name: "invalid UTF-8" },
+    { data: new TextEncoder().encode("left\r\nright\r\n"), name: "CRLF" },
+    { data: new TextEncoder().encode("one\n\n"), name: "trailing LF pair" },
+    { data: new TextEncoder().encode("last line"), name: "no trailing LF" },
+  ];
+
+  for (const { data, name } of exactBufferCases) {
+    test(`reads exact paste-buffer bytes with ${name}`, async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const buffer = `exact-${name.replaceAll(" ", "-")}`;
+        await server.loadBuffer(buffer, data);
+        await using live = await server.connect();
+
+        await expect(
+          Promise.all([server.showBufferBytes(buffer), live.showBufferBytes(buffer)]),
+        ).resolves.toEqual([data, data]);
+      });
+    }, 40_000);
+  }
 });

@@ -3,8 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "declaration": true,
-    "declarationMap": false,
-    "inlineSources": true,
+    "declarationMap": true,
+    "inlineSources": false,
     "sourceMap": true,
     "noEmit": false
   }

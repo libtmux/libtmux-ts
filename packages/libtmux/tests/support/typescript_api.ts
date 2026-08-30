@@ -16,7 +16,7 @@
  * these two, and making them queue pushed a build past its deadline instead.
  */
 
-import { resolveNode22 } from "../../src/_internal/test/node22.js";
+import { resolveNode22 } from "../../src/_internal/test/testkit.js";
 
 const CANCELLED = "context canceled";
 const ATTEMPTS = 3;

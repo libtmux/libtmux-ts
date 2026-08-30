@@ -7,9 +7,226 @@ typecheck:symbols` is what keeps that true.
 Start with the [README](../README.md) for a reading order and recipes; this
 page is for looking one thing up.
 
+## Functions
+
+[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+
+### `encodeWhereDocument`
+
+```ts
+function encodeWhereDocument(document: WhereDocumentV1): string;
+```
+
+Serialize a WHERE document as canonical JSON.
+
+Field names and values use tmux's stable wire spellings. The input is
+validated without invoking accessors or conversion hooks.
+
+@throws QueryValidationError when the document or its criteria are invalid.
+
+```ts
+import { encodeWhereDocument } from "libtmux";
+const encoded = encodeWhereDocument({
+  model: "pane",
+  version: 1,
+  where: { title: { contains: "log" } },
+});
+```
+
+### `decodeWhereDocument`
+
+```ts
+function decodeWhereDocument(input: unknown): WhereDocumentV1;
+```
+
+Validate a WHERE document and restore camelCase criteria names.
+
+The returned document is canonical and deeply frozen.
+
+@throws QueryValidationError when the document or its criteria are invalid.
+
+```ts
+import { decodeWhereDocument } from "libtmux/selection";
+const document = decodeWhereDocument(
+  JSON.parse('{"model":"pane","version":1,"where":{"pane_title":"logs"}}'),
+);
+if (document.model === "pane") snapshot.panes.where(document.where);
+```
+
+### `parseLegacyWhere`
+
+```ts
+function parseLegacyWhere<Model extends "session" | "window">(
+  model: Model,
+  input: unknown,
+): Extract<WhereDocumentV1, { readonly model: Model }>;
+```
+
+Convert the Python port's `name__contains` spelling to canonical criteria.
+
+Accepts one own data property on a plain object and never invokes accessors
+or conversion hooks. The returned document and its criteria are frozen.
+
+@throws QueryValidationError when the model is not `session` or `window`, or
+the input is not exactly one string-valued `name__contains` property.
+
+```ts
+import { parseLegacyWhere } from "libtmux";
+const document = parseLegacyWhere("window", { name__contains: "log" });
+snapshot.windows.where(document.where);
+```
+
+### `isSafeInteger`
+
+```ts
+function isSafeInteger(value: unknown): value is SafeInteger;
+```
+
+Test whether a value is an exact JavaScript integer.
+
+```ts
+import { isSafeInteger } from "libtmux";
+const value: unknown = 3;
+if (isSafeInteger(value)) snapshot.sessions.where({ attached: value });
+```
+
+### `safeInteger`
+
+```ts
+function safeInteger(value: number): SafeInteger;
+```
+
+Authenticate an exact JavaScript integer or throw.
+
+@throws TypeError when `value` is fractional, infinite, `NaN`, or outside
+JavaScript's safe integer range.
+
+```ts
+import { safeInteger } from "libtmux";
+const pid = safeInteger(42);
+```
+
+### `isTmuxName`
+
+```ts
+function isTmuxName(value: unknown): value is string;
+```
+
+Test whether a value is a name every supported tmux stores unchanged.
+
+The refusal the mutating calls apply, offered ahead of them so a caller
+validating configuration can report the bad field rather than catching a
+`TypeError` from the call it fed.
+
+```ts
+import { isTmuxName } from "libtmux";
+const value: unknown = "work";
+const name = isTmuxName(value) ? value : undefined;
+```
+
+### `isSplitSize`
+
+```ts
+function isSplitSize(value: unknown): value is SplitSize;
+```
+
+Test whether a value is valid tmux split geometry.
+
+```ts
+import { isSplitSize } from "libtmux";
+const value: unknown = "30%";
+const size = isSplitSize(value) ? value : undefined;
+```
+
+### `splitSize`
+
+```ts
+function splitSize(value: number): SplitCellSize;
+```
+
+```ts
+function splitSize(value: SplitPercentage): SplitPercentage;
+```
+
+```ts
+function splitSize(value: SplitSize): SplitSize;
+```
+
+Authenticate tmux split geometry or throw.
+
+@throws TypeError when a cell count is negative, fractional, or above
+2147483647, or when a percentage is not a canonical whole `0%` to `100%`.
+
+```ts
+import { splitSize } from "libtmux";
+const size = splitSize(20);
+```
+
+## Scalar types
+
+[`SafeInteger`](#safeinteger-type) · [`SplitCellSize`](#splitcellsize-type) · [`SplitPercentage`](#splitpercentage-type) · [`SplitSize`](#splitsize-type)
+
+### `SafeInteger` type
+
+```ts
+type SafeInteger = number & { readonly [safeIntegerBrand]: "safe-integer" };
+```
+
+A finite whole number within JavaScript's safe integer range.
+
+```ts
+import { safeInteger } from "libtmux";
+import type { SafeInteger } from "libtmux";
+const count: SafeInteger = safeInteger(3);
+```
+
+### `SplitCellSize` type
+
+```ts
+type SplitCellSize = SafeInteger & {
+  readonly [splitCellSizeBrand]: "split-cell-size";
+};
+```
+
+A nonnegative cell count within tmux's signed 32-bit geometry range.
+
+```ts
+import { splitSize } from "libtmux";
+import type { SplitCellSize } from "libtmux";
+const size: SplitCellSize = splitSize(20);
+```
+
+### `SplitPercentage` type
+
+```ts
+type SplitPercentage = `${ZeroToNinetyNine}%` | "100%";
+```
+
+A canonical whole percentage from `0%` through `100%`.
+
+```ts
+import type { SplitPercentage } from "libtmux";
+const size: SplitPercentage = "30%";
+void size;
+```
+
+### `SplitSize` type
+
+```ts
+type SplitSize = SplitCellSize | SplitPercentage;
+```
+
+An authenticated cell count or canonical percentage for a pane split.
+
+```ts
+import type { SplitSize } from "libtmux";
+const size: SplitSize = "30%";
+void size;
+```
+
 ## Server
 
-[`open`](#serveropen) · [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`engine`](#serverengine) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -73,23 +290,6 @@ new Server({ socketPath: "/tmp/tmux-1000/work" }).socketPath;
 new Server({ socketPath: "/tmp/tmux-1000/work" }).socketPath;
 ```
 
-#### `Server.engine`
-
-```ts
-get engine(): CommandTransport | undefined
-```
-
-The engine this server was built with, if it was given one.
-
-`undefined` means tmux is a process this one can spawn, which is what
-{@link Server.watch} and {@link Server.connect} need and what a caller
-choosing between a connection and a command per read has to know.
-
-```ts
-const reader = server.engine === undefined ? await server.connect() : server;
-(await reader.snapshot()).windows.count();
-```
-
 #### `Server.tmuxBin`
 
 ```ts
@@ -108,38 +308,15 @@ new Server().tmuxBin; // "tmux"
 
 ### Methods
 
-#### `Server.open`
-
-```ts
-static async open(options?: ServerOptions): Promise<ManagedServer>
-```
-
-Build a server with its transport already chosen.
-
-The same API either way: what changes is whether a command spawns a process
-or travels over a connection this holds open. The mode comes from
-`transport`, or from `LIBTMUX_TRANSPORT` when that is not set — so a script
-can be pointed at a connection without editing it, and a test can force
-either mode around code that names neither.
-
-Asynchronous because attaching is: a control connection has to reach tmux
-before it can carry anything, and a server with no sessions has nothing to
-attach to. `close` is safe on both, and does nothing on a spawning server.
-
-```ts
-await using managed = await Server.open({ transport: "control" });
-(await managed.snapshot()).sessions.count();
-```
-
 #### `Server.withConnection`
 
 ```ts
-async withConnection<T>( body: (live: ConnectedServer) => Promise<T>, options?: WatchOptions, ): Promise<T>
+async withConnection<T>( body: (live: ConnectedServer) => Promise<T>, options?: ConnectOptions, ): Promise<T>
 ```
 
 Run `body` against a connected server, closing it afterwards.
 
-The scoped form of {@link connect}, for code that cannot use `await using`
+The scoped form of [`connect`](#serverconnect), for code that cannot use `await using`
 — it needs `Symbol.asyncDispose` in the consumer's `lib` — or would rather
 not manage the lifetime by hand. The connection closes on the way out
 whether `body` returns or throws.
@@ -183,18 +360,17 @@ for await (const event of events) {
 #### `Server.connect`
 
 ```ts
-async connect(options?: WatchOptions): Promise<ConnectedServer>
+async connect(options?: ConnectOptions): Promise<ConnectedServer>
 ```
 
 Bind this server to one control-mode connection and return it.
 
-The returned server has the same API, but its commands travel over an
-already-open connection instead of spawning a `tmux` process each. A
-snapshot costs four writes rather than four processes, which is what makes
-reacting to {@link watch} events affordable in a loop.
+The returned server has the same API and shares one control connection for
+events and daemon-lifetime tracking. Commands use ordinary tmux processes:
+control mode cannot frame arbitrary command output truthfully when aliases
+and waiting commands are allowed.
 
-`loadBuffer` and anything else that feeds a command stdin still needs the
-spawning server, since control mode has no channel for it.
+A snapshot remains one tmux invocation containing all four listings.
 
 ```ts
 await using live = await server.connect();
@@ -206,7 +382,7 @@ for await (const event of live.subscribe()) {
 #### `Server.snapshot`
 
 ```ts
-snapshot(): Promise<ServerSnapshot>
+snapshot(options: SnapshotOptions = {}): Promise<ServerSnapshot>
 ```
 
 Acquire an immutable view of the server at this instant.
@@ -231,7 +407,7 @@ Every session on the server, read now.
 This and its three siblings each take a snapshot of their own — four tmux
 commands per call — so calling several in a row describes several different
 instants and pays for each. Inside a loop that is an N+1: prefer one
-{@link snapshot} and read `sessions`, `windows`, `panes`, and `clients`
+[`snapshot`](#serversnapshot) and read `sessions`, `windows`, `panes`, and `clients`
 off it, which is both cheaper and consistent.
 
 ```ts
@@ -489,8 +665,8 @@ async versionAtLeast(minimum: string): Promise<boolean>
 Whether this server is at least `minimum`, written the way tmux writes it.
 
 This is how a caller gates on a feature that arrived in a known release
-without parsing `#{version}` themselves. A `master` build compares above
-every tagged release.
+without parsing `#{version}` themselves. Development builds such as
+`next-3.8` compare above every tagged release.
 
 ```ts
 if (await server.versionAtLeast("3.3")) {
@@ -596,6 +772,10 @@ hasSession(name: string): Promise<boolean>
 
 Whether a session with this name exists.
 
+The name is matched exactly. tmux normally accepts a unique prefix as a
+session target, which would make checking `work` answer yes for
+`workspace`; this method does not.
+
 ```ts
 if (!(await server.hasSession("work"))) {
   await server.newSession({ name: "work" });
@@ -641,9 +821,8 @@ loadBuffer(name: string, data: string | Uint8Array): Promise<void>
 
 Fill a paste buffer from data fed through tmux's stdin.
 
-Use this over {@link Server.setBuffer} for anything large or binary: that
+Use this over [`Server.setBuffer`](#serversetbuffer) for anything large or binary: that
 one passes its data as a command-line argument, and this one does not.
-Control mode has no channel for stdin, so this needs the spawning server.
 
 ```ts
 await server.loadBuffer("payload", new Uint8Array([0x68, 0x69]));
@@ -674,14 +853,25 @@ showBuffer(name: string): Promise<readonly string[]>
 
 Read a named paste buffer's contents.
 
-Over a control connection this stops at the first NUL byte: tmux writes a
-command's output to a control client as a C string. The buffer is unharmed
-— `saveBuffer` and a spawning server both read it whole — and a pane's own
-output is unaffected, being escaped before it is written.
-
 ```ts
 const lines = await server.showBuffer("greeting");
 lines[0]; // "hello"
+```
+
+#### `Server.showBufferBytes`
+
+```ts
+showBufferBytes(name: string): Promise<Uint8Array>
+```
+
+Read a named paste buffer without decoding or splitting its bytes.
+
+Unlike [`Server.showBuffer`](#servershowbuffer), this preserves NUL, invalid UTF-8, line
+endings, and trailing newlines.
+
+```ts
+const bytes = await server.showBufferBytes("payload");
+bytes[0]; // 104
 ```
 
 #### `Server.listBuffers`
@@ -742,6 +932,10 @@ isAlive(): Promise<boolean>
 
 Whether the tmux server is reachable.
 
+A missing daemon, socket, or tmux executable answers false. Cancellation,
+a command deadline, or an engine programming error still raises: none says
+whether the server is alive.
+
 ```ts
 if (await server.isAlive()) {
   await server.snapshot();
@@ -758,7 +952,7 @@ Assert the server is reachable, raising with tmux's reason if not.
 
 Every read already raises on an unreachable server, so this is not what
 tells an empty result from a missing one — it is the assertion form of
-{@link isAlive}, for a caller that wants the check and the reason without a
+[`isAlive`](#serverisalive), for a caller that wants the check and the reason without a
 read to hang it on.
 
 ```ts
@@ -778,7 +972,7 @@ caller to build their own subprocess — and reproduce the socket, the
 environment, the deadline, and the error handling — this runs one through
 the same path every other operation uses.
 
-Failure raises {@link TmuxCommandError} like any other command, carrying
+Failure raises `TmuxCommandError` like any other command, carrying
 tmux's own stderr.
 
 ```ts
@@ -791,21 +985,17 @@ await server.cmd("list-keys", ["-T", "copy-mode"]);
 pipeline( commands: readonly (readonly string[])[], options?: CommandOptions, ): Promise<readonly (readonly string[])[]>
 ```
 
-Run several tmux commands in one invocation.
+Run several tmux commands in order.
 
-tmux takes a sequence of commands, which is the difference between building
-a ten-window workspace with one process and doing it with ten. The result is
-positional — `results[i]` holds what `commands[i]` printed, empty for a
-command that prints nothing — so a creating command's `-P -F` lands where
-you asked for it.
+The result is positional: `results[i]` holds what `commands[i]` printed,
+empty for a command that prints nothing. Commands run as separate tmux
+invocations because arbitrary command output has no alias-independent
+delimiter.
 
 Not atomic. tmux runs the commands in order and stops at the first failure,
 leaving everything before it applied; the error names the command that
-failed. Take a {@link Server.snapshot} afterwards if you need to know what
+failed. Take a [`Server.snapshot`](#serversnapshot) afterwards if you need to know what
 survived.
-
-A connected server sends these one at a time instead, which costs the same
-over a connection that is already open.
 
 ```ts
 const [[first], [second]] = await server.pipeline([
@@ -820,15 +1010,14 @@ const [[first], [second]] = await server.pipeline([
 async batch<const T extends readonly PlannedOperation<unknown>[]>( operations: T, options?: CommandOptions, ): Promise<
 ```
 
-Run planned mutations as one invocation, resolving each to what it made.
+Run planned mutations in order, resolving each to what it made.
 
 The batched form of calling them one at a time: the same options go in and
-the same handles come out, positionally and individually typed. What
-changes is the cost. Calling `newWindow` ten times spends ten invocations
-and ten snapshots, because each has to find what it just created; a batch
-spends one of each for the whole group.
+the same handles come out, positionally and individually typed. Calling
+`newWindow` repeatedly takes one snapshot after each mutation; a batch runs
+the mutations in order and resolves all of them from one final snapshot.
 
-Not atomic, for the same reason {@link Server.pipeline} is not: tmux runs
+Not atomic, for the same reason [`Server.pipeline`](#serverpipeline) is not: tmux runs
 them in order and stops at the first failure, leaving everything before it
 applied.
 
@@ -921,10 +1110,8 @@ get plan(): SessionPlans
 The same mutations, described instead of run.
 
 `session.plan.newWindow(…)` takes what `session.newWindow(…)` takes and
-resolves to what it resolves to; it just hands the work to
-{@link Server.batch} rather than doing it now. A batch spends one
-invocation and one snapshot on the whole group, where calling them one at a
-time spends both per call.
+resolves to what it resolves to; it hands the work to [`Server.batch`](#serverbatch)
+so the planned mutations share one final snapshot.
 
 ```ts
 const [editor, logs] = await server.batch([
@@ -1151,6 +1338,8 @@ rename(name: string): Promise<void>
 
 Rename this session.
 
+Refuses a name the supported servers would not store identically.
+
 ```ts
 await session.rename("renamed");
 ```
@@ -1222,7 +1411,7 @@ sameTmuxIdAs(other: Session): boolean
 Whether `other` carries the same `$n`, wherever it came from.
 
 Sessions on unrelated servers routinely share an id; this says so, and
-{@link equals} says they are still different sessions.
+`equals` says they are still different sessions.
 
 ```ts
 session.sameTmuxIdAs(await session.refreshed()); // true
@@ -1230,7 +1419,7 @@ session.sameTmuxIdAs(await session.refreshed()); // true
 
 ## Window
 
-[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showOptions`](#windowshowoptions) · [`showResolvedOptions`](#windowshowresolvedoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
+[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showHooks`](#windowshowhooks) · [`setHook`](#windowsethook) · [`unsetHook`](#windowunsethook) · [`showOptions`](#windowshowoptions) · [`showResolvedOptions`](#windowshowresolvedoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`removePlacement`](#windowremoveplacement) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
 
 ### Properties
 
@@ -1308,7 +1497,7 @@ get plan(): WindowPlans
 The same mutations, described instead of run.
 
 Takes what the direct calls take and resolves to what they resolve to,
-for {@link Server.batch} to spend one invocation and one snapshot on.
+for [`Server.batch`](#serverbatch) to share one final snapshot.
 
 ```ts
 const [created] = await server.batch([window.plan.split({})]);
@@ -1316,6 +1505,43 @@ created.id;
 ```
 
 ### Methods
+
+#### `Window.showHooks`
+
+```ts
+showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
+```
+
+Read hooks set on this window itself.
+
+```ts
+const hooks = await window.showHooks();
+hooks.get("window-renamed")?.[0];
+```
+
+#### `Window.setHook`
+
+```ts
+setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
+```
+
+Bind a tmux command to a window-scoped hook.
+
+```ts
+await window.setHook("window-renamed", "display-message 'renamed'");
+```
+
+#### `Window.unsetHook`
+
+```ts
+unsetHook(name: string): Promise<void>
+```
+
+Remove every command bound to a window-scoped hook.
+
+```ts
+await window.unsetHook("window-renamed");
+```
 
 #### `Window.showOptions`
 
@@ -1480,6 +1706,8 @@ rename(name: string): Promise<void>
 
 Rename this window.
 
+Refuses a name the supported servers would not store identically.
+
 ```ts
 await window.rename("editor");
 ```
@@ -1526,7 +1754,25 @@ linked to one session" — a group member leaves by being killed, not by
 unlinking.
 
 ```ts
-await window.unlink();
+const destination = await server.newSession({ name: "unlink-example" });
+await window.link({ session: destination.id });
+const placement = (await server.snapshot()).windows.one({
+  id: window.id,
+  session: { is: { id: destination.id } },
+});
+await placement.unlink();
+```
+
+#### `Window.removePlacement`
+
+```ts
+removePlacement(): Promise<void>
+```
+
+Remove this placement, destroying an unshared window but refusing a group.
+
+```ts
+await window.removePlacement();
 ```
 
 #### `Window.swapWith`
@@ -1613,7 +1859,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -1662,7 +1908,7 @@ get plan(): PanePlans
 The same mutations, described instead of run.
 
 Takes what the direct calls take and resolves to what they resolve to,
-for {@link Server.batch} to spend one invocation and one snapshot on.
+for [`Server.batch`](#serverbatch) to share one final snapshot.
 
 ```ts
 const [created] = await server.batch([pane.plan.split({})]);
@@ -1670,6 +1916,43 @@ created.id;
 ```
 
 ### Methods
+
+#### `Pane.showHooks`
+
+```ts
+showHooks(): Promise<ReadonlyMap<string, readonly string[]>>
+```
+
+Read hooks set on this pane itself.
+
+```ts
+const hooks = await pane.showHooks();
+hooks.get("pane-title-changed")?.[0];
+```
+
+#### `Pane.setHook`
+
+```ts
+setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
+```
+
+Bind a tmux command to a pane-scoped hook.
+
+```ts
+await pane.setHook("pane-title-changed", "display-message 'title changed'");
+```
+
+#### `Pane.unsetHook`
+
+```ts
+unsetHook(name: string): Promise<void>
+```
+
+Remove every command bound to a pane-scoped hook.
+
+```ts
+await pane.unsetHook("pane-title-changed");
+```
 
 #### `Pane.showOptions`
 
@@ -1751,6 +2034,18 @@ Destroy this pane.
 
 ```ts
 await pane.kill();
+```
+
+#### `Pane.killIfWindowUnshared`
+
+```ts
+killIfWindowUnshared(): Promise<void>
+```
+
+Destroy this pane only if its window has one placement.
+
+```ts
+await pane.killIfWindowUnshared();
 ```
 
 #### `Pane.sendKeys`
@@ -1852,7 +2147,7 @@ pasteBuffer(name: string): Promise<void>
 Paste a named buffer into this pane, as if it were typed.
 
 The program running in the pane sees ordinary input, so a shell runs what
-arrives. {@link Server.loadBuffer} fills the buffer beforehand.
+arrives. [`Server.loadBuffer`](#serverloadbuffer) fills the buffer beforehand.
 
 ```ts
 await pane.pasteBuffer("greeting");
@@ -2280,7 +2575,7 @@ snapshot.windows.map((entry) => entry.name); // string[]
 #### `Selection.filter`
 
 ```ts
-filter( predicate: (value: Model, index: number, values: readonly Model[]) => unknown, thisArg?: unknown, ): Selection<Model>
+filter<Narrowed extends Model>( predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed, thisArg?: unknown, ): Selection<Narrowed>
 ```
 
 Keep the members `predicate` accepts.
@@ -2291,6 +2586,16 @@ to another process, or stored.
 
 ```ts
 snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true);
+```
+
+```ts
+filter( predicate: (value: Model, index: number, values: readonly Model[]) => unknown, thisArg?: unknown, ): Selection<Model>
+```
+
+Keep the members an ordinary predicate accepts without changing their type.
+
+```ts
+snapshot.panes.filter((entry) => entry.active === true);
 ```
 
 #### `Selection.where`

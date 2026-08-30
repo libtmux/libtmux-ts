@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { InMemoryTaskStore } from "@modelcontextprotocol/sdk/experimental/tasks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { realpathSync } from "node:fs";
@@ -10,21 +9,26 @@ import { Server } from "libtmux/server";
 import { readCallerEnvironment } from "./caller.js";
 import { createContext } from "./context.js";
 import { buildInstructions } from "./instructions.js";
-import { resolvePolicy, type Policy } from "./policy.js";
+import { resolvePolicy, snapshotPolicy, type Policy } from "./policy.js";
 import { offeredTools } from "./register.js";
+import { registerBuffers } from "./tools/buffers.js";
 import { registerCapture } from "./tools/capture.js";
 import { registerDiscovery } from "./tools/discovery.js";
 import { registerInput } from "./tools/input.js";
 import { registerLayout } from "./tools/layout.js";
 import { registerLifecycle } from "./tools/lifecycle.js";
+import { registerSearch } from "./tools/search.js";
 import { registerSettings } from "./tools/settings.js";
 import { registerWait } from "./tools/wait.js";
 import { registerWorkspace } from "./tools/workspace.js";
 import { registerPrompts } from "./prompts.js";
-import { createListChangedNotifier, registerResources } from "./resources.js";
+import { registerResources } from "./resources.js";
+import { createListChangedNotifier } from "./resource_watch.js";
 import { describeStartup } from "./startup.js";
 
 import manifest from "../package.json" with { type: "json" };
+
+export type { Policy, SafetyTier } from "./policy.js";
 
 /** The version this server reports, taken from the manifest so it cannot drift. */
 const PACKAGE_VERSION: string = manifest.version;
@@ -38,48 +42,73 @@ const PACKAGE_VERSION: string = manifest.version;
 export function createTmuxMcpServer(
   tmux: Server,
   options: {
+    /** Complete environment identifying the host process's tmux pane. */
+    readonly callerEnvironment?: Readonly<Record<string, string | undefined>>;
+    /** Complete environment from which to resolve MCP tool policy. */
     readonly environment?: Readonly<Record<string, string | undefined>>;
     readonly policy?: Policy;
   } = {},
 ): McpServer {
-  const environment = options.environment ?? process.env;
-  const policy = options.policy ?? resolvePolicy(environment);
+  const caller = readCallerEnvironment(options.callerEnvironment ?? process.env);
+  const policy = snapshotPolicy(
+    options.policy ?? resolvePolicy(options.environment ?? process.env),
+  );
   const mcp = new McpServer(
     { name: "libtmux", title: "tmux", version: PACKAGE_VERSION },
     {
-      instructions: buildInstructions(policy, readCallerEnvironment(environment)),
-      // Tasks live for one process. A wait outlives neither the connection that
-      // asked for it nor the tmux server it watches, so nothing here is worth
-      // the durability an external store would buy.
-      taskStore: new InMemoryTaskStore(),
+      instructions: buildInstructions(policy, caller),
     },
   );
 
   // Built after the server so a tool can say the resource list changed; the
   // notifier needs somewhere to send it.
-  const context = createContext(tmux, policy, createListChangedNotifier(mcp));
+  const context = createContext(tmux, policy, createListChangedNotifier(mcp), caller);
 
   // Every tool registers against the filtered view, so the allowlist cannot be
   // half-applied by a module that forgot it.
-  const offered = offeredTools(mcp, policy);
+  const registeredTools = new Set<string>();
+  const offered = offeredTools(mcp, policy, registeredTools);
   registerDiscovery(offered, context);
   registerCapture(offered, context);
+  registerSearch(offered, context);
+  registerBuffers(offered, context);
   registerInput(offered, context);
   registerLifecycle(offered, context);
   registerLayout(offered, context);
   registerSettings(offered, context);
   registerWait(offered, context);
   registerWorkspace(offered, context);
-  registerResources(mcp, context);
-  registerPrompts(mcp, context);
+  const disposeResources = registerResources(mcp, context);
+  registerPrompts(mcp, context, registeredTools);
 
-  // Each watched session holds a `tmux -C attach` for as long as something is
-  // reading it. Losing the client is the end of every reason to hold one, and
-  // a control client nobody closes stays attached until the daemon does.
-  const closed = mcp.server.onclose;
+  let backendClose: Promise<void> | undefined;
+  const closeBackend = (): Promise<void> => {
+    backendClose ??= (async () => {
+      try {
+        await disposeResources();
+      } finally {
+        await context.close();
+      }
+    })();
+    return backendClose;
+  };
   mcp.server.onclose = (): void => {
-    void context.close();
-    closed?.();
+    void closeBackend().catch(() => undefined);
+  };
+
+  // The protocol close callback is synchronous. Embedded callers still need
+  // `close()` to mean every control process has actually left.
+  const closeProtocol = mcp.close.bind(mcp);
+  let serverClose: Promise<void> | undefined;
+  mcp.close = (): Promise<void> => {
+    serverClose ??= closeProtocol().then(
+      () => closeBackend(),
+      async (error: unknown) => {
+        await closeBackend();
+        throw error;
+      },
+    );
+    return serverClose;
   };
 
   return mcp;

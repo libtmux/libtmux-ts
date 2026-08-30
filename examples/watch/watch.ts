@@ -59,15 +59,18 @@ export async function collectPaneOutput(server: Server, until: string): Promise<
 export async function watchWithBackpressure(server: Server): Promise<readonly string[]> {
   const session = await server.newSession({ name: "paced" });
 
-  await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
-  const events = live.subscribe();
+  await using events = server.watch({ pauseAfterSeconds: 5, target: session.id });
   await events.ready();
 
-  const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+  const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
 
   // tmux pauses a pane on its own once it falls behind. Asking for it directly
   // reaches the same state without waiting on a real flood.
-  await live.cmd("refresh-client", ["-A", `${pane.id}:pause`]);
+  const client = (await server.cmd("list-clients", ["-F", "#{client_name}\t#{client_flags}"]))
+    .find((value) => value.includes("control-mode") && value.includes("pause-after=5"))
+    ?.split("\t")[0];
+  if (client === undefined) throw new Error("the paced observer did not attach");
+  await server.cmd("refresh-client", ["-t", client, "-A", `${pane.id}:pause`]);
 
   const seen: string[] = [];
   for await (const event of events) {
@@ -93,11 +96,10 @@ export async function readOutputUnderBackpressure(
 ): Promise<{ readonly reportedAge: boolean; readonly text: string }> {
   const session = await server.newSession({ name: "paced-output" });
 
-  await using live = await server.connect({ pauseAfterSeconds: 5, target: session.id });
-  const events = live.subscribe();
+  await using events = server.watch({ pauseAfterSeconds: 5, target: session.id });
   await events.ready();
 
-  const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+  const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
 
   let text = "";
   let reportedAge = false;

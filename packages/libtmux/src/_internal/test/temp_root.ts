@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 /**
  * tmux refuses a socket path longer than this. Declared beside the naming rule
- * that has to fit inside it, and re-exported by run_root for its callers.
+ * that has to fit inside it, and re-exported by the testkit for its callers.
  */
 export const SOCKET_PATH_UTF8_LIMIT = 103;
 
@@ -49,6 +49,26 @@ export async function makeTestDirectory(prefix: string): Promise<string> {
 /** Whether a path is one this package created, rather than another port's. */
 function isOwnedTestPath(path: string): boolean {
   return path.startsWith(ownedRoot);
+}
+
+/**
+ * Every temporary directory this package created, for a sweep to look inside.
+ *
+ * The prefix is the only thing separating these from another libtmux port's, so
+ * enumeration belongs beside the rule that assigns it rather than in each
+ * caller. A symlink is never followed: `readdir` reports a link as a link, and
+ * only real directories are returned.
+ */
+export async function ownedTestDirectories(): Promise<readonly string[]> {
+  const parent = tmpdir();
+  try {
+    const entries = await readdir(parent, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() && isOwnedTestPath(join(parent, entry.name)))
+      .map((entry) => join(parent, entry.name));
+  } catch {
+    return [];
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { ServerSnapshot } from "../../types.js";
+import type { AbortLike, ServerSnapshot } from "../../types.js";
 import type { Server } from "../../server.js";
 import type { NormalizedGraph } from "../graph/model.js";
 import type { RuntimeContext } from "../runtime/context.js";
@@ -32,6 +32,7 @@ export async function buildSnapshotFromGraph(
 export async function buildServerSnapshot(
   server: Server,
   runtime: RuntimeContext,
+  signal?: AbortLike,
 ): Promise<ServerSnapshot> {
-  return buildSnapshotFromGraph(server, await acquireServerGraph(runtime));
+  return buildSnapshotFromGraph(server, await acquireServerGraph(runtime, signal));
 }

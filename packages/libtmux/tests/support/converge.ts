@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 
 /**
@@ -85,4 +86,74 @@ export async function waitForPathAbsent(path: string): Promise<void> {
     // eslint-disable-next-line no-await-in-loop -- absence observation is bounded and sequential.
     await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
   }
+}
+
+export async function waitForPathPresent(path: string, timeoutMs = TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- presence is observed within one bound.
+      await access(path);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`${path} was not created within the test bound`);
+    }
+    // eslint-disable-next-line no-await-in-loop -- presence observation is bounded and sequential.
+    await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+  }
+}
+
+export async function closeChildWithin(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+): Promise<{ readonly code: number | null; readonly signal: string | null }> {
+  const waitForClose = async (
+    boundMs: number,
+  ): Promise<{ readonly code: number | null; readonly signal: string | null } | undefined> => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return { code: child.exitCode, signal: child.signalCode };
+    }
+    return await new Promise((resolve, reject) => {
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        child.removeListener("close", onClose);
+        child.removeListener("error", onError);
+      };
+      const onClose = (code: number | null, signal: string | null): void => {
+        cleanup();
+        resolve({ code, signal });
+      };
+      const onError = (error: Error): void => {
+        cleanup();
+        reject(error);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve(undefined);
+      }, boundMs);
+      timer.unref();
+      child.once("close", onClose);
+      child.once("error", onError);
+      if (child.exitCode !== null || child.signalCode !== null) {
+        onClose(child.exitCode, child.signalCode);
+      }
+    });
+  };
+
+  let closed = await waitForClose(timeoutMs);
+  if (closed !== undefined) return closed;
+  child.kill("SIGTERM");
+  closed = await waitForClose(100);
+  if (closed !== undefined) return closed;
+  child.kill("SIGKILL");
+  closed = await waitForClose(500);
+  if (closed !== undefined) return closed;
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.unref();
+  throw new Error("owned child did not close after SIGKILL");
 }

@@ -78,9 +78,8 @@ export function offers(policy: Policy, tier: SafetyTier): boolean {
  * is never registered, so it is not merely refused — an agent cannot spend a
  * turn discovering it.
  */
-export function offeredTools(mcp: McpServer, policy: Policy): McpServer {
+export function offeredTools(mcp: McpServer, policy: Policy, registered: Set<string>): McpServer {
   const allowed = policy.tools;
-  if (allowed === undefined) return mcp;
   /**
    * Call the real registration only for a listed name.
    *
@@ -90,32 +89,16 @@ export function offeredTools(mcp: McpServer, policy: Policy): McpServer {
   const filtered =
     (owner: object, method: string) =>
     (name: string, ...rest: readonly unknown[]): unknown => {
-      if (!allowed.has(name)) return undefined;
+      if (allowed !== undefined && !allowed.has(name)) return undefined;
       const register = Reflect.get(owner, method) as (...args: readonly unknown[]) => unknown;
-      return register.call(owner, name, ...rest);
+      const result = register.call(owner, name, ...rest);
+      registered.add(name);
+      return result;
     };
 
   return new Proxy(mcp, {
     get(target, property, receiver): unknown {
       if (property === "registerTool") return filtered(target, "registerTool");
-      // A task tool registers through its own object, so filtering only
-      // `registerTool` would leave `wait_for_text_task` offered by a server
-      // that was told not to.
-      if (property === "experimental") {
-        const experimental = target.experimental;
-        const tasks = experimental.tasks;
-        return {
-          ...experimental,
-          tasks: new Proxy(tasks, {
-            get(taskTarget, taskProperty, taskReceiver): unknown {
-              if (taskProperty !== "registerToolTask") {
-                return Reflect.get(taskTarget, taskProperty, taskReceiver) as unknown;
-              }
-              return filtered(taskTarget, "registerToolTask");
-            },
-          }),
-        };
-      }
       return Reflect.get(target, property, receiver) as unknown;
     },
   });

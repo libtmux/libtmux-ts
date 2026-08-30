@@ -2,35 +2,40 @@
  * Waiting for a pane to say something, without polling and without hanging.
  *
  * These stream tmux's own notifications, so nothing is spent while nothing is
- * happening. What they cost instead is the caller's turn, which is why the
- * blocking ceiling is low and why the same waits are also offered as tasks: a
- * task hands back a handle at once, so a ten-minute build is a thing to check
- * on rather than a thing to sit through.
+ * happening. The ceiling is low because the wait still spends the caller's
+ * turn.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import {
-  isFailure,
-  requireLiveCursor,
-  requirePane,
-  type ReadablePane,
-  type ToolContext,
-} from "../context.js";
-import { effectiveWaitMs } from "../policy.js";
+import { requireLiveCursor, type ToolContext } from "../context.js";
+import { captureGridBounded } from "../grid_capture.js";
+import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { offers, READ_ONLY } from "../register.js";
-import { fail, ok, renderOutput, tailLines } from "../results.js";
+import { boundText, fail, ok, renderBoundedText } from "../results.js";
+import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
+import { isFailure, requirePane, type ReadablePane } from "../target_resolution.js";
+import type { PaneTailEndReason } from "../pane_tail.js";
 
-type WaitOutcome = "cancelled" | "matched" | "no_stream" | "pane_died" | "timed_out";
+type WaitOutcome =
+  | "cancelled"
+  | "matched"
+  | "no_stream"
+  | "output_lost"
+  | "pane_died"
+  | "stream_lost"
+  | "timed_out";
 
 interface WaitReport {
-  readonly cursor: number;
+  readonly cursor: string | null;
   readonly effectiveTimeoutMs: number;
   readonly matched: string | null;
+  readonly missedBytes: number;
   readonly outcome: WaitOutcome;
   readonly output: string;
+  readonly streamFailure: PaneTailEndReason | null;
 }
 
 /** How long a quiet stream is left alone before the loop looks again. */
@@ -41,11 +46,14 @@ const IDLE_WAKE_MS = 500;
  *
  * A pane's death is not output, so nothing wakes the wait to announce it and
  * the only way to hear about it is to ask. Asking on every idle wake would
- * spend a snapshot twice a second — seven thousand of them across the hour a
- * task wait may run — so a quiet wait asks on this interval instead, and a wait
- * that is hearing output never asks at all.
+ * spend a snapshot twice a second, so a quiet wait asks on this interval
+ * instead, and a wait that is hearing output never asks at all.
  */
 const LIVENESS_MS = 5_000;
+
+function isCancelled(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
 
 /**
  * Wait for a pane to print something matching, and report why the wait ended.
@@ -58,28 +66,40 @@ async function waitForOutput(
   context: ToolContext,
   pane: ReadablePane,
   options: {
-    readonly cursor?: number;
+    readonly cursor?: string;
     readonly matches: (text: string) => string | undefined;
     readonly signal?: AbortSignal;
     readonly timeoutMs: number;
   },
 ): Promise<WaitReport> {
-  const sessionId = pane.sessionId;
-  const tail =
-    context.policy.liveEnabled && sessionId !== null
-      ? await context.hub.tail(sessionId, pane.id)
-      : undefined;
-  if (tail === undefined) {
+  const sessionId = pane.format.session_id;
+  const tail = context.policy.liveEnabled
+    ? await context.hub.tail(sessionId, pane.id, options.signal)
+    : undefined;
+  if (isCancelled(options.signal)) {
     return {
-      cursor: 0,
+      cursor: null,
       effectiveTimeoutMs: options.timeoutMs,
       matched: null,
+      missedBytes: 0,
+      outcome: "cancelled",
+      output: "",
+      streamFailure: null,
+    };
+  }
+  if (tail === undefined) {
+    return {
+      cursor: null,
+      effectiveTimeoutMs: options.timeoutMs,
+      matched: null,
+      missedBytes: 0,
       outcome: "no_stream",
       output: "",
+      streamFailure: null,
     };
   }
 
-  const from = options.cursor;
+  const from = options.cursor ?? tail.cursor;
   const deadline = Date.now() + options.timeoutMs;
   let askedAlive = Date.now();
   for (;;) {
@@ -90,19 +110,34 @@ async function waitForOutput(
         cursor: seen.cursor,
         effectiveTimeoutMs: options.timeoutMs,
         matched: hit,
+        missedBytes: seen.missedBytes,
         outcome: "matched",
         output: seen.text,
+        streamFailure: null,
+      };
+    }
+    if (seen.missedBytes > 0) {
+      return {
+        cursor: null,
+        effectiveTimeoutMs: options.timeoutMs,
+        matched: null,
+        missedBytes: seen.missedBytes,
+        outcome: "output_lost",
+        output: seen.text,
+        streamFailure: null,
       };
     }
     // A caller that has gone away is not owed the rest of its deadline, and the
     // connection it was holding is wanted by somebody else.
-    if (options.signal?.aborted === true) {
+    if (isCancelled(options.signal)) {
       return {
         cursor: seen.cursor,
         effectiveTimeoutMs: options.timeoutMs,
         matched: null,
+        missedBytes: 0,
         outcome: "cancelled",
         output: seen.text,
+        streamFailure: null,
       };
     }
     const remaining = deadline - Date.now();
@@ -110,32 +145,51 @@ async function waitForOutput(
       // A dead pane and a quiet one look the same from the stream, and only one
       // of them is worth waiting on again.
       // eslint-disable-next-line no-await-in-loop -- reached once, on the way out.
-      const alive = (await context.snapshot()).panes.exists({ id: pane.id });
+      const current = (await context.snapshot()).panes.first({ id: pane.id });
+      const alive = current !== undefined && current.dead !== true;
       return {
         cursor: seen.cursor,
         effectiveTimeoutMs: options.timeoutMs,
         matched: null,
+        missedBytes: 0,
         outcome: alive ? "timed_out" : "pane_died",
         output: seen.text,
+        streamFailure: null,
       };
     }
     // eslint-disable-next-line no-await-in-loop -- each wait follows its read.
-    const woke = await tail.changed(Math.min(remaining, IDLE_WAKE_MS), options.signal);
-    if (woke || Date.now() - askedAlive < LIVENESS_MS) continue;
+    const change = await tail.changed(Math.min(remaining, IDLE_WAKE_MS), options.signal);
+    if (change === "closed") {
+      const last = tail.read(from);
+      return {
+        cursor: null,
+        effectiveTimeoutMs: options.timeoutMs,
+        matched: null,
+        missedBytes: last.missedBytes,
+        outcome: "stream_lost",
+        output: last.text,
+        streamFailure: tail.endReason ?? "connection_lost",
+      };
+    }
+    if (change === "changed" || change === "cancelled" || Date.now() - askedAlive < LIVENESS_MS) {
+      continue;
+    }
 
     // Nothing arrived, and a pane that has died will never make anything
-    // arrive. A task wait may run for an hour, so waiting out the deadline
-    // reports the death long after it mattered.
+    // arrive. Waiting out the deadline reports the death long after it mattered.
     askedAlive = Date.now();
     // eslint-disable-next-line no-await-in-loop -- only a wait hearing nothing pays this.
-    if (!(await context.snapshot()).panes.exists({ id: pane.id })) {
+    const current = (await context.snapshot()).panes.first({ id: pane.id });
+    if (current === undefined || current.dead === true) {
       const last = tail.read(from);
       return {
         cursor: last.cursor,
         effectiveTimeoutMs: options.timeoutMs,
         matched: null,
+        missedBytes: last.missedBytes,
         outcome: "pane_died",
         output: last.text,
+        streamFailure: null,
       };
     }
   }
@@ -165,12 +219,25 @@ async function renderWait(
       reason: `Cannot watch ${paneId}: no control-mode connection is available.`,
     });
   }
-  const limit = maxLines ?? context.policy.maxResultLines;
-  const trimmed = tailLines(report.output === "" ? [] : report.output.split("\n"), limit);
-  const screen =
+  const limit = effectiveResultLines(context.policy, maxLines);
+  const output = boundText(
+    report.output === "" ? [] : report.output.split("\n"),
+    limit,
+    MAX_RESULT_BYTES,
+  );
+  const screenBudget = MAX_RESULT_BYTES - output.returnedBytes;
+  const capture =
     report.outcome === "matched" || report.outcome === "cancelled"
-      ? ""
-      : tailLines(await pane.capture().catch(() => []), limit).lines.join("\n");
+      ? undefined
+      : await captureGridBounded(pane, {
+          byteLimit: screenBudget,
+          lineLimit: limit,
+        }).catch(() => undefined);
+  const boundedScreen = boundText(capture?.lines ?? [], limit, screenBudget);
+  const screen = boundedScreen.text;
+  const screenClamped =
+    capture !== undefined &&
+    (capture.byteClamped || capture.range.clamped || boundedScreen.omittedBytes > 0);
 
   // A wait is deliberately blind to what was already on the screen: matching it
   // would let text from an hour ago satisfy a wait that should have failed. But
@@ -185,29 +252,48 @@ async function renderWait(
       ? `matched ${describe}`
       : report.outcome === "cancelled"
         ? "cancelled before it matched"
-        : alreadyOnScreen
-          ? `no match while waiting, but ${describe} is on the pane now — it printed before this wait began. Read it with capture_pane; wait again from cursor=${String(report.cursor)} only if you want the next one`
-          : report.outcome === "pane_died"
-            ? "the pane exited before it matched; waiting again cannot help"
-            : `no match in ${String(report.effectiveTimeoutMs)}ms — call again with cursor=${String(report.cursor)} to carry on from here`;
+        : report.outcome === "stream_lost"
+          ? `the live stream ended (${report.streamFailure ?? "connection_lost"}); omit cursor to start again or use capture_pane`
+          : report.outcome === "output_lost"
+            ? "output passed the retained tail before it could be checked; omit cursor to start a fresh wait"
+            : alreadyOnScreen
+              ? `no match while waiting, but ${describe} is on the pane now — it printed before this wait began. Read it with capture_pane; wait again from cursor=${String(report.cursor)} only if you want the next one`
+              : report.outcome === "pane_died"
+                ? "the pane exited before it matched; waiting again cannot help"
+                : `no match in ${String(report.effectiveTimeoutMs)}ms — call again with cursor=${String(report.cursor)} to carry on from here`;
 
-  const body =
+  const outputText = renderBoundedText(output, "read again from the returned cursor");
+  const screenText =
     screen === ""
-      ? renderOutput(trimmed)
-      : `${renderOutput(trimmed)}\n\n[the pane currently shows]\n${screen}`;
+      ? screenClamped
+        ? "[pane screen omitted by the result limits]"
+        : ""
+      : `${screenClamped ? "[pane screen shortened by the result limits]\n" : ""}${screen}`;
+  const body =
+    screenText === "" ? outputText : `${outputText}\n\n[the pane currently shows]\n${screenText}`;
+  const missed =
+    report.missedBytes === 0
+      ? ""
+      : `\n\n[${String(report.missedBytes)} retained bytes were lost before this read; the result is incomplete]`;
 
   return ok(
     {
       alreadyOnScreen,
       cursor: report.cursor,
+      droppedLines: output.droppedLines,
       effectiveTimeoutMs: report.effectiveTimeoutMs,
       matched: report.matched,
+      missedBytes: report.missedBytes,
+      omittedBytes: output.omittedBytes,
       outcome: report.outcome,
-      output: trimmed.lines.join("\n"),
+      output: output.text,
       paneId,
+      returnedBytes: output.returnedBytes + boundedScreen.returnedBytes,
       screen,
+      screenClamped,
+      streamFailure: report.streamFailure,
     },
-    `${body}\n\n[${note}]`,
+    `${body}${missed}\n\n[${note}]`,
   );
 }
 
@@ -217,38 +303,59 @@ const waitOutputSchema = {
     .describe(
       "The pattern is on the pane now but printed before this wait began, so the wait could not match it. Read it with capture_pane rather than waiting again.",
     ),
-  cursor: z.number().int().describe("Pass to observe or to another wait to carry on from here."),
+  cursor: paneCursorSchema
+    .nullable()
+    .describe("Pass to observe or another wait; null means the live stream cannot be resumed."),
+  droppedLines: z.number().int().describe("Output lines omitted by the result limit."),
   effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced, after clamping."),
   matched: z.string().nullable().describe("The text that matched, or null."),
+  missedBytes: z
+    .number()
+    .int()
+    .describe("Retained output lost before this read; non-zero means the result is incomplete."),
+  omittedBytes: z.number().int().describe("Output bytes omitted by the result ceiling."),
   outcome: z
-    .enum(["matched", "timed_out", "pane_died", "no_stream", "cancelled"])
+    .enum([
+      "matched",
+      "timed_out",
+      "pane_died",
+      "no_stream",
+      "cancelled",
+      "output_lost",
+      "stream_lost",
+    ])
     .describe("Why the wait ended. Read this rather than guessing from the output."),
-  output: z.string().describe("Everything the pane printed while waiting, matched or not."),
-  paneId: z.string(),
+  output: z.string().describe("The bounded tail of what the pane printed while waiting."),
+  paneId: paneIdSchema,
+  returnedBytes: z.number().int().describe("UTF-8 bytes returned across output and screen."),
   screen: z
     .string()
     .describe(
-      "What the pane shows now. Filled when the wait did not match, so a miss is never blind.",
+      "What the pane shows now after a miss, unless result limits omit it; see screenClamped.",
     ),
+  screenClamped: z.boolean().describe("Whether result limits shortened the pane screen."),
+  streamFailure: z
+    .enum(["connection_lost", "events_dropped", "expired", "hub_closed", "topology_changed"])
+    .nullable()
+    .describe("Why the live stream ended, or null while it remained valid."),
 };
 
 export function registerWait(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "readonly")) return;
+  if (!offers(context.policy, "readonly") || !context.policy.liveEnabled) return;
 
   const inputSchema = {
-    cursor: z
-      .number()
-      .int()
-      .nonnegative()
+    cursor: paneCursorSchema
       .optional()
       .describe("Start from a cursor an earlier observe or wait returned."),
     maxLines: z.number().int().positive().optional(),
-    paneId: z.string(),
-    patterns: z
-      .array(z.string())
+    paneId: paneIdSchema,
+    patterns: requestTextArray("pattern", "patterns")
       .optional()
       .describe("Any one of these ends the wait. Omit to wait for any output at all."),
-    regex: z.boolean().optional().describe("Treat patterns as regular expressions."),
+    regex: z
+      .literal(false)
+      .optional()
+      .describe("Regular expressions are disabled because native matching can block the server."),
     timeoutMs: z
       .number()
       .int()
@@ -266,30 +373,11 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
     "just sent matches the echo. Whatever happens you get back what the pane " +
     "printed and why the wait ended — a timeout is never an empty answer.";
 
-  /** Build the matcher once, so a bad expression fails before anything waits. */
   function buildMatcher(
     patterns: readonly string[] | undefined,
-    regex: boolean | undefined,
-  ): ((text: string) => string | undefined) | CallToolResult {
+  ): (text: string) => string | undefined {
     if (patterns === undefined || patterns.length === 0) {
       return (text) => (text === "" ? undefined : text.slice(-80));
-    }
-    if (regex === true) {
-      const expressions: RegExp[] = [];
-      for (const pattern of patterns) {
-        try {
-          expressions.push(new RegExp(pattern));
-        } catch (error) {
-          return fail({
-            hint: "Set regex to false to match them as plain text.",
-            reason: `Not a valid regular expression: ${pattern} (${error instanceof Error ? error.message : String(error)})`,
-          });
-        }
-      }
-      return (text) =>
-        expressions
-          .map((expression) => expression.exec(text)?.[0])
-          .find((hit) => hit !== undefined);
     }
     return (text) => patterns.find((pattern) => text.includes(pattern));
   }
@@ -297,24 +385,22 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
   async function run(
     signal: AbortSignal | undefined,
     args: {
-      cursor?: number | undefined;
+      cursor?: string | undefined;
       maxLines?: number | undefined;
       paneId: string;
       patterns?: string[] | undefined;
-      regex?: boolean | undefined;
+      regex?: false | undefined;
       timeoutMs?: number | undefined;
     },
-    asTask: boolean,
   ): Promise<CallToolResult> {
-    const matcher = buildMatcher(args.patterns, args.regex);
-    if (typeof matcher !== "function") return matcher;
+    const matcher = buildMatcher(args.patterns);
 
     const snapshot = await context.snapshot();
     const pane = requirePane(snapshot, args.paneId);
     if (isFailure(pane)) return pane;
 
-    if (args.cursor !== undefined && pane.sessionId !== null) {
-      const tail = await context.hub.tail(pane.sessionId, pane.id);
+    if (context.policy.liveEnabled && args.cursor !== undefined) {
+      const tail = await context.hub.tail(pane.format.session_id, pane.id, signal);
       const stale =
         tail === undefined ? undefined : requireLiveCursor(tail, args.cursor, args.paneId);
       if (stale !== undefined) return stale;
@@ -324,7 +410,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
       matches: matcher,
       ...(signal === undefined ? {} : { signal }),
-      timeoutMs: effectiveWaitMs(context.policy, args.timeoutMs, asTask),
+      timeoutMs: effectiveWaitMs(context.policy, args.timeoutMs),
     });
     return renderWait(
       context,
@@ -347,66 +433,6 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       outputSchema: waitOutputSchema,
       title: "Wait for output",
     },
-    (args, extra) => run(extra.signal, args, false),
-  );
-
-  /**
-   * Whether the client on the other end actually speaks tasks.
-   *
-   * The task ceiling is traded for a handle that arrives at once and can be
-   * cancelled. A client that declares no task capability gets neither: the SDK
-   * runs the tool and polls on its behalf, so the call blocks and cannot be
-   * called off. Charging it the task ceiling hands it the worst combination
-   * available — an uncancellable wait carrying twenty times the ceiling the
-   * blocking tool would have used — which is the turn-destroying outcome the
-   * low blocking ceiling exists to prevent.
-   */
-  const clientSpeaksTasks = (): boolean => mcp.server.getClientCapabilities()?.tasks !== undefined;
-
-  // The same wait, offered as a task. A client that speaks tasks gets a handle
-  // immediately and can cancel; one that does not has the SDK poll on its
-  // behalf and sees exactly the blocking tool it saw before — which is why this
-  // is `optional` rather than `required`, and why the ceiling follows the
-  // client's capability rather than the tool's name.
-  mcp.experimental.tasks.registerToolTask(
-    "wait_for_text_task",
-    {
-      annotations: READ_ONLY,
-      description: `${description} If your client speaks tasks, you get a handle at once and can do other work, so a long timeoutMs costs nothing to wait on. If it does not, this blocks exactly like wait_for_text and is held to the same lower ceiling — the reply says which one it used.`,
-      execution: { taskSupport: "optional" },
-      inputSchema,
-      outputSchema: waitOutputSchema,
-      title: "Wait for output (task)",
-    },
-    {
-      createTask: async (args, extra) => {
-        const task = await extra.taskStore.createTask({
-          // The SDK polls at this interval for a client that does not speak
-          // tasks, so it is the added latency of the degraded path.
-          pollInterval: 200,
-          ttl: context.policy.taskWaitMaxMs + 60_000,
-        });
-        void run(extra.signal, args, clientSpeaksTasks())
-          .then((result) => extra.taskStore.storeTaskResult(task.taskId, "completed", result))
-          .catch((error: unknown) =>
-            extra.taskStore.storeTaskResult(
-              task.taskId,
-              "failed",
-              fail({ reason: error instanceof Error ? error.message : String(error) }),
-            ),
-          );
-        return { task };
-      },
-      getTask: (_args, extra) => extra.taskStore.getTask(extra.taskId),
-      getTaskResult: async (_args, extra) => {
-        // The store holds an arbitrary result; only one this tool wrote has
-        // `content`. Anything else means the task ended without one, and saying
-        // that beats handing back a shape the client will reject.
-        const stored: unknown = await extra.taskStore.getTaskResult(extra.taskId);
-        return typeof stored === "object" && stored !== null && "content" in stored
-          ? (stored as CallToolResult)
-          : fail({ reason: `Task ${extra.taskId} finished without a result.` });
-      },
-    },
+    (args, extra) => run(extra.signal, args),
   );
 }

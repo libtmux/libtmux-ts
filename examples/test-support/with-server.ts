@@ -1,18 +1,12 @@
 // The library's real-tmux fixture harness, which is internal and unpublished.
 // In-repo consumers use it directly; external ones have no need for it.
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
 
 import {
-  prepareRunRoot,
-  reapOwnedRunRoot,
   runWithCleanup,
-} from "../../packages/libtmux/src/_internal/test/run_root.js";
-import { TestServer } from "../../packages/libtmux/src/_internal/test/test_server.js";
-import {
+  withOwnedRunRoot,
+  TestServer,
   assertOwnedSocketPath,
-  makeTestDirectory,
-} from "../../packages/libtmux/src/_internal/test/temp_root.js";
+} from "../../packages/libtmux/src/_internal/test/testkit.js";
 
 /**
  * Hand a test an isolated, real tmux server and reap it afterwards.
@@ -24,27 +18,12 @@ import {
  * lifecycle: prepare, reap, and remove the parent directory it made.
  */
 export async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
-  const parent = await makeTestDirectory("ltx-examples-");
-  const published = process.env.LIBTMUX_TEST_RUN_ROOT;
-  const runRoot = published ?? join(parent, "run, root");
-  if (published === undefined) await prepareRunRoot(runRoot);
-  let done = false;
-  try {
+  return withOwnedRunRoot("ltx-examples-", async (runRoot) => {
+    const fixture = await TestServer.create({ runRoot, sessionName: "examples" });
+    assertOwnedSocketPath(fixture.socketPath);
     await runWithCleanup(
-      async () => {
-        const fixture = await TestServer.create({ runRoot, sessionName: "examples" });
-        assertOwnedSocketPath(fixture.socketPath);
-        await runWithCleanup(
-          () => body(fixture),
-          () => fixture.dispose(),
-        );
-      },
-      async () => {
-        if (published === undefined) await reapOwnedRunRoot(runRoot);
-        done = true;
-      },
+      () => body(fixture),
+      () => fixture.dispose(),
     );
-  } finally {
-    if (done) await rm(parent, { force: true, recursive: true });
-  }
+  });
 }

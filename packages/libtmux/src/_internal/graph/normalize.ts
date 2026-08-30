@@ -1,10 +1,28 @@
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
-import type { ConnectionAlias, DaemonEpoch, PaneRef, SessionRef, WindowRef } from "../../common.js";
+import type {
+  ConnectionAlias,
+  DaemonEpoch,
+  PaneId,
+  PaneRef,
+  SessionId,
+  SessionRef,
+  WindowId,
+  WindowRef,
+} from "../../common.js";
 import { QueryValidationError } from "../../exc.js";
 import type { DaemonIdentity } from "../runtime/context.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand } from "../codec/format_types.js";
-import type { CompleteFormatRow } from "../codec/schemas.js";
+import {
+  validatePopulatedFormatIdentities,
+  type CompleteFormatRow,
+  type RawCompleteFormatRow,
+} from "../codec/schemas.js";
+import {
+  parsePaneId as authenticatePaneId,
+  parseSessionId as authenticateSessionId,
+  parseWindowId as authenticateWindowId,
+} from "../runtime/ids.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -21,6 +39,7 @@ import {
   type NormalizedGraph,
   type WinlinkEntity,
 } from "./model.js";
+import { snapshotOwnDataArray } from "./data_snapshot.js";
 import { createLogicalRef, createWinlinkRef, type WinlinkRef } from "./refs.js";
 
 export interface NormalizeGraphInput {
@@ -128,50 +147,25 @@ function parseListCommand(value: unknown): ListCommand {
 }
 
 function parseRows(value: unknown): readonly unknown[] {
-  let isArray: boolean;
-  let lengthDescriptor: PropertyDescriptor | undefined;
-  const elementDescriptors: Array<PropertyDescriptor | undefined> = [];
-  try {
-    isArray = Array.isArray(value);
-    if (isArray) {
-      lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
-      const length = lengthDescriptor?.value;
-      if (typeof length === "number" && Number.isSafeInteger(length) && length >= 0) {
-        for (let index = 0; index < length; index += 1) {
-          elementDescriptors.push(Object.getOwnPropertyDescriptor(value, String(index)));
-        }
-      }
-    }
-  } catch (error) {
-    return invalidNormalization("graph source rows could not be inspected", error);
-  }
+  const snapshot = snapshotOwnDataArray(value);
+  if (snapshot.ok) return snapshot.value;
 
-  if (!isArray) {
-    return invalidNormalization("graph source rows must be an array");
-  }
-  if (
-    lengthDescriptor === undefined ||
-    !("value" in lengthDescriptor) ||
-    lengthDescriptor.enumerable ||
-    typeof lengthDescriptor.value !== "number" ||
-    !Number.isSafeInteger(lengthDescriptor.value) ||
-    lengthDescriptor.value < 0 ||
-    elementDescriptors.length !== lengthDescriptor.value
-  ) {
-    return invalidNormalization("graph source rows must have a valid array length");
-  }
-
-  const rows: unknown[] = [];
-  for (const descriptor of elementDescriptors) {
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+  switch (snapshot.failure.reason) {
+    case "not-array":
+      return invalidNormalization("graph source rows must be an array");
+    case "inspection":
+      return invalidNormalization(
+        "graph source rows could not be inspected",
+        snapshot.failure.cause,
+      );
+    case "length":
+      return invalidNormalization("graph source rows must have a valid array length");
+    case "element":
       return invalidNormalization("graph source rows must contain own enumerable data elements");
-    }
-    rows.push(descriptor.value);
   }
-  return rows;
 }
 
-function copyCompleteFormatRow(value: unknown): CompleteFormatRow {
+function copyCompleteFormatRow(value: unknown): RawCompleteFormatRow {
   if (typeof value !== "object" || value === null) {
     return invalidNormalization("captured format row must be an object");
   }
@@ -226,40 +220,43 @@ function copyCompleteFormatRow(value: unknown): CompleteFormatRow {
     entries.push([token, descriptor.value]);
   }
 
-  return Object.freeze(Object.fromEntries(entries)) as CompleteFormatRow;
+  return Object.freeze(Object.fromEntries(entries)) as RawCompleteFormatRow;
 }
 
-function parseSessionId(value: string | null, required: boolean): string | null {
+function parseSessionId(value: string | null, required: boolean): SessionId | null {
   if (value === null || value.length === 0) {
     if (required) return invalidNormalization("session topology requires a session ID");
     return null;
   }
-  if (!/^\$\d+$/u.test(value)) {
+  try {
+    return authenticateSessionId(value);
+  } catch {
     return invalidNormalization("session ID must use the session sigil");
   }
-  return value;
 }
 
-function parseWindowId(value: string | null, required: boolean): string | null {
+function parseWindowId(value: string | null, required: boolean): WindowId | null {
   if (value === null || value.length === 0) {
     if (required) return invalidNormalization("window topology requires a window ID");
     return null;
   }
-  if (!/^@\d+$/u.test(value)) {
+  try {
+    return authenticateWindowId(value);
+  } catch {
     return invalidNormalization("window ID must use the window sigil");
   }
-  return value;
 }
 
-function parsePaneId(value: string | null, required: boolean): string | null {
+function parsePaneId(value: string | null, required: boolean): PaneId | null {
   if (value === null || value.length === 0) {
     if (required) return invalidNormalization("pane topology requires a pane ID");
     return null;
   }
-  if (!/^%\d+$/u.test(value)) {
+  try {
+    return authenticatePaneId(value);
+  } catch {
     return invalidNormalization("pane ID must use the pane sigil");
   }
-  return value;
 }
 
 function parseClientId(value: string | null, required: boolean): string | null {
@@ -284,10 +281,12 @@ function parseWindowIndex(value: string | null, required: boolean): string | nul
   return value;
 }
 
-function validatePopulatedIdentities(row: CompleteFormatRow): void {
-  parseSessionId(row.session_id, false);
-  parseWindowId(row.window_id, false);
-  parsePaneId(row.pane_id, false);
+function validatePopulatedIdentities(row: RawCompleteFormatRow): void {
+  try {
+    validatePopulatedFormatIdentities(row);
+  } catch (cause) {
+    return invalidNormalization("captured format row contains a malformed tmux ID", cause);
+  }
   parseClientId(row.client_name, false);
   parseWindowIndex(row.window_index, false);
 }
@@ -320,7 +319,7 @@ export function normalizeGraph(input: NormalizeGraphInput): NormalizedGraph {
   const clients = new Map<string, EntityAccumulator<ClientRef>>();
   const winlinks = new Map<string, WinlinkAccumulator>();
 
-  const addSession = (id: string, occurrence: GraphRecordRef): SessionRef => {
+  const addSession = (id: SessionId, occurrence: GraphRecordRef): SessionRef => {
     const existing = sessions.get(id);
     if (existing !== undefined) {
       existing.occurrences.push(occurrence);
@@ -336,7 +335,7 @@ export function normalizeGraph(input: NormalizeGraphInput): NormalizedGraph {
     return ref;
   };
 
-  const addWindow = (id: string, occurrence: GraphRecordRef): WindowRef => {
+  const addWindow = (id: WindowId, occurrence: GraphRecordRef): WindowRef => {
     const existing = windows.get(id);
     if (existing !== undefined) {
       existing.occurrences.push(occurrence);
@@ -352,7 +351,7 @@ export function normalizeGraph(input: NormalizeGraphInput): NormalizedGraph {
     return ref;
   };
 
-  const addPane = (id: string, occurrence: GraphRecordRef): PaneRef => {
+  const addPane = (id: PaneId, occurrence: GraphRecordRef): PaneRef => {
     const existing = panes.get(id);
     if (existing !== undefined) {
       existing.occurrences.push(occurrence);
@@ -385,8 +384,8 @@ export function normalizeGraph(input: NormalizeGraphInput): NormalizedGraph {
   };
 
   const addWinlink = (
-    sessionId: string,
-    windowId: string,
+    sessionId: SessionId,
+    windowId: WindowId,
     windowIndex: string,
     occurrence: GraphRecordRef,
   ): WinlinkRef => {
@@ -423,8 +422,9 @@ export function normalizeGraph(input: NormalizeGraphInput): NormalizedGraph {
     const sourceRecords: GraphRecordRef[] = [];
 
     for (const [ordinal, rowInput] of rows.entries()) {
-      const scalars = copyCompleteFormatRow(rowInput);
-      validatePopulatedIdentities(scalars);
+      const rawScalars = copyCompleteFormatRow(rowInput);
+      validatePopulatedIdentities(rawScalars);
+      const scalars = rawScalars as CompleteFormatRow;
       const ref = createGraphRecordRef(source, ordinal);
       let model: GraphModel;
       let entity: GraphEntityRef;

@@ -1,3 +1,5 @@
+import { testParallelism } from "../src/_internal/test/testkit.js";
+
 import { NODE22, preflight } from "./preflight.js";
 
 await preflight([NODE22]);
@@ -6,7 +8,7 @@ const result = Bun.spawnSync({
   cmd: [
     "bun",
     "test",
-    "--parallel=4",
+    `--parallel=${String(testParallelism())}`,
     "--timeout=30000",
     "--no-orphans",
     "tests/unit",

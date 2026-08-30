@@ -1,23 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  carriesTmuxId,
-  daemonCondition,
-  guardedArgv,
-  refusedByGuard,
-} from "../../src/_internal/transport/daemon_guard.js";
+import { carriesTmuxId, daemonCondition } from "../../src/_internal/transport/daemon_guard.js";
 // Through the public entry an engine author imports, not the internal path,
 // so this fails if the export is dropped from `libtmux/engine`.
 import { guardRequest } from "../../src/engine.js";
+import type { TmuxInvocationRequest } from "../../src/engine.js";
 
 const encoder = new TextEncoder();
 const daemon = { pid: "4242", startTime: "1700000000" };
+const refusalCommand = /^'libtmux-daemon-restarted-[0-9a-f]{32}'$/u;
 
 describe("daemon guard", () => {
   test("recognises the argv shapes a restart makes dangerous", () => {
     expect(carriesTmuxId(["kill-pane", "-t", "%3"])).toBe(true);
     expect(carriesTmuxId(["kill-window", "-t", "@7"])).toBe(true);
     expect(carriesTmuxId(["kill-session", "-t", "$0"])).toBe(true);
+    expect(carriesTmuxId(["unlink-window", "-t", "$0:7"])).toBe(true);
     // Sources carry ids too, and a guard reading only `-t` would miss them.
     expect(carriesTmuxId(["swap-pane", "-s", "%1", "-t", "%2"])).toBe(true);
     expect(carriesTmuxId(["link-window", "-s", "@4", "-t", "other:9"])).toBe(true);
@@ -32,67 +30,72 @@ describe("daemon guard", () => {
     expect(daemonCondition(daemon)).toBe("#{==:#{pid}/#{start_time},4242/1700000000}");
   });
 
-  test("keeps the server flags outside the wrapper and quotes the command inside", () => {
-    expect(guardedArgv(["-S", "/tmp/ltx s"], ["kill-pane", "-t", "%3"], daemon)).toEqual([
-      "-S",
-      "/tmp/ltx s",
-      "if-shell",
-      "-F",
-      "#{==:#{pid}/#{start_time},4242/1700000000}",
-      "'kill-pane' '-t' '%3'",
-      "'list-windows' '-t' 'libtmux-daemon-restarted'",
-    ]);
-  });
-
-  test("a payload that is tmux syntax stays a payload", () => {
-    // Single-quoting is literal to tmux's lexer, so none of this can start a
-    // second command, expand a format, or escape the branch it is in.
-    const payload = `a b;kill-server "c" 'd' #{pane_id} \\e`;
-    const argv = guardedArgv([], ["send-keys", "-t", "%1", "-l", payload], daemon);
-
-    expect(argv.at(-2)).toBe(
-      `'send-keys' '-t' '%1' '-l' 'a b;kill-server "c" '\\''d'\\'' #{pane_id} \\e'`,
-    );
-  });
-
   test("guards a whole request, which is what an engine is handed", () => {
     // An engine receives requests, not argv, and the built-in transport is the
     // only thing that knew how to turn the guard on one into the wrapper tmux
     // enforces. Published so an implementer inherits restart safety instead of
-    // reimplementing `if-shell -F`, the impossible else branch, and the stderr
+    // reimplementing `if-shell -F`, the unique refusal command, and the stderr
     // that tells a refusal from a failure.
     // Global flags carry their value joined, which is what makes "the
     // subcommand starts at the first argument without a leading dash" exact.
     const guarded = guardRequest({
-      args: ["-S/tmp/ltx", "kill-pane", "-t", "%3"],
+      commands: [
+        ["kill-pane", "-t", "%3"],
+        ["display-message", "-p", "done"],
+      ],
       daemonGuard: daemon,
       executable: "tmux",
+      globalArgs: ["-S/tmp/ltx"],
     });
 
-    expect(guarded.args).toEqual(guardedArgv(["-S/tmp/ltx"], ["kill-pane", "-t", "%3"], daemon));
+    const [name, flag, condition, chain, refusal] = guarded.request.commands[0];
+    expect(guarded.request.globalArgs).toEqual(["-S/tmp/ltx"]);
+    expect({ chain, condition, flag, name }).toEqual({
+      chain: "'kill-pane' '-t' '%3' ; 'display-message' '-p' 'done'",
+      condition: daemonCondition(daemon),
+      flag: "-F",
+      name: "if-shell",
+    });
+    expect(refusal).toMatch(refusalCommand);
   });
 
-  test("leaves alone a request there is nothing to guard", () => {
-    const unguarded = { args: ["-S/tmp/ltx", "list-panes"], executable: "tmux" };
-    expect(guardRequest(unguarded)).toBe(unguarded);
+  test("leaves an unguarded request alone and rejects guarded stdin", () => {
+    const unguarded: TmuxInvocationRequest = {
+      commands: [["list-panes"]],
+      executable: "tmux",
+      globalArgs: ["-S/tmp/ltx"],
+    };
+    const prepared = guardRequest(unguarded);
+    expect(prepared.request).toBe(unguarded);
+    expect(prepared.refusedBy(1, encoder.encode("anything"))).toBe(false);
 
-    // `load-buffer -` reads the client's stdin, and an if-shell branch is a
-    // command tmux runs for itself, with no stdin to give it.
-    const piped = {
-      args: ["load-buffer", "-"],
+    const piped: TmuxInvocationRequest = {
+      commands: [["kill-pane", "-t", "%1"]],
       daemonGuard: daemon,
       executable: "tmux",
+      globalArgs: [],
       stdin: encoder.encode("hi"),
     };
-    expect(guardRequest(piped)).toBe(piped);
+    expect(() => guardRequest(piped)).toThrow(/stdin/u);
   });
 
-  test("tells the guard refusing from the command failing", () => {
-    expect(refusedByGuard(1, encoder.encode("can't find session: libtmux-daemon-restarted"))).toBe(
-      true,
-    );
-    expect(refusedByGuard(1, encoder.encode("can't find pane: %99"))).toBe(false);
-    // A zero exit is the command having run, whatever it printed.
-    expect(refusedByGuard(0, encoder.encode("libtmux-daemon-restarted"))).toBe(false);
+  test("binds refusal recognition to this request's nonce", () => {
+    const guarded = guardRequest({
+      commands: [["kill-pane", "-t", "%3"]],
+      daemonGuard: daemon,
+      executable: "tmux",
+      globalArgs: [],
+    });
+    const quoted = guarded.request.commands[0].at(-1);
+    if (quoted === undefined) throw new Error("missing refusal command");
+    const command = quoted.slice(1, -1);
+    const refusal = `unknown command: ${command}`;
+    const otherCommand = `${command.slice(0, -1)}${command.endsWith("0") ? "1" : "0"}`;
+
+    expect(guarded.refusedBy(1, encoder.encode(refusal))).toBe(true);
+    expect(guarded.refusedBy(1, encoder.encode(`unknown command: ${otherCommand}`))).toBe(false);
+    expect(guarded.refusedBy(1, encoder.encode(`prefix ${refusal}`))).toBe(false);
+    expect(guarded.refusedBy(1, encoder.encode("can't find pane: %99"))).toBe(false);
+    expect(guarded.refusedBy(0, encoder.encode(refusal))).toBe(false);
   });
 });

@@ -32,7 +32,8 @@ capture loop:
 **A command's output is never its echo.** A pane repeats what is typed into it,
 so waiting for text that appears in the command matches immediately and reports
 your own command back to you. `run_command` frames what it sends so the marker
-it waits for cannot appear in what it typed, and reports the real exit status.
+it waits for cannot appear in what it typed or in the command's inherited shell
+state, and reports the real exit status.
 
 **A wait that fails is still an answer.** Every wait reports why it ended —
 `matched`, `timed_out`, `pane_died`, `cancelled` — along with everything the pane
@@ -48,17 +49,21 @@ whole screen again.
 ## Install
 
 ```console
-$ npx -y @libtmux/mcp
+$ npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 Nothing to install ahead of time: the server speaks MCP over stdio, so an MCP
 client launches it as a subprocess. To pin it in a project instead:
 
 ```console
-$ bun add @libtmux/mcp
+$ bun add --exact @libtmux/mcp@0.1.0-alpha.6
 ```
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
+
+Linux is the only supported host for real tmux control. The macOS CI lane
+checks package artifacts without exercising tmux; macOS runtime behavior is
+unproven. WSL is untested.
 
 ## Configure your client
 
@@ -69,7 +74,7 @@ This is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.6"],
       "env": { "LIBTMUX_SOCKET_NAME": "agent" }
     }
   }
@@ -80,7 +85,8 @@ This is the whole configuration:
 <summary>Claude Code</summary>
 
 ```console
-$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- npx -y @libtmux/mcp
+$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
+    npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 </details>
@@ -112,29 +118,38 @@ agent's cleanup can reap the session you are working in.
 
 ### Tune what it will do
 
-| Variable                       | Default  | Effect                                                |
-| ------------------------------ | -------- | ----------------------------------------------------- |
-| `LIBTMUX_SAFETY`               | mutating | `readonly`, `mutating`, or `destructive`              |
-| `LIBTMUX_MCP_WAIT_MAX_MS`      | 30000    | Ceiling on a wait that blocks the caller              |
-| `LIBTMUX_MCP_TASK_WAIT_MAX_MS` | 600000   | Ceiling on a wait running as a task                   |
-| `LIBTMUX_MCP_MAX_RESULT_LINES` | 200      | Lines a result may carry before it trims and links    |
-| `LIBTMUX_MCP_LIVE`             | on       | Set to `0` to forbid control-mode connections         |
-| `LIBTMUX_MCP_TOOLS`            | all      | Comma-separated tool names, when a tier is too coarse |
+| Variable                         | Default  | Effect                                             |
+| -------------------------------- | -------- | -------------------------------------------------- |
+| `LIBTMUX_SAFETY`                 | readonly | `readonly`, `mutating`, or `destructive`           |
+| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000    | Ceiling on a wait that blocks the caller           |
+| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000    | Deadline for each internal tmux request            |
+| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200      | Lines a result may carry before it trims and links |
+| `LIBTMUX_MCP_LIVE`               | on       | Set to `0` to forbid control-mode connections      |
+| `LIBTMUX_MCP_TOOLS`              | all      | Comma-separated tool allowlist; blank offers none  |
 
-Two ceilings rather than one, because the two waits cost different things. A
-blocking wait spends the agent's turn and cannot be called off mid-flight, so it
-is held low. A task hands back a handle at once and can be cancelled, so it may
-run for as long as the work does. An over-large timeout is never an error: it is
-clamped, and every result reports the `effectiveTimeoutMs` it actually used.
+With live connections disabled, `wait_for_text`, streaming prompts, and resource
+subscriptions are omitted; `observe` returns a bounded capture with
+`streaming: false`.
+
+Cancelling a request stops its wait. An over-large tool timeout is never an
+error: it is clamped, and every result reports the `effectiveTimeoutMs` it
+actually used. The command timeout is capped at JavaScript's timer range.
 
 ### Safety tiers
 
 `LIBTMUX_SAFETY` decides which tools are **listed**, not which are refused. A
 tool an agent cannot see is one it cannot spend a turn being denied.
 
-- `readonly` — reading, watching, and waiting. Nothing writes.
+- `readonly` — reading, watching, and waiting. It sends no pane input and leaves
+  no tmux state behind. `show_buffer` may stage a temporary file; it reads at
+  most the result ceiling and removes the file before returning.
 - `mutating` — the above, plus typing, splitting, creating, and renaming.
 - `destructive` — the above, plus `kill_pane`, `kill_window`, `kill_session`.
+
+These tiers control tool exposure; they are not a sandbox, an authorization
+boundary, or a confidentiality boundary. A listed tool has the tmux socket and
+Unix-user authority of this process. Use a dedicated socket and read the
+[security boundary](../../SECURITY.md) before serving an untrusted client.
 
 A name this list does not hold falls to `readonly`, not to the default —
 `read-only` and `read_only` are how `readonly` is usually mistyped, and
@@ -145,7 +160,7 @@ up:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.0-alpha.2 serving agents at the readonly tier
+libtmux-mcp 0.1.0-alpha.6 serving agents at the readonly tier
 ```
 
 `LIBTMUX_MCP_TOOLS` narrows further when a tier is the wrong shape. A tier
@@ -156,6 +171,11 @@ registered, so an agent cannot spend a turn discovering it:
 ```console
 $ LIBTMUX_MCP_TOOLS=list_panes,capture_pane,run_command libtmux-mcp
 ```
+
+Leaving the variable unset offers every tool permitted by the tier. Once set,
+it is always an allowlist: a blank value offers no tools, and any other value
+offers only named tools permitted by the tier. Tool-dependent prompts appear
+only when their required tools are available; resources remain available.
 
 Independently of the tier, the server refuses to write to or kill **the pane it
 is running in** and any pane **a person is currently watching**, unless the call
@@ -169,15 +189,14 @@ can decide what to auto-approve.
 
 ### Find your way around
 
-| Tool              | Answers                                                 |
-| ----------------- | ------------------------------------------------------- |
-| `list_sessions`   | What sessions exist, and is anyone attached             |
-| `list_windows`    | What windows exist, optionally in one session           |
-| `list_panes`      | What panes exist, what each runs, which are yours       |
-| `get_pane`        | One pane's metadata                                     |
-| `whoami`          | Which pane this server runs in; which panes are watched |
-| `server_info`     | Socket, tmux version, daemon pid, totals                |
-| `display_message` | Any tmux format these projections do not carry          |
+| Tool            | Answers                                                 |
+| --------------- | ------------------------------------------------------- |
+| `list_sessions` | What sessions exist, and is anyone attached             |
+| `list_windows`  | What windows exist, optionally in one session           |
+| `list_panes`    | What panes exist, what each runs, which are yours       |
+| `get_pane`      | One pane's metadata                                     |
+| `whoami`        | Which pane this server runs in; which panes are watched |
+| `server_info`   | Socket, tmux version, daemon pid, totals                |
 
 ### Read what panes show
 
@@ -186,29 +205,34 @@ can decide what to auto-approve.
 | `capture_pane` | The rendered screen, or into the scrollback |
 | `observe`      | Only what is new since your cursor          |
 | `search_panes` | Which panes are showing something           |
-| `pipe_pane`    | Sends a pane's output to a command, durably |
+
+### Do things
+
+| Tool              | Does                                                    |
+| ----------------- | ------------------------------------------------------- |
+| `run_command`     | Runs a shell command, waits for it, reports exit status |
+| `send_keys`       | Sends keystrokes: TUIs, `C-c`, partial lines            |
+| `paste_text`      | Sends text with nothing read as a key name              |
+| `pipe_pane`       | Sends a pane's output to a host command, durably        |
+| `display_message` | Resolves arbitrary tmux formats, including `#()` jobs   |
+
+`display_message` is a mutating-tier tool because tmux formats may contain
+`#()` jobs that run through the host shell. The tier follows the authority the
+format accepts, even when a particular call only reads a field.
 
 A pane keeps `history-limit` lines and `observe` keeps a bounded buffer, so
 output larger than either is gone before anything asks for it. `pipe_pane` is
 tmux's answer: the command runs for as long as the pipe is open, so a long build
 is captured whole and costs nothing to leave running. It attaches to the pane
 rather than to the process in it, so it survives `respawn_pane` and keeps
-running until something stops it.
-
-### Do things
-
-| Tool          | Does                                                    |
-| ------------- | ------------------------------------------------------- |
-| `run_command` | Runs a shell command, waits for it, reports exit status |
-| `send_keys`   | Sends keystrokes: TUIs, `C-c`, partial lines            |
-| `paste_text`  | Sends text with nothing read as a key name              |
+running until something stops it. Starting or stopping the pipe mutates tmux,
+and its command has the tmux user's host authority.
 
 ### Wait
 
-| Tool                 | Does                                                    |
-| -------------------- | ------------------------------------------------------- |
-| `wait_for_text`      | Blocks until a pane prints something                    |
-| `wait_for_text_task` | The same wait as a task: a handle now, the result later |
+| Tool            | Does                                 |
+| --------------- | ------------------------------------ |
+| `wait_for_text` | Blocks until a pane prints something |
 
 ### Build and arrange
 
@@ -240,9 +264,14 @@ the global tables — `history-limit`, which decides how far `capture_pane` reac
 back, and `default-shell`, which decides what a new pane runs, both live there.
 `unset_option` puts an option back to what it inherits.
 
-`show_buffer` returns a buffer's contents; `save_buffer` writes it to a file on
-tmux's own machine instead, which is the one to reach for when the point is to
-store it rather than read it.
+Format-valued options such as `status-right` may contain `#()` jobs. tmux runs
+those through the host shell, and the option persists until it is unset, so
+`set_option` is marked open-world for host approval.
+
+`show_buffer` may stage a temporary file to measure the buffer and cap what it
+reads into the response; it removes that file before returning. `save_buffer`
+requires the `mutating` tier and writes the buffer to a file on tmux's own
+machine when the point is to store it rather than read it.
 
 Hooks are readable but not writable. A hook outlives the process that sets it,
 so an agent that sets one leaves behaviour behind in somebody's tmux that
@@ -276,22 +305,10 @@ back the `cursor` it returns:
 
 ```console
 $ observe  paneId=%1
-$ observe  paneId=%1  cursor=4096  waitMs=10000
+$ observe  paneId=%1  cursor=ltxc1.0123456789abcdef0123456789abcdef.4096  waitMs=10000
 ```
 
-The second call is charged only for what arrived after byte 4096.
-
-## Long waits without blocking
-
-`wait_for_text_task` is the same wait registered as an MCP task. A client that
-speaks the task protocol gets a handle immediately, can do other work, and can
-cancel. A client that does not gets exactly the blocking tool it expects —
-`taskSupport` is `optional`, so the SDK polls on its behalf. Nothing has to be
-upgraded for this to be safe.
-
-That is why the two ceilings differ: as a task, a wait may run for
-`LIBTMUX_MCP_TASK_WAIT_MAX_MS`, ten minutes by default, because sitting through
-it costs the agent nothing.
+The second call is charged only for what arrived after the opaque cursor.
 
 ## Resources
 
@@ -352,10 +369,16 @@ import { createTmuxMcpServer } from "@libtmux/mcp";
 const client = new Client({ name: "example", version: "0.0.0" });
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 await Promise.all([
-  createTmuxMcpServer(server, { environment: {} }).connect(serverSide),
+  createTmuxMcpServer(server, {
+    environment: { LIBTMUX_SAFETY: "mutating" },
+  }).connect(serverSide),
   client.connect(clientSide),
 ]);
 ```
+
+`environment` configures the MCP tool policy. Caller identity is read separately
+from `process.env` when the factory is constructed; an embedded test can override
+that complete input with `callerEnvironment`.
 
 ## What this does not do
 

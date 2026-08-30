@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { runTypeScriptApi } from "../support/typescript_api.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 /**
  * The retry that keeps a cancelled Go process from failing an unrelated gate.

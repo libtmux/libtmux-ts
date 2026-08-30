@@ -17,10 +17,8 @@ import { fileURLToPath } from "node:url";
  * workspace added beside it does not.
  *
  * What this deliberately does not claim: that every ecosystem dependabot could
- * file for is configured. Action pins are maintained by a researched sweep that
- * reads every `uses:` line and lands one commit per action, so there is no
- * github-actions entry to find and requiring one held this gate red against a
- * decision the repository had already made.
+ * file for is configured. Action pins are checked below, after the workflow
+ * set has been found, so a version tag cannot silently move the code CI runs.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -42,6 +40,28 @@ interface UpdateEntry {
   readonly directory?: unknown;
   readonly "package-ecosystem"?: unknown;
   readonly schedule?: unknown;
+}
+
+interface WorkflowStep {
+  readonly "continue-on-error"?: unknown;
+  readonly if?: unknown;
+  readonly name?: unknown;
+  readonly run?: unknown;
+  readonly uses?: unknown;
+  readonly with?: Readonly<Record<string, unknown>>;
+}
+
+interface WorkflowJob {
+  readonly "continue-on-error"?: unknown;
+  readonly if?: unknown;
+  readonly needs?: unknown;
+  readonly permissions?: unknown;
+  readonly steps?: unknown;
+  readonly uses?: unknown;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const failures: string[] = [];
@@ -173,6 +193,159 @@ const workflows = await Array.fromAsync(
 );
 if (workflows.length === 0) {
   process.stderr.write(`${configPath}: no workflows were found to keep pinned\n`);
+  process.exit(1);
+}
+
+for (const workflow of workflows) {
+  // eslint-disable-next-line no-await-in-loop -- each workflow gets an exact diagnostic.
+  const source = await Bun.file(join(repositoryRoot, ".github", workflow)).text();
+  for (const [index, reference] of source.split("\n").entries()) {
+    const line = index + 1;
+    const found = /^\s*(?:-\s*)?uses:\s*[^@\s]+@([^\s#]+)/u.exec(reference);
+    if (found === null) continue;
+    const revision = found[1];
+    if (revision === undefined || !/^[0-9a-f]{40}$/u.test(revision)) {
+      failures.push(
+        `.github/${workflow}:${String(line)} pins an action by ${JSON.stringify(revision)}, not a full commit SHA`,
+      );
+    }
+  }
+}
+
+const publishPath = join(repositoryRoot, ".github/workflows/publish.yml");
+const publishSource = await Bun.file(publishPath).text();
+const publishDocument = Bun.YAML.parse(publishSource) as {
+  readonly concurrency?: {
+    readonly "cancel-in-progress"?: unknown;
+    readonly group?: unknown;
+    readonly queue?: unknown;
+  };
+  readonly on?: {
+    readonly push?: { readonly tags?: unknown };
+    readonly workflow_dispatch?: unknown;
+  };
+  readonly permissions?: unknown;
+  readonly jobs?: Readonly<Record<string, WorkflowJob>>;
+};
+const publishJobs = publishDocument.jobs ?? {};
+const publishJob = publishJobs.publish;
+const rawPublishSteps = publishJob?.steps;
+const publishSteps: readonly WorkflowStep[] = Array.isArray(rawPublishSteps)
+  ? (rawPublishSteps as WorkflowStep[])
+  : [];
+if (publishSteps.some((step) => step.if !== undefined || step["continue-on-error"] !== undefined)) {
+  failures.push(".github/workflows/publish.yml: every publication step must run and fail closed");
+}
+
+const verifyJob = publishJobs.verify;
+if (
+  verifyJob?.uses !== "./.github/workflows/typescript.yml" ||
+  verifyJob["continue-on-error"] !== undefined ||
+  publishJob?.needs !== "verify" ||
+  publishJob.if !== undefined ||
+  publishJob["continue-on-error"] !== undefined
+) {
+  failures.push(
+    ".github/workflows/publish.yml: publication must need the full reusable workflow and fail on any error",
+  );
+}
+const rootPermissions = publishDocument.permissions;
+const publishPermissions = publishJob?.permissions;
+if (
+  !isRecord(rootPermissions) ||
+  Object.keys(rootPermissions).length !== 1 ||
+  rootPermissions.contents !== "read" ||
+  Object.entries(publishJobs).some(
+    ([name, job]) => name !== "publish" && job.permissions !== undefined,
+  ) ||
+  !isRecord(publishPermissions) ||
+  Object.keys(publishPermissions).length !== 2 ||
+  publishPermissions.contents !== "read" ||
+  publishPermissions["id-token"] !== "write"
+) {
+  failures.push(
+    ".github/workflows/publish.yml: only the publication job may mint an npm OIDC token",
+  );
+}
+
+const typescriptPath = join(repositoryRoot, ".github/workflows/typescript.yml");
+const typescriptDocument = Bun.YAML.parse(await Bun.file(typescriptPath).text()) as {
+  readonly on?: Readonly<Record<string, unknown>>;
+};
+if (!Object.hasOwn(typescriptDocument.on ?? {}, "workflow_call")) {
+  failures.push(
+    ".github/workflows/typescript.yml: the full workflow must accept calls from the publish workflow",
+  );
+}
+
+const setupNodeStep = (step: WorkflowStep, version: string): boolean =>
+  typeof step.uses === "string" &&
+  step.uses.startsWith("actions/setup-node@") &&
+  step.with?.["node-version"] === version;
+const node22 = publishSteps.findIndex((step) => setupNodeStep(step, "22"));
+const node22Path = publishSteps.findIndex(
+  (step) => typeof step.run === "string" && step.run.includes("LIBTMUX_NODE22=$(which node)"),
+);
+const node24 = publishSteps.findIndex(
+  (step) =>
+    setupNodeStep(step, "24") && step.with?.["registry-url"] === "https://registry.npmjs.org",
+);
+if (node22 < 0 || node22Path <= node22 || node24 <= node22Path) {
+  failures.push(
+    ".github/workflows/publish.yml: must capture an authenticated Node 22 path before configuring Node 24 for npm trusted publishing",
+  );
+}
+
+const packageCheck = publishSteps.find(
+  (step) => step.name === "Build and check every package",
+)?.run;
+const expectedPackageCheck = `for package in libtmux mcp workspace; do
+  ( cd "packages/$package" && bun run test:package && bun run test:install )
+done
+`;
+if (packageCheck !== expectedPackageCheck) {
+  failures.push(
+    ".github/workflows/publish.yml: must run test:install after test:package for libtmux, mcp, and workspace",
+  );
+}
+
+const publishTriggers = publishDocument.on ?? {};
+const tagPatterns = publishTriggers.push?.tags;
+if (
+  Object.keys(publishTriggers).length !== 1 ||
+  !Array.isArray(tagPatterns) ||
+  tagPatterns.length !== 1 ||
+  tagPatterns[0] !== "v*"
+) {
+  failures.push(
+    ".github/workflows/publish.yml: the credentialed workflow must run only for v* tag pushes",
+  );
+}
+
+const releaseCoordinator = publishSteps.find((step) => step.name === "Coordinate release")?.run;
+if (releaseCoordinator !== "bun scripts/publish-release.ts") {
+  failures.push(
+    ".github/workflows/publish.yml: must delegate tag publishing to scripts/publish-release.ts",
+  );
+}
+
+const publishConcurrency = publishDocument.concurrency;
+if (
+  publishConcurrency?.group !== "publish" ||
+  publishConcurrency.queue !== "max" ||
+  publishConcurrency["cancel-in-progress"] !== undefined
+) {
+  failures.push(
+    ".github/workflows/publish.yml: must queue every release in the repository-wide publish concurrency group",
+  );
+}
+
+if (failures.length > 0) {
+  process.stderr.write(
+    `Continuous integration configuration the repository does not support:\n${failures
+      .map((failure) => `  ${failure}\n`)
+      .join("")}`,
+  );
   process.exit(1);
 }
 

@@ -9,21 +9,32 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { Pane, ServerSnapshot } from "libtmux";
 import { ResizeAdjustmentDirection } from "libtmux/constants";
 
+import type { CallerIdentity } from "../caller.js";
+import { runTopologyMutation, type ToolContext } from "../context.js";
+import { effectiveResultLines } from "../policy.js";
+import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
+import { fail, ok } from "../results.js";
+import { inlineRequestText, paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
 import {
   isFailure,
+  panePlacements,
   requirePane,
+  requirePanePlacement,
   requireSession,
   requireWindow,
-  type ToolContext,
-} from "../context.js";
-import { MUTATING, offers } from "../register.js";
-import { fail, ok } from "../results.js";
+  requireWindowPlacement,
+  windowPlacements,
+  type SourcePlacement,
+} from "../target_resolution.js";
 import {
   paneLine,
   paneView,
   paneViewSchema,
+  limitViews,
+  renderViews,
   windowLine,
   windowView,
   windowViewSchema,
@@ -45,6 +56,36 @@ const LAYOUTS = [
   "tiled",
 ] as const;
 
+const sourceSessionSchema = requestText("sourceSession")
+  .optional()
+  .describe("Source session id or name. Required when the id has several placements.");
+const sourceIndexSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .optional()
+  .describe("Source window index. Required when the session has several placements of the id.");
+
+function projectPane(snapshot: ServerSnapshot, paneId: string, identity: CallerIdentity) {
+  const pane = requirePane(snapshot, paneId);
+  return isFailure(pane) ? pane : paneView(pane, identity, panePlacements(snapshot, paneId));
+}
+
+function projectWindow(snapshot: ServerSnapshot, windowId: string) {
+  const window = requireWindow(snapshot, windowId);
+  return isFailure(window) ? window : windowView(window, windowPlacements(snapshot, windowId));
+}
+
+function sourcePlacement(
+  sourceSession: string | undefined,
+  sourceIndex: number | undefined,
+): SourcePlacement {
+  return {
+    ...(sourceIndex === undefined ? {} : { sourceIndex }),
+    ...(sourceSession === undefined ? {} : { sourceSession }),
+  };
+}
+
 export function registerLayout(mcp: McpServer, context: ToolContext): void {
   if (!offers(context.policy, "mutating")) return;
 
@@ -64,7 +105,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
           .describe("Cells to move by. Needs direction."),
         direction: z.enum(["up", "down", "left", "right"]).optional(),
         height: z.number().int().positive().optional(),
-        paneId: z.string(),
+        paneId: paneIdSchema,
         width: z.number().int().positive().optional(),
         zoom: z.boolean().optional().describe("Toggle this pane filling its window."),
       },
@@ -86,7 +127,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         });
       }
       const after = await context.snapshot();
-      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
+      const view = projectPane(after, paneId, await context.identity(after));
+      if (isFailure(view)) return view;
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -98,7 +140,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       description:
         "Make a pane the active one in its window. Moves the cursor of anyone " +
         "attached to that window.",
-      inputSchema: { paneId: z.string() },
+      inputSchema: { paneId: paneIdSchema },
       outputSchema: { pane: paneViewSchema },
       title: "Select pane",
     },
@@ -108,7 +150,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       await pane.select();
       const after = await context.snapshot();
-      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
+      const view = projectPane(after, paneId, await context.identity(after));
+      if (isFailure(view)) return view;
       return ok({ pane: view }, paneLine(view));
     },
   );
@@ -118,16 +161,26 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Make a window the current one in its session.",
-      inputSchema: { windowId: z.string() },
+      inputSchema: {
+        sourceIndex: sourceIndexSchema,
+        sourceSession: sourceSessionSchema,
+        windowId: windowIdSchema,
+      },
       outputSchema: { window: windowViewSchema },
       title: "Select window",
     },
-    async ({ windowId }) => {
+    async ({ sourceIndex, sourceSession, windowId }) => {
       const snapshot = await context.snapshot();
-      const window = requireWindow(snapshot, windowId);
+      const window = requireWindowPlacement(
+        snapshot,
+        windowId,
+        sourcePlacement(sourceSession, sourceIndex),
+      );
       if (isFailure(window)) return window;
       await window.select();
-      const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      const after = await context.snapshot();
+      const view = projectWindow(after, windowId);
+      if (isFailure(view)) return view;
       return ok({ window: view }, windowLine(view));
     },
   );
@@ -138,10 +191,12 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       annotations: MUTATING,
       description:
         "Rearrange a window's panes. Takes one of tmux's named layouts, or a layout " +
-        "string from an earlier window's `layout` field to reproduce it exactly.",
+        "string from an earlier window whose `metadataComplete` is true to reproduce it exactly.",
       inputSchema: {
-        layout: z.string().describe(`One of ${LAYOUTS.join(", ")}, or a tmux layout string.`),
-        windowId: z.string(),
+        layout: inlineRequestText("layout").describe(
+          `One of ${LAYOUTS.join(", ")}, or a tmux layout string.`,
+        ),
+        windowId: windowIdSchema,
       },
       outputSchema: { window: windowViewSchema },
       title: "Select layout",
@@ -151,7 +206,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       const window = requireWindow(snapshot, windowId);
       if (isFailure(window)) return window;
       await window.selectLayout(layout);
-      const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      const view = projectWindow(await context.snapshot(), windowId);
+      if (isFailure(view)) return view;
       // A layout string describing a different number of panes is accepted and
       // does nothing: tmux exits 0 and leaves the window alone. A named layout
       // is always applied, so only the string form can silently miss — and the
@@ -162,7 +218,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         { window: view },
         windowLine(view) +
           (ignored
-            ? `\n\n[the layout string was not applied: this window is still ${view.layout}. ` +
+            ? `\n\n[the layout string was not applied: the returned window.layout is unchanged. ` +
               `tmux accepts a layout describing a different set of panes and changes nothing.]`
             : ""),
       );
@@ -174,8 +230,12 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Exchange two panes' positions. Their ids and contents travel with them.",
-      inputSchema: { otherPaneId: z.string(), paneId: z.string() },
-      outputSchema: { panes: z.array(paneViewSchema) },
+      inputSchema: { otherPaneId: paneIdSchema, paneId: paneIdSchema },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int().nonnegative(),
+        panes: z.array(paneViewSchema),
+      },
       title: "Swap panes",
     },
     async ({ otherPaneId, paneId }) => {
@@ -184,14 +244,23 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       const other = requirePane(snapshot, otherPaneId);
       if (isFailure(other)) return other;
-      // Validated above for the not-found message. Swapping arranges two panes
-      // rather than writing into either, so neither needs the write guard —
-      // but swapWith takes the pane itself, which the read-only view withholds.
-      await pane.swapWith(snapshot.panes.one({ id: otherPaneId }));
+      await pane.swapWith(other as Pane);
       const after = await context.snapshot();
       const identity = await context.identity(after);
-      const views = [paneId, otherPaneId].map((id) => paneView(after.panes.one({ id }), identity));
-      return ok({ panes: views }, views.map(paneLine).join("\n"));
+      const firstView = projectPane(after, paneId, identity);
+      if (isFailure(firstView)) return firstView;
+      const otherView = projectPane(after, otherPaneId, identity);
+      if (isFailure(otherView)) return otherView;
+      const views = [firstView, otherView];
+      const bounded = limitViews(views, effectiveResultLines(context.policy, undefined), paneLine);
+      return ok(
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          panes: bounded.views,
+        },
+        renderViews(bounded, "panes", "inspect each pane separately"),
+      );
     },
   );
 
@@ -202,15 +271,21 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       description: "Move a window to another index, or into another session.",
       inputSchema: {
         index: z.number().int().nonnegative().optional(),
-        session: z.string().optional().describe("Destination session id or name."),
-        windowId: z.string(),
+        session: requestText("session").optional().describe("Destination session id or name."),
+        sourceIndex: sourceIndexSchema,
+        sourceSession: sourceSessionSchema,
+        windowId: windowIdSchema,
       },
       outputSchema: { window: windowViewSchema },
       title: "Move window",
     },
-    async ({ index, session, windowId }) => {
+    async ({ index, session, sourceIndex, sourceSession, windowId }) => {
       const snapshot = await context.snapshot();
-      const window = requireWindow(snapshot, windowId);
+      const window = requireWindowPlacement(
+        snapshot,
+        windowId,
+        sourcePlacement(sourceSession, sourceIndex),
+      );
       if (isFailure(window)) return window;
       let destination: string | undefined;
       if (session !== undefined) {
@@ -218,12 +293,14 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         if (isFailure(found)) return found;
         destination = found.id;
       }
-      await window.move({
-        ...(index === undefined ? {} : { index }),
-        ...(destination === undefined ? {} : { session: destination }),
-      });
-      const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
-      context.topologyChanged();
+      await runTopologyMutation(context, () =>
+        window.move({
+          ...(index === undefined ? {} : { index }),
+          ...(destination === undefined ? {} : { session: destination }),
+        }),
+      );
+      const view = projectWindow(await context.snapshot(), windowId);
+      if (isFailure(view)) return view;
       return ok({ window: view }, windowLine(view));
     },
   );
@@ -243,7 +320,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       inputSchema: {
         height: z.number().int().positive().optional(),
         width: z.number().int().positive().optional(),
-        windowId: z.string(),
+        windowId: windowIdSchema,
       },
       outputSchema: { window: windowViewSchema },
       title: "Resize window",
@@ -262,54 +339,65 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         ...(height === undefined ? {} : { height }),
         ...(width === undefined ? {} : { width }),
       });
-      const view = windowView((await context.snapshot()).windows.one({ id: windowId }));
+      const view = projectWindow(await context.snapshot(), windowId);
+      if (isFailure(view)) return view;
       return ok({ window: view }, windowLine(view));
     },
   );
 
-  mcp.registerTool(
-    "move_pane",
-    {
-      annotations: MUTATING,
-      description:
-        "Move a pane into another window as a split, or break it out into a window " +
-        "of its own by naming no destination. The pane keeps its id and whatever is " +
-        "running in it, which killing it and splitting again does not. Moving a " +
-        "window's last pane destroys that window.",
-      inputSchema: {
-        paneId: z.string(),
-        vertical: z
-          .boolean()
-          .optional()
-          .describe(
-            "Join as a horizontal split rather than a vertical one. Unused when breaking out.",
-          ),
-        windowId: z
-          .string()
-          .optional()
-          .describe("Window to move it into. Omit to break it out into a window of its own."),
-        windowName: z.string().optional().describe("Name for the window a break-out creates."),
+  if (offers(context.policy, "destructive")) {
+    mcp.registerTool(
+      "move_pane",
+      {
+        annotations: DESTRUCTIVE,
+        description:
+          "Move a pane into another window as a split, or break it out into a window " +
+          "of its own by naming no destination. The pane keeps its id and whatever is " +
+          "running in it, which killing it and splitting again does not. Moving a " +
+          "window's last pane destroys that window.",
+        inputSchema: {
+          paneId: paneIdSchema,
+          sourceIndex: sourceIndexSchema,
+          sourceSession: sourceSessionSchema,
+          vertical: z
+            .boolean()
+            .optional()
+            .describe(
+              "Join as a horizontal split rather than a vertical one. Unused when breaking out.",
+            ),
+          windowId: windowIdSchema
+            .optional()
+            .describe("Window to move it into. Omit to break it out into a window of its own."),
+          windowName: inlineRequestText("windowName")
+            .optional()
+            .describe("Name for the window a break-out creates."),
+        },
+        outputSchema: { pane: paneViewSchema },
+        title: "Move pane",
       },
-      outputSchema: { pane: paneViewSchema },
-      title: "Move pane",
-    },
-    async ({ paneId, vertical, windowId, windowName }) => {
-      const snapshot = await context.snapshot();
-      const pane = requirePane(snapshot, paneId);
-      if (isFailure(pane)) return pane;
-      if (windowId === undefined) {
-        await pane.breakOut(windowName);
-      } else {
-        const window = requireWindow(snapshot, windowId);
-        if (isFailure(window)) return window;
-        await pane.joinTo(window.id, vertical === undefined ? {} : { vertical });
-      }
-      const after = await context.snapshot();
-      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
-      context.topologyChanged();
-      return ok({ pane: view }, paneLine(view));
-    },
-  );
+      async ({ paneId, sourceIndex, sourceSession, vertical, windowId, windowName }) => {
+        const snapshot = await context.snapshot();
+        const pane =
+          windowId === undefined || sourceIndex !== undefined || sourceSession !== undefined
+            ? requirePanePlacement(snapshot, paneId, sourcePlacement(sourceSession, sourceIndex))
+            : requirePane(snapshot, paneId);
+        if (isFailure(pane)) return pane;
+        const destination = windowId === undefined ? undefined : requireWindow(snapshot, windowId);
+        if (isFailure(destination)) return destination;
+        await runTopologyMutation(context, async () => {
+          if (destination === undefined) {
+            await pane.breakOut(windowName);
+          } else {
+            await pane.joinTo(destination.id, vertical === undefined ? {} : { vertical });
+          }
+        });
+        const after = await context.snapshot();
+        const view = projectPane(after, paneId, await context.identity(after));
+        if (isFailure(view)) return view;
+        return ok({ pane: view }, paneLine(view));
+      },
+    );
+  }
 
   mcp.registerTool(
     "swap_window",
@@ -319,21 +407,62 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         "Exchange the positions of two windows, which may be in different sessions. " +
         "Each keeps its id, its panes and what is running in them; only where they " +
         "sit changes. This is swap_pane's analogue one level up.",
-      inputSchema: { otherWindowId: z.string(), windowId: z.string() },
-      outputSchema: { windows: z.array(windowViewSchema) },
+      inputSchema: {
+        otherSourceIndex: sourceIndexSchema,
+        otherSourceSession: sourceSessionSchema,
+        otherWindowId: windowIdSchema,
+        sourceIndex: sourceIndexSchema,
+        sourceSession: sourceSessionSchema,
+        windowId: windowIdSchema,
+      },
+      outputSchema: {
+        complete: z.boolean(),
+        omittedEntries: z.number().int().nonnegative(),
+        windows: z.array(windowViewSchema),
+      },
       title: "Swap windows",
     },
-    async ({ otherWindowId, windowId }) => {
+    async ({
+      otherSourceIndex,
+      otherSourceSession,
+      otherWindowId,
+      sourceIndex,
+      sourceSession,
+      windowId,
+    }) => {
       const snapshot = await context.snapshot();
-      const window = requireWindow(snapshot, windowId);
+      const window = requireWindowPlacement(
+        snapshot,
+        windowId,
+        sourcePlacement(sourceSession, sourceIndex),
+      );
       if (isFailure(window)) return window;
-      const other = requireWindow(snapshot, otherWindowId);
+      const other = requireWindowPlacement(
+        snapshot,
+        otherWindowId,
+        sourcePlacement(otherSourceSession, otherSourceIndex),
+      );
       if (isFailure(other)) return other;
-      await window.swapWith(other);
+      await runTopologyMutation(context, () => window.swapWith(other));
       const after = await context.snapshot();
-      const views = [windowId, otherWindowId].map((id) => windowView(after.windows.one({ id })));
-      context.topologyChanged();
-      return ok({ windows: views }, views.map(windowLine).join("\n"));
+      const firstView = projectWindow(after, windowId);
+      if (isFailure(firstView)) return firstView;
+      const otherView = projectWindow(after, otherWindowId);
+      if (isFailure(otherView)) return otherView;
+      const views = [firstView, otherView];
+      const bounded = limitViews(
+        views,
+        effectiveResultLines(context.policy, undefined),
+        windowLine,
+      );
+      return ok(
+        {
+          complete: bounded.complete,
+          omittedEntries: bounded.omittedEntries,
+          windows: bounded.views,
+        },
+        renderViews(bounded, "windows", "inspect each window separately"),
+      );
     },
   );
 
@@ -344,7 +473,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       description:
         "Give a pane a title. Useful for labelling what an agent put where, since " +
         "the title shows in list_panes and survives the command changing.",
-      inputSchema: { paneId: z.string(), title: z.string() },
+      inputSchema: { paneId: paneIdSchema, title: inlineRequestText("title") },
       outputSchema: { pane: paneViewSchema },
       title: "Set pane title",
     },
@@ -354,7 +483,8 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       await pane.setTitle(title);
       const after = await context.snapshot();
-      const view = paneView(after.panes.one({ id: paneId }), await context.identity(after));
+      const view = projectPane(after, paneId, await context.identity(after));
+      if (isFailure(view)) return view;
       return ok({ pane: view }, paneLine(view));
     },
   );

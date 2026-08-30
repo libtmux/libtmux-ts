@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -126,14 +126,52 @@ function programFor(found: readonly Block[]): string {
   ].join("\n");
 }
 
+const SCRATCH = ".readme-check-";
+
+/**
+ * Clear scratch whose owner is gone.
+ *
+ * The directory has to sit beside the README for a bare specifier to resolve,
+ * so it is scratch inside the tree, and the `finally` below cannot run when the
+ * process is signalled. Four had been sitting in the repository root for a
+ * fortnight.
+ *
+ * The owning pid is in the name, and a directory is reaped only once that
+ * process is gone — a concurrent run holds its own. Signal 0 tests for the
+ * process without touching it. A reused pid reads as alive and keeps the
+ * directory, which is the safe way to be wrong.
+ */
+function ownerIsGone(name: string): boolean {
+  const owner = Number(name.slice(SCRATCH.length).split("-")[0]);
+  if (!Number.isSafeInteger(owner) || owner <= 0) return true;
+  try {
+    process.kill(owner, 0);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+async function sweep(home: string): Promise<void> {
+  const entries = await readdir(home, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name.startsWith(SCRATCH) && ownerIsGone(entry.name)) {
+      // eslint-disable-next-line no-await-in-loop -- one removal at a time is enough.
+      await rm(join(home, entry.name), { force: true, recursive: true });
+    }
+  }
+}
+
 const failures: string[] = [];
 for (const { blocks: found, file } of perReadme) {
   if (found.length === 0) continue;
   // Beside the README, so a bare specifier resolves through that package's
   // node_modules exactly as it would for someone who installed it.
   const home = join(repositoryRoot, dirname(file));
+  // eslint-disable-next-line no-await-in-loop -- as above.
+  await sweep(home);
   // eslint-disable-next-line no-await-in-loop -- one program at a time keeps the report ordered.
-  const directory = await mkdtemp(join(home, ".readme-check-"));
+  const directory = await mkdtemp(join(home, `${SCRATCH}${String(process.pid)}-`));
   try {
     const checkPath = join(directory, "check.ts");
     const configPath = join(directory, "tsconfig.json");

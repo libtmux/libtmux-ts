@@ -3,24 +3,33 @@ import type { TmuxVersion } from "../../types.js";
 export type { TmuxVersion };
 
 const taggedVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)([a-z]?)$/u;
-const masterBasePattern = /(0|[1-9]\d*)\.(0|[1-9]\d*)([a-z]?)/u;
+const masterSuffix = "-master";
+const nextPrefix = "next-";
 
 function invalidVersion(raw: string): TypeError {
   return new TypeError(`invalid tmux version: ${raw}`);
 }
 
+function isDevelopmentVersion(raw: string): boolean {
+  return raw === "master" || raw.startsWith(nextPrefix) || raw.endsWith(masterSuffix);
+}
+
 export function parseTmuxVersion(raw: string): TmuxVersion {
-  if (raw.includes("master")) {
-    const match = masterBasePattern.exec(raw);
+  if (raw === "master") {
     return Object.freeze({
-      major: match === null ? 0 : Number.parseInt(match[1]!, 10),
-      minor: match === null ? 0 : Number.parseInt(match[2]!, 10),
+      major: 0,
+      minor: 0,
       raw,
-      suffix: match?.[3] ?? "",
+      suffix: "",
     });
   }
 
-  const match = taggedVersionPattern.exec(raw);
+  const tagged = raw.startsWith(nextPrefix)
+    ? raw.slice(nextPrefix.length)
+    : raw.endsWith(masterSuffix)
+      ? raw.slice(0, -masterSuffix.length)
+      : raw;
+  const match = taggedVersionPattern.exec(tagged);
   if (match === null) throw invalidVersion(raw);
   return Object.freeze({
     major: Number.parseInt(match[1]!, 10),
@@ -31,9 +40,9 @@ export function parseTmuxVersion(raw: string): TmuxVersion {
 }
 
 export function compareTmuxVersions(left: TmuxVersion, right: TmuxVersion): number {
-  const leftMaster = left.raw.includes("master");
-  const rightMaster = right.raw.includes("master");
-  if (leftMaster !== rightMaster) return leftMaster ? 1 : -1;
+  const leftDevelopment = isDevelopmentVersion(left.raw);
+  const rightDevelopment = isDevelopmentVersion(right.raw);
+  if (leftDevelopment !== rightDevelopment) return leftDevelopment ? 1 : -1;
   if (left.major !== right.major) return left.major - right.major;
   if (left.minor !== right.minor) return left.minor - right.minor;
   return left.suffix.localeCompare(right.suffix, "en-US");

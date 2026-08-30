@@ -3,6 +3,7 @@ import type { IfShellOptions, RespawnOptions, RunShellOptions } from "../../type
 import { TmuxCommandError } from "../../exc.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { assertName } from "./names.js";
 
 /** Run a shell command through tmux and return whatever it printed. */
 export async function runShell(
@@ -135,13 +136,13 @@ export async function breakPane(
     "-d",
     ...(paneId == null ? [] : ["-s", paneId]),
     ...(sessionId == null ? [] : ["-t", `${sessionId}:`]),
-    ...(windowName === undefined ? [] : ["-n", windowName]),
+    ...(windowName === undefined ? [] : ["-n", assertName("window", windowName)]),
     ...(renames ? ["-P", "-F", "#{window_id}"] : []),
   ]);
   if (!renames || windowName === undefined) return;
   const created = printed[0];
   if (created === undefined || created === "") return;
-  await runCommand(runtime, ["rename-window", "-t", created, windowName]);
+  await runCommand(runtime, ["rename-window", "-t", created, assertName("window", windowName)]);
 }
 
 /** Move a pane into another window, joining it as a split. */

@@ -23,6 +23,24 @@ export const SOURCES = [
   "src/selection.ts",
 ];
 
+const ROOT_SOURCES = [
+  {
+    file: "src/selection.ts",
+    functions: ["encodeWhereDocument", "decodeWhereDocument", "parseLegacyWhere"],
+    types: [],
+  },
+  {
+    file: "src/common.ts",
+    functions: ["isSafeInteger", "safeInteger"],
+    types: ["SafeInteger"],
+  },
+  {
+    file: "src/types.ts",
+    functions: ["isSplitSize", "isTmuxName", "splitSize"],
+    types: ["SplitCellSize", "SplitPercentage", "SplitSize"],
+  },
+] as const;
+
 /**
  * Symbols that carry no example of their own, with the reason.
  *
@@ -53,11 +71,65 @@ export interface Member {
   readonly signature: string;
 }
 
+export interface PublicMember extends Member {
+  readonly owner: string;
+}
+
+export type DocumentedPublicMember = PublicMember & { readonly example: string };
+
+/** Refuse a public surface that would let either symbol gate skip an example. */
+export function requireSymbolExamples(
+  members: readonly PublicMember[],
+): readonly DocumentedPublicMember[] {
+  const missing = members.filter(
+    (member) => member.example === undefined || member.example.trim() === "",
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `${String(missing.length)} of ${String(members.length)} public symbols have no example:\n` +
+        missing
+          .map(
+            (member) => `  ${member.file}:${String(member.line)}  ${member.owner}.${member.name}`,
+          )
+          .join("\n"),
+    );
+  }
+  return members as readonly DocumentedPublicMember[];
+}
+
 export interface ApiClass {
   readonly file: string;
   readonly members: readonly Member[];
   readonly name: string;
   readonly prose: string;
+}
+
+export interface ApiDeclaration {
+  readonly example: string | undefined;
+  readonly file: string;
+  readonly kind: "function" | "type";
+  readonly line: number;
+  readonly name: string;
+  readonly prose: string;
+  readonly signatures: readonly string[];
+}
+
+export type DocumentedApiDeclaration = ApiDeclaration & { readonly example: string };
+
+export function requireRootExamples(
+  declarations: readonly ApiDeclaration[],
+): readonly DocumentedApiDeclaration[] {
+  const missing = declarations.filter(
+    (entry) => entry.example === undefined || entry.example.trim() === "",
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `root API declarations have no example:\n${missing
+        .map((entry) => `  ${entry.file}:${String(entry.line)}  ${entry.name}`)
+        .join("\n")}`,
+    );
+  }
+  return declarations as readonly DocumentedApiDeclaration[];
 }
 
 function docAbove(
@@ -100,11 +172,109 @@ function signatureAt(lines: readonly string[], index: number): string {
     .trim();
 }
 
+interface ParsedDeclaration {
+  readonly hasBody: boolean;
+  readonly signature: string;
+}
+
+/** A root declaration and the terminator on that declaration itself. */
+function declarationAt(
+  lines: readonly string[],
+  index: number,
+  kind: ApiDeclaration["kind"],
+): ParsedDeclaration {
+  if (kind === "function") {
+    const collected: string[] = [];
+    let hasBody = false;
+    for (let at = index; at < lines.length && at < index + 12; at += 1) {
+      const line = lines[at] ?? "";
+      collected.push(line.trimEnd());
+      if (/;\s*$/u.test(line)) break;
+      if (/\{\s*$/u.test(line)) {
+        hasBody = true;
+        break;
+      }
+    }
+    return {
+      hasBody,
+      signature: collected
+        .join("\n")
+        .replace(/^export /u, "")
+        .replace(/\s*\{\s*$/u, ";")
+        .trim(),
+    };
+  }
+
+  const collected: string[] = [];
+  let braces = 0;
+  for (let at = index; at < lines.length && at < index + 20; at += 1) {
+    const line = lines[at] ?? "";
+    collected.push(line.trimEnd());
+    braces += (line.match(/\{/gu) ?? []).length - (line.match(/\}/gu) ?? []).length;
+    if (braces === 0 && /;\s*$/u.test(line)) break;
+  }
+  return {
+    hasBody: false,
+    signature: collected
+      .join("\n")
+      .replace(/^export /u, "")
+      .trim(),
+  };
+}
+
+function declarationsOf(
+  source: string,
+  file: string,
+  wantedFunctions: ReadonlySet<string>,
+  wantedTypes: ReadonlySet<string>,
+): readonly ApiDeclaration[] {
+  const lines = source.split("\n");
+  const declarations = new Map<string, ApiDeclaration>();
+
+  for (const [index, line] of lines.entries()) {
+    const functionName = /^export function (\w+)/u.exec(line)?.[1];
+    const typeName = /^export type (\w+)/u.exec(line)?.[1];
+    const kind = functionName === undefined ? "type" : "function";
+    const name = functionName ?? typeName;
+    if (name === undefined) continue;
+    if (kind === "function" ? !wantedFunctions.has(name) : !wantedTypes.has(name)) continue;
+
+    const doc = docAbove(lines, index);
+    const read =
+      doc === undefined
+        ? { example: undefined, prose: "" }
+        : readDoc(lines.slice(doc.start, doc.end + 1));
+    const key = `${kind}:${name}`;
+    const existing = declarations.get(key);
+    const declaration = declarationAt(lines, index, kind);
+    if (existing === undefined) {
+      declarations.set(key, {
+        example: read.example,
+        file,
+        kind,
+        line: index + 1,
+        name,
+        prose: read.prose,
+        signatures: [declaration.signature],
+      });
+    } else {
+      if (declaration.hasBody) continue;
+      declarations.set(key, {
+        ...existing,
+        example: existing.example ?? read.example,
+        prose: existing.prose === "" ? read.prose : existing.prose,
+        signatures: [...existing.signatures, declaration.signature],
+      });
+    }
+  }
+  return [...declarations.values()];
+}
+
 // A generic may contain a `>` — `batch<const T extends Planned<X>[]>` — so the
 // parameter list ends at the `(` after it. The name alternation carries
 // `[Symbol.iterator]`, which a plain-identifier group drops from the reference.
 const MEMBER =
-  /^ {2}(?:declare )?(?:static )?(?:readonly )?(?:async )?(?:(get|set) )?([a-zA-Z][a-zA-Z0-9_]*|\[[^\]]+\])(<[^(]*>)?\s*([(:])/u;
+  /^ {2}(?:public )?(?:declare )?(?:static )?(?:readonly )?(?:async )?(?:(get|set) )?([a-zA-Z][a-zA-Z0-9_]*|\[[^\]]+\])(<[^(]*>)?\s*([(:])/u;
 
 /** Every documented public member of every exported class in `source`. */
 export function classesOf(source: string, file: string): readonly ApiClass[] {
@@ -155,7 +325,7 @@ export function classesOf(source: string, file: string): readonly ApiClass[] {
     // rather than field by field. The prefixes match MEMBER's own: a predicate
     // narrower than the pattern feeding it is how a member goes quietly exempt.
     const isReadonlyField =
-      !isCall && !isGetter && /^ {2}(?:declare )?(?:static )?readonly /u.test(line);
+      !isCall && !isGetter && /^ {2}(?:public )?(?:declare )?(?:static )?readonly /u.test(line);
     if (!isCall && !isGetter && !isReadonlyField) continue;
 
     const doc = docAbove(lines, index);
@@ -185,4 +355,25 @@ export async function readApiSurface(): Promise<readonly ApiClass[]> {
     })),
   );
   return sources.flatMap(({ file, source }) => classesOf(source, file));
+}
+
+/** The root functions and scalar aliases whose validation semantics need prose. */
+export async function readRootApiSurface(): Promise<readonly ApiDeclaration[]> {
+  const sources = await Promise.all(
+    ROOT_SOURCES.map(async (entry) => ({
+      ...entry,
+      source: await readFile(join(packageRoot, entry.file), "utf8"),
+    })),
+  );
+  const declarations = sources.flatMap((entry) =>
+    declarationsOf(entry.source, entry.file, new Set(entry.functions), new Set(entry.types)),
+  );
+  const expected = ROOT_SOURCES.flatMap((entry) => [
+    ...entry.functions.map((name) => `function:${name}`),
+    ...entry.types.map((name) => `type:${name}`),
+  ]);
+  const found = new Set(declarations.map((entry) => `${entry.kind}:${entry.name}`));
+  const missing = expected.filter((entry) => !found.has(entry));
+  if (missing.length > 0) throw new Error(`root API declarations not found: ${missing.join(", ")}`);
+  return declarations;
 }

@@ -7,22 +7,18 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
 import { Server } from "../../src/server.js";
-import {
-  asSingleInvocation,
-  guardRequest,
-  MAX_PACKED_ARGV_BYTES,
-  refusedByGuard,
-} from "../../src/engine.js";
+import { flattenInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
 import { TmuxServerRestarted } from "../../src/exc.js";
 import type {
   DaemonGuard,
-  TmuxCommandRequest,
   TmuxCommandResult,
   TmuxEngine,
+  TmuxInvocationRequest,
 } from "../../src/engine.js";
 
 /**
@@ -65,46 +61,29 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
   };
 
   return {
-    async execute(request: TmuxCommandRequest) {
+    async execute(request: TmuxInvocationRequest) {
       // The obligation an engine is least likely to meet by accident. Dropping
       // it costs nothing until a daemon restarts, and then a handle read before
       // the restart addresses whatever now holds its id. Both halves: the
       // wrapper that makes tmux refuse, and the reply that tells that refusal
       // from the command itself having failed.
       const guarded = guardRequest(request);
-      const result = await run(
-        guarded.executable,
-        guarded.args,
-        guarded.environment,
-        guarded.stdin,
-      );
-      if (request.daemonGuard !== undefined && refusedByGuard(result.returncode, result.stderr)) {
-        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
-      }
-      return result;
-    },
-    async executeGroup(requests: readonly TmuxCommandRequest[]) {
-      const [first] = requests;
-      if (first === undefined) return [];
-      // The helper the built-in engine uses. Running these separately would
-      // return the same rows and stop the snapshot being one instant.
-      const invocation = asSingleInvocation(requests);
-      // The ceiling an engine has to respect, published for exactly this: a
-      // tmux client packs its whole argv into one imsg and refuses past it.
-      const packed = [first.executable, ...invocation.args].reduce(
+      const args = flattenInvocation(guarded.request);
+      const packed = [guarded.request.executable, ...args].reduce(
         (total, argument) => total + Buffer.byteLength(argument, "utf8") + 1,
         0,
       );
-      if (packed > MAX_PACKED_ARGV_BYTES) throw new Error("command list is too long for tmux");
-      const result = await run(first.executable, invocation.args, first.environment, undefined);
-      const sections = invocation.sections(result.stdout);
-      return sections.map((stdout, index) => ({
-        cmd: result.cmd,
-        returncode: index === sections.length - 1 ? result.returncode : 0,
-        signal: null,
-        stderr: index === sections.length - 1 ? result.stderr : new Uint8Array(),
-        stdout,
-      }));
+      if (packed > MAX_PACKED_ARGV_BYTES) throw new Error("invocation is too long for tmux");
+      const result = await run(
+        guarded.request.executable,
+        args,
+        guarded.request.environment,
+        guarded.request.stdin,
+      );
+      if (guarded.refusedBy(result.returncode, result.stderr)) {
+        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+      }
+      return result;
     },
   };
 }
@@ -150,7 +129,7 @@ describe("a supplied engine", () => {
 
       // An engine sees the guard it is obliged to honour, and honouring it is
       // one published call rather than a reimplementation of `if-shell -F`,
-      // the impossible else branch, and the stderr that tells a refusal from a
+      // the unique refusal command, and the stderr that tells a refusal from a
       // failure. What reaches tmux is what the built-in engine would have sent.
       const guards: (DaemonGuard | undefined)[] = [];
       const sent: (readonly string[])[] = [];
@@ -158,10 +137,9 @@ describe("a supplied engine", () => {
         engine: {
           execute: (request) => {
             guards.push(request.daemonGuard);
-            sent.push(guardRequest(request).args);
+            sent.push(flattenInvocation(guardRequest(request).request));
             return shellEngine(() => undefined).execute(request);
           },
-          executeGroup: (requests) => shellEngine(() => undefined).executeGroup(requests),
         },
         environment: fixture.controllerEnvironment,
         socketPath: fixture.socketPath,
@@ -205,22 +183,6 @@ describe("a supplied engine", () => {
     });
   }, 60_000);
 
-  test("echoes the engine back, the way it echoes every other option", async () => {
-    await withServer(async (fixture) => {
-      const engine = shellEngine(() => undefined);
-      const shared = {
-        environment: fixture.controllerEnvironment,
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
-      };
-
-      // What a caller downstream needs to know before reaching for a call
-      // that only a local tmux can answer.
-      expect(new Server({ ...shared, engine }).engine).toBe(engine);
-      expect(new Server(shared).engine).toBeUndefined();
-    });
-  }, 60_000);
-
   test("refuses the two calls that can only drive a local tmux", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
@@ -237,31 +199,6 @@ describe("a supplied engine", () => {
       expect(() => server.watch()).toThrow(/engine/u);
       await expect(server.connect()).rejects.toThrow(/engine/u);
     });
-  }, 60_000);
-
-  test("keeps an engine when the environment asks for control mode", async () => {
-    await withServer(async (fixture) => {
-      const invocations: (readonly string[])[] = [];
-      // Set by whoever started the process, not by the caller who supplied the
-      // engine. The engine is the more specific instruction, so it wins.
-      await using opened = await Server.open({
-        engine: shellEngine((argv) => invocations.push(argv)),
-        environment: { ...fixture.controllerEnvironment, LIBTMUX_TRANSPORT: "control" },
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
-      });
-
-      expect((await opened.snapshot()).sessions.count()).toBeGreaterThan(0);
-      expect(invocations).not.toBeEmpty();
-    });
-  }, 60_000);
-
-  test("refuses a control transport asked for in the same breath as an engine", async () => {
-    // Ambient configuration is ignored; a contradiction the caller wrote on
-    // purpose is refused, the way socketName and socketPath are.
-    await expect(
-      Server.open({ engine: shellEngine(() => undefined), transport: "control" }),
-    ).rejects.toThrow(TypeError);
   }, 60_000);
 
   test("tells two engines apart when they say where they reach", async () => {

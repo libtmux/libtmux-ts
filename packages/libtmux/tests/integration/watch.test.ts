@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { EventEmitter } from "node:events";
 import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -13,8 +14,11 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+  TestServer,
+  TEST_HANDLE_PROTOTYPES,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type {
   CommandRequest,
@@ -25,8 +29,6 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxException, WaitTimeout } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -44,11 +46,6 @@ class CountingSpawnTransport implements CommandTransport {
   execute(request: CommandRequest): Promise<RawCommandResult> {
     this.spawned += 1;
     return this.#inner.execute(request);
-  }
-
-  executeGroup(requests: readonly CommandRequest[]): Promise<readonly RawCommandResult[]> {
-    this.spawned += 1;
-    return this.#inner.executeGroup(requests);
   }
 }
 
@@ -69,6 +66,7 @@ function countingServerFor(fixture: TestServer): {
       daemonEpoch: 0 as DaemonEpoch,
       transport,
     }),
+    TEST_HANDLE_PROTOTYPES,
   );
   return { server, transport };
 }
@@ -248,6 +246,79 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
+  /**
+   * tmux evaluates a subscription on a one-second timer, so a report is a
+   * change rather than every value, and the deadline has to outlast a tick.
+   */
+  test("reports a subscribed format at each scope", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const events = server.watch({
+        subscriptions: [
+          { format: "#{session_name}", name: "session" },
+          { format: "#{pane_current_command}", name: "cmd", scope: "all-panes" },
+        ],
+      });
+      try {
+        const seen = new Map<string, string>();
+        for await (const event of events) {
+          if (event.kind !== "subscription-changed") continue;
+          seen.set(event.name, event.value);
+          if (event.name === "cmd") {
+            // A pane-scope report names the object it expanded against; a
+            // session-scope one has no window or pane to name.
+            expect(event.paneId).toMatch(/^%\d+$/u);
+            expect(event.windowId).toMatch(/^@\d+$/u);
+          }
+          if (event.name === "session") expect(event.paneId).toBeUndefined();
+          if (seen.size === 2) break;
+        }
+        expect(seen.get("session")).toBe("watch");
+        expect(seen.get("cmd")).not.toBe("");
+      } finally {
+        await events.close();
+      }
+    });
+  }, 60_000);
+
+  test("subscribes and unsubscribes on a live connection", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+      const events = live.subscribe();
+      await live.subscribeFormat({ format: "#{session_name}", name: "who" });
+
+      const first = await events.find(
+        (event) => event.kind === "subscription-changed" && event.name === "who",
+        { timeoutMs: 20_000 },
+      );
+      expect(first).toMatchObject({ kind: "subscription-changed", value: "watch" });
+
+      // Unsubscribing is the same command with the name alone; tmux answers
+      // nothing, so the assertion is that it was accepted.
+      await live.unsubscribeFormat("who");
+      await events.close();
+    });
+  }, 60_000);
+
+  test("refuses a subscription name tmux would misread", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using live = await server.connect();
+      // A colon splits the subscribe grammar and a space makes the report's
+      // fields ambiguous; both are refused here rather than sent.
+      await expect(
+        live.subscribeFormat({ format: "#{session_name}", name: "a:b" }),
+      ).rejects.toThrow(/subscription name/u);
+      await expect(
+        live.subscribeFormat({ format: "#{session_name}", name: "a b" }),
+      ).rejects.toThrow(/subscription name/u);
+      await expect(live.subscribeFormat({ format: "a\nb", name: "ok" })).rejects.toThrow(
+        /line break/u,
+      );
+    });
+  }, 60_000);
+
   test("refuses a second iteration of the same stream", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -283,7 +354,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("runs commands over the open connection instead of spawning", async () => {
+  test("snapshots through a connected server", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
@@ -296,7 +367,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("mutates over the connection and sees its own change", async () => {
+  test("mutates through a connected server and sees its own change", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
@@ -308,18 +379,13 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("carries notifications and command responses on one connection", async () => {
+  test("observes a change made through the connected server", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
 
-      // A command round-trip proves the client has attached. Sleeping instead
-      // races the attach against the mutation, and a missed notification is
-      // indistinguishable from a broken stream.
       const session = (await live.snapshot()).sessions.one({ name: "watch" });
 
-      // The stream buffers from the moment the connection opened, so iterating
-      // after the round-trip does not miss what arrived during it.
       const arrived = until(live.subscribe(), (event) => event.kind === "window-add");
       await session.newWindow({ name: "both-ways" });
 
@@ -338,21 +404,48 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("reopens a dropped connection and says so, when asked to", async () => {
+  test("gates readiness on the replacement after a dropped connection", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one({ name: "watch" });
+      const before = new Set(await clientNames(server));
       const events = server.watch({ reconnect: { attempts: 3, delayMs: 25 } });
+      const reconnecting = Promise.withResolvers<void>();
+      let reconnectedAttempts: number | undefined;
+      let sawWindowAdd = false;
+      const drain = (async () => {
+        for await (const event of events) {
+          if (event.kind === "reconnecting") reconnecting.resolve();
+          if (event.kind === "reconnected") reconnectedAttempts = event.attempts;
+          if (event.kind === "window-add") sawWindowAdd = true;
+        }
+      })();
+      try {
+        await events.ready();
+        await detachOwn(server, before);
+        await reconnecting.promise;
 
-      const reconnected = until(events, (event) => event.kind === "reconnected");
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      // Detach the control client rather than killing the session: this is the
-      // drop a long-lived process actually survives, and it leaves the fixture
-      // server intact for the harness that owns it.
-      await fixture.executeText(["detach-client", "-s", "watch"]).catch(() => undefined);
+        // A change made after the retired generation reports ready is lost.
+        // The replacement generation must attach before this barrier answers.
+        const replacementReady = events.ready();
+        let readySettled = false;
+        void replacementReady.then(
+          () => {
+            readySettled = true;
+          },
+          () => undefined,
+        );
+        await Promise.resolve();
+        expect(readySettled).toBe(false);
+        await replacementReady;
+        await session.newWindow({ name: "after-reconnect-ready" });
 
-      const event = await reconnected;
-      if (event.kind !== "reconnected") throw new Error("expected reconnected");
-      expect(event.attempts).toBeGreaterThanOrEqual(1);
+        await waitUntil(() => sawWindowAdd, "the replacement client to announce the window", 5_000);
+        expect(reconnectedAttempts).toBeGreaterThanOrEqual(1);
+      } finally {
+        await events.close();
+        await drain.catch(() => undefined);
+      }
     });
   }, 60_000);
 
@@ -387,6 +480,31 @@ describe("Server.watch", () => {
       await session.newWindow({ name: "awaited" });
 
       expect((await arriving).windows.count({ name: "awaited" })).toBe(1);
+    });
+  }, 60_000);
+
+  test("polls for whole-server state with no notification", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const remote = await server.newSession({ name: "quiet", shellCommand: "sleep 60" });
+      const pane = remote.panes.one();
+      await using live = await server.connect({ target: "watch" });
+      let arm!: () => void;
+      const armed = new Promise<void>((resolve) => {
+        arm = resolve;
+      });
+
+      const arriving = live.waitFor(
+        (snapshot) => {
+          arm();
+          return snapshot.panes.exists({ id: pane.id, title: "arrived" });
+        },
+        { pollIntervalMs: 50, timeoutMs: 1_500 },
+      );
+      await armed;
+      await fixture.executeText(["select-pane", "-t", pane.id, "-T", "arrived"]);
+
+      expect((await arriving).panes.one({ id: pane.id }).title).toBe("arrived");
     });
   }, 60_000);
 
@@ -536,7 +654,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("cancels a command already queued on a control connection", async () => {
+  test("rejects an already-aborted connected command", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       await using live = await server.connect();
@@ -897,45 +1015,6 @@ describe("Server.watch", () => {
     }
   }, 30_000);
 
-  test("selects the transport by option, by environment, and by default", async () => {
-    await withServer(async (fixture) => {
-      const base = {
-        environment: fixture.controllerEnvironment,
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
-      };
-
-      // Whichever way the mode was chosen, the caller holds the same type and
-      // makes the same calls — which is the whole point of choosing it by
-      // configuration rather than by editing the code that uses it.
-      const byOption = await Server.open({ ...base, transport: "control" });
-      const byEnvironment = await Server.open({
-        ...base,
-        environment: { ...fixture.controllerEnvironment, LIBTMUX_TRANSPORT: "control" },
-      });
-      const spawning = await Server.open(base);
-      try {
-        expect((await byOption.snapshot()).sessions.count()).toBeGreaterThan(0);
-        expect((await byEnvironment.snapshot()).sessions.count()).toBeGreaterThan(0);
-        expect((await spawning.snapshot()).sessions.count()).toBeGreaterThan(0);
-      } finally {
-        // Valid on all three, and a no-op on the one holding nothing.
-        await byOption.close();
-        await byEnvironment.close();
-        await spawning.close();
-      }
-
-      // An unreadable value is refused where it is written, rather than
-      // silently spawning and leaving a caller wondering why nothing changed.
-      await expect(
-        Server.open({
-          ...base,
-          environment: { ...fixture.controllerEnvironment, LIBTMUX_TRANSPORT: "carrier-pigeon" },
-        }),
-      ).rejects.toThrow(TypeError);
-    });
-  }, 60_000);
-
   test("closes the connection a scope opened, even when the body throws", async () => {
     await withServer(async (fixture) => {
       const { server, transport } = countingServerFor(fixture);
@@ -945,8 +1024,8 @@ describe("Server.watch", () => {
         (await live.snapshot()).sessions.count(),
       );
       expect(counted).toBeGreaterThan(0);
-      // The body ran over the connection, so the scope spawned nothing for it.
-      expect(transport.spawned - before).toBe(0);
+      // One observer authentication, one version probe, and one acquisition.
+      expect(transport.spawned - before).toBe(3);
 
       let captured: unknown;
       await server
@@ -966,7 +1045,7 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
-  test("runs a sequence over the connection rather than spawning for it", async () => {
+  test("keeps connected commands on process boundaries", async () => {
     await withServer(async (fixture) => {
       const { server, transport } = countingServerFor(fixture);
       const live = await server.connect();
@@ -979,38 +1058,8 @@ describe("Server.watch", () => {
           ["display-message", "-p", "three"],
         ]);
 
-        // Output alone cannot see this: a sequence run by spawning returns
-        // exactly what one sent over the connection returns, so the only
-        // evidence of which happened is whether anything was spawned. A
-        // connection exists to make that number zero.
-        expect(transport.spawned - before).toBe(0);
-      } finally {
-        await live.close();
-      }
-    });
-  }, 60_000);
-
-  test("runs a sequence over a connection without disturbing correlation", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      const live = await server.connect();
-      try {
-        // tmux answers a chained line with one block per command, and this
-        // connection pairs one block with one request — so a chain sent down it
-        // would hand each reply to the request behind it. Sending them
-        // separately keeps the pairing and costs the same on an open socket.
-        const results = await live.pipeline([
-          ["display-message", "-p", "FIRST"],
-          ["display-message", "-p", "SECOND"],
-          ["display-message", "-p", "THIRD"],
-        ]);
-
-        expect(results).toEqual([["FIRST"], ["SECOND"], ["THIRD"]]);
-
-        // And the connection still pairs correctly afterwards.
-        expect(await live.cmd("display-message", ["-p", "AFTER"], { target: null })).toEqual([
-          "AFTER",
-        ]);
+        // Authentication is shared; each user command keeps its own process.
+        expect(transport.spawned - before).toBe(4);
       } finally {
         await live.close();
       }
@@ -1030,7 +1079,6 @@ describe("Server.watch", () => {
           ]),
         ).rejects.toThrow();
 
-        // Same semantics as the chained form: earlier applied, later never ran.
         const windows = (await server.snapshot()).windows;
         expect(windows.exists({ name: "kept" })).toBe(true);
         expect(windows.exists({ name: "unreached" })).toBe(false);
@@ -1045,9 +1093,6 @@ describe("Server.watch", () => {
       const server = serverFor(fixture);
       const live = await server.connect();
       try {
-        // One transport chains the commands and frames the output with a
-        // marker; the other sends them one at a time and gets tmux's own
-        // framing. A caller must not be able to tell which ran.
         const commands = [
           ["display-message", "-p", "plain"],
           ["display-message", "-p", ""], // prints one blank line
@@ -1056,16 +1101,14 @@ describe("Server.watch", () => {
           ["display-message", "-p", "日本語🚀"],
         ];
 
-        const chained = await server.pipeline(commands);
-        const sent = await live.pipeline(commands);
+        const spawned = await server.pipeline(commands);
+        const connected = await live.pipeline(commands);
 
-        expect(chained).toEqual(sent);
-        // A command that printed one blank line reads as having printed
-        // nothing, which is what `cmd` answers for the same command.
-        expect(chained[1]).toEqual([]);
-        expect(chained[2]).toEqual([]);
-        expect(chained[3]).toEqual(["a b;c 'd' \"e\""]);
-        expect(chained[4]).toEqual(["日本語🚀"]);
+        expect(spawned).toEqual(connected);
+        expect(spawned[1]).toEqual([""]);
+        expect(spawned[2]).toEqual([]);
+        expect(spawned[3]).toEqual(["a b;c 'd' \"e\""]);
+        expect(spawned[4]).toEqual(["日本語🚀"]);
       } finally {
         await live.close();
       }
@@ -1095,7 +1138,9 @@ describe("Server.watch", () => {
         );
         expect(ours).toEqual([]);
       } finally {
-        process.off("unhandledRejection", record);
+        // Bun hides the inherited generic overload, so detach through the EventEmitter view.
+        const processEvents: Pick<EventEmitter, "off"> = process;
+        processEvents.off("unhandledRejection", record);
       }
     });
   }, 40_000);

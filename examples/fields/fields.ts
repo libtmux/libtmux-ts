@@ -1,9 +1,9 @@
-import { Server } from "libtmux";
+import { Server, type SafeInteger } from "libtmux";
 
 export interface PaneReport {
   readonly area: number;
   readonly activeCount: number;
-  readonly pids: readonly number[];
+  readonly pids: readonly SafeInteger[];
   readonly sessionAgeMs: number;
 }
 
@@ -31,7 +31,7 @@ export async function reportPanes(server: Server): Promise<PaneReport> {
   const pids = panes
     .toArray()
     .map((pane) => pane.panePid)
-    .filter((pid): pid is number => pid !== null);
+    .filter((pid) => pid !== null);
 
   // Times arrive as Date.
   const created = snapshot.sessions.one({ name: "fields" }).created;

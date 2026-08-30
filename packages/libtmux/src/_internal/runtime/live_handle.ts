@@ -10,8 +10,7 @@ import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { decodeFormatValue } from "../codec/format_values.js";
 import type { CompleteFormatRow } from "../codec/schemas.js";
 import {
-  graphRecordRefsEqual,
-  isNormalizedGraph,
+  graphRecordForRef,
   type GraphEntityRef,
   type GraphModel,
   type GraphRecordRef,
@@ -52,11 +51,7 @@ function requireState(value: unknown): LiveHandleState {
 }
 
 function requireAuthenticProvenance(graph: NormalizedGraph, record: GraphRecordRef): void {
-  if (
-    !isNormalizedGraph(graph) ||
-    !graphRecordRefsEqual(record, record) ||
-    !graph.records.some((candidate) => graphRecordRefsEqual(candidate.ref, record))
-  ) {
+  if (graphRecordForRef(graph, record) === undefined) {
     throw new LibTmuxException("handle provenance is not authentic");
   }
 }
@@ -162,6 +157,24 @@ export function initializeLiveHandle<Handle extends Child>(
   return handle;
 }
 
+export function modelKindForHandle(value: unknown): GraphModel | undefined {
+  return stateForValue(value)?.model;
+}
+
+/**
+ * Whether two captures came from the same running daemon.
+ *
+ * A capture with no daemon listed no rows at all, so it handed out no handles
+ * and cannot reach this. Comparing pid and start time together is what survives
+ * pid reuse.
+ */
+function sameCapturedDaemon(left: NormalizedGraph, right: NormalizedGraph): boolean {
+  const leftDaemon = left.capture.daemon;
+  const rightDaemon = right.capture.daemon;
+  if (leftDaemon === undefined || rightDaemon === undefined) return leftDaemon === rightDaemon;
+  return leftDaemon.pid === rightDaemon.pid && leftDaemon.startTime === rightDaemon.startTime;
+}
+
 /**
  * Whether two handles describe the same thing on the same tmux server.
  *
@@ -183,20 +196,6 @@ export function initializeLiveHandle<Handle extends Child>(
  * differs for clients on purpose: this one compares the whole row, that one
  * compares `client_name`. Neither can do the other's job.
  */
-/**
- * Whether two captures came from the same running daemon.
- *
- * A capture with no daemon listed no rows at all, so it handed out no handles
- * and cannot reach this. Comparing pid and start time together is what survives
- * pid reuse.
- */
-function sameCapturedDaemon(left: NormalizedGraph, right: NormalizedGraph): boolean {
-  const leftDaemon = left.capture.daemon;
-  const rightDaemon = right.capture.daemon;
-  if (leftDaemon === undefined || rightDaemon === undefined) return leftDaemon === rightDaemon;
-  return leftDaemon.pid === rightDaemon.pid && leftDaemon.startTime === rightDaemon.startTime;
-}
-
 export function liveHandlesEqual(left: Child, other: unknown): boolean {
   const leftState = stateForValue(left);
   const rightState = stateForValue(other);

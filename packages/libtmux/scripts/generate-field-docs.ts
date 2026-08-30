@@ -6,7 +6,7 @@ import {
   WHERE_RELATIONS_V1,
   type WhereModel,
 } from "../src/_generated/where_fields.js";
-import { scalarOperatorNames } from "../src/_internal/selection/compile.js";
+import { scalarOperatorNames } from "../src/_internal/selection/scalar.js";
 import { packageRoot } from "./package_root.js";
 
 /**

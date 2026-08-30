@@ -5,9 +5,11 @@ import { join } from "node:path";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
+  sweepStaleRunRoots,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
 import { packageRoot } from "../package_root.js";
 import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
@@ -128,6 +130,11 @@ if (unsupplied.length > 0) {
   process.exit(1);
 }
 
+// Cleanup is a finally, and SIGKILL skips it. A run killed that way left its
+// tmux daemon behind under a name no later run revisits; this is where one
+// still can. Once per suite process, before anything creates a root of its own.
+await sweepStaleRunRoots();
+
 const isolated = await mkdtemp(join(tmpdir(), "ltx-readme-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;
 
@@ -244,7 +251,7 @@ if (leaks.length > 0) {
 if (strayServers.length > 0) {
   process.stderr.write(`${strayServers.join("\n")}\n`);
   process.stderr.write(
-    `\n${OUTPUT} examples left tmux servers behind that this package's own fixtures do not track — a block built its own \`new Server()\` or \`Server.open()\` and nothing closed it. Killed above; the run is not clean.\n`,
+    `\n${OUTPUT} examples left tmux servers behind that this package's own fixtures do not track — a block built its own \`new Server()\` and nothing killed it. Killed above; the run is not clean.\n`,
   );
   process.exit(1);
 }

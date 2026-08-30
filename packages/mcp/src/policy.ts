@@ -8,37 +8,44 @@
  * process to belong to.
  */
 
+import { MAX_PACKED_ARGV_BYTES } from "libtmux/engine";
+
 /** How much a tool may return before it starts linking instead of inlining. */
 export const DEFAULT_MAX_RESULT_LINES = 200;
+
+/** Largest tmux-derived UTF-8 payload per result; fixed notices may add a small overhead. */
+export const MAX_RESULT_BYTES = 256 * 1024;
+
+/** Largest UTF-8 payload a request may stage or collect across repeated items. */
+export const MAX_REQUEST_BYTES = MAX_RESULT_BYTES;
+
+/** Largest quoted request text within one tmux invocation. */
+export const MAX_INLINE_REQUEST_BYTES = Math.floor(MAX_PACKED_ARGV_BYTES / 2);
+
+// A share of what tmux carries, floored: these are byte counts, and the
+// argv budget is not a multiple of eight.
+/** Largest command before its five-byte-per-byte shell framing. */
+export const MAX_FRAMED_COMMAND_BYTES = Math.floor(MAX_PACKED_ARGV_BYTES / 8);
+
+/** Most repeated operations one request may schedule. */
+export const MAX_REQUEST_ITEMS = 64;
 
 /**
  * How long a blocking wait may run.
  *
  * The ceiling bounds the agent's turn, not the transport: waits await
- * throughout, so a long one does not stall the connection. What it costs is the
- * agent — it picks the wrong marker once and the whole turn is gone with nothing
- * to show for it, and a plain tool call gives it no way to change its mind
- * mid-flight.
+ * throughout, so a long one does not stall the connection.
  */
 export const DEFAULT_BLOCKING_WAIT_MS = 30_000;
-
-/**
- * How long the same wait may run as a task.
- *
- * A task hands back a handle immediately and can be cancelled, so the reason the
- * blocking ceiling is low does not apply. What remains is tmux's own limit:
- * `grid_collect_history` frees the oldest scrollback once `history-limit` is
- * reached, which invalidates the anchor a long observation is measured from.
- */
-export const DEFAULT_TASK_WAIT_MS = 600_000;
 
 /** How long a single tmux command may run before it is killed. */
 export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 const BLOCKING_WAIT_FLOOR_MS = 1_000;
 const BLOCKING_WAIT_LIMIT_MS = 120_000;
-const TASK_WAIT_FLOOR_MS = 1_000;
-const TASK_WAIT_LIMIT_MS = 3_600_000;
+/** Largest delay accepted by libtmux's timer-backed command deadline. */
+const COMMAND_TIMEOUT_LIMIT_MS = 2_147_483_647;
+const MAX_RESULT_LINES_LIMIT = 10_000;
 
 /**
  * Which tools this server offers.
@@ -54,6 +61,10 @@ const TIER_RANK: Readonly<Record<SafetyTier, number>> = {
   readonly: 0,
 };
 
+function isSafetyTier(value: unknown): value is SafetyTier {
+  return value === "readonly" || value === "mutating" || value === "destructive";
+}
+
 export interface Policy {
   /** Ceiling on a wait that blocks the caller. */
   readonly blockingWaitMaxMs: number;
@@ -62,8 +73,6 @@ export interface Policy {
   readonly liveEnabled: boolean;
   readonly maxResultLines: number;
   readonly safety: SafetyTier;
-  /** Ceiling on a wait running as a task. */
-  readonly taskWaitMaxMs: number;
   /**
    * The only tools to offer, when an operator has narrowed it that far.
    *
@@ -91,24 +100,19 @@ function clamp(value: number, floor: number, limit: number): number {
  */
 function readInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  if (!/^[0-9]+$/u.test(raw)) return fallback;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/**
- * Read a comma-separated allowlist, treating an empty value as no list.
- *
- * Not as an empty list: a variable someone set and left blank means "I did not
- * decide", and answering it with a server that offers nothing is a puzzle
- * rather than a policy.
- */
+/** Read a comma-separated allowlist, preserving whether the variable was set. */
 function readToolAllowlist(raw: string | undefined): ReadonlySet<string> | undefined {
   if (raw === undefined) return undefined;
   const names = raw
     .split(",")
     .map((name) => name.trim())
     .filter((name) => name !== "");
-  return names.length === 0 ? undefined : new Set(names);
+  return new Set(names);
 }
 
 /**
@@ -124,7 +128,7 @@ function readToolAllowlist(raw: string | undefined): ReadonlySet<string> | undef
  * this becomes visible.
  */
 function readSafety(raw: string | undefined): SafetyTier {
-  if (raw === undefined) return "mutating";
+  if (raw === undefined) return "readonly";
   const named = raw.trim().toLowerCase();
   if (named === "readonly" || named === "read-only") return "readonly";
   if (named === "mutating" || named === "destructive") return named;
@@ -140,25 +144,94 @@ export function resolvePolicy(
       BLOCKING_WAIT_FLOOR_MS,
       BLOCKING_WAIT_LIMIT_MS,
     ),
-    commandTimeoutMs: readInteger(
-      environment.LIBTMUX_MCP_COMMAND_TIMEOUT_MS,
-      DEFAULT_COMMAND_TIMEOUT_MS,
+    commandTimeoutMs: Math.min(
+      readInteger(environment.LIBTMUX_MCP_COMMAND_TIMEOUT_MS, DEFAULT_COMMAND_TIMEOUT_MS),
+      COMMAND_TIMEOUT_LIMIT_MS,
     ),
     liveEnabled: environment.LIBTMUX_MCP_LIVE !== "0",
-    maxResultLines: readInteger(environment.LIBTMUX_MCP_MAX_RESULT_LINES, DEFAULT_MAX_RESULT_LINES),
+    maxResultLines: clamp(
+      readInteger(environment.LIBTMUX_MCP_MAX_RESULT_LINES, DEFAULT_MAX_RESULT_LINES),
+      1,
+      MAX_RESULT_LINES_LIMIT,
+    ),
     safety: readSafety(environment.LIBTMUX_SAFETY),
     tools: readToolAllowlist(environment.LIBTMUX_MCP_TOOLS),
-    taskWaitMaxMs: clamp(
-      readInteger(environment.LIBTMUX_MCP_TASK_WAIT_MAX_MS, DEFAULT_TASK_WAIT_MS),
-      TASK_WAIT_FLOOR_MS,
-      TASK_WAIT_LIMIT_MS,
-    ),
   };
+}
+
+function requireInteger(field: string, value: number, floor: number, limit: number): void {
+  if (!Number.isSafeInteger(value) || value < floor || value > limit) {
+    throw new TypeError(`policy.${field} must be an integer from ${floor} to ${limit}`);
+  }
+}
+
+/** Validate and detach a policy supplied through the public JavaScript boundary. */
+export function snapshotPolicy(policy: Policy): Policy {
+  if (typeof policy !== "object" || policy === null) {
+    throw new TypeError("policy must be an object");
+  }
+
+  const { blockingWaitMaxMs, commandTimeoutMs, liveEnabled, maxResultLines, safety, tools } =
+    policy;
+
+  if (!isSafetyTier(safety)) {
+    throw new TypeError("policy.safety must be readonly, mutating, or destructive");
+  }
+  requireInteger(
+    "blockingWaitMaxMs",
+    blockingWaitMaxMs,
+    BLOCKING_WAIT_FLOOR_MS,
+    BLOCKING_WAIT_LIMIT_MS,
+  );
+  requireInteger("commandTimeoutMs", commandTimeoutMs, 1, COMMAND_TIMEOUT_LIMIT_MS);
+  if (typeof liveEnabled !== "boolean") {
+    throw new TypeError("policy.liveEnabled must be a boolean");
+  }
+  requireInteger("maxResultLines", maxResultLines, 1, MAX_RESULT_LINES_LIMIT);
+  let toolSnapshot: ReadonlySet<string> | undefined;
+  if (tools !== undefined) {
+    const copy = new Set<string>();
+    let invalidTool = false;
+    try {
+      Set.prototype.forEach.call(tools, (name: unknown): void => {
+        if (typeof name === "string") copy.add(name);
+        else invalidTool = true;
+      });
+    } catch {
+      throw new TypeError("policy.tools must be a Set or undefined");
+    }
+    if (invalidTool) {
+      throw new TypeError("policy.tools must contain only strings");
+    }
+    toolSnapshot = copy;
+  }
+
+  return {
+    blockingWaitMaxMs,
+    commandTimeoutMs,
+    liveEnabled,
+    maxResultLines,
+    safety,
+    tools: toolSnapshot,
+  };
+}
+
+/** Keep a caller's requested line count inside the operator's ceiling. */
+export function effectiveResultLines(policy: Policy, requested: number | undefined): number {
+  const configured = Number.isSafeInteger(policy.maxResultLines)
+    ? policy.maxResultLines
+    : DEFAULT_MAX_RESULT_LINES;
+  const ceiling = clamp(configured, 1, MAX_RESULT_LINES_LIMIT);
+  const desired =
+    requested === undefined || !Number.isSafeInteger(requested)
+      ? ceiling
+      : clamp(requested, 1, MAX_RESULT_LINES_LIMIT);
+  return Math.min(desired, ceiling);
 }
 
 /** Whether a tool needing `required` is offered under `active`. */
 export function tierAllows(active: SafetyTier, required: SafetyTier): boolean {
-  return TIER_RANK[active] >= TIER_RANK[required];
+  return isSafetyTier(active) && isSafetyTier(required) && TIER_RANK[active] >= TIER_RANK[required];
 }
 
 /**
@@ -168,12 +241,8 @@ export function tierAllows(active: SafetyTier, required: SafetyTier): boolean {
  * with one costs the agent a turn to learn a policy the result could have
  * carried. The honoured value comes back on every wait result instead.
  */
-export function effectiveWaitMs(
-  policy: Policy,
-  requested: number | undefined,
-  asTask: boolean,
-): number {
-  const ceiling = asTask ? policy.taskWaitMaxMs : policy.blockingWaitMaxMs;
+export function effectiveWaitMs(policy: Policy, requested: number | undefined): number {
+  const ceiling = policy.blockingWaitMaxMs;
   return requested === undefined
     ? Math.min(DEFAULT_BLOCKING_WAIT_MS, ceiling)
     : Math.min(requested, ceiling);

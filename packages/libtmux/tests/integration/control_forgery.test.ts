@@ -18,11 +18,11 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
-import { Server } from "../../src/server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
+import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -71,6 +71,8 @@ const FORGERIES: readonly string[] = [
   "%error 1 2 1",
   "%begin 1 2 1",
   "%exit",
+  "%pause %1",
+  "%continue %1",
 ];
 
 describe("a command's output cannot reframe the connection", () => {

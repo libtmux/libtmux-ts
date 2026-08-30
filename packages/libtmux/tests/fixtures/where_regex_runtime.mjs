@@ -6,13 +6,15 @@ import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../dist/_generated/where
 import { createGraphSourceId } from "../../dist/_internal/graph/model.js";
 import { materializeProjectionMembers } from "../../dist/_internal/graph/materialize.js";
 import { normalizeGraph } from "../../dist/_internal/graph/normalize.js";
-import { SelectionProjectionBuilder } from "../../dist/_internal/graph/selection_projection.js";
+import { SelectionProjectionBuilder } from "../../dist/_internal/graph/projection_builder.js";
 import {
   createRuntimeContext,
   createServerWithRuntime,
 } from "../../dist/_internal/runtime/context.js";
 import { TmuxConnection } from "../../dist/_internal/runtime/connection.js";
 import { createProjectedSelection } from "../../dist/_internal/selection/evaluate.js";
+import { flattenInvocation } from "../../dist/engine.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../dist/_internal/test/testkit.js";
 
 const protocol = "libtmux-where-regex-v1";
 const implementation = process.argv[2];
@@ -20,15 +22,14 @@ assert.ok(implementation === "bun" || implementation === "node");
 
 const fixture = JSON.parse(await readFile(new URL("./where_regex.json", import.meta.url), "utf8"));
 assert.equal(fixture.protocol, protocol);
-assert.deepEqual(fixture.runtimes, { bun: "1.3.14", node: "22", python: "3" });
+assert.deepEqual(fixture.runtimes, { bun: ["1.3.14", "1.4.0"], node: "22", python: "3" });
 
 // Checked against the corpus rather than a repeated literal: what makes this
 // evidence is that the engine running the cases is the one that recorded them.
 if (implementation === "bun") {
-  assert.equal(
-    process.versions.bun,
-    fixture.runtimes.bun,
-    `the regex corpus records Bun ${fixture.runtimes.bun}; this is Bun ${process.versions.bun}. Run the suite on the Bun package.json pins, or regenerate the corpus.`,
+  assert.ok(
+    fixture.runtimes.bun.includes(process.versions.bun),
+    `the regex corpus records Bun ${fixture.runtimes.bun.join(" and ")}; this is Bun ${process.versions.bun}. Run the suite on a recorded Bun, or regenerate the corpus.`,
   );
 } else {
   assert.equal(process.versions.bun, undefined);
@@ -69,11 +70,11 @@ const transport = {
   async execute(request) {
     requests.push(request);
     return {
-      cmd: Object.freeze([request.executable, ...request.args]),
+      cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
       returncode: 0,
       signal: null,
       stderr: new Uint8Array(),
-      stdout: new TextEncoder().encode("3.7b\n"),
+      stdout: new TextEncoder().encode("3.7b\t101\t202\n"),
     };
   },
 };
@@ -104,7 +105,7 @@ const graph = normalizeGraph({
     },
   ],
 });
-const builder = SelectionProjectionBuilder.create({
+const builder = SelectionProjectionBuilder.createCorpus({
   descriptors: {
     client: {
       fields: WHERE_FIELDS_V1.client,
@@ -128,7 +129,7 @@ const builder = SelectionProjectionBuilder.create({
     },
   },
   graph,
-  source,
+  sources: [source],
 });
 for (const member of graph.sources[0].records) {
   builder.materializeMany(member, "windows", []);
@@ -136,9 +137,10 @@ for (const member of graph.sources[0].records) {
   builder.materializeOne(member, "activeWindow", null);
   builder.materializeOne(member, "activePane", null);
 }
-const projection = builder.seal();
+const projection = builder.sealViews().get(source);
+assert.ok(projection);
 const values = await materializeProjectionMembers(
-  createServerWithRuntime(runtime),
+  createServerWithRuntime(runtime, TEST_HANDLE_PROTOTYPES),
   projection,
   graph,
 );
@@ -154,7 +156,7 @@ const observations = fixture.cases.map((entry) => {
   assert.equal(matched, entry.expected[implementation], entry.id);
   return { id: entry.id, matched };
 });
-const combined = fixture.cases.find(({ id }) => id === "multiline-dotall-open-quantifier");
+const combined = fixture.cases.find(({ id }) => id === "multiline-dotall-fixed-width");
 assert.ok(combined);
 const countCombined = (flags, pattern = combined.pattern) =>
   selection.count({
@@ -167,9 +169,9 @@ const countCombined = (flags, pattern = combined.pattern) =>
 assert.equal(countCombined("ms"), 1);
 assert.equal(countCombined("m"), 0);
 assert.equal(countCombined("s"), 0);
-const unsatisfiedLowerBound = combined.pattern.replace("{2,}", "{4,}");
-assert.notEqual(unsatisfiedLowerBound, combined.pattern);
-assert.equal(countCombined("ms", unsatisfiedLowerBound), 0);
+const unsatisfiedTokenCount = combined.pattern.replace("tokentokentoken", "tokentokentokentoken");
+assert.notEqual(unsatisfiedTokenCount, combined.pattern);
+assert.equal(countCombined("ms", unsatisfiedTokenCount), 0);
 assert.equal(requests.length, requestCount);
 
 process.stdout.write(

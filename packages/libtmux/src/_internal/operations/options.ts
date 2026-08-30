@@ -1,15 +1,18 @@
 import type { CommandOptions } from "../../common.js";
 import type { SetOptionOptions } from "../../types.js";
-import type { OptionScope } from "../../types.js";
+import { OPTION_SCOPE_FLAG_MAP, type OptionScope } from "../../constants.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";
 
-const SCOPE_FLAGS: Readonly<Record<OptionScope, readonly string[]>> = Object.freeze({
-  pane: ["-p"],
-  server: ["-s"],
-  session: [],
-  window: ["-w"],
-});
+function scopeArguments(scope: OptionScope): readonly string[] {
+  const flag = OPTION_SCOPE_FLAG_MAP[scope];
+  return flag === "" ? [] : [flag];
+}
+
+/** Keep caller-owned names literal in tmux arguments that always expand formats. */
+export function literalFormat(value: string): string {
+  return value.replaceAll("#", "##");
+}
 
 /** What `vis(3)` writes for a byte that cannot be printed, and its byte. */
 const CONTROL_ESCAPES: ReadonlyMap<string, string> = new Map([
@@ -107,7 +110,7 @@ export async function showOptions(
 ): Promise<ReadonlyMap<string, string>> {
   const lines = await runCommand(runtime, [
     "show-options",
-    ...SCOPE_FLAGS[scope],
+    ...scopeArguments(scope),
     ...(flags.global === true ? ["-g"] : []),
     ...(target == null ? [] : ["-t", target]),
   ]);
@@ -140,7 +143,7 @@ export async function showResolvedOptions(
   const lines = await runCommand(runtime, [
     "show-options",
     "-A",
-    ...SCOPE_FLAGS[scope],
+    ...scopeArguments(scope),
     ...(target == null ? [] : ["-t", target]),
   ]);
 
@@ -166,11 +169,11 @@ export async function setOption(
     runtime,
     [
       "set-option",
-      ...SCOPE_FLAGS[scope],
+      ...scopeArguments(scope),
       ...(options.global === true ? ["-g"] : []),
       ...(options.append === true ? ["-a"] : []),
       ...(target == null ? [] : ["-t", target]),
-      name,
+      literalFormat(name),
       value,
     ],
     options,
@@ -189,11 +192,11 @@ export async function unsetOption(
     runtime,
     [
       "set-option",
-      ...SCOPE_FLAGS[scope],
+      ...scopeArguments(scope),
       ...(options.global === true ? ["-g"] : []),
       "-u",
       ...(target == null ? [] : ["-t", target]),
-      name,
+      literalFormat(name),
     ],
     options,
   );

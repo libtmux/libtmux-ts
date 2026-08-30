@@ -1,12 +1,18 @@
-import type { CompleteFormatRow } from "../codec/schemas.js";
-import { executeGuardedListGroup, type GuardedListing } from "../codec/guard_codec.js";
+import type { RawCompleteFormatRow } from "../codec/schemas.js";
+import { LibTmuxException } from "../../exc.js";
+import type { AbortLike } from "../../types.js";
+import { executeGuardedListGroup, type GuardedListing } from "../codec/guarded_listing.js";
+import { FormatProtocolError } from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
 import {
+  beginDaemonObservation,
   observeDaemonIdentity,
   type DaemonIdentity,
   type RuntimeContext,
 } from "../runtime/context.js";
+
+const MAX_ACQUISITION_ATTEMPTS = 2;
 
 /**
  * The four listings one acquisition runs, in the order their sections arrive.
@@ -27,17 +33,28 @@ export const ACQUISITION_LISTINGS: readonly GuardedListing[] = Object.freeze([
  *
  * `pid` and `start_time` are universal-scope fields, so every row of every
  * listing already carries them and reading the daemon's identity costs no
- * command of its own. A server with nothing on it lists no rows at all, and
- * then there is nothing to compare — which is correct: an empty server has
- * handed out no handles to invalidate.
+ * command of its own.
  */
-function daemonOf(rows: readonly (readonly CompleteFormatRow[])[]): DaemonIdentity | undefined {
+type DaemonRow = Readonly<Pick<RawCompleteFormatRow, "pid" | "start_time">>;
+
+export function daemonIdentityOf(rows: readonly (readonly DaemonRow[])[]): DaemonIdentity {
+  let daemon: DaemonIdentity | undefined;
   for (const set of rows) {
-    const row = set[0];
-    if (row?.pid == null || row.start_time == null) continue;
-    return Object.freeze({ pid: row.pid, startTime: row.start_time });
+    for (const row of set) {
+      if (row.pid == null || row.start_time == null) {
+        throw new FormatProtocolError("captured row has an incomplete daemon identity");
+      }
+      if (daemon === undefined) {
+        daemon = Object.freeze({ pid: row.pid, startTime: row.start_time });
+        continue;
+      }
+      if (daemon.pid !== row.pid || daemon.startTime !== row.start_time) {
+        throw new FormatProtocolError("captured rows disagree on daemon identity");
+      }
+    }
   }
-  return undefined;
+  if (daemon === undefined) throw new FormatProtocolError("captured graph has no daemon identity");
+  return daemon;
 }
 
 /**
@@ -56,42 +73,35 @@ function daemonOf(rows: readonly (readonly CompleteFormatRow[])[]): DaemonIdenti
  * placements of a window linked into two sessions survive as two window
  * records sharing one window entity.
  */
-export async function acquireServerGraph(
+async function acquireServerGraphAttempt(
   runtime: RuntimeContext,
-  // Set only by the retry below. A restart invalidates the epoch that this
-  // acquisition already read, so the rows in hand describe the new daemon under
-  // the old epoch and cannot be normalized. Reading again under the new one is
-  // the whole recovery, and a second restart in that window is a different
-  // outage rather than a reason to keep going round.
-  afterRestart = false,
+  attemptsRemaining: number,
+  signal?: AbortLike,
 ): Promise<NormalizedGraph> {
-  const [capabilities, [sessions = [], windows = [], panes = [], clients = []]] = await Promise.all(
-    [
-      runtime.capabilities.bind(),
-      executeGuardedListGroup({
-        capabilities: runtime.capabilities,
-        connection: runtime.connection,
-        listings: ACQUISITION_LISTINGS,
-        ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
-        transport: runtime.transport,
-      }),
-    ],
-  );
+  const observation = beginDaemonObservation(runtime);
+  const capabilities = await runtime.capabilities.bind(signal);
+  const [sessions = [], windows = [], panes = [], clients = []] = await executeGuardedListGroup({
+    capabilities: runtime.capabilities,
+    connection: runtime.connection,
+    listings: ACQUISITION_LISTINGS,
+    ...(signal === undefined ? {} : { signal }),
+    ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
+    transport: runtime.transport,
+  });
 
-  // A restart hands the next daemon the same socket and the same ids, so
-  // noticing it here is what keeps a handle from the previous one from
-  // resolving against its successor. Invalidating the epoch is what enforces
-  // that: every graph captured under the old epoch stops validating.
-  const daemon = daemonOf([sessions, windows, panes, clients]);
-  if (daemon !== undefined && observeDaemonIdentity(runtime, daemon).restarted && !afterRestart) {
-    return acquireServerGraph(runtime, true);
+  const daemon = daemonIdentityOf([sessions, windows, panes, clients]);
+  if (!observeDaemonIdentity(runtime, observation, capabilities, daemon)) {
+    if (attemptsRemaining > 1) {
+      return acquireServerGraphAttempt(runtime, attemptsRemaining - 1, signal);
+    }
+    throw new LibTmuxException("daemon changed repeatedly during graph acquisition");
   }
 
   return normalizeGraph({
     capture: {
       capabilityFingerprint: capabilities.fingerprint,
       connection: capabilities.connectionAlias,
-      ...(daemon === undefined ? {} : { daemon }),
+      daemon,
       epoch: capabilities.daemonEpoch,
       tmuxVersion: capabilities.rawVersion,
     },
@@ -102,4 +112,11 @@ export async function acquireServerGraph(
       { listCommand: "list-clients", rows: clients, source: createGraphSourceId("clients") },
     ] satisfies readonly CapturedRowSet[],
   });
+}
+
+export function acquireServerGraph(
+  runtime: RuntimeContext,
+  signal?: AbortLike,
+): Promise<NormalizedGraph> {
+  return acquireServerGraphAttempt(runtime, MAX_ACQUISITION_ATTEMPTS, signal);
 }

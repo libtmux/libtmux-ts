@@ -7,13 +7,14 @@ import {
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
-} from "../../src/_internal/test/run_root.js";
-import { TestServer } from "../../src/_internal/test/test_server.js";
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
+
+import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { LibTmuxException, TmuxCommandError } from "../../src/exc.js";
 import { Server } from "../../src/server.js";
-
-import { makeTestDirectory } from "../../src/_internal/test/temp_root.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -74,10 +75,10 @@ describe("lifecycle mutations", () => {
 
       const window = await session.newWindow({ name: "editor" });
       expect(window.name).toBe("editor");
-      expect(window.sessionId).toBe(session.id);
+      expect(window.session?.id).toBe(session.id);
 
       const pane = await window.split();
-      expect(pane.windowId).toBe(window.id);
+      expect(pane.window?.id).toBe(window.id);
       // The returned pane is live; the window handle predates the split and
       // still reports the instant it was created at.
       expect(window.panes.length).toBe(1);
@@ -155,7 +156,7 @@ describe("lifecycle mutations", () => {
       const server = serverFor(fixture);
       await server.newSession({ name: "other" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
       await window.link({ index: 9, session: "other" });
 
@@ -164,7 +165,7 @@ describe("lifecycle mutations", () => {
 
       // Refreshing resolves the placement it was created at, not the new one.
       expect(later.index).toBe(originalIndex);
-      expect(later.sessionName).toBe(fixture.sessionName);
+      expect(later.session?.name).toBe(fixture.sessionName);
     });
   }, 40_000);
 
@@ -173,7 +174,7 @@ describe("lifecycle mutations", () => {
       const server = serverFor(fixture);
       await server.newSession({ name: "other" });
       const window = (await server.snapshot()).windows
-        .filter((candidate) => candidate.sessionName === fixture.sessionName)
+        .filter((candidate) => candidate.session?.name === fixture.sessionName)
         .one();
       await window.move({ index: 9, session: "other" });
 
@@ -311,7 +312,7 @@ describe("lifecycle mutations", () => {
       for (const session of [first.id, joined.id]) {
         expect(
           snapshot.windows
-            .filter((window) => window.sessionId === session)
+            .filter((window) => window.session?.id === session)
             .map((window) => window.name),
         ).toEqual(["shared", "added"]);
       }
@@ -326,14 +327,16 @@ describe("lifecycle mutations", () => {
 
       // Measured rather than assumed: tmux 3.2 ignores a detached session's
       // requested size, so the window this divides is not the same everywhere.
-      const height = (await server.snapshot()).windows.one({ id: pane.windowId }).height ?? 0;
+      const paneWindow = pane.window;
+      if (paneWindow === undefined) throw new Error("expected the pane to resolve its window");
+      const height = (await server.snapshot()).windows.one({ id: paneWindow.id }).height ?? 0;
       expect(height).toBeGreaterThan(8);
 
       const split = await pane.split({ size: "25%" });
       const placed = (await server.snapshot()).panes.one({ id: split.id });
 
       // A quarter of the window, rather than the half a default split gives.
-      expect(placed.height).toBe(Math.floor(height / 4));
+      expect(placed.height).toBe(safeInteger(Math.floor(height / 4)));
     });
   }, 40_000);
 
@@ -353,13 +356,13 @@ describe("lifecycle mutations", () => {
       expect(logs.name).toBe("logs");
       expect(editor.id).toMatch(/^@\d+$/u);
       expect(editor.id).not.toBe(logs.id);
-      expect(editor.sessionId).toBe(session.id);
+      expect(editor.session?.id).toBe(session.id);
 
       // A mixed batch stays typed per element rather than collapsing to a
       // union, so the pane keeps its own methods.
       const [pane] = await server.batch([editor.plan.split({})]);
       expect(pane.id).toMatch(/^%\d+$/u);
-      expect(pane.windowId).toBe(editor.id);
+      expect(pane.window?.id).toBe(editor.id);
       expect(await pane.capture()).toBeDefined();
 
       const named = (await server.snapshot()).windows.where({
@@ -369,14 +372,12 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
-  test("plans a pane's own mutations, so trimming panes costs one round trip", async () => {
+  test("plans a pane's own mutations with one final snapshot", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const window = (await server.snapshot()).windows.one();
       const origin = window.panes.one();
 
-      // Splitting from the pane rather than the window, described rather than
-      // run: three splits, one invocation and one snapshot.
       const created = await server.batch([
         origin.plan.split({}),
         origin.plan.split({}),
@@ -385,9 +386,7 @@ describe("lifecycle mutations", () => {
       expect(created.map((pane) => pane.id)).toHaveLength(3);
       expect(new Set(created.map((pane) => pane.id)).size).toBe(3);
 
-      // Trimming back down is the shape a workspace builder needs, and the
-      // reason a pane needs a plan of its own: killing one at a time costs a
-      // process and a snapshot each.
+      // Trimming back down is the shape a workspace builder needs.
       const extra = (await server.snapshot()).windows.one({ id: window.id }).panes.toArray();
       await server.batch(extra.slice(1).map((pane) => pane.plan.kill()));
 
@@ -420,9 +419,13 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
-  test("runs a sequence in one invocation, framed per command", async () => {
+  test("returns each pipeline command's output positionally", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
+      await server.setOption(
+        "command-alias[99]",
+        "display-message=display-message -p injected ; display-message",
+      );
 
       const results = await server.pipeline([
         ["new-window", "-d", "-P", "-F", "#{window_id}", "-n", "one"],
@@ -430,13 +433,12 @@ describe("lifecycle mutations", () => {
         ["new-window", "-d", "-P", "-F", "#{window_id}", "-n", "two"],
       ]);
 
-      // Positional: the silent command frames as empty rather than shifting
-      // the creator behind it, which is the whole reason for the framing.
       expect(results).toHaveLength(3);
       expect(results[0]?.[0]).toMatch(/^@\d+$/u);
       expect(results[1]).toEqual([]);
       expect(results[2]?.[0]).toMatch(/^@\d+$/u);
 
+      await server.unsetOption("command-alias[99]");
       const windows = (await server.snapshot()).windows;
       expect(windows.exists({ name: "one" })).toBe(true);
       expect(windows.exists({ name: "two" })).toBe(true);
@@ -486,27 +488,6 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
-  test("splits a sequence past tmux's argument limit rather than failing", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      // tmux refuses an argument vector past 1000 elements (cmd_unpack_argv in
-      // cmd.c, "command too long"), and a sequence shares one vector. 400
-      // commands of three arguments each, plus the framing, is well past it.
-      const commands = Array.from({ length: 400 }, (_, index) => [
-        "display-message",
-        "-p",
-        `line-${String(index)}`,
-      ]);
-
-      const results = await server.pipeline(commands);
-
-      // Split across invocations, but the result is one sequence in order.
-      expect(results).toHaveLength(400);
-      expect(results[0]).toEqual(["line-0"]);
-      expect(results[399]).toEqual(["line-399"]);
-    });
-  }, 40_000);
-
   test("names the failing command wherever it sits in the sequence", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -517,8 +498,6 @@ describe("lifecycle mutations", () => {
         [failing, echo("b")],
         [echo("a"), failing, echo("c")],
         [echo("a"), failing],
-        // Past the chunk boundary, so the failure lands in a later invocation.
-        [...Array.from({ length: 300 }, (_, index) => echo(`x${String(index)}`)), failing],
       ]) {
         // eslint-disable-next-line no-await-in-loop -- one sequence at a time.
         const thrown = await server.pipeline(commands).then(

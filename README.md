@@ -43,27 +43,31 @@ then query it like data.
 ## Quickstart
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.0-alpha.6
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i libtmux
+$ npm i --save-exact libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ pnpm add libtmux
+$ pnpm add --save-exact libtmux@0.1.0-alpha.6
 ```
 
 ```console
-$ yarn add libtmux
+$ yarn add --exact libtmux@0.1.0-alpha.6
 ```
 
 </details>
 
 Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.2a or newer.
+
+Linux is the only supported host for real tmux control. The macOS CI lane
+checks package artifacts without exercising tmux; macOS runtime behavior is
+unproven. WSL is untested.
 
 ```ts
 import { Server } from "libtmux";
@@ -73,7 +77,7 @@ const snapshot = await server.snapshot();
 
 // No further tmux calls: everything below resolves against the snapshot.
 const editors = snapshot.panes.where({ currentCommand: "vim" });
-console.log(editors.count(), editors.at(0)?.sessionName);
+console.log(editors.count(), editors.at(0)?.session?.name);
 ```
 
 Building something rather than reading it looks like this — and this block is a
@@ -130,8 +134,8 @@ selection.oneOrUndefined({ name: "work" });
 selection.exists({ name: "work" });
 ```
 
-Criteria are data, so they serialize — the same object can come from a config
-file, an MCP call, or a CLI flag.
+Criteria are data. `encodeWhereDocument` writes a model-tagged query;
+`decodeWhereDocument` validates one read from a config file, MCP call, or CLI.
 
 ## Packages
 
@@ -149,7 +153,7 @@ Three packages, released together, each usable on its own.
 ### [libtmux](packages/libtmux) — the library
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.0-alpha.6
 ```
 
 ```ts
@@ -178,7 +182,7 @@ A stdio MCP server. Point it at a socket and an agent can list sessions, read a
 pane, send keys, and **wait for output** rather than polling for it.
 
 ```console
-$ npx -y @libtmux/mcp
+$ npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 Add it to any MCP client — this is the whole configuration:
@@ -188,7 +192,7 @@ Add it to any MCP client — this is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.6"],
       "env": { "LIBTMUX_SOCKET_NAME": "agent" }
     }
   }
@@ -199,21 +203,21 @@ Add it to any MCP client — this is the whole configuration:
 <summary>Claude Code, in one command</summary>
 
 ```console
-$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- npx -y @libtmux/mcp
+$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
+    npx -y @libtmux/mcp@0.1.0-alpha.6
 ```
 
 </details>
 
 The tools an agent reaches for first:
 
-| Tool                 | What it does                                                        |
-| -------------------- | ------------------------------------------------------------------- |
-| `run_command`        | Runs a shell command, waits for it, reports its real exit status    |
-| `wait_for_text`      | Blocks until a pane prints something, streaming tmux notifications  |
-| `wait_for_text_task` | The same wait as an MCP task: a handle now, the result later        |
-| `observe`            | Only what a pane printed since your cursor                          |
-| `whoami`             | Which pane the server runs in, and which panes a person is watching |
-| `build_workspace`    | A session and all its windows in one tmux invocation                |
+| Tool              | What it does                                                        |
+| ----------------- | ------------------------------------------------------------------- |
+| `run_command`     | Runs a shell command, waits for it, reports its real exit status    |
+| `wait_for_text`   | Blocks until a pane prints something, streaming tmux notifications  |
+| `observe`         | Only what a pane printed since your cursor                          |
+| `whoami`          | Which pane the server runs in, and which panes a person is watching |
+| `build_workspace` | A session and all its windows in one tmux invocation                |
 
 Panes, windows, sessions, layouts, options, buffers and environment are covered
 too, and the server is browsable: `tmux://` resources, subscribable pane
@@ -221,15 +225,14 @@ contents, prompts, and completions.
 
 Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 [Configuration](packages/mcp/README.md#point-it-at-a-server) ·
-[Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool) ·
-[Long waits](packages/mcp/README.md#long-waits-without-blocking)
+[Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool)
 
 ### [@libtmux/workspace](packages/workspace) — declarative sessions
 
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
 ```console
-$ bun add @libtmux/workspace
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.6 libtmux@0.1.0-alpha.6
 ```
 
 ```ts
@@ -260,23 +263,27 @@ integration suite, so the code there is the code that runs.
 $ bun test examples
 ```
 
-## How commands travel
+## How work is arranged
 
-Transport, chaining and concurrency are independent, each one token at the call
-site, and **none of them changes what you get back** —
-[the full table is here](packages/libtmux/README.md#choosing-how-commands-travel).
+Observation, planning and concurrency compose around the same command engine —
+[the full table is here](packages/libtmux/README.md#choosing-how-work-is-arranged).
 
-| Mode      | Turn it on                    | When to use it                                      |
-| --------- | ----------------------------- | --------------------------------------------------- |
-| spawning  | the default                   | A script that runs a few commands and exits         |
-| connected | `await server.connect()`      | Anything long-lived, or a loop reacting to events   |
-| watching  | `server.watch()`              | Reacting to a change rather than polling to find it |
-| planned   | `.plan` + `server.batch([…])` | Creating or changing several things at once         |
+| Mode       | Turn it on                    | When to use it                                      |
+| ---------- | ----------------------------- | --------------------------------------------------- |
+| connected  | `await server.connect()`      | Pairing commands with a persistent event observer   |
+| watching   | `server.watch()`              | Reacting to a change rather than polling to find it |
+| pipeline   | `server.pipeline([…])`        | Ordered commands when printed output is enough      |
+| planned    | `.plan` + `server.batch([…])` | Ordered mutations that must return typed handles    |
+| concurrent | `Promise.all`                 | Independent work that may safely overlap            |
 
-Twelve windows, measured: one-at-a-time costs 64 tmux invocations and about a
-second; batched costs 5 and about 40 ms. Same answer, different cost —
-[reproduce it](packages/libtmux/README.md#choosing-how-commands-travel) with
-`bun packages/libtmux/scripts/bench-modes.ts`.
+For its create-twelve-windows-and-query workload, the benchmark uses 25
+invocations one at a time, 13 through `pipeline`, and 14 through `batch`; the
+last includes the snapshot that resolves typed handles. It reports
+machine-specific timings beside those deterministic counts:
+
+```console
+$ bun packages/libtmux/scripts/bench-modes.ts
+```
 
 ## What this package promises
 
