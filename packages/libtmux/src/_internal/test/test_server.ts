@@ -15,7 +15,7 @@ import {
   readDaemonIdentity,
   resolveControllerIdentity,
   type ControllerIdentity,
-  type ProcessIdentity,
+  type DaemonIdentity,
 } from "./process_identity.js";
 import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import {
@@ -164,7 +164,7 @@ function sameController(
 }
 
 interface LaunchedFixtureGeneration {
-  readonly daemonIdentity: ProcessIdentity;
+  readonly daemonIdentity: DaemonIdentity;
   readonly observedSocketPath: string;
   readonly record: Extract<FixtureRecord, { readonly phase: "running" }>;
   readonly sessionId: string;
@@ -362,7 +362,7 @@ async function launchFixtureGeneration(options: {
 }
 
 export class TestServer {
-  daemonIdentity: ProcessIdentity;
+  daemonIdentity: DaemonIdentity;
   readonly logicalSocketName: string;
   readonly observedSocketPath: string;
   readonly readinessSignaledBeforeControllerWait: boolean;
@@ -385,7 +385,7 @@ export class TestServer {
   private constructor(options: {
     controllerIdentity: ControllerIdentity;
     controllerEnvironment: Readonly<Record<string, string>>;
-    daemonIdentity: ProcessIdentity;
+    daemonIdentity: DaemonIdentity;
     logicalSocketName: string;
     launchExecutable: string | undefined;
     observedSocketPath: string;
