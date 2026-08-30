@@ -28,7 +28,6 @@
       "name": "@example/agent",
       "version": "0.0.0",
       "dependencies": {
-        "@libtmux/workspace": "workspace:*",
         "libtmux": "workspace:*",
       },
     },
@@ -80,12 +79,13 @@
       "name": "@example/workspace",
       "version": "0.0.0",
       "dependencies": {
+        "@libtmux/workspace": "workspace:*",
         "libtmux": "workspace:*",
       },
     },
     "packages/libtmux": {
       "name": "libtmux",
-      "version": "0.1.0-alpha.6",
+      "version": "0.1.0-alpha.7",
       "devDependencies": {
         "@types/bun": "1.4.0",
         "@types/node": "22.20.1",
@@ -99,27 +99,27 @@
     },
     "packages/mcp": {
       "name": "@libtmux/mcp",
-      "version": "0.1.0-alpha.6",
+      "version": "0.1.0-alpha.7",
       "bin": {
         "libtmux-mcp": "dist/server.js",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
-        "libtmux": "0.1.0-alpha.6",
+        "libtmux": "0.1.0-alpha.7",
         "zod": "4.4.3",
       },
     },
     "packages/workspace": {
       "name": "@libtmux/workspace",
-      "version": "0.1.0-alpha.6",
+      "version": "0.1.0-alpha.7",
       "dependencies": {
         "zod": "4.4.3",
       },
       "devDependencies": {
-        "libtmux": "0.1.0-alpha.6",
+        "libtmux": "0.1.0-alpha.7",
       },
       "peerDependencies": {
-        "libtmux": "0.1.0-alpha.6",
+        "libtmux": "0.1.0-alpha.7",
       },
     },
   },

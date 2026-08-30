@@ -19,7 +19,7 @@ checks package artifacts without exercising tmux; macOS runtime behavior is
 unproven. WSL is untested. This is a proof boundary, not an OS rejection.
 
 ```console
-$ bun add --exact libtmux@0.1.0-alpha.6
+$ bun add --exact libtmux@0.1.0-alpha.7
 ```
 
 > [!WARNING]

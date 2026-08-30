@@ -1,6 +1,6 @@
 {
   "name": "@libtmux/workspace",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "description": "Declarative tmux workspace builder, built on libtmux.",
   "keywords": [
     "libtmux",
@@ -61,10 +61,10 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "libtmux": "0.1.0-alpha.6"
+    "libtmux": "0.1.0-alpha.7"
   },
   "peerDependencies": {
-    "libtmux": "0.1.0-alpha.6"
+    "libtmux": "0.1.0-alpha.7"
   },
   "engines": {
     "bun": ">=1.3.14",

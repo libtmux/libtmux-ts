@@ -49,14 +49,14 @@ whole screen again.
 ## Install
 
 ```console
-$ npx -y @libtmux/mcp@0.1.0-alpha.6
+$ npx -y @libtmux/mcp@0.1.0-alpha.7
 ```
 
 Nothing to install ahead of time: the server speaks MCP over stdio, so an MCP
 client launches it as a subprocess. To pin it in a project instead:
 
 ```console
-$ bun add --exact @libtmux/mcp@0.1.0-alpha.6
+$ bun add --exact @libtmux/mcp@0.1.0-alpha.7
 ```
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
@@ -74,7 +74,7 @@ This is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.6"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.7"],
       "env": { "LIBTMUX_SOCKET_NAME": "agent" }
     }
   }
@@ -86,7 +86,7 @@ This is the whole configuration:
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
-    npx -y @libtmux/mcp@0.1.0-alpha.6
+    npx -y @libtmux/mcp@0.1.0-alpha.7
 ```
 
 </details>
@@ -160,7 +160,7 @@ up:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.0-alpha.6 serving agents at the readonly tier
+libtmux-mcp 0.1.0-alpha.7 serving agents at the readonly tier
 ```
 
 `LIBTMUX_MCP_TOOLS` narrows further when a tier is the wrong shape. A tier

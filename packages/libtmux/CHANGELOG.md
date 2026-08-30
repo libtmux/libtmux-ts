@@ -12,6 +12,8 @@ remember.
 
 ## Unreleased
 
+## 0.1.0-alpha.7 (2026-08-30)
+
 ### `libtmux`
 
 #### Control mode
