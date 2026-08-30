@@ -379,7 +379,8 @@ export class TestServer {
   readonly #reservationCapability: ReservationCapability;
   readonly #requestObserver: EntrySnapshot["requestObserver"];
   #cleanupPromise: Promise<void> | undefined;
-  #replacing = false;
+  #disposeRequested = false;
+  #replacementPromise: Promise<void> | undefined;
 
   private constructor(options: {
     controllerIdentity: ControllerIdentity;
@@ -492,10 +493,22 @@ export class TestServer {
   }
 
   /** Replace this fixture's daemon while preserving its exact socket path. */
-  async replace(sessionName: string): Promise<void> {
-    if (this.#cleanupPromise !== undefined) throw new Error("disposed fixture cannot be replaced");
-    if (this.#replacing) throw new Error("fixture replacement is already running");
-    this.#replacing = true;
+  replace(sessionName: string): Promise<void> {
+    if (this.#disposeRequested) {
+      return Promise.reject(new Error("disposed fixture cannot be replaced"));
+    }
+    if (this.#replacementPromise !== undefined) {
+      return Promise.reject(new Error("fixture replacement is already running"));
+    }
+    let tracked!: Promise<void>;
+    tracked = this.#replaceGeneration(sessionName).finally(() => {
+      if (this.#replacementPromise === tracked) this.#replacementPromise = undefined;
+    });
+    this.#replacementPromise = tracked;
+    return tracked;
+  }
+
+  async #replaceGeneration(sessionName: string): Promise<void> {
     try {
       const reserved = await retireFixtureGeneration(this.#reservationCapability);
       const launched = await launchFixtureGeneration({
@@ -525,8 +538,6 @@ export class TestServer {
         reportSecondaryCleanupFailure(error, cleanupError);
       }
       throw error;
-    } finally {
-      this.#replacing = false;
     }
   }
 
@@ -562,10 +573,15 @@ export class TestServer {
   }
 
   dispose(): Promise<void> {
-    this.#cleanupPromise ??= (async () => {
-      const report = await reapFixture(this.#reservationCapability);
-      if (report.leaks.length > 0) throw new Error(report.leaks.join("; "));
-    })();
+    if (this.#cleanupPromise === undefined) {
+      this.#disposeRequested = true;
+      const replacement = this.#replacementPromise;
+      this.#cleanupPromise = (async () => {
+        await replacement?.catch(() => undefined);
+        const report = await reapFixture(this.#reservationCapability);
+        if (report.leaks.length > 0) throw new Error(report.leaks.join("; "));
+      })();
+    }
     return this.#cleanupPromise;
   }
 
