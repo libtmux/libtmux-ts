@@ -190,21 +190,22 @@ describe("guarded format codec", () => {
       execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }]),
     ).resolves.toEqual({ daemon: { pid: "101", start_time: "202" }, listings: [[], []] });
     await expect(
-      execute(
-        [{ listCommand: "list-sessions" }, { listCommand: "list-windows" }],
-        { withSessionRow: true },
-      ),
+      execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], {
+        withSessionRow: true,
+      }),
     ).rejects.toThrow("no current target");
     await expect(execute([{ listCommand: "list-windows" }])).rejects.toThrow("no current target");
-    for (const result of [
-      { returncode: 0, signal: null },
-      { returncode: 2, signal: null },
-      { returncode: 1, signal: "SIGTERM" },
-    ]) {
-      await expect(
-        execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], result),
-      ).rejects.toThrow("no current target");
-    }
+    await Promise.all(
+      [
+        { returncode: 0, signal: null },
+        { returncode: 2, signal: null },
+        { returncode: 1, signal: "SIGTERM" },
+      ].map((result) =>
+        expect(
+          execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], result),
+        ).rejects.toThrow("no current target"),
+      ),
+    );
   });
 
   test("requires one valid daemon identity frame even when no listings were requested", async () => {
