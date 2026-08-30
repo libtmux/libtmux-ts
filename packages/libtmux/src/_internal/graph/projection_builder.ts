@@ -427,6 +427,7 @@ export class SelectionProjectionBuilder {
       connection: this.graph.capture.connection,
       epoch: this.graph.capture.epoch,
       capabilityFingerprint: this.graph.capture.capabilityFingerprint,
+      ...(this.graph.capture.daemon === undefined ? {} : { daemon: this.graph.capture.daemon }),
       // Carried so a query can be told a field is newer than the server that
       // answered. Rebuilding the capture field by field is why it was lost.
       ...(this.graph.capture.tmuxVersion === undefined

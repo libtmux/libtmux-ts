@@ -957,8 +957,8 @@ await lines.catch(() => undefined); // rejects with the abort reason
 
 Every operation that takes options accepts both, so the rule you learn on one
 method holds on the next. The default applies to every command the server runs,
-including the version probe it makes first and the four listings behind
-`snapshot()`. `signal` is
+including the version probe it makes first and the identity read plus four
+listings behind `snapshot()`. `signal` is
 typed structurally, so a real `AbortSignal` satisfies it without the published
 types requiring a DOM or Node library.
 

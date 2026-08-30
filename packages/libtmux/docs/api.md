@@ -374,7 +374,8 @@ and waiting commands are allowed.
 The connection has the attached-client lifecycle described by
 [`watch`](#serverwatch) until it closes.
 
-A snapshot remains one tmux invocation containing all four listings.
+A snapshot remains one tmux invocation containing its daemon identity read
+and all four listings.
 
 ```ts
 await using live = await server.connect();
@@ -408,9 +409,10 @@ async sessions(): Promise<Selection<Session>>
 
 Every session on the server, read now.
 
-This and its three siblings each take a snapshot of their own — four tmux
-commands per call — so calling several in a row describes several different
-instants and pays for each. Inside a loop that is an N+1: prefer one
+This and its three siblings each take a snapshot of their own — one daemon
+identity read and four listings per call — so calling several in a row
+describes several different instants and pays for each. Inside a loop that
+is an N+1: prefer one
 [`snapshot`](#serversnapshot) and read `sessions`, `windows`, `panes`, and `clients`
 off it, which is both cheaper and consistent.
 
@@ -420,7 +422,7 @@ sessions.where({ name: "work" }).count();
 ```
 
 ```ts
-// Four commands, and every collection agrees with the others.
+// One invocation, and every collection agrees with the others.
 const now = await server.snapshot();
 for (const session of now.sessions) console.log(session.name, session.windows.length);
 ```
@@ -454,7 +456,7 @@ panes.where({ currentCommand: "vim" }).count();
 #### `Server.daemonIdentity`
 
 ```ts
-async daemonIdentity(): Promise<DaemonIdentity | undefined>
+async daemonIdentity(): Promise<DaemonIdentity>
 ```
 
 Which daemon is answering on this socket right now.
@@ -465,13 +467,13 @@ its panes from `%0` again — so a handle held across the restart names an
 object that no longer exists, at an id something else now has. Comparing
 this before and after is how a long-running caller can tell.
 
-`undefined` when the server has nothing to list, which is also the only
-case where it has handed out no handles to invalidate.
+A reachable daemon reports its identity even when it has no sessions. An
+unreachable server rejects instead of returning an absent identity.
 
 ```ts
 const before = await server.daemonIdentity();
 const after = await server.daemonIdentity();
-before?.pid === after?.pid;
+before.pid === after.pid;
 ```
 
 #### `Server.clients`

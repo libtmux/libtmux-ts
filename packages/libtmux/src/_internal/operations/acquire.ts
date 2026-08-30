@@ -31,9 +31,9 @@ export const ACQUISITION_LISTINGS: readonly GuardedListing[] = Object.freeze([
 /**
  * Which daemon answered this listing.
  *
- * `pid` and `start_time` are universal-scope fields, so every row of every
- * listing already carries them and reading the daemon's identity costs no
- * command of its own.
+ * The leading identity frame always carries `pid` and `start_time`. Every
+ * listing row repeats those universal-scope fields so acquisition can reject a
+ * row from another daemon rather than joining two generations.
  */
 type DaemonRow = Readonly<Pick<RawCompleteFormatRow, "pid" | "start_time">>;
 
@@ -69,13 +69,13 @@ export function daemonIdentityOf(
  * session or window record. Each model therefore needs its own listing to
  * supply the contextual rows a selection draws its members from.
  *
- * The four listings go as one tmux command list, which is what makes them one
- * instant rather than four adjacent ones — tmux drains a client's queue whole,
- * so no other client runs in between. Their count does not vary with the
- * topology, which is what lets relation traversal stay free of I/O. Listing
- * windows and panes with `-a` keeps that true across every session, and both
- * placements of a window linked into two sessions survive as two window
- * records sharing one window entity.
+ * The daemon identity read and four listings go as one tmux command list,
+ * which is what makes them one instant rather than adjacent observations —
+ * tmux drains a client's queue whole, so no other client runs in between.
+ * Their count does not vary with the topology, which is what lets relation
+ * traversal stay free of I/O. Listing windows and panes with `-a` keeps that
+ * true across every session, and both placements of a window linked into two
+ * sessions survive as two window records sharing one window entity.
  */
 async function acquireServerGraphAttempt(
   runtime: RuntimeContext,

@@ -97,8 +97,8 @@ function parseEpoch(value: unknown): DaemonEpoch {
  *
  * Every handle materialized from this capture compares by it: the epoch says
  * what one `Server` object has noticed, and two of them reading one daemon have
- * to agree that their handles name the same panes. A server with nothing to
- * list reports none, and has handed out no handles to compare.
+ * to agree that their handles name the same panes. Only normalized legacy graph
+ * input can omit it; every live acquisition carries the identity frame.
  */
 function parseDaemon(value: unknown): DaemonIdentity | undefined {
   if (value === undefined) return undefined;

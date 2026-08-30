@@ -588,6 +588,7 @@ declare const decodedPaneId: DecodedFormatValue<"pane_id">;
 const exactPackedArgvLimit: 16364 = MAX_PACKED_ARGV_BYTES;
 const exactPackedArgvCount: 1000 = MAX_PACKED_ARGV_COUNT;
 const daemonIdentityFromServer: ServerDaemonIdentity = daemonIdentity;
+const requiredDaemonIdentity: Promise<DaemonIdentity> = rootServer.daemonIdentity();
 const paneIdFromRequiredRow: PaneId = paneIdentityRow.pane_id;
 const paneIdFromDecoder: PaneId = decodedPaneId;
 const sessionId: SessionId = rootSnapshot.sessions.one().id;
@@ -611,6 +612,7 @@ void [
   exactPackedArgvLimit,
   exactPackedArgvCount,
   daemonIdentityFromServer,
+  requiredDaemonIdentity,
   paneIdFromRequiredRow,
   paneIdFromDecoder,
   sessionId,

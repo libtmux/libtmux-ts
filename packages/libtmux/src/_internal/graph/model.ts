@@ -30,7 +30,7 @@ export interface GraphRecordRef extends GraphRecordRefNominal {
 export interface GraphCapture {
   readonly capabilityFingerprint: string;
   readonly connection: ConnectionAlias;
-  /** Which daemon answered, when it had anything to list. */
+  /** Which daemon answered. Optional only on normalized legacy graph input. */
   readonly daemon?: DaemonIdentity;
   readonly epoch: DaemonEpoch;
   /**

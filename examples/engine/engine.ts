@@ -70,8 +70,9 @@ export async function throughACustomEngine(reference: Server): Promise<number> {
 
   const throughEngine = new Server({ engine });
 
-  // The whole API works over the seam. A snapshot's four commands arrive in
-  // one request, and it answers about the same tmux the built-in server sees.
+  // The whole API works over the seam. A snapshot's identity read and four
+  // listings arrive in one request, and they describe the same tmux the
+  // built-in server sees.
   const snapshot = await throughEngine.snapshot();
   return snapshot.sessions.count();
 }

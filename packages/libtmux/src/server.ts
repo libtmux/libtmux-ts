@@ -28,6 +28,7 @@ import type {
 import { randomUUID } from "node:crypto";
 
 import { runRawCommand } from "./_internal/operations/raw.js";
+import { acquireServerGraph } from "./_internal/operations/acquire.js";
 
 import { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch } from "./common.js";
@@ -63,7 +64,6 @@ import {
 import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
 import {
   createRuntimeContext,
-  lastObservedDaemon,
   registerServerRuntime,
   runtimeForServer,
   runtimeForServerValue,
@@ -358,7 +358,8 @@ export class Server {
    * }
    * ```
    *
-   * A snapshot remains one tmux invocation containing all four listings.
+   * A snapshot remains one tmux invocation containing its daemon identity read
+   * and all four listings.
    */
   async connect(options?: ConnectOptions): Promise<ConnectedServer> {
     if (options !== undefined && "pauseAfterSeconds" in options) {
@@ -418,14 +419,15 @@ export class Server {
   /**
    * Every session on the server, read now.
    *
-   * This and its three siblings each take a snapshot of their own — four tmux
-   * commands per call — so calling several in a row describes several different
-   * instants and pays for each. Inside a loop that is an N+1: prefer one
+   * This and its three siblings each take a snapshot of their own — one daemon
+   * identity read and four listings per call — so calling several in a row
+   * describes several different instants and pays for each. Inside a loop that
+   * is an N+1: prefer one
    * {@link snapshot} and read `sessions`, `windows`, `panes`, and `clients`
    * off it, which is both cheaper and consistent.
    *
    * ```ts
-   * // Four commands, and every collection agrees with the others.
+   * // One invocation, and every collection agrees with the others.
    * const now = await server.snapshot();
    * for (const session of now.sessions) console.log(session.name, session.windows.length);
    * ```
@@ -472,20 +474,22 @@ export class Server {
    * object that no longer exists, at an id something else now has. Comparing
    * this before and after is how a long-running caller can tell.
    *
-   * `undefined` when the server has nothing to list, which is also the only
-   * case where it has handed out no handles to invalidate.
+   * A reachable daemon reports its identity even when it has no sessions. An
+   * unreachable server rejects instead of returning an absent identity.
    *
    * ```ts
    * const before = await server.daemonIdentity();
    * const after = await server.daemonIdentity();
-   * before?.pid === after?.pid;
+   * before.pid === after.pid;
    * ```
    */
-  async daemonIdentity(): Promise<DaemonIdentity | undefined> {
-    // Acquisition reads `pid` and `start_time` on every row already, so this
-    // costs the snapshot it would have taken anyway and no command of its own.
-    await this.snapshot();
-    return lastObservedDaemon(runtimeForServer(this));
+  async daemonIdentity(): Promise<DaemonIdentity> {
+    const graph = await acquireServerGraph(runtimeForServer(this));
+    const identity = graph.capture.daemon;
+    if (identity === undefined) {
+      throw new LibTmuxException("live acquisition omitted the daemon identity");
+    }
+    return identity;
   }
 
   /**

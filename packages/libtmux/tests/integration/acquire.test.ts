@@ -210,11 +210,17 @@ describe("server graph acquisition", () => {
 
       const graph = await acquireServerGraph(runtimeFor(server));
       const daemon = graph.capture.daemon;
+      const publicIdentity = await new Server({
+        environment: server.controllerEnvironment,
+        socketPath: server.socketPath,
+        tmuxBin: server.tmuxExecutable,
+      }).daemonIdentity();
 
       expect(daemon).toBeDefined();
       if (daemon === undefined) throw new Error("zero-row capture omitted its daemon identity");
       expect(daemon.pid).toBe(String(server.daemonIdentity.pid));
       expect(daemon.startTime).toMatch(/^\d+$/u);
+      expect(publicIdentity).toEqual(daemon);
       expect(graph.records).toEqual([]);
     });
   }, 30_000);

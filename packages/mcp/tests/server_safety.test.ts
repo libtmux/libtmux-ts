@@ -63,7 +63,7 @@ describe("staying out of the way", () => {
           expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
         },
         {
-          TMUX: `${fixture.socketPath},${String((await tmux.daemonIdentity())?.pid ?? "")},0`,
+          TMUX: `${fixture.socketPath},${(await tmux.daemonIdentity()).pid},0`,
           TMUX_PANE: paneId,
         },
       );
@@ -74,7 +74,7 @@ describe("staying out of the way", () => {
     await withServer(async (fixture) => {
       const tmux = serverFor(fixture);
       const paneId = (await tmux.snapshot()).panes.one().id;
-      const serverPid = String((await tmux.daemonIdentity())?.pid ?? "");
+      const serverPid = (await tmux.daemonIdentity()).pid;
       const callerEnvironment: Record<string, string> = {
         TMUX: `${fixture.socketPath},${serverPid},0`,
         TMUX_PANE: paneId,
@@ -159,7 +159,7 @@ describe("staying out of the way", () => {
           expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
         },
         {
-          TMUX: `${fixture.socketPath},${String((await tmux.daemonIdentity())?.pid ?? "")},0`,
+          TMUX: `${fixture.socketPath},${(await tmux.daemonIdentity()).pid},0`,
           TMUX_PANE: paneId,
         },
       );
@@ -271,7 +271,7 @@ describe("staying out of the way", () => {
     await withServer(async (callerFixture) => {
       const callerTmux = serverFor(callerFixture);
       const callerPaneId = (await callerTmux.snapshot()).panes.one().id;
-      const callerPid = String((await callerTmux.daemonIdentity())?.pid ?? "");
+      const callerPid = (await callerTmux.daemonIdentity()).pid;
 
       await withServer(async (targetFixture) => {
         await withClient(
@@ -411,7 +411,7 @@ describe("staying out of the way", () => {
           expect(await callerFlag("resize_pane", { paneId, width: 40 })).toBe(true);
         },
         {
-          TMUX: `${fixture.socketPath},${String((await tmux.daemonIdentity())?.pid ?? "")},0`,
+          TMUX: `${fixture.socketPath},${(await tmux.daemonIdentity()).pid},0`,
           TMUX_PANE: paneId,
         },
       );

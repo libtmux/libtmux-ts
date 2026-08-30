@@ -164,9 +164,9 @@ export function modelKindForHandle(value: unknown): GraphModel | undefined {
 /**
  * Whether two captures came from the same running daemon.
  *
- * A capture with no daemon listed no rows at all, so it handed out no handles
- * and cannot reach this. Comparing pid and start time together is what survives
- * pid reuse.
+ * Live acquisition always supplies the daemon. A normalized legacy capture may
+ * omit it, so absence still compares with absence for stored graphs. Comparing
+ * pid and start time together is what survives pid reuse.
  */
 function sameCapturedDaemon(left: NormalizedGraph, right: NormalizedGraph): boolean {
   const leftDaemon = left.capture.daemon;
