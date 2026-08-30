@@ -32,6 +32,11 @@ daemons, and resolve `ready` only for the current connection. (#11)
 Control parsing preserves `%output` bodies and split UTF-8 sequences across
 flow-control pauses, and close failures reach pending callers. (#11)
 
+`Server.watch` and `Server.connect` now document that each open control
+connection is a tmux-visible attached client. It appears in snapshots,
+increments `session_attached`, triggers client hooks, and affects
+attachment-sensitive policy until the connection closes. (#14)
+
 #### Types
 
 **Breaking.** Public identifiers and model fields are scoped to their owning
@@ -88,6 +93,10 @@ tmux receives an oversized request. (#11)
 
 Server snapshots expose the signal that invalidated them and verify daemon
 liveness before returning cached state. (#11)
+
+`Server.daemonIdentity` returns a concrete identity for a reachable daemon with
+no sessions. An unreachable server rejects instead of returning `undefined`;
+identity capture and the four listings remain one tmux invocation. (#14)
 
 Subprocess output and diagnostic bytes are bounded, drained, and included in
 typed failures without allowing child processes to block indefinitely. (#11)
@@ -149,8 +158,18 @@ working directory without shell reinterpretation. (#11)
 Implicit panes are normalized before planning so equivalent workspace
 documents produce the same operation sequence. (#11)
 
+`WorkspaceInput` describes input before schema defaults and transforms, while
+`Workspace` describes validated output. `applyWorkspace` and `planWorkspace`
+accept `WorkspaceInput`, including a window whose `panes` field is omitted.
+(#14)
+
 Pruning distinguishes linked windows and grouped sessions instead of deleting
 a shared underlying window. (#11)
+
+`prune: "always"` is documented as authority for one `planWorkspace` or
+`applyWorkspace` call, not a persistent ownership claim. It does not stamp a
+found session, so a later default `"owned"` apply leaves new surplus alone.
+(#14)
 
 Workspace plans expose immutable, typed operation inputs so callers cannot
 silently change a validated plan before execution. (#11)
