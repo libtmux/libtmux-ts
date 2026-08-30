@@ -455,8 +455,8 @@ export type HookScope = OptionScopeValue;
 /**
  * The tmux version a server is running.
  *
- * `raw` is tmux's own string, kept verbatim because a build can report things
- * like `master` or a vendor suffix that the parsed fields flatten.
+ * `raw` is tmux's own string, kept verbatim because a development build can
+ * report forms such as `next-3.8` that the parsed fields flatten.
  */
 export interface TmuxVersion {
   readonly major: number;
