@@ -1,9 +1,10 @@
 /**
- * What a snapshot costs as the server it reads gets bigger.
+ * What a snapshot and repeated local queries cost as the server gets bigger.
  *
  * A snapshot is four list commands whatever the topology, and every row is
  * completed to every field its scope defines. This is the measurement an
- * argument for a reduced model or a field projection has to start from.
+ * argument for a reduced model or a field projection has to start from. Once
+ * acquired, nested relationship queries stay inside that immutable graph.
  *
  * Run with `bun scripts/bench-snapshot.ts`. Numbers belong to the machine and
  * the tmux that produced them, both of which are reported.
@@ -23,6 +24,7 @@ import type {
   RawCommandResult,
 } from "../src/_internal/transport/types.js";
 import type { Server } from "../src/server.js";
+import type { ServerSnapshot } from "../src/types.js";
 import { TEST_HANDLE_PROTOTYPES, makeTestDirectory } from "../src/_internal/test/testkit.js";
 
 /** Counts invocations and the bytes tmux answered with, which is the other cost. */
@@ -50,9 +52,11 @@ interface Shape {
 }
 
 interface Row {
+  readonly acquisitionMs: number;
   readonly bytes: number;
   readonly invocations: number;
-  readonly ms: number;
+  readonly localInvocations: number;
+  readonly localMs: number;
   readonly panes: number;
   readonly shape: string;
 }
@@ -66,6 +70,9 @@ const SHAPES: readonly Shape[] = [
 
 /** Enough repeats that a single slow or lucky run does not become the number. */
 const REPEATS = 3;
+
+/** Repeated enough to make an in-memory relationship query measurable. */
+const LOCAL_QUERIES = 250;
 
 function serverOn(
   socketPath: string,
@@ -120,22 +127,53 @@ async function measure(shape: Shape, socketPath: string, tmuxBin: string): Promi
     let invocations = 0;
     let bytes = 0;
     let panes = 0;
+    let snapshot: ServerSnapshot | undefined;
     for (let repeat = 0; repeat < REPEATS; repeat += 1) {
       const invocationsBefore = transport.invocations;
       const bytesBefore = transport.bytes;
       const started = performance.now();
       // eslint-disable-next-line no-await-in-loop -- the measurement is sequential by construction.
-      const snapshot = await server.snapshot();
+      snapshot = await server.snapshot();
       timings.push(performance.now() - started);
       invocations = transport.invocations - invocationsBefore;
       bytes = transport.bytes - bytesBefore;
       panes = snapshot.panes.count();
     }
+    if (snapshot === undefined) throw new Error("snapshot benchmark ran no acquisition");
+
+    const localQuery = (): number =>
+      snapshot.panes
+        .where({
+          session: { is: { windows: { some: { activePane: { isNot: null } } } } },
+          window: { is: { panes: { some: { dead: false } } } },
+        })
+        .count();
+    const localInvocationsBefore = transport.invocations;
+    for (let warmup = 0; warmup < LOCAL_QUERIES; warmup += 1) localQuery();
+
+    let matches = 0;
+    const localTimings: number[] = [];
+    for (let repeat = 0; repeat < REPEATS; repeat += 1) {
+      const localStarted = performance.now();
+      for (let query = 0; query < LOCAL_QUERIES; query += 1) matches += localQuery();
+      localTimings.push(performance.now() - localStarted);
+    }
+    const localInvocations = transport.invocations - localInvocationsBefore;
+    if (matches !== panes * LOCAL_QUERIES * REPEATS) {
+      throw new Error(`local query matched ${String(matches)} panes`);
+    }
+    if (localInvocations !== 0) {
+      throw new Error(`local queries made ${String(localInvocations)} tmux invocations`);
+    }
+
     timings.sort((left, right) => left - right);
+    localTimings.sort((left, right) => left - right);
     return {
+      acquisitionMs: timings[Math.floor(timings.length / 2)] ?? 0,
       bytes,
       invocations,
-      ms: timings[Math.floor(timings.length / 2)] ?? 0,
+      localInvocations,
+      localMs: localTimings[Math.floor(localTimings.length / 2)] ?? 0,
       panes,
       shape: `${String(shape.sessions)}x${String(shape.windowsPerSession)}x${String(shape.panesPerWindow)}`,
     };
@@ -162,13 +200,25 @@ async function main(): Promise<void> {
     await rm(root, { force: true, recursive: true });
   }
 
-  const header = ["sessions x windows x panes", "panes", "wall-clock", "invocations", "bytes read"];
+  const header = [
+    "sessions x windows x panes",
+    "panes",
+    "acquire wall",
+    "acquire calls",
+    "bytes read",
+    "local queries",
+    "local wall",
+    "query calls",
+  ];
   const body = rows.map((row) => [
     row.shape,
     String(row.panes),
-    `${row.ms.toFixed(0)} ms`,
+    `${row.acquisitionMs.toFixed(0)} ms`,
     String(row.invocations),
     `${(row.bytes / 1024).toFixed(0)} KiB`,
+    String(LOCAL_QUERIES),
+    `${row.localMs.toFixed(0)} ms`,
+    String(row.localInvocations),
   ]);
   const widths = header.map((cell, index) =>
     Math.max(cell.length, ...body.map((line) => line[index]?.length ?? 0)),
