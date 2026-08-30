@@ -30,6 +30,7 @@ interface Row {
 }
 
 const OUTPUT_BYTES = 1024 * 1024;
+export const OUTPUT_MARKER = "LTX-BENCH-OUTPUT-END";
 const SLOW_BUFFER_SIZE = 64;
 const SLOW_EVENTS = 100_000;
 const RECONNECT_LOOPS = 5;
@@ -39,6 +40,26 @@ const LIVE_DEADLINE_MS = 30_000;
 interface OwnedBenchmarkDaemon {
   readonly fixture: TestServer;
   readonly server: Server;
+}
+
+export class OutputMarkerTracker {
+  #markerTail = "";
+  #receivedBytes = 0;
+
+  get receivedBytes(): number {
+    return this.#receivedBytes;
+  }
+
+  push(data: string): number | undefined {
+    this.#receivedBytes += Buffer.byteLength(data, "utf8");
+    const candidate = this.#markerTail + data;
+    const markerIndex = candidate.indexOf(OUTPUT_MARKER);
+    if (markerIndex !== -1) {
+      return this.#receivedBytes - Buffer.byteLength(candidate.slice(markerIndex), "utf8");
+    }
+    this.#markerTail = candidate.slice(-(OUTPUT_MARKER.length - 1));
+    return undefined;
+  }
 }
 
 function serverOn(socketPath: string, tmuxBin: string): Server {
@@ -92,23 +113,14 @@ async function measureOutput(runRoot: string, tmuxBin: string): Promise<Row> {
     const events = live.subscribe();
     try {
       await events.ready();
-      const marker = "LTX-BENCH-OUTPUT-END";
-      const markerSplit = marker.length - 3;
-      let markerTail = "";
-      let receivedBytes = 0;
+      const markerSplit = OUTPUT_MARKER.length - 3;
+      const markerTracker = new OutputMarkerTracker();
       let markerOffset: number | undefined;
       const observed = events.find(
         (event) => {
           if (event.kind !== "output") return false;
-          receivedBytes += Buffer.byteLength(event.data, "utf8");
-          const candidate = markerTail + event.data;
-          const markerIndex = candidate.indexOf(marker);
-          if (markerIndex !== -1) {
-            markerOffset = receivedBytes - Buffer.byteLength(candidate.slice(markerIndex), "utf8");
-            return true;
-          }
-          markerTail = candidate.slice(-(marker.length - 1));
-          return false;
+          markerOffset = markerTracker.push(event.data);
+          return markerOffset !== undefined;
         },
         { timeoutMs: LIVE_DEADLINE_MS },
       );
@@ -117,14 +129,14 @@ async function measureOutput(runRoot: string, tmuxBin: string): Promise<Row> {
         name: "stream",
         shellCommand:
           `sh -c 'head -c ${String(OUTPUT_BYTES)} /dev/zero | tr "\\000" x; ` +
-          `printf "${marker.slice(0, markerSplit)}"; sleep 0.05; ` +
-          `printf "${marker.slice(markerSplit)}\\n"; sleep 30'`,
+          `printf "${OUTPUT_MARKER.slice(0, markerSplit)}"; sleep 0.05; ` +
+          `printf "${OUTPUT_MARKER.slice(markerSplit)}\\n"; sleep 30'`,
       });
       const terminal = await observed;
       const elapsed = performance.now() - started;
       if (terminal?.kind !== "output" || markerOffset === undefined) {
         throw new Error(
-          `pane output marker was not observed after ${String(receivedBytes)} bytes ` +
+          `pane output marker was not observed after ${String(markerTracker.receivedBytes)} bytes ` +
             `(${String(events.dropped)} dropped)`,
         );
       }
@@ -350,4 +362,4 @@ async function main(): Promise<void> {
   );
 }
 
-await main();
+if (import.meta.main) await main();
