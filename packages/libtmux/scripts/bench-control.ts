@@ -16,7 +16,12 @@ import { TmuxServerRestarted } from "../src/exc.js";
 import { Server, type DaemonIdentity } from "../src/server.js";
 import { createEventStream } from "../src/_internal/control/stream.js";
 import { parsePaneId } from "../src/_internal/runtime/ids.js";
-import { assertOwnedSocketPath, makeTestDirectory } from "../src/_internal/test/testkit.js";
+import {
+  assertOwnedSocketPath,
+  makeTestDirectory,
+  runWithCleanup,
+} from "../src/_internal/test/testkit.js";
+import { killExactTmux, launchExactTmux } from "../tests/support/tmux_cleanup.js";
 
 interface Row {
   readonly outcome: string;
@@ -31,6 +36,17 @@ const SLOW_EVENTS = 100_000;
 const RECONNECT_LOOPS = 5;
 const REPLACEMENT_LOOPS = 3;
 const LIVE_DEADLINE_MS = 30_000;
+
+interface CleanupState {
+  failed: boolean;
+}
+
+interface OwnedBenchmarkDaemon {
+  pid: number | undefined;
+  readonly server: Server;
+  readonly socketPath: string;
+  readonly tmuxBin: string;
+}
 
 function serverOn(socketPath: string, tmuxBin: string): Server {
   assertOwnedSocketPath(socketPath);
@@ -51,17 +67,6 @@ async function waitUntil(
   throw new Error(failure);
 }
 
-async function waitForServerExit(server: Server): Promise<void> {
-  await waitUntil(
-    () =>
-      server.isAlive().then(
-        (alive) => !alive,
-        () => true,
-      ),
-    "tmux daemon did not exit",
-  );
-}
-
 async function controlClientNames(server: Server): Promise<string[]> {
   return (
     await server.cmd("list-clients", ["-F", "#{client_control_mode}\t#{client_name}"], {
@@ -72,31 +77,71 @@ async function controlClientNames(server: Server): Promise<string[]> {
     .map((line) => line.slice(2));
 }
 
-function sameDaemon(left: DaemonIdentity | undefined, right: DaemonIdentity | undefined): boolean {
-  return (
-    left !== undefined &&
-    right !== undefined &&
-    left.pid === right.pid &&
-    left.startTime === right.startTime
+function sameDaemon(left: DaemonIdentity, right: DaemonIdentity): boolean {
+  return left.pid === right.pid && left.startTime === right.startTime;
+}
+
+async function startOwnedDaemon(owned: OwnedBenchmarkDaemon, sessionName: string): Promise<void> {
+  if (owned.pid !== undefined) throw new Error("benchmark daemon is already running");
+  owned.pid = await launchExactTmux(owned.socketPath, owned.tmuxBin, sessionName);
+}
+
+async function stopOwnedDaemon(owned: OwnedBenchmarkDaemon, cleanup: CleanupState): Promise<void> {
+  const pid = owned.pid;
+  if (pid === undefined) return;
+  try {
+    await killExactTmux(owned.socketPath, pid);
+    owned.pid = undefined;
+  } catch (error) {
+    cleanup.failed = true;
+    throw error;
+  }
+}
+
+async function withOwnedBenchmarkDaemon<T>(
+  socketPath: string,
+  tmuxBin: string,
+  sessionName: string,
+  cleanup: CleanupState,
+  body: (owned: OwnedBenchmarkDaemon) => Promise<T>,
+): Promise<T> {
+  const owned: OwnedBenchmarkDaemon = {
+    pid: undefined,
+    server: serverOn(socketPath, tmuxBin),
+    socketPath,
+    tmuxBin,
+  };
+  return runWithCleanup(
+    async () => {
+      await startOwnedDaemon(owned, sessionName);
+      return body(owned);
+    },
+    () => stopOwnedDaemon(owned, cleanup),
   );
 }
 
-async function measureOutput(socketPath: string, tmuxBin: string): Promise<Row> {
-  const server = serverOn(socketPath, tmuxBin);
-  try {
-    await server.newSession({ name: "output", shellCommand: "exec cat" });
+async function measureOutput(
+  socketPath: string,
+  tmuxBin: string,
+  cleanup: CleanupState,
+): Promise<Row> {
+  return withOwnedBenchmarkDaemon(socketPath, tmuxBin, "output", cleanup, async ({ server }) => {
     const session = (await server.snapshot()).sessions.one({ name: "output" });
     const live = await server.connect({ target: session.id });
     const events = live.subscribe();
     try {
       await events.ready();
       const marker = "LTX-BENCH-OUTPUT-END";
+      const markerSplit = marker.length - 3;
+      let markerTail = "";
       let receivedBytes = 0;
       const observed = events.find(
         (event) => {
           if (event.kind !== "output") return false;
           receivedBytes += Buffer.byteLength(event.data, "utf8");
-          return event.data.includes(marker);
+          const candidate = markerTail + event.data;
+          markerTail = candidate.slice(-(marker.length - 1));
+          return candidate.includes(marker);
         },
         { timeoutMs: LIVE_DEADLINE_MS },
       );
@@ -105,7 +150,8 @@ async function measureOutput(socketPath: string, tmuxBin: string): Promise<Row> 
         name: "stream",
         shellCommand:
           `sh -c 'head -c ${String(OUTPUT_BYTES)} /dev/zero | tr "\\000" x; ` +
-          `printf "\\n${marker}\\n"; sleep 30'`,
+          `printf "\\n${marker.slice(0, markerSplit)}"; sleep 0.05; ` +
+          `printf "${marker.slice(markerSplit)}\\n"; sleep 30'`,
       });
       const terminal = await observed;
       const elapsed = performance.now() - started;
@@ -125,9 +171,7 @@ async function measureOutput(socketPath: string, tmuxBin: string): Promise<Row> 
       await events.close();
       await live.close();
     }
-  } finally {
-    await server.cmd("kill-server", [], { target: null }).catch(() => undefined);
-  }
+  });
 }
 
 async function measureSlowSubscriber(): Promise<Row> {
@@ -160,10 +204,12 @@ async function measureSlowSubscriber(): Promise<Row> {
   };
 }
 
-async function measureReconnects(socketPath: string, tmuxBin: string): Promise<Row> {
-  const server = serverOn(socketPath, tmuxBin);
-  try {
-    await server.newSession({ name: "reconnect", shellCommand: "exec cat" });
+async function measureReconnects(
+  socketPath: string,
+  tmuxBin: string,
+  cleanup: CleanupState,
+): Promise<Row> {
+  return withOwnedBenchmarkDaemon(socketPath, tmuxBin, "reconnect", cleanup, async ({ server }) => {
     const baseline = new Set(await controlClientNames(server));
     const live = await server.connect({ reconnect: { attempts: 5, delayMs: 10 } });
     const events = live.subscribe();
@@ -216,15 +262,16 @@ async function measureReconnects(socketPath: string, tmuxBin: string): Promise<R
         return current.length === baseline.size && current.every((name) => baseline.has(name));
       }, "reconnect benchmark left an attached client");
     }
-  } finally {
-    await server.cmd("kill-server", [], { target: null }).catch(() => undefined);
-  }
+  });
 }
 
-async function measureReplacement(socketPath: string, tmuxBin: string): Promise<Row> {
-  const server = serverOn(socketPath, tmuxBin);
-  try {
-    await server.newSession({ name: "generation-0", shellCommand: "exec cat" });
+async function measureReplacement(
+  socketPath: string,
+  tmuxBin: string,
+  cleanup: CleanupState,
+): Promise<Row> {
+  return withOwnedBenchmarkDaemon(socketPath, tmuxBin, "generation-0", cleanup, async (owned) => {
+    const { server } = owned;
     const live = await server.connect({ reconnect: { attempts: 100, delayMs: 20 } });
     const events = live.subscribe();
     let reconnected = 0;
@@ -248,13 +295,9 @@ async function measureReplacement(socketPath: string, tmuxBin: string): Promise<
         const stale = (await live.snapshot()).panes.one();
         const started = performance.now();
         // eslint-disable-next-line no-await-in-loop -- the replacement is the measured state transition.
-        await server.cmd("kill-server", [], { target: null }).catch(() => undefined);
-        // eslint-disable-next-line no-await-in-loop -- the socket must be quiescent before reuse.
-        await waitForServerExit(server);
+        await stopOwnedDaemon(owned, cleanup);
         // eslint-disable-next-line no-await-in-loop -- starts the measured successor daemon.
-        await server.cmd("new-session", ["-d", "-s", `generation-${String(loop)}`, "exec cat"], {
-          target: null,
-        });
+        await startOwnedDaemon(owned, `generation-${String(loop)}`);
         // eslint-disable-next-line no-await-in-loop -- waits for this generation's observer attach.
         await waitUntil(
           () => reconnected >= loop,
@@ -298,9 +341,7 @@ async function measureReplacement(socketPath: string, tmuxBin: string): Promise<
       await live.close();
       await drain;
     }
-  } finally {
-    await server.cmd("kill-server", [], { target: null }).catch(() => undefined);
-  }
+  });
 }
 
 function render(rows: readonly Row[]): string {
@@ -319,21 +360,23 @@ function render(rows: readonly Row[]): string {
 }
 
 async function main(): Promise<void> {
+  if (process.platform !== "linux") throw new Error("the live control benchmark requires Linux");
   const tmuxBin = process.env.LIBTMUX_TMUX_BIN ?? "tmux";
   const root = await makeTestDirectory("ltx-benchcontrol-");
+  const cleanup: CleanupState = { failed: false };
   const rows: Row[] = [];
   let tmuxVersion = "unknown";
   try {
-    rows.push(await measureOutput(join(root, "output"), tmuxBin));
+    rows.push(await measureOutput(join(root, "output"), tmuxBin, cleanup));
     rows.push(await measureSlowSubscriber());
-    rows.push(await measureReconnects(join(root, "reconnect"), tmuxBin));
-    rows.push(await measureReplacement(join(root, "replacement"), tmuxBin));
+    rows.push(await measureReconnects(join(root, "reconnect"), tmuxBin, cleanup));
+    rows.push(await measureReplacement(join(root, "replacement"), tmuxBin, cleanup));
     const versionServer = serverOn(join(root, "version"), tmuxBin);
     tmuxVersion =
       (await versionServer.cmd("-V", [], { target: null }).catch(() => ["unknown"]))[0] ??
       "unknown";
   } finally {
-    await rm(root, { force: true, recursive: true });
+    if (!cleanup.failed) await rm(root, { force: true, recursive: true });
   }
 
   process.stdout.write(`${render(rows)}\n`);

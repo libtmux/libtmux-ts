@@ -87,10 +87,14 @@ async function reapRedLaunch(socketPath: string): Promise<void> {
   await new Promise<void>((resolve) => child.once("close", () => resolve()));
 }
 
-async function launchExactTmux(socketPath: string): Promise<number> {
+async function launchExactTmux(
+  socketPath: string,
+  tmuxExecutable = "tmux",
+  sessionName = `replacement-${randomUUID().slice(0, 8)}`,
+): Promise<number> {
   const launched = await closeChild(
     spawn(
-      "tmux",
+      tmuxExecutable,
       [
         "-f",
         "/dev/null",
@@ -102,7 +106,7 @@ async function launchExactTmux(socketPath: string): Promise<number> {
         "-F",
         "#{pid}",
         "-s",
-        `replacement-${randomUUID().slice(0, 8)}`,
+        sessionName,
         "exec cat",
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
