@@ -381,6 +381,8 @@ describe("linked and grouped placements", () => {
           name: "run_command",
         });
         expect(written.isError ?? false, toolText(written)).toBe(false);
+        const writtenOutcome = structured<{ readonly outcome: string }>(written).outcome;
+        expect(writtenOutcome, toolText(written)).toBe("completed");
 
         const search = structured<{
           readonly matches: readonly {

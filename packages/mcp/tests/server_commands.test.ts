@@ -384,6 +384,13 @@ describe("running commands", () => {
     await withServer(async (fixture) => {
       const exercise = async (client: Client, live: boolean): Promise<void> => {
         const paneId = await shellPaneId(client);
+        const warm = structured<{ outcome: string }>(
+          await client.callTool({
+            arguments: { command: "true", paneId, timeoutMs: 5_000 },
+            name: "run_command",
+          }),
+        );
+        expect(warm.outcome).toBe("completed");
         await client.callTool({
           arguments: { name: "late", text: "late" },
           name: "load_buffer",
@@ -392,6 +399,10 @@ describe("running commands", () => {
           arguments: { command: "sleep 4", paneId, timeoutMs: 1_000 },
           name: "run_command",
         });
+        expect(
+          structured<{ outcome: string; stillRunning: boolean }>(timedOut),
+          toolText(timedOut),
+        ).toMatchObject({ outcome: "timed_out", stillRunning: true });
         const refused = await client.callTool({
           arguments: { command: "echo late", paneId, timeoutMs: 1_000 },
           name: "run_command",

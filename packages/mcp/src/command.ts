@@ -174,7 +174,7 @@ async function sendLiteralLine(pane: Pane, line: string): Promise<void> {
 }
 
 function hasExactLine(stream: string, expected: string): boolean {
-  return stream.split("\n").some((line) => line.replace(/\r$/u, "") === expected);
+  return stream.split("\n").some((line) => line.trimEnd() === expected);
 }
 
 /**

@@ -139,11 +139,8 @@ export function parseFramedOutput(stream: string, id: string): ParsedFramedOutpu
     if (suffixAt < 0) return undefined;
     const rawStatus = stream.slice(endAt + endPrefix.length, suffixAt);
     const parsed = Number(rawStatus);
-    const afterSuffix = stream[suffixAt + endSuffix.length];
-    const completeSuffix =
-      afterSuffix === undefined ||
-      afterSuffix === "\n" ||
-      (afterSuffix === "\r" && stream[suffixAt + endSuffix.length + 1] === "\n");
+    const afterSuffix = stream.slice(suffixAt + endSuffix.length);
+    const completeSuffix = /^[\t ]*(?:\r?\n|$)/u.test(afterSuffix);
     if (/^(?:0|[1-9][0-9]{0,2})$/u.test(rawStatus) && parsed <= 255 && completeSuffix) {
       exitStatus = parsed;
       break;

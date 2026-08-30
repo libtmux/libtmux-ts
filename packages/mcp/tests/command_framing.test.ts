@@ -186,16 +186,16 @@ describe("command framing", () => {
     expect(result.exitStatus).toBe(127);
   });
 
-  test("rejoins a soft-wrapped fallback marker", async () => {
+  test("recognizes a right-padded, soft-wrapped fallback marker", async () => {
     let id = "";
     let ready = "";
     const pane = {
       capture: async (options: { readonly joinWrapped?: boolean }) => {
-        if (id === "") return [`${ready}_R`];
+        if (id === "") return [`${ready}_R   `];
         const end = `${id}_E 127 ${id}_D`;
         return options.joinWrapped === true
-          ? [`${ready}_R`, `${id}_S`, "result", end]
-          : [`${ready}_R`, `${id}_S`, "result", end.slice(0, -2), end.slice(-2)];
+          ? [`${ready}_R   `, `${id}_S`, "result", `${end}   `]
+          : [`${ready}_R   `, `${id}_S`, "result", end.slice(0, -2), `${end.slice(-2)}   `];
       },
       format: { session_id: "$1" },
       height: 8,
