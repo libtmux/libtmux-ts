@@ -187,11 +187,17 @@ function consumerFor(name: string): Consumer {
       types: [
         'import { applyWorkspace } from "@libtmux/workspace";',
         'import { parseWorkspace, parseWorkspaceYaml } from "@libtmux/workspace/config";',
+        'import type { Workspace, WorkspaceInput } from "@libtmux/workspace/config";',
         'import { OWNERSHIP_OPTION } from "@libtmux/workspace/ownership";',
+        'const workspaceInput: WorkspaceInput = { session_name: "ltx-install-canary", windows: [{}] };',
+        "const workspace: Workspace = parseWorkspace(workspaceInput);",
+        "const accepted: Parameters<typeof applyWorkspace>[1] = workspaceInput;",
         "void applyWorkspace;",
+        "void accepted;",
         "void parseWorkspace;",
         "void parseWorkspaceYaml;",
         "void OWNERSHIP_OPTION;",
+        "void workspace;",
         "",
       ].join("\n"),
       nodeProbe: [

@@ -63,10 +63,13 @@ export const workspaceSchema = z.strictObject({
   windows: z.array(windowSchema).min(1),
 });
 
-export type Workspace = z.infer<typeof workspaceSchema>;
-export type WorkspaceWindow = z.infer<typeof windowSchema>;
-export type WorkspacePane = z.infer<typeof paneSchema>;
-export type WorkspaceOptionValue = z.infer<typeof optionValueSchema>;
+/** Workspace data before schema defaults and transforms are applied. */
+export type WorkspaceInput = z.input<typeof workspaceSchema>;
+/** A validated workspace with every schema default and transform applied. */
+export type Workspace = z.output<typeof workspaceSchema>;
+export type WorkspaceWindow = z.output<typeof windowSchema>;
+export type WorkspacePane = z.output<typeof paneSchema>;
+export type WorkspaceOptionValue = z.output<typeof optionValueSchema>;
 
 /** Validate a parsed workspace, rejecting anything the schema does not allow. */
 export function parseWorkspace(value: unknown): Workspace {

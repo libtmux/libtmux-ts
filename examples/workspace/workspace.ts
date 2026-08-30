@@ -1,7 +1,7 @@
 import type { Server } from "libtmux/server";
 import type { Session } from "libtmux/session";
 import { applyWorkspace } from "@libtmux/workspace";
-import type { Workspace } from "@libtmux/workspace/config";
+import type { WorkspaceInput } from "@libtmux/workspace/config";
 
 /**
  * Build the shape most people reach for tmux to get: one session, a window
@@ -34,9 +34,9 @@ export const DEVELOPMENT_WORKSPACE = {
   windows: [
     { panes: ["sleep 30", "sleep 30"], window_name: "editor" },
     { panes: ["sleep 30"], window_name: "server" },
-    { panes: ["sleep 30"], window_name: "logs" },
+    { window_name: "logs" },
   ],
-} satisfies Workspace;
+} satisfies WorkspaceInput;
 
 /** Apply the package's declarative workspace to a server. */
 export function buildWorkspace(server: Server): Promise<Session> {
