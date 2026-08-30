@@ -12,6 +12,149 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+#### Control mode
+
+`ControlClient` supports format subscriptions for notification-driven state
+updates without polling. Per-name changes stay ordered through reconnects and
+update local subscription state only after tmux accepts them. Refusal or close
+leaves prior state intact; indeterminate delivery is retried after reconnect.
+(#11)
+
+**Breaking.** Connected-mode options `maxCommandBytes` and
+`maxPendingCommands` are removed; issue commands through `Server` and use the
+control connection for observation. (#11)
+
+Control connections validate reconnect settings, reject stale successor
+daemons, and resolve `ready` only for the current connection. (#11)
+
+Control parsing preserves `%output` bodies and split UTF-8 sequences across
+flow-control pauses, and close failures reach pending callers. (#11)
+
+#### Types
+
+**Breaking.** Public identifiers and model fields are scoped to their owning
+server and model, and numeric fields use their declared scalar domains.
+Update code that interchanged raw IDs or relied on widened number types. (#11)
+
+`OptionScope`, `CommandOptions`, `JoinOptions`, and `SetOptionOptions` are
+exported for callers building typed wrappers. (#11)
+
+Generated declarations preserve public predicates, exact-map types, and all
+types reachable from exported APIs. (#11)
+
+**Breaking.** Exception classes that no public operation threw are no longer
+exported; remove those imports and handle the operation's documented result
+or error instead. (#11)
+
+#### Sessions, windows, and panes
+
+Session and window names that tmux would rewrite now fail before execution;
+use `isTmuxName` to preflight user input. (#11)
+
+Linked-window operations preserve exact placement identity when selecting,
+moving, linking, swapping, or unlinking a window. (#11)
+
+`Window.remove` and `Pane.kill` expose direct, typed removal operations. (#11)
+
+Option and hook operations pass names literally, preserve cancellation and
+timeout settings, and validate the requested scope. (#11)
+
+#### Queries and selections
+
+String predicates use Unicode-aware case folding while scalar predicates keep
+their declared wire types. (#11)
+
+Regex and key predicates enforce finite input limits, and null relations
+retain deterministic ordering. (#11)
+
+The public `WHERE` codecs are exported for callers that serialize or inspect
+typed query expressions. (#11)
+
+#### Buffers and capture
+
+Buffer APIs preserve arbitrary bytes instead of decoding and re-encoding
+payloads as text. (#11)
+
+Capture options can retain trailing blank cells without losing the distinction
+between spaces and absent content. (#11)
+
+#### Server, transport, and snapshots
+
+Packed commands enforce `MAX_PACKED_ARGV_BYTES` and
+`MAX_PACKED_ARGV_COUNT`, charging only command arguments and failing before
+tmux receives an oversized request. (#11)
+
+Server snapshots expose the signal that invalidated them and verify daemon
+liveness before returning cached state. (#11)
+
+Subprocess output and diagnostic bytes are bounded, drained, and included in
+typed failures without allowing child processes to block indefinitely. (#11)
+
+Server handles remain bound to the daemon identity they observed and refuse
+operations after that identity changes. (#11)
+
+### `@libtmux/mcp`
+
+#### Safety and policy
+
+MCP starts read-only by default. `LIBTMUX_MCP_TOOLS` is an exact allowlist,
+and an empty value grants no tools. (#11)
+
+Read-only mode avoids shell execution, attended-pane mutations require caller
+authority, and option writes enforce their declared scope. (#11)
+
+**Breaking.** The experimental MCP task surface is removed; use resource
+reads, live streams, and `run_command` for observable command execution.
+(#11)
+
+#### Commands, reads, and results
+
+`run_command` reports explicit started, busy, completed, canceled, and marker
+outcomes instead of inferring status from pane text. (#11)
+
+MCP request, name, line, pane-output, and result limits are enforced
+consistently, with typed errors when a value cannot be represented safely.
+(#11)
+
+Tool results preserve structured values while keeping diagnostic and retained
+output within the advertised byte limits. (#11)
+
+#### Live streams and resources
+
+Live streams preserve split ANSI sequences, UTF-8, backspaces, and byte
+cursors, and report gaps when retained output has been lost. (#11)
+
+Subscriptions rebind after pane identity changes and cancel cleanly while a
+stream is still opening. (#11)
+
+Resource listing supports bounded cursors, invalidates stale catalogs, and
+closes session listeners when their final consumer disconnects. (#11)
+
+Topology resources preserve linked-window placement identity and deduplicate
+descriptors without hiding distinct links. (#11)
+
+Tool guidance and schemas describe only the operations allowed by the active
+policy. (#11)
+
+### `@libtmux/workspace`
+
+Workspace application reports partial progress when tmux changes state before
+a later operation fails. (#11)
+
+Workspace commands use literal argument arrays and preserve the requested
+working directory without shell reinterpretation. (#11)
+
+Implicit panes are normalized before planning so equivalent workspace
+documents produce the same operation sequence. (#11)
+
+Pruning distinguishes linked windows and grouped sessions instead of deleting
+a shared underlying window. (#11)
+
+Workspace plans expose immutable, typed operation inputs so callers cannot
+silently change a validated plan before execution. (#11)
+
 ## 0.1.0-alpha.6
 
 ### `libtmux`
