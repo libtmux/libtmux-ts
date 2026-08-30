@@ -99,6 +99,37 @@ const tsRootPath = fileURLToPath(tsRoot);
 const bunTlsCompatibility: BunConnectionOptions = { key: [{ pem: "test key" }] };
 void bunTlsCompatibility;
 
+const canonicalNumber = /^(?:0|[1-9][0-9]*)$/u;
+const semverIdentifier = /^[0-9A-Za-z-]+$/u;
+const digits = /^[0-9]+$/u;
+
+function hasValidIdentifiers(value: string, canonicalNumeric: boolean): boolean {
+  return value
+    .split(".")
+    .every(
+      (identifier) =>
+        semverIdentifier.test(identifier) &&
+        (!canonicalNumeric || !digits.test(identifier) || canonicalNumber.test(identifier)),
+    );
+}
+
+function isSemVer(value: string): boolean {
+  const buildSeparator = value.indexOf("+");
+  const release = buildSeparator < 0 ? value : value.slice(0, buildSeparator);
+  const build = buildSeparator < 0 ? undefined : value.slice(buildSeparator + 1);
+  if (build !== undefined && !hasValidIdentifiers(build, false)) return false;
+
+  const prereleaseSeparator = release.indexOf("-");
+  const core = prereleaseSeparator < 0 ? release : release.slice(0, prereleaseSeparator);
+  const prerelease = prereleaseSeparator < 0 ? undefined : release.slice(prereleaseSeparator + 1);
+  if (prerelease !== undefined && !hasValidIdentifiers(prerelease, true)) return false;
+
+  const coreIdentifiers = core.split(".");
+  return (
+    coreIdentifiers.length === 3 && coreIdentifiers.every((part) => canonicalNumber.test(part))
+  );
+}
+
 async function readJson<T>(relativePath: string): Promise<T> {
   return JSON.parse(await readFile(new URL(relativePath, tsRoot), "utf8")) as T;
 }
@@ -126,6 +157,15 @@ async function runBoundedCommand(command: readonly string[], cwd: string) {
 }
 
 describe("package contract", () => {
+  test("recognizes strict SemVer syntax without an ambiguous expression", () => {
+    for (const version of ["0.0.0", "1.2.3-alpha.1", "1.2.3-alpha-1+build.7"]) {
+      expect(isSemVer(version)).toBe(true);
+    }
+    for (const version of ["01.2.3", "1.2", "1.2.3-01", "1.2.3-", "1.2.3+build+again"]) {
+      expect(isSemVer(version)).toBe(false);
+    }
+  });
+
   test("publishes only ESM root and package metadata entrypoints", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
@@ -163,9 +203,7 @@ describe("package contract", () => {
     expect(packageManifest.name).toBe("libtmux");
     // Stable and prerelease manifests share the same coordinated release path.
     // The exact number is not pinned: a gate edited per release is no gate.
-    expect(packageManifest.version).toMatch(
-      /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u,
-    );
+    expect(isSemVer(packageManifest.version)).toBe(true);
     // Every package in the workspace ships together under one version, so a
     // tag names a state of the whole repository rather than of one package.
     const siblings = await Promise.all(
