@@ -7,6 +7,7 @@ import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
+import { TmuxTransportError } from "../../src/exc.js";
 import type {
   CommandRequest,
   CommandTransport,
@@ -91,6 +92,12 @@ class GatedTransport implements CommandTransport {
       stderr: new Uint8Array(),
       stdout: new Uint8Array(),
     });
+  }
+
+  reject(index: number, error: Error): void {
+    const reply = this.#replies[index];
+    if (reply === undefined) throw new Error("no gated request");
+    reply.reject(error);
   }
 }
 
@@ -340,6 +347,133 @@ describe("ControlConnection child ownership", () => {
     expect(fallback.requests).toHaveLength(1);
 
     await control.close();
+  });
+
+  test("does not accept a subscription before a pending attach", async () => {
+    const child = new FakeChild(108);
+    const fallback = new GatedTransport();
+    const control = new ControlConnection(connection(), {}, false, fallback, () => child);
+
+    const subscription = control.subscribeFormat({
+      format: "#{pane_current_command}",
+      name: "cmd",
+    });
+    expect(await promiseState(subscription)).toBe("pending");
+
+    attach(child);
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(1);
+    expect(await promiseState(subscription)).toBe("pending");
+    fallback.reply(0, 1);
+    await expect(subscription).rejects.toThrow("refused");
+
+    await control.close();
+  });
+
+  test("rejects an active subscription when the connection closes", async () => {
+    const child = new FakeChild(109);
+    const fallback = new GatedTransport();
+    const control = new ControlConnection(connection(), {}, false, fallback, () => child);
+    attach(child);
+    await control.ready();
+
+    const subscription = control.subscribeFormat({
+      format: "#{pane_current_command}",
+      name: "cmd",
+    });
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(1);
+    const settlement = subscription.then(
+      () => "resolved" as const,
+      () => "rejected" as const,
+    );
+    const closing = control.close();
+    const stateAtClose = await Promise.race([
+      settlement,
+      nextTurn().then(() => "pending" as const),
+    ]);
+
+    fallback.reply(0);
+    await Promise.allSettled([subscription, closing]);
+    expect(stateAtClose).toBe("rejected");
+  });
+
+  test("retries uncertain subscription delivery on the replacement child", async () => {
+    const old = new FakeChild(110);
+    const replacement = new FakeChild(111);
+    const children = [old, replacement];
+    const replacementOpened = Promise.withResolvers<void>();
+    let spawns = 0;
+    const fallback = new GatedTransport();
+    const control = new ControlConnection(
+      connection(),
+      { reconnect: { attempts: 1, delayMs: 0 } },
+      false,
+      fallback,
+      () => {
+        const child = takeChild(children);
+        spawns += 1;
+        if (spawns === 2) replacementOpened.resolve();
+        return child;
+      },
+    );
+    attach(old);
+    await control.ready();
+
+    const subscription = control.subscribeFormat({
+      format: "#{pane_current_command}",
+      name: "cmd",
+    });
+    await nextTurn();
+    fallback.reject(
+      0,
+      new TmuxTransportError("subscription delivery became uncertain", {
+        delivery: "written",
+        kind: "pipe",
+      }),
+    );
+    await replacementOpened.promise;
+    attach(replacement);
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(2);
+    expect(await promiseState(subscription)).toBe("pending");
+    fallback.reply(1);
+    await subscription;
+
+    await control.close();
+  });
+
+  test("keeps a same-state change pending across a reconnect microtask", async () => {
+    const old = new FakeChild(112);
+    const replacement = new FakeChild(113);
+    const children = [old, replacement];
+    const replacementOpened = Promise.withResolvers<void>();
+    let spawns = 0;
+    const subscription = { format: "#{pane_current_command}", name: "cmd" } as const;
+    const control = new ControlConnection(
+      connection(),
+      { reconnect: { attempts: 1, delayMs: 0 }, subscriptions: [subscription] },
+      false,
+      new RecordingTransport(),
+      () => {
+        const child = takeChild(children);
+        spawns += 1;
+        if (spawns === 2) replacementOpened.resolve();
+        return child;
+      },
+    );
+    attach(old);
+    await control.ready();
+
+    const unchanged = control.subscribeFormat(subscription);
+    queueMicrotask(() => old.emit("close", 1));
+    await replacementOpened.promise;
+    const stateDuringReconnect = await promiseState(unchanged);
+    attach(replacement);
+    await Promise.all([control.ready(), unchanged]);
+    await control.close();
+
+    expect(stateDuringReconnect).toBe("pending");
   });
 
   test("serializes changes to the same subscription name", async () => {

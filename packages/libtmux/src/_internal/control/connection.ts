@@ -62,16 +62,6 @@ function sameSubscription(
   );
 }
 
-function sameSubscriptions(
-  left: ReadonlyMap<string, FormatSubscription>,
-  right: ReadonlyMap<string, FormatSubscription>,
-): boolean {
-  if (left.size !== right.size) return false;
-  for (const [name, subscription] of left) {
-    if (!sameSubscription(subscription, right.get(name))) return false;
-  }
-  return true;
-}
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
@@ -158,6 +148,8 @@ export class ControlConnection {
   #attachment: AttachmentState = { kind: "pending" };
   #closed = false;
   #closePromise: Promise<void> | undefined;
+  readonly #lifetimeAbort = new AbortController();
+  #terminalError: Error | undefined;
   #onAbort: (() => void) | undefined;
   readonly #signal: AbortLike | undefined;
   readonly #stderr: Buffer[] = [];
@@ -179,6 +171,7 @@ export class ControlConnection {
    * recover its stream and quietly stop reporting formats.
    */
   readonly #subscriptions = new Map<string, FormatSubscription>();
+  /** Public changes by name, held across attach retries so calls cannot overtake. */
   readonly #subscriptionTurns = new Map<string, Promise<void>>();
   /** Which reconnect attempt is in flight, so `reconnected` can name it once tmux answers. */
   #reconnectingAttempt: number | undefined;
@@ -475,21 +468,10 @@ export class ControlConnection {
       // Subscriptions belong to the control client, and a reconnect replaced
       // it. Re-issued here, where the attach that would otherwise have lost
       // them has just been accepted.
-      const applied = new Map<string, FormatSubscription>();
-      while (!sameSubscriptions(applied, this.#subscriptions)) {
-        const names = new Set([...applied.keys(), ...this.#subscriptions.keys()]);
-        for (const name of names) {
-          if (this.#children.active() !== child || this.#closed) return;
-          // eslint-disable-next-line no-await-in-loop -- one refusal names one subscription.
-          await this.#serializeSubscription(name, async () => {
-            if (this.#children.active() !== child || this.#closed) return;
-            const desired = this.#subscriptions.get(name);
-            if (sameSubscription(applied.get(name), desired)) return;
-            await this.#issueSubscription(child, name, desired);
-            if (desired === undefined) applied.delete(name);
-            else applied.set(name, desired);
-          });
-        }
+      for (const [name, subscription] of this.#subscriptions) {
+        if (this.#children.active() !== child || this.#closed) return;
+        // eslint-disable-next-line no-await-in-loop -- one refusal names one subscription.
+        await this.#issueSubscription(child, name, subscription);
       }
     } catch (error) {
       if (this.#children.active() === child) {
@@ -573,6 +555,8 @@ export class ControlConnection {
     this.#closed = true;
     this.#releaseAbort();
     const reason = failure ?? new Error("tmux control connection closed");
+    this.#terminalError ??= reason;
+    this.#lifetimeAbort.abort(this.#terminalError);
     const attachment = this.#attachment;
     if (attachment.kind !== "failed") {
       this.#attachment = { error: reason, kind: "failed" };
@@ -602,13 +586,16 @@ export class ControlConnection {
       subscription === undefined
         ? name
         : `${name}:${subscriptionScope(subscription.scope)}:${subscription.format}`;
-    const result = await fallback.execute({
-      commands: [["refresh-client", "-t", `client-${String(child.pid)}`, "-B", argument]],
-      executable: this.#executable,
-      environment: this.#environment,
-      globalArgs: this.#commandPrefix,
-      timeoutMs: 30_000,
-    });
+    const result = await this.#untilClosed(
+      fallback.execute({
+        commands: [["refresh-client", "-t", `client-${String(child.pid)}`, "-B", argument]],
+        executable: this.#executable,
+        environment: this.#environment,
+        globalArgs: this.#commandPrefix,
+        signal: this.#lifetimeAbort.signal,
+        timeoutMs: 30_000,
+      }),
+    );
     if (result.returncode !== 0) {
       throw new TmuxTransportError("tmux refused a format subscription", {
         delivery: "replied",
@@ -617,14 +604,26 @@ export class ControlConnection {
     }
   }
 
+  async #untilClosed<T>(operation: Promise<T>): Promise<T> {
+    const stopped = Promise.withResolvers<never>();
+    const stop = (): void => {
+      stopped.reject(this.#terminalError ?? new Error("tmux control connection closed"));
+    };
+    this.#lifetimeAbort.signal.addEventListener("abort", stop, { once: true });
+    const raced = Promise.race([operation, stopped.promise]);
+    if (this.#lifetimeAbort.signal.aborted) stop();
+    try {
+      return await raced;
+    } finally {
+      this.#lifetimeAbort.signal.removeEventListener("abort", stop);
+    }
+  }
+
   /**
-   * Issue one subscription change now, or leave it to the attach in flight.
+   * Issue one subscription change only while the current child is attached.
    *
-   * A replacement child exists before tmux has accepted its attach, so issuing
-   * against it addresses a client tmux does not know yet — which comes back as
-   * a refusal rather than as the reconnect it is. `#finishAttach` issues every
-   * stored subscription once the attach lands, so waiting loses nothing and
-   * keeps one change from being sent twice.
+   * A replacement child exists before tmux knows its client id. Undefined
+   * keeps the public change pending until an attached child can accept it.
    */
   async #issueWhenAttached(
     name: string,
@@ -633,7 +632,31 @@ export class ControlConnection {
     const child = this.#children.active();
     if (this.#closed || this.#reopening || child === undefined) return undefined;
     if (this.#attachment.kind !== "attached") return undefined;
-    await this.#issueSubscription(child, name, subscription);
+    try {
+      await this.#issueSubscription(child, name, subscription);
+    } catch (error) {
+      if (this.#closed) throw error;
+      if (
+        this.#children.active() !== child ||
+        this.#reopening ||
+        this.#attachment.kind !== "attached"
+      ) {
+        return undefined;
+      }
+      if (
+        !(error instanceof TmuxTransportError) ||
+        error.delivery === "written" ||
+        error.delivery === "indeterminate"
+      ) {
+        this.#fail(
+          error instanceof Error
+            ? error
+            : new Error("format subscription delivery became uncertain"),
+        );
+        if (!this.#closed) return undefined;
+      }
+      throw error;
+    }
     return child;
   }
 
@@ -662,35 +685,37 @@ export class ControlConnection {
     subscription: FormatSubscription | undefined,
   ): Promise<void> {
     await this.#serializeSubscription(name, async () => {
-      const previous = this.#subscriptions.get(name);
-      const issuedTo = await this.#issueWhenAttached(name, subscription);
-      this.#storeSubscription(name, subscription);
-      const current = this.#children.active();
-      if (
-        current === issuedTo ||
-        current === undefined ||
-        this.#closed ||
-        this.#reopening ||
-        this.#attachment.kind !== "attached"
-      ) {
-        return;
-      }
-      try {
-        await this.#issueSubscription(current, name, subscription);
-      } catch (error) {
-        this.#storeSubscription(name, previous);
-        const rollback = this.#children.active();
-        if (
-          rollback !== undefined &&
-          !this.#closed &&
-          !this.#reopening &&
-          this.#attachment.kind === "attached"
-        ) {
-          await this.#issueSubscription(rollback, name, previous).catch(() => undefined);
-        }
-        throw error;
-      }
+      await this.#applySubscriptionChange(name, subscription);
     });
+  }
+
+  async #applySubscriptionChange(
+    name: string,
+    subscription: FormatSubscription | undefined,
+  ): Promise<void> {
+    await this.ready();
+    if (
+      this.#children.active() === undefined ||
+      this.#closed ||
+      this.#reopening ||
+      this.#attachment.kind !== "attached"
+    ) {
+      await this.#applySubscriptionChange(name, subscription);
+      return;
+    }
+    if (sameSubscription(this.#subscriptions.get(name), subscription)) return;
+    const issuedTo = await this.#issueWhenAttached(name, subscription);
+    if (
+      issuedTo === undefined ||
+      this.#children.active() !== issuedTo ||
+      this.#closed ||
+      this.#reopening ||
+      this.#attachment.kind !== "attached"
+    ) {
+      await this.#applySubscriptionChange(name, subscription);
+      return;
+    }
+    this.#storeSubscription(name, subscription);
   }
 
   /** Add or replace a subscription, and issue it if a client can take it. */
