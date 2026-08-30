@@ -46,9 +46,13 @@ function takeChild(children: FakeChild[]): FakeChild {
 
 class RecordingTransport implements CommandTransport {
   readonly requests: CommandRequest[] = [];
-  readonly #outcome: Error | number;
+  #outcome: Error | number;
 
   constructor(outcome: Error | number = 0) {
+    this.#outcome = outcome;
+  }
+
+  setOutcome(outcome: Error | number): void {
     this.#outcome = outcome;
   }
 
@@ -62,6 +66,31 @@ class RecordingTransport implements CommandTransport {
       stderr: this.#outcome === 0 ? new Uint8Array() : new TextEncoder().encode("resume refused"),
       stdout: new Uint8Array(),
     };
+  }
+}
+
+class GatedTransport implements CommandTransport {
+  readonly requests: CommandRequest[] = [];
+  readonly #replies: PromiseWithResolvers<RawCommandResult>[] = [];
+
+  execute(request: CommandRequest): Promise<RawCommandResult> {
+    this.requests.push(request);
+    const reply = Promise.withResolvers<RawCommandResult>();
+    this.#replies.push(reply);
+    return reply.promise;
+  }
+
+  reply(index: number, returncode = 0): void {
+    const request = this.requests[index];
+    const reply = this.#replies[index];
+    if (request === undefined || reply === undefined) throw new Error("no gated request");
+    reply.resolve({
+      cmd: [request.executable, ...flattenInvocation(request)],
+      returncode,
+      signal: null,
+      stderr: new Uint8Array(),
+      stdout: new Uint8Array(),
+    });
   }
 }
 
@@ -279,6 +308,97 @@ describe("ControlConnection child ownership", () => {
       .map((request) => request.commands[0]?.join(" ") ?? "")
       .filter((command) => command.includes("client-102") && command.includes("-B"));
     expect(reissued).toEqual(["refresh-client -t client-102 -B cmd:%*:#{pane_current_command}"]);
+
+    await control.close();
+  });
+
+  test("does not retain a refused subscription for reconnect", async () => {
+    const old = new FakeChild(103);
+    const replacement = new FakeChild(104);
+    const children = [old, replacement];
+    const fallback = new RecordingTransport(1);
+    const control = new ControlConnection(
+      connection(),
+      { reconnect: { attempts: 1, delayMs: 0 } },
+      false,
+      fallback,
+      () => takeChild(children),
+    );
+    attach(old);
+    await control.ready();
+
+    await expect(
+      control.subscribeFormat({ format: "#{pane_current_command}", name: "cmd" }),
+    ).rejects.toThrow("refused");
+    expect(fallback.requests).toHaveLength(1);
+    fallback.setOutcome(0);
+
+    old.emit("close", 1);
+    await nextTurn();
+    attach(replacement);
+    await control.ready();
+    expect(fallback.requests).toHaveLength(1);
+
+    await control.close();
+  });
+
+  test("serializes changes to the same subscription name", async () => {
+    const child = new FakeChild(106);
+    const fallback = new GatedTransport();
+    const control = new ControlConnection(connection(), {}, false, fallback, () => child);
+    attach(child);
+    await control.ready();
+
+    const subscribe = control.subscribeFormat({
+      format: "#{pane_current_command}",
+      name: "cmd",
+    });
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(1);
+    const unsubscribe = control.unsubscribeFormat("cmd");
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(1);
+
+    fallback.reply(0);
+    await subscribe;
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(2);
+    expect(fallback.requests[0]?.commands[0]?.at(-1)).toBe("cmd::#{pane_current_command}");
+    expect(fallback.requests[1]?.commands[0]?.at(-1)).toBe("cmd");
+    fallback.reply(1);
+    await unsubscribe;
+
+    await control.close();
+  });
+
+  test("reconciles a replacement queued during attach", async () => {
+    const child = new FakeChild(107);
+    const fallback = new GatedTransport();
+    const control = new ControlConnection(
+      connection(),
+      { subscriptions: [{ format: "#{session_name}", name: "scope" }] },
+      false,
+      fallback,
+      () => child,
+    );
+    const ready = control.ready();
+    attach(child);
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(1);
+
+    const replacement = control.subscribeFormat({
+      format: "#{pane_current_command}",
+      name: "scope",
+    });
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(1);
+    fallback.reply(0);
+    await nextTurn();
+    expect(fallback.requests).toHaveLength(2);
+    expect(fallback.requests[0]?.commands[0]?.at(-1)).toBe("scope::#{session_name}");
+    expect(fallback.requests[1]?.commands[0]?.at(-1)).toBe("scope::#{pane_current_command}");
+    fallback.reply(1);
+    await Promise.all([ready, replacement]);
 
     await control.close();
   });

@@ -37,6 +37,41 @@ function subscriptionScope(scope: FormatSubscription["scope"]): string {
   if (scope === "all-windows") return "@*";
   return scope;
 }
+
+function checkedSubscription(subscription: FormatSubscription): FormatSubscription {
+  const name = assertSubscriptionName(subscription.name);
+  assertSubscriptionFormat(subscription.format);
+  return Object.freeze({
+    format: subscription.format,
+    name,
+    ...(subscription.scope === undefined ? {} : { scope: subscription.scope }),
+  });
+}
+
+function sameSubscription(
+  left: FormatSubscription | undefined,
+  right: FormatSubscription | undefined,
+): boolean {
+  return (
+    left === right ||
+    (left !== undefined &&
+      right !== undefined &&
+      left.name === right.name &&
+      left.format === right.format &&
+      left.scope === right.scope)
+  );
+}
+
+function sameSubscriptions(
+  left: ReadonlyMap<string, FormatSubscription>,
+  right: ReadonlyMap<string, FormatSubscription>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [name, subscription] of left) {
+    if (!sameSubscription(subscription, right.get(name))) return false;
+  }
+  return true;
+}
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 /** Kept only to explain an exit, so the tail is what matters. */
 const MAX_STDERR_BYTES = 64 * 1024;
@@ -144,6 +179,7 @@ export class ControlConnection {
    * recover its stream and quietly stop reporting formats.
    */
   readonly #subscriptions = new Map<string, FormatSubscription>();
+  readonly #subscriptionTurns = new Map<string, Promise<void>>();
   /** Which reconnect attempt is in flight, so `reconnected` can name it once tmux answers. */
   #reconnectingAttempt: number | undefined;
   #observerBinding: ControlObserverBinding | undefined;
@@ -194,8 +230,8 @@ export class ControlConnection {
     this.#framer = new LineFramer(Math.max(MAX_CARRY_BYTES, MAX_CONTROL_LINE_BYTES));
     this.#pauseAfterSeconds = pauseAfterSeconds;
     for (const subscription of options.subscriptions ?? []) {
-      this.#subscriptions.set(assertSubscriptionName(subscription.name), subscription);
-      assertSubscriptionFormat(subscription.format);
+      const checked = checkedSubscription(subscription);
+      this.#subscriptions.set(checked.name, checked);
     }
     const globals = connectionArguments(connection);
     this.#commandPrefix = Object.freeze([...globals]);
@@ -439,10 +475,21 @@ export class ControlConnection {
       // Subscriptions belong to the control client, and a reconnect replaced
       // it. Re-issued here, where the attach that would otherwise have lost
       // them has just been accepted.
-      for (const name of this.#subscriptions.keys()) {
-        if (this.#children.active() !== child || this.#closed) return;
-        // eslint-disable-next-line no-await-in-loop -- one refusal names one subscription.
-        await this.#issueSubscription(child, name);
+      const applied = new Map<string, FormatSubscription>();
+      while (!sameSubscriptions(applied, this.#subscriptions)) {
+        const names = new Set([...applied.keys(), ...this.#subscriptions.keys()]);
+        for (const name of names) {
+          if (this.#children.active() !== child || this.#closed) return;
+          // eslint-disable-next-line no-await-in-loop -- one refusal names one subscription.
+          await this.#serializeSubscription(name, async () => {
+            if (this.#children.active() !== child || this.#closed) return;
+            const desired = this.#subscriptions.get(name);
+            if (sameSubscription(applied.get(name), desired)) return;
+            await this.#issueSubscription(child, name, desired);
+            if (desired === undefined) applied.delete(name);
+            else applied.set(name, desired);
+          });
+        }
       }
     } catch (error) {
       if (this.#children.active() === child) {
@@ -542,12 +589,15 @@ export class ControlConnection {
    * sending it down the observer's own stream would put the reply where a
    * notification is read.
    */
-  async #issueSubscription(child: ControlChild, name: string): Promise<void> {
+  async #issueSubscription(
+    child: ControlChild,
+    name: string,
+    subscription: FormatSubscription | undefined,
+  ): Promise<void> {
     const fallback = this.#observerCommands;
     if (fallback === undefined || child.pid === undefined) {
       throw new Error("watch observer has no spawning transport");
     }
-    const subscription = this.#subscriptions.get(name);
     const argument =
       subscription === undefined
         ? name
@@ -576,19 +626,77 @@ export class ControlConnection {
    * stored subscription once the attach lands, so waiting loses nothing and
    * keeps one change from being sent twice.
    */
-  async #issueWhenAttached(name: string): Promise<void> {
+  async #issueWhenAttached(
+    name: string,
+    subscription: FormatSubscription | undefined,
+  ): Promise<ControlChild | undefined> {
     const child = this.#children.active();
-    if (this.#closed || this.#reopening || child === undefined) return;
-    if (this.#attachment.kind !== "attached") return;
-    await this.#issueSubscription(child, name);
+    if (this.#closed || this.#reopening || child === undefined) return undefined;
+    if (this.#attachment.kind !== "attached") return undefined;
+    await this.#issueSubscription(child, name, subscription);
+    return child;
+  }
+
+  async #serializeSubscription(name: string, operation: () => Promise<void>): Promise<void> {
+    const previous = this.#subscriptionTurns.get(name) ?? Promise.resolve();
+    const turn = Promise.withResolvers<void>();
+    this.#subscriptionTurns.set(name, turn.promise);
+    await previous;
+    try {
+      await operation();
+    } finally {
+      turn.resolve();
+      if (this.#subscriptionTurns.get(name) === turn.promise) {
+        this.#subscriptionTurns.delete(name);
+      }
+    }
+  }
+
+  #storeSubscription(name: string, subscription: FormatSubscription | undefined): void {
+    if (subscription === undefined) this.#subscriptions.delete(name);
+    else this.#subscriptions.set(name, subscription);
+  }
+
+  async #changeSubscription(
+    name: string,
+    subscription: FormatSubscription | undefined,
+  ): Promise<void> {
+    await this.#serializeSubscription(name, async () => {
+      const previous = this.#subscriptions.get(name);
+      const issuedTo = await this.#issueWhenAttached(name, subscription);
+      this.#storeSubscription(name, subscription);
+      const current = this.#children.active();
+      if (
+        current === issuedTo ||
+        current === undefined ||
+        this.#closed ||
+        this.#reopening ||
+        this.#attachment.kind !== "attached"
+      ) {
+        return;
+      }
+      try {
+        await this.#issueSubscription(current, name, subscription);
+      } catch (error) {
+        this.#storeSubscription(name, previous);
+        const rollback = this.#children.active();
+        if (
+          rollback !== undefined &&
+          !this.#closed &&
+          !this.#reopening &&
+          this.#attachment.kind === "attached"
+        ) {
+          await this.#issueSubscription(rollback, name, previous).catch(() => undefined);
+        }
+        throw error;
+      }
+    });
   }
 
   /** Add or replace a subscription, and issue it if a client can take it. */
   async subscribeFormat(subscription: FormatSubscription): Promise<void> {
-    const name = assertSubscriptionName(subscription.name);
-    assertSubscriptionFormat(subscription.format);
-    this.#subscriptions.set(name, subscription);
-    await this.#issueWhenAttached(name);
+    const checked = checkedSubscription(subscription);
+    await this.#changeSubscription(checked.name, checked);
   }
 
   /**
@@ -599,9 +707,7 @@ export class ControlConnection {
    * `#finishAttach` will re-issue.
    */
   async unsubscribeFormat(name: string): Promise<void> {
-    assertSubscriptionName(name);
-    this.#subscriptions.delete(name);
-    await this.#issueWhenAttached(name);
+    await this.#changeSubscription(assertSubscriptionName(name), undefined);
   }
 
   /**
