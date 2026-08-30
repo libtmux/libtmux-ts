@@ -331,6 +331,23 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("offers mutations but not destructive tools under the mutating tier", async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const names = (await client.listTools()).tools.map((tool) => tool.name);
+          expect(names).toContain("send_keys");
+          expect(names).toContain("new_window");
+          expect(names).not.toContain("kill_pane");
+          expect(names).not.toContain("move_pane");
+          expect(client.getInstructions() ?? "").toContain("Safety: mutating");
+        },
+        { LIBTMUX_SAFETY: "mutating" },
+      );
+    });
+  }, 60_000);
+
   test("does not execute format commands under the readonly tier", async () => {
     await withServer(async (fixture) => {
       await withClient(

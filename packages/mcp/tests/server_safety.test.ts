@@ -207,6 +207,36 @@ describe("staying out of the way", () => {
     });
   }, 60_000);
 
+  test("force overrides the destructive guard on an attended window", async () => {
+    await withServer(async (fixture) => {
+      await withAttendedPane(fixture, async (paneId) => {
+        await withClient(
+          fixture,
+          async (client) => {
+            await client.callTool({ arguments: { name: "kept" }, name: "new_session" });
+            const windowId = structured<{ pane: { windowId: string } }>(
+              await client.callTool({ arguments: { paneId }, name: "get_pane" }),
+            ).pane.windowId;
+
+            const refused = await client.callTool({
+              arguments: { windowId },
+              name: "kill_window",
+            });
+            expect((refused as { isError?: boolean }).isError).toBe(true);
+            expect(toolText(refused)).toContain("watching");
+
+            const forced = await client.callTool({
+              arguments: { force: true, windowId },
+              name: "kill_window",
+            });
+            expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
+          },
+          { LIBTMUX_SAFETY: "destructive" },
+        );
+      });
+    });
+  }, 60_000);
+
   test("marks every visible split attended and only the zoomed pane", async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
