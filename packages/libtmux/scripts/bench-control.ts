@@ -122,7 +122,13 @@ async function measureOutput(runRoot: string, tmuxBin: string): Promise<Row> {
       });
       const terminal = await observed;
       const elapsed = performance.now() - started;
-      if (terminal?.kind !== "output" || markerOffset !== OUTPUT_BYTES) {
+      if (terminal?.kind !== "output" || markerOffset === undefined) {
+        throw new Error(
+          `pane output marker was not observed after ${String(receivedBytes)} bytes ` +
+            `(${String(events.dropped)} dropped)`,
+        );
+      }
+      if (markerOffset !== OUTPUT_BYTES) {
         throw new Error(
           `pane output marker began at ${String(markerOffset)} bytes, expected ${String(OUTPUT_BYTES)}`,
         );
