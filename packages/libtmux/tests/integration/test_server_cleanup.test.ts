@@ -120,6 +120,55 @@ describe("TestServer cleanup", () => {
     });
   }, 30_000);
 
+  test("publishes replacement authority before returning the successor", async () => {
+    await withTemporaryRunRoot("replacement", async (runRoot) => {
+      const server = await TestServer.create({ runRoot, sessionName: "predecessor" });
+      const predecessor = server.daemonIdentity;
+      try {
+        await server.replace("successor");
+        expect(server.daemonIdentity).not.toEqual(predecessor);
+        expect(server.sessionName).toBe("successor");
+        expect((await server.executeText(["display-message", "-p", "#S"])).stdout).toEqual([
+          "successor",
+        ]);
+        const record = await readFixtureRecord(server.reservationPath);
+        expect(record.phase).toBe("running");
+        if (record.phase !== "running") throw new Error("replacement was not promoted");
+        expect(record.daemon).toEqual(server.daemonIdentity);
+      } finally {
+        await server.dispose();
+      }
+      await waitForProcessExit(server.daemonIdentity.pid);
+    });
+  });
+
+  test("serializes disposal behind an active replacement launch", async () => {
+    await withTemporaryRunRoot("replacement-dispose", async (runRoot) => {
+      let bootstrapRequests = 0;
+      let disposal: Promise<void> | undefined;
+      let server: TestServer;
+      server = await TestServer.create({
+        requestObserver: (request) => {
+          if (request.purpose !== "bootstrap") return;
+          bootstrapRequests += 1;
+          if (bootstrapRequests === 2) disposal = server.dispose();
+        },
+        runRoot,
+        sessionName: "predecessor",
+      });
+      try {
+        await server.replace("successor");
+        if (disposal === undefined) throw new Error("replacement launch did not request disposal");
+        const successorPid = server.daemonIdentity.pid;
+        await disposal;
+        await waitForProcessExit(successorPid);
+        await expect(access(server.reservationPath)).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        await server.dispose().catch(() => undefined);
+      }
+    });
+  });
+
   test("uses the authenticated daemon executable for the cleanup PID guard", async () => {
     const parent = await makeTestDirectory("ltx4-cleanup-executable-");
     const runRoot = join(parent, "root");

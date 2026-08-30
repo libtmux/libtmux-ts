@@ -600,6 +600,79 @@ async function connectedGenerationKill(
   return "killed";
 }
 
+/**
+ * Stop one authenticated generation without releasing its reservation.
+ *
+ * The running record remains durable until the daemon is confirmed gone. The
+ * reservation then returns to `reserved`, so a successor can publish its launch
+ * attempt before the controller process is spawned. An interrupted replacement
+ * therefore always leaves one state the stale-root reaper understands.
+ */
+export async function retireFixtureGeneration(
+  capability: ReservationCapability,
+): Promise<Extract<FixtureRecord, { readonly phase: "reserved" }>> {
+  return serializeReservationMutation(capability, async () => {
+    const current = await preflightReservation(capability);
+    if (current.record.phase !== "running") {
+      throw new Error(`fixture retirement requires running, received ${current.record.phase}`);
+    }
+    const record = current.record;
+    const initialSocketState = classifySocketEvidence(current, record.socketIdentity);
+    if (initialSocketState === "foreign" || initialSocketState === "unauthenticated") {
+      throw new ForeignSocketEvidenceError(
+        foreignSocketLeak(initialSocketState, current.socketIdentity, record.socketIdentity),
+      );
+    }
+
+    await assertControllerCurrent(record.controller);
+    const observed = await readDaemonIdentity(record.daemon.pid);
+    if (observed === undefined) {
+      const processAtPid = await readProcessIdentity(record.daemon.pid);
+      if (processAtPid?.startIdentity === record.daemon.startIdentity) {
+        throw new Error(`daemon executable identity mismatch for PID ${String(record.daemon.pid)}`);
+      }
+    } else {
+      await assertExactProcessLaunch(record, record.daemon);
+      if (initialSocketState !== "authenticated") {
+        throw new Error("live fixture daemon has no authenticated socket");
+      }
+      const outcome = await connectedGenerationKill(capability, record);
+      if (outcome !== "killed") {
+        throw new Error(`fixture generation could not be retired: ${outcome}`);
+      }
+    }
+    if (!(await awaitDaemonExit(record.daemon, deadlineMs(DAEMON_REAPED_DEADLINE_MS)))) {
+      throw new Error(`daemon ${String(record.daemon.pid)} remained live after retirement`);
+    }
+
+    let final = await preflightReservation(capability);
+    const finalSocketState = classifySocketEvidence(final, record.socketIdentity);
+    if (finalSocketState === "authenticated") {
+      // The running record remains the durable unlink authority until this
+      // exact socket is gone. A crash before the reserved record is published
+      // therefore leaves ordinary running-generation cleanup enough evidence.
+      await unlink(record.socketPath);
+      final = await preflightReservation(capability);
+    } else if (finalSocketState !== "absent") {
+      throw new ForeignSocketEvidenceError(
+        foreignSocketLeak(finalSocketState, final.socketIdentity, record.socketIdentity),
+      );
+    }
+    if (final.socketPresent) throw new Error("fixture socket remained after retirement");
+    const reserved: Extract<FixtureRecord, { readonly phase: "reserved" }> = {
+      controller: record.controller,
+      logicalSocketName: record.logicalSocketName,
+      owner: record.owner,
+      phase: "reserved",
+      protocol: record.protocol,
+      runId: record.runId,
+      socketPath: record.socketPath,
+    };
+    await writeAtomicJson(capability.recordPath, reserved);
+    return reserved;
+  });
+}
+
 async function reapReservation(capability: ReservationCapability): Promise<ReapReport> {
   const leak = (message: unknown): ReapReport => ({
     leaks: [String(message)],

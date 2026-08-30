@@ -67,7 +67,7 @@ const listCommands = ["list-clients", "list-panes", "list-sessions", "list-windo
  * this cannot check their shape against a live server.
  *
  * Pinned rather than skipped. Their accessors exist and answer null forever, so
- * the set is a property of the snapshot's four commands; if one starts arriving
+ * the set is a property of the snapshot's four listings; if one starts arriving
  * — a fifth listing, or tmux moving a field's scope — this fails and the shape
  * gets checked like every other.
  */

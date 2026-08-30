@@ -381,7 +381,7 @@ Never create tags and never push them. See
 
 ## Benchmarks
 
-Two, run by hand rather than as gates: `package.json` lists the gates, and a
+Three, run by hand rather than as gates: `package.json` lists the gates, and a
 number that varies with the machine is not one.
 
 Grid the transports against batching and concurrency:
@@ -390,15 +390,27 @@ Grid the transports against batching and concurrency:
 $ bun packages/libtmux/scripts/bench-modes.ts
 ```
 
-Measure what a snapshot costs as the server grows:
+Measure whole-server acquisition and repeated deep local queries as the server
+grows:
 
 ```console
 $ bun packages/libtmux/scripts/bench-snapshot.ts
 ```
 
-It reports the command count, which the design holds flat, against the bytes
-and wall clock, which grow with the server — what a projection would address,
-and what it would cost to give up.
+It reports the acquisition command count, which the design holds flat, against
+the bytes and wall clock, which grow with the server. The local query column
+must add no tmux invocation.
+
+Exercise sustained pane output, a slow subscriber, reconnect loops, and daemon
+replacement:
+
+```console
+$ bun packages/libtmux/scripts/bench-control.ts
+```
+
+That benchmark requires bounded buffers, complete lifecycle transitions,
+daemon-bound handle retirement, and attached-client cleanup. It reports wall
+clock but does not compare it to a pass threshold.
 
 ## Pull requests
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { GuardCodec } from "../../src/_internal/codec/guard_codec.js";
+import { executeGuardedListGroup } from "../../src/_internal/codec/guarded_listing.js";
 import { ACQUISITION_LISTINGS } from "../../src/_internal/operations/acquire.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
@@ -13,6 +14,7 @@ import {
 } from "../../src/_internal/transport/invocation.js";
 import { SUPPORTED_TMUX_VERSIONS } from "../support/tmux_matrix.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import type { CommandRequest } from "../../src/_internal/transport/types.js";
 
 /**
  * Room to grow before tmux refuses the acquisition outright.
@@ -24,7 +26,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
  */
 const REQUIRED_HEADROOM_BYTES = 3072;
 
-function acquisitionRequest(rawVersion: string): ReturnType<typeof prepareInvocationRequest> {
+async function acquisitionRequest(rawVersion: string): Promise<CommandRequest> {
   const capabilities = deriveTmuxCapabilities({
     connectionAlias: "budget" as ConnectionAlias,
     daemon: { pid: "101", startTime: "202" },
@@ -37,22 +39,36 @@ function acquisitionRequest(rawVersion: string): ReturnType<typeof prepareInvoca
     // is measured against a real one and not against a default.
     socketPath: "/tmp/ltx-0123456789abcdef-0123456789abcdef/s",
   });
-  const commands = ACQUISITION_LISTINGS.map((listing) => {
-    const request = new GuardCodec({
-      capabilities,
-      listCommand: listing.listCommand,
-    }).prepare();
-    return [listing.listCommand, ...(listing.listExtraArgs ?? []), `-F${request.format}`];
+  let captured: CommandRequest | undefined;
+  await executeGuardedListGroup({
+    capabilities: { bind: () => Promise.resolve(capabilities) },
+    connection,
+    listings: ACQUISITION_LISTINGS,
+    transport: {
+      execute(request) {
+        captured = request;
+        return Promise.resolve({
+          cmd: ["tmux"],
+          returncode: 0,
+          signal: null,
+          stderr: new Uint8Array(),
+          stdout: new TextEncoder().encode("ltxI101;202\n"),
+        });
+      },
+    },
   });
-  return prepareInvocationRequest(connection, commands);
+  if (captured === undefined) throw new Error("acquisition did not execute");
+  return captured;
 }
 
 describe("acquisition argv budget", () => {
-  test("one atomic acquisition fits what tmux packs an argv into, with room to grow", () => {
-    const measured = SUPPORTED_TMUX_VERSIONS.map((version) => {
-      const packed = packedCommandBytes(acquisitionRequest(version));
-      return { fits: packed <= MAX_PACKED_ARGV_BYTES - REQUIRED_HEADROOM_BYTES, packed, version };
-    });
+  test("one atomic acquisition fits what tmux packs an argv into, with room to grow", async () => {
+    const measured = await Promise.all(
+      SUPPORTED_TMUX_VERSIONS.map(async (version) => {
+        const packed = packedCommandBytes(await acquisitionRequest(version));
+        return { fits: packed <= MAX_PACKED_ARGV_BYTES - REQUIRED_HEADROOM_BYTES, packed, version };
+      }),
+    );
 
     // Asserted as one object so a failure prints every version's size: the
     // number is the first thing whoever regenerated the registry needs, and the

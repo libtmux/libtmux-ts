@@ -86,9 +86,12 @@ async function waitForControlProbe(path: string): Promise<void> {
 }
 
 describe("ControlMode", () => {
-  test("keeps ControlMode as an attached client resource", async () => {
+  test("keeps ControlMode as a tmux-visible attached client resource", async () => {
     await withTemporaryRunRoot("control-mode", async (runRoot) => {
       const server = await createRegisteredTestServer({ runRoot });
+      expect(
+        (await server.executeText(["list-sessions", "-F", "#{session_attached}"])).stdout,
+      ).toEqual(["0"]);
       const control = await ControlMode.open({ server, targetSession: server.sessionId });
       try {
         const listed = await server.executeText([
@@ -97,10 +100,16 @@ describe("ControlMode", () => {
           "#{client_pid}\t#{client_name}",
         ]);
         expect(listed.stdout).toContain(`${String(control.pid)}\t${control.clientName}`);
+        expect(
+          (await server.executeText(["list-sessions", "-F", "#{session_attached}"])).stdout,
+        ).toEqual(["1"]);
       } finally {
         await control.dispose();
         const listed = await server.executeText(["list-clients", "-F", "#{client_pid}"]);
         expect(listed.stdout).not.toContain(String(control.pid));
+        expect(
+          (await server.executeText(["list-sessions", "-F", "#{session_attached}"])).stdout,
+        ).toEqual(["0"]);
         await server.dispose();
       }
     });

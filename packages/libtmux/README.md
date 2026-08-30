@@ -675,6 +675,11 @@ cannot promise positional results.
 A snapshot answers what is true now. `server.watch()` answers what changed, over
 one persistent `tmux -C` connection rather than a command per read.
 
+Each `watch()` or `connect()` owns a real attached tmux client until it closes.
+That client appears in snapshots, increments `session_attached`, and is visible
+to client hooks and attachment-sensitive policy such as `destroy-unattached`.
+Multiple watches or connections create multiple clients.
+
 <!-- static: reads every event until the process is interrupted -->
 
 ```ts
@@ -797,7 +802,7 @@ await using live = await server.connect();
 
 for await (const event of live.subscribe()) {
   if (event.kind !== "window-add") continue;
-  const snapshot = await live.snapshot(); // one four-command tmux invocation
+  const snapshot = await live.snapshot(); // one atomic identity-plus-four-listings invocation
   console.log(snapshot.windows.count());
 }
 ```
@@ -952,8 +957,8 @@ await lines.catch(() => undefined); // rejects with the abort reason
 
 Every operation that takes options accepts both, so the rule you learn on one
 method holds on the next. The default applies to every command the server runs,
-including the version probe it makes first and the four listings behind
-`snapshot()`. `signal` is
+including the version probe it makes first and the identity read plus four
+listings behind `snapshot()`. `signal` is
 typed structurally, so a real `AbortSignal` satisfies it without the published
 types requiring a DOM or Node library.
 

@@ -31,29 +31,33 @@ export const ACQUISITION_LISTINGS: readonly GuardedListing[] = Object.freeze([
 /**
  * Which daemon answered this listing.
  *
- * `pid` and `start_time` are universal-scope fields, so every row of every
- * listing already carries them and reading the daemon's identity costs no
- * command of its own.
+ * The leading identity frame always carries `pid` and `start_time`. Every
+ * listing row repeats those universal-scope fields so acquisition can reject a
+ * row from another daemon rather than joining two generations.
  */
 type DaemonRow = Readonly<Pick<RawCompleteFormatRow, "pid" | "start_time">>;
 
-export function daemonIdentityOf(rows: readonly (readonly DaemonRow[])[]): DaemonIdentity {
-  let daemon: DaemonIdentity | undefined;
+export function daemonIdentityOf(
+  identity: DaemonRow,
+  rows: readonly (readonly DaemonRow[])[],
+): DaemonIdentity {
+  if (identity.pid == null || identity.start_time == null) {
+    throw new FormatProtocolError("identity frame has an incomplete daemon identity");
+  }
+  const daemon: DaemonIdentity = Object.freeze({
+    pid: identity.pid,
+    startTime: identity.start_time,
+  });
   for (const set of rows) {
     for (const row of set) {
       if (row.pid == null || row.start_time == null) {
         throw new FormatProtocolError("captured row has an incomplete daemon identity");
       }
-      if (daemon === undefined) {
-        daemon = Object.freeze({ pid: row.pid, startTime: row.start_time });
-        continue;
-      }
       if (daemon.pid !== row.pid || daemon.startTime !== row.start_time) {
-        throw new FormatProtocolError("captured rows disagree on daemon identity");
+        throw new FormatProtocolError("captured row disagrees with the daemon identity frame");
       }
     }
   }
-  if (daemon === undefined) throw new FormatProtocolError("captured graph has no daemon identity");
   return daemon;
 }
 
@@ -65,13 +69,13 @@ export function daemonIdentityOf(rows: readonly (readonly DaemonRow[])[]): Daemo
  * session or window record. Each model therefore needs its own listing to
  * supply the contextual rows a selection draws its members from.
  *
- * The four listings go as one tmux command list, which is what makes them one
- * instant rather than four adjacent ones — tmux drains a client's queue whole,
- * so no other client runs in between. Their count does not vary with the
- * topology, which is what lets relation traversal stay free of I/O. Listing
- * windows and panes with `-a` keeps that true across every session, and both
- * placements of a window linked into two sessions survive as two window
- * records sharing one window entity.
+ * The daemon identity read and four listings go as one tmux command list,
+ * which is what makes them one instant rather than adjacent observations —
+ * tmux drains a client's queue whole, so no other client runs in between.
+ * Their count does not vary with the topology, which is what lets relation
+ * traversal stay free of I/O. Listing windows and panes with `-a` keeps that
+ * true across every session, and both placements of a window linked into two
+ * sessions survive as two window records sharing one window entity.
  */
 async function acquireServerGraphAttempt(
   runtime: RuntimeContext,
@@ -80,7 +84,7 @@ async function acquireServerGraphAttempt(
 ): Promise<NormalizedGraph> {
   const observation = beginDaemonObservation(runtime);
   const capabilities = await runtime.capabilities.bind(signal);
-  const [sessions = [], windows = [], panes = [], clients = []] = await executeGuardedListGroup({
+  const grouped = await executeGuardedListGroup({
     capabilities: runtime.capabilities,
     connection: runtime.connection,
     listings: ACQUISITION_LISTINGS,
@@ -88,8 +92,9 @@ async function acquireServerGraphAttempt(
     ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
     transport: runtime.transport,
   });
+  const [sessions = [], windows = [], panes = [], clients = []] = grouped.listings;
 
-  const daemon = daemonIdentityOf([sessions, windows, panes, clients]);
+  const daemon = daemonIdentityOf(grouped.daemon, [sessions, windows, panes, clients]);
   if (!observeDaemonIdentity(runtime, observation, capabilities, daemon)) {
     if (attemptsRemaining > 1) {
       return acquireServerGraphAttempt(runtime, attemptsRemaining - 1, signal);

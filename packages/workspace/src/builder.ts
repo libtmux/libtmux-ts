@@ -10,6 +10,7 @@ import {
   parseWorkspace,
   windowStartDirectory,
   type Workspace,
+  type WorkspaceInput,
   type WorkspaceWindow,
 } from "./config.js";
 import {
@@ -111,7 +112,7 @@ export class WorkspaceApplyError extends Error {
  */
 export async function applyWorkspace(
   server: Server,
-  workspaceInput: Workspace,
+  workspaceInput: WorkspaceInput,
   options: ApplyWorkspaceOptions = {},
 ): Promise<Session> {
   const workspace = parseWorkspace(workspaceInput);
@@ -197,7 +198,7 @@ export async function applyWorkspace(
  */
 export async function planWorkspace(
   server: Server,
-  workspaceInput: Workspace,
+  workspaceInput: WorkspaceInput,
   options: PlanWorkspaceOptions = {},
 ): Promise<WorkspacePlan> {
   const workspace = parseWorkspace(workspaceInput);

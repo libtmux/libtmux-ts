@@ -107,7 +107,6 @@ export async function resolveCallerIdentity(
 
   const sameServer =
     caller.paneId !== undefined &&
-    identity !== undefined &&
     caller.serverPid !== undefined &&
     caller.serverPid === identity.pid;
 
@@ -116,7 +115,7 @@ export async function resolveCallerIdentity(
     callerPaneId: caller.paneId,
     callerPaneIsOnThisServer: sameServer,
     clients,
-    serverPid: identity?.pid,
+    serverPid: identity.pid,
   };
 }
 

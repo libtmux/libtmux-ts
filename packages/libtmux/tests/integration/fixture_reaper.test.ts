@@ -635,4 +635,28 @@ describe("fixture launch and exact-root reaping", () => {
       }
     }, 30_000);
   }
+
+  test("reaps the published successor after a replacement worker is killed", async () => {
+    const { parent, root } = await createIsolatedRunRoot("replacement-worker");
+    const marker = join(parent, "ready.json");
+    const child = await spawnLeakingWorker(root, "replacement-hold", marker);
+    try {
+      await waitForPathPresent(marker);
+      const state = await readJsonMarker<{ daemonPid: number }>(marker);
+      child.kill("SIGKILL");
+      const closed = await closeChild(child);
+      expect(closed.signal === "SIGKILL" || closed.code === 137).toBe(true);
+      expect(processExists(state.daemonPid)).toBe(true);
+
+      expect((await reapOwnedRunRoot(root)).leaks).toEqual([]);
+      await waitForProcessExit(state.daemonPid);
+      await expect(stat(root)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await closeChild(child).catch(() => undefined);
+      }
+      await removeIsolatedRunRoot(parent, root);
+    }
+  }, 30_000);
 });

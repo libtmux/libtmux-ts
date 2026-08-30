@@ -7,9 +7,13 @@ import {
   type ApplyWorkspaceOptions,
   type PlanWorkspaceOptions,
 } from "../src/builder.js";
+import type { Workspace, WorkspaceInput } from "../src/config.js";
+import { parseWorkspace } from "../src/config.js";
 import { OWNERSHIP_OPTION } from "../src/ownership.js";
 
-const WORKSPACE = { session_name: "validated", windows: [{ panes: [] }] };
+const WORKSPACE = { session_name: "validated", windows: [{}] } satisfies WorkspaceInput;
+const NORMALIZED_WORKSPACE: Workspace = parseWorkspace(WORKSPACE);
+void NORMALIZED_WORKSPACE;
 
 function serverThatMustStayUnreached(): {
   readonly invocations: () => number;

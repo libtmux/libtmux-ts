@@ -473,6 +473,21 @@ describe("normalized entity and winlink graph", () => {
 });
 
 describe("selection projection snapshots", () => {
+  test("carries a live daemon identity into the projection capture", () => {
+    const daemon = Object.freeze({ pid: "101", startTime: "202" });
+    const graph = normalizeGraph({
+      capture: { ...capture(), daemon },
+      sources: [source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })])],
+    });
+    const projection = singleSourceProjection({
+      descriptors: descriptors(),
+      graph,
+      source: createGraphSourceId("sessions"),
+    });
+
+    expect(projection.capture.daemon).toEqual(daemon);
+  });
+
   test("shares one authenticated corpus across source member views", () => {
     const graph = normalizeGraph({
       capture: capture(),

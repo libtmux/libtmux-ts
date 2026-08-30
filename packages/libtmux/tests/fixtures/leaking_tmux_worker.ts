@@ -14,6 +14,7 @@ interface Arguments {
     | "inherited-pipe"
     | "launching-hold"
     | "owner-mode-exit"
+    | "replacement-hold"
     | "self-sigterm";
 }
 
@@ -36,6 +37,7 @@ function parseArguments(argv: readonly string[]): Arguments {
         value === "inherited-pipe" ||
         value === "launching-hold" ||
         value === "owner-mode-exit" ||
+        value === "replacement-hold" ||
         value === "self-sigterm")
     ) {
       mode = value;
@@ -77,6 +79,7 @@ if (args.mode === "exit") {
     throw new Error("launching-hold wrapper returned unexpectedly");
   } else {
     const server = await TestServer.create({ runRoot });
+    if (args.mode === "replacement-hold") await server.replace("replacement");
     if (args.mode === "corrupt-record-exit") {
       const recordText = await readFile(server.recordPath, "utf8");
       await unlink(server.socketPath);

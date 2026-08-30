@@ -434,7 +434,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
       ]);
       const structured = {
         panes: paneEntities(snapshot.panes.toArray()).length,
-        pid: identity?.pid ?? null,
+        pid: identity.pid,
         sessions: snapshot.sessions.count(),
         socketPath: printable(resolvedSocket === "" ? context.tmux.socketPath : resolvedSocket),
         version: version.raw,

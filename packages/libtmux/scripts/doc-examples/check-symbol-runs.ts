@@ -39,9 +39,9 @@ import { sweepStrayTmux } from "./tmux_sweep.js";
  * purpose: predicting which examples damage the world from the shape of their
  * code kept being wrong, and a wrong prediction surfaces as a failure against
  * a later example that did nothing wrong. One snapshot is a few milliseconds.
- * An example that throws anyway forces a rebuild and one retry, so undetected
- * damage poisons at most one attempt, and the counts printed below are the
- * evidence for that rather than an assertion of it.
+ * An example that still throws fails the gate. Repeating an unclassified
+ * failure against a fresh fixture would hide the shared-state defect that made
+ * the first attempt fail.
  */
 
 const SOURCE_LABEL = "TSDoc symbol examples";
@@ -121,9 +121,83 @@ interface SymbolExample extends Example {
 interface Outcome {
   readonly detail?: string;
   readonly origin: string;
-  readonly rebuilt?: boolean;
-  readonly retried?: boolean;
   readonly state: "excused" | "failed" | "ran";
+}
+
+interface FingerprintHandle {
+  readonly format: Readonly<Record<string, string | null>>;
+}
+
+interface FingerprintSnapshot {
+  readonly clients: { toArray: () => readonly FingerprintHandle[] };
+  readonly panes: { toArray: () => readonly FingerprintHandle[] };
+  readonly sessions: { toArray: () => readonly FingerprintHandle[] };
+  readonly windows: { toArray: () => readonly FingerprintHandle[] };
+}
+
+const FINGERPRINT_ANCHORS = Object.freeze([
+  {
+    bindings: ["client"],
+    fields: ["client_name", "session_id", "window_id", "pane_id"],
+    identity: "client_name",
+    selection: "clients",
+  },
+  {
+    bindings: ["pane", "otherPane"],
+    fields: ["session_id", "window_id", "window_index", "pane_id", "pane_index"],
+    identity: "pane_id",
+    selection: "panes",
+  },
+  {
+    bindings: ["session"],
+    fields: ["session_id", "session_name"],
+    identity: "session_id",
+    selection: "sessions",
+  },
+  {
+    bindings: ["editor", "other"],
+    fields: ["session_id", "window_id", "window_index", "window_name"],
+    identity: "window_id",
+    selection: "windows",
+  },
+] as const);
+
+function bindingField(world: World, name: string, field: string): string | undefined {
+  const value = (world.bindings[name] as FingerprintHandle | undefined)?.format[field];
+  return value ?? undefined;
+}
+
+function anchoredRows(
+  handles: readonly FingerprintHandle[],
+  identityField: string,
+  identities: ReadonlySet<string>,
+  fields: readonly string[],
+): readonly string[] {
+  return handles
+    .filter((handle) => {
+      const identity = handle.format[identityField];
+      return identity !== null && identity !== undefined && identities.has(identity);
+    })
+    .map((handle) => JSON.stringify(fields.map((field) => handle.format[field] ?? null)))
+    .toSorted();
+}
+
+function worldFingerprint(world: World, snapshot: FingerprintSnapshot): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      FINGERPRINT_ANCHORS.map(({ bindings, fields, identity, selection }) => {
+        const identities = new Set(
+          bindings
+            .map((name) => bindingField(world, name, identity))
+            .filter((value): value is string => value !== undefined),
+        );
+        return [
+          selection,
+          anchoredRows(snapshot[selection].toArray(), identity, identities, fields),
+        ];
+      }),
+    ),
+  );
 }
 
 function generate(examples: readonly Example[]): string {
@@ -198,7 +272,6 @@ let leaks: readonly string[] = [];
 let strayServers: readonly string[] = [];
 let rebuildCount = 0;
 let validateOnlyCount = 0;
-let retryCount = 0;
 const started = performance.now();
 
 try {
@@ -210,6 +283,7 @@ try {
 
   let worldIndex = 0;
   let world: World | undefined;
+  let expectedWorldFingerprint = "";
   // Always true so `pane.sendKeys(...)` examples — there are several — never
   // race the shell's line editor the way the finding in readme_world.ts
   // describes; every rebuild pays this once, not once per example.
@@ -226,22 +300,18 @@ try {
       runRoot: worldRoot,
       scratch,
     });
+    const server = world.bindings["server"] as { snapshot: () => Promise<unknown> };
+    expectedWorldFingerprint = worldFingerprint(
+      world,
+      (await server.snapshot()) as FingerprintSnapshot,
+    );
     worldIndex += 1;
     rebuildCount += 1;
   };
   await rebuild();
 
-  /** Whether every id this world handed out still resolves. */
+  /** Whether every bound handle still names the fixture placement it began on. */
   const worldIsIntact = async (candidate: World): Promise<boolean> => {
-    const ids = [
-      candidate.bindings["session"],
-      candidate.bindings["editor"],
-      candidate.bindings["other"],
-      candidate.bindings["pane"],
-      candidate.bindings["otherPane"],
-    ]
-      .map((each) => (each as { id?: unknown } | undefined)?.id)
-      .filter((id): id is string => typeof id === "string");
     const server = candidate.bindings["server"] as { snapshot: () => Promise<unknown> };
     let fresh: unknown;
     try {
@@ -249,17 +319,9 @@ try {
     } catch {
       return false;
     }
-    const flat = fresh as {
-      panes: { toArray: () => readonly { id: string }[] };
-      sessions: { toArray: () => readonly { id: string }[] };
-      windows: { toArray: () => readonly { id: string }[] };
-    };
-    const known = new Set([
-      ...flat.sessions.toArray().map((each) => each.id),
-      ...flat.windows.toArray().map((each) => each.id),
-      ...flat.panes.toArray().map((each) => each.id),
-    ]);
-    if (!ids.every((id) => known.has(id))) return false;
+    if (worldFingerprint(candidate, fresh as FingerprintSnapshot) !== expectedWorldFingerprint) {
+      return false;
+    }
 
     // The connection, too. `session.detach()` ends this world's control
     // connection without touching an id, so every id above still resolves while
@@ -309,8 +371,7 @@ try {
       continue;
     }
 
-    // Read at call time, not captured. A retry rebuilds the world first, so
-    // bindings taken before that point are handles into a server the rebuild
+    // Read at call time so a rebuild never leaves handles into the world it
     // already disposed.
     const attempt = async (): Promise<Error | undefined> => {
       const bindings = world?.bindings ?? {};
@@ -334,27 +395,14 @@ try {
     };
 
     // eslint-disable-next-line no-await-in-loop -- one example at a time against the one shared world.
-    let outcome = await attempt();
-    let retried = false;
-    if (outcome !== undefined) {
-      // Rebuild and try once more, for damage the liveness check cannot see —
-      // a connection that ended with every id intact. The retry reads the
-      // rebuilt world's bindings, not the ones captured before it.
-      retried = true;
-      retryCount += 1;
-      // eslint-disable-next-line no-await-in-loop -- as above.
-      await rebuild();
-      // eslint-disable-next-line no-await-in-loop -- as above.
-      outcome = await attempt();
-    }
+    const outcome = await attempt();
 
     if (outcome === undefined) {
-      outcomes.push({ origin, retried, state: "ran" });
+      outcomes.push({ origin, state: "ran" });
     } else {
       outcomes.push({
         detail: `${outcome.constructor.name}: ${outcome.message.split("\n")[0] ?? ""}`,
         origin,
-        retried,
         state: "failed",
       });
     }
@@ -380,7 +428,6 @@ const elapsedMs = performance.now() - started;
 const ran = outcomes.filter((outcome) => outcome.state === "ran");
 const failed = outcomes.filter((outcome) => outcome.state === "failed");
 const excused = outcomes.filter((outcome) => outcome.state === "excused");
-const retried = outcomes.filter((outcome) => outcome.retried === true);
 
 for (const outcome of failed) {
   process.stderr.write(`${outcome.origin} ${outcome.detail ?? ""}\n`);
@@ -409,11 +456,8 @@ process.stdout.write(
     `${String(examples.length)} total in ${elapsedMs.toFixed(0)}ms ` +
     `(${(elapsedMs / examples.length).toFixed(1)}ms/example)\n` +
     `  world rebuilds: ${String(rebuildCount)}, liveness checks that found no damage: ${String(validateOnlyCount)}, ` +
-    `retries after an unpredicted failure: ${String(retryCount)}\n`,
+    `unpredicted retries: 0\n`,
 );
-if (retried.length > 0) {
-  for (const outcome of retried) process.stdout.write(`  retried ${outcome.origin}\n`);
-}
 for (const outcome of excused) {
   process.stdout.write(`  excused ${outcome.origin}: ${outcome.detail ?? ""}\n`);
 }

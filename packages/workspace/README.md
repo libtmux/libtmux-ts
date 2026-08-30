@@ -159,9 +159,9 @@ focus, or pane commands. It is advisory: acquire a fresh one after any delay or
 failed apply because tmux structure may have changed.
 Planning accepts `prune`; command policy is apply-only.
 
-`prune` decides the rest. `"owned"` is the default above; `"never"` never
-removes anything; `"always"` is how you say a session somebody else made is now
-this file's, at the call site rather than in a comment:
+`prune` decides the rest. `"owned"` is the default above; `"never"` removes
+nothing; `"always"` authorizes this one plan or apply to remove surplus from a
+session the workspace did not create:
 
 ```ts
 await applyWorkspace(
@@ -170,6 +170,9 @@ await applyWorkspace(
   { prune: "always" },
 );
 ```
+
+`"always"` does not claim the session or stamp persistent ownership. A later
+apply using the default `"owned"` policy leaves new surplus alone.
 
 ## A worked example
 
