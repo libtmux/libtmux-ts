@@ -209,9 +209,12 @@ describe("server graph acquisition", () => {
       await server.executeText(["kill-session", "-t", server.sessionName]);
 
       const graph = await acquireServerGraph(runtimeFor(server));
+      const daemon = graph.capture.daemon;
 
-      expect(graph.capture.daemon.pid).toBe(String(server.daemonIdentity.pid));
-      expect(graph.capture.daemon.startTime).toMatch(/^\d+$/u);
+      expect(daemon).toBeDefined();
+      if (daemon === undefined) throw new Error("zero-row capture omitted its daemon identity");
+      expect(daemon.pid).toBe(String(server.daemonIdentity.pid));
+      expect(daemon.startTime).toMatch(/^\d+$/u);
       expect(graph.records).toEqual([]);
     });
   }, 30_000);
