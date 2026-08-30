@@ -96,13 +96,19 @@ async function measureOutput(runRoot: string, tmuxBin: string): Promise<Row> {
       const markerSplit = marker.length - 3;
       let markerTail = "";
       let receivedBytes = 0;
+      let markerOffset: number | undefined;
       const observed = events.find(
         (event) => {
           if (event.kind !== "output") return false;
           receivedBytes += Buffer.byteLength(event.data, "utf8");
           const candidate = markerTail + event.data;
+          const markerIndex = candidate.indexOf(marker);
+          if (markerIndex !== -1) {
+            markerOffset = receivedBytes - Buffer.byteLength(candidate.slice(markerIndex), "utf8");
+            return true;
+          }
           markerTail = candidate.slice(-(marker.length - 1));
-          return candidate.includes(marker);
+          return false;
         },
         { timeoutMs: LIVE_DEADLINE_MS },
       );
@@ -111,19 +117,21 @@ async function measureOutput(runRoot: string, tmuxBin: string): Promise<Row> {
         name: "stream",
         shellCommand:
           `sh -c 'head -c ${String(OUTPUT_BYTES)} /dev/zero | tr "\\000" x; ` +
-          `printf "\\n${marker.slice(0, markerSplit)}"; sleep 0.05; ` +
+          `printf "${marker.slice(0, markerSplit)}"; sleep 0.05; ` +
           `printf "${marker.slice(markerSplit)}\\n"; sleep 30'`,
       });
       const terminal = await observed;
       const elapsed = performance.now() - started;
-      if (terminal?.kind !== "output" || receivedBytes < OUTPUT_BYTES) {
-        throw new Error(`pane output ended after ${String(receivedBytes)} bytes`);
+      if (terminal?.kind !== "output" || markerOffset !== OUTPUT_BYTES) {
+        throw new Error(
+          `pane output marker began at ${String(markerOffset)} bytes, expected ${String(OUTPUT_BYTES)}`,
+        );
       }
       if (events.dropped !== 0) {
         throw new Error(`active output subscriber dropped ${String(events.dropped)} events`);
       }
       return {
-        outcome: `${String(receivedBytes)} B read, 0 dropped`,
+        outcome: `${String(markerOffset)} B payload, 0 dropped`,
         size: `${String(OUTPUT_BYTES / 1024)} KiB`,
         wall: `${elapsed.toFixed(0)} ms`,
         workload: "sustained pane output",
