@@ -869,7 +869,7 @@ windows:
     }, 60_000);
   }
 
-  test("prunes a session it did not create only when told to in so many words", async () => {
+  test("prune always authorizes one apply without claiming the session", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const mine = await server.newSession({ name: "adopted" });
@@ -883,6 +883,16 @@ windows:
       await applyWorkspace(server, workspace, { prune: "always" });
       const after = (await server.snapshot()).sessions.one({ name: "adopted" });
       expect(after.windows.count()).toBe(1);
+      expect((await after.showOptions()).get(OWNERSHIP_OPTION)).toBeUndefined();
+
+      await after.newWindow({ name: "later" });
+      const next = await planWorkspace(server, workspace);
+      expect(next.owned).toBe(false);
+      expect(next.removesWindows).toEqual([]);
+      expect(next.retains).not.toBeEmpty();
+
+      await applyWorkspace(server, workspace);
+      expect((await server.snapshot()).sessions.one({ name: "adopted" }).windows.count()).toBe(2);
     });
   }, 60_000);
 

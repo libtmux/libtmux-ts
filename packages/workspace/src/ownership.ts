@@ -36,8 +36,8 @@ export async function claimSession(session: Session, name: string): Promise<void
  *
  * `owned` is the default because it is the only one that is safe without
  * knowing where the session came from: a workspace prunes what it built and
- * leaves alone what it merely found. `always` is the opt-in for a session
- * somebody else made, and says so at the call site rather than in a comment.
+ * leaves alone what it merely found. `always` authorizes pruning for one
+ * operation; it does not stamp or otherwise adopt the session.
  */
 export function mayPrune(policy: PrunePolicy, owned: boolean): boolean {
   if (policy === "never") return false;

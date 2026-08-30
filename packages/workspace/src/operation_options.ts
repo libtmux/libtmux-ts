@@ -11,12 +11,13 @@ export type CommandPolicy = "always" | "create-only";
 /** How `applyWorkspace` should treat a workspace that is already running. */
 export interface ApplyWorkspaceOptions {
   readonly commands?: CommandPolicy;
-  /** How to treat undescribed windows and panes; defaults to `owned`. */
+  /** How this apply treats undescribed topology; `always` does not claim ownership. */
   readonly prune?: PrunePolicy;
 }
 
 /** Structural planning options; pane command delivery is apply-only. */
 export interface PlanWorkspaceOptions {
+  /** How this plan treats undescribed topology; `always` does not claim ownership. */
   readonly prune?: PrunePolicy;
 }
 
