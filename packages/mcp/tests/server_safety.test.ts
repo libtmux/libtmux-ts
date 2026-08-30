@@ -230,6 +230,11 @@ describe("staying out of the way", () => {
               name: "kill_window",
             });
             expect((forced as { isError?: boolean }).isError ?? false).toBe(false);
+            expect(structured<{ killed: string }>(forced).killed).toBe(windowId);
+            const remaining = structured<{ windows: readonly { id: string }[] }>(
+              await client.callTool({ arguments: {}, name: "list_windows" }),
+            ).windows;
+            expect(remaining.some(({ id }) => id === windowId)).toBe(false);
           },
           { LIBTMUX_SAFETY: "destructive" },
         );
