@@ -16,6 +16,23 @@ const identity: CallerIdentity = {
   serverPid: "42",
 };
 
+type InputHandler = (
+  args: Readonly<Record<string, unknown>>,
+  extra: { readonly signal?: AbortSignal },
+) => Promise<unknown>;
+
+function collectInputHandlers(context: ToolContext): ReadonlyMap<string, InputHandler> {
+  const handlers = new Map<string, InputHandler>();
+  const registrar = {
+    registerTool(name: string, _config: unknown, handler: InputHandler): object {
+      handlers.set(name, handler);
+      return {};
+    },
+  } as unknown as ToolRegistrar;
+  registerInput(registrar, context);
+  return handlers;
+}
+
 function snapshot(fields: Readonly<Record<string, unknown>>): ServerSnapshot {
   const window = { id: "@1", index: 0 };
   const pane = {
@@ -70,27 +87,48 @@ describe("pane input state", () => {
   });
 });
 
+test("send_keys applies attention policy to every configured member", async () => {
+  const sent: string[] = [];
+  let panes: unknown[] = [];
+  const window = { id: "@1", index: 0, panes: { toArray: () => panes } };
+  const source = {
+    currentCommand: "sh",
+    dead: false,
+    format: { session_id: "$1", window_index: "0" },
+    id: "%1",
+    inMode: 0,
+    sendKeys: async (keys: string) => {
+      sent.push(keys);
+    },
+    synchronized: true,
+    window,
+  };
+  const peer = { ...source, id: "%2", sendKeys: undefined };
+  panes = [source, peer];
+  const context = {
+    hub: {},
+    identity: async () => ({ ...identity, attendedPaneIds: ["%2"] }),
+    policy: {},
+    snapshot: async () => ({ panes: { toArray: () => panes } }),
+    tmux: {},
+  } as unknown as ToolContext;
+  const handler = collectInputHandlers(context).get("send_keys");
+  if (handler === undefined) throw new Error("send_keys was not registered");
+
+  const result = (await handler({ keys: "x", paneId: "%1" }, {})) as {
+    readonly content: readonly { readonly text?: string }[];
+    readonly isError?: boolean;
+  };
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain("%2");
+  expect(result.content[0]?.text).toContain("watching");
+  expect(sent).toEqual([]);
+});
+
 test("paste_text rechecks state after buffer setup and always cleans up", async () => {
   const events: string[] = [];
   const snapshots = [snapshot({}), snapshot({ inMode: 1 })];
   let snapshotIndex = 0;
-  const handlers = new Map<
-    string,
-    (args: Readonly<Record<string, unknown>>, extra: { signal?: AbortSignal }) => Promise<unknown>
-  >();
-  const registrar = {
-    registerTool(
-      name: string,
-      _config: unknown,
-      handler: (
-        args: Readonly<Record<string, unknown>>,
-        extra: { signal?: AbortSignal },
-      ) => Promise<unknown>,
-    ): object {
-      handlers.set(name, handler);
-      return {};
-    },
-  } as unknown as ToolRegistrar;
   const context = {
     hub: {},
     identity: async () => identity,
@@ -113,9 +151,8 @@ test("paste_text rechecks state after buffer setup and always cleans up", async 
       events.push("paste");
     };
   }
-  registerInput(registrar, context);
 
-  const handler = handlers.get("paste_text");
+  const handler = collectInputHandlers(context).get("paste_text");
   if (handler === undefined) throw new Error("paste_text was not registered");
   const result = (await handler({ paneId: "%1", text: "payload" }, {})) as {
     isError?: boolean;
@@ -123,5 +160,29 @@ test("paste_text rechecks state after buffer setup and always cleans up", async 
 
   expect(result.isError).toBe(true);
   expect(snapshotIndex).toBe(2);
+  expect(events).toEqual(["load", "delete"]);
+});
+
+test("paste_text attempts cleanup when buffer setup fails", async () => {
+  const events: string[] = [];
+  const context = {
+    hub: {},
+    identity: async () => identity,
+    policy: {},
+    snapshot: async () => snapshot({}),
+    tmux: {
+      deleteBuffer: async () => {
+        events.push("delete");
+      },
+      loadBuffer: async () => {
+        events.push("load");
+        throw new Error("load failed");
+      },
+    },
+  } as unknown as ToolContext;
+
+  const handler = collectInputHandlers(context).get("paste_text");
+  if (handler === undefined) throw new Error("paste_text was not registered");
+  await expect(handler({ paneId: "%1", text: "payload" }, {})).rejects.toThrow("load failed");
   expect(events).toEqual(["load", "delete"]);
 });

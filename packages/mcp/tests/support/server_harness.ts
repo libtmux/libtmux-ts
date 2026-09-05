@@ -32,6 +32,7 @@ export async function withServer(body: (fixture: TestServer) => Promise<void>): 
 export async function withClient(
   fixture: TestServer,
   body: (client: Client) => Promise<void>,
+  callerEnvironment: Readonly<Record<string, string>> = {},
 ): Promise<void> {
   const client = new Client({ name: "libtmux-test", version: "0.0.0" });
   const transport = new StdioClientTransport({
@@ -45,6 +46,7 @@ export async function withClient(
       LIBTMUX_TOOLSETS: "inspect,manage,execute,teardown",
       TMUX: "",
       TMUX_PANE: "",
+      ...callerEnvironment,
     },
   });
   await runWithCleanup(

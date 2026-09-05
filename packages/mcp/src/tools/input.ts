@@ -299,7 +299,11 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
 
         await finalPane.pasteBuffer(bufferName);
       } finally {
-        if (loaded) await context.tmux.deleteBuffer(bufferName);
+        try {
+          await context.tmux.deleteBuffer(bufferName);
+        } catch (error) {
+          if (loaded) throw error;
+        }
       }
       return ok(
         { bytes: Buffer.byteLength(text, "utf8"), paneId },
@@ -326,7 +330,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Override pane-attention and shell-prompt checks. Default false."),
+          .describe("Write despite caller or pane-attention protection. Default false."),
         maxLines: z.number().int().positive().optional(),
         paneId: paneIdSchema,
         timeoutMs: z

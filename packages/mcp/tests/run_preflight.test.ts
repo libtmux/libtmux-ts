@@ -105,6 +105,12 @@ test.each(transitions)(
     let snapshotIndex = 0;
     let identityIndex = 0;
     let setupCount = 0;
+    let completionWaitCount = 0;
+    const changed = tail.changed.bind(tail);
+    tail.changed = (...args) => {
+      completionWaitCount += 1;
+      return changed(...args);
+    };
     const identities = [identity, finalIdentity];
     const context = {
       hub: {
@@ -129,6 +135,7 @@ test.each(transitions)(
     expect(reason).toContain("changed during run_shell_command setup");
     expect(snapshotIndex).toBe(2);
     expect(setupCount).toBe(1);
+    expect(completionWaitCount).toBe(0);
     expect(sent).toEqual([]);
     expect(activeFramedCommand(context, "%1")).toBeUndefined();
   },
