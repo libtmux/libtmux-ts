@@ -26,6 +26,10 @@ describe("command framing", () => {
     return { status: result.status, stderr: result.stderr, stdout: result.stdout };
   }
 
+  function quote(value: string): string {
+    return `'${value.replaceAll("'", `'"'"'`)}'`;
+  }
+
   test("parses a complete framed result without pane state", () => {
     expect(
       parseFramedOutput(
@@ -123,6 +127,90 @@ describe("command framing", () => {
         "ltxready_R\nltxabc123def0_S\nbefore\nltxabc123def0_E 1 ltxabc123def0_D\nerrexit-on\n",
       );
     }
+  });
+
+  test("keeps framing private from inherited printf functions and aliases", () => {
+    const id = "ltxabc123def0";
+    for (const shell of shells) {
+      const ready = "ltxready";
+      const functionResult = run(
+        shell,
+        `printf() { command printf 'function:%s\\n' "$1"; }\n${frame(
+          "printf 'command-call\\n'",
+          ready,
+          false,
+        )}`,
+        `${id}\n`,
+      );
+      expect(functionResult.stdout, `${shell} function`).toContain(`${ready}_R\n`);
+      expect(functionResult.stdout, `${shell} function`).toContain("function:command-call\\n\n");
+      expect(functionResult.stdout, `${shell} function`).toContain(`${id}_E 0 ${id}_D\n`);
+
+      const framed = frame("printf command-alias", ready, false);
+      const aliasResult = run(
+        shell,
+        `shopt -s expand_aliases 2>/dev/null || :\n` +
+          `alias printf='command printf "alias-call\\n"'\n` +
+          `eval ${quote(framed)}`,
+        `${id}\n`,
+      );
+      expect(aliasResult.stdout, `${shell} alias`).toContain(`${ready}_R\n`);
+      expect(aliasResult.stdout, `${shell} alias`).toContain("alias-call\n");
+      expect(aliasResult.stdout, `${shell} alias`).toContain(`${id}_E 0 ${id}_D\n`);
+    }
+  });
+
+  test("isolates command-defined shell state and a bare exit", () => {
+    const id = "ltxabc123def0";
+    for (const shell of shells) {
+      const command =
+        `inner_ltx() { :; }; trap 'command printf "inner-exit\\n"' 0; ` +
+        `cd /; export LTX_FRAME_STATE=inner; exit 23`;
+      const source =
+        `LTX_FRAME_STATE=outer; before=$PWD; ` +
+        `readonly ltx_marker=outer ltx_options=outer ltx_payload=outer ltx_traps=outer ltx_status=outer; ` +
+        `trap 'command printf "outer-exit\\n"' 0\n` +
+        `${frame(command, "ltxready", false)}\n` +
+        `if [ "$PWD:$LTX_FRAME_STATE" = "$before:outer" ] && ` +
+        `! command -v inner_ltx >/dev/null 2>&1; then command printf 'parent-stable\\n'; fi`;
+      const result = run(shell, source, `${id}\n`);
+
+      expect(result.status, shell).toBe(0);
+      expect(result.stdout, shell).toContain(`${id}_S\ninner-exit\n${id}_E 23 ${id}_D\n`);
+      expect(result.stdout, shell).toEndWith("parent-stable\nouter-exit\n");
+    }
+  });
+
+  test("closes the frame around invalid trailing syntax", () => {
+    const id = "ltxabc123def0";
+    for (const shell of shells) {
+      const result = run(shell, frame("printf before; if", "ltxready", false), `${id}\n`);
+      const parsed = parseFramedOutput(result.stdout, id);
+
+      expect(result.status, shell).toBe(0);
+      expect(parsed, shell).toBeDefined();
+      expect(parsed?.exitStatus, shell).toBeGreaterThan(0);
+    }
+  });
+
+  test("the command sees an inherited Bash ERR trap and the parent keeps it", () => {
+    const bash = Bun.which("bash");
+    expect(bash).not.toBeNull();
+    const id = "ltxabc123def0";
+    const result = run(
+      bash ?? "bash",
+      `trap 'command printf "outer-err:%s\\n" "$?"' ERR\n` +
+        `${frame("false", "ltxready", false)}\n` +
+        `false\n` +
+        `command printf 'parent-after-err\\n'`,
+      `${id}\n`,
+    );
+
+    const parsed = parseFramedOutput(result.stdout, id);
+    expect(result.status).toBe(0);
+    expect(parsed?.exitStatus).toBe(1);
+    expect(parsed?.output).toContain("outer-err:1");
+    expect(result.stdout).toEndWith("outer-err:1\nparent-after-err\n");
   });
 
   test("keeps the marker out of inherited Bash debug state", () => {

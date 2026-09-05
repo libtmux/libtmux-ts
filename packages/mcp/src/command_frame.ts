@@ -23,19 +23,19 @@ export function frame(command: string, ready: string, suppressHistory: boolean):
     `set +T; trap - DEBUG RETURN ERR;; esac; ` +
     `case "\${ZSH_VERSION-}" in ?*) ${traps}=$(typeset -f TRAPDEBUG); ` +
     `unfunction TRAPDEBUG 2>/dev/null || :;; esac; ` +
-    `${payload}=$(printf '%bX' '${encoded}'); ${payload}=\${${payload}%X}; ` +
-    `printf '%s%s\\n' '${ready}' '_R'; ` +
+    `${payload}=$(command printf '%bX' '${encoded}'); ${payload}=\${${payload}%X}; ` +
+    `command printf '%s%s\\n' '${ready}' '_R'; ` +
     `while IFS= read -r ${marker}; do ` +
     `case "\${${marker}}" in ${markerPattern}) break;; esac; done; ` +
     `case "\${${marker}}" in ${markerPattern}) :;; *) exit 125;; esac; ` +
-    `${scope}() { printf '%s\\n' "\${${marker}}_S"; ` +
+    `${scope}() { command printf '%s\\n' "\${${marker}}_S"; ` +
     `( unset ${marker}; set --; ` +
     `eval "\${${traps}}"; unset ${traps}; ` +
     `case "\${BASH_VERSION-}:\${${options}}" in ?*:*T*) set -T;; esac; ` +
     `case "\${${options}}" in *e*) set -e;; esac; ` +
     `case "\${${options}}" in *x*) set -x;; esac; ` +
     `unset ${options}; eval "\${${payload}}" ); ` +
-    `printf '%s %s %s\\n' "\${${marker}}_E" "$?" "\${${marker}}_D"; }; ${scope} )`
+    `command printf '%s %s %s\\n' "\${${marker}}_E" "$?" "\${${marker}}_D"; }; ${scope} )`
   );
 }
 
