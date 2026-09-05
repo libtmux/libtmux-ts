@@ -278,6 +278,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
 
       const bufferName = `ltx-mcp-paste-${randomUUID().replaceAll("-", "")}`;
       let loaded = false;
+      let operationFailure: { readonly error: unknown } | undefined;
+      let cleanupFailure: { readonly error: unknown } | undefined;
+      let refusal: ReturnType<typeof fail> | undefined;
       try {
         await context.tmux.loadBuffer(bufferName, enter === true ? `${text}\n` : text);
         loaded = true;
@@ -291,20 +294,33 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           force,
           "paste into",
         );
-        if (isFailure(finalPane)) return finalPane;
-        const finalActive = activeFramedCommand(context, paneId);
-        if (finalActive !== undefined && force !== true) {
-          return busyPane(context.policy, paneId, finalActive);
+        if (isFailure(finalPane)) {
+          refusal = finalPane;
+        } else {
+          const finalActive = activeFramedCommand(context, paneId);
+          if (finalActive !== undefined && force !== true) {
+            refusal = busyPane(context.policy, paneId, finalActive);
+          } else {
+            await finalPane.pasteBuffer(bufferName);
+          }
         }
-
-        await finalPane.pasteBuffer(bufferName);
-      } finally {
-        try {
-          await context.tmux.deleteBuffer(bufferName);
-        } catch (error) {
-          if (loaded) throw error;
-        }
+      } catch (error) {
+        operationFailure = { error };
       }
+      try {
+        await context.tmux.deleteBuffer(bufferName);
+      } catch (error) {
+        if (loaded) cleanupFailure = { error };
+      }
+      if (operationFailure !== undefined && cleanupFailure !== undefined) {
+        throw new AggregateError(
+          [operationFailure.error, cleanupFailure.error],
+          "paste failed and private buffer cleanup also failed",
+        );
+      }
+      if (operationFailure !== undefined) throw operationFailure.error;
+      if (cleanupFailure !== undefined) throw cleanupFailure.error;
+      if (refusal !== undefined) return refusal;
       return ok(
         { bytes: Buffer.byteLength(text, "utf8"), paneId },
         `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId} only.`,
