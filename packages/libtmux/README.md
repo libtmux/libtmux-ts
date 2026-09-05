@@ -857,15 +857,15 @@ to, and an untargeted `watch()` lands on whichever session tmux considers
 current. On a server with one session that is the one you meant; on a server
 with two it is silence rather than an error.
 
-A pane echoes what is typed into it, so waiting for text that also appears in
-the keys you just sent matches the echo rather than the output. Wait for
-something the command prints.
+A pane echoes what is typed into it. `Pane.run` matches `until` only after that
+echo. `watch` remains the path when the output is not from keys this process
+sent.
 
 ### Act, then wait, with an observer
 
-The loop an agent runs. `connect()` pairs commands through the server engine
-with notifications from a persistent observer. Subscribe before sending so a
-marker printed in between is still seen.
+The loop an agent runs. `Pane.run` subscribes, sends the command, and matches
+`until` only after the shell's echo of the keys. Completing on that echo is
+refused.
 
 This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
 which the integration suite runs against a real tmux server:
@@ -874,21 +874,10 @@ which the integration suite runs against a real tmux server:
 
 ```ts
 const session = await server.newSession({ name: "agent" });
-
-await using live = await server.connect({ target: session.id });
-
-const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
-
-const printed = live
-  .subscribe()
-  .find(
-    (event) => event.kind === "output" && event.paneId === pane.id && event.data.includes(marker),
-    { timeoutMs: 30_000 },
-  );
-
-await pane.sendKeys(command);
-
-const event = await printed;
+const pane = session.activePane;
+if (pane === undefined) throw new Error("a new session always has one pane");
+return pane.run(command, {
+  until: marker,
 ```
 
 ### Build a workspace

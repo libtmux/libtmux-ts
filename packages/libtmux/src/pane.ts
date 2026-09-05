@@ -8,6 +8,7 @@ import type {
   PopupOptions,
   ResizeOptions,
   RespawnOptions,
+  RunOptions,
   SendKeysOptions,
   SetHookOptions,
   SetOptionOptions,
@@ -33,6 +34,7 @@ import {
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import { runPane } from "./_internal/operations/pane_run.js";
 import {
   setOption,
   showOptions,
@@ -261,6 +263,25 @@ export class Pane {
    */
   sendKeys(keys: string, options?: SendKeysOptions): Promise<void> {
     return sendKeys(runtimeForHandle(this), this.id, keys, options);
+  }
+
+  /**
+   * Send `command` and wait for `until` in the output after the shell's echo.
+   *
+   * Subscribes before sending, so a line printed while connecting is still
+   * seen. Completing on the echo of the keys is refused: `until` is matched
+   * only after that echo. The control client this opens is disposed when the
+   * wait ends, including on timeout, abort, or throw.
+   *
+   * ```ts
+   * const output = await pane.run("printf 'ready\\n'", { until: "ready" });
+   * ```
+   *
+   * @throws WaitTimeout when `until` never appears after the echo.
+   * @throws TypeError when `until` is empty.
+   */
+  run(command: string, options: RunOptions): Promise<string> {
+    return runPane(this, command, options);
   }
 
   /**

@@ -454,6 +454,7 @@ declare const abort: AbortSignal;
 export const cancellable: readonly Promise<unknown>[] = [
   cancelPane.capture({ signal: abort }),
   cancelPane.sendKeys("x", { signal: abort }),
+  cancelPane.run("true", { signal: abort, until: "x" }),
   cancelPane.split({ signal: abort }),
   cancelPane.resize({ signal: abort, width: 10 }),
   cancelPane.respawn("true", { signal: abort }),
@@ -471,5 +472,6 @@ export const cancellable: readonly Promise<unknown>[] = [
 export const boundable: readonly Promise<unknown>[] = [
   cancelPane.capture({ timeoutMs: 1_000 }),
   cancelPane.sendKeys("x", { timeoutMs: 1_000 }),
+  cancelPane.run("true", { timeoutMs: 1_000, until: "x" }),
   cancelServer.newSession({ timeoutMs: 1_000 }),
 ];

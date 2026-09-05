@@ -22,13 +22,12 @@ socket of its own. Requires tmux 3.2a or newer.
 
 ## What it shows
 
-One control observer carries notifications while commands use the server's
-engine. Keeping that observer open makes event-driven waits persistent without
-turning command output into a control-mode protocol.
+`Pane.run` is the call. It opens a control client for the wait, sends the
+command, and matches `until` only after the shell's echo of the keys.
+Completing on that echo is refused. The client is disposed when the wait ends.
 
-Waiting for a marker is the part worth copying. A pane echoes what is typed
-into it, so waiting for text that also appears in the command you sent matches
-your own keystrokes rather than the output.
+Waiting for a marker that also appears in the keys you sent is the case this
+covers: the echo is not the result.
 
 ## Where to go next
 

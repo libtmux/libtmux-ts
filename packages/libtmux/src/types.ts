@@ -287,6 +287,17 @@ export interface SendKeysOptions extends CommandOptions {
   readonly literal?: boolean;
 }
 
+/** Options for {@link Pane.run}. */
+export interface RunOptions extends CommandOptions {
+  /**
+   * Text that must appear in output after the shell's echo of the command.
+   *
+   * Completing on that echo is refused. A marker that appears only in the keys
+   * never ends the wait.
+   */
+  readonly until: string;
+}
+
 /** Options for {@link Server.cmd} and the handle-level `cmd`. */
 export interface CmdOptions extends CommandOptions {
   /**
