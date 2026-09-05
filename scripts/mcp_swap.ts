@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { constants } from "node:fs";
 import {
+  access,
   chmod,
   lstat,
   mkdir,
@@ -976,6 +978,77 @@ function assertDistinctConfigTargets(plans: readonly ServerWritePlan[]): void {
   }
 }
 
+async function assertDestinationFeasible(path: string): Promise<void> {
+  let candidate = dirname(path);
+  for (;;) {
+    let metadata;
+    try {
+      // eslint-disable-next-line no-await-in-loop -- ascend until one ancestor exists.
+      metadata = await lstat(candidate);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw error;
+      candidate = parent;
+      continue;
+    }
+    if (!metadata.isDirectory()) {
+      throw new TypeError(`destination parent is not a directory: ${path}`);
+    }
+    try {
+      // eslint-disable-next-line no-await-in-loop -- the discovered ancestor must be checked now.
+      await access(candidate, constants.W_OK | constants.X_OK);
+    } catch (error) {
+      throw new Error(`destination is not writable: ${path}`, { cause: error });
+    }
+    return;
+  }
+}
+
+async function assertPlanFeasible(plan: ServerWritePlan): Promise<void> {
+  const destinations = [plan.route.targetPath];
+  if (plan.mode !== undefined && plan.recovery.backup === undefined) {
+    destinations.push(backupPath(plan.info.configPath));
+  }
+  const needsRoute = plan.mode !== undefined || plan.recovery.backup !== undefined;
+  if (needsRoute && plan.recovery.route === undefined) {
+    destinations.push(recoveryRoutePath(plan.info.configPath));
+  }
+  await Promise.all([...new Set(destinations)].map(assertDestinationFeasible));
+}
+
+function planError(info: CliInfo, error: unknown): Error {
+  return new Error(`${info.name} (${info.configPath}): ${(error as Error).message}`, {
+    cause: error,
+  });
+}
+
+async function planServerWrites(
+  infos: readonly CliInfo[],
+  name: string,
+  spec: ServerSpec,
+): Promise<readonly ServerWritePlan[]> {
+  const plans: ServerWritePlan[] = [];
+  for (const info of infos) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- every config parses before feasibility checks.
+      plans.push(await planServerWrite(info, name, spec));
+    } catch (error) {
+      throw planError(info, error);
+    }
+  }
+  assertDistinctConfigTargets(plans);
+  for (const plan of plans) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- stable client ownership keeps failures actionable.
+      await assertPlanFeasible(plan);
+    } catch (error) {
+      throw planError(plan.info, error);
+    }
+  }
+  return plans;
+}
+
 async function assertPathMissing(path: string, label: string): Promise<void> {
   try {
     await lstat(path);
@@ -1069,18 +1142,7 @@ export async function writeServers(
   name: string,
   spec: ServerSpec,
 ): Promise<readonly WriteServerOutcome[]> {
-  const plans: ServerWritePlan[] = [];
-  for (const info of infos) {
-    try {
-      // eslint-disable-next-line no-await-in-loop -- every plan must exist before any staging.
-      plans.push(await planServerWrite(info, name, spec));
-    } catch (error) {
-      throw new Error(`${info.name} (${info.configPath}): ${(error as Error).message}`, {
-        cause: error,
-      });
-    }
-  }
-  assertDistinctConfigTargets(plans);
+  const plans = await planServerWrites(infos, name, spec);
 
   const staged: StagedServerWrite[] = [];
   const temporaryPaths: string[] = [];
@@ -1391,12 +1453,15 @@ async function main(argv: readonly string[]): Promise<number> {
       // eslint-disable-next-line no-await-in-loop -- each CLI is reported in order, and one failing must not race the next.
       if (!(await isInstalled(info))) continue;
       selected.push(info);
-      if (options.dryRun) {
-        process.stdout.write(`would update ${info.name} (${info.configPath})\n`);
-      }
     }
-    if (options.dryRun) return 0;
     try {
+      if (options.dryRun) {
+        await planServerWrites(selected, options.server, spec);
+        for (const info of selected) {
+          process.stdout.write(`would update ${info.name} (${info.configPath})\n`);
+        }
+        return 0;
+      }
       const outcomes = await writeServers(selected, options.server, spec);
       for (const [index, info] of selected.entries()) {
         process.stdout.write(

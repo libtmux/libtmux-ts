@@ -126,21 +126,30 @@ async function waitForStagedFile(path: string): Promise<void> {
   throw new Error(`staged file did not appear beside ${path}`);
 }
 
-async function runSwap(args: readonly string[]): Promise<{ status: number; stderr: string }> {
+async function runSwap(
+  args: readonly string[],
+  environment: Readonly<Record<string, string>> = {},
+): Promise<{ status: number; stderr: string; stdout: string }> {
   const child = Bun.spawn(
     [process.execPath, join(repositoryRoot, "scripts", "mcp_swap.ts"), ...args],
     {
       env: {
         ...process.env,
+        BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
         HOME: home,
         XDG_CONFIG_HOME: join(home, ".config"),
+        ...environment,
       },
       stderr: "pipe",
-      stdout: "ignore",
+      stdout: "pipe",
     },
   );
-  const [status, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-  return { status, stderr };
+  const [status, stderr, stdout] = await Promise.all([
+    child.exited,
+    new Response(child.stderr).text(),
+    new Response(child.stdout).text(),
+  ]);
+  return { status, stderr, stdout };
 }
 
 describe("source specs", () => {
@@ -821,6 +830,102 @@ describe("swapping a config", () => {
 
     await expect(backupOnce(info.configPath)).rejects.toThrow(/recovery route/u);
   });
+});
+
+describe("dry-run", () => {
+  async function seedAllClients(): Promise<readonly CliInfo[]> {
+    const infos = knownClis({ XDG_CONFIG_HOME: join(home, ".config") }, home);
+    await Promise.all(
+      infos.map(async (info, index) => {
+        await seed(info, originalConfig(info));
+        await chmod(info.configPath, index % 2 === 0 ? 0o600 : 0o640);
+      }),
+    );
+    return infos;
+  }
+
+  async function configState(infos: readonly CliInfo[]): Promise<unknown> {
+    return Promise.all(
+      infos.map(async (info) => ({
+        mode: (await stat(info.configPath)).mode & 0o777,
+        name: info.name,
+        raw: await readFile(info.configPath, "utf8"),
+      })),
+    );
+  }
+
+  test("validates all eight clients without starting the build server or writing", async () => {
+    const infos = await seedAllClients();
+    const bin = join(home, "bin");
+    const serverMarker = join(home, "server-started");
+    await mkdir(bin);
+    await writeFile(join(bin, "node"), `#!/bin/sh\n: > ${JSON.stringify(serverMarker)}\nexit 1\n`);
+    await chmod(join(bin, "node"), 0o700);
+    const beforeState = await configState(infos);
+    const beforeTree = (await readdir(home, { recursive: true })).toSorted();
+
+    const result = await runSwap(
+      ["use", "--source", "build", "--repo", repositoryRoot, "--dry-run"],
+      { PATH: bin },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    for (const info of infos) expect(result.stdout).toContain(`would update ${info.name}`);
+    expect(await configState(infos)).toEqual(beforeState);
+    expect((await readdir(home, { recursive: true })).toSorted()).toEqual(beforeTree);
+    expect(await Bun.file(serverMarker).exists()).toBe(false);
+  });
+
+  test("rejects a malformed later config without writes or success claims", async () => {
+    const infos = await seedAllClients();
+    const later = infos.at(-1)!;
+    await writeFile(later.configPath, "{ malformed\n");
+    const beforeState = await configState(infos);
+    const beforeTree = (await readdir(home, { recursive: true })).toSorted();
+
+    const result = await runSwap(["use", "--source", "dev", "--dry-run"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/pi .*JSON Parse error/u);
+    expect(result.stdout).not.toContain("would update");
+    expect(await configState(infos)).toEqual(beforeState);
+    expect((await readdir(home, { recursive: true })).toSorted()).toEqual(beforeTree);
+  });
+
+  test.each(["unusable backup", "unwritable destination"] as const)(
+    "rejects an %s for a later client without writes",
+    async (failure) => {
+      const infos = await seedAllClients();
+      const later = infos.at(-1)!;
+      const directory = dirname(later.configPath);
+      if (failure === "unusable backup") {
+        await mkdir(backupPath(later.configPath));
+      } else {
+        await chmod(directory, 0o500);
+      }
+      const beforeState = await configState(infos);
+      const beforeTree = (await readdir(home, { recursive: true })).toSorted();
+
+      try {
+        const result = await runSwap(["use", "--source", "dev", "--dry-run"]);
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toMatch(/pi .*recovery backup|pi .*not writable/u);
+        expect(result.stdout).not.toContain("would update");
+        expect(await configState(infos)).toEqual(beforeState);
+        expect((await readdir(home, { recursive: true })).toSorted()).toEqual(beforeTree);
+
+        await expect(
+          writeServers(infos, "libtmux", buildSpec({ kind: "dev", repo: "/repo" })),
+        ).rejects.toThrow(/recovery backup|not writable/u);
+        expect(await configState(infos)).toEqual(beforeState);
+        expect((await readdir(home, { recursive: true })).toSorted()).toEqual(beforeTree);
+      } finally {
+        if (failure === "unwritable destination") await chmod(directory, 0o700);
+      }
+    },
+  );
 });
 
 describe("CLI table", () => {
