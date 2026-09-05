@@ -293,6 +293,9 @@ an oversized row is represented explicitly rather than silently omitted. Inner
 operations receive no separate approval, so the batch capability metadata is
 the union of every still-eligible nested tool.
 
+A serialized request ID may use at most 512 KiB. A larger ID receives a bounded
+invalid-request response before any tool runs.
+
 ### Do things
 
 | Tool                | Does                                                    |

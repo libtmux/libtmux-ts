@@ -13,6 +13,7 @@ import { readCallerEnvironment } from "./caller.js";
 import { createContext } from "./context.js";
 import { buildInstructions } from "./instructions.js";
 import { resolvePolicy, snapshotPolicy, TOOLSETS, type Policy } from "./policy.js";
+import { boundRequestIds } from "./protocol_transport.js";
 import { assertKnownPolicyTools, ToolRegistry } from "./register.js";
 import { registerCapture } from "./tools/capture.js";
 import { registerDiscovery } from "./tools/discovery.js";
@@ -258,7 +259,7 @@ export async function main(): Promise<void> {
       version: PACKAGE_VERSION,
     })}\n`,
   );
-  await mcp.connect(new StdioServerTransport());
+  await mcp.connect(boundRequestIds(new StdioServerTransport()));
 }
 
 /**
