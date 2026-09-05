@@ -114,6 +114,11 @@ caller — so the reading happens here, at the edge that has a process.
 | `LIBTMUX_TMUX_CONFIG` | Absolute path to the config used for a new server          |
 | `LIBTMUX_TMUX_BIN`    | The `tmux` executable to use                               |
 
+The executable and socket selector are validated and frozen before any tmux
+connection. ASCII control characters and DEL are refused there; apostrophes
+and non-ASCII characters pass through unchanged. Snapshots, live tails, and
+framed commands all use that selected server route.
+
 `LIBTMUX_SOCKET_NAME` is retired. Replace it with `LIBTMUX_SOCKET`; its
 presence stops startup instead of selecting a socket.
 
@@ -321,15 +326,42 @@ invalid-request response before any tool runs.
 A pane keeps `history-limit` lines and `capture_since` keeps a bounded buffer,
 so output larger than either is gone before anything asks for it.
 
-`paste_text` uses tmux's buffer transport so arbitrary text is not parsed as key
-names. Its temporary buffer is removed whether delivery succeeds or fails.
-`send_keys_batch` validates and bounds every child operation before sending the
-first one.
+`paste_text` loads the text and optional newline into one uniquely named private
+buffer, then pastes directly to the named pane. Unlike key input, that stays
+target-only when synchronized input is enabled. It checks the target before
+buffer setup and checks it again immediately before paste; cleanup is attempted
+on every path. `send_keys_batch` validates and bounds every child operation
+before sending the first one, then takes a fresh snapshot for each row.
 
-When `set_synchronize_panes` is enabled, one input can reach every pane in a
-window. Input results therefore disclose the actual resolved pane ids, not only
-the pane originally named. That amplification is also recorded in the tool's
-capability row.
+When a source pane's effective `synchronize-panes` value is off, its configured
+input cohort is only that source. When it is on, the cohort is the sorted,
+deduplicated set of same-window panes whose own effective value is on. Every
+member must be alive and outside a human-owned mode. Caller, attended-pane, and
+active framed-command protections also apply to every member by default;
+`force` retains its existing override for those policy checks, but never
+overrides mode or liveness.
+
+Input results disclose that configured membership at the immediate preflight,
+not observed recipients or a delivery receipt. State can change after any
+snapshot; each `send_keys_batch` row takes its own check so an earlier row
+cannot authorize a later one.
+
+`run_shell_command` additionally requires a singular configured cohort and a
+supported POSIX foreground shell. It checks once before reservation and live
+tail setup, then takes one fresh check after setup immediately before the first
+wrapper byte. A change in pane identity, daemon, placement, liveness, mode,
+shell, or cohort refuses the command without sending the wrapper or its release
+marker. The final check also reapplies caller, attended-pane, and competing-run
+policy. These are exactly two observational checks, not an atomic tmux
+transaction, so another process can still race the final check.
+
+The frame uses the shell's `command printf` primitive so an inherited `printf`
+alias or function cannot forge its bookkeeping. The caller's command still
+sees inherited shell options and traps, and its subshell keeps command-defined
+functions, traps, directory changes, and exports out of the parent. This is a
+correctness protocol inside a trusted interactive shell, not a sandbox against
+a hostile shell. It trusts the selected tmux executable, the daemon and its
+loaded configuration, and the supported foreground shell.
 
 ### Wait
 
