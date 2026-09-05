@@ -310,6 +310,9 @@ describe("swapping a config", () => {
       expect((await stat(info.configPath)).mode & 0o777).toBe(0o600);
       expect((await stat(backupPath(info.configPath))).mode & 0o777).toBe(0o600);
 
+      await chmod(info.configPath, 0o640);
+      expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
+
       expect(await revertConfig(info)).toBe(true);
       expect(await readFile(info.configPath, "utf8")).toBe(original);
       expect((await stat(info.configPath)).mode & 0o777).toBe(0o600);
