@@ -9,7 +9,7 @@ import type { TmuxEngine } from "libtmux/engine";
 import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { createTmuxMcpServer, serverFromEnvironment } from "../src/server.js";
 import { inspectServerStartup } from "../src/startup.js";
-import { resolvedPaneInputTargetIds } from "../src/target_resolution.js";
+import { isFailure, resolvedPaneInputTargetIds } from "../src/target_resolution.js";
 import { SearchMatchBudget } from "../src/tools/search.js";
 import { ReadBatchAccumulator, readBatchWireBytes } from "../src/tools/target.js";
 
@@ -518,7 +518,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
         "observe",
       ]);
       expect(tools.find(({ name }) => name === "set_synchronize_panes")?.description).toContain(
-        "subsequent input to one pane is copied to every pane",
+        "Pane overrides still determine each effective configured cohort",
       );
       expect(properties("send_keys")).toContain("paneId");
       const sendKeysOutput = tools.find(({ name }) => name === "send_keys")?.outputSchema;
@@ -707,17 +707,27 @@ test("minimal startup authenticates the daemon creator after start-server", asyn
   expect(minimalConfig).toContain("set-environment -gu LIBTMUX_MCP_LAUNCH_NONCE");
 });
 
-test("synchronize-panes resolves the disclosed pane target set", async () => {
-  const panes = [{ id: "%2" }, { id: "%1" }, { id: "%2" }];
-  const pane = (value: string) => ({
-    id: "%1",
-    window: {
-      panes: { toArray: () => panes },
-      showResolvedOptions: () => Promise.resolve(new Map([["synchronize-panes", value]])),
-    },
-  });
-  expect(await resolvedPaneInputTargetIds(pane("off"))).toEqual(["%1"]);
-  expect(await resolvedPaneInputTargetIds(pane("on"))).toEqual(["%1", "%2"]);
+test("synchronize-panes resolves the effective configured cohort", async () => {
+  const pane = (source: boolean | null, peer: boolean | null) => {
+    const panes = [
+      { id: "%2", synchronized: peer },
+      { id: "%1", synchronized: source },
+      { id: "%2", synchronized: peer },
+    ];
+    return {
+      ...panes[1]!,
+      window: {
+        panes: { toArray: () => panes },
+        showResolvedOptions: () => Promise.resolve(new Map([["synchronize-panes", "on"]])),
+      },
+    };
+  };
+  expect(await resolvedPaneInputTargetIds(pane(false, true))).toEqual(["%1"]);
+  expect(await resolvedPaneInputTargetIds(pane(true, false))).toEqual(["%1"]);
+  expect(await resolvedPaneInputTargetIds(pane(true, true))).toEqual(["%1", "%2"]);
+
+  expect(isFailure(await resolvedPaneInputTargetIds(pane(null, true)))).toBe(true);
+  expect(isFailure(await resolvedPaneInputTargetIds(pane(true, null)))).toBe(true);
 });
 
 test("read batch preserves nested results within the shared result ceiling", async () => {

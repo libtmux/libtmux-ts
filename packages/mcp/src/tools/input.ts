@@ -16,7 +16,7 @@ import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
 import {
   isFailure,
-  requireWritablePane,
+  requirePaneInputTarget,
   resolvedPaneInputTargetIds,
 } from "../target_resolution.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
@@ -90,9 +90,11 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         paneId: paneIdSchema,
       },
       outputSchema: {
-        attended: z.boolean().describe("A person is watching the pane this was sent to."),
+        attended: z.boolean().describe("A person is watching a configured cohort member."),
         paneId: paneIdSchema,
-        resolvedPaneIds: z.array(paneIdSchema),
+        resolvedPaneIds: z
+          .array(paneIdSchema)
+          .describe("Configured cohort at the immediate preflight, not a delivery receipt."),
         sent: z.boolean(),
       },
       title: "Send keys",
@@ -100,11 +102,12 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
     async ({ enter, force, keys, literal, paneId }) => {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
-      const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
+      const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "type into");
       if (isFailure(pane)) return pane;
-      const resolvedPaneIds = await resolvedPaneInputTargetIds(pane);
+      const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
+      if (isFailure(resolvedPaneIds)) return resolvedPaneIds;
       for (const resolvedPaneId of resolvedPaneIds) {
-        const writable = requireWritablePane(
+        const writable = requirePaneInputTarget(
           snapshot,
           identity,
           resolvedPaneId,
@@ -127,8 +130,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       return ok(
         { attended, paneId, resolvedPaneIds, sent: true },
         attended
-          ? `Sent to ${targetText}. Somebody is watching a resolved pane.`
-          : `Sent to ${targetText}.`,
+          ? `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}. Somebody is watching a configured member.`
+          : `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}.`,
       );
     },
   );
@@ -156,7 +159,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
     async ({ enter, force, paneId, text }) => {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
-      const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
+      const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "paste into");
       if (isFailure(pane)) return pane;
       const active = activeFramedCommand(context, paneId);
       if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
@@ -251,7 +254,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       }
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
-      const pane = requireWritablePane(snapshot, identity, paneId, force, "run in");
+      const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "run in");
       if (isFailure(pane)) return pane;
       const active = activeFramedCommand(context, paneId);
       if (active !== undefined && force !== true) {

@@ -187,15 +187,20 @@ test("the stdio server executes the retained capability surface end to end", asy
       await channelWait;
 
       await call("set_synchronize_panes", { enabled: true, windowId: created.windowId });
-      const synchronized = structured<{ resolvedPaneIds: readonly string[] }>(
-        await call("send_keys", {
-          enter: false,
-          keys: "C-l",
-          paneId: created.paneId,
-        }),
-      );
+      const synchronizedAnswer = await call("send_keys", {
+        enter: false,
+        keys: "C-l",
+        paneId: created.paneId,
+      });
+      const synchronized = structured<{ resolvedPaneIds: readonly string[] }>(synchronizedAnswer);
       expect(new Set(synchronized.resolvedPaneIds)).toEqual(
         new Set([created.paneId, split.pane.id]),
+      );
+      const synchronizedText = (
+        synchronizedAnswer as { content: readonly { text?: string; type: string }[] }
+      ).content[0];
+      expect(synchronizedText?.type === "text" ? synchronizedText.text : "").toContain(
+        "configured input cohort",
       );
       await call("send_keys_batch", {
         operations: [

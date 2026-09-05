@@ -53,23 +53,50 @@ export type ReadablePane = Omit<Pane, PaneWrite>;
 
 interface PaneInputTarget {
   readonly id: string;
+  readonly synchronized: boolean | null;
   readonly window:
     | {
-        readonly panes: { toArray(): readonly { readonly id: string }[] };
-        showResolvedOptions(): Promise<ReadonlyMap<string, string>>;
+        readonly panes: {
+          toArray(): readonly {
+            readonly id: string;
+            readonly synchronized: boolean | null;
+          }[];
+        };
       }
     | undefined;
 }
 
-/** The panes tmux will reach when synchronize-panes amplifies one send. */
-export async function resolvedPaneInputTargetIds(
+/** The configured panes tmux input can reach from one snapshot. */
+export function resolvedPaneInputTargetIds(
   pane: PaneInputTarget,
-): Promise<readonly string[]> {
+): CallToolResult | readonly string[] {
+  if (typeof pane.synchronized !== "boolean") {
+    return fail({
+      hint: "Refresh the pane snapshot before sending input.",
+      reason: `Pane ${pane.id} has no usable effective synchronize-panes state.`,
+    });
+  }
+  if (!pane.synchronized) return [pane.id];
   const window = pane.window;
-  if (window === undefined) return [pane.id];
-  const synchronized = (await window.showResolvedOptions()).get("synchronize-panes");
-  if (synchronized !== "on" && synchronized !== "1") return [pane.id];
-  return [...new Set(window.panes.toArray().map(({ id }) => id))].sort();
+  if (window === undefined) {
+    return fail({
+      hint: "Refresh the pane snapshot before sending input.",
+      reason: `Pane ${pane.id} has no window from which to resolve its configured input cohort.`,
+    });
+  }
+  const panes = window.panes.toArray();
+  const unknown = panes.find((candidate) => typeof candidate.synchronized !== "boolean");
+  if (unknown !== undefined) {
+    return fail({
+      hint: "Refresh the pane snapshot before sending input.",
+      reason: `Pane ${unknown.id} has no usable effective synchronize-panes state.`,
+    });
+  }
+  return [
+    ...new Set(
+      panes.filter((candidate) => candidate.synchronized === true).map((candidate) => candidate.id),
+    ),
+  ].sort();
 }
 
 export interface SourcePlacement {
@@ -190,6 +217,43 @@ export function requireWritablePane(
     return fail({
       hint: "list_panes identifies watched panes. Pick another pane, or pass force to mean it.",
       reason: `Refusing to ${verb} ${paneId}: a person is watching that pane.`,
+    });
+  }
+  return pane;
+}
+
+/** Find a live pane outside human-owned modes for immediate input. */
+export function requirePaneInputTarget(
+  snapshot: ServerSnapshot,
+  identity: CallerIdentity,
+  paneId: string,
+  force: boolean | undefined,
+  verb = "write into",
+): CallToolResult | Pane {
+  const pane = requireWritablePane(snapshot, identity, paneId, force, verb);
+  if (isFailure(pane)) return pane;
+  if (typeof pane.dead !== "boolean") {
+    return fail({
+      hint: "Refresh with snapshot_pane before sending input.",
+      reason: `Refusing to ${verb} ${paneId}: its liveness state is unavailable.`,
+    });
+  }
+  if (pane.dead) {
+    return fail({
+      hint: "respawn_pane restarts the pane's command while keeping its id.",
+      reason: `Refusing to ${verb} ${paneId}: the pane is dead and has no input reader.`,
+    });
+  }
+  if (typeof pane.inMode !== "number" || !Number.isSafeInteger(pane.inMode) || pane.inMode < 0) {
+    return fail({
+      hint: "Refresh with snapshot_pane before sending input.",
+      reason: `Refusing to ${verb} ${paneId}: its pane-mode state is unavailable.`,
+    });
+  }
+  if (pane.inMode !== 0) {
+    return fail({
+      hint: "Use capture_pane or snapshot_pane to read it, then wait for the person to leave the mode.",
+      reason: `Refusing to ${verb} ${paneId}: its human-owned mode is active.`,
     });
   }
   return pane;

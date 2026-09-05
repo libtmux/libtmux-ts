@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { ServerSnapshot } from "libtmux";
 
 import type { ToolContext } from "../context.js";
+import { activeFramedCommand } from "../command.js";
 import {
   effectiveResultLines,
   effectiveWaitMs,
@@ -35,6 +36,7 @@ import {
   isFailure,
   panePlacements,
   requirePane,
+  requirePaneInputTarget,
   resolvedPaneInputTargetIds,
   requireSession,
   requireWindow,
@@ -422,7 +424,8 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     {
       annotations: OPEN_WORLD,
       description:
-        "Set whether subsequent input to one pane is copied to every pane in the window.",
+        "Set the window default for synchronized pane input. Pane overrides still determine " +
+        "each effective configured cohort.",
       inputSchema: { enabled: z.boolean(), windowId: windowIdSchema },
       outputSchema: { enabled: z.boolean(), windowId: windowIdSchema },
       title: "Set synchronize panes",
@@ -444,7 +447,8 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     {
       annotations: OPEN_WORLD,
       description:
-        "Send an ordered batch of pane-input operations, stopping or continuing on error.",
+        "Send an ordered batch of pane-input operations, resolving and checking each row's " +
+        "configured cohort immediately before input. Stop or continue on error.",
       inputSchema: {
         onError: z.enum(["stop", "continue"]).optional(),
         operations: z
@@ -478,7 +482,7 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
         const snapshot = await context.snapshot();
         // eslint-disable-next-line no-await-in-loop -- identity must match this operation's snapshot.
         const identity = await context.identity(snapshot);
-        const pane = requireWritablePane(
+        const pane = requirePaneInputTarget(
           snapshot,
           identity,
           operation.paneId,
@@ -493,10 +497,19 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
           continue;
         }
         // eslint-disable-next-line no-await-in-loop -- targets are resolved immediately before input.
-        const resolvedPaneIds = await resolvedPaneInputTargetIds(pane);
+        const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
+        if (isFailure(resolvedPaneIds)) {
+          const reason =
+            resolvedPaneIds.content[0]?.type === "text"
+              ? resolvedPaneIds.content[0].text
+              : "Configured pane cohort could not be resolved.";
+          failures.push({ index, reason });
+          if (onError !== "continue") break;
+          continue;
+        }
         let resolvedFailure: string | undefined;
         for (const resolvedPaneId of resolvedPaneIds) {
-          const writable = requireWritablePane(
+          const writable = requirePaneInputTarget(
             snapshot,
             identity,
             resolvedPaneId,
@@ -508,6 +521,13 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
               writable.content[0]?.type === "text"
                 ? writable.content[0].text
                 : "Resolved pane refused input.";
+            break;
+          }
+          const active = activeFramedCommand(context, resolvedPaneId);
+          if (active !== undefined && operation.force !== true) {
+            resolvedFailure =
+              `Refusing to send keys to ${resolvedPaneId}: ` +
+              `run_shell_command ${active} is still active.`;
             break;
           }
         }
