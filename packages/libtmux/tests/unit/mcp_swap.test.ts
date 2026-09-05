@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +24,7 @@ import {
   spliceEntry,
   toEntry,
   writeServer,
+  writeServers,
   xdgConfigHome,
   type CliInfo,
 } from "../../../../scripts/mcp_swap.js";
@@ -59,9 +60,34 @@ function cliFor(name: string): CliInfo {
   return info;
 }
 
+function originalConfig(info: CliInfo): string {
+  if (info.format === "toml") {
+    return `model = "keep-${info.name}"\n\n[${info.container[0]}.keep]\ncommand = "other"\n`;
+  }
+  const comment = info.format === "jsonc" ? `  // keep-${info.name}\n` : "";
+  return `{\n${comment}  "${info.container[0]}": {\n    "keep": { "command": "other" }\n  }\n}\n`;
+}
+
 async function seed(info: CliInfo, contents: string): Promise<void> {
   await mkdir(join(info.configPath, ".."), { recursive: true });
   await writeFile(info.configPath, contents);
+}
+
+async function runSwap(args: readonly string[]): Promise<{ status: number; stderr: string }> {
+  const child = Bun.spawn(
+    [process.execPath, join(repositoryRoot, "scripts", "mcp_swap.ts"), ...args],
+    {
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_CONFIG_HOME: join(home, ".config"),
+      },
+      stderr: "pipe",
+      stdout: "ignore",
+    },
+  );
+  const [status, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  return { status, stderr };
 }
 
 describe("source specs", () => {
@@ -262,6 +288,10 @@ describe("JSONC", () => {
 });
 
 describe("TOML", () => {
+  test("rejects malformed input instead of editing around it", () => {
+    expect(() => parseServerTables("broken = [", "mcp_servers")).toThrow();
+  });
+
   test("adds a table without disturbing its neighbours", () => {
     const source = 'model = "gpt"\n\n[mcp_servers.other]\ncommand = "keep"\n';
 
@@ -297,6 +327,111 @@ describe("TOML", () => {
 });
 
 describe("swapping a config", () => {
+  test.each(["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"])(
+    "round-trips %s bytes and mode in isolation",
+    async (name) => {
+      const info = cliFor(name);
+      const original = originalConfig(info);
+      await seed(info, original);
+      await chmod(info.configPath, 0o640);
+
+      expect(await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }))).toBe(
+        "added",
+      );
+      expect(await readServer(info, "libtmux")).toMatchObject({ command: "bun" });
+      expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
+      expect((await stat(backupPath(info.configPath))).mode & 0o777).toBe(0o640);
+
+      expect(await revertConfig(info)).toBe(true);
+      expect(await readFile(info.configPath, "utf8")).toBe(original);
+      expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
+    },
+  );
+
+  test("round-trips all eight selected clients together", async () => {
+    const infos = knownClis({ XDG_CONFIG_HOME: join(home, ".config") }, home);
+    const originals = new Map<string, string>();
+    await Promise.all(
+      infos.map(async (info, index) => {
+        const original = originalConfig(info);
+        originals.set(info.name, original);
+        await seed(info, original);
+        await chmod(info.configPath, index % 2 === 0 ? 0o600 : 0o640);
+      }),
+    );
+
+    const outcomes = await writeServers(
+      infos,
+      "libtmux",
+      buildSpec({ kind: "build", repo: "/repo" }),
+    );
+    expect(outcomes).toEqual(infos.map(() => "added"));
+    await Promise.all(
+      infos.map(async (info, index) => {
+        expect(await readServer(info, "libtmux")).toMatchObject({ command: "node" });
+        expect((await stat(info.configPath)).mode & 0o777).toBe(index % 2 === 0 ? 0o600 : 0o640);
+      }),
+    );
+    await Promise.all(
+      infos.map(async (info, index) => {
+        expect(await revertConfig(info)).toBe(true);
+        expect(await readFile(info.configPath, "utf8")).toBe(originals.get(info.name));
+        expect((await stat(info.configPath)).mode & 0o777).toBe(index % 2 === 0 ? 0o600 : 0o640);
+      }),
+    );
+  });
+
+  test("preflights every selected config before changing any", async () => {
+    const first = cliFor("claude");
+    const later = cliFor("cursor");
+    const original = '{\n  "mcpServers": { "keep": { "command": "first" } }\n}\n';
+    await seed(first, original);
+    await seed(later, '{ "mcpServers": { broken } }\n');
+    await chmod(first.configPath, 0o600);
+    await chmod(later.configPath, 0o640);
+
+    const { status, stderr } = await runSwap([
+      "use",
+      "--source",
+      "dev",
+      "--repo",
+      repositoryRoot,
+      "--no-preflight",
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("cursor");
+    expect(await readFile(first.configPath, "utf8")).toBe(original);
+    expect((await stat(first.configPath)).mode & 0o777).toBe(0o600);
+    expect((await stat(later.configPath)).mode & 0o777).toBe(0o640);
+    expect(await Bun.file(backupPath(first.configPath)).exists()).toBe(false);
+    expect(await Bun.file(backupPath(later.configPath)).exists()).toBe(false);
+    expect(
+      (await readdir(join(first.configPath, ".."))).some((name) => name.includes("mcp-swap")),
+    ).toBe(false);
+  });
+
+  test("a failed server preflight writes no config or backup", async () => {
+    const info = cliFor("claude");
+    const original = originalConfig(info);
+    await seed(info, original);
+    await chmod(info.configPath, 0o600);
+
+    const { status, stderr } = await runSwap([
+      "use",
+      "--source",
+      "dev",
+      "--repo",
+      join(home, "missing-checkout"),
+    ]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("did not answer");
+    expect(await readFile(info.configPath, "utf8")).toBe(original);
+    expect((await stat(info.configPath)).mode & 0o777).toBe(0o600);
+    expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(false);
+  });
+
   test.serial("preserves a private mode through swap and revert", async () => {
     const previousUmask = process.umask(0o022);
     try {

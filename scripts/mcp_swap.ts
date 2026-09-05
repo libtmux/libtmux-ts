@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 
 import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process.js";
 
@@ -324,32 +325,11 @@ export function parseJsonc(text: string): unknown {
  * shape here is fixed by the CLIs that write it.
  */
 export function parseServerTables(text: string, container: string): Record<string, unknown> {
-  const servers: Record<string, unknown> = {};
-  let current: Record<string, unknown> | undefined;
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#")) continue;
-    const header = /^\[([^\]]+)\]$/u.exec(line);
-    if (header !== null) {
-      const path = header[1]!.split(".").map((part) => part.replaceAll('"', ""));
-      if (path.length >= 2 && path[0] === container) {
-        current = {};
-        servers[path.slice(1).join(".")] = current;
-      } else {
-        current = undefined;
-      }
-      continue;
-    }
-    if (current === undefined) continue;
-    const pair = /^([A-Za-z_][\w-]*)\s*=\s*(.+)$/u.exec(line);
-    if (pair === null) continue;
-    try {
-      current[pair[1]!] = JSON.parse(pair[2]!) as unknown;
-    } catch {
-      current[pair[1]!] = pair[2]!.replaceAll('"', "");
-    }
-  }
-  return servers;
+  const parsed = Bun.TOML.parse(text) as Readonly<Record<string, unknown>>;
+  const servers = parsed[container];
+  return typeof servers === "object" && servers !== null
+    ? { ...(servers as Record<string, unknown>) }
+    : {};
 }
 
 /** Render one server as a TOML table, replacing any table of the same name. */
@@ -509,11 +489,22 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
-async function fileMode(path: string): Promise<number | undefined> {
-  return stat(path).then(
-    (status) => status.mode & 0o7777,
-    () => undefined,
+function isMissing(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { readonly code?: unknown }).code === "ENOENT"
   );
+}
+
+async function fileMode(path: string): Promise<number | undefined> {
+  try {
+    return (await stat(path)).mode & 0o7777;
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw error;
+  }
 }
 
 /**
@@ -553,7 +544,13 @@ export function backupPath(configPath: string): string {
 
 /** Read a config, answering an empty document when the file is not there yet. */
 export async function readConfig(info: CliInfo): Promise<{ raw: string; value: unknown }> {
-  const raw = await readFile(info.configPath, "utf8").catch(() => "");
+  let raw: string;
+  try {
+    raw = await readFile(info.configPath, "utf8");
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+    raw = "";
+  }
   if (info.format === "toml") return { raw, value: parseServerTables(raw, info.container[0]!) };
   if (raw.trim() === "") return { raw, value: {} };
   // Read every JSON config the lenient way. JSONC is a superset, so a strict
@@ -582,44 +579,192 @@ export async function readServer(info: CliInfo, name: string): Promise<ServerSpe
   return fromEntry(servers[name], info.dialect);
 }
 
-/** Point a CLI at `spec`, backing the file up first. Returns what it did. */
+export type WriteServerOutcome = "added" | "replaced";
+
+interface ServerWritePlan {
+  readonly backupExists: boolean;
+  readonly data: string;
+  readonly info: CliInfo;
+  readonly mode: number | undefined;
+  readonly outcome: WriteServerOutcome;
+  readonly raw: string;
+}
+
+/** Parse and render one update without changing its config or backup. */
+async function planServerWrite(
+  info: CliInfo,
+  name: string,
+  spec: ServerSpec,
+): Promise<ServerWritePlan> {
+  const { raw, value } = await readConfig(info);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("config root must be an object");
+  }
+  const servers =
+    info.format === "toml"
+      ? (value as Record<string, unknown>)
+      : containerOf(value, info.container);
+  const had = fromEntry(servers[name], info.dialect) !== undefined;
+  const entry = toEntry(spec, info.dialect);
+  let data: string;
+  if (info.format === "toml") {
+    data = renderServerTable(raw, info.container[0]!, name, entry);
+    Bun.TOML.parse(data);
+  } else {
+    // Splice into the bytes the user has, so comments and spacing survive. Only
+    // when there is no container to splice into — an empty or absent file — is
+    // the document rebuilt, where there is nothing to preserve anyway.
+    const spliced = raw.trim() === "" ? undefined : spliceEntry(raw, info.container, name, entry);
+    if (spliced !== undefined) {
+      data = spliced;
+    } else {
+      const document = value as Record<string, unknown>;
+      let node = document;
+      for (const key of info.container) {
+        const next = node[key];
+        node[key] = typeof next === "object" && next !== null ? next : {};
+        node = node[key] as Record<string, unknown>;
+      }
+      node[name] = entry;
+      data = `${JSON.stringify(document, undefined, 2)}\n`;
+    }
+    parseJsonc(data);
+  }
+
+  const mode = await fileMode(info.configPath);
+  const backup = backupPath(info.configPath);
+  const backupMode = await fileMode(backup);
+  if (backupMode !== undefined) await readFile(backup);
+  return {
+    backupExists: backupMode !== undefined,
+    data,
+    info,
+    mode,
+    outcome: had ? "replaced" : "added",
+    raw,
+  };
+}
+
+interface StagedServerWrite {
+  readonly backupTemporary: string | undefined;
+  readonly plan: ServerWritePlan;
+  readonly temporary: string;
+}
+
+async function stageFile(path: string, data: string, mode: number | undefined): Promise<string> {
+  const temporary = `${path}.mcp-swap-${String(process.pid)}-${randomUUID()}`;
+  try {
+    await writeFile(temporary, data, mode === undefined ? { flag: "wx" } : { flag: "wx", mode });
+    if (mode !== undefined) await chmod(temporary, mode);
+    return temporary;
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+}
+
+async function cleanupTemporaries(paths: readonly string[]): Promise<void> {
+  await Promise.all(paths.map((path) => rm(path, { force: true })));
+}
+
+/** Update a selected client set as one rollback-capable transaction. */
+export async function writeServers(
+  infos: readonly CliInfo[],
+  name: string,
+  spec: ServerSpec,
+): Promise<readonly WriteServerOutcome[]> {
+  const plans: ServerWritePlan[] = [];
+  for (const info of infos) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- every plan must exist before any staging.
+      plans.push(await planServerWrite(info, name, spec));
+    } catch (error) {
+      throw new Error(`${info.name} (${info.configPath}): ${(error as Error).message}`, {
+        cause: error,
+      });
+    }
+  }
+
+  const staged: StagedServerWrite[] = [];
+  const temporaryPaths: string[] = [];
+  try {
+    for (const plan of plans) {
+      // eslint-disable-next-line no-await-in-loop -- staging preserves deterministic failure ownership.
+      await mkdir(join(plan.info.configPath, ".."), { recursive: true });
+      const backupTemporary =
+        plan.mode === undefined || plan.backupExists
+          ? undefined
+          : // eslint-disable-next-line no-await-in-loop -- all backups stage before target changes.
+            await stageFile(backupPath(plan.info.configPath), plan.raw, plan.mode);
+      if (backupTemporary !== undefined) temporaryPaths.push(backupTemporary);
+      // eslint-disable-next-line no-await-in-loop -- all configs stage before target changes.
+      const temporary = await stageFile(plan.info.configPath, plan.data, plan.mode);
+      temporaryPaths.push(temporary);
+      staged.push({ backupTemporary, plan, temporary });
+    }
+  } catch (error) {
+    await cleanupTemporaries(temporaryPaths);
+    throw error;
+  }
+
+  const createdBackups: string[] = [];
+  const committed: ServerWritePlan[] = [];
+  try {
+    for (const entry of staged) {
+      if (entry.backupTemporary === undefined) continue;
+      const destination = backupPath(entry.plan.info.configPath);
+      // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
+      await rename(entry.backupTemporary, destination);
+      createdBackups.push(destination);
+    }
+    for (const entry of staged) {
+      // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
+      await rename(entry.temporary, entry.plan.info.configPath);
+      committed.push(entry.plan);
+    }
+  } catch (error) {
+    const rollbackFailures: unknown[] = [];
+    for (const plan of committed.toReversed()) {
+      try {
+        if (plan.mode === undefined) {
+          // eslint-disable-next-line no-await-in-loop -- rollback must finish before reporting failure.
+          await rm(plan.info.configPath, { force: true });
+        } else {
+          // eslint-disable-next-line no-await-in-loop -- rollback must finish before reporting failure.
+          await writeAtomic(plan.info.configPath, plan.raw, plan.mode);
+        }
+      } catch (rollbackError) {
+        rollbackFailures.push(rollbackError);
+      }
+    }
+    for (const backup of createdBackups) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- rollback must remove every new backup.
+        await rm(backup, { force: true });
+      } catch (rollbackError) {
+        rollbackFailures.push(rollbackError);
+      }
+    }
+    await cleanupTemporaries(temporaryPaths);
+    if (rollbackFailures.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackFailures],
+        `swap failed and ${String(rollbackFailures.length)} rollback operation(s) also failed`,
+      );
+    }
+    throw error;
+  }
+  await cleanupTemporaries(temporaryPaths);
+  return plans.map(({ outcome }) => outcome);
+}
+
+/** Point one CLI at `spec`, backing the file up first. */
 export async function writeServer(
   info: CliInfo,
   name: string,
   spec: ServerSpec,
-): Promise<"added" | "replaced"> {
-  await mkdir(join(info.configPath, ".."), { recursive: true });
-  const backup = await backupOnce(info.configPath);
-  void backup;
-  const { raw, value } = await readConfig(info);
-  const had = (await readServer(info, name)) !== undefined;
-  if (info.format === "toml") {
-    const entry = toEntry(spec, info.dialect);
-    await writeAtomic(info.configPath, renderServerTable(raw, info.container[0]!, name, entry));
-    return had ? "replaced" : "added";
-  }
-  const entry = toEntry(spec, info.dialect);
-  // Splice into the bytes the user has, so comments and spacing survive. Only
-  // when there is no container to splice into — an empty or absent file — is
-  // the document rebuilt, where there is nothing to preserve anyway.
-  const spliced = raw.trim() === "" ? undefined : spliceEntry(raw, info.container, name, entry);
-  if (spliced !== undefined) {
-    await writeAtomic(info.configPath, spliced);
-    return had ? "replaced" : "added";
-  }
-  const document = (typeof value === "object" && value !== null ? value : {}) as Record<
-    string,
-    unknown
-  >;
-  let node = document;
-  for (const key of info.container) {
-    const next = node[key];
-    node[key] = typeof next === "object" && next !== null ? next : {};
-    node = node[key] as Record<string, unknown>;
-  }
-  node[name] = entry;
-  await writeAtomic(info.configPath, `${JSON.stringify(document, undefined, 2)}\n`);
-  return had ? "replaced" : "added";
+): Promise<WriteServerOutcome> {
+  return (await writeServers([info], name, spec))[0]!;
 }
 
 /** Restore a config from the backup a swap wrote, and drop the backup. */
@@ -771,7 +916,6 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (command === "use") {
-    let failures = 0;
     const spec = buildSpec(options.source);
     process.stdout.write(`${options.source.kind}: ${describeSpec(spec)}\n`);
     if (!options.skipPreflight && !options.dryRun) {
@@ -781,28 +925,28 @@ async function main(argv: readonly string[]): Promise<number> {
         return 1;
       }
     }
+    const selected: CliInfo[] = [];
     for (const info of clis) {
       // eslint-disable-next-line no-await-in-loop -- each CLI is reported in order, and one failing must not race the next.
       if (!(await isInstalled(info))) continue;
+      selected.push(info);
       if (options.dryRun) {
         process.stdout.write(`would update ${info.name} (${info.configPath})\n`);
-        continue;
-      }
-      // One unreadable config must not decide the fate of the others: without
-      // this, the run stops midway having swapped some and not the rest, and
-      // says nothing about which.
-      try {
-        // eslint-disable-next-line no-await-in-loop -- each CLI is reported in order, and one failing must not race the next.
-        const outcome = await writeServer(info, options.server, spec);
-        process.stdout.write(`${outcome} ${options.server} in ${info.name} (${info.configPath})\n`);
-      } catch (error) {
-        failures += 1;
-        process.stderr.write(
-          `skipped ${info.name} (${info.configPath}): ${(error as Error).message}\n`,
-        );
       }
     }
-    return failures === 0 ? 0 : 1;
+    if (options.dryRun) return 0;
+    try {
+      const outcomes = await writeServers(selected, options.server, spec);
+      for (const [index, info] of selected.entries()) {
+        process.stdout.write(
+          `${outcomes[index]!} ${options.server} in ${info.name} (${info.configPath})\n`,
+        );
+      }
+      return 0;
+    } catch (error) {
+      process.stderr.write(`refusing partial client update: ${(error as Error).message}\n`);
+      return 1;
+    }
   }
 
   if (command === "revert") {
