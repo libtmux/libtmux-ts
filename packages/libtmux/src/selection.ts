@@ -10,6 +10,8 @@ import type { Server } from "./server.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 
+export { compileBoundedRegex } from "./_internal/selection/regex.js";
+
 type ModelKindOf<Model> = Model extends Client
   ? "client"
   : Model extends Pane

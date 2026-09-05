@@ -4,6 +4,7 @@ import {
   invalidQuery,
   isObject,
   listed,
+  newParseState,
   snapshotObject,
   withActive,
   type ParseState,
@@ -183,6 +184,13 @@ function compileRegex(
   } catch (error) {
     return invalidQuery(state, "the regular expression did not compile", error);
   }
+}
+
+/** Compile a regex under the same deterministic grammar and work budget as selection queries. */
+export function compileBoundedRegex(pattern: string): RegExp {
+  const state = newParseState();
+  if (typeof pattern !== "string") return invalidQuery(state, "expected a string");
+  return compileRegex(pattern, "", false, state);
 }
 
 export function parseRegex(

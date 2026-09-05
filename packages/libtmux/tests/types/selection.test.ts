@@ -110,7 +110,7 @@ type _CreateProjectedSelection = Expect<
 type _RuntimeExports = Expect<
   Equal<
     keyof typeof selectionModule,
-    "decodeWhereDocument" | "encodeWhereDocument" | "parseLegacyWhere"
+    "compileBoundedRegex" | "decodeWhereDocument" | "encodeWhereDocument" | "parseLegacyWhere"
   >
 >;
 type _RegexData = Expect<

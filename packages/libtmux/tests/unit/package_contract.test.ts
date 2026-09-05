@@ -191,6 +191,7 @@ describe("package contract", () => {
       "WaitTimeout",
       "Window",
       "WindowDirection",
+      "compileBoundedRegex",
       "decodeWhereDocument",
       "encodeWhereDocument",
       "isSafeInteger",

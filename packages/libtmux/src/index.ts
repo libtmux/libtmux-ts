@@ -5,6 +5,7 @@ export { Session, type SessionPlans } from "./session.js";
 export { Window, type WindowPlans } from "./window.js";
 
 export {
+  compileBoundedRegex,
   decodeWhereDocument,
   encodeWhereDocument,
   parseLegacyWhere,

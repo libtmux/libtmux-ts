@@ -9,6 +9,7 @@ import { createProjectedSelection } from "../../src/_internal/selection/evaluate
 import { foldCase } from "../../src/_internal/selection/scalar.js";
 import { parseSessionId } from "../../src/_internal/runtime/ids.js";
 import {
+  compileBoundedRegex,
   decodeWhereDocument,
   encodeWhereDocument,
   type PaneWhere,
@@ -69,6 +70,12 @@ function scalarForms(field: string, value: unknown): readonly Record<string, unk
     { [field]: { notIn: [value] } },
   ];
 }
+
+test("the public bounded regex compiler shares the selection work budget", () => {
+  expect(compileBoundedRegex("^ready-[0-9]+$").test("ready-12")).toBe(true);
+  expect(() => compileBoundedRegex("(a+)+")).toThrow(/only one quantifier|cannot be repeated/u);
+  expect(() => compileBoundedRegex("x".repeat(513))).toThrow(/512-code-unit limit/u);
+});
 
 function assertDeepFrozenData(value: unknown, seen = new Set<object>()): void {
   if (typeof value !== "object" || value === null || seen.has(value)) return;
