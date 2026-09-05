@@ -1224,6 +1224,7 @@ export async function writeServers(
     }
   } catch (error) {
     const rollbackFailures: unknown[] = [];
+    const failedRollbacks = new Set<ServerWritePlan>();
     for (const entry of committed.toReversed()) {
       const { plan } = entry;
       try {
@@ -1242,9 +1243,11 @@ export async function writeServers(
         }
       } catch (rollbackError) {
         rollbackFailures.push(rollbackError);
+        failedRollbacks.add(plan);
       }
     }
-    for (const paths of createdRecovery.values()) {
+    for (const [plan, paths] of createdRecovery) {
+      if (failedRollbacks.has(plan)) continue;
       for (const path of paths) {
         try {
           // eslint-disable-next-line no-await-in-loop -- recovery is discarded only after restore.
@@ -1257,9 +1260,21 @@ export async function writeServers(
     }
     await cleanupTemporaries(temporaryPaths);
     if (rollbackFailures.length > 0) {
+      const retainedRecovery = [...failedRollbacks].flatMap((plan) => {
+        const paths = new Set(createdRecovery.get(plan) ?? []);
+        if (plan.recovery.backup !== undefined) paths.add(backupPath(plan.info.configPath));
+        if (plan.recovery.route !== undefined) {
+          paths.add(recoveryRoutePath(plan.info.configPath));
+        }
+        return [...paths];
+      });
+      const retained =
+        retainedRecovery.length === 0
+          ? ""
+          : `; recovery retained at ${retainedRecovery.join(", ")}`;
       throw new AggregateError(
         [error, ...rollbackFailures],
-        `swap failed and ${String(rollbackFailures.length)} rollback operation(s) also failed`,
+        `swap failed and ${String(rollbackFailures.length)} rollback operation(s) also failed${retained}`,
       );
     }
     throw error;

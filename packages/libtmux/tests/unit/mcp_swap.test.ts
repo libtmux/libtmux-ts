@@ -5,6 +5,7 @@ import {
   readFile,
   readlink,
   readdir,
+  rename,
   rm,
   stat,
   symlink,
@@ -124,6 +125,16 @@ async function waitForStagedFile(path: string): Promise<void> {
     await Bun.sleep(1);
   }
   throw new Error(`staged file did not appear beside ${path}`);
+}
+
+async function waitForFileChange(path: string, original: string): Promise<void> {
+  for (let attempt = 0; attempt < 5_000; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop -- poll until the first write commits.
+    if ((await readFile(path, "utf8")) !== original) return;
+    // eslint-disable-next-line no-await-in-loop -- polling must yield between observations.
+    await Bun.sleep(1);
+  }
+  throw new Error(`file did not change: ${path}`);
 }
 
 async function runSwap(
@@ -563,6 +574,93 @@ describe("swapping a config", () => {
         expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(false);
       }),
     );
+  });
+
+  test("retains and names recovery units whose rollback fails in reverse order", async () => {
+    const raw = '{\n  "mcpServers": { "keep": { "command": "other" } }\n}\n';
+    const info = (name: string): CliInfo => ({
+      binary: name,
+      configPath: join(home, "rollback", `${name}.json`),
+      container: ["mcpServers"],
+      dialect: "standard",
+      format: "json",
+      name,
+    });
+    const first = info("first");
+    const second = info("second");
+    const middle = Array.from({ length: 120 }, (_, index) => info(`middle-${index}`));
+    const later = info("later");
+    const firstSeed = await seedSymlink(first, raw, 0o640);
+    const secondSeed = await seedSymlink(second, raw, 0o640);
+    const laterSeed = await seedSymlink(later, raw, 0o640);
+    await Promise.all(middle.map(async (entry) => seed(entry, raw)));
+
+    const replacement = '{\n  "sentinel": "untouched"\n}\n';
+    const replacementTarget = join(home, "dotfiles", "rollback-replacement.json");
+    await writeFile(replacementTarget, replacement);
+    const replacementLinks = [first, second, later].map(
+      (entry) => `${entry.configPath}.replacement`,
+    );
+    await Promise.all(
+      replacementLinks.map(async (path) => {
+        await symlink(relative(dirname(path), replacementTarget), path);
+      }),
+    );
+
+    const pending = writeServers(
+      [first, second, ...middle, later],
+      "libtmux",
+      buildSpec({ kind: "dev", repo: "/repo" }),
+    );
+    await waitForFileChange(secondSeed.target, raw);
+    await rename(replacementLinks[0]!, first.configPath);
+    await rename(replacementLinks[1]!, second.configPath);
+    await rename(replacementLinks[2]!, later.configPath);
+
+    let failure: unknown;
+    try {
+      await pending;
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(AggregateError);
+    if (!(failure instanceof AggregateError)) throw failure;
+    const rollbackMessages = failure.errors
+      .slice(1)
+      .map((error: unknown) => (error as Error).message);
+    expect(rollbackMessages[0]).toContain(second.configPath);
+    expect(rollbackMessages[1]).toContain(first.configPath);
+
+    for (const entry of [first, second]) {
+      expect(failure.message).toContain(backupPath(entry.configPath));
+      expect(failure.message).toContain(backupRoutePath(entry.configPath));
+    }
+    const retainedState = await Promise.all(
+      [first, second].map(async (entry) => ({
+        backupMode: (await stat(backupPath(entry.configPath))).mode & 0o777,
+        raw: await readFile(backupPath(entry.configPath), "utf8"),
+        routeMode: (await stat(backupRoutePath(entry.configPath))).mode & 0o777,
+      })),
+    );
+    expect(retainedState).toEqual([
+      { backupMode: 0o640, raw, routeMode: 0o600 },
+      { backupMode: 0o640, raw, routeMode: 0o600 },
+    ]);
+    expect(await readFile(firstSeed.target, "utf8")).not.toBe(raw);
+    expect(await readFile(secondSeed.target, "utf8")).not.toBe(raw);
+    expect(await readFile(replacementTarget, "utf8")).toBe(replacement);
+
+    const middleState = await Promise.all(
+      middle.map(async (entry) => ({
+        backup: await Bun.file(backupPath(entry.configPath)).exists(),
+        raw: await readFile(entry.configPath, "utf8"),
+        route: await Bun.file(backupRoutePath(entry.configPath)).exists(),
+      })),
+    );
+    expect(middleState).toEqual(middle.map(() => ({ backup: false, raw, route: false })));
+    expect(await readFile(laterSeed.target, "utf8")).toBe(raw);
+    expect(await Bun.file(backupPath(later.configPath)).exists()).toBe(false);
+    expect(await Bun.file(backupRoutePath(later.configPath)).exists()).toBe(false);
   });
 
   test("removes a new backup when route publication loses a race", async () => {
