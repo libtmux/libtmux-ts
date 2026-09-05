@@ -1,6 +1,17 @@
-import { chmod, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -32,6 +43,7 @@ import {
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
+const CLI_NAMES = ["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"] as const;
 
 /**
  * The config surgery behind `mcp_swap`.
@@ -68,9 +80,50 @@ function originalConfig(info: CliInfo): string {
   return `{\n${comment}  "${info.container[0]}": {\n    "keep": { "command": "other" }\n  }\n}\n`;
 }
 
+function backupRoutePath(configPath: string): string {
+  return `${backupPath(configPath)}.route.json`;
+}
+
 async function seed(info: CliInfo, contents: string): Promise<void> {
   await mkdir(join(info.configPath, ".."), { recursive: true });
   await writeFile(info.configPath, contents);
+}
+
+async function seedSymlink(
+  info: CliInfo,
+  contents: string,
+  mode: number,
+): Promise<{ linkTarget: string; target: string }> {
+  const target = join(home, "dotfiles", `${info.name}.${info.format === "toml" ? "toml" : "json"}`);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, contents);
+  await chmod(target, mode);
+  await mkdir(dirname(info.configPath), { recursive: true });
+  const linkTarget = relative(dirname(info.configPath), target);
+  await symlink(linkTarget, info.configPath);
+  return { linkTarget, target };
+}
+
+async function waitForPath(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 5_000; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop -- poll until the transaction reaches this boundary.
+    if (await Bun.file(path).exists()) return;
+    // eslint-disable-next-line no-await-in-loop -- polling must yield between observations.
+    await Bun.sleep(1);
+  }
+  throw new Error(`path did not appear: ${path}`);
+}
+
+async function waitForStagedFile(path: string): Promise<void> {
+  const directory = dirname(path);
+  const prefix = `${basename(path)}.mcp-swap-`;
+  for (let attempt = 0; attempt < 5_000; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop -- poll until staging reaches this boundary.
+    if ((await readdir(directory)).some((entry) => entry.startsWith(prefix))) return;
+    // eslint-disable-next-line no-await-in-loop -- polling must yield between observations.
+    await Bun.sleep(1);
+  }
+  throw new Error(`staged file did not appear beside ${path}`);
 }
 
 async function runSwap(args: readonly string[]): Promise<{ status: number; stderr: string }> {
@@ -327,36 +380,58 @@ describe("TOML", () => {
 });
 
 describe("swapping a config", () => {
-  test.each(["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"])(
-    "round-trips %s bytes and mode in isolation",
-    async (name) => {
-      const info = cliFor(name);
-      const original = originalConfig(info);
-      await seed(info, original);
-      await chmod(info.configPath, 0o640);
+  test.each(CLI_NAMES)("round-trips %s bytes and mode in isolation", async (name) => {
+    const info = cliFor(name);
+    const original = originalConfig(info);
+    await seed(info, original);
+    await chmod(info.configPath, 0o640);
 
-      expect(await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }))).toBe(
-        "added",
-      );
-      expect(await readServer(info, "libtmux")).toMatchObject({ command: "bun" });
-      expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
-      expect((await stat(backupPath(info.configPath))).mode & 0o777).toBe(0o640);
+    expect(await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }))).toBe(
+      "added",
+    );
+    expect(await readServer(info, "libtmux")).toMatchObject({ command: "bun" });
+    expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
+    expect((await stat(backupPath(info.configPath))).mode & 0o777).toBe(0o640);
 
-      expect(await revertConfig(info)).toBe(true);
-      expect(await readFile(info.configPath, "utf8")).toBe(original);
-      expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
-    },
-  );
+    expect(await revertConfig(info)).toBe(true);
+    expect(await readFile(info.configPath, "utf8")).toBe(original);
+    expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
+  });
 
-  test("round-trips all eight selected clients together", async () => {
+  test.each(CLI_NAMES)("round-trips a symlinked %s config", async (name) => {
+    const info = cliFor(name);
+    const original = originalConfig(info);
+    const { linkTarget, target } = await seedSymlink(info, original, 0o640);
+
+    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+
+    expect((await lstat(info.configPath)).isSymbolicLink()).toBe(true);
+    expect(await readlink(info.configPath)).toBe(linkTarget);
+    expect(await readServer(info, "libtmux")).toMatchObject({ command: "bun" });
+    expect((await stat(target)).mode & 0o777).toBe(0o640);
+    expect((await stat(backupPath(info.configPath))).mode & 0o777).toBe(0o640);
+    expect((await stat(backupRoutePath(info.configPath))).mode & 0o777).toBe(0o600);
+
+    expect(await revertConfig(info)).toBe(true);
+    expect((await lstat(info.configPath)).isSymbolicLink()).toBe(true);
+    expect(await readlink(info.configPath)).toBe(linkTarget);
+    expect(await readFile(target, "utf8")).toBe(original);
+    expect((await stat(target)).mode & 0o777).toBe(0o640);
+    expect(await Bun.file(backupRoutePath(info.configPath)).exists()).toBe(false);
+  });
+
+  test("round-trips all eight symlinked clients together", async () => {
     const infos = knownClis({ XDG_CONFIG_HOME: join(home, ".config") }, home);
-    const originals = new Map<string, string>();
+    const originals = new Map<
+      string,
+      { linkTarget: string; mode: number; raw: string; target: string }
+    >();
     await Promise.all(
       infos.map(async (info, index) => {
-        const original = originalConfig(info);
-        originals.set(info.name, original);
-        await seed(info, original);
-        await chmod(info.configPath, index % 2 === 0 ? 0o600 : 0o640);
+        const raw = originalConfig(info);
+        const mode = index % 2 === 0 ? 0o600 : 0o640;
+        const seeded = await seedSymlink(info, raw, mode);
+        originals.set(info.name, { ...seeded, mode, raw });
       }),
     );
 
@@ -368,6 +443,7 @@ describe("swapping a config", () => {
     expect(outcomes).toEqual(infos.map(() => "added"));
     await Promise.all(
       infos.map(async (info, index) => {
+        expect((await lstat(info.configPath)).isSymbolicLink()).toBe(true);
         expect(await readServer(info, "libtmux")).toMatchObject({ command: "node" });
         expect((await stat(info.configPath)).mode & 0o777).toBe(index % 2 === 0 ? 0o600 : 0o640);
       }),
@@ -377,10 +453,200 @@ describe("swapping a config", () => {
         expect(await revertConfig(info)).toBe(true);
         const original = originals.get(info.name);
         if (original === undefined) throw new Error(`missing ${info.name} fixture`);
-        expect(await readFile(info.configPath, "utf8")).toBe(original);
+        expect((await lstat(info.configPath)).isSymbolicLink()).toBe(true);
+        expect(await readlink(info.configPath)).toBe(original.linkTarget);
+        expect(await readFile(original.target, "utf8")).toBe(original.raw);
         expect((await stat(info.configPath)).mode & 0o777).toBe(index % 2 === 0 ? 0o600 : 0o640);
+        expect(await Bun.file(backupRoutePath(info.configPath)).exists()).toBe(false);
       }),
     );
+  });
+
+  test("rejects selected configs that resolve to one target", async () => {
+    const first = cliFor("claude");
+    const later = cliFor("cursor");
+    const target = join(home, "dotfiles", "shared.json");
+    const original = '{\n  "mcpServers": { "keep": { "command": "other" } }\n}\n';
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, original);
+    await Promise.all(
+      [first, later].map(async (info) => {
+        await mkdir(dirname(info.configPath), { recursive: true });
+        await symlink(relative(dirname(info.configPath), target), info.configPath);
+      }),
+    );
+
+    await expect(
+      writeServers([first, later], "libtmux", buildSpec({ kind: "dev", repo: "/repo" })),
+    ).rejects.toThrow(/same resolved target/u);
+
+    expect(await readFile(target, "utf8")).toBe(original);
+    expect((await lstat(first.configPath)).isSymbolicLink()).toBe(true);
+    expect((await lstat(later.configPath)).isSymbolicLink()).toBe(true);
+    expect(await Bun.file(backupPath(first.configPath)).exists()).toBe(false);
+    expect(await Bun.file(backupPath(later.configPath)).exists()).toBe(false);
+  });
+
+  test.each(["symlink", "file"] as const)(
+    "refuses a config link replaced by a %s after staging",
+    async (replacementKind) => {
+      const info = cliFor("cursor");
+      const padding = "x".repeat(16 * 1024 * 1024);
+      const original = `{\n  "padding": "${padding}",\n  "mcpServers": {}\n}\n`;
+      const { target } = await seedSymlink(info, original, 0o640);
+      const replacementTarget = join(home, "dotfiles", "replacement.json");
+      const replacement = '{\n  "sentinel": "unchanged"\n}\n';
+      await writeFile(replacementTarget, replacement);
+
+      const pending = writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+      try {
+        await waitForStagedFile(target);
+        await rm(info.configPath);
+        if (replacementKind === "symlink") {
+          await symlink(relative(dirname(info.configPath), replacementTarget), info.configPath);
+        } else {
+          await writeFile(info.configPath, replacement);
+        }
+
+        await expect(pending).rejects.toThrow(/config.*changed/u);
+      } finally {
+        await pending.catch(() => undefined);
+      }
+
+      expect(await readFile(target, "utf8")).toBe(original);
+      expect(await readFile(replacementTarget, "utf8")).toBe(replacement);
+      expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(false);
+    },
+  );
+
+  test("refuses a config link retargeted after backup commit", async () => {
+    const raw = '{\n  "mcpServers": { "keep": { "command": "other" } }\n}\n';
+    const earlier = Array.from({ length: 40 }, (_, index): CliInfo => ({
+      binary: `earlier-${index}`,
+      configPath: join(home, "earlier", `${index}.json`),
+      container: ["mcpServers"],
+      dialect: "standard",
+      format: "json",
+      name: `earlier-${index}`,
+    }));
+    await Promise.all(earlier.map(async (info) => seed(info, raw)));
+    const later = cliFor("cursor");
+    const { target } = await seedSymlink(later, raw, 0o640);
+    const replacementTarget = join(home, "dotfiles", "retargeted.json");
+    const replacement = '{\n  "sentinel": "unchanged"\n}\n';
+    await writeFile(replacementTarget, replacement);
+
+    const pending = writeServers(
+      [...earlier, later],
+      "libtmux",
+      buildSpec({ kind: "dev", repo: "/repo" }),
+    );
+    await waitForPath(backupPath(later.configPath));
+    await rm(later.configPath);
+    await symlink(relative(dirname(later.configPath), replacementTarget), later.configPath);
+
+    await expect(pending).rejects.toThrow(/config.*changed/u);
+    expect(await readFile(target, "utf8")).toBe(raw);
+    expect(await readFile(replacementTarget, "utf8")).toBe(replacement);
+    await Promise.all(
+      earlier.map(async (info) => {
+        expect(await readFile(info.configPath, "utf8")).toBe(raw);
+        expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(false);
+      }),
+    );
+  });
+
+  test("removes a new backup when route publication loses a race", async () => {
+    const info = cliFor("cursor");
+    const padding = "x".repeat(16 * 1024 * 1024);
+    const original = `{\n  "padding": "${padding}",\n  "mcpServers": {}\n}\n`;
+    const { target } = await seedSymlink(info, original, 0o640);
+    const routePath = backupRoutePath(info.configPath);
+    const intruder = "do not replace\n";
+
+    const swap = writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+    await waitForStagedFile(routePath);
+    await writeFile(routePath, intruder);
+
+    await expect(swap).rejects.toThrow(/recovery route.*changed/u);
+    expect(await readFile(target, "utf8")).toBe(original);
+    expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(false);
+    expect(await readFile(routePath, "utf8")).toBe(intruder);
+  });
+
+  test.each(["directory", "symlink", "malformed", "oversized", "wrong-mode"] as const)(
+    "rejects a %s recovery route sidecar",
+    async (kind) => {
+      const info = cliFor("cursor");
+      const original = originalConfig(info);
+      const { target } = await seedSymlink(info, original, 0o640);
+      await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/one" }));
+      const before = await readFile(target, "utf8");
+      const sidecar = backupRoutePath(info.configPath);
+      const validSidecar = await readFile(sidecar, "utf8");
+      await rm(sidecar, { force: true, recursive: true });
+      if (kind === "directory") {
+        await mkdir(sidecar);
+      } else if (kind === "symlink") {
+        const other = join(home, "route-record.json");
+        await writeFile(other, "{}\n");
+        await symlink(other, sidecar);
+      } else if (kind === "malformed") {
+        await writeFile(sidecar, "{ malformed\n", { mode: 0o600 });
+      } else if (kind === "oversized") {
+        await writeFile(sidecar, "x".repeat(16 * 1024 + 1), { mode: 0o600 });
+      } else {
+        await writeFile(sidecar, validSidecar, { mode: 0o640 });
+        await chmod(sidecar, 0o640);
+      }
+
+      await expect(
+        writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/two" })),
+      ).rejects.toThrow(/recovery route/u);
+
+      expect(await readFile(target, "utf8")).toBe(before);
+      expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(true);
+    },
+  );
+
+  test.each(["symlink", "same-target-symlink", "file"] as const)(
+    "refuses revert after the config link becomes a %s",
+    async (replacementKind) => {
+      const info = cliFor("cursor");
+      const original = originalConfig(info);
+      const { target } = await seedSymlink(info, original, 0o640);
+      await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+      const swapped = await readFile(target, "utf8");
+      const replacementTarget = join(home, "dotfiles", "revert-replacement.json");
+      const replacement = '{\n  "sentinel": "unchanged"\n}\n';
+      await writeFile(replacementTarget, replacement);
+      await rm(info.configPath);
+      if (replacementKind.endsWith("symlink")) {
+        const nextTarget = replacementKind === "same-target-symlink" ? target : replacementTarget;
+        await symlink(relative(dirname(info.configPath), nextTarget), info.configPath);
+      } else {
+        await writeFile(info.configPath, replacement);
+      }
+
+      await expect(revertConfig(info)).rejects.toThrow(/config.*changed/u);
+
+      expect(await readFile(target, "utf8")).toBe(swapped);
+      expect(await readFile(replacementTarget, "utf8")).toBe(replacement);
+      expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(true);
+      expect(await Bun.file(backupRoutePath(info.configPath)).exists()).toBe(true);
+    },
+  );
+
+  test("refuses a legacy symlink backup without route metadata", async () => {
+    const info = cliFor("cursor");
+    const original = originalConfig(info);
+    const { target } = await seedSymlink(info, original, 0o640);
+    await writeFile(backupPath(info.configPath), original, { mode: 0o640 });
+
+    await expect(revertConfig(info)).rejects.toThrow(/legacy.*symlink/u);
+
+    expect(await readFile(target, "utf8")).toBe(original);
+    expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(true);
   });
 
   test("preflights every selected config before changing any", async () => {
@@ -478,15 +744,24 @@ describe("swapping a config", () => {
   test("keeps the first backup, so revert undoes every swap at once", async () => {
     const info = cliFor("cursor");
     const original = '{\n  "mcpServers": {}\n}\n';
-    await seed(info, original);
+    const { linkTarget, target } = await seedSymlink(info, original, 0o640);
 
     await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/one" }));
+    const firstBackup = await readFile(backupPath(info.configPath));
+    const firstRoute = await readFile(backupRoutePath(info.configPath));
     await writeServer(info, "libtmux", buildSpec({ kind: "build", repo: "/two" }));
     await writeServer(info, "libtmux", buildSpec({ kind: "published", version: "9" }));
+    expect(await readFile(backupPath(info.configPath))).toEqual(firstBackup);
+    expect(await readFile(backupRoutePath(info.configPath))).toEqual(firstRoute);
     await revertConfig(info);
 
     // Not the state before the last swap — the state before any of them.
-    expect(await readFile(info.configPath, "utf8")).toBe(original);
+    expect((await lstat(info.configPath)).isSymbolicLink()).toBe(true);
+    expect(await readlink(info.configPath)).toBe(linkTarget);
+    expect(await readFile(target, "utf8")).toBe(original);
+    expect((await stat(target)).mode & 0o777).toBe(0o640);
+    expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(false);
+    expect(await Bun.file(backupRoutePath(info.configPath)).exists()).toBe(false);
   });
 
   test("creates a config for a CLI that has none", async () => {
@@ -520,6 +795,31 @@ describe("swapping a config", () => {
     const info = cliFor("gemini");
     expect(await backupOnce(info.configPath)).toBeUndefined();
     expect(backupPath(info.configPath)).toBe(`${info.configPath}.mcp-swap-backup`);
+  });
+
+  test("backs up a symlink as an authenticated recovery unit", async () => {
+    const info = cliFor("cursor");
+    const original = originalConfig(info);
+    const { linkTarget, target } = await seedSymlink(info, original, 0o640);
+
+    expect(await backupOnce(info.configPath)).toBe(backupPath(info.configPath));
+    expect(await readFile(backupPath(info.configPath), "utf8")).toBe(original);
+    expect((await stat(backupRoutePath(info.configPath))).mode & 0o777).toBe(0o600);
+    expect((await lstat(info.configPath)).isSymbolicLink()).toBe(true);
+    expect(await readlink(info.configPath)).toBe(linkTarget);
+
+    expect(await revertConfig(info)).toBe(true);
+    expect(await readFile(target, "utf8")).toBe(original);
+    expect(await Bun.file(backupRoutePath(info.configPath)).exists()).toBe(false);
+  });
+
+  test("backupOnce rejects a malformed existing recovery unit", async () => {
+    const info = cliFor("cursor");
+    await seedSymlink(info, originalConfig(info), 0o640);
+    await backupOnce(info.configPath);
+    await writeFile(backupRoutePath(info.configPath), "{}\n", { mode: 0o600 });
+
+    await expect(backupOnce(info.configPath)).rejects.toThrow(/recovery route/u);
   });
 });
 
