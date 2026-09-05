@@ -26,7 +26,7 @@ export async function connectAgent(server: Server): Promise<Client> {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await Promise.all([
     createTmuxMcpServer(server, {
-      environment: { LIBTMUX_SAFETY: "mutating" },
+      environment: { LIBTMUX_TOOLSETS: "inspect,execute" },
     }).connect(serverSide),
     client.connect(clientSide),
   ]);
@@ -43,21 +43,21 @@ export interface CommandResult {
  * Run a command and learn whether it worked.
  *
  * The output is what the command printed, not the pane's echo of the command:
- * `run_command` frames what it sends so the marker it waits for cannot appear
- * in what it typed. That is why waiting for `hello` here does not match the
- * `echo hello` that produced it, which is the trap a capture loop falls into
- * every time.
+ * `run_shell_command` frames what it sends so the marker it waits for cannot
+ * appear in what it typed. That is why waiting for `hello` here does not match
+ * the `echo hello` that produced it, which is the trap a capture loop falls
+ * into every time.
  */
 export async function runAndCheck(
   client: Client,
   paneId: string,
   command: string,
 ): Promise<CommandResult> {
-  return callTool<CommandResult>(client, "run_command", { command, paneId });
+  return callTool<CommandResult>(client, "run_shell_command", { command, paneId });
 }
 
 export interface WaitResult {
-  readonly cursor: number;
+  readonly cursor: string | null;
   readonly outcome: string;
   readonly output: string;
   readonly screen: string;
@@ -85,7 +85,7 @@ export async function waitFor(
 }
 
 export interface Delta {
-  readonly cursor: number;
+  readonly cursor: string | null;
   readonly text: string;
 }
 
@@ -100,29 +100,40 @@ export async function watch(
   client: Client,
   paneId: string,
 ): Promise<(waitMs: number) => Promise<Delta>> {
-  let cursor = (await callTool<Delta>(client, "observe", { paneId })).cursor;
+  let cursor = (await callTool<Delta>(client, "capture_since", { paneId })).cursor;
   return async (waitMs: number) => {
-    const delta = await callTool<Delta>(client, "observe", { cursor, paneId, waitMs });
+    const delta = await callTool<Delta>(client, "capture_since", {
+      ...(cursor === null ? {} : { cursor }),
+      paneId,
+      waitMs,
+    });
     cursor = delta.cursor;
     return delta;
   };
 }
 
 /**
- * Build a session and every window in it with one call.
- *
- * Calling `new_window` per window spends a tmux invocation and a snapshot each,
- * because each has to find what it just made; this spends one of each for the
- * group and hands back every pane id, so nothing needs a `list_panes` after.
+ * Build a session and add configured-process windows without command payloads.
  */
 export async function buildWorkspace(
   client: Client,
   session: string,
   windows: readonly string[],
 ): Promise<readonly string[]> {
-  const built = await callTool<{ panes: { id: string }[] }>(client, "build_workspace", {
-    session,
-    windows: windows.map((name) => ({ name, shellCommand: "sh" })),
+  const [first, ...rest] = windows;
+  if (first === undefined) throw new TypeError("windows must not be empty");
+  const created = await callTool<{ paneId: string }>(client, "create_session", {
+    name: session,
+    windowName: first,
   });
-  return built.panes.map((pane) => pane.id);
+  const paneIds = [created.paneId];
+  for (const name of rest) {
+    // eslint-disable-next-line no-await-in-loop -- window creation follows session mutation order.
+    const window = await callTool<{ paneId: string }>(client, "create_window", {
+      name,
+      session,
+    });
+    paneIds.push(window.paneId);
+  }
+  return paneIds;
 }

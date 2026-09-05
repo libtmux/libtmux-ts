@@ -51,6 +51,27 @@ type PaneWrite = "kill" | "pasteBuffer" | "respawn" | "sendKeys";
  */
 export type ReadablePane = Omit<Pane, PaneWrite>;
 
+interface PaneInputTarget {
+  readonly id: string;
+  readonly window:
+    | {
+        readonly panes: { toArray(): readonly { readonly id: string }[] };
+        showResolvedOptions(): Promise<ReadonlyMap<string, string>>;
+      }
+    | undefined;
+}
+
+/** The panes tmux will reach when synchronize-panes amplifies one send. */
+export async function resolvedPaneInputTargetIds(
+  pane: PaneInputTarget,
+): Promise<readonly string[]> {
+  const window = pane.window;
+  if (window === undefined) return [pane.id];
+  const synchronized = (await window.showResolvedOptions()).get("synchronize-panes");
+  if (synchronized !== "on" && synchronized !== "1") return [pane.id];
+  return [...new Set(window.panes.toArray().map(({ id }) => id))].sort();
+}
+
 export interface SourcePlacement {
   readonly sourceIndex?: number;
   readonly sourceSession?: string;
@@ -122,7 +143,7 @@ function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult 
   return fail({
     hint:
       available.length === 0
-        ? "This server has no panes. Create one with new_session."
+        ? "This server has no panes. Create one with create_session."
         : `Panes on this server: ${suggest(available, "list_panes")}`,
     reason: `No pane ${paneId} on this server.`,
   });
@@ -167,7 +188,7 @@ export function requireWritablePane(
   }
   if (force !== true && isAttended(identity, paneId)) {
     return fail({
-      hint: "whoami lists who is attached. Pick another pane, or pass force to mean it.",
+      hint: "list_panes identifies watched panes. Pick another pane, or pass force to mean it.",
       reason: `Refusing to ${verb} ${paneId}: a person is watching that pane.`,
     });
   }
@@ -187,7 +208,7 @@ export function requireSession(snapshot: ServerSnapshot, target: string): CallTo
   return fail({
     hint:
       available.length === 0
-        ? "This server has no sessions. Create one with new_session."
+        ? "This server has no sessions. Create one with create_session."
         : `Sessions on this server: ${suggest(available, "list_sessions")}`,
     reason: `No session ${target} on this server.`,
   });

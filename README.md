@@ -193,7 +193,7 @@ Add it to any MCP client — this is the whole configuration:
     "tmux": {
       "command": "npx",
       "args": ["-y", "@libtmux/mcp@0.1.0-alpha.7"],
-      "env": { "LIBTMUX_SOCKET_NAME": "agent" }
+      "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
 }
@@ -203,7 +203,7 @@ Add it to any MCP client — this is the whole configuration:
 <summary>Claude Code, in one command</summary>
 
 ```console
-$ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
+$ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
     npx -y @libtmux/mcp@0.1.0-alpha.7
 ```
 
@@ -211,20 +211,21 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET_NAME=agent -- \
 
 The tools an agent reaches for first:
 
-| Tool              | What it does                                                        |
-| ----------------- | ------------------------------------------------------------------- |
-| `run_command`     | Runs a shell command, waits for it, reports its real exit status    |
-| `wait_for_text`   | Blocks until a pane prints something, streaming tmux notifications  |
-| `observe`         | Only what a pane printed since your cursor                          |
-| `whoami`          | Which pane the server runs in, and which panes a person is watching |
-| `build_workspace` | A session and all its windows in one tmux invocation                |
+| Tool                | What it does                                                       |
+| ------------------- | ------------------------------------------------------------------ |
+| `list_sessions`     | Lists stable session identities and metadata                       |
+| `capture_since`     | Returns only pane output after a cursor                            |
+| `wait_for_text`     | Waits for bounded literal or regular-expression matches            |
+| `run_shell_command` | Runs a command through a pane and reports output and exit status   |
+| `create_session`    | Creates a session without accepting a command or environment value |
 
-Panes, windows, sessions, layouts, options, buffers and environment are covered
-too, and the server is browsable: `tmux://` resources, subscribable pane
-contents, prompts, and completions.
+The 47 tools are split into `inspect`, `manage`, `execute`, and `teardown`.
+`tmux://capabilities` is the only resource; the server exposes no prompts,
+resource templates, background jobs, or generic mutation tools.
 
 Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 [Configuration](packages/mcp/README.md#point-it-at-a-server) ·
+[Toolsets and trust](packages/mcp/README.md#toolsets-and-trust) ·
 [Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool)
 
 ### [@libtmux/workspace](packages/workspace) — declarative sessions

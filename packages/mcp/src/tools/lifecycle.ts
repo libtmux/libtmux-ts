@@ -6,20 +6,19 @@
  * four for anything built in steps.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { ServerSnapshot } from "libtmux";
 import { PaneDirection } from "libtmux/constants";
 
 import { isAttended, isCallerPane, type CallerIdentity } from "../caller.js";
-import { runTopologyMutation, type ToolContext } from "../context.js";
+import type { ToolContext } from "../context.js";
 import { MAX_INLINE_REQUEST_BYTES } from "../policy.js";
-import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, offers } from "../register.js";
+import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, type ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
   fitsInlineRequest,
-  inlineRequestText,
+  literalTmuxText,
   paneIdSchema,
   requestText,
   sessionIdSchema,
@@ -64,11 +63,9 @@ function projectWindow(snapshot: ServerSnapshot, windowId: string) {
   return isFailure(window) ? window : windowView(window, windowPlacements(snapshot, windowId));
 }
 
-export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "mutating")) return;
-
+export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
-    "new_session",
+    "create_session",
     {
       annotations: MUTATING_OPEN_WORLD,
       description:
@@ -76,19 +73,16 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         "so you can start working without listing anything first.",
       inputSchema: z
         .object({
-          name: inlineRequestText("name")
+          name: literalTmuxText("name")
             .optional()
             .describe("Session name; tmux picks a number when omitted."),
-          shellCommand: inlineRequestText("shellCommand")
-            .optional()
-            .describe("Run this instead of a shell. The session ends when it exits."),
           height: z
             .number()
             .int()
             .positive()
             .optional()
             .describe("Rows. Default 24, because a detached session has no client to size it."),
-          startDirectory: inlineRequestText("startDirectory").optional(),
+          startDirectory: literalTmuxText("startDirectory").optional(),
           width: z
             .number()
             .int()
@@ -99,13 +93,13 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
                 "git log --graph, docker ps — truncates to that at the source, where no " +
                 "capture option can recover it.",
             ),
-          windowName: inlineRequestText("windowName").optional(),
+          windowName: literalTmuxText("windowName").optional(),
         })
         .refine(
-          ({ name, shellCommand, startDirectory, windowName }) =>
-            fitsInlineRequest([name, shellCommand, startDirectory, windowName]),
+          ({ name, startDirectory, windowName }) =>
+            fitsInlineRequest([name, startDirectory, windowName]),
           {
-            message: `new_session text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+            message: `create_session text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
           },
         ),
       outputSchema: {
@@ -113,24 +107,21 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         session: sessionViewSchema,
         windowId: windowIdSchema,
       },
-      title: "New session",
+      title: "Create session",
     },
-    async ({ height, name, shellCommand, startDirectory, width, windowName }) => {
-      const session = await runTopologyMutation(context, () =>
-        context.tmux.newSession({
-          ...(name === undefined ? {} : { name }),
-          ...(shellCommand === undefined ? {} : { shellCommand }),
-          ...(startDirectory === undefined ? {} : { startDirectory }),
-          ...(width === undefined ? {} : { width }),
-          ...(height === undefined ? {} : { height }),
-          ...(windowName === undefined ? {} : { windowName }),
-        }),
-      );
+    async ({ height, name, startDirectory, width, windowName }) => {
+      const session = await context.tmux.newSession({
+        ...(name === undefined ? {} : { name }),
+        ...(startDirectory === undefined ? {} : { startDirectory }),
+        ...(width === undefined ? {} : { width }),
+        ...(height === undefined ? {} : { height }),
+        ...(windowName === undefined ? {} : { windowName }),
+      });
       const snapshot = await context.snapshot();
       const pane = snapshot.panes.first({ session: { is: { id: session.id } } });
       if (pane === undefined) {
         return fail({
-          hint: "Use a command that stays running, or omit shellCommand to start a shell.",
+          hint: "Inspect the configured default command and create the session again.",
           reason: `Session ${session.id} ended before its first pane could be read.`,
         });
       }
@@ -147,43 +138,35 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   );
 
   mcp.registerTool(
-    "new_window",
+    "create_window",
     {
       annotations: MUTATING_OPEN_WORLD,
       description: "Add a window to a session and return it with its pane.",
       inputSchema: z
         .object({
-          name: inlineRequestText("name").optional(),
+          name: literalTmuxText("name").optional(),
           session: requestText("session").describe("Session id ($1) or name."),
-          shellCommand: inlineRequestText("shellCommand").optional(),
-          startDirectory: inlineRequestText("startDirectory").optional(),
+          startDirectory: literalTmuxText("startDirectory").optional(),
         })
-        .refine(
-          ({ name, shellCommand, startDirectory }) =>
-            fitsInlineRequest([name, shellCommand, startDirectory]),
-          {
-            message: `new_window text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
-          },
-        ),
+        .refine(({ name, startDirectory }) => fitsInlineRequest([name, startDirectory]), {
+          message: `create_window text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+        }),
       outputSchema: { paneId: paneIdSchema, window: windowViewSchema },
-      title: "New window",
+      title: "Create window",
     },
-    async ({ name, session, shellCommand, startDirectory }) => {
+    async ({ name, session, startDirectory }) => {
       const snapshot = await context.snapshot();
       const found = requireSession(snapshot, session);
       if (isFailure(found)) return found;
-      const window = await runTopologyMutation(context, () =>
-        found.newWindow({
-          ...(name === undefined ? {} : { name }),
-          ...(shellCommand === undefined ? {} : { shellCommand }),
-          ...(startDirectory === undefined ? {} : { startDirectory }),
-        }),
-      );
+      const window = await found.newWindow({
+        ...(name === undefined ? {} : { name }),
+        ...(startDirectory === undefined ? {} : { startDirectory }),
+      });
       const after = await context.snapshot();
       const pane = after.panes.first({ window: { is: { id: window.id } } });
       if (pane === undefined) {
         return fail({
-          hint: "Use a command that stays running, or omit shellCommand to start a shell.",
+          hint: "Inspect the configured default command and create the window again.",
           reason: `Window ${window.id} ended before its first pane could be read.`,
         });
       }
@@ -197,7 +180,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   );
 
   mcp.registerTool(
-    "split_pane",
+    "split_window",
     {
       annotations: MUTATING_OPEN_WORLD,
       description:
@@ -210,21 +193,17 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
             .optional()
             .describe("Default below."),
           paneId: paneIdSchema,
-          shellCommand: inlineRequestText("shellCommand").optional(),
-          startDirectory: inlineRequestText("startDirectory")
+          startDirectory: literalTmuxText("startDirectory")
             .optional()
             .describe("Defaults to the directory the pane being split is in."),
         })
-        .refine(
-          ({ shellCommand, startDirectory }) => fitsInlineRequest([shellCommand, startDirectory]),
-          {
-            message: `split_pane text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
-          },
-        ),
+        .refine(({ startDirectory }) => fitsInlineRequest([startDirectory]), {
+          message: `split_window text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
+        }),
       outputSchema: { pane: paneViewSchema },
-      title: "Split pane",
+      title: "Split window",
     },
-    async ({ direction, paneId, shellCommand, startDirectory }) => {
+    async ({ direction, paneId, startDirectory }) => {
       const snapshot = await context.snapshot();
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
@@ -234,13 +213,10 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       // reads as "keep working here", so the source pane's directory is the
       // default; naming one still overrides it.
       const inherited = startDirectory ?? pane.currentPath ?? undefined;
-      const created = await runTopologyMutation(context, () =>
-        pane.split({
-          ...(direction === undefined ? {} : { direction: DIRECTIONS[direction] }),
-          ...(shellCommand === undefined ? {} : { shellCommand }),
-          ...(inherited === undefined ? {} : { startDirectory: inherited }),
-        }),
-      );
+      const created = await pane.split({
+        ...(direction === undefined ? {} : { direction: DIRECTIONS[direction] }),
+        ...(inherited === undefined ? {} : { startDirectory: inherited }),
+      });
       const after = await context.snapshot();
       const view = projectPane(after, created.id, await context.identity(after));
       if (isFailure(view)) return view;
@@ -253,7 +229,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Rename a session. Its id does not change, so targets by id keep working.",
-      inputSchema: { name: inlineRequestText("name"), session: requestText("session") },
+      inputSchema: { name: literalTmuxText("name"), session: requestText("session") },
       outputSchema: { session: sessionViewSchema },
       title: "Rename session",
     },
@@ -261,7 +237,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const found = requireSession(snapshot, session);
       if (isFailure(found)) return found;
-      await runTopologyMutation(context, () => found.rename(name));
+      await found.rename(name);
       const after = await context.snapshot();
       const view = sessionView(
         after.sessions.one({ id: found.id }),
@@ -276,7 +252,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
     {
       annotations: MUTATING,
       description: "Rename a window. Its id does not change.",
-      inputSchema: { name: inlineRequestText("name"), windowId: windowIdSchema },
+      inputSchema: { name: literalTmuxText("name"), windowId: windowIdSchema },
       outputSchema: { window: windowViewSchema },
       title: "Rename window",
     },
@@ -284,7 +260,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const window = requireWindow(snapshot, windowId);
       if (isFailure(window)) return window;
-      await runTopologyMutation(context, () => window.rename(name));
+      await window.rename(name);
       const view = projectWindow(await context.snapshot(), windowId);
       if (isFailure(view)) return view;
       return ok({ window: view }, windowLine(view));
@@ -294,9 +270,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
   mcp.registerTool(
     "respawn_pane",
     {
-      annotations: offers(context.policy, "destructive")
-        ? { ...MUTATING_OPEN_WORLD, destructiveHint: true }
-        : MUTATING_OPEN_WORLD,
+      annotations: MUTATING_OPEN_WORLD,
       description:
         "Restart a pane's command in place, keeping the pane and its id. Use to " +
         "recover a pane whose process died, rather than killing and re-splitting.",
@@ -312,41 +286,30 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
           .optional()
           .describe("Replace a still-running process. Default false."),
         paneId: paneIdSchema,
-        shellCommand: inlineRequestText("shellCommand").optional(),
+        startDirectory: literalTmuxText("startDirectory").optional(),
       },
       outputSchema: { pane: paneViewSchema },
       title: "Respawn pane",
     },
-    async ({ force, killFirst, paneId, shellCommand }) => {
+    async ({ force, killFirst, paneId, startDirectory }) => {
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "restart");
       if (isFailure(pane)) return pane;
       if (killFirst === true) {
-        // Respawning a dead pane is recovery and belongs at this tier. Killing
-        // what is still running is tmux's own kill by another name, and a tier
-        // that hides kill_pane cannot offer the same end by another road.
-        if (!offers(context.policy, "destructive")) {
-          return fail({
-            hint:
-              "Respawn without killFirst to recover a pane whose process has already " +
-              "exited, or run this server at the destructive tier.",
-            reason:
-              `Refusing to replace what is running in ${paneId}: killFirst ends that ` +
-              `process, and this server offers the ${context.policy.safety} tier.`,
-          });
-        }
+        // Replacing a running process has delete semantics even though the pane survives.
         const guard = guardDestructive(identity, paneId, force);
         if (guard !== undefined) return guard;
       }
-      await pane.respawn(shellCommand, killFirst === undefined ? {} : { kill: killFirst });
+      await pane.respawn(undefined, {
+        ...(killFirst === undefined ? {} : { kill: killFirst }),
+        ...(startDirectory === undefined ? {} : { startDirectory }),
+      });
       const view = projectPane(await context.snapshot(), paneId, identity);
       if (isFailure(view)) return view;
       return ok({ pane: view }, paneLine(view));
     },
   );
-
-  if (!offers(context.policy, "destructive")) return;
 
   mcp.registerTool(
     "kill_pane",
@@ -368,7 +331,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
       // the refusal for a pane somebody else is watching.
       const guard = guardDestructive(identity, paneId, force);
       if (guard !== undefined) return guard;
-      await runTopologyMutation(context, () => pane.kill());
+      await pane.kill();
       return ok({ killed: paneId }, `Killed ${paneId}.`);
     },
   );
@@ -394,7 +357,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
       }
-      await runTopologyMutation(context, () => window.kill());
+      await window.kill();
       return ok({ killed: windowId }, `Killed ${windowId} and its ${String(inside.length)} panes.`);
     },
   );
@@ -421,7 +384,7 @@ export function registerLifecycle(mcp: McpServer, context: ToolContext): void {
         const guard = guardDestructive(identity, pane.id, force);
         if (guard !== undefined) return guard;
       }
-      await runTopologyMutation(context, () => found.kill());
+      await found.kill();
       return ok(
         { killed: found.id },
         `Killed session ${found.id}. Windows and panes shared with other sessions remain there.`,
@@ -451,7 +414,7 @@ function guardDestructive(
   }
   if (isAttended(identity, paneId)) {
     return fail({
-      hint: "whoami lists who is attached. Pass force if you mean it.",
+      hint: "list_panes identifies watched panes. Pass force if you mean it.",
       reason: `Refusing to kill ${paneId}: somebody is watching it.`,
     });
   }

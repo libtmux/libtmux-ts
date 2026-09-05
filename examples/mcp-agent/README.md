@@ -24,13 +24,16 @@ Requires tmux 3.2a or newer.
 ## What it shows
 
 The same act-then-wait shape as [`../agent/`](../agent/README.md), expressed as
-tool calls. `run_command` frames a command so its own echo cannot be mistaken
-for its output, and reports the exit status — which is the difference between
-"the text appeared" and "the command succeeded".
+tool calls. `run_shell_command` frames a command so its own echo cannot be
+mistaken for its output, and reports the exit status — which is the difference
+between "the text appeared" and "the command succeeded".
 
-The example opts into the `mutating` safety tier because it creates topology
-and types commands. An MCP server left at its default `readonly` tier does not
-offer those tools.
+The example selects the `inspect` and `execute` toolsets because it creates
+topology, types commands, and waits for output.
+
+Its exported helpers cover the full workflow: create a multi-window workspace,
+run a framed command, wait for output produced elsewhere, and continue reading
+from an opaque cursor without recapturing the screen.
 
 No subprocess and no socket of its own: the client and server share memory, so
 this is the cheapest way to see the tool surface end to end.

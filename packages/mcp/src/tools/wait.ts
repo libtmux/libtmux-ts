@@ -6,14 +6,14 @@
  * turn.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { compileBoundedRegex } from "libtmux";
 import { z } from "zod";
 
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
-import { offers, READ_ONLY } from "../register.js";
+import { READ_ONLY, type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
 import { isFailure, requirePane, type ReadablePane } from "../target_resolution.js";
@@ -305,7 +305,9 @@ const waitOutputSchema = {
     ),
   cursor: paneCursorSchema
     .nullable()
-    .describe("Pass to observe or another wait; null means the live stream cannot be resumed."),
+    .describe(
+      "Pass to capture_since or another wait; null means the live stream cannot be resumed.",
+    ),
   droppedLines: z.number().int().describe("Output lines omitted by the result limit."),
   effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced, after clamping."),
   matched: z.string().nullable().describe("The text that matched, or null."),
@@ -340,22 +342,20 @@ const waitOutputSchema = {
     .describe("Why the live stream ended, or null while it remained valid."),
 };
 
-export function registerWait(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "readonly") || !context.policy.liveEnabled) return;
-
+export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
   const inputSchema = {
     cursor: paneCursorSchema
       .optional()
-      .describe("Start from a cursor an earlier observe or wait returned."),
+      .describe("Start from a cursor an earlier capture_since or wait returned."),
     maxLines: z.number().int().positive().optional(),
     paneId: paneIdSchema,
     patterns: requestTextArray("pattern", "patterns")
       .optional()
       .describe("Any one of these ends the wait. Omit to wait for any output at all."),
     regex: z
-      .literal(false)
+      .boolean()
       .optional()
-      .describe("Regular expressions are disabled because native matching can block the server."),
+      .describe("Interpret patterns using libtmux's bounded regular-expression grammar."),
     timeoutMs: z
       .number()
       .int()
@@ -367,7 +367,7 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
   const description =
     "Wait until a pane prints something, streaming tmux's notifications rather " +
     "than polling. Use for output you did NOT author — another process, a person, " +
-    "a background job. For a command you wrote, use run_command: it knows when the " +
+    "a background job. For a command you wrote, use run_shell_command: it knows when the " +
     "command ended and reports exit status, which no text match can. A pane echoes " +
     "what is typed into it, so waiting for text that also appears in a command you " +
     "just sent matches the echo. Whatever happens you get back what the pane " +
@@ -375,11 +375,14 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
 
   function buildMatcher(
     patterns: readonly string[] | undefined,
+    regex: boolean,
   ): (text: string) => string | undefined {
     if (patterns === undefined || patterns.length === 0) {
       return (text) => (text === "" ? undefined : text.slice(-80));
     }
-    return (text) => patterns.find((pattern) => text.includes(pattern));
+    if (!regex) return (text) => patterns.find((pattern) => text.includes(pattern));
+    const compiled = patterns.map((pattern) => compileBoundedRegex(pattern));
+    return (text) => patterns.find((_, index) => compiled[index]?.test(text) === true);
   }
 
   async function run(
@@ -389,11 +392,11 @@ export function registerWait(mcp: McpServer, context: ToolContext): void {
       maxLines?: number | undefined;
       paneId: string;
       patterns?: string[] | undefined;
-      regex?: false | undefined;
+      regex?: boolean | undefined;
       timeoutMs?: number | undefined;
     },
   ): Promise<CallToolResult> {
-    const matcher = buildMatcher(args.patterns);
+    const matcher = buildMatcher(args.patterns, args.regex === true);
 
     const snapshot = await context.snapshot();
     const pane = requirePane(snapshot, args.paneId);

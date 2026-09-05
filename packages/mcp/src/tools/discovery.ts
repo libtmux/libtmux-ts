@@ -6,15 +6,13 @@
  * is the difference between one command and one per session.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
-import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { offers, OPEN_WORLD, READ_ONLY } from "../register.js";
-import { boundText, ok, renderBoundedText } from "../results.js";
-import { inlineRequestText, paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
+import { effectiveResultLines } from "../policy.js";
+import { READ_ONLY, type ToolRegistrar } from "../register.js";
+import { ok } from "../results.js";
+import { paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
 import {
   isFailure,
   paneEntities,
@@ -25,8 +23,6 @@ import {
   windowPlacements,
 } from "../target_resolution.js";
 import {
-  clientView,
-  clientViewSchema,
   limitViews,
   paneLine,
   paneView,
@@ -38,10 +34,7 @@ import {
   windowLine,
   windowView,
   windowViewSchema,
-  type ClientView,
 } from "../views.js";
-
-const PROJECTED_RESULT_BYTES = MAX_RESULT_BYTES - 1_024;
 
 /**
  * A path, safe to put in a result.
@@ -62,153 +55,7 @@ function printable(value: string | null | undefined): string | null {
   return escaped;
 }
 
-interface WhoamiProjection extends Readonly<Record<string, unknown>> {
-  readonly attendedPaneIds: readonly string[];
-  readonly callerPaneId: string | null;
-  readonly callerPaneIsOnThisServer: boolean;
-  readonly clients: readonly ClientView[];
-  readonly complete: boolean;
-  readonly omittedAttendedPaneIds: number;
-  readonly omittedClients: number;
-  readonly serverPid: string | null;
-}
-
-function whoamiLines(value: WhoamiProjection): readonly string[] {
-  const watched =
-    value.attendedPaneIds.length === 0
-      ? value.omittedAttendedPaneIds === 0
-        ? "Nobody is attached; no pane is being watched."
-        : `${String(value.omittedAttendedPaneIds)} watched pane ids omitted by the result ceiling.`
-      : `Watched by a person: ${value.attendedPaneIds.join(", ")}${
-          value.omittedAttendedPaneIds === 0
-            ? ""
-            : `, and ${String(value.omittedAttendedPaneIds)} more`
-        }`;
-  return [
-    value.callerPaneId === null
-      ? "This server does not run inside a tmux pane, so it has no pane of its own."
-      : value.callerPaneIsOnThisServer
-        ? `Running inside pane ${value.callerPaneId} on this server — do not write to it.`
-        : `Running inside pane ${value.callerPaneId}, but on a different tmux server than this one.`,
-    watched,
-    value.omittedClients === 0
-      ? ""
-      : `${String(value.omittedClients)} attached clients omitted by the result ceiling.`,
-  ].filter((line) => line !== "");
-}
-
-function largestFittingPrefix(length: number, fits: (count: number) => boolean): number {
-  let low = 0;
-  let high = length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (fits(middle)) low = middle;
-    else high = middle - 1;
-  }
-  return low;
-}
-
-function boundedWhoami(
-  identity: CallerIdentity,
-  callerPaneId: string | null,
-  clients: readonly ClientView[],
-): WhoamiProjection {
-  const build = (attendedCount: number, clientCount: number): WhoamiProjection => {
-    const omittedAttendedPaneIds = identity.attendedPaneIds.length - attendedCount;
-    const omittedClients = clients.length - clientCount;
-    return {
-      attendedPaneIds: identity.attendedPaneIds.slice(0, attendedCount),
-      callerPaneId,
-      callerPaneIsOnThisServer: identity.callerPaneIsOnThisServer,
-      clients: clients.slice(0, clientCount),
-      complete: omittedAttendedPaneIds === 0 && omittedClients === 0,
-      omittedAttendedPaneIds,
-      omittedClients,
-      serverPid: identity.serverPid ?? null,
-    };
-  };
-  const fits = (value: WhoamiProjection): boolean =>
-    Buffer.byteLength(JSON.stringify(value), "utf8") <= PROJECTED_RESULT_BYTES &&
-    Buffer.byteLength(whoamiLines(value).join("\n"), "utf8") <= PROJECTED_RESULT_BYTES;
-  // Pane ids carry the safety decision, so retain them before client metadata.
-  const attendedCount = largestFittingPrefix(identity.attendedPaneIds.length, (count) =>
-    fits(build(count, 0)),
-  );
-  const clientCount = largestFittingPrefix(clients.length, (count) =>
-    fits(build(attendedCount, count)),
-  );
-  return build(attendedCount, clientCount);
-}
-
-/**
- * The bare variable names in a tmux format.
- *
- * Only `#{name}` is a name. Everything else tmux allows inside the braces —
- * `#{?cond,a,b}`, `#{==:x,y}`, `#{s/a/b/:var}`, `#{e|...}`, `#{T:...}` — is an
- * expression, and an identifier test skips all of them because none is one.
- * Rejecting a working format would be worse than the silence this replaces.
- */
-function formatVariables(format: string): readonly string[] {
-  const names: string[] = [];
-  for (const match of format.matchAll(/#\{([^{}]*)\}/gu)) {
-    const inner = match[1] ?? "";
-    if (/^[a-zA-Z_][a-zA-Z0-9_]*$/u.test(inner)) names.push(inner);
-  }
-  return names;
-}
-
-/**
- * Say which names in a format tmux does not know.
- *
- * tmux prints nothing for a field it has never heard of and exits 0, so a typo
- * and a genuinely empty field are the same answer — in the one tool documented
- * as the escape hatch for fields nothing else projects, which is where a
- * hand-written format is most likely. `display-message -a` enumerates the
- * table, so the two can be told apart.
- *
- * Enumerated against the same target the caller used: the set is
- * target-dependent, and a pane field checked at server scope would look
- * missing when it is only out of scope.
- *
- * Asking the running tmux rather than carrying a table is what makes this
- * version-aware: 3.4 knows 120 variables against a pane and 3.7 knows 141, so
- * a format written against a newer server is told exactly which field the
- * older one lacks, and a field added in a future tmux needs no change here.
- * A static list would be faster and would quietly lose all of that.
- */
-async function unknownFields(
-  enumerate: () => Promise<readonly string[]>,
-  asked: readonly string[],
-  value: string,
-): Promise<readonly string[]> {
-  // Extracting the names is pure string work, so it happens first and for
-  // free. The table is consulted when nothing resolved, and also when more
-  // than one name could have contributed — a format mixing a known field with
-  // an unknown one produces something that reads like a value, so partial
-  // resolution is invisible in a way a wholly empty result is not. One name
-  // that resolved is the common case and still costs nothing.
-  if (asked.length === 0) return [];
-  if (value !== "" && asked.length < 2) return [];
-  const known = new Set(
-    (await enumerate().catch(() => [])).map((line) => line.slice(0, line.indexOf("="))),
-  );
-  if (known.size === 0) return [];
-  return asked.filter((name) => !known.has(name));
-}
-
-/** How an empty result explains itself. */
-function emptyNote(unknown: readonly string[]): string {
-  if (unknown.length === 0) return "";
-  return (
-    `\n\n[tmux has no ${unknown.length === 1 ? "field" : "fields"} ${unknown.join(", ")}. ` +
-    `It prints nothing for a name it does not know, so an empty value can be a typo ` +
-    `rather than an empty field.]`
-  );
-}
-
-export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "readonly")) return;
-
+export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "list_sessions",
     {
@@ -244,7 +91,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           sessions: bounded.views,
         },
         sessions.length === 0
-          ? "No sessions on this server. Create one with new_session."
+          ? "No sessions on this server. Create one with create_session."
           : renderViews(bounded, "sessions", "reduce the server topology before listing again"),
       );
     },
@@ -344,7 +191,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
   );
 
   mcp.registerTool(
-    "get_pane",
+    "get_pane_info",
     {
       annotations: READ_ONLY,
       description:
@@ -365,43 +212,7 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
   );
 
   mcp.registerTool(
-    "whoami",
-    {
-      annotations: READ_ONLY,
-      description:
-        "Which pane this MCP server runs in, and which panes a person is currently " +
-        "watching. Call this before writing to a pane you did not create: typing " +
-        "into your own terminal or into someone's foreground window is the one " +
-        "mistake tmux cannot undo.",
-      inputSchema: {},
-      outputSchema: {
-        attendedPaneIds: z.array(paneIdSchema),
-        callerPaneId: paneIdSchema.nullable(),
-        callerPaneIsOnThisServer: z.boolean(),
-        clients: z.array(clientViewSchema),
-        complete: z.boolean(),
-        omittedAttendedPaneIds: z.number().int().nonnegative(),
-        omittedClients: z.number().int().nonnegative(),
-        serverPid: z.string().nullable(),
-      },
-      title: "Who and where am I",
-    },
-    async () => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const clients = snapshot.clients.toArray().map(clientView);
-      const callerPaneId = paneIdSchema.safeParse(identity.callerPaneId);
-      const structured = boundedWhoami(
-        identity,
-        callerPaneId.success ? callerPaneId.data : null,
-        clients,
-      );
-      return ok(structured, whoamiLines(structured).join("\n"));
-    },
-  );
-
-  mcp.registerTool(
-    "server_info",
+    "get_server_info",
     {
       annotations: READ_ONLY,
       description:
@@ -446,91 +257,5 @@ export function registerDiscovery(mcp: McpServer, context: ToolContext): void {
           `${String(structured.sessions)} sessions / ${String(structured.windows)} windows / ${String(structured.panes)} panes`,
       );
     },
-  );
-
-  if (offers(context.policy, "mutating")) {
-    mcp.registerTool(
-      "display_message",
-      {
-        annotations: OPEN_WORLD,
-        description:
-          "Resolve a tmux format string against a target, e.g. '#{pane_current_command}'. " +
-          "The escape hatch for any field these tools do not project.",
-        inputSchema: {
-          format: inlineRequestText("format").describe("A tmux format, e.g. '#{pane_pid}'."),
-          target: paneIdSchema.optional().describe("Pane id to resolve against."),
-        },
-        outputSchema: {
-          complete: z.boolean(),
-          droppedLines: z.number().int(),
-          omittedBytes: z.number().int(),
-          returnedBytes: z.number().int(),
-          value: z.string(),
-        },
-        title: "Resolve a tmux format",
-      },
-      async ({ format, target }) => {
-        const snapshot = await context.snapshot();
-        if (target !== undefined) {
-          const pane = requirePane(snapshot, target);
-          if (isFailure(pane)) return pane;
-          const lines = await pane.displayMessage(format);
-          const value = lines.join("\n");
-          // displayMessage takes a format, not flags, so the enumeration goes
-          // through the command with the same pane as its target.
-          const unknown = await unknownFields(
-            () => context.tmux.cmd("display-message", ["-p", "-a"], { target }),
-            formatVariables(format),
-            value,
-          );
-          return boundedDisplay(context, value, unknown);
-        }
-        const lines = await context.tmux.cmd("display-message", ["-p", format], { target: null });
-        const value = lines.join("\n");
-        const unknown = await unknownFields(
-          () => context.tmux.cmd("display-message", ["-p", "-a"], { target: null }),
-          formatVariables(format),
-          value,
-        );
-        return boundedDisplay(context, value, unknown);
-      },
-    );
-  }
-}
-
-function boundedDisplay(
-  context: ToolContext,
-  value: string,
-  unknown: readonly string[],
-): ReturnType<typeof ok> {
-  const lineLimit = effectiveResultLines(context.policy, undefined);
-  const diagnostic = emptyNote(unknown).trimStart();
-  const diagnosticLines = diagnostic === "" ? [] : diagnostic.split("\n");
-  const diagnosticBounded = boundText(diagnosticLines, lineLimit, MAX_RESULT_BYTES);
-  const valueBounded = boundText(
-    value === "" ? [] : value.split("\n"),
-    Math.max(0, lineLimit - diagnosticLines.length),
-    Math.max(0, MAX_RESULT_BYTES - diagnosticBounded.returnedBytes),
-  );
-  const recovery = "use a narrower format or resolve its fields separately";
-  const complete =
-    valueBounded.droppedLines === 0 &&
-    valueBounded.omittedBytes === 0 &&
-    diagnosticBounded.droppedLines === 0 &&
-    diagnosticBounded.omittedBytes === 0;
-  return ok(
-    {
-      complete,
-      droppedLines: valueBounded.droppedLines + diagnosticBounded.droppedLines,
-      omittedBytes: valueBounded.omittedBytes + diagnosticBounded.omittedBytes,
-      returnedBytes: valueBounded.returnedBytes + diagnosticBounded.returnedBytes,
-      value: valueBounded.text,
-    },
-    [
-      renderBoundedText(valueBounded, recovery),
-      renderBoundedText(diagnosticBounded, "use fewer format fields"),
-    ]
-      .filter((part) => part !== "")
-      .join("\n\n"),
   );
 }

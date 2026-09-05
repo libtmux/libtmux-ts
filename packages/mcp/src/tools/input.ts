@@ -2,26 +2,29 @@
  * Writing to panes.
  *
  * Two shapes, and choosing the wrong one is the most common way an agent wastes
- * a turn here. `run_command` is for a shell command you wrote and want the
+ * a turn here. `run_shell_command` is for a shell command you wrote and want the
  * result of; `send_keys` is for keystrokes — a TUI, a signal, a partial line.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
 import type { Policy } from "../policy.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { offers, OPEN_WORLD } from "../register.js";
+import { OPEN_WORLD, type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
-import { isFailure, requireWritablePane } from "../target_resolution.js";
+import {
+  isFailure,
+  requireWritablePane,
+  resolvedPaneInputTargetIds,
+} from "../target_resolution.js";
 import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
 /**
  * Shells whose syntax the command framing is written in.
  *
- * `run_command` uses POSIX subshells, positional parameters, `printf`, and `$?`.
+ * `run_shell_command` uses POSIX subshells, positional parameters, `printf`, and `$?`.
  * fish, csh, and PowerShell do not share that grammar, so a command framed for
  * them fails to parse and the wait runs to its deadline against a syntax error.
  */
@@ -58,20 +61,18 @@ function busyPane(policy: Policy, paneId: string, active: string): ReturnType<ty
       followups.length === 0
         ? "Wait for that command to finish before writing to the pane."
         : `Wait for that command to finish, or ${followups.join(", or ")}.`,
-    reason: `Refusing to write into ${paneId}: run_command ${active} is still active.`,
+    reason: `Refusing to write into ${paneId}: run_shell_command ${active} is still active.`,
   });
 }
 
-export function registerInput(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "mutating")) return;
-
+export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "send_keys",
     {
       annotations: OPEN_WORLD,
       description:
         "Send keystrokes to a pane. Use for TUIs, control keys (C-c), and partial " +
-        "lines. For a shell command whose result you want, use run_command — it " +
+        "lines. For a shell command whose result you want, use run_shell_command — it " +
         "waits for completion and reports exit status, which this does not.",
       inputSchema: {
         enter: z.boolean().optional().describe("Press Enter afterwards. Default true."),
@@ -91,6 +92,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       outputSchema: {
         attended: z.boolean().describe("A person is watching the pane this was sent to."),
         paneId: paneIdSchema,
+        resolvedPaneIds: z.array(paneIdSchema),
         sent: z.boolean(),
       },
       title: "Send keys",
@@ -100,17 +102,33 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       const identity = await context.identity(snapshot);
       const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
       if (isFailure(pane)) return pane;
-      const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
+      const resolvedPaneIds = await resolvedPaneInputTargetIds(pane);
+      for (const resolvedPaneId of resolvedPaneIds) {
+        const writable = requireWritablePane(
+          snapshot,
+          identity,
+          resolvedPaneId,
+          force,
+          "type into",
+        );
+        if (isFailure(writable)) return writable;
+        const active = activeFramedCommand(context, resolvedPaneId);
+        if (active !== undefined && force !== true) {
+          return busyPane(context.policy, resolvedPaneId, active);
+        }
+      }
 
       await pane.sendKeys(keys, {
         ...(enter === undefined ? {} : { enter }),
         ...(literal === undefined ? {} : { literal }),
       });
-      const attended = identity.attendedPaneIds.includes(paneId);
+      const attended = resolvedPaneIds.some((id) => identity.attendedPaneIds.includes(id));
+      const targetText = resolvedPaneIds.join(", ");
       return ok(
-        { attended, paneId, sent: true },
-        attended ? `Sent to ${paneId}. Somebody is watching that pane.` : `Sent to ${paneId}.`,
+        { attended, paneId, resolvedPaneIds, sent: true },
+        attended
+          ? `Sent to ${targetText}. Somebody is watching a resolved pane.`
+          : `Sent to ${targetText}.`,
       );
     },
   );
@@ -151,7 +169,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
   );
 
   mcp.registerTool(
-    "run_command",
+    "run_shell_command",
     {
       annotations: OPEN_WORLD,
       description:
@@ -225,7 +243,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .boolean()
           .describe("Whether the command may still be running after this call returned."),
       },
-      title: "Run a command and wait",
+      title: "Run a shell command and wait",
     },
     async ({ command, force, maxLines, paneId, timeoutMs }, extra) => {
       if (command.trim() === "") {
@@ -260,7 +278,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           hint:
             "This tool frames commands in POSIX shell syntax, which that shell does not " +
             "share. Use send_keys, or run the command in a pane running sh, bash, or zsh.",
-          reason: `Pane ${paneId} is running ${running}, which run_command cannot address.`,
+          reason: `Pane ${paneId} is running ${running}, which run_shell_command cannot address.`,
         });
       }
       if (force !== true && !POSIX_SHELLS.has(running)) {

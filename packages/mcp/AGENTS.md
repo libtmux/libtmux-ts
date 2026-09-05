@@ -27,13 +27,13 @@ field against the tool's `outputSchema` whether or not `isError` is set, so a
 failure with its own diagnostic shape is rejected as a protocol violation and
 the model never reads the reason. `fail()` returns text alone for this.
 
-**`run_command`'s framing is POSIX shell and nothing else.** A marker-free
-wrapper prints an exact readiness line before reading the marker as terminal
-input. It suspends Bash and zsh debug traps while the marker exists, validates
-the marker, and restores shell state only after removing it from the command
-subshell. fish, csh, and PowerShell do not share that grammar, so the tool
-refuses them even with `force`. The marker is framing, not confinement: code
-with the tmux socket's authority can inspect the pane.
+**`run_shell_command`'s framing is POSIX shell and nothing else.** A
+marker-free wrapper prints an exact readiness line before reading the marker as
+terminal input. It suspends Bash and zsh debug traps while the marker exists,
+validates the marker, and restores shell state only after removing it from the
+command subshell. fish, csh, and PowerShell do not share that grammar, so the
+tool refuses them even with `force`. The marker is framing, not confinement:
+code with the tmux socket's authority can inspect the pane.
 
 ## Cancellation
 
@@ -44,6 +44,6 @@ nobody is waiting on, which is why the gate for it is a unit test on
 
 ## Two ways to read a pane, and they differ
 
-`observe` reports the byte stream in write order and cannot resolve cursor
-addressing. `capture_pane` reads tmux's rendered grid. They are not two ways to
-read one thing, and the tool descriptions say so.
+`capture_since` reports the byte stream in write order and cannot resolve
+cursor addressing. `capture_pane` reads tmux's rendered grid. They are not two
+ways to read one thing, and the tool descriptions say so.

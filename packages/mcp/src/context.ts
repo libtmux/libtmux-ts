@@ -27,25 +27,6 @@ export interface ToolContext {
   readonly policy: Policy;
   snapshot(signal?: AbortSignal): Promise<ServerSnapshot>;
   readonly tmux: Server;
-  /**
-   * Say that this call may have changed the resource catalog's topology.
-   *
-   * Called once after each structural mutation attempt. Coalesced by the
-   * notifier, so calling it freely is the point.
-   */
-  topologyChanged(): void;
-}
-
-/** Notify even when tmux may have applied a mutation before rejecting its result. */
-export async function runTopologyMutation<T>(
-  context: Pick<ToolContext, "topologyChanged">,
-  mutation: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await mutation();
-  } finally {
-    context.topologyChanged();
-  }
 }
 
 /**
@@ -69,7 +50,7 @@ export function describeUnreachable(tmux: Server, reason: string): string {
     ...(tmux.socketPath === undefined
       ? tmux.socketName === undefined
         ? []
-        : [`LIBTMUX_SOCKET_NAME=${tmux.socketName}`]
+        : [`LIBTMUX_SOCKET=${tmux.socketName}`]
       : [`LIBTMUX_SOCKET_PATH=${tmux.socketPath}`]),
   ];
   const launched =
@@ -79,7 +60,7 @@ export function describeUnreachable(tmux: Server, reason: string): string {
   return (
     `${reason}\n\nThis server was launched with ${launched}. That is set by whoever ` +
     `configured this MCP server, not by you — report it rather than retrying. ` +
-    `Start a server there with new_session if creating one is what was wanted.`
+    `Start a server there with create_session if creating one is what was wanted.`
   );
 }
 
@@ -106,7 +87,6 @@ function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
 export function createContext(
   tmux: Server,
   policy: Policy,
-  topologyChanged: () => void = () => undefined,
   caller: CallerEnvironment = readCallerEnvironment(),
 ): ToolContext & { close(): Promise<void> } {
   const hub = new LiveHub(tmux, { connectTimeoutMs: policy.commandTimeoutMs });
@@ -117,7 +97,6 @@ export function createContext(
     policy,
     snapshot: (signal) => withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal })),
     tmux,
-    topologyChanged,
   };
 }
 

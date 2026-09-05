@@ -1,21 +1,80 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TmuxCommandError } from "libtmux";
+import { compileBoundedRegex, TmuxCommandError } from "libtmux";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
 import { boundedCaptureRange, captureRowLimit } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { offers, READ_ONLY } from "../register.js";
+import { READ_ONLY, type ToolRegistrar } from "../register.js";
 import { fail, mapConcurrent, ok } from "../results.js";
 import { paneIdSchema, requestText } from "../schemas.js";
 import { isFailure, paneEntities, panePlacements, requireSession } from "../target_resolution.js";
 import { panePlacementView, placementViewSchema, type PlacementView } from "../views.js";
 
 const SEARCH_CONCURRENCY = 8;
+const SEARCH_MATCH_BYTES = 256 * 1024;
+const SEARCH_MATCH_LINES = 20_000;
+const SEARCH_MATCH_MILLISECONDS = 5_000;
+const SEARCH_PANES = 200;
 
-export function registerSearch(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "readonly")) return;
+/** Aggregate deterministic work budget for literal matching, measured in UTF-8 bytes. */
+export class SearchMatchBudget {
+  readonly #deadline: number;
+  readonly #now: () => number;
+  #remaining: number;
+  #remainingLines: number;
+  #exhaustedBy: "bytes" | "lines" | "time" | undefined;
 
+  constructor(
+    maximum: number = SEARCH_MATCH_BYTES,
+    maximumLines: number = SEARCH_MATCH_LINES,
+    maximumMilliseconds: number = SEARCH_MATCH_MILLISECONDS,
+    now: () => number = Date.now,
+  ) {
+    if (
+      !Number.isSafeInteger(maximum) ||
+      maximum <= 0 ||
+      !Number.isSafeInteger(maximumLines) ||
+      maximumLines <= 0 ||
+      !Number.isSafeInteger(maximumMilliseconds) ||
+      maximumMilliseconds <= 0
+    ) {
+      throw new TypeError("search match budget must be a positive safe integer");
+    }
+    this.#now = now;
+    this.#deadline = now() + maximumMilliseconds;
+    this.#remaining = maximum;
+    this.#remainingLines = maximumLines;
+  }
+
+  get exhaustedBy(): "bytes" | "lines" | "time" | undefined {
+    return this.#exhaustedBy;
+  }
+
+  active(): boolean {
+    if (this.#now() < this.#deadline) return true;
+    this.#exhaustedBy = "time";
+    return false;
+  }
+
+  take(text: string): boolean {
+    if (!this.active()) return false;
+    if (this.#remainingLines === 0) {
+      this.#exhaustedBy = "lines";
+      return false;
+    }
+    // One byte per row also bounds an arbitrarily large set of empty inputs.
+    const cost = Buffer.byteLength(text, "utf8") + 1;
+    if (cost > this.#remaining) {
+      this.#exhaustedBy = "bytes";
+      return false;
+    }
+    this.#remaining -= cost;
+    this.#remainingLines -= 1;
+    return true;
+  }
+}
+
+export function registerSearch(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "search_panes",
     {
@@ -23,16 +82,15 @@ export function registerSearch(mcp: McpServer, context: ToolContext): void {
       description:
         "Find which panes are showing something. Searches pane contents, not their " +
         "names — use list_panes for metadata. Returns the matching lines with their " +
-        "pane, so you can target one without capturing them all.",
+        "pane, so you can target one without capturing them all. Literal matching " +
+        "stops at one 256 KiB aggregate UTF-8 byte budget.",
       inputSchema: {
         maxMatchesPerPane: z.number().int().positive().optional(),
         pattern: requestText("pattern").min(1).describe("Non-empty literal text to find."),
         regex: z
-          .literal(false)
+          .boolean()
           .optional()
-          .describe(
-            "Regular expressions are disabled because native matching can block the server.",
-          ),
+          .describe("Interpret pattern using libtmux's bounded regular-expression grammar."),
         scrollbackLines: z
           .number()
           .int()
@@ -55,24 +113,34 @@ export function registerSearch(mcp: McpServer, context: ToolContext): void {
             windowName: z.string(),
           }),
         ),
+        matchingByteClamped: z.boolean(),
+        matchingLineClamped: z.boolean(),
+        matchingTimeClamped: z.boolean(),
         matchesTruncated: z.boolean(),
+        paneLimitClamped: z.boolean(),
         panesFailed: z.number().int(),
         panesSearched: z.number().int(),
         scrollbackClamped: z.boolean(),
       },
       title: "Search pane contents",
     },
-    async ({ maxMatchesPerPane, pattern, scrollbackLines, session }) => {
-      const matcher = (line: string): boolean => line.includes(pattern);
+    async ({ maxMatchesPerPane, pattern, regex, scrollbackLines, session }) => {
+      const compiled = regex === true ? compileBoundedRegex(pattern) : undefined;
+      const matcher =
+        compiled === undefined
+          ? (line: string): boolean => line.includes(pattern)
+          : (line: string): boolean => compiled.test(line);
 
       const snapshot = await context.snapshot();
       const target = session === undefined ? undefined : requireSession(snapshot, session);
       if (target !== undefined && isFailure(target)) return target;
-      const panes = paneEntities(
+      const candidatePanes = paneEntities(
         snapshot.panes
           .toArray()
           .filter((pane) => target === undefined || pane.format.session_id === target.id),
       );
+      const panes = candidatePanes.slice(0, SEARCH_PANES);
+      const paneLimitClamped = panes.length !== candidatePanes.length;
       const perPane = effectiveResultLines(context.policy, maxMatchesPerPane ?? 5);
       const resultLimit = effectiveResultLines(context.policy, undefined);
       const requestedScrollback = scrollbackLines ?? 0;
@@ -88,12 +156,26 @@ export function registerSearch(mcp: McpServer, context: ToolContext): void {
         windowName: string;
       }[] = [];
       let capturesByteClamped = false;
-      let matchesTruncated = false;
+      let matchingByteClamped = false;
+      let matchingLineClamped = false;
+      let matchingTimeClamped = false;
+      let matchesTruncated = paneLimitClamped;
       let panesFailed = 0;
       let panesSearched = 0;
       let structuredBytes = 2;
       let textBytes = 0;
+      const matchBudget = new SearchMatchBudget();
+      const markMatchClamp = (): void => {
+        matchingByteClamped ||= matchBudget.exhaustedBy === "bytes";
+        matchingLineClamped ||= matchBudget.exhaustedBy === "lines";
+        matchingTimeClamped ||= matchBudget.exhaustedBy === "time";
+        matchesTruncated = true;
+      };
       searchLoop: for (let offset = 0; offset < panes.length; offset += SEARCH_CONCURRENCY) {
+        if (!matchBudget.active()) {
+          markMatchClamp();
+          break;
+        }
         const batch = panes.slice(offset, offset + SEARCH_CONCURRENCY);
         // eslint-disable-next-line no-await-in-loop -- each bounded batch is released before the next.
         const captures = await mapConcurrent(batch, SEARCH_CONCURRENCY, async (pane) => {
@@ -141,6 +223,10 @@ export function registerSearch(mcp: McpServer, context: ToolContext): void {
           capturesByteClamped ||= byteClamped;
           let foundForPane = 0;
           for (const [index, line] of lines.entries()) {
+            if (!matchBudget.take(line)) {
+              markMatchClamp();
+              break searchLoop;
+            }
             if (!matcher(line)) continue;
             if (foundForPane >= perPane) {
               matchesTruncated = true;
@@ -197,7 +283,7 @@ export function registerSearch(mcp: McpServer, context: ToolContext): void {
       const answer =
         matches.length === 0
           ? matchesTruncated
-            ? `Matches for ${pattern} were omitted because no complete result fit the byte ceiling.`
+            ? `Search for ${pattern} stopped at a declared work or result ceiling.`
             : `No pane of ${String(panesSearched)} searched is showing ${pattern}. Try scrollbackLines to look above the visible screen.`
           : matches
               .map((match) => {
@@ -212,19 +298,37 @@ export function registerSearch(mcp: McpServer, context: ToolContext): void {
           ? [`[scrollbackLines clamped to ${String(effectiveScrollback)}]`]
           : []),
         ...(capturesByteClamped ? ["[pane captures shortened to fit the byte ceiling]"] : []),
+        ...(matchingByteClamped
+          ? [`[search stopped at the ${String(SEARCH_MATCH_BYTES)}-byte matching ceiling]`]
+          : []),
+        ...(matchingLineClamped
+          ? [`[search stopped at the ${String(SEARCH_MATCH_LINES)}-line matching ceiling]`]
+          : []),
+        ...(matchingTimeClamped
+          ? [`[search stopped at the ${String(SEARCH_MATCH_MILLISECONDS)} ms matching ceiling]`]
+          : []),
+        ...(paneLimitClamped
+          ? [`[search considered the first ${String(SEARCH_PANES)} panes]`]
+          : []),
         ...(panesFailed === 0
           ? []
           : [
               `[${String(panesFailed)} pane capture${panesFailed === 1 ? "" : "s"} failed; those panes were not searched]`,
             ]),
-        ...(matchesTruncated ? [`[matches truncated at ${String(resultLimit)} lines]`] : []),
+        ...(matches.length >= resultLimit
+          ? [`[matches truncated at ${String(resultLimit)} lines]`]
+          : []),
       ];
       return ok(
         {
           capturesByteClamped,
           effectiveScrollbackLines: effectiveScrollback,
           matches,
+          matchingByteClamped,
+          matchingLineClamped,
+          matchingTimeClamped,
           matchesTruncated,
+          paneLimitClamped,
           panesFailed,
           panesSearched,
           scrollbackClamped,

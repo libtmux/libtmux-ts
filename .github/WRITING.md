@@ -90,7 +90,7 @@ than a handful of entries takes `####` headings for its areas.
 Lead with the identifier and a concrete verb — add, fix, remove, deprecate,
 support, requires, `now`, `no longer`. Name identifiers literally:
 `Server.newSession`, `Selection.one`, `LIBTMUX_TMUX_BUILDS`,
-`tmux://panes/{pane}`. One to three sentences.
+`tmux://capabilities`. One to three sentences.
 
 Do not sell a fix: "no longer returns another command's reply", not "improves
 reliability". Do not describe effort. Give the old behaviour only where it
