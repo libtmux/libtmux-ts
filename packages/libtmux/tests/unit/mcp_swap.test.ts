@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -297,6 +297,27 @@ describe("TOML", () => {
 });
 
 describe("swapping a config", () => {
+  test.serial("preserves a private mode through swap and revert", async () => {
+    const previousUmask = process.umask(0o022);
+    try {
+      const info = cliFor("cursor");
+      const original = '{\n  "mcpServers": {}\n}\n';
+      await seed(info, original);
+      await chmod(info.configPath, 0o600);
+
+      await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+
+      expect((await stat(info.configPath)).mode & 0o777).toBe(0o600);
+      expect((await stat(backupPath(info.configPath))).mode & 0o777).toBe(0o600);
+
+      expect(await revertConfig(info)).toBe(true);
+      expect(await readFile(info.configPath, "utf8")).toBe(original);
+      expect((await stat(info.configPath)).mode & 0o777).toBe(0o600);
+    } finally {
+      process.umask(previousUmask);
+    }
+  });
+
   test("writes, reads back, and reverts to the original bytes", async () => {
     const info = cliFor("cursor");
     const original =

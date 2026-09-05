@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
 import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process.js";
 
@@ -509,6 +509,13 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
+async function fileMode(path: string): Promise<number | undefined> {
+  return stat(path).then(
+    (status) => status.mode & 0o7777,
+    () => undefined,
+  );
+}
+
 /**
  * Replace a file's contents without leaving a truncated one behind.
  *
@@ -516,9 +523,11 @@ async function exists(path: string): Promise<boolean> {
  * that no longer starts, so the new bytes land under a temporary name and the
  * rename swaps them in whole.
  */
-export async function writeAtomic(path: string, data: string): Promise<void> {
+export async function writeAtomic(path: string, data: string, mode?: number): Promise<void> {
   const temporary = `${path}.mcp-swap-${String(process.pid)}`;
-  await writeFile(temporary, data);
+  const targetMode = mode ?? (await fileMode(path));
+  await writeFile(temporary, data, targetMode === undefined ? undefined : { mode: targetMode });
+  if (targetMode !== undefined) await chmod(temporary, targetMode);
   await rename(temporary, path);
 }
 
@@ -531,8 +540,10 @@ export async function writeAtomic(path: string, data: string): Promise<void> {
 export async function backupOnce(path: string): Promise<string | undefined> {
   const backup = `${path}${BACKUP_SUFFIX}`;
   if (await exists(backup)) return backup;
-  if (!(await exists(path))) return undefined;
-  await writeFile(backup, await readFile(path, "utf8"));
+  const mode = await fileMode(path);
+  if (mode === undefined) return undefined;
+  await writeFile(backup, await readFile(path, "utf8"), { mode });
+  await chmod(backup, mode);
   return backup;
 }
 
@@ -614,8 +625,9 @@ export async function writeServer(
 /** Restore a config from the backup a swap wrote, and drop the backup. */
 export async function revertConfig(info: CliInfo): Promise<boolean> {
   const backup = backupPath(info.configPath);
-  if (!(await exists(backup))) return false;
-  await writeAtomic(info.configPath, await readFile(backup, "utf8"));
+  const mode = await fileMode(backup);
+  if (mode === undefined) return false;
+  await writeAtomic(info.configPath, await readFile(backup, "utf8"), mode);
   await rm(backup, { force: true });
   return true;
 }
