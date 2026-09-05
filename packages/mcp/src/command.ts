@@ -51,6 +51,8 @@ function isCancelled(signal: AbortSignal | undefined): boolean {
 }
 
 export interface FramedCommandReservation {
+  /** Describe an unfinished command other than this reservation. */
+  conflictingCommand(paneId: string): string | undefined;
   release(): void;
   settleWith(settled: Promise<void>): void;
 }
@@ -81,6 +83,14 @@ export function reserveFramedCommand(
     if (byPane.size === 0) activeCommands.delete(context);
   };
   return {
+    conflictingCommand: (targetPaneId) => {
+      const active = byPane.get(targetPaneId);
+      if (active === undefined) return undefined;
+      for (const [candidate, description] of active) {
+        if (candidate !== token) return description;
+      }
+      return undefined;
+    },
     release,
     settleWith: (settled) => {
       void settled.then(release, () => undefined);
@@ -191,6 +201,7 @@ export async function runFramedCommand(
   timeoutMs: number | undefined,
   signal?: AbortSignal,
   suppressHistory = true,
+  beforeDispatch?: () => Promise<Pane>,
 ): Promise<FramedResult> {
   const budget = effectiveWaitMs(context.policy, timeoutMs);
   if (isCancelled(signal)) return beforeStartResult(budget, "cancelled");
@@ -211,7 +222,8 @@ export async function runFramedCommand(
   let missedBytes = 0;
   let commandStarted = false;
   let usedFallback = tail === undefined;
-  await sendLiteralLine(pane, source);
+  const dispatchPane = beforeDispatch === undefined ? pane : await beforeDispatch();
+  await sendLiteralLine(dispatchPane, source);
   for (;;) {
     if (Date.now() >= deadline || isCancelled(signal)) break;
     if (tail?.endReason !== undefined) {

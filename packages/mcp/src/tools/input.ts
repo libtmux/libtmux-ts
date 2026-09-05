@@ -8,8 +8,16 @@
 
 import { randomUUID } from "node:crypto";
 
+import type { Pane, ServerSnapshot } from "libtmux";
 import { z } from "zod";
 
+import type { CallerIdentity } from "../caller.js";
+import {
+  activeFramedCommand,
+  reserveFramedCommand,
+  runFramedCommand,
+  type FramedCommandReservation,
+} from "../command.js";
 import type { ToolContext } from "../context.js";
 import type { Policy } from "../policy.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
@@ -21,7 +29,6 @@ import {
   requirePaneInputTarget,
   resolvedPaneInputTargetIds,
 } from "../target_resolution.js";
-import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
 
 /**
  * Shells whose syntax the command framing is written in.
@@ -64,6 +71,99 @@ function busyPane(policy: Policy, paneId: string, active: string): ReturnType<ty
         ? "Wait for that command to finish before writing to the pane."
         : `Wait for that command to finish, or ${followups.join(", or ")}.`,
     reason: `Refusing to write into ${paneId}: run_shell_command ${active} is still active.`,
+  });
+}
+
+interface RunPreflight {
+  readonly pane: Pane;
+  readonly signature: string;
+}
+
+const RUN_TRANSITION = Symbol("run-transition");
+
+function runPreflight(
+  context: ToolContext,
+  snapshot: ServerSnapshot,
+  identity: CallerIdentity,
+  paneId: string,
+  force: boolean | undefined,
+  reservation?: FramedCommandReservation,
+): ReturnType<typeof fail> | RunPreflight {
+  const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "run in");
+  if (isFailure(pane)) return pane;
+  const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
+  if (isFailure(resolvedPaneIds)) return resolvedPaneIds;
+
+  for (const resolvedPaneId of resolvedPaneIds) {
+    const writable = requirePaneInputTarget(snapshot, identity, resolvedPaneId, force, "run in");
+    if (isFailure(writable)) return writable;
+    const active =
+      reservation?.conflictingCommand(resolvedPaneId) ??
+      (reservation === undefined ? activeFramedCommand(context, resolvedPaneId) : undefined);
+    if (active !== undefined && force !== true) {
+      return busyPane(context.policy, resolvedPaneId, active);
+    }
+  }
+
+  if (resolvedPaneIds.length !== 1 || resolvedPaneIds[0] !== paneId) {
+    return fail({
+      hint: "Disable synchronize-panes for this pane before running a framed command.",
+      reason:
+        `Refusing to run in ${paneId}: its configured input cohort contains ` +
+        `${String(resolvedPaneIds.length)} panes (${resolvedPaneIds.join(", ")}).`,
+    });
+  }
+
+  const rawCommand = pane.currentCommand;
+  const running = shellName(typeof rawCommand === "string" ? rawCommand : "");
+  if (!POSIX_SHELLS.has(running)) {
+    return fail({
+      hint: OTHER_SHELLS.has(running)
+        ? "Use send_keys, or run the command in a pane running sh, bash, dash, or zsh."
+        : "Use send_keys if input belongs to that program, or choose a pane at a supported POSIX shell prompt.",
+      reason:
+        running === ""
+          ? `Pane ${paneId} has no trusted foreground shell state.`
+          : `Pane ${paneId} is running ${running}, which run_shell_command cannot address.`,
+    });
+  }
+
+  const sessionId = pane.format.session_id;
+  const windowId = pane.window?.id ?? pane.format.window_id;
+  if (
+    typeof identity.serverPid !== "string" ||
+    identity.serverPid === "" ||
+    typeof sessionId !== "string" ||
+    sessionId === "" ||
+    typeof windowId !== "string" ||
+    windowId === ""
+  ) {
+    return fail({
+      hint: "Refresh the pane snapshot before running a framed command.",
+      reason: `Pane ${paneId} has no usable daemon or placement identity.`,
+    });
+  }
+
+  return {
+    pane,
+    signature: JSON.stringify({
+      cohort: resolvedPaneIds,
+      command: rawCommand,
+      dead: pane.dead,
+      mode: pane.inMode,
+      paneId,
+      serverPid: identity.serverPid,
+      sessionId,
+      synchronized: pane.synchronized,
+      windowId,
+    }),
+  };
+}
+
+function runTransitionFailure(paneId: string): ReturnType<typeof fail> {
+  return fail({
+    hint: "Take a fresh snapshot and retry only after the pane is stable and unattended.",
+    reason: `Pane ${paneId} changed during run_shell_command setup; no command was sent.`,
   });
 }
 
@@ -291,53 +391,46 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       }
       const snapshot = await context.snapshot();
       const identity = await context.identity(snapshot);
-      const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "run in");
-      if (isFailure(pane)) return pane;
-      const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) {
-        return busyPane(context.policy, paneId, active);
-      }
-      if (pane.dead === true) {
-        // Not a `force` case: a dead pane has no process to read the command,
-        // so forcing it would spend the whole timeout waiting for a marker
-        // that cannot be printed. The shell check below would pass — a dead
-        // pane still reports the command it last ran.
-        return fail({
-          hint: "respawn_pane restarts a pane's command, keeping the pane and its id.",
-          reason:
-            `Pane ${paneId} is dead: its process exited and the pane is kept only because ` +
-            `remain-on-exit is set, so nothing there can run a command.`,
-        });
-      }
-      const running = shellName(pane.currentCommand ?? "");
-      if (OTHER_SHELLS.has(running)) {
-        // Not a `force` case: forcing it would send POSIX syntax to a shell
-        // that cannot parse it, and the wait would run to its deadline against
-        // an error message.
-        return fail({
-          hint:
-            "This tool frames commands in POSIX shell syntax, which that shell does not " +
-            "share. Use send_keys, or run the command in a pane running sh, bash, or zsh.",
-          reason: `Pane ${paneId} is running ${running}, which run_shell_command cannot address.`,
-        });
-      }
-      if (force !== true && !POSIX_SHELLS.has(running)) {
-        return fail({
-          hint:
-            "A shell command typed into a program that is not a shell goes to that program. " +
-            "Use send_keys if that is what you meant, or pass force.",
-          reason: `Pane ${paneId} is running ${running === "" ? "an unknown command" : running}, not a shell.`,
-        });
-      }
+      const initial = runPreflight(context, snapshot, identity, paneId, force);
+      if (isFailure(initial)) return initial;
 
       const reservation = reserveFramedCommand(context, paneId, command);
-
-      const result = await runFramedCommand(context, pane, command, timeoutMs, extra.signal).catch(
-        (error: unknown) => {
-          reservation.release();
-          throw error;
-        },
-      );
+      let result: Awaited<ReturnType<typeof runFramedCommand>>;
+      try {
+        result = await runFramedCommand(
+          context,
+          initial.pane,
+          command,
+          timeoutMs,
+          extra.signal,
+          true,
+          async () => {
+            let final: ReturnType<typeof runPreflight>;
+            try {
+              const finalSnapshot = await context.snapshot(extra.signal);
+              const finalIdentity = await context.identity(finalSnapshot);
+              final = runPreflight(
+                context,
+                finalSnapshot,
+                finalIdentity,
+                paneId,
+                force,
+                reservation,
+              );
+            } catch {
+              throw RUN_TRANSITION;
+            }
+            if (isFailure(final) || final.signature !== initial.signature) {
+              throw RUN_TRANSITION;
+            }
+            return final.pane;
+          },
+        );
+      } catch (error) {
+        reservation.release();
+        if (error === RUN_TRANSITION) return runTransitionFailure(paneId);
+        throw error;
+      }
       reservation.settleWith(result.settled);
       const bounded = boundText(
         result.output === "" ? [] : result.output.split("\n"),
