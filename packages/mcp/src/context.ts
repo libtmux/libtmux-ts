@@ -19,12 +19,14 @@ import { LiveHub } from "./live.js";
 import type { PaneTail } from "./pane_tail.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
+import { pinTmuxRoute, type PinnedTmuxRoute } from "./route.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export interface ToolContext {
   readonly hub: LiveHub;
   identity(snapshot: ServerSnapshot): Promise<CallerIdentity>;
   readonly policy: Policy;
+  readonly route: PinnedTmuxRoute;
   snapshot(signal?: AbortSignal): Promise<ServerSnapshot>;
   readonly tmux: Server;
 }
@@ -89,12 +91,14 @@ export function createContext(
   policy: Policy,
   caller: CallerEnvironment = readCallerEnvironment(),
 ): ToolContext & { close(): Promise<void> } {
+  const route = pinTmuxRoute(tmux);
   const hub = new LiveHub(tmux, { connectTimeoutMs: policy.commandTimeoutMs });
   return {
     close: () => hub.close(),
     hub,
     identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, caller),
     policy,
+    route,
     snapshot: (signal) => withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal })),
     tmux,
   };

@@ -640,6 +640,37 @@ test("startup env uses the shared socket name, socket path, and config contract"
   ).toThrow(/only one.*LIBTMUX_SOCKET.*LIBTMUX_SOCKET_PATH|LIBTMUX_SOCKET.*only one/u);
 });
 
+test("startup route rejects only ASCII controls and DEL", () => {
+  for (let byte = 0; byte <= 0xff; byte += 1) {
+    const value = `route'${String.fromCharCode(byte)}value`;
+    const invalid = byte <= 0x1f || byte === 0x7f;
+    const create = (field: "bin" | "name" | "path") =>
+      serverFromEnvironment(
+        field === "bin"
+          ? { LIBTMUX_TMUX_BIN: value }
+          : field === "name"
+            ? { LIBTMUX_SOCKET: value }
+            : { LIBTMUX_SOCKET_PATH: `/tmp/${value}` },
+      );
+    for (const field of ["bin", "name", "path"] as const) {
+      if (invalid) {
+        expect(() => create(field), `${field} accepted byte 0x${byte.toString(16)}`).toThrow(
+          /ASCII control|DEL/u,
+        );
+      } else {
+        const server = create(field);
+        expect(
+          field === "bin"
+            ? server.tmuxBin
+            : field === "name"
+              ? server.socketName
+              : server.socketPath,
+        ).toBe(field === "path" ? `/tmp/${value}` : value);
+      }
+    }
+  }
+});
+
 test("minimal startup authenticates the daemon creator after start-server", async () => {
   const observedOwner = "01234567-89ab-cdef-0123-456789abcdef";
   const commands: (readonly string[])[] = [];

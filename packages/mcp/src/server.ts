@@ -15,6 +15,7 @@ import { buildInstructions } from "./instructions.js";
 import { resolvePolicy, snapshotPolicy, TOOLSETS, type Policy } from "./policy.js";
 import { boundRequestIds } from "./protocol_transport.js";
 import { assertKnownPolicyTools, ToolRegistry } from "./register.js";
+import { assertSafeRouteValue } from "./route.js";
 import { registerCapture } from "./tools/capture.js";
 import { registerDiscovery } from "./tools/discovery.js";
 import { registerInput } from "./tools/input.js";
@@ -97,16 +98,13 @@ export function createTmuxMcpServer(
     mcp.server.registerCapabilities({ tools: {} });
     mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
   }
-  const socketSelector =
-    tmux.socketPath === undefined
-      ? `name:${tmux.socketName ?? "default"}`
-      : `path:${tmux.socketPath}`;
+  const socketSelector = context.route.selector;
   const defaultDedicated =
-    tmux.socketPath === undefined &&
-    tmux.socketName === "libtmux-mcp" &&
+    context.route.socketPath === undefined &&
+    context.route.socketName === "libtmux-mcp" &&
     startup.configurationProvenance === "minimal";
   const selectionProvenance = defaultDedicated ? "default-dedicated" : "operator-current";
-  const disclosedSocketPath = startup.resolvedSocketPath ?? tmux.socketPath ?? null;
+  const disclosedSocketPath = startup.resolvedSocketPath ?? context.route.socketPath ?? null;
   const capabilityReport = Object.freeze({
     boundary: Object.freeze({
       dynamicResources: false,
@@ -204,6 +202,12 @@ export function serverFromEnvironment(
   if (hasSocketName && socketName === "") {
     throw new TypeError("LIBTMUX_SOCKET must not be empty");
   }
+  assertSafeRouteValue(
+    "LIBTMUX_TMUX_BIN",
+    tmuxBin === undefined || tmuxBin === "" ? "tmux" : tmuxBin,
+  );
+  if (socketPath === undefined) assertSafeRouteValue("LIBTMUX_SOCKET", socketName);
+  else assertSafeRouteValue("LIBTMUX_SOCKET_PATH", socketPath);
   if (socketPath !== undefined && !isAbsolute(socketPath)) {
     throw new TypeError("LIBTMUX_SOCKET_PATH must be absolute");
   }
