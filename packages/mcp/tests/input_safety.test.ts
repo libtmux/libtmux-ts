@@ -3,7 +3,10 @@ import { describe, expect, test } from "bun:test";
 import type { ServerSnapshot } from "libtmux";
 
 import type { CallerIdentity } from "../src/caller.js";
+import type { ToolContext } from "../src/context.js";
+import type { ToolRegistrar } from "../src/register.js";
 import { isFailure, requirePaneInputTarget } from "../src/target_resolution.js";
+import { registerInput } from "../src/tools/input.js";
 
 const identity: CallerIdentity = {
   attendedPaneIds: [],
@@ -65,4 +68,60 @@ describe("pane input state", () => {
   test("never lets force write to a dead pane", () => {
     expect(refusal({ dead: true }, true)).toContain("dead");
   });
+});
+
+test("paste_text rechecks state after buffer setup and always cleans up", async () => {
+  const events: string[] = [];
+  const snapshots = [snapshot({}), snapshot({ inMode: 1 })];
+  let snapshotIndex = 0;
+  const handlers = new Map<
+    string,
+    (args: Readonly<Record<string, unknown>>, extra: { signal?: AbortSignal }) => Promise<unknown>
+  >();
+  const registrar = {
+    registerTool(
+      name: string,
+      _config: unknown,
+      handler: (
+        args: Readonly<Record<string, unknown>>,
+        extra: { signal?: AbortSignal },
+      ) => Promise<unknown>,
+    ): object {
+      handlers.set(name, handler);
+      return {};
+    },
+  } as unknown as ToolRegistrar;
+  const context = {
+    hub: {},
+    identity: async () => identity,
+    policy: {},
+    snapshot: async () => snapshots[snapshotIndex++] as ServerSnapshot,
+    tmux: {
+      deleteBuffer: async () => {
+        events.push("delete");
+      },
+      loadBuffer: async () => {
+        events.push("load");
+      },
+    },
+  } as unknown as ToolContext;
+  const panes = snapshots.map((entry) => entry.panes.toArray()[0]) as unknown as {
+    pasteBuffer(name: string): Promise<void>;
+  }[];
+  for (const pane of panes) {
+    pane.pasteBuffer = async () => {
+      events.push("paste");
+    };
+  }
+  registerInput(registrar, context);
+
+  const handler = handlers.get("paste_text");
+  if (handler === undefined) throw new Error("paste_text was not registered");
+  const result = (await handler({ paneId: "%1", text: "payload" }, {})) as {
+    isError?: boolean;
+  };
+
+  expect(result.isError).toBe(true);
+  expect(snapshotIndex).toBe(2);
+  expect(events).toEqual(["load", "delete"]);
 });

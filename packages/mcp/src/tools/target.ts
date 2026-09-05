@@ -40,7 +40,6 @@ import {
   resolvedPaneInputTargetIds,
   requireSession,
   requireWindow,
-  requireWritablePane,
   windowPlacements,
 } from "../target_resolution.js";
 import {
@@ -496,7 +495,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
           if (onError !== "continue") break;
           continue;
         }
-        // eslint-disable-next-line no-await-in-loop -- targets are resolved immediately before input.
         const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
         if (isFailure(resolvedPaneIds)) {
           const reason =

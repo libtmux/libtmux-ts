@@ -6,6 +6,8 @@
  * result of; `send_keys` is for keystrokes — a TUI, a signal, a partial line.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
@@ -157,16 +159,51 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       title: "Paste text",
     },
     async ({ enter, force, paneId, text }) => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "paste into");
-      if (isFailure(pane)) return pane;
+      const firstSnapshot = await context.snapshot();
+      const firstIdentity = await context.identity(firstSnapshot);
+      const firstPane = requirePaneInputTarget(
+        firstSnapshot,
+        firstIdentity,
+        paneId,
+        force,
+        "paste into",
+      );
+      if (isFailure(firstPane)) return firstPane;
       const active = activeFramedCommand(context, paneId);
       if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
-      await pane.sendKeys(text, { enter: enter ?? false, literal: true });
+
+      if (text === "" && enter !== true) {
+        return ok({ bytes: 0, paneId }, `Pasted 0 bytes into ${paneId}.`);
+      }
+
+      const bufferName = `ltx-mcp-paste-${randomUUID().replaceAll("-", "")}`;
+      let loaded = false;
+      try {
+        await context.tmux.loadBuffer(bufferName, enter === true ? `${text}\n` : text);
+        loaded = true;
+
+        const finalSnapshot = await context.snapshot();
+        const finalIdentity = await context.identity(finalSnapshot);
+        const finalPane = requirePaneInputTarget(
+          finalSnapshot,
+          finalIdentity,
+          paneId,
+          force,
+          "paste into",
+        );
+        if (isFailure(finalPane)) return finalPane;
+        const finalActive = activeFramedCommand(context, paneId);
+        if (finalActive !== undefined && force !== true) {
+          return busyPane(context.policy, paneId, finalActive);
+        }
+
+        await finalPane.pasteBuffer(bufferName);
+      } finally {
+        if (loaded) await context.tmux.deleteBuffer(bufferName);
+      }
       return ok(
         { bytes: Buffer.byteLength(text, "utf8"), paneId },
-        `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId}.`,
+        `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId} only.`,
       );
     },
   );
