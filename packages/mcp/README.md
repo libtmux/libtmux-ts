@@ -451,6 +451,20 @@ The retired prompts remain available as explicit tool workflows:
 | `diagnose-pane`   | `get_pane_info`, `capture_pane` or `snapshot_pane`, `show_option`, `show_hooks`, and `show_environment`                  |
 | `build-workspace` | `create_session`, `create_window`, `split_window`, `select_layout`, `set_pane_title`, `select_window`, and `select_pane` |
 
+For `run-and-check`, a `timed_out` outcome means the command may still be
+running. Continue observing it; do not run the command again.
+
+For `watch-until`, carry the returned cursor into the next capture after a
+timeout. A `pane_died` outcome means retrying cannot produce more output.
+
+For `diagnose-pane`, inspect `currentCommand`, `dead`, bounded scrollback and
+its cursor, the last command, and the last non-empty output. Give a root-cause
+hypothesis and propose the single cheapest confirming command, but do not
+execute it.
+
+For `build-workspace`, report every pane ID returned while creating the
+topology.
+
 ## Capability disclosure
 
 Each advertised tool carries
