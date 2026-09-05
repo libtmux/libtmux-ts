@@ -7,7 +7,7 @@ test("the stdio server executes the retained capability surface end to end", asy
     await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
     await withClient(fixture, async (client) => {
       const tools = await client.listTools();
-      expect(tools.tools).toHaveLength(47);
+      expect(tools.tools).toHaveLength(45);
       expect((await client.listResources()).resources.map(({ uri }) => uri)).toEqual([
         "tmux://capabilities",
       ]);
@@ -175,8 +175,6 @@ test("the stdio server executes the retained capability surface end to end", asy
       await call("set_pane_title", { paneId: created.paneId, title: "contract-pane" });
       await call("move_window", { index: 7, windowId: extraWindow.window.id });
       await call("select_window", { windowId: extraWindow.window.id });
-      await call("enter_copy_mode", { paneId: created.paneId, scrollUp: 1 });
-      await call("exit_copy_mode", { paneId: created.paneId });
       await call("set_mouse_enabled", { enabled: true });
       await call("set_history_limit", { lines: 4_000 });
 

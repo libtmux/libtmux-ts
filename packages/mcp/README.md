@@ -235,7 +235,7 @@ Routes removed or renamed since the previous alpha migrate as follows:
 | `get_pane`                                                                                   | `get_pane_info`                                                                                               |
 | `whoami`                                                                                     | `list_panes` exposes caller and watched panes; inspect one with `get_pane_info`                               |
 | `server_info`                                                                                | `get_server_info`                                                                                             |
-| `observe`                                                                                    | Start with `snapshot_pane`, then pass its cursor to `capture_since`                                           |
+| `observe`                                                                                    | Use `snapshot_pane` once, or seed `capture_since` without a cursor and reuse the cursor it returns            |
 | `run_command`                                                                                | `run_shell_command`                                                                                           |
 | `build_workspace`                                                                            | Compose `create_session`, `create_window`, `split_window`, layout, title, and selection tools                 |
 | `new_session`                                                                                | `create_session`                                                                                              |
@@ -271,13 +271,26 @@ default, while `force` records that the caller deliberately chose one.
 
 ### Read what panes show
 
-| Tool                    | Answers                                            |
-| ----------------------- | -------------------------------------------------- |
-| `capture_pane`          | The rendered screen, or into the scrollback        |
-| `capture_since`         | Only what is new since your cursor                 |
-| `snapshot_pane`         | A bounded screen snapshot and continuation cursor  |
-| `search_panes`          | Which panes contain a bounded pattern              |
-| `call_read_tools_batch` | Typed results from up to 16 eligible inspect calls |
+| Tool                    | Answers                                             |
+| ----------------------- | --------------------------------------------------- |
+| `capture_pane`          | The rendered screen, or into the scrollback         |
+| `capture_since`         | Only what is new since your cursor                  |
+| `snapshot_pane`         | Bounded content, pane metadata, and cursor position |
+| `search_panes`          | Which panes contain a bounded pattern               |
+| `call_read_tools_batch` | Typed results from up to 16 eligible inspect calls  |
+
+Use `search_panes` to discover which pane contains a value without capturing
+every pane. Once the pane is known, `capture_pane` reads its rendered screen;
+negative `start` and `end` values reach into retained history. `snapshot_pane`
+returns bounded content plus mode, cursor position, scroll position, and pane
+metadata in one MCP response. Its metadata and content come from separate tmux
+requests, so do not treat them as an atomic view.
+
+For repeated observation, seed `capture_since` without a cursor and pass its
+opaque cursor back on later calls. A nonzero `missedBytes` means retained stream
+data was lost before the read; use `capture_pane` to recover whatever remains in
+tmux's bounded history. The capture tools read output without entering or
+changing a client mode.
 
 Search is one bounded operation even when it spans the whole socket: at most
 200 panes, 20,000 captured lines, 256 KiB of matched input, and five seconds of
@@ -331,7 +344,13 @@ capability row.
 `create_session`, `create_window`, `split_window`, `respawn_pane`,
 `rename_session`, `rename_window`, `resize_pane`, `resize_window`,
 `select_pane`, `select_window`, `select_layout`, `swap_pane`, `move_window`, and
-`set_pane_title`. `enter_copy_mode` and `exit_copy_mode` control copy mode.
+`set_pane_title`.
+
+Copy mode and other client modes are human-owned, modal state. A nonzero
+`snapshot_pane.inMode` reports that state; input may be interpreted by the
+active tmux key table instead of reaching the pane's program. Report the mode
+and wait for its owner to leave it. The MCP server deliberately neither enters
+nor cancels client modes.
 
 `move_window` moves a complete window between sessions without restarting its
 panes; pane and window identities remain stable. `swap_pane` exchanges pane
@@ -399,11 +418,13 @@ That waits through tmux's notifications and comes back with `exitStatus`,
 own typing. `run_shell_command` is immune by construction; `wait_for_text` is for
 output somebody else wrote.
 
-**Do not re-read the screen.** Call `snapshot_pane` once to get a cursor, then
-pass it to `capture_since`:
+**Do not re-read the screen.** Use `snapshot_pane` when one response needs
+bounded content and pane metadata. For later deltas, call `capture_since`
+without a cursor once, then pass back the opaque cursor it returns:
 
 ```console
 $ snapshot_pane  paneId=%1
+$ capture_since  paneId=%1
 $ capture_since  paneId=%1  cursor=ltxc1.0123456789abcdef0123456789abcdef.4096  waitMs=10000
 ```
 
@@ -447,7 +468,7 @@ The retired prompts remain available as explicit tool workflows:
 | Previous prompt   | Current workflow                                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `run-and-check`   | `run_shell_command`                                                                                                      |
-| `watch-until`     | `snapshot_pane`, then `capture_since` or `wait_for_text`                                                                 |
+| `watch-until`     | Seed `capture_since` without a cursor, then reuse its cursor with `capture_since` or `wait_for_text`                     |
 | `diagnose-pane`   | `get_pane_info`, `capture_pane` or `snapshot_pane`, `show_option`, `show_hooks`, and `show_environment`                  |
 | `build-workspace` | `create_session`, `create_window`, `split_window`, `select_layout`, `set_pane_title`, `select_window`, and `select_pane` |
 
@@ -537,6 +558,12 @@ program that draws by moving the cursor â€” a progress bar, a full-screen TUI â€
 reads jumbled there, because resolving cursor addressing would mean emulating a
 terminal. `capture_pane` reads tmux's rendered grid and is the answer when that
 matters.
+
+The MCP surface does not drive attachment-bound client UX such as copy mode,
+clock mode, choose-tree, command prompts, menus, popups, or mouse gestures.
+Those interactions depend on a person's key table, client, clipboard, and
+timing. Read their visible result with `capture_pane`, inspect mode through
+`snapshot_pane`, and leave entry and cleanup to the attached client.
 
 There are no dynamic topology resources, subscriptions, prompts, background
 jobs, generic option or environment mutation, public buffer management, or

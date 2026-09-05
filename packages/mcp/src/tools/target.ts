@@ -306,7 +306,8 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     {
       annotations: READ_ONLY,
       description:
-        "Return pane metadata, mode, cursor, scroll position, and bounded terminal content together.",
+        "Return bounded terminal content and pane metadata in one MCP response. The metadata " +
+        "and capture come from separate tmux requests and are not an atomic snapshot.",
       inputSchema: {
         maxLines: z.number().int().positive().optional(),
         paneId: paneIdSchema,
@@ -346,54 +347,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
         },
         `${paneLine(view)}\n${renderBoundedText(bounded, "use capture_pane with a narrower range")}`,
       );
-    },
-  );
-
-  registry.registerTool(
-    "enter_copy_mode",
-    {
-      annotations: MUTATING,
-      description: "Enter copy mode in a pane and optionally scroll upward.",
-      inputSchema: {
-        paneId: paneIdSchema,
-        scrollUp: z.number().int().positive().optional(),
-      },
-      outputSchema: { pane: paneViewSchema },
-      title: "Enter copy mode",
-    },
-    async ({ paneId, scrollUp }) => {
-      const before = await context.snapshot();
-      const pane = requirePane(before, paneId);
-      if (isFailure(pane)) return pane;
-      await pane.enterCopyMode();
-      if (scrollUp !== undefined) {
-        await context.tmux.cmd("send-keys", ["-X", "-N", String(scrollUp), "scroll-up"], {
-          target: paneId,
-        });
-      }
-      const view = await projectedPane(await context.snapshot(), paneId, context);
-      if (isFailure(view)) return view;
-      return ok({ pane: view }, paneLine(view));
-    },
-  );
-
-  registry.registerTool(
-    "exit_copy_mode",
-    {
-      annotations: MUTATING,
-      description: "Leave copy mode in a pane.",
-      inputSchema: { paneId: paneIdSchema },
-      outputSchema: { pane: paneViewSchema },
-      title: "Exit copy mode",
-    },
-    async ({ paneId }) => {
-      const before = await context.snapshot();
-      const pane = requirePane(before, paneId);
-      if (isFailure(pane)) return pane;
-      await pane.exitCopyMode();
-      const view = await projectedPane(await context.snapshot(), paneId, context);
-      if (isFailure(view)) return view;
-      return ok({ pane: view }, paneLine(view));
     },
   );
 

@@ -35,8 +35,6 @@ const TOOLS_BY_TOOLSET = {
     "wait_for_text",
   ],
   manage: [
-    "enter_copy_mode",
-    "exit_copy_mode",
     "move_window",
     "rename_session",
     "rename_window",
@@ -124,8 +122,6 @@ const SOURCE_CATALOG_ORDER = [
   "find_pane_by_position",
   "get_tmux_variables",
   "snapshot_pane",
-  "enter_copy_mode",
-  "exit_copy_mode",
   "wait_for_channel",
   "signal_channel",
   "set_mouse_enabled",
@@ -334,7 +330,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
     async (client) => {
       const tools = (await client.listTools()).tools;
       expect(tools.map(({ name }) => name)).toEqual([...SOURCE_CATALOG_ORDER]);
-      expect(tools).toHaveLength(47);
+      expect(tools).toHaveLength(45);
 
       const controlledOpeners = [
         {
@@ -394,7 +390,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
           opener: "Delete tmux state; accepts no command payload.",
         },
       ] as const;
-      expect(controlledOpeners.reduce((count, group) => count + group.names.length, 0)).toBe(47);
+      expect(controlledOpeners.reduce((count, group) => count + group.names.length, 0)).toBe(45);
       for (const { names, opener } of controlledOpeners) {
         for (const name of names) {
           expect(tools.find((tool) => tool.name === name)?.description, name).toStartWith(
@@ -503,7 +499,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
         hostCommandTools: 0,
         operatingSystemBoundary: "none",
         socket: { namespaceBoundary: "tmux-objects-only" },
-        toolCount: 47,
+        toolCount: 45,
         toolFilteringBoundary: "interface-shaping-not-authorization",
       });
       expect(report.tools.find(({ name }) => name === "snapshot_pane")?.nestedAuthority).toEqual(
@@ -915,16 +911,19 @@ test("startup provenance controls the implicit teardown surface", async () => {
       configurationProvenance: "minimal",
       hasTeardown: true,
       serverState: "created",
+      toolCount: 45,
     },
     {
       configurationProvenance: "unknown",
       hasTeardown: false,
       serverState: "existing",
+      toolCount: 41,
     },
     {
       configurationProvenance: "user-configured",
       hasTeardown: false,
       serverState: "absent",
+      toolCount: 41,
     },
   ] as const;
 
@@ -935,6 +934,7 @@ test("startup provenance controls the implicit teardown surface", async () => {
       async (client) => {
         const names = (await client.listTools()).tools.map(({ name }) => name);
         expect(names.includes("kill_session")).toBe(startup.hasTeardown);
+        expect(names).toHaveLength(startup.toolCount);
 
         const resource = await client.readResource({ uri: "tmux://capabilities" });
         const content = resource.contents[0];

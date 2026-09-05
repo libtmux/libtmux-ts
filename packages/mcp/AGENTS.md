@@ -47,3 +47,23 @@ nobody is waiting on, which is why the gate for it is a unit test on
 `capture_since` reports the byte stream in write order and cannot resolve
 cursor addressing. `capture_pane` reads tmux's rendered grid. They are not two
 ways to read one thing, and the tool descriptions say so.
+
+## Public surface boundary
+
+The MCP is a curated, semantic surface for detached-safe operations, not a
+one-to-one wrapper around libtmux. Library parity does not imply MCP parity;
+retain useful core APIs even when they have no public MCP route.
+
+Keep modal, human-client UX out when a noninteractive equivalent exists. This
+includes copy and clock modes, choose-tree, command prompts, menus, popups, and
+mouse gestures. Use `capture_pane` for the rendered grid and history,
+`search_panes` for discovery, `snapshot_pane` for content and reported mode, and
+`capture_since` for cursor-based observation. Report a human-owned mode instead
+of entering or cancelling it.
+
+Paired cleanup, unclear ownership, or dependence on a key table, mouse,
+clipboard, attachment, or timing are signals to exclude a route from MCP. Core
+library APIs remain available to explicit programmatic clients.
+
+Every public tool belongs to exactly one ADR toolset. The manifest owns its
+runtime registration, schemas, capability report, documentation, and tests.

@@ -219,7 +219,7 @@ The tools an agent reaches for first:
 | `run_shell_command` | Runs a command through a pane and reports output and exit status   |
 | `create_session`    | Creates a session without accepting a command or environment value |
 
-The 47 tools are split into `inspect`, `manage`, `execute`, and `teardown`.
+The 45 tools are split into `inspect`, `manage`, `execute`, and `teardown`.
 `tmux://capabilities` is the only resource; the server exposes no prompts,
 resource templates, background jobs, or generic mutation tools.
 
