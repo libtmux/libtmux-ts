@@ -375,7 +375,9 @@ describe("swapping a config", () => {
     await Promise.all(
       infos.map(async (info, index) => {
         expect(await revertConfig(info)).toBe(true);
-        expect(await readFile(info.configPath, "utf8")).toBe(originals.get(info.name));
+        const original = originals.get(info.name);
+        if (original === undefined) throw new Error(`missing ${info.name} fixture`);
+        expect(await readFile(info.configPath, "utf8")).toBe(original);
         expect((await stat(info.configPath)).mode & 0o777).toBe(index % 2 === 0 ? 0o600 : 0o640);
       }),
     );
