@@ -86,12 +86,12 @@ const expectedDevDependencies = {
   // `overrides` pins it for the whole workspace, so a manifest naming anything
   // else would name a version that does not install.
   "@types/node": "22.20.1",
-  knip: "6.32.2",
-  oxfmt: "0.64.0",
-  oxlint: "1.79.0",
+  knip: "6.34.0",
+  oxfmt: "0.66.0",
+  oxlint: "1.81.0",
   "oxlint-tsgolint": "7.0.2001",
   typescript: "7.0.2",
-  zod: "4.4.3",
+  zod: "4.5.4",
 };
 
 const tsRoot = new URL("../..", import.meta.url);

@@ -187,14 +187,19 @@ describe("validator agrees with Zod", () => {
     }
   });
 
-  test("is deliberately stricter than Zod about a prototype key", () => {
+  test("reports a prototype key as unrecognized rather than dropping it", () => {
     // JSON.parse makes `__proto__` an own enumerable key, so it is an unknown
-    // key by every definition Object.keys uses. Zod's strictObject accepts the
-    // object anyway and silently drops the key, which is the one thing a
-    // strict object should not do with something it does not recognise.
+    // key by every definition Object.keys uses. Zod's strictObject accepted the
+    // object through 4.4.3 and silently dropped the key, which is the one thing
+    // a strict object must not do with something it does not recognise; 4.5.4
+    // refuses it. Both validators are pinned here so a regression in either
+    // side of the agreement fails rather than passing as a new consensus.
     const input = JSON.parse('{"pane_id":"%1","pane_title":null,"__proto__":{"z":1}}') as unknown;
 
-    expect(theirs.row.safeParse(input).success).toBe(true);
+    const zod = theirs.row.safeParse(input);
+    expect(zod.success).toBe(false);
+    if (zod.success) throw new Error("expected rejection");
+    expect(zod.error.issues[0]).toMatchObject({ code: "unrecognized_keys" });
 
     const mine = ours.row.safeParse(input);
     expect(mine.success).toBe(false);
