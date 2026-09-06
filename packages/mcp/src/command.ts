@@ -73,7 +73,13 @@ interface ActiveInput {
 const activeInputs = new Map<string, ActiveInput>();
 
 function paneInputKey(authority: InputAuthority, paneId: string): string {
-  return JSON.stringify([authority.socketPath, authority.pid, authority.startTime, paneId]);
+  return JSON.stringify([
+    authority.endpointDevice,
+    authority.endpointInode,
+    authority.pid,
+    authority.startTime,
+    paneId,
+  ]);
 }
 
 /** Describe the first unfinished command this server started in a pane. */

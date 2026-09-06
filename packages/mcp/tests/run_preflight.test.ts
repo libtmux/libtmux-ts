@@ -27,6 +27,8 @@ const identity: CallerIdentity = {
 };
 
 const authority: InputAuthority = {
+  endpointDevice: "2096",
+  endpointInode: "9408963",
   pid: "42",
   routeSelector: "path:/tmp/libtmux-run-preflight",
   socketPath: "/tmp/libtmux-run-preflight",
@@ -313,6 +315,25 @@ test("the registry collapses selectors for one physical daemon generation", () =
     { ...authority, routeSelector: "name:the-same-daemon" },
     "%1",
     "name selector",
+  );
+
+  const conflicted = isPaneInputConflict(second);
+  first.release();
+  if (!conflicted) second.release();
+  expect(conflicted).toBe(true);
+});
+
+test("the registry collapses socket aliases for one physical daemon generation", () => {
+  const first = reserveFramedCommand(authority, "%1", "original socket");
+  if (isPaneInputConflict(first)) throw new Error("first reservation conflicted");
+  const second = reserveFramedCommand(
+    {
+      ...authority,
+      routeSelector: "path:/tmp/libtmux-run-preflight-alias",
+      socketPath: "/tmp/libtmux-run-preflight-alias",
+    },
+    "%1",
+    "hardlink alias",
   );
 
   const conflicted = isPaneInputConflict(second);

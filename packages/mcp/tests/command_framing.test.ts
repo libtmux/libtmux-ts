@@ -13,6 +13,8 @@ import { resolvePolicy } from "../src/policy.js";
 
 describe("command framing", () => {
   const authority: InputAuthority = {
+    endpointDevice: "2096",
+    endpointInode: "9408963",
     pid: "42",
     routeSelector: "path:/tmp/libtmux-command-frame",
     socketPath: "/tmp/libtmux-command-frame",

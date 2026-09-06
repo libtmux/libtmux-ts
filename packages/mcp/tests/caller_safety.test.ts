@@ -1,12 +1,18 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Pane, ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
 
 import {
   readCallerEnvironment,
+  readServerAuthority,
   resolveCallerIdentity,
   type CallerEnvironment,
+  type ServerAuthority,
 } from "../src/caller.js";
 import { createContext } from "../src/context.js";
 import { resolvePolicy } from "../src/policy.js";
@@ -54,12 +60,38 @@ function server(pid = "42", socketPath = "/tmp/libtmux-caller-selected"): Server
   } as unknown as Server;
 }
 
+function authority(pid = "42", socketPath = "/tmp/libtmux-caller-selected"): ServerAuthority {
+  return {
+    endpointDevice: "2096",
+    endpointInode: "9408963",
+    pid,
+    socketPath,
+    startTime: "700",
+  };
+}
+
 function attached(overrides: Readonly<Record<string, string | undefined>> = {}): CallerEnvironment {
   return readCallerEnvironment({
     TMUX: "/tmp/libtmux-caller-selected,42,3",
     TMUX_PANE: "%7",
     ...overrides,
   });
+}
+
+async function withSocket<T>(body: (socketPath: string) => Promise<T>): Promise<T> {
+  const directory = await mkdtemp(join(tmpdir(), "ltx-mcp-endpoint-"));
+  const socketPath = join(directory, "server.sock");
+  const listener = createServer();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      listener.once("error", reject);
+      listener.listen(socketPath, resolve);
+    });
+    return await body(socketPath);
+  } finally {
+    await new Promise<void>((resolve) => listener.close(() => resolve()));
+    await rm(directory, { force: true, recursive: true });
+  }
 }
 
 test("caller environment distinguishes detached, invalid, and attached context", () => {
@@ -70,6 +102,9 @@ test("caller environment distinguishes detached, invalid, and attached context",
     { TMUX_PANE: "%7" },
     { TMUX: "", TMUX_PANE: "" },
     { TMUX: "relative,42,3", TMUX_PANE: "%7" },
+    { TMUX: "/tmp/libtmux\u0000caller,42,3", TMUX_PANE: "%7" },
+    { TMUX: "/tmp/libtmux\ncaller,42,3", TMUX_PANE: "%7" },
+    { TMUX: "/tmp/libtmux\u007fcaller,42,3", TMUX_PANE: "%7" },
     { TMUX: "/tmp/libtmux-caller-selected,0,3", TMUX_PANE: "%7" },
     { TMUX: "/tmp/libtmux-caller-selected,042,3", TMUX_PANE: "%7" },
     { TMUX: "/tmp/libtmux-caller-selected,42,03", TMUX_PANE: "%7" },
@@ -92,8 +127,17 @@ test("caller environment distinguishes detached, invalid, and attached context",
   ).toMatchObject({ socketPath: "/tmp/libtmux,caller", status: "attached" });
 });
 
+test("server authority rejects control bytes in its reported socket", async () => {
+  await expect(
+    readServerAuthority({
+      cmd: async () => ["/tmp/libtmux\ncaller\t42\t700"],
+      socketPath: "/tmp/libtmux-caller-selected",
+    } as unknown as Server),
+  ).rejects.toThrow("control");
+});
+
 test("caller selection authenticates its socket, pid, pane, and session", async () => {
-  const selected = await resolveCallerIdentity(server(), snapshot(), attached());
+  const selected = await resolveCallerIdentity(server(), snapshot(), attached(), authority());
   expect(selected.inputProblem).toBeUndefined();
   expect(selected.callerPaneIsOnThisServer).toBe(true);
 
@@ -101,6 +145,7 @@ test("caller selection authenticates its socket, pid, pane, and session", async 
     server(),
     snapshot(),
     attached({ TMUX: "/tmp/libtmux-caller-foreign,43,3" }),
+    authority(),
   );
   expect(foreign.inputProblem).toBeUndefined();
   expect(foreign.callerPaneIsOnThisServer).toBe(false);
@@ -114,7 +159,7 @@ test("caller selection authenticates its socket, pid, pane, and session", async 
         [readCallerEnvironment({ TMUX_PANE: "%7" }), snapshot()],
       ] as const
     ).map(async ([caller, observed]) => {
-      const invalid = await resolveCallerIdentity(server(), observed, caller);
+      const invalid = await resolveCallerIdentity(server(), observed, caller, authority());
       expect(invalid.inputProblem).toContain("caller");
       expect(isFailure(requirePaneInputTarget(observed, invalid, "%7", true, "type into"))).toBe(
         true,
@@ -134,7 +179,7 @@ test("caller selection accepts the matching linked-pane placement", async () => 
     sessions: observed.sessions,
   } as unknown as ServerSnapshot;
 
-  const selected = await resolveCallerIdentity(server(), linked, attached());
+  const selected = await resolveCallerIdentity(server(), linked, attached(), authority());
 
   expect(selected.inputProblem).toBeUndefined();
   expect(selected.callerPaneIsOnThisServer).toBe(true);
@@ -167,7 +212,12 @@ test("non-control client pane and zoom state fail closed", async () => {
   await Promise.all(
     cases.map(async (client) => {
       const observed = snapshot({ clients: [client] });
-      const identity = await resolveCallerIdentity(server(), observed, readCallerEnvironment({}));
+      const identity = await resolveCallerIdentity(
+        server(),
+        observed,
+        readCallerEnvironment({}),
+        authority(),
+      );
       expect(identity.inputProblem).toContain("client");
       expect(isFailure(requirePaneInputTarget(observed, identity, "%7", true, "type into"))).toBe(
         true,
@@ -201,7 +251,12 @@ test("zoomed clients must name a pane placement in their claimed session and win
   await Promise.all(
     cases.map(async (client) => {
       const observed = snapshot({ clients: [client] });
-      const identity = await resolveCallerIdentity(server(), observed, readCallerEnvironment({}));
+      const identity = await resolveCallerIdentity(
+        server(),
+        observed,
+        readCallerEnvironment({}),
+        authority(),
+      );
       expect(identity.inputProblem).toContain("client");
       expect(identity.attendedPaneIds).toEqual([]);
     }),
@@ -242,34 +297,38 @@ test("terminal client topology accepts the matching linked-pane placement", asyn
     sessions: observed.sessions,
   } as unknown as ServerSnapshot;
 
-  const identity = await resolveCallerIdentity(server(), linked, readCallerEnvironment({}));
+  const identity = await resolveCallerIdentity(
+    server(),
+    linked,
+    readCallerEnvironment({}),
+    authority(),
+  );
 
   expect(identity.inputProblem).toBeUndefined();
   expect(identity.attendedPaneIds).toEqual([pane.id]);
 });
 
 test("input observation rejects a daemon transition around its snapshot", async () => {
-  const events: string[] = [];
-  const authorities = [
-    "/tmp/libtmux-caller-selected\t42\t700",
-    "/tmp/libtmux-caller-selected\t42\t701",
-  ];
-  const tmux = {
-    cmd: async () => {
-      events.push("authority");
-      return [authorities.shift() ?? ""];
-    },
-    snapshot: async () => {
-      events.push("snapshot");
-      return snapshot();
-    },
-    socketName: undefined,
-    socketPath: "/tmp/libtmux-caller-selected",
-    tmuxBin: "tmux",
-  } as unknown as Server;
-  const context = createContext(tmux, resolvePolicy({}), attached());
+  await withSocket(async (base) => {
+    const events: string[] = [];
+    const authorities = [`${base}\t42\t700`, `${base}\t42\t701`];
+    const tmux = {
+      cmd: async () => {
+        events.push("authority");
+        return [authorities.shift() ?? ""];
+      },
+      snapshot: async () => {
+        events.push("snapshot");
+        return snapshot();
+      },
+      socketName: undefined,
+      socketPath: base,
+      tmuxBin: "tmux",
+    } as unknown as Server;
+    const context = createContext(tmux, resolvePolicy({}), attached({ TMUX: `${base},42,3` }));
 
-  await expect(context.observeInput()).rejects.toThrow("changed while observing");
-  expect(events).toEqual(["authority", "snapshot", "authority"]);
-  await context.close();
+    await expect(context.observeInput()).rejects.toThrow("changed while observing");
+    expect(events).toEqual(["authority", "snapshot", "authority"]);
+    await context.close();
+  });
 });

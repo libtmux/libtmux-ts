@@ -25,6 +25,8 @@ const identity: CallerIdentity = {
 };
 
 const authority: InputAuthority = {
+  endpointDevice: "2096",
+  endpointInode: "9408963",
   pid: "42",
   routeSelector: "path:/tmp/libtmux-input-safety",
   socketPath: "/tmp/libtmux-input-safety",

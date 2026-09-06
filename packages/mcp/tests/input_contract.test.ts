@@ -1,8 +1,15 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { expect, test } from "bun:test";
+import { link, symlink, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
+import { Server } from "libtmux/server";
 
+import { readCallerEnvironment } from "../src/caller.js";
+import { isPaneInputConflict, reserveFramedCommand } from "../src/command.js";
+import { createContext } from "../src/context.js";
+import { resolvePolicy } from "../src/policy.js";
 import { structured, withClient, withServer } from "./support/server_harness.js";
 
 interface PanePair {
@@ -68,6 +75,88 @@ async function waitForPaneFormat(
   }
   throw new Error(`${paneId} did not reach ${format}=${expected}`);
 }
+
+test("live socket aliases share caller and pane ownership", async () => {
+  await withServer(async (fixture) => {
+    const symbolic = join(dirname(fixture.socketPath), "mcp-symlink.sock");
+    const hardlink = join(dirname(fixture.socketPath), "mcp-hardlink.sock");
+    const contexts: ReturnType<typeof createContext>[] = [];
+    try {
+      await symlink(fixture.socketPath, symbolic);
+      await link(fixture.socketPath, hardlink);
+      const routes = [fixture.socketPath, symbolic, hardlink];
+      for (const socketPath of routes) {
+        contexts.push(
+          createContext(
+            new Server({
+              environment: fixture.controllerEnvironment,
+              socketPath,
+              tmuxBin: fixture.tmuxExecutable,
+            }),
+            resolvePolicy({}),
+          ),
+        );
+      }
+      const observations = await Promise.all(contexts.map((context) => context.observeInput()));
+      const first = observations[0];
+      if (first === undefined) throw new Error("fixture produced no input observation");
+      const physical = [
+        first.authority.endpointDevice,
+        first.authority.endpointInode,
+        first.authority.pid,
+        first.authority.startTime,
+      ];
+      expect(
+        observations.map(({ authority }) => [
+          authority.endpointDevice,
+          authority.endpointInode,
+          authority.pid,
+          authority.startTime,
+        ]),
+      ).toEqual(Array.from({ length: routes.length }, () => physical));
+
+      const pane = first.snapshot.panes.toArray()[0];
+      const sessionIndex = pane?.format.session_id?.slice(1);
+      if (pane === undefined || sessionIndex === undefined) throw new Error("fixture has no pane");
+      const held = reserveFramedCommand(first.authority, pane.id, "live alias");
+      if (isPaneInputConflict(held)) throw new Error("initial reservation conflicted");
+      try {
+        for (const observed of observations.slice(1)) {
+          const conflict = reserveFramedCommand(observed.authority, pane.id, "alias writer");
+          expect(isPaneInputConflict(conflict)).toBe(true);
+          if (!isPaneInputConflict(conflict)) conflict.release();
+        }
+      } finally {
+        held.release();
+      }
+
+      await Promise.all(
+        [symbolic, hardlink].map(async (socketPath) => {
+          const callerContext = createContext(
+            new Server({
+              environment: fixture.controllerEnvironment,
+              socketPath: fixture.socketPath,
+              tmuxBin: fixture.tmuxExecutable,
+            }),
+            resolvePolicy({}),
+            readCallerEnvironment({
+              TMUX: `${socketPath},${fixture.daemonIdentity.pid},${sessionIndex}`,
+              TMUX_PANE: pane.id,
+            }),
+          );
+          contexts.push(callerContext);
+          const caller = await callerContext.observeInput();
+          expect(caller.identity.inputProblem, socketPath).toBeUndefined();
+          expect(caller.identity.callerPaneIsOnThisServer, socketPath).toBe(true);
+        }),
+      );
+    } finally {
+      await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
+      await unlink(symbolic).catch(() => undefined);
+      await unlink(hardlink).catch(() => undefined);
+    }
+  });
+}, 15_000);
 
 test("paste_text keeps its Enter and payload target-only", async () => {
   await withServer(async (fixture) => {

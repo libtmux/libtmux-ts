@@ -46,6 +46,8 @@ export interface PaneInputObservation {
 
 export function sameInputAuthority(left: InputAuthority, right: InputAuthority): boolean {
   return (
+    left.endpointDevice === right.endpointDevice &&
+    left.endpointInode === right.endpointInode &&
     left.routeSelector === right.routeSelector &&
     left.socketPath === right.socketPath &&
     left.pid === right.pid &&

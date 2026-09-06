@@ -7,10 +7,13 @@
  * typing into someone else's.
  */
 
-import { isAbsolute } from "node:path";
+import { stat } from "node:fs/promises";
+import { isAbsolute, normalize } from "node:path";
 
 import type { ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
+
+import { assertSafeRouteValue } from "./route.js";
 
 /**
  * What tmux exported into the process it started.
@@ -26,6 +29,14 @@ export interface CallerEnvironment {
   readonly sessionId: string | undefined;
   readonly socketPath: string | undefined;
   readonly status: "attached" | "detached" | "invalid";
+}
+
+function hasUnsafeRouteByte(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit <= 0x1f || unit === 0x7f) return true;
+  }
+  return false;
 }
 
 /**
@@ -60,6 +71,7 @@ export function readCallerEnvironment(
     pane === undefined ||
     parts.length < 3 ||
     !isAbsolute(socketPath) ||
+    hasUnsafeRouteByte(socketPath) ||
     !/^[1-9][0-9]*$/u.test(serverPid ?? "") ||
     !/^(?:0|[1-9][0-9]*)$/u.test(sessionIndex ?? "") ||
     !/^%(?:0|[1-9][0-9]*)$/u.test(pane)
@@ -84,12 +96,40 @@ export function readCallerEnvironment(
 }
 
 export interface ServerAuthority {
+  readonly endpointDevice: string;
+  readonly endpointInode: string;
   readonly pid: string;
   readonly socketPath: string;
   readonly startTime: string;
 }
 
 const AUTHORITY_FORMAT = "#{socket_path}\t#{pid}\t#{start_time}";
+
+async function socketIdentity(path: string): Promise<{
+  readonly endpointDevice: string;
+  readonly endpointInode: string;
+}> {
+  let metadata: Awaited<ReturnType<typeof stat>>;
+  try {
+    metadata = await stat(path, { bigint: true });
+  } catch (error) {
+    throw new TypeError("tmux socket path does not name a usable local socket", { cause: error });
+  }
+  if (!metadata.isSocket()) {
+    throw new TypeError("tmux socket path does not name a usable local socket");
+  }
+  return {
+    endpointDevice: metadata.dev.toString(),
+    endpointInode: metadata.ino.toString(),
+  };
+}
+
+function sameSocketIdentity(
+  left: Pick<ServerAuthority, "endpointDevice" | "endpointInode">,
+  right: Pick<ServerAuthority, "endpointDevice" | "endpointInode">,
+): boolean {
+  return left.endpointDevice === right.endpointDevice && left.endpointInode === right.endpointInode;
+}
 
 /** Read one daemon's physical socket and complete process generation together. */
 export async function readServerAuthority(
@@ -113,7 +153,18 @@ export async function readServerAuthority(
   ) {
     throw new TypeError("tmux returned no usable socket and daemon identity");
   }
-  return Object.freeze({ pid: pid ?? "", socketPath, startTime: startTime ?? "" });
+  assertSafeRouteValue("tmux socket path", socketPath);
+  const selectedPath = tmux.socketPath ?? socketPath;
+  if (!isAbsolute(selectedPath)) {
+    throw new TypeError("tmux returned no usable socket and daemon identity");
+  }
+  assertSafeRouteValue("selected tmux socket path", selectedPath);
+  return Object.freeze({
+    ...(await socketIdentity(selectedPath)),
+    pid: pid ?? "",
+    socketPath,
+    startTime: startTime ?? "",
+  });
 }
 
 /** A client tmux is currently drawing for, and what it is showing. */
@@ -232,10 +283,27 @@ export async function resolveCallerIdentity(
   });
 
   let sameServer = false;
-  if (caller.status === "attached" && caller.socketPath !== observed.socketPath) {
-    // A complete context for another socket is valid, but it does not select
-    // this server and grants no force exception here.
-  } else if (caller.status === "attached") {
+  let selectsServer = false;
+  if (caller.status === "attached") {
+    const callerPath = caller.socketPath ?? "";
+    const sameNamedEndpoint = normalize(callerPath) === normalize(observed.socketPath);
+    if (callerPath === observed.socketPath) {
+      selectsServer = true;
+    } else if (caller.serverPid === observed.pid) {
+      try {
+        selectsServer = sameSocketIdentity(await socketIdentity(callerPath), observed);
+        if (!selectsServer) {
+          inputProblem ??= "The caller's tmux socket alias does not select the observed daemon.";
+        }
+      } catch {
+        inputProblem ??= "The caller's tmux socket alias is no longer usable.";
+      }
+    } else if (sameNamedEndpoint) {
+      inputProblem ??=
+        "The caller's tmux pane, session, or daemon generation is no longer current.";
+    }
+  }
+  if (caller.status === "attached" && selectsServer) {
     const paneMatchesSession = panePlacements.some(
       (candidate) =>
         candidate.id === caller.paneId && candidate.format.session_id === caller.sessionId,
