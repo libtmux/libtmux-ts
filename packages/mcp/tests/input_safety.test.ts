@@ -602,6 +602,37 @@ test("paste_text reports cleanup failure after an indeterminate load", async () 
   expect((failure as AggregateError).errors).toEqual([loadFailure, cleanupFailure]);
 });
 
+test("paste_text preserves a transition refusal when cleanup also fails", async () => {
+  const snapshots = [snapshot({}), snapshot({ inMode: 1 })];
+  const cleanupFailure = new Error("delete failed");
+  let snapshotIndex = 0;
+  const context = {
+    observeInput: async () => observation(snapshots[snapshotIndex++] as ServerSnapshot),
+    policy: resolvePolicy({}),
+    tmux: {
+      cmd: async (command: string) => {
+        if (command === "delete-buffer") throw cleanupFailure;
+      },
+    },
+  } as unknown as ToolContext;
+  const handler = collectInputHandlers(context).get("paste_text");
+  if (handler === undefined) throw new Error("paste_text was not registered");
+
+  let failure: unknown;
+  try {
+    await handler({ paneId: "%1", text: "payload" }, {});
+  } catch (error) {
+    failure = error;
+  }
+
+  expect(failure).toBeInstanceOf(AggregateError);
+  const errors = (failure as AggregateError).errors;
+  expect(errors[0]).toBeInstanceOf(Error);
+  expect((errors[0] as Error).message).toContain("changed during paste_text setup");
+  expect((errors[0] as Error).cause).toMatchObject({ isError: true });
+  expect(errors[1]).toBe(cleanupFailure);
+});
+
 test("paste_text bounds private buffer commands independently", async () => {
   const events: Array<{
     readonly args: readonly string[];

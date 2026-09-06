@@ -262,6 +262,15 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             "paste failed and private buffer cleanup also failed",
           );
         }
+        if (refusal !== undefined && cleanupFailure !== undefined) {
+          const content = refusal.content[0];
+          const reason =
+            content?.type === "text" ? content.text : "pane input changed before paste";
+          throw new AggregateError(
+            [new Error(reason, { cause: refusal }), cleanupFailure.error],
+            "paste was refused and private buffer cleanup also failed",
+          );
+        }
         if (operationFailure !== undefined) throw operationFailure.error;
         if (cleanupFailure !== undefined) throw cleanupFailure.error;
         if (refusal !== undefined) return refusal;
