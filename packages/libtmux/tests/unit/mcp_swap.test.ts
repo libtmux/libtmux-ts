@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -113,18 +113,6 @@ async function waitForPath(path: string): Promise<void> {
     await Bun.sleep(1);
   }
   throw new Error(`path did not appear: ${path}`);
-}
-
-async function waitForStagedFile(path: string): Promise<void> {
-  const directory = dirname(path);
-  const prefix = `${basename(path)}.mcp-swap-`;
-  for (let attempt = 0; attempt < 5_000; attempt += 1) {
-    // eslint-disable-next-line no-await-in-loop -- poll until staging reaches this boundary.
-    if ((await readdir(directory)).some((entry) => entry.startsWith(prefix))) return;
-    // eslint-disable-next-line no-await-in-loop -- polling must yield between observations.
-    await Bun.sleep(1);
-  }
-  throw new Error(`staged file did not appear beside ${path}`);
 }
 
 async function waitForFileChange(path: string, original: string): Promise<void> {
@@ -511,27 +499,24 @@ describe("swapping a config", () => {
     "refuses a config link replaced by a %s after staging",
     async (replacementKind) => {
       const info = cliFor("cursor");
-      const padding = "x".repeat(16 * 1024 * 1024);
-      const original = `{\n  "padding": "${padding}",\n  "mcpServers": {}\n}\n`;
+      const original = '{\n  "mcpServers": {}\n}\n';
       const { target } = await seedSymlink(info, original, 0o640);
       const replacementTarget = join(home, "dotfiles", "replacement.json");
       const replacement = '{\n  "sentinel": "unchanged"\n}\n';
       await writeFile(replacementTarget, replacement);
 
-      const pending = writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
-      try {
-        await waitForStagedFile(target);
-        await rm(info.configPath);
-        if (replacementKind === "symlink") {
-          await symlink(relative(dirname(info.configPath), replacementTarget), info.configPath);
-        } else {
-          await writeFile(info.configPath, replacement);
-        }
+      const pending = writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }), {
+        afterStaging: async () => {
+          await rm(info.configPath);
+          if (replacementKind === "symlink") {
+            await symlink(relative(dirname(info.configPath), replacementTarget), info.configPath);
+          } else {
+            await writeFile(info.configPath, replacement);
+          }
+        },
+      });
 
-        await expect(pending).rejects.toThrow(/config.*changed/u);
-      } finally {
-        await pending.catch(() => undefined);
-      }
+      await expect(pending).rejects.toThrow(/config.*changed/u);
 
       expect(await readFile(target, "utf8")).toBe(original);
       expect(await readFile(replacementTarget, "utf8")).toBe(replacement);
@@ -665,15 +650,14 @@ describe("swapping a config", () => {
 
   test("removes a new backup when route publication loses a race", async () => {
     const info = cliFor("cursor");
-    const padding = "x".repeat(16 * 1024 * 1024);
-    const original = `{\n  "padding": "${padding}",\n  "mcpServers": {}\n}\n`;
+    const original = '{\n  "mcpServers": {}\n}\n';
     const { target } = await seedSymlink(info, original, 0o640);
     const routePath = backupRoutePath(info.configPath);
     const intruder = "do not replace\n";
 
-    const swap = writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
-    await waitForStagedFile(routePath);
-    await writeFile(routePath, intruder);
+    const swap = writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }), {
+      afterStaging: () => writeFile(routePath, intruder),
+    });
 
     await expect(swap).rejects.toThrow(/recovery route.*changed/u);
     expect(await readFile(target, "utf8")).toBe(original);

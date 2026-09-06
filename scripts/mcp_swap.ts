@@ -866,6 +866,10 @@ export async function readServer(info: CliInfo, name: string): Promise<ServerSpe
 
 export type WriteServerOutcome = "added" | "replaced";
 
+export interface SwapTransactionHooks {
+  readonly afterStaging?: () => Promise<void> | void;
+}
+
 interface ServerWritePlan {
   readonly data: string;
   readonly info: CliInfo;
@@ -1141,6 +1145,7 @@ export async function writeServers(
   infos: readonly CliInfo[],
   name: string,
   spec: ServerSpec,
+  hooks: SwapTransactionHooks = {},
 ): Promise<readonly WriteServerOutcome[]> {
   const plans = await planServerWrites(infos, name, spec);
 
@@ -1178,6 +1183,7 @@ export async function writeServers(
         temporary,
       });
     }
+    await hooks.afterStaging?.();
   } catch (error) {
     await cleanupTemporaries(temporaryPaths);
     throw error;
@@ -1288,8 +1294,9 @@ export async function writeServer(
   info: CliInfo,
   name: string,
   spec: ServerSpec,
+  hooks: SwapTransactionHooks = {},
 ): Promise<WriteServerOutcome> {
-  return (await writeServers([info], name, spec))[0]!;
+  return (await writeServers([info], name, spec, hooks))[0]!;
 }
 
 /** Restore a config from the backup a swap wrote, and drop the backup. */
