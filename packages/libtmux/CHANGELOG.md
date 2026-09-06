@@ -12,6 +12,8 @@ remember.
 
 ## Unreleased
 
+## 0.1.0-alpha.8 (2026-09-06)
+
 ### `libtmux`
 
 #### Queries and selections

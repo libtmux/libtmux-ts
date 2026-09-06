@@ -85,7 +85,7 @@ $ bun scripts/mcp_swap.ts use --source build
 Probe and register a pinned published release:
 
 ```console
-$ bun scripts/mcp_swap.ts use --source published --version 0.1.0-alpha.7
+$ bun scripts/mcp_swap.ts use --source published --version 0.1.0-alpha.8
 ```
 
 Pass `--cli` more than once or use comma-separated names. Selections are

@@ -85,7 +85,7 @@
     },
     "packages/libtmux": {
       "name": "libtmux",
-      "version": "0.1.0-alpha.7",
+      "version": "0.1.0-alpha.8",
       "devDependencies": {
         "@types/bun": "1.4.0",
         "@types/node": "22.20.1",
@@ -99,27 +99,27 @@
     },
     "packages/mcp": {
       "name": "@libtmux/mcp",
-      "version": "0.1.0-alpha.7",
+      "version": "0.1.0-alpha.8",
       "bin": {
         "libtmux-mcp": "dist/server.js",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
-        "libtmux": "0.1.0-alpha.7",
+        "libtmux": "0.1.0-alpha.8",
         "zod": "4.5.4",
       },
     },
     "packages/workspace": {
       "name": "@libtmux/workspace",
-      "version": "0.1.0-alpha.7",
+      "version": "0.1.0-alpha.8",
       "dependencies": {
         "zod": "4.5.4",
       },
       "devDependencies": {
-        "libtmux": "0.1.0-alpha.7",
+        "libtmux": "0.1.0-alpha.8",
       },
       "peerDependencies": {
-        "libtmux": "0.1.0-alpha.7",
+        "libtmux": "0.1.0-alpha.8",
       },
     },
   },
