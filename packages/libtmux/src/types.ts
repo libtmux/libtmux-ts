@@ -162,8 +162,15 @@ export interface NewWindowOptions extends CommandOptions {
 
 declare const splitCellSizeBrand: unique symbol;
 
+/**
+ * One decimal character, for building a percentage's shape in the type system.
+ *
+ * These three exist so `"101%"` is a compile error rather than a runtime one.
+ */
 type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+/** A leading digit, so `"07%"` is not a percentage. */
 type NonZeroDigit = Exclude<Digit, "0">;
+/** Every whole number a percentage may start with, short of one hundred. */
 type ZeroToNinetyNine = "0" | NonZeroDigit | `${NonZeroDigit}${Digit}`;
 
 /**

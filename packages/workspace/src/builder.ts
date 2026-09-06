@@ -251,6 +251,13 @@ async function windowAt(
   return { created: false, window: existing };
 }
 
+/**
+ * What applying one window needs to know beyond the window itself.
+ *
+ * `windowIsNew` separates the two jobs this does: a window it just created
+ * needs everything set, and one that already existed needs only the
+ * differences, so the flag is what keeps a rebuild from redoing the work.
+ */
 interface ApplyWindowContext {
   readonly commands: CommandPolicy;
   readonly pruning: boolean;

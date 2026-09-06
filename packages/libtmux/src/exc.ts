@@ -11,16 +11,19 @@ import type { DeliveryStatus } from "./common.js";
  */
 export type Query = Readonly<Record<string, unknown>>;
 
+/** What any of these errors accepts: the cause, and the tmux command that ran. */
 interface ExceptionOptions {
   readonly cause?: unknown;
   readonly subcommand?: string;
 }
 
+/** The criteria that found nothing, and an optional message replacing the built one. */
 interface ObjectDoesNotExistOptions extends ExceptionOptions {
   readonly message?: string;
   readonly query?: Query;
 }
 
+/** The criteria that matched too much, with how many it matched when known. */
 interface MultipleObjectsReturnedOptions extends ObjectDoesNotExistOptions {
   readonly count?: number;
 }
