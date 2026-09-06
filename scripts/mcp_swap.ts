@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { closeSync, constants, fchmodSync, fstatSync, lstatSync, openSync } from "node:fs";
 import {
   access,
@@ -10,6 +10,7 @@ import {
   mkdir,
   open,
   readFile,
+  readdir,
   realpath,
   rename,
   rmdir,
@@ -48,6 +49,7 @@ import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process.
 export type ConfigFormat = "json" | "jsonc" | "toml";
 export type Dialect = "claude" | "opencode" | "standard";
 export type SourceKind = "build" | "dev" | "published";
+export type SwapScope = "project" | "user";
 
 export interface CliInfo {
   /** Executable that proves the CLI is installed. */
@@ -67,9 +69,10 @@ export interface ServerSpec {
 }
 
 const MAX_PREFLIGHT_OUTPUT_BYTES = 4 * 1024 * 1024;
+const MAX_PREPARATION_OUTPUT_BYTES = 16 * 1024 * 1024;
 const LOCK_WORKER_COMMAND = "__mcp-swap-lock-worker";
-const LOCK_EX = 2;
-const LOCK_UN = 8;
+const F_LOCK = 1;
+const F_ULOCK = 0;
 const O_CLOEXEC =
   (constants as unknown as Readonly<Record<string, number | undefined>>).O_CLOEXEC ?? 0;
 
@@ -179,6 +182,12 @@ export function knownClis(
   ];
 }
 
+export function scopedCli(info: CliInfo, repo: string, scope: SwapScope): CliInfo {
+  if (info.name !== "claude" || scope === "user") return info;
+  if (!isAbsolute(repo)) throw new TypeError("Claude project scope needs an absolute repository");
+  return { ...info, container: ["projects", repo, "mcpServers"] };
+}
+
 /**
  * Render a spec in the shape one CLI expects.
  *
@@ -207,21 +216,56 @@ export function toEntry(spec: ServerSpec, dialect: Dialect): Record<string, unkn
 
 /** Read a spec back out of whatever shape a CLI stored it in. */
 export function fromEntry(entry: unknown, dialect: Dialect): ServerSpec | undefined {
-  if (typeof entry !== "object" || entry === null) return undefined;
+  try {
+    return parseEntry(entry, dialect, "server entry");
+  } catch {
+    return undefined;
+  }
+}
+
+function stringMap(value: unknown, label: string): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object of strings`);
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.some(([, item]) => typeof item !== "string")) {
+    throw new TypeError(`${label} must be an object of strings`);
+  }
+  return Object.fromEntries(entries) as Record<string, string>;
+}
+
+function stringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new TypeError(`${label} must be an array of strings`);
+  }
+  return [...value] as string[];
+}
+
+function parseEntry(entry: unknown, dialect: Dialect, label: string): ServerSpec | undefined {
+  if (entry === undefined) return undefined;
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw new TypeError(`${label} must be an object`);
+  }
   const record = entry as Record<string, unknown>;
   if (dialect === "opencode") {
-    const line = record.command;
-    if (!Array.isArray(line) || line.length === 0) return undefined;
-    const [command, ...args] = line as string[];
-    if (command === undefined) return undefined;
-    return { args, command, env: (record.environment as Record<string, string>) ?? {} };
+    const line = stringArray(record.command, `${label}.command`);
+    if (line.length === 0) throw new TypeError(`${label}.command must not be empty`);
+    return {
+      args: line.slice(1),
+      command: line[0]!,
+      env:
+        record.environment === undefined
+          ? {}
+          : stringMap(record.environment, `${label}.environment`),
+    };
   }
-  const command = record.command;
-  if (typeof command !== "string") return undefined;
+  if (typeof record.command !== "string" || record.command === "") {
+    throw new TypeError(`${label}.command must be a nonempty string`);
+  }
   return {
-    args: (record.args as string[] | undefined) ?? [],
-    command,
-    env: (record.env as Record<string, string>) ?? {},
+    args: record.args === undefined ? [] : stringArray(record.args, `${label}.args`),
+    command: record.command,
+    env: record.env === undefined ? {} : stringMap(record.env, `${label}.env`),
   };
 }
 
@@ -250,10 +294,17 @@ export interface SourceOptions {
   readonly version?: string;
 }
 
+function requireSafeComponent(value: string, label: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(value)) {
+    throw new TypeError(`${label} must be one safe component`);
+  }
+}
+
 export function buildSpec(options: SourceOptions): ServerSpec {
   const env = { ...options.env };
   if (options.kind === "published") {
     const version = options.version ?? "latest";
+    requireSafeComponent(version, "--version");
     // `-y` so a machine that has never seen the package does not stop to ask,
     // which for a server launched by an agent would look like a hang.
     return { args: ["-y", `${PUBLISHED_PACKAGE}@${version}`], command: "npx", env };
@@ -265,6 +316,43 @@ export function buildSpec(options: SourceOptions): ServerSpec {
     return { args: ["run", join(repo, DEV_ENTRY)], command: "bun", env };
   }
   return { args: [join(repo, BUILD_ENTRY)], command: "node", env };
+}
+
+async function requireRegularFile(path: string, label: string): Promise<void> {
+  let metadata;
+  try {
+    metadata = await stat(path);
+  } catch (error) {
+    throw new Error(`${label} does not exist: ${path}`, { cause: error });
+  }
+  if (!metadata.isFile()) throw new TypeError(`${label} is not a regular file: ${path}`);
+}
+
+async function prepareSource(options: SourceOptions): Promise<void> {
+  if (options.kind === "published") {
+    if (Bun.which("npx") === null) throw new Error("published source needs npx on PATH");
+    return;
+  }
+  const repo = options.repo!;
+  if (options.kind === "dev") {
+    if (Bun.which("bun") === null) throw new Error("dev source needs bun on PATH");
+    await requireRegularFile(join(repo, DEV_ENTRY), "development server entry");
+    return;
+  }
+  if (Bun.which("bun") === null) throw new Error("build source needs bun on PATH");
+  const result = await runBoundedCommand(
+    ["bun", "run", "--cwd", join(repo, "packages", "mcp"), "build"],
+    {
+      env: { ...process.env },
+      maxOutputBytes: MAX_PREPARATION_OUTPUT_BYTES,
+      timeoutMilliseconds: 300_000,
+    },
+  );
+  if (result.termination !== "exited" || result.exitCode !== 0) {
+    const detail = result.stderr.trim().split("\n")[0] ?? "";
+    throw new Error(`MCP build failed${detail === "" ? "" : `: ${detail}`}`);
+  }
+  await requireRegularFile(join(repo, BUILD_ENTRY), "built server entry");
 }
 
 /** Describe a spec the way `status` prints it. */
@@ -338,8 +426,21 @@ export function blankJsonc(text: string): string {
   // the comments, since one can hide behind the other.
   const blanked = out.join("");
   const cleaned = blanked.split("");
+  inString = false;
+  escaped = false;
   for (let index = 0; index < blanked.length; index += 1) {
-    if (blanked[index] !== ",") continue;
+    const character = blanked[index]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character !== ",") continue;
     let scan = index + 1;
     while (scan < blanked.length && /\s/u.test(blanked[scan]!)) scan += 1;
     const following = blanked[scan];
@@ -363,9 +464,70 @@ export function parseJsonc(text: string): unknown {
 export function parseServerTables(text: string, container: string): Record<string, unknown> {
   const parsed = Bun.TOML.parse(text) as Readonly<Record<string, unknown>>;
   const servers = parsed[container];
-  return typeof servers === "object" && servers !== null
-    ? { ...(servers as Record<string, unknown>) }
-    : {};
+  if (servers === undefined) return {};
+  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) {
+    throw new TypeError(`${container} must be a table`);
+  }
+  return { ...(servers as Record<string, unknown>) };
+}
+
+function tomlInlineValue(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(tomlInlineValue).join(", ")}]`;
+  if (typeof value === "object" && value !== null) {
+    return `{ ${Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${JSON.stringify(key)} = ${tomlInlineValue(item)}`)
+      .join(", ")} }`;
+  }
+  throw new TypeError("TOML server data has an unsupported value");
+}
+
+interface InlineTomlContainer {
+  readonly index: number;
+  readonly prefix: string;
+  readonly suffix: string;
+}
+
+function inlineTomlContainer(
+  lines: readonly string[],
+  container: string,
+): InlineTomlContainer | undefined {
+  const escaped = container.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const startPattern = new RegExp(`^(\\s*${escaped}\\s*=\\s*)\\{`, "u");
+  for (const [index, line] of lines.entries()) {
+    const start = startPattern.exec(line);
+    if (start === null) continue;
+    const open = start[0].lastIndexOf("{");
+    let depth = 0;
+    let quoted = false;
+    let escapedCharacter = false;
+    for (let cursor = open; cursor < line.length; cursor += 1) {
+      const character = line[cursor]!;
+      if (quoted) {
+        if (escapedCharacter) escapedCharacter = false;
+        else if (character === "\\") escapedCharacter = true;
+        else if (character === '"') quoted = false;
+      } else if (character === '"') quoted = true;
+      else if (character === "{") depth += 1;
+      else if (character === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          const suffix = line.slice(cursor + 1);
+          if (!/^\s*(?:#.*)?$/u.test(suffix)) return undefined;
+          return { index, prefix: start[1]!, suffix };
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function dottedTomlTarget(line: string, container: string, name: string): boolean {
+  const escapedContainer = container.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`^\\s*${escapedContainer}\\.${escapedName}\\.`, "u").test(line);
 }
 
 /** Render one server as a TOML table, replacing any table of the same name. */
@@ -376,18 +538,51 @@ export function renderServerTable(
   entry: Record<string, unknown>,
 ): string {
   const header = `[${container}.${name}]`;
+  const environment = entry.env;
+  if (
+    environment !== undefined &&
+    (typeof environment !== "object" || environment === null || Array.isArray(environment))
+  ) {
+    throw new TypeError("TOML server env must be an object");
+  }
   const body = Object.entries(entry)
-    .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
-    .join("\n");
-  const block = `${header}\n${body}\n`;
+    .filter(([key]) => key !== "env")
+    .map(([key, value]) => `${key} = ${JSON.stringify(value)}`);
+  const environmentBody = Object.entries((environment ?? {}) as Record<string, unknown>).map(
+    ([key, value]) => `${JSON.stringify(key)} = ${JSON.stringify(value)}`,
+  );
+  const block = [
+    header,
+    ...body,
+    ...(environmentBody.length === 0 ? [] : ["", `[${container}.${name}.env]`, ...environmentBody]),
+    "",
+  ].join("\n");
   const lines = text.split("\n");
   const start = lines.findIndex((line) => line.trim() === header);
   if (start === -1) {
+    const inline = inlineTomlContainer(lines, container);
+    if (inline !== undefined) {
+      const servers = parseServerTables(text, container);
+      servers[name] = entry;
+      const changed = [...lines];
+      changed[inline.index] = `${inline.prefix}${tomlInlineValue(servers)}${inline.suffix}`;
+      return changed.join("\n");
+    }
+    if (lines.some((line) => dottedTomlTarget(line, container, name))) {
+      const retained = lines.filter((line) => !dottedTomlTarget(line, container, name));
+      const base = retained.join("\n").replace(/\n*$/u, "\n");
+      return `${base}\n${block}`;
+    }
     const separator = text.trim() === "" ? "" : text.endsWith("\n") ? "\n" : "\n\n";
     return `${text}${separator}${block}`;
   }
   let end = start + 1;
-  while (end < lines.length && !lines[end]!.trim().startsWith("[")) end += 1;
+  const childPrefix = `[${container}.${name}.`;
+  while (end < lines.length) {
+    const line = lines[end]!.trim();
+    if (line.startsWith("[") && !line.startsWith(childPrefix)) break;
+    end += 1;
+  }
   return [...lines.slice(0, start), block.trimEnd(), ...lines.slice(end)].join("\n");
 }
 
@@ -396,9 +591,27 @@ export function removeServerTable(text: string, container: string, name: string)
   const header = `[${container}.${name}]`;
   const lines = text.split("\n");
   const start = lines.findIndex((line) => line.trim() === header);
-  if (start === -1) return text;
+  if (start === -1) {
+    const inline = inlineTomlContainer(lines, container);
+    if (inline !== undefined) {
+      const servers = parseServerTables(text, container);
+      if (!Object.hasOwn(servers, name)) return text;
+      delete servers[name];
+      const changed = [...lines];
+      changed[inline.index] = `${inline.prefix}${tomlInlineValue(servers)}${inline.suffix}`;
+      return changed.join("\n");
+    }
+    return lines.some((line) => dottedTomlTarget(line, container, name))
+      ? lines.filter((line) => !dottedTomlTarget(line, container, name)).join("\n")
+      : text;
+  }
   let end = start + 1;
-  while (end < lines.length && !lines[end]!.trim().startsWith("[")) end += 1;
+  const childPrefix = `[${container}.${name}.`;
+  while (end < lines.length) {
+    const line = lines[end]!.trim();
+    if (line.startsWith("[") && !line.startsWith(childPrefix)) break;
+    end += 1;
+  }
   return [...lines.slice(0, start), ...lines.slice(end)].join("\n");
 }
 
@@ -456,7 +669,7 @@ function membersOf(text: string, open: number): Member[] {
     if (text[index] !== '"') break;
     const keyStart = index;
     const keyEnd = valueEnd(text, keyStart);
-    const key = text.slice(keyStart + 1, keyEnd - 1);
+    const key = JSON.parse(text.slice(keyStart, keyEnd)) as string;
     let cursor = keyEnd;
     while (cursor < text.length && /\s/u.test(text[cursor]!)) cursor += 1;
     if (text[cursor] !== ":") break;
@@ -467,6 +680,50 @@ function membersOf(text: string, open: number): Member[] {
     index = end;
   }
   return members;
+}
+
+function assertUniqueMembers(text: string, open: number, label: string): readonly Member[] {
+  const members = membersOf(text, open);
+  const seen = new Set<string>();
+  for (const member of members) {
+    if (seen.has(member.key)) throw new TypeError(`${label} has duplicate ${member.key} members`);
+    seen.add(member.key);
+  }
+  return members;
+}
+
+function validateJsonPath(text: string, path: readonly string[]): void {
+  if (text.trim() === "") return;
+  const blanked = blankJsonc(text);
+  let open = blanked.indexOf("{");
+  if (open === -1) throw new TypeError("config root must be an object");
+  const traversed: string[] = [];
+  for (const key of path) {
+    const label = traversed.length === 0 ? "config root" : traversed.join(".");
+    const member = assertUniqueMembers(blanked, open, label).find(
+      (candidate) => candidate.key === key,
+    );
+    if (member === undefined) return;
+    traversed.push(key);
+    if (blanked[member.valueStart] !== "{") {
+      throw new TypeError(`${traversed.join(".")} must be an object`);
+    }
+    open = member.valueStart;
+  }
+  assertUniqueMembers(blanked, open, traversed.join("."));
+}
+
+function validateJsonServer(text: string, info: CliInfo, name: string): void {
+  const entryPath = [...info.container, name];
+  validateJsonPath(text, entryPath);
+  const blanked = blankJsonc(text);
+  const entry = objectAt(blanked, entryPath);
+  if (entry === undefined) return;
+  const environmentName = info.dialect === "opencode" ? "environment" : "env";
+  const environment = membersOf(blanked, entry).find((member) => member.key === environmentName);
+  if (environment !== undefined && blanked[environment.valueStart] === "{") {
+    assertUniqueMembers(blanked, environment.valueStart, [...entryPath, environmentName].join("."));
+  }
 }
 
 /** Offset of the `{` opening the object at `path`, if every step exists. */
@@ -514,6 +771,30 @@ export function spliceEntry(
   }
   const last = members[members.length - 1]!;
   return `${original.slice(0, last.valueEnd)},\n${pad}${addition}${original.slice(last.valueEnd)}`;
+}
+
+function spliceEntryCreatingPath(
+  original: string,
+  path: readonly string[],
+  name: string,
+  entry: Record<string, unknown>,
+): string | undefined {
+  const blanked = blankJsonc(original);
+  let open = blanked.indexOf("{");
+  if (open === -1) return undefined;
+  const traversed: string[] = [];
+  for (const [index, key] of path.entries()) {
+    const member = membersOf(blanked, open).find((candidate) => candidate.key === key);
+    if (member === undefined) {
+      let nested: Record<string, unknown> = { [name]: entry };
+      for (const suffix of path.slice(index + 1).toReversed()) nested = { [suffix]: nested };
+      return spliceEntry(original, traversed, key, nested);
+    }
+    if (blanked[member.valueStart] !== "{") return undefined;
+    traversed.push(key);
+    open = member.valueStart;
+  }
+  return spliceEntry(original, path, name, entry);
 }
 
 const BACKUP_SUFFIX = ".mcp-swap-backup";
@@ -622,7 +903,7 @@ interface LockWorkerMessage {
 interface NativeLockLibrary {
   close(): void;
   readonly symbols: {
-    flock(descriptor: number, operation: number): number;
+    lockf(descriptor: number, operation: number, length: bigint): number;
     openat(directory: number, path: Buffer, flags: number, mode: number): number;
   };
 }
@@ -735,12 +1016,15 @@ async function runLockWorker(directoryPath: string, lockName: string): Promise<n
     process.stdout.write(`${JSON.stringify(message)}\n`);
   };
   try {
+    if (!isAbsolute(directoryPath) || lockName !== "state.lock") {
+      throw new Error("lock worker received an unsafe lock path");
+    }
     if (typeof constants.O_NOFOLLOW !== "number" || typeof constants.O_DIRECTORY !== "number") {
       throw new Error("platform cannot open the swap lock without following links");
     }
     const { dlopen, FFIType } = await import("bun:ffi");
     library = dlopen(nativeLibraryName(), {
-      flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+      lockf: { args: [FFIType.i32, FFIType.i32, FFIType.i64], returns: FFIType.i32 },
       openat: {
         args: [FFIType.i32, FFIType.cstring, FFIType.i32, FFIType.i32],
         returns: FFIType.i32,
@@ -774,7 +1058,7 @@ async function runLockWorker(directoryPath: string, lockName: string): Promise<n
       fchmodSync(lockDescriptor, 0o600);
     }
     if (lockDescriptor === -1) throw new Error("could not open the persistent swap lock");
-    if (library.symbols.flock(lockDescriptor, LOCK_EX) !== 0) {
+    if (library.symbols.lockf(lockDescriptor, F_LOCK, 0n) !== 0) {
       throw new Error("could not acquire the persistent swap lock");
     }
     const state = await inspectSwapLockAt(join(directoryPath, lockName));
@@ -789,7 +1073,7 @@ async function runLockWorker(directoryPath: string, lockName: string): Promise<n
     if (!sameSwapLock(state, current) || !lockMatchesMetadata(state, openedAgain)) {
       throw new Error("swap lock changed before release");
     }
-    if (library.symbols.flock(lockDescriptor, LOCK_UN) !== 0) {
+    if (library.symbols.lockf(lockDescriptor, F_ULOCK, 0n) !== 0) {
       throw new Error("could not release the persistent swap lock");
     }
     send({ kind: "released" });
@@ -1355,19 +1639,28 @@ export async function readConfig(info: CliInfo): Promise<{ raw: string; value: u
     if (!isMissing(error)) throw error;
     raw = "";
   }
-  if (info.format === "toml") return { raw, value: parseServerTables(raw, info.container[0]!) };
-  if (raw.trim() === "") return { raw, value: {} };
-  // Read every JSON config the lenient way. JSONC is a superset, so a strict
-  // file parses identically, and a stray comment in one that is meant to be
-  // strict is the user's business rather than a reason to refuse the file.
-  return { raw, value: parseJsonc(raw) };
+  return { raw, value: parseConfigRaw(info, raw) };
+}
+
+function parseConfigRaw(info: CliInfo, raw: string): unknown {
+  if (info.format === "toml") return parseServerTables(raw, info.container[0]!);
+  if (raw.trim() === "") return {};
+  return info.format === "jsonc" ? parseJsonc(raw) : (JSON.parse(raw) as unknown);
 }
 
 function containerOf(value: unknown, path: readonly string[]): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("config root must be an object");
+  }
   let node = value as Record<string, unknown>;
+  const traversed: string[] = [];
   for (const key of path) {
     const next = node[key];
-    if (typeof next !== "object" || next === null) return {};
+    traversed.push(key);
+    if (next === undefined) return {};
+    if (typeof next !== "object" || next === null || Array.isArray(next)) {
+      throw new TypeError(`${traversed.join(".")} must be an object`);
+    }
     node = next as Record<string, unknown>;
   }
   return node;
@@ -1375,17 +1668,19 @@ function containerOf(value: unknown, path: readonly string[]): Record<string, un
 
 /** The spec a CLI currently has registered under `name`, if any. */
 export async function readServer(info: CliInfo, name: string): Promise<ServerSpec | undefined> {
-  const { value } = await readConfig(info);
+  const { raw, value } = await readConfig(info);
+  if (info.format !== "toml") validateJsonServer(raw, info, name);
   const servers =
     info.format === "toml"
       ? (value as Record<string, unknown>)
       : containerOf(value, info.container);
-  return fromEntry(servers[name], info.dialect);
+  return parseEntry(servers[name], info.dialect, `${info.name} ${name} entry`);
 }
 
 export type WriteServerOutcome = "added" | "replaced";
 
 export interface SwapTransactionHooks {
+  readonly afterFailureBeforeUnlock?: (error: unknown) => Promise<void> | void;
   readonly afterLockAcquired?: () => Promise<void> | void;
   readonly afterStaging?: () => Promise<void> | void;
   readonly beforeConfigCommit?: (info: CliInfo, index: number) => Promise<void> | void;
@@ -1431,14 +1726,39 @@ async function planServerWrite(
 ): Promise<ServerWritePlan> {
   const route = await inspectConfigRoute(info.configPath);
   const { raw, value } = await readConfig(info);
+  const { data, outcome } = renderServerData(info, raw, value, name, spec);
+
+  const mode = await fileMode(route.targetPath);
+  const recovery = await readRecoveryState(info.configPath, route);
+  await assertConfigRoute(route);
+  return {
+    data,
+    info,
+    mode,
+    outcome,
+    raw,
+    recovery,
+    route,
+  };
+}
+
+function renderServerData(
+  info: CliInfo,
+  raw: string,
+  value: unknown,
+  name: string,
+  spec: ServerSpec,
+): { readonly data: string; readonly outcome: WriteServerOutcome } {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("config root must be an object");
   }
+  if (info.format !== "toml") validateJsonServer(raw, info, name);
   const servers =
     info.format === "toml"
       ? (value as Record<string, unknown>)
       : containerOf(value, info.container);
-  const had = fromEntry(servers[name], info.dialect) !== undefined;
+  const current = parseEntry(servers[name], info.dialect, `${info.name} ${name} entry`);
+  const had = current !== undefined;
   const entry = toEntry(spec, info.dialect);
   let data: string;
   if (info.format === "toml") {
@@ -1448,35 +1768,34 @@ async function planServerWrite(
     // Splice into the bytes the user has, so comments and spacing survive. Only
     // when there is no container to splice into — an empty or absent file — is
     // the document rebuilt, where there is nothing to preserve anyway.
-    const spliced = raw.trim() === "" ? undefined : spliceEntry(raw, info.container, name, entry);
+    const spliced =
+      raw.trim() === "" ? undefined : spliceEntryCreatingPath(raw, info.container, name, entry);
     if (spliced !== undefined) {
       data = spliced;
     } else {
       const document = value as Record<string, unknown>;
       let node = document;
+      const traversed: string[] = [];
       for (const key of info.container) {
         const next = node[key];
-        node[key] = typeof next === "object" && next !== null ? next : {};
+        traversed.push(key);
+        if (
+          next !== undefined &&
+          (typeof next !== "object" || next === null || Array.isArray(next))
+        ) {
+          throw new TypeError(`${traversed.join(".")} must be an object`);
+        }
+        node[key] = next ?? {};
         node = node[key] as Record<string, unknown>;
       }
       node[name] = entry;
       data = `${JSON.stringify(document, undefined, 2)}\n`;
     }
-    parseJsonc(data);
+    if (info.format === "jsonc") parseJsonc(data);
+    else JSON.parse(data);
   }
 
-  const mode = await fileMode(route.targetPath);
-  const recovery = await readRecoveryState(info.configPath, route);
-  await assertConfigRoute(route);
-  return {
-    data,
-    info,
-    mode,
-    outcome: had ? "replaced" : "added",
-    raw,
-    recovery,
-    route,
-  };
+  return { data, outcome: had ? "replaced" : "added" };
 }
 
 interface StagedFile extends RecoveryFile {
@@ -1728,7 +2047,7 @@ function fileReplacement(
 function fileRemoval(
   destination: string,
   original: RecoveryFile,
-  role: "backup" | "state",
+  role: "backup" | "config" | "state",
 ): FileReplacement {
   return {
     cleanupBoundary: `${role}-cleanup`,
@@ -2655,18 +2974,1150 @@ export async function revertConfig(info: CliInfo): Promise<boolean> {
   return (await revertConfigs([info]))[0]!;
 }
 
-/** Whether a CLI is installed, judged by its executable being on PATH. */
-export async function isInstalled(info: CliInfo): Promise<boolean> {
-  return Bun.which(info.binary) !== null || exists(info.configPath);
+const NATIVE_CONFIG_MAX_BYTES = 16 * 1024 * 1024;
+const NATIVE_STATE_MAX_BYTES = 256 * 1024;
+const NATIVE_BACKUP_MARKER = ".bak.mcp-swap-typescript-";
+
+interface NativeFileRecord {
+  readonly digest: string;
+  readonly identity: string;
+  readonly mode: number;
+  readonly size: number;
 }
 
-/**
- * Launch a spec and complete one MCP `initialize` round trip.
- *
- * A spec that cannot start is worth catching here rather than in every config
- * that received it, where it surfaces as an agent that quietly has no tools.
- * Closing stdin lets a well-behaved stdio server exit on its own.
- */
+interface NativeRecoveryEntry {
+  readonly backup: NativeFileRecord | null;
+  readonly backupPath: string | null;
+  readonly client: string;
+  readonly configPath: string;
+  readonly expectedConfig: NativeFileRecord;
+  readonly logicalIdentity: string | null;
+  readonly originalKind: "file" | "missing";
+  readonly originalMode: number | null;
+  readonly routeKind: "regular" | "symlink";
+  readonly scope: SwapScope;
+  readonly sequence: number;
+  readonly server: string;
+  readonly targetPath: string;
+}
+
+interface NativeLedger {
+  readonly entries: Readonly<Record<string, NativeRecoveryEntry>>;
+  readonly nextSequence: number;
+  readonly port: "typescript";
+  readonly version: 1;
+}
+
+interface NativeContext {
+  readonly ledger: NativeLedger;
+  readonly stateFile: RecoveryFile | undefined;
+}
+
+function nativeStateDirectory(): string {
+  return join(xdgStateHome(), "libtmux-mcp-dev", "swap", "typescript");
+}
+
+export function nativeStatePath(): string {
+  return join(nativeStateDirectory(), "state.json");
+}
+
+function nativeBackupPath(targetPath: string, sequence: number): string {
+  return `${targetPath}${NATIVE_BACKUP_MARKER}${String(sequence).padStart(20, "0")}`;
+}
+
+function nativeFileRecord(file: RecoveryFile): NativeFileRecord {
+  return {
+    digest: contentDigest(file.raw),
+    identity: file.identity,
+    mode: file.mode,
+    size: Buffer.byteLength(file.raw),
+  };
+}
+
+function sameNativeFileRecord(expected: NativeFileRecord, actual: RecoveryFile): boolean {
+  return (
+    expected.identity === actual.identity &&
+    expected.mode === actual.mode &&
+    expected.size === Buffer.byteLength(actual.raw) &&
+    expected.digest === contentDigest(actual.raw)
+  );
+}
+
+function sameNativeContent(expected: NativeFileRecord, actual: RecoveryFile): boolean {
+  return (
+    expected.mode === actual.mode &&
+    expected.size === Buffer.byteLength(actual.raw) &&
+    expected.digest === contentDigest(actual.raw)
+  );
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .toSorted()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
+}
+
+function serializeNativeLedger(ledger: NativeLedger): string {
+  const payload = {
+    entries: Object.fromEntries(
+      Object.entries(ledger.entries).toSorted(([a], [b]) => a.localeCompare(b)),
+    ),
+    nextSequence: ledger.nextSequence,
+    port: ledger.port,
+    version: ledger.version,
+  };
+  return `${JSON.stringify({ checksum: contentDigest(canonicalJson(payload)), payload }, undefined, 2)}\n`;
+}
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[], label: string): void {
+  if (Object.keys(value).toSorted().join("\0") !== keys.toSorted().join("\0")) {
+    throw new TypeError(`${label} has unknown or missing fields`);
+  }
+}
+
+function nativeObjectMember(text: string, open: number, key: string, label: string): Member {
+  const member = assertUniqueMembers(text, open, label).find((candidate) => candidate.key === key);
+  if (member === undefined || text[member.valueStart] !== "{") {
+    throw new TypeError(`${label}.${key} must be an object`);
+  }
+  return member;
+}
+
+function validateNativeLedgerDuplicates(raw: string): void {
+  const open = raw.indexOf("{");
+  if (open === -1) throw new TypeError("TypeScript recovery state is not an object");
+  const payload = nativeObjectMember(raw, open, "payload", "TypeScript recovery state");
+  const entries = nativeObjectMember(
+    raw,
+    payload.valueStart,
+    "entries",
+    "TypeScript recovery payload",
+  );
+  for (const entry of assertUniqueMembers(raw, entries.valueStart, "TypeScript recovery entries")) {
+    if (raw[entry.valueStart] !== "{") {
+      throw new TypeError(`recovery entry ${entry.key} is not an object`);
+    }
+    const members = assertUniqueMembers(raw, entry.valueStart, `recovery entry ${entry.key}`);
+    for (const key of ["backup", "expectedConfig"]) {
+      const nested = members.find((member) => member.key === key);
+      if (nested !== undefined && raw[nested.valueStart] === "{") {
+        assertUniqueMembers(raw, nested.valueStart, `${entry.key} ${key}`);
+      }
+    }
+  }
+}
+
+function parseNativeFileRecord(value: unknown, label: string): NativeFileRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError(`${label} is not an object`);
+  }
+  const record = value as Record<string, unknown>;
+  exactKeys(record, ["digest", "identity", "mode", "size"], label);
+  if (
+    typeof record.digest !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(record.digest) ||
+    typeof record.identity !== "string" ||
+    !/^\d+:\d+:-?\d+$/u.test(record.identity) ||
+    !Number.isInteger(record.mode) ||
+    (record.mode as number) < 0 ||
+    (record.mode as number) > 0o7777 ||
+    !Number.isSafeInteger(record.size) ||
+    (record.size as number) < 0
+  ) {
+    throw new TypeError(`${label} has invalid file identity`);
+  }
+  return {
+    digest: record.digest,
+    identity: record.identity,
+    mode: record.mode as number,
+    size: record.size as number,
+  };
+}
+
+function parseNativeRecoveryEntry(key: string, value: unknown): NativeRecoveryEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError(`recovery entry ${key} is not an object`);
+  }
+  const record = value as Record<string, unknown>;
+  exactKeys(
+    record,
+    [
+      "backup",
+      "backupPath",
+      "client",
+      "configPath",
+      "expectedConfig",
+      "logicalIdentity",
+      "originalKind",
+      "originalMode",
+      "routeKind",
+      "scope",
+      "sequence",
+      "server",
+      "targetPath",
+    ],
+    `recovery entry ${key}`,
+  );
+  const clientNames = new Set(knownClis({}, "/home").map((info) => info.name));
+  if (
+    typeof record.client !== "string" ||
+    !clientNames.has(record.client) ||
+    (record.scope !== "user" && record.scope !== "project") ||
+    (record.client !== "claude" && record.scope !== "user") ||
+    key !== `${record.client}:${record.scope}` ||
+    typeof record.configPath !== "string" ||
+    !isAbsolute(record.configPath) ||
+    record.configPath.includes("\0") ||
+    typeof record.targetPath !== "string" ||
+    !isAbsolute(record.targetPath) ||
+    record.targetPath.includes("\0") ||
+    (record.routeKind !== "regular" && record.routeKind !== "symlink") ||
+    (record.originalKind !== "file" && record.originalKind !== "missing") ||
+    typeof record.server !== "string" ||
+    record.server === "" ||
+    !Number.isSafeInteger(record.sequence) ||
+    (record.sequence as number) < 0
+  ) {
+    throw new TypeError(`recovery entry ${key} has invalid ownership`);
+  }
+  requireSafeComponent(record.server, `${key} server`);
+  if (
+    (record.routeKind === "regular" && record.logicalIdentity !== null) ||
+    (record.routeKind === "symlink" &&
+      (typeof record.logicalIdentity !== "string" ||
+        !/^\d+:\d+:-?\d+:-?\d+$/u.test(record.logicalIdentity))) ||
+    (record.originalKind === "missing" &&
+      (record.originalMode !== null || record.backup !== null || record.backupPath !== null)) ||
+    (record.originalKind === "file" &&
+      (!Number.isInteger(record.originalMode) ||
+        (record.originalMode as number) < 0 ||
+        (record.originalMode as number) > 0o7777 ||
+        typeof record.backupPath !== "string" ||
+        !isAbsolute(record.backupPath) ||
+        record.backupPath.includes("\0") ||
+        record.backup === null))
+  ) {
+    throw new TypeError(`recovery entry ${key} has invalid route or backup`);
+  }
+  return {
+    backup:
+      record.backup === null
+        ? null
+        : parseNativeFileRecord(record.backup, `${key} recovery backup`),
+    backupPath: record.backupPath as string | null,
+    client: record.client,
+    configPath: record.configPath,
+    expectedConfig: parseNativeFileRecord(record.expectedConfig, `${key} expected config`),
+    logicalIdentity: record.logicalIdentity as string | null,
+    originalKind: record.originalKind,
+    originalMode: record.originalMode as number | null,
+    routeKind: record.routeKind,
+    scope: record.scope,
+    sequence: record.sequence as number,
+    server: record.server,
+    targetPath: record.targetPath,
+  };
+}
+
+function parseNativeLedger(raw: string): NativeLedger {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw new TypeError("TypeScript recovery state is malformed", { cause: error });
+  }
+  validateNativeLedgerDuplicates(raw);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("TypeScript recovery state is not an object");
+  }
+  const envelope = value as Record<string, unknown>;
+  exactKeys(envelope, ["checksum", "payload"], "TypeScript recovery state");
+  if (
+    typeof envelope.payload !== "object" ||
+    envelope.payload === null ||
+    Array.isArray(envelope.payload)
+  ) {
+    throw new TypeError("TypeScript recovery payload is not an object");
+  }
+  const payload = envelope.payload as Record<string, unknown>;
+  exactKeys(payload, ["entries", "nextSequence", "port", "version"], "TypeScript recovery payload");
+  if (
+    envelope.checksum !== contentDigest(canonicalJson(payload)) ||
+    payload.port !== "typescript" ||
+    payload.version !== 1 ||
+    !Number.isSafeInteger(payload.nextSequence) ||
+    (payload.nextSequence as number) < 0 ||
+    typeof payload.entries !== "object" ||
+    payload.entries === null ||
+    Array.isArray(payload.entries)
+  ) {
+    throw new TypeError("TypeScript recovery state has an invalid checksum or schema");
+  }
+  const entries = Object.fromEntries(
+    Object.entries(payload.entries as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      parseNativeRecoveryEntry(key, entry),
+    ]),
+  );
+  const sequences = Object.values(entries).map((entry) => entry.sequence);
+  if (
+    new Set(sequences).size !== sequences.length ||
+    sequences.some((sequence) => sequence >= (payload.nextSequence as number))
+  ) {
+    throw new TypeError("TypeScript recovery state has invalid sequence ownership");
+  }
+  return {
+    entries,
+    nextSequence: payload.nextSequence as number,
+    port: "typescript",
+    version: 1,
+  };
+}
+
+function emptyNativeLedger(): NativeLedger {
+  return { entries: {}, nextSequence: 0, port: "typescript", version: 1 };
+}
+
+async function readNativeContext(): Promise<NativeContext> {
+  const directory = await inspectLockDirectory(nativeStateDirectory());
+  if (directory === undefined) return { ledger: emptyNativeLedger(), stateFile: undefined };
+  const stateFile = await readRecoveryFile(
+    nativeStatePath(),
+    "TypeScript recovery state",
+    NATIVE_STATE_MAX_BYTES,
+  );
+  if (stateFile === undefined) return { ledger: emptyNativeLedger(), stateFile: undefined };
+  if (stateFile.mode !== 0o600) throw new TypeError("TypeScript recovery state mode must be 0600");
+  return { ledger: parseNativeLedger(stateFile.raw), stateFile };
+}
+
+async function ensureNativeStateDirectory(): Promise<void> {
+  try {
+    await mkdir(nativeStateDirectory(), { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  const directory = await inspectLockDirectory(nativeStateDirectory());
+  if (directory === undefined) throw new Error("TypeScript recovery directory was not created");
+}
+
+async function ensureNativeDestinationParent(path: string): Promise<void> {
+  const parent = dirname(path);
+  const expected = await canonicalMissingPath(parent);
+  await mkdir(parent, { mode: 0o700, recursive: true });
+  const metadata = await lstat(parent);
+  const actual = await realpath(parent);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || actual !== expected) {
+    throw new Error(`destination parent changed while it was created: ${path}`);
+  }
+}
+
+async function nativeOrphanBackups(
+  allClis: readonly CliInfo[],
+  ledger: NativeLedger,
+): Promise<readonly string[]> {
+  const owned = new Set(
+    Object.values(ledger.entries).flatMap((entry) =>
+      entry.backupPath === null ? [] : [entry.backupPath],
+    ),
+  );
+  const candidates = new Set<string>();
+  for (const info of allClis) {
+    // eslint-disable-next-line no-await-in-loop -- routes may point at distinct dotfile trees.
+    const route = await inspectConfigRoute(info.configPath);
+    const parent = dirname(route.targetPath);
+    const prefix = `${basename(route.targetPath)}${NATIVE_BACKUP_MARKER}`;
+    let names: string[];
+    try {
+      // eslint-disable-next-line no-await-in-loop -- each authenticated parent is inspected once.
+      names = await readdir(parent);
+    } catch (error) {
+      if (isMissing(error)) continue;
+      throw error;
+    }
+    for (const name of names) {
+      const path = join(parent, name);
+      if (name.startsWith(prefix) && !owned.has(path)) candidates.add(path);
+    }
+  }
+  return [...candidates].toSorted();
+}
+
+interface NativeConfigSnapshot {
+  readonly file: RecoveryFile | undefined;
+  readonly info: CliInfo;
+  readonly route: ConfigRoute;
+}
+
+async function nativeConfigSnapshot(info: CliInfo): Promise<NativeConfigSnapshot> {
+  const route = await inspectConfigRoute(info.configPath);
+  const file =
+    route.kind === "missing"
+      ? undefined
+      : await readRecoveryFile(route.targetPath, `${info.name} config`, NATIVE_CONFIG_MAX_BYTES);
+  if (route.kind !== "missing" && file?.identity !== route.targetIdentity) {
+    throw new Error(`${info.name} config changed while it was read`);
+  }
+  return { file, info, route };
+}
+
+function nativeEntryMatchesRoute(entry: NativeRecoveryEntry, route: ConfigRoute): boolean {
+  return (
+    route.kind === entry.routeKind &&
+    route.logicalPath === entry.configPath &&
+    route.targetPath === entry.targetPath &&
+    (route.kind === "regular" || route.logicalIdentity === entry.logicalIdentity)
+  );
+}
+
+async function verifyNativeContext(
+  context: NativeContext,
+  allClis: readonly CliInfo[],
+  extraPaths: readonly { readonly label: string; readonly path: string }[] = [],
+  heldLock?: SwapLockState,
+): Promise<Map<string, NativeConfigSnapshot>> {
+  const byName = new Map(allClis.map((info) => [info.name, info]));
+  const snapshots = new Map<string, NativeConfigSnapshot>();
+  for (const info of allClis) {
+    // eslint-disable-next-line no-await-in-loop -- every path is authenticated in canonical order.
+    snapshots.set(info.name, await nativeConfigSnapshot(info));
+  }
+
+  const entriesByTarget = new Map<string, NativeRecoveryEntry[]>();
+  for (const [key, entry] of Object.entries(context.ledger.entries)) {
+    const info = byName.get(entry.client);
+    if (info === undefined || info.configPath !== entry.configPath) {
+      throw new Error(`${key} recovery state does not own its configured client path`);
+    }
+    if (entry.backupPath !== null) {
+      if (entry.backupPath !== nativeBackupPath(entry.targetPath, entry.sequence)) {
+        throw new Error(`${key} recovery backup is outside the TypeScript namespace`);
+      }
+      // eslint-disable-next-line no-await-in-loop -- every recorded backup is authenticated.
+      const backup = await readRecoveryFile(
+        entry.backupPath,
+        `${key} recovery backup`,
+        NATIVE_CONFIG_MAX_BYTES,
+      );
+      if (
+        backup === undefined ||
+        entry.backup === null ||
+        backup.mode !== 0o600 ||
+        !sameNativeFileRecord(entry.backup, backup)
+      ) {
+        throw new Error(`${key} recovery backup changed`);
+      }
+    }
+    const snapshot = snapshots.get(entry.client)!;
+    if (!nativeEntryMatchesRoute(entry, snapshot.route) || snapshot.file === undefined) {
+      throw new Error(`${key} configuration route changed`);
+    }
+    const grouped = entriesByTarget.get(entry.targetPath) ?? [];
+    grouped.push(entry);
+    entriesByTarget.set(entry.targetPath, grouped);
+  }
+  for (const entries of entriesByTarget.values()) {
+    const newest = entries.toSorted((a, b) => b.sequence - a.sequence)[0]!;
+    const current = snapshots.get(newest.client)!.file!;
+    if (!sameNativeFileRecord(newest.expectedConfig, current)) {
+      throw new Error(`${newest.client} config changed since mcp-swap wrote its newest layer`);
+    }
+  }
+
+  const paths = new Map<string, string>();
+  const identities = new Map<string, string>();
+  const claim = (
+    label: string,
+    artifactPaths: readonly string[],
+    artifactIdentities: readonly (string | undefined)[],
+  ): void => {
+    for (const path of new Set(artifactPaths)) {
+      const previous = paths.get(path);
+      if (previous !== undefined) throw new Error(`${label} aliases ${previous}`);
+      paths.set(path, label);
+    }
+    for (const identity of new Set(artifactIdentities)) {
+      if (identity === undefined) continue;
+      const previous = identities.get(identity);
+      if (previous !== undefined) throw new Error(`${label} aliases ${previous}`);
+      identities.set(identity, label);
+    }
+  };
+  const lock = heldLock ?? (await inspectSwapLock());
+  claim("swap lock", [lock.logicalPath, lock.physicalPath], [lock.identity]);
+  for (const snapshot of snapshots.values()) {
+    claim(
+      `${snapshot.info.name} config`,
+      [snapshot.route.logicalPath, snapshot.route.targetPath],
+      [
+        snapshot.route.targetIdentity,
+        snapshot.route.logicalIdentity?.split(":").slice(0, 3).join(":"),
+      ],
+    );
+  }
+  claim(
+    "TypeScript recovery state",
+    [nativeStatePath(), await canonicalMissingPath(nativeStatePath())],
+    [context.stateFile?.identity],
+  );
+  for (const [key, entry] of Object.entries(context.ledger.entries)) {
+    if (entry.backupPath !== null) {
+      claim(
+        `${key} recovery backup`,
+        // eslint-disable-next-line no-await-in-loop -- claims retain ledger order for diagnostics.
+        [entry.backupPath, await canonicalMissingPath(entry.backupPath)],
+        [entry.backup?.identity],
+      );
+    }
+  }
+  for (const extra of extraPaths) {
+    let metadata;
+    try {
+      // eslint-disable-next-line no-await-in-loop -- candidate claims are checked in plan order.
+      metadata = await lstat(extra.path, { bigint: true });
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    // eslint-disable-next-line no-await-in-loop -- candidate claims are checked in plan order.
+    const canonical = await canonicalMissingPath(extra.path);
+    claim(
+      extra.label,
+      [extra.path, canonical],
+      [metadata === undefined ? undefined : fileIdentity(metadata)],
+    );
+    if (metadata !== undefined) throw new Error(`${extra.label} already exists`);
+    // eslint-disable-next-line no-await-in-loop -- each destination must pass before planning returns.
+    await assertDestinationFeasible(extra.path);
+  }
+  return snapshots;
+}
+
+type NativeUseOutcome = "added" | "replaced" | "unchanged";
+
+interface NativeBackupRewrite {
+  readonly data: string;
+  readonly entry: NativeRecoveryEntry;
+  readonly key: string;
+  readonly snapshot: RecoveryFile;
+}
+
+interface NativeUsePlan {
+  readonly backupPath: string | null;
+  readonly data: string;
+  readonly existing: NativeRecoveryEntry | undefined;
+  readonly finalSpec: ServerSpec;
+  readonly key: string;
+  readonly newer: readonly NativeBackupRewrite[];
+  readonly outcome: NativeUseOutcome;
+  readonly scope: SwapScope;
+  readonly server: string;
+  readonly scopedInfo: CliInfo;
+  readonly sequence: number;
+  readonly snapshot: NativeConfigSnapshot;
+}
+
+interface NativeUseBatch {
+  readonly context: NativeContext;
+  readonly plans: readonly NativeUsePlan[];
+}
+
+function sameServerSpec(left: ServerSpec | undefined, right: ServerSpec): boolean {
+  return left !== undefined && canonicalJson(left) === canonicalJson(right);
+}
+
+function serverFromRaw(info: CliInfo, raw: string, server: string): ServerSpec | undefined {
+  const value = parseConfigRaw(info, raw);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("config root must be an object");
+  }
+  const servers =
+    info.format === "toml"
+      ? (value as Record<string, unknown>)
+      : containerOf(value, info.container);
+  if (info.format !== "toml") validateJsonServer(raw, info, server);
+  return parseEntry(servers[server], info.dialect, `${info.name} ${server} entry`);
+}
+
+function finalServerSpec(
+  base: ServerSpec,
+  current: ServerSpec | undefined,
+  explicitToolsets: boolean,
+): ServerSpec {
+  if ("LIBTMUX_SAFETY" in base.env) {
+    throw new Error("LIBTMUX_SAFETY is retired; use LIBTMUX_TOOLSETS");
+  }
+  const environment = { ...current?.env, ...base.env };
+  if (explicitToolsets) {
+    delete environment.LIBTMUX_SAFETY;
+  }
+  return { args: [...base.args], command: base.command, env: environment };
+}
+
+async function planNativeUse(
+  allClis: readonly CliInfo[],
+  selected: readonly CliInfo[],
+  server: string,
+  repo: string,
+  scope: SwapScope,
+  baseSpec: ServerSpec,
+  explicitToolsets: boolean,
+  heldLock?: SwapLockState,
+): Promise<NativeUseBatch> {
+  const context = await readNativeContext();
+  const snapshots = await verifyNativeContext(context, allClis, [], heldLock);
+  let nextSequence = context.ledger.nextSequence;
+  const plans: NativeUsePlan[] = [];
+  const extraPaths: { label: string; path: string }[] = [];
+  for (const info of selected) {
+    try {
+      const normalizedScope: SwapScope = info.name === "claude" ? scope : "user";
+      const scopedInfo = scopedCli(info, repo, normalizedScope);
+      const key = `${info.name}:${normalizedScope}`;
+      const snapshot = snapshots.get(info.name)!;
+      const raw = snapshot.file?.raw ?? "";
+      const current = serverFromRaw(scopedInfo, raw, server);
+      const finalSpec = finalServerSpec(baseSpec, current, explicitToolsets);
+      const existing = context.ledger.entries[key];
+      let sequence = existing?.sequence;
+      if (sequence === undefined) {
+        if (nextSequence === Number.MAX_SAFE_INTEGER) {
+          throw new Error("TypeScript recovery sequence is exhausted");
+        }
+        sequence = nextSequence++;
+      }
+      const backupPath =
+        existing?.backupPath ??
+        (snapshot.file === undefined
+          ? null
+          : nativeBackupPath(snapshot.route.targetPath, sequence));
+      if (existing === undefined && backupPath !== null) {
+        extraPaths.push({ label: `${key} recovery backup`, path: backupPath });
+      }
+      const rendered = sameServerSpec(current, finalSpec)
+        ? { data: raw, outcome: "unchanged" as const }
+        : {
+            ...renderServerData(
+              scopedInfo,
+              raw,
+              parseConfigRaw(scopedInfo, raw),
+              server,
+              finalSpec,
+            ),
+            outcome: (current === undefined ? "added" : "replaced") as NativeUseOutcome,
+          };
+      const newer: NativeBackupRewrite[] = [];
+      if (existing !== undefined && rendered.outcome !== "unchanged") {
+        const candidates = Object.entries(context.ledger.entries)
+          .filter(
+            ([candidateKey, candidate]) =>
+              candidateKey !== key &&
+              candidate.targetPath === existing.targetPath &&
+              candidate.sequence > existing.sequence,
+          )
+          .toSorted(([, left], [, right]) => left.sequence - right.sequence);
+        for (const [candidateKey, candidate] of candidates) {
+          if (candidate.backupPath === null) {
+            throw new Error(`${candidateKey} recovery chain has no backup`);
+          }
+          // eslint-disable-next-line no-await-in-loop -- recovery order is the chain order.
+          const backup = await readRecoveryFile(
+            candidate.backupPath,
+            `${candidateKey} recovery backup`,
+            NATIVE_CONFIG_MAX_BYTES,
+          );
+          if (
+            backup === undefined ||
+            candidate.backup === null ||
+            !sameNativeFileRecord(candidate.backup, backup)
+          ) {
+            throw new Error(`${candidateKey} recovery backup changed`);
+          }
+          const data = renderServerData(
+            scopedInfo,
+            backup.raw,
+            parseConfigRaw(scopedInfo, backup.raw),
+            server,
+            finalSpec,
+          ).data;
+          newer.push({ data, entry: candidate, key: candidateKey, snapshot: backup });
+        }
+      }
+      // eslint-disable-next-line no-await-in-loop -- failures are attributed in selection order.
+      await assertDestinationFeasible(snapshot.route.targetPath);
+      plans.push({
+        backupPath,
+        data: rendered.data,
+        existing,
+        finalSpec,
+        key,
+        newer,
+        outcome: rendered.outcome,
+        scope: normalizedScope,
+        server,
+        scopedInfo,
+        sequence,
+        snapshot,
+      });
+    } catch (error) {
+      throw planError(info, error);
+    }
+  }
+  await assertDestinationFeasible(nativeStatePath());
+  await verifyNativeContext(context, allClis, extraPaths, heldLock);
+  return { context, plans };
+}
+
+function sameFinalSpecs(left: NativeUseBatch, right: NativeUseBatch): boolean {
+  return (
+    left.plans.length === right.plans.length &&
+    left.plans.every(
+      (plan, index) =>
+        plan.key === right.plans[index]?.key &&
+        canonicalJson(plan.finalSpec) === canonicalJson(right.plans[index]?.finalSpec),
+    )
+  );
+}
+
+interface NativePreparedUse {
+  readonly configStages: ReadonlyMap<string, StagedFile>;
+  readonly ledger: NativeLedger;
+  readonly operations: readonly FileReplacement[];
+  readonly temporaryFiles: readonly StagedFile[];
+}
+
+async function prepareNativeUse(batch: NativeUseBatch): Promise<NativePreparedUse> {
+  if (batch.plans.every((plan) => plan.outcome === "unchanged")) {
+    return {
+      configStages: new Map(),
+      ledger: batch.context.ledger,
+      operations: [],
+      temporaryFiles: [],
+    };
+  }
+  await ensureNativeStateDirectory();
+  const entries: Record<string, NativeRecoveryEntry> = { ...batch.context.ledger.entries };
+  let nextSequence = batch.context.ledger.nextSequence;
+  const temporaryFiles: StagedFile[] = [];
+  const prefix: FileReplacement[] = [];
+  const configs: FileReplacement[] = [];
+  const configStages = new Map<string, StagedFile>();
+  for (const plan of batch.plans) {
+    if (plan.outcome !== "unchanged") {
+      // eslint-disable-next-line no-await-in-loop -- every target parent is authenticated before staging.
+      await ensureNativeDestinationParent(plan.snapshot.route.targetPath);
+    }
+  }
+  for (const plan of batch.plans) {
+    if (plan.outcome === "unchanged") continue;
+    const current = plan.snapshot.file;
+    let backup = plan.existing?.backup ?? null;
+    let restoredSelected: NativeFileRecord | undefined;
+    if (plan.existing === undefined && plan.backupPath !== null && current !== undefined) {
+      // eslint-disable-next-line no-await-in-loop -- every owned backup stages before publication.
+      const stage = await stageFile(plan.backupPath, current.raw, 0o600);
+      temporaryFiles.push(stage);
+      prefix.push(fileReplacement(stage, plan.backupPath, undefined, "backup"));
+      backup = nativeFileRecord(stage);
+    }
+    for (const rewrite of plan.newer) {
+      // eslint-disable-next-line no-await-in-loop -- recovery-chain order is deterministic.
+      const stage = await stageFile(rewrite.entry.backupPath!, rewrite.data, 0o600);
+      temporaryFiles.push(stage);
+      prefix.push(fileReplacement(stage, rewrite.entry.backupPath!, rewrite.snapshot, "backup"));
+      entries[rewrite.key] = { ...rewrite.entry, backup: nativeFileRecord(stage) };
+      restoredSelected ??= {
+        ...nativeFileRecord(stage),
+        mode: rewrite.entry.originalMode!,
+      };
+    }
+    // eslint-disable-next-line no-await-in-loop -- all config stages precede any publication.
+    const configStage = await stageFile(
+      plan.snapshot.route.targetPath,
+      plan.data,
+      current?.mode ?? 0o600,
+    );
+    temporaryFiles.push(configStage);
+    configStages.set(plan.key, configStage);
+    const configRecord = nativeFileRecord(configStage);
+    const newestRewrite = plan.newer.at(-1);
+    if (newestRewrite !== undefined) {
+      entries[newestRewrite.key] = {
+        ...entries[newestRewrite.key]!,
+        expectedConfig: configRecord,
+      };
+    }
+    const existing = plan.existing;
+    entries[plan.key] = {
+      backup,
+      backupPath: plan.backupPath,
+      client: plan.scopedInfo.name,
+      configPath: plan.scopedInfo.configPath,
+      expectedConfig: newestRewrite === undefined ? configRecord : restoredSelected!,
+      logicalIdentity:
+        plan.snapshot.route.kind === "symlink" ? plan.snapshot.route.logicalIdentity! : null,
+      originalKind: existing?.originalKind ?? (current === undefined ? "missing" : "file"),
+      originalMode: existing?.originalMode ?? current?.mode ?? null,
+      routeKind: plan.snapshot.route.kind === "symlink" ? "symlink" : "regular",
+      scope: plan.scope,
+      sequence: plan.sequence,
+      server: plan.server,
+      targetPath: plan.snapshot.route.targetPath,
+    };
+    nextSequence = Math.max(nextSequence, plan.sequence + 1);
+    configs.push(fileReplacement(configStage, plan.snapshot.route.targetPath, current, "config"));
+  }
+  const ledger: NativeLedger = {
+    entries,
+    nextSequence,
+    port: "typescript",
+    version: 1,
+  };
+  const stateStage = await stageFile(nativeStatePath(), serializeNativeLedger(ledger), 0o600);
+  temporaryFiles.push(stateStage);
+  prefix.push(fileReplacement(stateStage, nativeStatePath(), batch.context.stateFile, "state"));
+  return { configStages, ledger, operations: [...prefix, ...configs], temporaryFiles };
+}
+
+async function applyNativeOperations(
+  operations: readonly FileReplacement[],
+  temporaryFiles: readonly StagedFile[],
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<void> {
+  const applied: FileReplacement[] = [];
+  try {
+    for (const operation of operations) {
+      // eslint-disable-next-line no-await-in-loop -- publication order is part of recovery.
+      await applyReplacement(operation, hooks, lock);
+      applied.push(operation);
+    }
+  } catch (error) {
+    const rollbackFailures = [
+      ...(await collectFailures(applied.toReversed(), async (operation) =>
+        rollbackReplacement(operation, hooks, lock),
+      )),
+    ];
+    rollbackFailures.push(...(await cleanupFiles(temporaryFiles, hooks, lock)));
+    if (rollbackFailures.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackFailures],
+        "native swap failed and exact rollback was incomplete",
+      );
+    }
+    throw error;
+  }
+  const cleanupFailures = [
+    ...(await cleanupReplacements(operations, hooks, lock)),
+    ...(await cleanupFiles(temporaryFiles, hooks, lock)),
+  ];
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(cleanupFailures, "native swap committed but cleanup was incomplete");
+  }
+}
+
+export async function useNativeConfigs(
+  allClis: readonly CliInfo[],
+  selected: readonly CliInfo[],
+  server: string,
+  repo: string,
+  scope: SwapScope,
+  baseSpec: ServerSpec,
+  explicitToolsets: boolean,
+  options: {
+    readonly dryRun: boolean;
+    readonly hooks?: SwapTransactionHooks;
+    readonly prepare?: () => Promise<void>;
+    readonly skipPreflight: boolean;
+  },
+): Promise<readonly NativeUsePlan[]> {
+  const preliminary = await planNativeUse(
+    allClis,
+    selected,
+    server,
+    repo,
+    scope,
+    baseSpec,
+    explicitToolsets,
+  );
+  if (options.dryRun) return preliminary.plans;
+  await options.prepare?.();
+  if (!options.skipPreflight) {
+    const unique = new Map(
+      preliminary.plans.map((plan) => [canonicalJson(plan.finalSpec), plan.finalSpec]),
+    );
+    for (const spec of unique.values()) {
+      // eslint-disable-next-line no-await-in-loop -- every distinct final environment is probed.
+      const reason = await preflight(spec, 300_000);
+      if (reason !== undefined) {
+        throw new Error(`server did not answer MCP initialize: ${reason}`);
+      }
+    }
+  }
+  return withSwapLock(async (lock) => {
+    try {
+      await options.hooks?.afterLockAcquired?.();
+      const locked = await planNativeUse(
+        allClis,
+        selected,
+        server,
+        repo,
+        scope,
+        baseSpec,
+        explicitToolsets,
+      );
+      if (!sameFinalSpecs(preliminary, locked)) {
+        throw new Error("final MCP specification changed after preflight");
+      }
+      const prepared = await prepareNativeUse(locked);
+      await options.hooks?.afterStaging?.();
+      const stagedCheck = await planNativeUse(
+        allClis,
+        selected,
+        server,
+        repo,
+        scope,
+        baseSpec,
+        explicitToolsets,
+        lock.state,
+      );
+      if (!sameFinalSpecs(locked, stagedCheck)) {
+        throw new Error("final MCP specification changed during staging");
+      }
+      await applyNativeOperations(
+        prepared.operations,
+        prepared.temporaryFiles,
+        options.hooks ?? {},
+        lock,
+      );
+      return locked.plans;
+    } catch (error) {
+      await options.hooks?.afterFailureBeforeUnlock?.(error);
+      throw error;
+    }
+  });
+}
+
+interface NativeRevertPlan {
+  readonly backup: RecoveryFile | undefined;
+  readonly entry: NativeRecoveryEntry;
+  readonly info: CliInfo;
+  readonly key: string;
+  readonly snapshot: NativeConfigSnapshot;
+}
+
+interface NativeRevertBatch {
+  readonly context: NativeContext;
+  readonly plans: readonly NativeRevertPlan[];
+}
+
+async function planNativeRevert(
+  allClis: readonly CliInfo[],
+  selected: readonly CliInfo[],
+  scope: SwapScope | undefined,
+  heldLock?: SwapLockState,
+): Promise<NativeRevertBatch> {
+  const context = await readNativeContext();
+  const snapshots = await verifyNativeContext(context, allClis, [], heldLock);
+  const selectedNames = new Set(selected.map((info) => info.name));
+  const candidates = Object.entries(context.ledger.entries)
+    .filter(([, entry]) => selectedNames.has(entry.client))
+    .filter(
+      ([, entry]) =>
+        scope === undefined || entry.scope === (entry.client === "claude" ? scope : "user"),
+    )
+    .toSorted(([, left], [, right]) => right.sequence - left.sequence);
+  const candidateKeys = new Set(candidates.map(([key]) => key));
+  for (const [key, entry] of candidates) {
+    const skippedNewer = Object.entries(context.ledger.entries).find(
+      ([otherKey, other]) =>
+        !candidateKeys.has(otherKey) &&
+        other.targetPath === entry.targetPath &&
+        other.sequence > entry.sequence,
+    );
+    if (skippedNewer !== undefined) {
+      throw new Error(`${key} cannot revert before newer layer ${skippedNewer[0]}`);
+    }
+  }
+
+  const simulated = new Map<string, RecoveryFile | undefined>();
+  const plans: NativeRevertPlan[] = [];
+  for (const [key, entry] of candidates) {
+    const info = allClis.find((candidate) => candidate.name === entry.client)!;
+    const snapshot = snapshots.get(entry.client)!;
+    const current = simulated.has(entry.targetPath)
+      ? simulated.get(entry.targetPath)
+      : snapshot.file;
+    if (current === undefined) throw new Error(`${key} config disappeared before revert`);
+    const first = !simulated.has(entry.targetPath);
+    if (
+      (first && !sameNativeFileRecord(entry.expectedConfig, current)) ||
+      (!first && !sameNativeContent(entry.expectedConfig, current))
+    ) {
+      throw new Error(`${key} recovery chain does not match the current config`);
+    }
+    let backup: RecoveryFile | undefined;
+    if (entry.originalKind === "file") {
+      // eslint-disable-next-line no-await-in-loop -- backups are consumed in strict LIFO order.
+      backup = await readRecoveryFile(
+        entry.backupPath!,
+        `${key} recovery backup`,
+        NATIVE_CONFIG_MAX_BYTES,
+      );
+      if (
+        backup === undefined ||
+        entry.backup === null ||
+        !sameNativeFileRecord(entry.backup, backup)
+      ) {
+        throw new Error(`${key} recovery backup changed before revert`);
+      }
+      simulated.set(entry.targetPath, { ...backup, mode: entry.originalMode! });
+    } else {
+      simulated.set(entry.targetPath, undefined);
+    }
+    plans.push({ backup, entry, info, key, snapshot });
+  }
+  return { context, plans };
+}
+
+interface NativePreparedRevert {
+  readonly operations: readonly FileReplacement[];
+  readonly temporaryFiles: readonly StagedFile[];
+}
+
+async function prepareNativeRevert(batch: NativeRevertBatch): Promise<NativePreparedRevert> {
+  if (batch.plans.length === 0) return { operations: [], temporaryFiles: [] };
+  await ensureNativeStateDirectory();
+  const entries: Record<string, NativeRecoveryEntry> = { ...batch.context.ledger.entries };
+  const temporaryFiles: StagedFile[] = [];
+  const configs: FileReplacement[] = [];
+  const lastRestored = new Map<string, RecoveryFile | undefined>();
+  const expected = new Map<string, RecoveryFile>();
+  for (const plan of batch.plans) {
+    const prior = expected.get(plan.entry.targetPath) ?? plan.snapshot.file;
+    if (prior === undefined) throw new Error(`${plan.key} config disappeared before staging`);
+    if (plan.entry.originalKind === "file") {
+      // eslint-disable-next-line no-await-in-loop -- restore stages follow the authenticated LIFO chain.
+      const stage = await stageFile(
+        plan.entry.targetPath,
+        plan.backup!.raw,
+        plan.entry.originalMode!,
+      );
+      temporaryFiles.push(stage);
+      configs.push(fileReplacement(stage, plan.entry.targetPath, prior, "config"));
+      expected.set(plan.entry.targetPath, stage);
+      lastRestored.set(plan.entry.targetPath, stage);
+    } else {
+      configs.push(fileRemoval(plan.entry.targetPath, prior, "config"));
+      expected.delete(plan.entry.targetPath);
+      lastRestored.set(plan.entry.targetPath, undefined);
+    }
+    delete entries[plan.key];
+  }
+
+  for (const [targetPath, restored] of lastRestored) {
+    const predecessor = Object.entries(entries)
+      .filter(([, entry]) => entry.targetPath === targetPath)
+      .toSorted(([, left], [, right]) => right.sequence - left.sequence)[0];
+    if (predecessor !== undefined) {
+      if (restored === undefined) {
+        throw new Error(`${predecessor[0]} recovery predecessor cannot expect a missing config`);
+      }
+      entries[predecessor[0]] = {
+        ...predecessor[1],
+        expectedConfig: nativeFileRecord(restored),
+      };
+    }
+  }
+
+  const backups = batch.plans.flatMap((plan) =>
+    plan.backup === undefined ? [] : [fileRemoval(plan.entry.backupPath!, plan.backup, "backup")],
+  );
+  let state: FileReplacement;
+  if (Object.keys(entries).length === 0) {
+    if (batch.context.stateFile === undefined) {
+      throw new Error("recovery entries exist without TypeScript recovery state");
+    }
+    state = fileRemoval(nativeStatePath(), batch.context.stateFile, "state");
+  } else {
+    const ledger: NativeLedger = { ...batch.context.ledger, entries };
+    const stage = await stageFile(nativeStatePath(), serializeNativeLedger(ledger), 0o600);
+    temporaryFiles.push(stage);
+    state = fileReplacement(stage, nativeStatePath(), batch.context.stateFile, "state");
+  }
+  return { operations: [...configs, ...backups, state], temporaryFiles };
+}
+
+export async function revertNativeConfigs(
+  allClis: readonly CliInfo[],
+  selected: readonly CliInfo[],
+  scope: SwapScope | undefined,
+  options: { readonly dryRun: boolean; readonly hooks?: SwapTransactionHooks },
+): Promise<readonly NativeRevertPlan[]> {
+  const preliminary = await planNativeRevert(allClis, selected, scope);
+  if (options.dryRun || preliminary.plans.length === 0) return preliminary.plans;
+  return withSwapLock(async (lock) => {
+    try {
+      await options.hooks?.afterLockAcquired?.();
+      const locked = await planNativeRevert(allClis, selected, scope);
+      if (
+        locked.plans.map((plan) => plan.key).join("\0") !==
+        preliminary.plans.map((plan) => plan.key).join("\0")
+      ) {
+        throw new Error("revert plan changed before the shared lock was acquired");
+      }
+      const prepared = await prepareNativeRevert(locked);
+      await options.hooks?.afterStaging?.();
+      const stagedCheck = await planNativeRevert(allClis, selected, scope, lock.state);
+      if (
+        stagedCheck.plans.map((plan) => plan.key).join("\0") !==
+        locked.plans.map((plan) => plan.key).join("\0")
+      ) {
+        throw new Error("revert plan changed during staging");
+      }
+      await applyNativeOperations(
+        prepared.operations,
+        prepared.temporaryFiles,
+        options.hooks ?? {},
+        lock,
+      );
+      return locked.plans;
+    } catch (error) {
+      await options.hooks?.afterFailureBeforeUnlock?.(error);
+      throw error;
+    }
+  });
+}
+
+interface ClientPresence {
+  readonly binary: boolean;
+  readonly config: boolean;
+  readonly piAdapter: boolean;
+}
+
+async function clientPresence(info: CliInfo): Promise<ClientPresence> {
+  return {
+    binary: Bun.which(info.binary) !== null,
+    config: await exists(info.configPath),
+    piAdapter:
+      info.name !== "pi" ||
+      (await stat(join(dirname(info.configPath), "npm", "node_modules", "pi-mcp-adapter")).then(
+        (metadata) => metadata.isDirectory(),
+        () => false,
+      )),
+  };
+}
+
+/** Whether both the CLI executable and its known configuration are present. */
+export async function isInstalled(info: CliInfo): Promise<boolean> {
+  const presence = await clientPresence(info);
+  return presence.binary && presence.config;
+}
+
+/** Complete one MCP `initialize` round trip and reject unusable server specs. */
 export async function preflight(spec: ServerSpec, timeoutMs = 60_000): Promise<string | undefined> {
   const frames =
     [
@@ -2684,9 +4135,28 @@ export async function preflight(spec: ServerSpec, timeoutMs = 60_000): Promise<s
   let result: BoundedCommandResult;
   try {
     result = await runBoundedCommand([spec.command, ...spec.args], {
+      acceptStdoutLine: (line) => {
+        try {
+          validateJsonPath(line, ["result"]);
+          const message = JSON.parse(line) as Record<string, unknown>;
+          const response = message.result;
+          return (
+            message.jsonrpc === "2.0" &&
+            message.id === 1 &&
+            typeof response === "object" &&
+            response !== null &&
+            !Array.isArray(response) &&
+            typeof (response as Record<string, unknown>).protocolVersion === "string" &&
+            ((response as Record<string, unknown>).protocolVersion as string).trim() !== ""
+          );
+        } catch {
+          return false;
+        }
+      },
       env: { ...process.env, ...spec.env },
       maxOutputBytes: MAX_PREFLIGHT_OUTPUT_BYTES,
       stdin: frames,
+      terminationGraceMilliseconds: 500,
       timeoutMilliseconds: timeoutMs,
     });
   } catch (error) {
@@ -2696,28 +4166,23 @@ export async function preflight(spec: ServerSpec, timeoutMs = 60_000): Promise<s
   if (result.termination === "output_limit_exceeded") {
     return `initialize exceeded ${String(MAX_PREFLIGHT_OUTPUT_BYTES)} output bytes`;
   }
+  if (result.termination === "accepted") return undefined;
   if (result.termination === "signaled") {
     return `server terminated by ${result.signalCode ?? "an unknown signal"}`;
   }
-  for (const line of result.stdout.split("\n")) {
-    if (line.trim() === "") continue;
-    try {
-      const message = JSON.parse(line) as { id?: number; result?: { serverInfo?: unknown } };
-      if (message.id === 1 && message.result !== undefined) return undefined;
-    } catch {
-      continue;
-    }
-  }
   const stderr = result.stderr.trim();
-  return `no initialize reply${stderr === "" ? "" : `: ${stderr.split("\n")[0]!}`}`;
+  return `no valid initialize reply${stderr === "" ? "" : `: ${stderr.split("\n")[0]!}`}`;
 }
 
 interface Options {
   readonly clients: readonly string[];
   readonly dryRun: boolean;
+  readonly explicitToolsets: boolean;
   readonly repo: string;
+  readonly provided: ReadonlySet<string>;
   readonly server: string;
   readonly skipPreflight: boolean;
+  readonly scope: SwapScope | undefined;
   readonly source: SourceOptions;
 }
 
@@ -2727,6 +4192,7 @@ function usage(): string {
     "",
     "  bun scripts/mcp_swap.ts detect",
     "  bun scripts/mcp_swap.ts status",
+    "  bun scripts/mcp_swap.ts doctor",
     "  bun scripts/mcp_swap.ts use --source dev [--dry-run]",
     "  bun scripts/mcp_swap.ts use --source build",
     "  bun scripts/mcp_swap.ts use --source published --version 1.2.3",
@@ -2737,13 +4203,17 @@ function usage(): string {
     "  client names: claude, codex, cursor, gemini, grok, agy (or antigravity), opencode, pi",
     "  --server NAME   registration slug (default: libtmux)",
     "  --repo PATH     checkout for dev and build (default: this one)",
+    "  --scope SCOPE   Claude layer: project or user (use default: project)",
+    "  --env KEY=VALUE environment overlay; repeat to set more",
     "  --no-preflight  register without starting the server first",
   ].join("\n");
 }
 
 function parseOptions(argv: readonly string[]): Options {
   const values = new Map<string, string>();
+  const provided = new Set<string>();
   const clients: string[] = [];
+  const environment: Record<string, string> = {};
   let dryRun = false;
   let skipPreflight = false;
   for (let index = 0; index < argv.length; index += 1) {
@@ -2751,13 +4221,25 @@ function parseOptions(argv: readonly string[]): Options {
     const equals = token.indexOf("=");
     const flag = equals === -1 ? token : token.slice(0, equals);
     const assigned = equals === -1 ? undefined : token.slice(equals + 1);
+    provided.add(flag);
     if (flag === "--dry-run" || flag === "--no-preflight") {
       if (assigned !== undefined) throw new Error(`${flag} takes no value`);
       if (flag === "--dry-run") dryRun = true;
       else skipPreflight = true;
       continue;
     }
-    if (!["--cli", "--client", "--repo", "--server", "--source", "--version"].includes(flag)) {
+    if (
+      ![
+        "--cli",
+        "--client",
+        "--env",
+        "--repo",
+        "--scope",
+        "--server",
+        "--source",
+        "--version",
+      ].includes(flag)
+    ) {
       throw new Error(`unknown option ${flag}`);
     }
     const value = assigned ?? argv[++index];
@@ -2765,7 +4247,18 @@ function parseOptions(argv: readonly string[]): Options {
       throw new Error(`${flag} wants a value`);
     }
     if (flag === "--cli" || flag === "--client") clients.push(value);
-    else values.set(flag, value);
+    else if (flag === "--env") {
+      const separator = value.indexOf("=");
+      const key = separator === -1 ? "" : value.slice(0, separator);
+      const environmentValue = separator === -1 ? "" : value.slice(separator + 1);
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key) || environmentValue.includes("\0")) {
+        throw new Error("--env expects KEY=VALUE with a valid environment name");
+      }
+      if (key === "LIBTMUX_SAFETY") {
+        throw new Error("LIBTMUX_SAFETY is retired; use LIBTMUX_TOOLSETS");
+      }
+      environment[key] = environmentValue;
+    } else values.set(flag, value);
   }
 
   const kind = (values.get("--source") ?? "dev") as SourceKind;
@@ -2773,16 +4266,59 @@ function parseOptions(argv: readonly string[]): Options {
     throw new Error(`unknown source ${kind}; expected dev, build, or published`);
   }
   // The repository root, one directory above this repository-level script.
-  const repo = values.get("--repo") ?? join(import.meta.dir, "..");
+  const repo = resolve(values.get("--repo") ?? join(import.meta.dir, ".."));
   const version = values.get("--version");
+  const rawScope = values.get("--scope");
+  if (rawScope !== undefined && rawScope !== "project" && rawScope !== "user") {
+    throw new Error("--scope expects project or user");
+  }
   return {
     clients,
     dryRun,
+    explicitToolsets: Object.hasOwn(environment, "LIBTMUX_TOOLSETS"),
+    provided,
     repo,
     server: values.get("--server") ?? "libtmux",
     skipPreflight,
-    source: { kind, repo, ...(version === undefined ? {} : { version }) },
+    scope: rawScope,
+    source: { env: environment, kind, repo, ...(version === undefined ? {} : { version }) },
   };
+}
+
+function validateCommandOptions(command: string, options: Options): void {
+  if (!["detect", "doctor", "revert", "status", "use"].includes(command)) {
+    throw new Error(`unknown command ${command}`);
+  }
+  const only = (flags: readonly string[], commands: readonly string[]): void => {
+    for (const flag of flags) {
+      if (options.provided.has(flag) && !commands.includes(command)) {
+        throw new Error(`${flag} does not apply to ${command}`);
+      }
+    }
+  };
+  only(["--dry-run"], ["revert", "use"]);
+  only(["--env", "--no-preflight", "--source", "--version"], ["use"]);
+  only(["--repo", "--server"], ["doctor", "status", "use"]);
+  only(["--scope"], ["revert", "status", "use"]);
+  if (options.provided.has("--version") && options.source.kind !== "published") {
+    throw new Error("--version only applies to --source published");
+  }
+  requireSafeComponent(options.server, "--server");
+  if (options.source.version !== undefined)
+    requireSafeComponent(options.source.version, "--version");
+}
+
+async function canonicalRepository(path: string): Promise<string> {
+  let canonical: string;
+  try {
+    canonical = await realpath(path);
+  } catch (error) {
+    throw new Error(`repository does not exist: ${path}`, { cause: error });
+  }
+  if (!(await stat(canonical)).isDirectory()) {
+    throw new TypeError(`repository is not a directory: ${path}`);
+  }
+  return canonical;
 }
 
 export function selectClis(clis: readonly CliInfo[], names: readonly string[]): readonly CliInfo[] {
@@ -2811,6 +4347,7 @@ async function main(argv: readonly string[]): Promise<number> {
   let allClis: readonly CliInfo[];
   try {
     options = parseOptions(argv.slice(1));
+    validateCommandOptions(command, options);
     allClis = knownClis();
     clis = selectClis(allClis, options.clients);
   } catch (error) {
@@ -2821,55 +4358,175 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === "detect") {
     for (const info of clis) {
       // eslint-disable-next-line no-await-in-loop -- each CLI is reported in order, and one failing must not race the next.
-      const installed = await isInstalled(info);
+      const presence = await clientPresence(info);
+      const installed = presence.binary && presence.config;
+      const caveat =
+        info.name === "pi" && !presence.piAdapter
+          ? " (needs pi-mcp-adapter; pi has no built-in MCP client)"
+          : "";
       process.stdout.write(
-        `${installed ? "present" : "absent "}  ${info.name.padEnd(9)}${info.configPath}\n`,
+        `[${installed ? "yes" : "no"}] ${info.name.padEnd(9)} binary=${presence.binary ? "present" : "missing"} config=${presence.config ? "present" : "missing"}${caveat}\n`,
       );
     }
     return 0;
   }
 
   if (command === "status") {
-    for (const info of clis) {
-      // eslint-disable-next-line no-await-in-loop -- each CLI is reported in order, and one failing must not race the next.
-      if (!(await isInstalled(info))) continue;
-      // eslint-disable-next-line no-await-in-loop -- each CLI is reported in order, and one failing must not race the next.
-      const spec = await readServer(info, options.server);
-      const shown =
-        spec === undefined ? "(not registered)" : `${classifySpec(spec)}: ${describeSpec(spec)}`;
-      process.stdout.write(`${info.name.padEnd(9)} ${shown}\n`);
+    let failed = false;
+    let repository: string;
+    try {
+      repository = await canonicalRepository(options.repo);
+    } catch (error) {
+      process.stderr.write(`mcp_swap: ${(error as Error).message}\n`);
+      return 1;
     }
-    return 0;
+    for (const info of clis) {
+      // eslint-disable-next-line no-await-in-loop -- status is deliberately deterministic.
+      const presence = await clientPresence(info);
+      if (!presence.config) {
+        if (options.clients.length > 0)
+          process.stdout.write(`${info.name.padEnd(15)} (no config)\n`);
+        continue;
+      }
+      const scopes: readonly SwapScope[] =
+        info.name === "claude"
+          ? options.scope === undefined
+            ? ["user", "project"]
+            : [options.scope]
+          : ["user"];
+      for (const scope of scopes) {
+        const label = info.name === "claude" ? `claude:${scope}` : info.name;
+        try {
+          const target = scopedCli(info, repository, scope);
+          // eslint-disable-next-line no-await-in-loop -- scope precedence is reported in order.
+          const spec = await readServer(target, options.server);
+          const shown =
+            spec === undefined
+              ? "(not registered)"
+              : `${classifySpec(spec)}: ${describeSpec(spec)} env=${JSON.stringify(Object.keys(spec.env).toSorted())}`;
+          process.stdout.write(`${label.padEnd(15)} ${shown}\n`);
+        } catch (error) {
+          failed = true;
+          process.stderr.write(`${label}: ${(error as Error).message}\n`);
+        }
+      }
+    }
+    return failed ? 1 : 0;
+  }
+
+  if (command === "doctor") {
+    let failed = false;
+    let repository: string;
+    try {
+      repository = await canonicalRepository(options.repo);
+    } catch (error) {
+      process.stderr.write(`mcp_swap: ${(error as Error).message}\n`);
+      return 1;
+    }
+    process.stdout.write(`mcp-swap doctor\n  repo: ${repository}\n  server: ${options.server}\n`);
+    process.stdout.write("  configurations:\n");
+    for (const info of clis) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- diagnostics retain catalog order.
+        const snapshot = await nativeConfigSnapshot(info);
+        if (snapshot.file === undefined) {
+          process.stdout.write(`    ${info.name}: missing\n`);
+          continue;
+        }
+        // Parse every scope that this client can own, not just its bytes.
+        const scopes: readonly SwapScope[] =
+          info.name === "claude" ? ["user", "project"] : ["user"];
+        for (const scope of scopes) {
+          const target = scopedCli(info, repository, scope);
+          serverFromRaw(target, snapshot.file.raw, options.server);
+        }
+        process.stdout.write(
+          `    ${info.name}: ${String(Buffer.byteLength(snapshot.file.raw))} bytes mode=${snapshot.file.mode.toString(8).padStart(4, "0")}\n`,
+        );
+      } catch (error) {
+        failed = true;
+        process.stdout.write(`    ${info.name}: unreadable: ${(error as Error).message}\n`);
+      }
+    }
+    let doctorLedger = emptyNativeLedger();
+    try {
+      const context = await readNativeContext();
+      doctorLedger = context.ledger;
+      if (context.stateFile === undefined) {
+        process.stdout.write("  outstanding swaps: none\n");
+      } else {
+        await verifyNativeContext(context, allClis);
+        process.stdout.write("  outstanding swaps:\n");
+        for (const [key, entry] of Object.entries(context.ledger.entries).toSorted(
+          ([, left], [, right]) => left.sequence - right.sequence,
+        )) {
+          process.stdout.write(`    ${key} sequence=${String(entry.sequence)}\n`);
+        }
+      }
+    } catch (error) {
+      failed = true;
+      process.stdout.write(`  recovery: invalid: ${(error as Error).message}\n`);
+    }
+    try {
+      const orphans = await nativeOrphanBackups(allClis, doctorLedger);
+      for (const orphan of orphans) {
+        failed = true;
+        process.stdout.write(`  recovery: unowned TypeScript backup: ${orphan}\n`);
+      }
+    } catch (error) {
+      failed = true;
+      process.stdout.write(`  recovery scan: ${(error as Error).message}\n`);
+    }
+    for (const [name, client] of [
+      ["ANTHROPIC_API_KEY", "claude"],
+      ["OPENAI_API_KEY", "codex"],
+      ["GEMINI_API_KEY", "gemini"],
+      ["GOOGLE_API_KEY", "gemini"],
+      ["XAI_API_KEY", "grok"],
+      ["GROK_API_KEY", "grok"],
+    ] as const) {
+      if (process.env[name] !== undefined) {
+        process.stdout.write(`  ! ${name} overrides ${client}'s stored login\n`);
+      }
+    }
+    return failed ? 1 : 0;
   }
 
   if (command === "use") {
-    const spec = buildSpec(options.source);
-    process.stdout.write(`${options.source.kind}: ${describeSpec(spec)}\n`);
-    if (!options.skipPreflight && !options.dryRun) {
-      const reason = await preflight(spec);
-      if (reason !== undefined) {
-        process.stderr.write(`refusing to register a server that did not answer — ${reason}\n`);
-        return 1;
-      }
-    }
-    const selected: CliInfo[] = [];
-    for (const info of clis) {
-      // eslint-disable-next-line no-await-in-loop -- each CLI is reported in order, and one failing must not race the next.
-      if (!(await isInstalled(info))) continue;
-      selected.push(info);
-    }
     try {
-      if (options.dryRun) {
-        await planServerWrites(selected, options.server, spec, undefined, allClis);
-        for (const info of selected) {
-          process.stdout.write(`would update ${info.name} (${info.configPath})\n`);
-        }
-        return 0;
+      const repository = await canonicalRepository(options.repo);
+      const source = { ...options.source, repo: repository };
+      const spec = buildSpec(source);
+      const selected: CliInfo[] = [];
+      for (const info of clis) {
+        if (options.clients.length > 0) selected.push(info);
+        // eslint-disable-next-line no-await-in-loop -- default detection preserves catalog order.
+        else if (await isInstalled(info)) selected.push(info);
       }
-      const outcomes = await writeServers(selected, options.server, spec, {}, allClis);
-      for (const [index, info] of selected.entries()) {
+      if (selected.length === 0) {
+        throw new Error("no installed client with a configuration was detected");
+      }
+      const plans = await useNativeConfigs(
+        allClis,
+        selected,
+        options.server,
+        repository,
+        options.scope ?? "project",
+        spec,
+        options.explicitToolsets,
+        {
+          dryRun: options.dryRun,
+          prepare: () => prepareSource(source),
+          skipPreflight: options.skipPreflight,
+        },
+      );
+      process.stdout.write(`${options.source.kind}: ${describeSpec(spec)}\n`);
+      for (const plan of plans) {
+        const verb = options.dryRun ? "would update" : plan.outcome;
+        const label =
+          plan.scopedInfo.name === "claude" ? `claude:${plan.scope}` : plan.scopedInfo.name;
         process.stdout.write(
-          `${outcomes[index]!} ${options.server} in ${info.name} (${info.configPath})\n`,
+          `${verb} ${label} (${plan.scopedInfo.configPath}): ${options.server}\n`,
         );
       }
       return 0;
@@ -2881,20 +4538,14 @@ async function main(argv: readonly string[]): Promise<number> {
 
   if (command === "revert") {
     try {
-      if (options.dryRun) {
-        const { plans } = await planReverts(clis, undefined, allClis);
-        for (const plan of plans) {
-          if (plan.recovery.backup !== undefined) {
-            process.stdout.write(`would restore ${plan.info.name} (${plan.info.configPath})\n`);
-          }
-        }
-        return 0;
-      }
-      const outcomes = await revertConfigs(clis, {}, allClis);
-      for (const [index, info] of clis.entries()) {
-        if (outcomes[index] === true) {
-          process.stdout.write(`restored ${info.name} (${info.configPath})\n`);
-        }
+      const plans = await revertNativeConfigs(allClis, clis, options.scope, {
+        dryRun: options.dryRun,
+      });
+      for (const plan of plans) {
+        const label = plan.info.name === "claude" ? `claude:${plan.entry.scope}` : plan.info.name;
+        process.stdout.write(
+          `${options.dryRun ? "would restore" : "restored"} ${label} (${plan.info.configPath})\n`,
+        );
       }
       return 0;
     } catch (error) {

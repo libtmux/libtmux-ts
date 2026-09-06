@@ -100,6 +100,9 @@ $ bun packages/mcp/src/server.ts
 
 </details>
 
+Repository contributors can preview, apply, and exactly revert registrations
+across supported clients with the [native MCP swap helper](../../scripts/mcp_swap.md).
+
 ### Point it at a server
 
 An MCP client supplies an environment and a command line, and nothing else, so
