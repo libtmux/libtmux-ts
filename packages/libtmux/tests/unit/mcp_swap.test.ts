@@ -1900,6 +1900,31 @@ describe("dry-run", () => {
     expect((await readdir(home, { recursive: true })).toSorted()).toEqual(beforeTree);
   });
 
+  test.each([
+    ["claude", '{"note":"', '"}'],
+    ["codex", "# keep ", '\nmodel = "gpt"\n'],
+    ["opencode", "{// keep ", '\n"mcp": {}}'],
+  ] as const)(
+    "rejects malformed UTF-8 in %s without rewriting it",
+    async (name, prefix, suffix) => {
+      const info = cliFor(name);
+      const malformed = Buffer.concat([
+        Buffer.from(prefix),
+        Buffer.from([0xc3, 0x28]),
+        Buffer.from(suffix),
+      ]);
+      await mkdir(dirname(info.configPath), { recursive: true });
+      await writeFile(info.configPath, malformed);
+
+      const result = await runSwap(["use", "--source", "dev", "--dry-run", "--cli", name]);
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("UTF-8");
+      expect(result.stdout).not.toContain("would update");
+      expect(await readFile(info.configPath)).toEqual(malformed);
+    },
+  );
+
   test.each(["unusable backup", "unwritable destination"] as const)(
     "rejects an %s for a later client without writes",
     async (failure) => {

@@ -1160,6 +1160,18 @@ interface RecoveryState {
   readonly route: RecoveryFile | undefined;
 }
 
+function decodeUtf8(contents: Uint8Array, label: string): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(contents);
+  } catch (error) {
+    throw new TypeError(`${label} is not valid UTF-8`, { cause: error });
+  }
+}
+
+async function readUtf8File(path: string, label: string): Promise<string> {
+  return decodeUtf8(await readFile(path), label);
+}
+
 async function readRecoveryFile(
   path: string,
   label: string,
@@ -1186,7 +1198,7 @@ async function readRecoveryFile(
     if (maximumBytes !== undefined && before.size > BigInt(maximumBytes)) {
       throw new TypeError(`${label} exceeds ${String(maximumBytes)} bytes: ${path}`);
     }
-    const raw = await handle.readFile({ encoding: "utf8" });
+    const raw = decodeUtf8(await handle.readFile(), label);
     const after = await handle.stat({ bigint: true });
     const afterPath = await lstat(path, { bigint: true });
     if (
@@ -1323,7 +1335,7 @@ async function readRecoveryState(configPath: string, route: ConfigRoute): Promis
   ) {
     throw new Error(`recovery backup changed since swap: ${configPath}`);
   }
-  const targetRaw = await readFile(route.targetPath, "utf8");
+  const targetRaw = await readUtf8File(route.targetPath, "config");
   const targetMode = await fileMode(route.targetPath);
   if (
     targetMode !== routeRecord.targetMode ||
@@ -1338,7 +1350,7 @@ async function readRecoveryState(configPath: string, route: ConfigRoute): Promis
 export async function readConfig(info: CliInfo): Promise<{ raw: string; value: unknown }> {
   let raw: string;
   try {
-    raw = await readFile(info.configPath, "utf8");
+    raw = await readUtf8File(info.configPath, `${info.name} config`);
   } catch (error) {
     if (!isMissing(error)) throw error;
     raw = "";
@@ -2064,7 +2076,7 @@ async function assertConfigState(
   await assertConfigRoute(route);
   if (route.kind === "missing") return;
   if (
-    (await readFile(route.targetPath, "utf8")) !== raw ||
+    (await readUtf8File(route.targetPath, "config")) !== raw ||
     (await fileMode(route.targetPath)) !== mode
   ) {
     throw new Error(`config contents changed after planning: ${route.logicalPath}`);
@@ -2133,7 +2145,7 @@ async function assertServerWritePlan(plan: ServerWritePlan): Promise<void> {
 
 async function planRevert(info: CliInfo): Promise<RevertPlan> {
   const route = await inspectConfigRoute(info.configPath);
-  const raw = route.kind === "missing" ? "" : await readFile(route.targetPath, "utf8");
+  const raw = route.kind === "missing" ? "" : await readUtf8File(route.targetPath, "config");
   const mode = await fileMode(route.targetPath);
   const recovery = await readRecoveryState(info.configPath, route);
   const plan = { info, mode, raw, recovery, route };
