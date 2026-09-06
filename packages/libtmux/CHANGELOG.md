@@ -12,6 +12,108 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+#### Queries and selections
+
+`compileBoundedRegex` is exported for callers that compile selection patterns
+outside a query, under the same input ceilings the `WHERE` predicates apply.
+Its emitted declaration resolves without reaching into private modules. (#16)
+
+### `@libtmux/mcp`
+
+#### Capability surface
+
+**Breaking.** One registry of 45 tools, split across `inspect`, `manage`,
+`execute`, and `teardown`, backs registration, dispatch, schemas,
+descriptions, exact selection, and the static `tmux://capabilities` report.
+Each `tools/list` entry carries its capability row under the namespaced
+`com.git-pull.libtmux-mcp/capability` key. (#16)
+
+Every tool definition classifies independent process reach, effects, output
+classes, secret and untrusted-output flags, internal interpreter sinks,
+annotations, nested authority, and future-input amplification. Public rows
+expose one schema-keyed `inputLiteralization` map, and tmux-format-bearing
+names and paths are literalized once. (#16)
+
+**Breaking.** MCP prompts, dynamic resources, raw and generic mutation
+families, background jobs, workspace tools, and buffer tools are removed.
+`tmux://capabilities` is the only MCP resource. (#16)
+
+**Breaking.** `enter_copy_mode` and `exit_copy_mode` are no longer MCP routes.
+`Pane` keeps both in the library; MCP clients read a pane through bounded
+capture, history, search, snapshots, and cursors without taking ownership of a
+person's modal client state. (#16)
+
+The MCP README maps every previous tool, resource, and prompt name to its
+current route, composed workflow, or explicit lack of replacement. Renamed
+routes include `get_pane` to `get_pane_info`, `server_info` to
+`get_server_info`, `observe` to `snapshot_pane` plus `capture_since`,
+`run_command` to `run_shell_command`, and the `new_*` and `split_pane`
+topology routes to `create_*` and `split_window`. (#16)
+
+#### Pane input
+
+Key input resolves each pane's effective synchronized-input setting before
+writing. It refuses a configured cohort holding a dead pane, a human-owned
+mode, a protected caller or attended pane, or another active framed command,
+and reports configured membership rather than observed delivery. (#16)
+
+Literal paste stays target-only and removes its private buffer, including when
+setup fails partway. (#16)
+
+#### Shell commands
+
+`run_shell_command` requires one live, mode-free pane at a supported POSIX
+shell and checks it twice around setup, refusing on a state, identity, cohort,
+or shell transition before command bytes are sent. Its framing bypasses
+inherited `printf` aliases and functions while preserving the command's
+inherited shell state. (#16)
+
+#### Configuration
+
+**Breaking.** `LIBTMUX_TOOLSETS`, `LIBTMUX_TOOLS`, and `LIBTMUX_EXCLUDE_TOOLS`
+replace safety tiers and the legacy allowlist. `LIBTMUX_SOCKET` selects a
+socket name, `LIBTMUX_SOCKET_PATH` an absolute path, and `LIBTMUX_TMUX_CONFIG`
+configuration provenance.
+
+`LIBTMUX_SAFETY`, `LIBTMUX_MCP_TOOLS`, and `LIBTMUX_SOCKET_NAME` now fail on
+presence rather than silently narrowing or widening a stale configuration.
+
+Before:
+
+    LIBTMUX_MCP_TOOLS=capture_pane,list_panes
+
+After:
+
+    LIBTMUX_TOOLSETS=
+    LIBTMUX_TOOLS=capture_pane,list_panes
+
+An empty `LIBTMUX_TOOLSETS` selects no toolset, so `LIBTMUX_TOOLS` carries the
+exact list; leave `LIBTMUX_TOOLS` unset when the old allowlist was empty.
+Startup refuses rather than serving a tool surface the operator no longer
+controls. (#16)
+
+The default launch uses a dedicated `libtmux-mcp` socket and minimal
+configuration. It grants teardown only when it creates the daemon itself and
+authenticates that creation with a per-launch marker; a concurrent or later
+process on the same socket treats the daemon's provenance as unknown. (#16)
+
+The tmux executable and socket route are frozen for the server's lifetime.
+ASCII control characters and DEL in those startup values fail before tmux is
+contacted. (#16)
+
+#### Limits
+
+The read aggregate preserves each nested result envelope and its row-level
+success accounting, caps the whole JSON-RPC response at 1,000,000 bytes, and
+reports truncation and omitted bytes. Serialized request IDs over 512 KiB fail
+before dispatch rather than consuming that budget. (#16)
+
+Literal search and wait patterns carry bounded counts and UTF-8 sizes. Search
+stops after 200 panes, 20,000 lines, 256 KiB of matching input, or five
+seconds, and names the ceiling that truncated the scan. (#16)
+
 ### `@libtmux/workspace`
 
 **Breaking.** `workspaceSchema` is no longer exported, and the published types
