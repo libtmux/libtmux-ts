@@ -97,6 +97,14 @@ export type DaemonIdentity = DaemonGuard;
 // answers "how long before this library gives up on tmux".
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/**
+ * How to reach a tmux server, and what to assume when it is quiet.
+ *
+ * Every field is optional and every default is tmux's own, except
+ * {@link ServerOptions.environment}, which replaces the process environment
+ * rather than extending it. `socketName` and `socketPath` name the same thing
+ * two ways and are mutually exclusive.
+ */
 export interface ServerOptions {
   readonly colors?: 88 | 256;
   readonly configFile?: string;
@@ -210,6 +218,20 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
   );
 }
 
+/**
+ * One tmux server, addressed by the socket it listens on.
+ *
+ * Constructing this starts no process. tmux spawns the daemon on the first
+ * command that needs one, and a daemon already listening on that socket is
+ * used rather than replaced, so two `Server` values built from the same
+ * options address the same tmux.
+ *
+ * Sessions, windows and panes are reached from here and carry the server with
+ * them. Handles taken from one daemon do not survive its restart: the
+ * replacement numbers panes from `%0` again — see {@link DaemonIdentity}.
+ *
+ * @throws TypeError if both `socketName` and `socketPath` are given.
+ */
 export class Server {
   declare private readonly serverBrand: undefined;
 
