@@ -22,7 +22,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process.js";
 
 /**
- * Point every installed agent CLI at one build of this MCP server.
+ * Point selected installed agent CLIs at one build of this MCP server.
  *
  * An agent CLI launches an MCP server as a subprocess named in its config
  * file. Trying a change therefore means editing several files by hand, each in
@@ -1406,6 +1406,11 @@ interface RevertPlan extends TransactionPlan {
   readonly raw: string;
 }
 
+interface TransactionBatch<Plan extends TransactionPlan> {
+  readonly plans: readonly Plan[];
+  readonly protectedPlans: readonly TransactionPlan[];
+}
+
 /** Parse and render one update without changing its config or backup. */
 async function planServerWrite(
   info: CliInfo,
@@ -1828,8 +1833,10 @@ async function rollbackReplacements<T extends FileReplacement, Plan>(
     const plan = planFor(operation);
     if (checks.skipFailedPlans !== false && failedPlans.has(plan)) continue;
     try {
-      // eslint-disable-next-line no-await-in-loop -- topology must still address the owned target.
-      await checks.before?.(operation);
+      if (operation.committed !== undefined) {
+        // eslint-disable-next-line no-await-in-loop -- a committed replacement must remain owned.
+        await checks.before?.(operation);
+      }
       // eslint-disable-next-line no-await-in-loop -- rollback is exact reverse commit order.
       await rollbackReplacement(operation, hooks, lock);
       // eslint-disable-next-line no-await-in-loop -- restored topology is verified before advancing.
@@ -1913,6 +1920,27 @@ async function assertDistinctTransactionArtifacts(
   }
 }
 
+async function protectedTransactionArtifacts(
+  selected: readonly CliInfo[],
+  protectedInfos: readonly CliInfo[],
+): Promise<readonly TransactionPlan[]> {
+  const selectedEntries = new Set(selected.map((info) => `${info.name}\u0000${info.configPath}`));
+  const plans: TransactionPlan[] = [];
+  for (const info of protectedInfos) {
+    if (selectedEntries.has(`${info.name}\u0000${info.configPath}`)) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop -- route ownership must be attributed to one client.
+      const route = await inspectConfigRoute(info.configPath);
+      // eslint-disable-next-line no-await-in-loop -- sidecars are part of the same client's route.
+      const recovery = await readRecoveryState(info.configPath, route);
+      plans.push({ info, recovery, route });
+    } catch (error) {
+      throw planError(info, error);
+    }
+  }
+  return plans;
+}
+
 async function assertDestinationFeasible(path: string): Promise<void> {
   let candidate = dirname(path);
   for (;;) {
@@ -1963,7 +1991,8 @@ async function planServerWrites(
   name: string,
   spec: ServerSpec,
   lock?: SwapLockState,
-): Promise<readonly ServerWritePlan[]> {
+  protectedInfos: readonly CliInfo[] = infos,
+): Promise<TransactionBatch<ServerWritePlan>> {
   const lockState = lock ?? (await inspectSwapLock());
   const plans: ServerWritePlan[] = [];
   for (const info of infos) {
@@ -1974,7 +2003,8 @@ async function planServerWrites(
       throw planError(info, error);
     }
   }
-  await assertDistinctTransactionArtifacts(plans, lockState);
+  const protectedPlans = await protectedTransactionArtifacts(infos, protectedInfos);
+  await assertDistinctTransactionArtifacts([...plans, ...protectedPlans], lockState);
   for (const plan of plans) {
     try {
       // eslint-disable-next-line no-await-in-loop -- stable client ownership keeps failures actionable.
@@ -1991,7 +2021,7 @@ async function planServerWrites(
       throw planError(plan.info, error);
     }
   }
-  return plans;
+  return { plans, protectedPlans };
 }
 
 async function assertPathMissing(path: string, label: string): Promise<void> {
@@ -2066,6 +2096,36 @@ async function assertRecoveryState(plan: TransactionPlan): Promise<void> {
   }
 }
 
+async function assertProtectedTransactionArtifacts(
+  plans: readonly TransactionPlan[],
+): Promise<void> {
+  for (const plan of plans) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- every protected route must remain exact at this boundary.
+      await assertConfigRoute(plan.route);
+      // eslint-disable-next-line no-await-in-loop -- recovery artifacts share the same route boundary.
+      await assertRecoveryState(plan);
+    } catch (error) {
+      throw planError(plan.info, error);
+    }
+  }
+}
+
+function guardTransactionHooks(
+  hooks: SwapTransactionHooks,
+  protectedPlans: readonly TransactionPlan[],
+): SwapTransactionHooks {
+  return {
+    ...hooks,
+    beforeFileOperation: async (operation) => {
+      await hooks.beforeFileOperation?.(operation);
+      if (!operation.boundary.includes("-rollback-") && !operation.boundary.endsWith("-cleanup")) {
+        await assertProtectedTransactionArtifacts(protectedPlans);
+      }
+    },
+  };
+}
+
 async function assertServerWritePlan(plan: ServerWritePlan): Promise<void> {
   await assertConfigState(plan.route, plan.raw, plan.mode);
   await assertRecoveryState(plan);
@@ -2089,7 +2149,8 @@ async function assertRevertPlan(plan: RevertPlan): Promise<void> {
 async function planReverts(
   infos: readonly CliInfo[],
   lock?: SwapLockState,
-): Promise<readonly RevertPlan[]> {
+  protectedInfos: readonly CliInfo[] = infos,
+): Promise<TransactionBatch<RevertPlan>> {
   const lockState = lock ?? (await inspectSwapLock());
   const plans: RevertPlan[] = [];
   for (const info of infos) {
@@ -2101,7 +2162,8 @@ async function planReverts(
     }
   }
   const active = plans.filter((plan) => plan.recovery.backup !== undefined);
-  await assertDistinctTransactionArtifacts(active, lockState);
+  const protectedPlans = await protectedTransactionArtifacts(infos, protectedInfos);
+  await assertDistinctTransactionArtifacts([...plans, ...protectedPlans], lockState);
   for (const plan of active) {
     try {
       // eslint-disable-next-line no-await-in-loop -- each active route needs writable sibling slots.
@@ -2124,7 +2186,7 @@ async function planReverts(
       throw planError(plan.info, error);
     }
   }
-  return plans;
+  return { plans, protectedPlans };
 }
 
 async function assertRecoveryUnit(entry: StagedServerWrite): Promise<void> {
@@ -2340,13 +2402,20 @@ export async function writeServers(
   name: string,
   spec: ServerSpec,
   hooks: SwapTransactionHooks = {},
+  protectedInfos: readonly CliInfo[] = infos,
 ): Promise<readonly WriteServerOutcome[]> {
-  await planServerWrites(infos, name, spec);
+  await planServerWrites(infos, name, spec, undefined, protectedInfos);
   return withSwapLock(async (lock) => {
     await hooks.afterLockAcquired?.();
     await lock.assert();
-    const plans = await planServerWrites(infos, name, spec, lock.state);
-    return writeServersLocked(plans, hooks, lock);
+    const { plans, protectedPlans } = await planServerWrites(
+      infos,
+      name,
+      spec,
+      lock.state,
+      protectedInfos,
+    );
+    return writeServersLocked(plans, guardTransactionHooks(hooks, protectedPlans), lock);
   });
 }
 
@@ -2558,13 +2627,14 @@ async function revertConfigsLocked(
 export async function revertConfigs(
   infos: readonly CliInfo[],
   hooks: SwapTransactionHooks = {},
+  protectedInfos: readonly CliInfo[] = infos,
 ): Promise<readonly boolean[]> {
-  await planReverts(infos);
+  await planReverts(infos, undefined, protectedInfos);
   return withSwapLock(async (lock) => {
     await hooks.afterLockAcquired?.();
     await lock.assert();
-    const plans = await planReverts(infos, lock.state);
-    return revertConfigsLocked(plans, hooks, lock);
+    const { plans, protectedPlans } = await planReverts(infos, lock.state, protectedInfos);
+    return revertConfigsLocked(plans, guardTransactionHooks(hooks, protectedPlans), lock);
   });
 }
 
@@ -2631,6 +2701,7 @@ export async function preflight(spec: ServerSpec, timeoutMs = 60_000): Promise<s
 }
 
 interface Options {
+  readonly clients: readonly string[];
   readonly dryRun: boolean;
   readonly repo: string;
   readonly server: string;
@@ -2640,7 +2711,7 @@ interface Options {
 
 function usage(): string {
   return [
-    "Point every installed agent CLI at one build of this MCP server.",
+    "Point selected installed agent CLIs at one build of this MCP server.",
     "",
     "  bun scripts/mcp_swap.ts detect",
     "  bun scripts/mcp_swap.ts status",
@@ -2649,6 +2720,9 @@ function usage(): string {
     "  bun scripts/mcp_swap.ts use --source published --version 1.2.3",
     "  bun scripts/mcp_swap.ts revert",
     "",
+    "  --cli NAME[,NAME...]  limit clients; repeat to select more",
+    "  --client NAME  alias for --cli",
+    "  client names: claude, codex, cursor, gemini, grok, agy (or antigravity), opencode, pi",
     "  --server NAME   registration slug (default: libtmux)",
     "  --repo PATH     checkout for dev and build (default: this one)",
     "  --no-preflight  register without starting the server first",
@@ -2656,26 +2730,62 @@ function usage(): string {
 }
 
 function parseOptions(argv: readonly string[]): Options {
-  const value = (flag: string): string | undefined => {
-    const at = argv.indexOf(flag);
-    return at === -1 ? undefined : argv[at + 1];
-  };
-  const kind = (value("--source") ?? "dev") as SourceKind;
+  const values = new Map<string, string>();
+  const clients: string[] = [];
+  let dryRun = false;
+  let skipPreflight = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]!;
+    const equals = token.indexOf("=");
+    const flag = equals === -1 ? token : token.slice(0, equals);
+    const assigned = equals === -1 ? undefined : token.slice(equals + 1);
+    if (flag === "--dry-run" || flag === "--no-preflight") {
+      if (assigned !== undefined) throw new Error(`${flag} takes no value`);
+      if (flag === "--dry-run") dryRun = true;
+      else skipPreflight = true;
+      continue;
+    }
+    if (!["--cli", "--client", "--repo", "--server", "--source", "--version"].includes(flag)) {
+      throw new Error(`unknown option ${flag}`);
+    }
+    const value = assigned ?? argv[++index];
+    if (value === undefined || value === "" || (assigned === undefined && value.startsWith("--"))) {
+      throw new Error(`${flag} wants a value`);
+    }
+    if (flag === "--cli" || flag === "--client") clients.push(value);
+    else values.set(flag, value);
+  }
+
+  const kind = (values.get("--source") ?? "dev") as SourceKind;
   if (!["build", "dev", "published"].includes(kind)) {
     throw new Error(`unknown source ${kind}; expected dev, build, or published`);
   }
-  // The workspace root, not this package: the entries below are workspace
-  // paths because the server is a sibling package, and this script only lives
-  // here because it is where the repository keeps its tooling.
-  const repo = value("--repo") ?? join(import.meta.dir, "..", "..", "..");
-  const version = value("--version");
+  // The repository root, one directory above this repository-level script.
+  const repo = values.get("--repo") ?? join(import.meta.dir, "..");
+  const version = values.get("--version");
   return {
-    dryRun: argv.includes("--dry-run"),
+    clients,
+    dryRun,
     repo,
-    server: value("--server") ?? "libtmux",
-    skipPreflight: argv.includes("--no-preflight"),
+    server: values.get("--server") ?? "libtmux",
+    skipPreflight,
     source: { kind, repo, ...(version === undefined ? {} : { version }) },
   };
+}
+
+export function selectClis(clis: readonly CliInfo[], names: readonly string[]): readonly CliInfo[] {
+  if (names.length === 0) return clis;
+  const known = new Set(clis.map((info) => info.name));
+  const wanted = new Set<string>();
+  for (const selection of names) {
+    for (const rawName of selection.split(",")) {
+      const name = rawName.trim() === "antigravity" ? "agy" : rawName.trim();
+      if (name === "") throw new Error("client name was empty");
+      if (!known.has(name)) throw new Error(`unknown client ${name}`);
+      wanted.add(name);
+    }
+  }
+  return clis.filter((info) => wanted.has(info.name));
 }
 
 async function main(argv: readonly string[]): Promise<number> {
@@ -2684,8 +2794,17 @@ async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`${usage()}\n`);
     return 0;
   }
-  const options = parseOptions(argv.slice(1));
-  const clis = knownClis();
+  let options: Options;
+  let clis: readonly CliInfo[];
+  let allClis: readonly CliInfo[];
+  try {
+    options = parseOptions(argv.slice(1));
+    allClis = knownClis();
+    clis = selectClis(allClis, options.clients);
+  } catch (error) {
+    process.stderr.write(`mcp_swap: ${(error as Error).message}\n${usage()}\n`);
+    return 2;
+  }
 
   if (command === "detect") {
     for (const info of clis) {
@@ -2729,13 +2848,13 @@ async function main(argv: readonly string[]): Promise<number> {
     }
     try {
       if (options.dryRun) {
-        await planServerWrites(selected, options.server, spec);
+        await planServerWrites(selected, options.server, spec, undefined, allClis);
         for (const info of selected) {
           process.stdout.write(`would update ${info.name} (${info.configPath})\n`);
         }
         return 0;
       }
-      const outcomes = await writeServers(selected, options.server, spec);
+      const outcomes = await writeServers(selected, options.server, spec, {}, allClis);
       for (const [index, info] of selected.entries()) {
         process.stdout.write(
           `${outcomes[index]!} ${options.server} in ${info.name} (${info.configPath})\n`,
@@ -2751,7 +2870,7 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === "revert") {
     try {
       if (options.dryRun) {
-        const plans = await planReverts(clis);
+        const { plans } = await planReverts(clis, undefined, allClis);
         for (const plan of plans) {
           if (plan.recovery.backup !== undefined) {
             process.stdout.write(`would restore ${plan.info.name} (${plan.info.configPath})\n`);
@@ -2759,7 +2878,7 @@ async function main(argv: readonly string[]): Promise<number> {
         }
         return 0;
       }
-      const outcomes = await revertConfigs(clis);
+      const outcomes = await revertConfigs(clis, {}, allClis);
       for (const [index, info] of clis.entries()) {
         if (outcomes[index] === true) {
           process.stdout.write(`restored ${info.name} (${info.configPath})\n`);

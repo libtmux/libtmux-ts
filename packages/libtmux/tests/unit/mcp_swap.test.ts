@@ -35,6 +35,7 @@ import {
   renderServerTable,
   revertConfig,
   revertConfigs,
+  selectClis,
   spliceEntry,
   toEntry,
   writeServer,
@@ -48,6 +49,18 @@ import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 const CLI_NAMES = ["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"];
+
+function* permutations(values: readonly string[]): Generator<readonly string[]> {
+  if (values.length === 0) {
+    yield [];
+    return;
+  }
+  for (const [index, value] of values.entries()) {
+    for (const suffix of permutations(values.filter((_, candidate) => candidate !== index))) {
+      yield [value, ...suffix];
+    }
+  }
+}
 
 /**
  * The config surgery behind `mcp_swap`.
@@ -87,6 +100,17 @@ function originalConfig(info: CliInfo): string {
   }
   const comment = info.format === "jsonc" ? `  // keep-${info.name}\n` : "";
   return `{\n${comment}  "${info.container[0]}": {\n    "keep": { "command": "other" }\n  }\n}\n`;
+}
+
+async function seedAllClients(): Promise<readonly CliInfo[]> {
+  const infos = knownClis({ XDG_CONFIG_HOME: join(home, ".config") }, home);
+  await Promise.all(
+    infos.map(async (info, index) => {
+      await seed(info, originalConfig(info));
+      await chmod(info.configPath, index % 2 === 0 ? 0o600 : 0o640);
+    }),
+  );
+  return infos;
 }
 
 function backupRoutePath(configPath: string): string {
@@ -774,6 +798,37 @@ describe("swapping a config", () => {
       expect(await Bun.file(backupPath(info.configPath)).exists()).toBe(false);
     },
   );
+
+  test("rechecks unselected client routes immediately before mutation", async () => {
+    const selected = cliFor("cursor");
+    const unselected = cliFor("gemini");
+    await seed(selected, originalConfig(selected));
+    await seed(unselected, originalConfig(unselected));
+    const selectedBefore = await fileState(selected.configPath);
+    let raced = false;
+
+    await expect(
+      writeServers(
+        [selected],
+        "libtmux",
+        buildSpec({ kind: "dev", repo: "/repo" }),
+        {
+          beforeFileOperation: async ({ boundary }) => {
+            if (raced || boundary !== "config-take-aside") return;
+            raced = true;
+            await rm(unselected.configPath);
+            await symlink(selected.configPath, unselected.configPath);
+          },
+        },
+        [selected, unselected],
+      ),
+    ).rejects.toThrow(/gemini .*config path changed/u);
+
+    expect(raced).toBe(true);
+    expect(await fileState(selected.configPath)).toEqual(selectedBefore);
+    expect((await lstat(unselected.configPath)).isSymbolicLink()).toBe(true);
+    expect(await readFile(unselected.configPath, "utf8")).toBe(selectedBefore.raw);
+  });
 
   test.each([
     ["backup", "hardlink"],
@@ -1686,17 +1741,6 @@ describe("swapping a config", () => {
 });
 
 describe("dry-run", () => {
-  async function seedAllClients(): Promise<readonly CliInfo[]> {
-    const infos = knownClis({ XDG_CONFIG_HOME: join(home, ".config") }, home);
-    await Promise.all(
-      infos.map(async (info, index) => {
-        await seed(info, originalConfig(info));
-        await chmod(info.configPath, index % 2 === 0 ? 0o600 : 0o640);
-      }),
-    );
-    return infos;
-  }
-
   async function configState(infos: readonly CliInfo[]): Promise<unknown> {
     return Promise.all(
       infos.map(async (info) => ({
@@ -1706,6 +1750,116 @@ describe("dry-run", () => {
       })),
     );
   }
+
+  test("selects repeatable client flags in canonical order without duplicates", async () => {
+    const infos = await seedAllClients();
+    const beforeState = await configState(infos);
+
+    const result = await runSwap([
+      "use",
+      "--source",
+      "dev",
+      "--dry-run",
+      "--cli",
+      "cursor",
+      "--client",
+      "claude",
+      "--cli",
+      "cursor",
+      "--client",
+      "antigravity",
+      "--cli",
+      "agy",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(
+      result.stdout
+        .split("\n")
+        .filter((line) => line.startsWith("would update "))
+        .map((line) => /^would update ([^ ]+)/u.exec(line)?.[1]),
+    ).toEqual(["claude", "cursor", "agy"]);
+    expect(await configState(infos)).toEqual(beforeState);
+  });
+
+  test.each(["use", "revert"] as const)(
+    "refuses %s when a selected config aliases an unselected client",
+    async (command) => {
+      const selected = cliFor("cursor");
+      const unselected = cliFor("gemini");
+      await seed(unselected, originalConfig(unselected));
+      await mkdir(dirname(selected.configPath), { recursive: true });
+      await symlink(unselected.configPath, selected.configPath);
+      if (command === "revert") {
+        await writeServers([selected], "libtmux", buildSpec({ kind: "dev", repo: "/first" }));
+      }
+      const before = await fileState(unselected.configPath);
+
+      const result = await runSwap(
+        command === "use"
+          ? ["use", "--source", "dev", "--no-preflight", "--cli", "cursor"]
+          : ["revert", "--cli", "cursor"],
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/same resolved target|same transaction artifact/u);
+      expect(result.stdout).not.toMatch(/updated|restored/u);
+      expect(await fileState(unselected.configPath)).toEqual(before);
+    },
+  );
+
+  test("rejects unknown options before planning writes", async () => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+    const before = await fileState(info.configPath);
+
+    const result = await runSwap(["use", "--dry-run", "--definitely-invalid", "value"]);
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("unknown option --definitely-invalid");
+    expect(result.stdout).not.toContain("would update");
+    expect(await fileState(info.configPath)).toEqual(before);
+  });
+
+  test("rejects a client flag without a value before planning writes", async () => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+    const before = await fileState(info.configPath);
+
+    const result = await runSwap(["use", "--dry-run", "--cli"]);
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("--cli wants a value");
+    expect(result.stdout).not.toContain("would update");
+    expect(await fileState(info.configPath)).toEqual(before);
+  });
+
+  test("rejects an unknown client before planning writes", async () => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+    const before = await fileState(info.configPath);
+
+    const result = await runSwap(["use", "--dry-run", "--cli", "clod"]);
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("unknown client clod");
+    expect(result.stdout).not.toContain("would update");
+    expect(await fileState(info.configPath)).toEqual(before);
+  });
+
+  test("defaults dev registration to this checkout", async () => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+
+    const result = await runSwap(["use", "--source", "dev", "--dry-run", "--cli", "cursor"], {
+      PATH: join(home, "empty-path"),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `dev: bun run ${join(repositoryRoot, "packages", "mcp", "src", "server.ts")}`,
+    );
+  });
 
   test("validates all eight clients without starting the build server or writing", async () => {
     const infos = await seedAllClients();
@@ -1840,6 +1994,71 @@ describe("dry-run", () => {
 });
 
 describe("CLI table", () => {
+  test("documents comma selectors and the antigravity alias", async () => {
+    const help = await runSwap(["help"]);
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("NAME[,NAME...]");
+    expect(help.stdout).toContain("agy (or antigravity)");
+  });
+
+  test("normalizes all 40,320 client orderings", () => {
+    const clis = knownClis({}, "/home/x");
+    const expected = CLI_NAMES.join("\0");
+    let count = 0;
+    for (const ordering of permutations(CLI_NAMES)) {
+      const selected = selectClis(clis, ordering)
+        .map((info) => info.name)
+        .join("\0");
+      if (selected !== expected)
+        throw new Error(`selection order changed for ${ordering.join(",")}`);
+      count += 1;
+    }
+    expect(count).toBe(40_320);
+  });
+
+  test("applies comma, repeat, and alias selectors to detect, status, and revert", async () => {
+    const infos = await seedAllClients();
+    const selection = ["--cli", "cursor,antigravity", "--client", "claude", "--cli", "cursor"];
+
+    const detected = await runSwap(["detect", ...selection]);
+    expect(detected.status).toBe(0);
+    expect(
+      detected.stdout
+        .trim()
+        .split("\n")
+        .map((line) => line.trim().split(/\s+/u)[1]),
+    ).toEqual(["claude", "cursor", "agy"]);
+
+    const status = await runSwap(["status", ...selection]);
+    expect(status.status).toBe(0);
+    expect(
+      status.stdout
+        .trim()
+        .split("\n")
+        .map((line) => line.split(/\s+/u)[0]),
+    ).toEqual(["claude", "cursor", "agy"]);
+
+    await writeServers(infos, "libtmux", buildSpec({ kind: "dev", repo: "/first" }));
+    const reverted = await runSwap(["revert", ...selection]);
+    expect(reverted.status).toBe(0);
+    expect(
+      reverted.stdout
+        .trim()
+        .split("\n")
+        .map((line) => line.split(/\s+/u)[1]),
+    ).toEqual(["claude", "cursor", "agy"]);
+    await Promise.all(
+      infos.map(async (info) => {
+        const registered = await readServer(info, "libtmux");
+        if (["claude", "cursor", "agy"].includes(info.name)) {
+          expect(registered).toBeUndefined();
+        } else {
+          expect(registered).toBeDefined();
+        }
+      }),
+    );
+  });
+
   test("covers every agent the original swapped, with its own shape", () => {
     const clis = knownClis({}, "/home/x");
     expect(clis.map((info) => info.name).toSorted()).toEqual([
