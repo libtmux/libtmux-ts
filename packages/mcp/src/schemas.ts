@@ -33,6 +33,19 @@ export function inlineRequestText(label: string) {
   });
 }
 
+export const TMUX_FORMAT_SCHEMA_KEY = "x-libtmux-tmux-format";
+export const TMUX_FORMAT_LITERALIZATION = "literalized-once";
+export const TMUX_FORMAT_VALIDATED_VARIABLE = "validated-variable-name";
+
+/** Encode text once where tmux would otherwise expand it as a format. */
+export function literalTmuxText(label: string) {
+  return z
+    .string()
+    .transform((value) => value.replaceAll("#", "##"))
+    .pipe(inlineRequestText(label))
+    .meta({ [TMUX_FORMAT_SCHEMA_KEY]: TMUX_FORMAT_LITERALIZATION });
+}
+
 /** Validate a command before the shell wrapper expands every byte fivefold. */
 export function framedCommandText(label: string) {
   return z
@@ -79,5 +92,5 @@ export const sessionIdSchema = inlineRequestText("sessionId")
 
 export const paneCursorSchema = requestText("cursor").regex(
   PANE_CURSOR_PATTERN,
-  "Expected a cursor returned by observe or wait_for_text.",
+  "Expected a cursor returned by capture_since or wait_for_text.",
 );

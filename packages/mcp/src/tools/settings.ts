@@ -7,14 +7,13 @@
  * server that is doing something unexpected, which is the case that comes up.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
-import { effectiveResultLines, MAX_INLINE_REQUEST_BYTES } from "../policy.js";
-import { MUTATING, offers, OPEN_WORLD, READ_ONLY } from "../register.js";
+import { effectiveResultLines } from "../policy.js";
+import { READ_ONLY, type ToolRegistrar } from "../register.js";
 import { fail, limitEntries, ok, renderEntries } from "../results.js";
-import { fitsInlineRequest, inlineRequestText, requestText } from "../schemas.js";
+import { inlineRequestText, requestText } from "../schemas.js";
 import { isFailure, requirePane, requireSession, requireWindow } from "../target_resolution.js";
 
 /**
@@ -102,50 +101,37 @@ async function optionSite(
   };
 }
 
-export function registerSettings(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "readonly")) return;
-
+export function registerSettings(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
-    "show_options",
+    "show_option",
     {
       annotations: READ_ONLY,
-      description: "Read tmux options at server, session, or pane scope.",
+      description: "Read one named tmux option at server, session, window, or pane scope.",
       inputSchema: {
+        name: inlineRequestText("name"),
         scope: z.enum(SCOPES).optional().describe("Default server."),
         target: requestText("target")
           .optional()
           .describe("Session id/name or pane id, for the matching scope."),
       },
       outputSchema: {
-        complete: z.boolean(),
-        omittedEntries: z.number().int(),
-        options: z.record(z.string(), z.string()),
+        name: z.string(),
         scope: z.string(),
+        value: z.string().nullable(),
       },
-      title: "Show options",
+      title: "Show option",
     },
-    async ({ scope, target }) => {
+    async ({ name, scope, target }) => {
       const chosen = scope ?? "server";
       const missing = requireTarget(chosen, target);
       if (missing !== undefined) return missing;
       const site = await optionSite(context, chosen, target);
       if (isFailure(site)) return site;
       const read = await site.show();
-      const bounded = limitEntries(
-        [...read],
-        effectiveResultLines(context.policy, undefined),
-        ([name, value]) => `${JSON.stringify(name)}:${JSON.stringify(value)}`,
-        ([name, value]) => `${name} ${value}`,
-      );
-      const options = Object.fromEntries(bounded.entries);
+      const value = read.get(name) ?? null;
       return ok(
-        {
-          complete: bounded.complete,
-          omittedEntries: bounded.omittedEntries,
-          options,
-          scope: chosen,
-        },
-        renderEntries(bounded, "options", "narrow the scope before reading again"),
+        { name, scope: chosen, value },
+        value === null ? `${chosen} option ${name} is unset.` : `${name} ${value}`,
       );
     },
   );
@@ -251,106 +237,6 @@ export function registerSettings(mcp: McpServer, context: ToolContext): void {
           omittedEntries: bounded.omittedEntries,
         },
         renderEntries(bounded, "variables", "read one session scope at a time"),
-      );
-    },
-  );
-
-  if (!offers(context.policy, "mutating")) return;
-
-  mcp.registerTool(
-    "set_option",
-    {
-      annotations: OPEN_WORLD,
-      description:
-        "Set a tmux option at server, session, or pane scope. Changes stay until " +
-        "something unsets them, including after this process ends. Format-valued " +
-        "options such as status-right may contain #() jobs that run host shell commands.",
-      inputSchema: z
-        .object({
-          name: inlineRequestText("name"),
-          scope: z.enum(SCOPES).optional().describe("Default server."),
-          target: requestText("target").optional(),
-          value: inlineRequestText("value"),
-        })
-        .refine(({ name, value }) => fitsInlineRequest([name, value]), {
-          message: `set_option text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
-        }),
-      outputSchema: { name: z.string(), scope: z.string(), value: z.string() },
-      title: "Set option",
-    },
-    async ({ name, scope, target, value }) => {
-      const chosen = scope ?? "server";
-      const missing = requireTarget(chosen, target);
-      if (missing !== undefined) return missing;
-      const site = await optionSite(context, chosen, target);
-      if (isFailure(site)) return site;
-      await site.set(name, value);
-      return ok({ name, scope: chosen, value }, `Set ${chosen} option ${name} to ${value}.`);
-    },
-  );
-
-  mcp.registerTool(
-    "unset_option",
-    {
-      annotations: MUTATING,
-      description:
-        "Remove one tmux option at a scope, so it falls back to the value it " +
-        "inherits. This is how a set_option is undone: without it a wrong value " +
-        "set from here could not be taken back from here.",
-      inputSchema: {
-        name: inlineRequestText("name"),
-        scope: z.enum(SCOPES).optional().describe("Default server."),
-        target: requestText("target")
-          .optional()
-          .describe("Session id/name or pane id, required for those scopes."),
-      },
-      outputSchema: { name: z.string(), scope: z.string() },
-      title: "Unset option",
-    },
-    async ({ name, scope, target }) => {
-      const chosen = scope ?? "server";
-      const missing = requireTarget(chosen, target);
-      if (missing !== undefined) return missing;
-      const site = await optionSite(context, chosen, target);
-      if (isFailure(site)) return site;
-      await site.unset(name);
-      return ok({ name, scope: chosen }, `Unset ${chosen} option ${name}; it now inherits.`);
-    },
-  );
-
-  mcp.registerTool(
-    "set_environment",
-    {
-      annotations: MUTATING,
-      description:
-        "Set a variable in tmux's environment. Affects processes tmux starts after " +
-        "this, not ones already running.",
-      inputSchema: z
-        .object({
-          name: inlineRequestText("name"),
-          session: requestText("session")
-            .optional()
-            .describe("Session scope; omit for server scope."),
-          value: inlineRequestText("value"),
-        })
-        .refine(({ name, value }) => fitsInlineRequest([name, value]), {
-          message: `set_environment text is too large after tmux quoting; the combined limit is ${String(MAX_INLINE_REQUEST_BYTES)} bytes.`,
-        }),
-      outputSchema: { name: z.string(), scope: z.string() },
-      title: "Set environment",
-    },
-    async ({ name, session, value }) => {
-      const snapshot = await context.snapshot();
-      if (session === undefined) {
-        await context.tmux.setEnvironment(name, value);
-      } else {
-        const found = requireSession(snapshot, session);
-        if (isFailure(found)) return found;
-        await found.setEnvironment(name, value);
-      }
-      return ok(
-        { name, scope: session === undefined ? "server" : "session" },
-        `Set ${name} for new processes.`,
       );
     },
   );

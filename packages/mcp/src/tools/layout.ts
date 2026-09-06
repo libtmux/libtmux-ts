@@ -6,23 +6,27 @@
  * reporting a bare success.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { Pane, ServerSnapshot } from "libtmux";
 import { ResizeAdjustmentDirection } from "libtmux/constants";
 
 import type { CallerIdentity } from "../caller.js";
-import { runTopologyMutation, type ToolContext } from "../context.js";
+import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
-import { DESTRUCTIVE, MUTATING, offers } from "../register.js";
+import { MUTATING, type ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
-import { inlineRequestText, paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
+import {
+  inlineRequestText,
+  literalTmuxText,
+  paneIdSchema,
+  requestText,
+  windowIdSchema,
+} from "../schemas.js";
 import {
   isFailure,
   panePlacements,
   requirePane,
-  requirePanePlacement,
   requireSession,
   requireWindow,
   requireWindowPlacement,
@@ -86,9 +90,7 @@ function sourcePlacement(
   };
 }
 
-export function registerLayout(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "mutating")) return;
-
+export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "resize_pane",
     {
@@ -293,12 +295,10 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
         if (isFailure(found)) return found;
         destination = found.id;
       }
-      await runTopologyMutation(context, () =>
-        window.move({
-          ...(index === undefined ? {} : { index }),
-          ...(destination === undefined ? {} : { session: destination }),
-        }),
-      );
+      await window.move({
+        ...(index === undefined ? {} : { index }),
+        ...(destination === undefined ? {} : { session: destination }),
+      });
       const view = projectWindow(await context.snapshot(), windowId);
       if (isFailure(view)) return view;
       return ok({ window: view }, windowLine(view));
@@ -345,127 +345,6 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
     },
   );
 
-  if (offers(context.policy, "destructive")) {
-    mcp.registerTool(
-      "move_pane",
-      {
-        annotations: DESTRUCTIVE,
-        description:
-          "Move a pane into another window as a split, or break it out into a window " +
-          "of its own by naming no destination. The pane keeps its id and whatever is " +
-          "running in it, which killing it and splitting again does not. Moving a " +
-          "window's last pane destroys that window.",
-        inputSchema: {
-          paneId: paneIdSchema,
-          sourceIndex: sourceIndexSchema,
-          sourceSession: sourceSessionSchema,
-          vertical: z
-            .boolean()
-            .optional()
-            .describe(
-              "Join as a horizontal split rather than a vertical one. Unused when breaking out.",
-            ),
-          windowId: windowIdSchema
-            .optional()
-            .describe("Window to move it into. Omit to break it out into a window of its own."),
-          windowName: inlineRequestText("windowName")
-            .optional()
-            .describe("Name for the window a break-out creates."),
-        },
-        outputSchema: { pane: paneViewSchema },
-        title: "Move pane",
-      },
-      async ({ paneId, sourceIndex, sourceSession, vertical, windowId, windowName }) => {
-        const snapshot = await context.snapshot();
-        const pane =
-          windowId === undefined || sourceIndex !== undefined || sourceSession !== undefined
-            ? requirePanePlacement(snapshot, paneId, sourcePlacement(sourceSession, sourceIndex))
-            : requirePane(snapshot, paneId);
-        if (isFailure(pane)) return pane;
-        const destination = windowId === undefined ? undefined : requireWindow(snapshot, windowId);
-        if (isFailure(destination)) return destination;
-        await runTopologyMutation(context, async () => {
-          if (destination === undefined) {
-            await pane.breakOut(windowName);
-          } else {
-            await pane.joinTo(destination.id, vertical === undefined ? {} : { vertical });
-          }
-        });
-        const after = await context.snapshot();
-        const view = projectPane(after, paneId, await context.identity(after));
-        if (isFailure(view)) return view;
-        return ok({ pane: view }, paneLine(view));
-      },
-    );
-  }
-
-  mcp.registerTool(
-    "swap_window",
-    {
-      annotations: MUTATING,
-      description:
-        "Exchange the positions of two windows, which may be in different sessions. " +
-        "Each keeps its id, its panes and what is running in them; only where they " +
-        "sit changes. This is swap_pane's analogue one level up.",
-      inputSchema: {
-        otherSourceIndex: sourceIndexSchema,
-        otherSourceSession: sourceSessionSchema,
-        otherWindowId: windowIdSchema,
-        sourceIndex: sourceIndexSchema,
-        sourceSession: sourceSessionSchema,
-        windowId: windowIdSchema,
-      },
-      outputSchema: {
-        complete: z.boolean(),
-        omittedEntries: z.number().int().nonnegative(),
-        windows: z.array(windowViewSchema),
-      },
-      title: "Swap windows",
-    },
-    async ({
-      otherSourceIndex,
-      otherSourceSession,
-      otherWindowId,
-      sourceIndex,
-      sourceSession,
-      windowId,
-    }) => {
-      const snapshot = await context.snapshot();
-      const window = requireWindowPlacement(
-        snapshot,
-        windowId,
-        sourcePlacement(sourceSession, sourceIndex),
-      );
-      if (isFailure(window)) return window;
-      const other = requireWindowPlacement(
-        snapshot,
-        otherWindowId,
-        sourcePlacement(otherSourceSession, otherSourceIndex),
-      );
-      if (isFailure(other)) return other;
-      await runTopologyMutation(context, () => window.swapWith(other));
-      const after = await context.snapshot();
-      const firstView = projectWindow(after, windowId);
-      if (isFailure(firstView)) return firstView;
-      const otherView = projectWindow(after, otherWindowId);
-      if (isFailure(otherView)) return otherView;
-      const views = [firstView, otherView];
-      const bounded = limitViews(
-        views,
-        effectiveResultLines(context.policy, undefined),
-        windowLine,
-      );
-      return ok(
-        {
-          complete: bounded.complete,
-          omittedEntries: bounded.omittedEntries,
-          windows: bounded.views,
-        },
-        renderViews(bounded, "windows", "inspect each window separately"),
-      );
-    },
-  );
-
   mcp.registerTool(
     "set_pane_title",
     {
@@ -473,7 +352,7 @@ export function registerLayout(mcp: McpServer, context: ToolContext): void {
       description:
         "Give a pane a title. Useful for labelling what an agent put where, since " +
         "the title shows in list_panes and survives the command changing.",
-      inputSchema: { paneId: paneIdSchema, title: inlineRequestText("title") },
+      inputSchema: { paneId: paneIdSchema, title: literalTmuxText("title") },
       outputSchema: { pane: paneViewSchema },
       title: "Set pane title",
     },

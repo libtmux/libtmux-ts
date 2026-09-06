@@ -214,19 +214,5 @@ export async function mapConcurrent<Input, Output>(
 export function renderOutput(trimmed: Trimmed): string {
   const body = trimmed.lines.join("\n");
   if (trimmed.droppedLines === 0) return body;
-  return `[${String(trimmed.droppedLines)} earlier lines omitted; raise maxLines or read the resource for all of it]\n${body}`;
-}
-
-/**
- * A pointer to content instead of the content.
- *
- * A capture of a long scrollback costs the agent its context whether or not it
- * needed all of it. Linking lets it pay only when it decides to.
- */
-export function resourceLink(
-  uri: string,
-  name: string,
-  description: string,
-): CallToolResult["content"][number] {
-  return { description, name, type: "resource_link", uri };
+  return `[${String(trimmed.droppedLines)} earlier lines omitted; raise maxLines within the server limit]\n${body}`;
 }

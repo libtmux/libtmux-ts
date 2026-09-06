@@ -11,41 +11,48 @@ import type { Server } from "libtmux/server";
 
 import {
   readCallerEnvironment,
+  readServerAuthority,
   resolveCallerIdentity,
   type CallerEnvironment,
   type CallerIdentity,
+  type ServerAuthority,
 } from "./caller.js";
 import { LiveHub } from "./live.js";
 import type { PaneTail } from "./pane_tail.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
+import { pinTmuxRoute, type PinnedTmuxRoute } from "./route.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export interface ToolContext {
   readonly hub: LiveHub;
   identity(snapshot: ServerSnapshot): Promise<CallerIdentity>;
+  observeInput(signal?: AbortSignal): Promise<PaneInputObservation>;
   readonly policy: Policy;
+  readonly route: PinnedTmuxRoute;
   snapshot(signal?: AbortSignal): Promise<ServerSnapshot>;
   readonly tmux: Server;
-  /**
-   * Say that this call may have changed the resource catalog's topology.
-   *
-   * Called once after each structural mutation attempt. Coalesced by the
-   * notifier, so calling it freely is the point.
-   */
-  topologyChanged(): void;
 }
 
-/** Notify even when tmux may have applied a mutation before rejecting its result. */
-export async function runTopologyMutation<T>(
-  context: Pick<ToolContext, "topologyChanged">,
-  mutation: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await mutation();
-  } finally {
-    context.topologyChanged();
-  }
+export interface InputAuthority extends ServerAuthority {
+  readonly routeSelector: string;
+}
+
+export interface PaneInputObservation {
+  readonly authority: InputAuthority;
+  readonly identity: CallerIdentity;
+  readonly snapshot: ServerSnapshot;
+}
+
+export function sameInputAuthority(left: InputAuthority, right: InputAuthority): boolean {
+  return (
+    left.endpointDevice === right.endpointDevice &&
+    left.endpointInode === right.endpointInode &&
+    left.routeSelector === right.routeSelector &&
+    left.socketPath === right.socketPath &&
+    left.pid === right.pid &&
+    left.startTime === right.startTime
+  );
 }
 
 /**
@@ -69,7 +76,7 @@ export function describeUnreachable(tmux: Server, reason: string): string {
     ...(tmux.socketPath === undefined
       ? tmux.socketName === undefined
         ? []
-        : [`LIBTMUX_SOCKET_NAME=${tmux.socketName}`]
+        : [`LIBTMUX_SOCKET=${tmux.socketName}`]
       : [`LIBTMUX_SOCKET_PATH=${tmux.socketPath}`]),
   ];
   const launched =
@@ -79,7 +86,7 @@ export function describeUnreachable(tmux: Server, reason: string): string {
   return (
     `${reason}\n\nThis server was launched with ${launched}. That is set by whoever ` +
     `configured this MCP server, not by you — report it rather than retrying. ` +
-    `Start a server there with new_session if creating one is what was wanted.`
+    `Start a server there with create_session if creating one is what was wanted.`
   );
 }
 
@@ -106,18 +113,37 @@ function withRecovery<T>(tmux: Server, work: Promise<T>): Promise<T> {
 export function createContext(
   tmux: Server,
   policy: Policy,
-  topologyChanged: () => void = () => undefined,
   caller: CallerEnvironment = readCallerEnvironment(),
 ): ToolContext & { close(): Promise<void> } {
+  const route = pinTmuxRoute(tmux);
   const hub = new LiveHub(tmux, { connectTimeoutMs: policy.commandTimeoutMs });
+  const snapshot = (signal?: AbortSignal): Promise<ServerSnapshot> =>
+    withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal }));
+  const authority = async (signal?: AbortSignal): Promise<InputAuthority> => ({
+    ...(await withRecovery(tmux, readServerAuthority(tmux, signal))),
+    routeSelector: route.selector,
+  });
   return {
     close: () => hub.close(),
     hub,
     identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, caller),
+    observeInput: async (signal) => {
+      const before = await authority(signal);
+      const observed = await snapshot(signal);
+      const after = await authority(signal);
+      if (!sameInputAuthority(before, after)) {
+        throw new Error("tmux daemon identity changed while observing pane input state");
+      }
+      return {
+        authority: before,
+        identity: await resolveCallerIdentity(tmux, observed, caller, before),
+        snapshot: observed,
+      };
+    },
     policy,
-    snapshot: (signal) => withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal })),
+    route,
+    snapshot,
     tmux,
-    topologyChanged,
   };
 }
 

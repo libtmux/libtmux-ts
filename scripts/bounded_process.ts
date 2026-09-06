@@ -1,14 +1,17 @@
 import type { EventEmitter } from "node:events";
 
 interface BoundedCommandOptions {
+  readonly acceptStdoutLine?: (line: string) => boolean;
   readonly cwd?: string;
   readonly env: Record<string, string | undefined>;
   readonly maxOutputBytes: number;
   readonly stdin?: string;
+  readonly terminationGraceMilliseconds?: number;
   readonly timeoutMilliseconds: number;
 }
 
 export type BoundedCommandTermination =
+  | "accepted"
   | "exited"
   | "output_limit_exceeded"
   | "signaled"
@@ -88,6 +91,8 @@ function capturePipe(
   stream: ReadableStream<Uint8Array>,
   retain: (value: Uint8Array) => Uint8Array,
   outputLimitExceeded: () => void,
+  acceptLine?: (line: string) => boolean,
+  accepted?: () => void,
 ): {
   cancel(): void;
   readonly text: Promise<string>;
@@ -96,12 +101,34 @@ function capturePipe(
   const text = (async () => {
     const decoder = new TextDecoder();
     const output: string[] = [];
+    let pending = "";
+    const inspect = (text: string, final: boolean): void => {
+      if (acceptLine === undefined || accepted === undefined) return;
+      pending += text;
+      for (;;) {
+        const newline = pending.indexOf("\n");
+        if (newline === -1) break;
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        if (acceptLine(line)) accepted();
+      }
+      if (final && pending !== "" && acceptLine(pending)) accepted();
+    };
     for (;;) {
       // eslint-disable-next-line no-await-in-loop -- each read advances one pipe cursor.
       const { done, value } = await reader.read();
-      if (done) return `${output.join("")}${decoder.decode()}`;
+      if (done) {
+        const tail = decoder.decode();
+        output.push(tail);
+        inspect(tail, true);
+        return output.join("");
+      }
       const retained = retain(value);
-      if (retained.byteLength > 0) output.push(decoder.decode(retained, { stream: true }));
+      if (retained.byteLength > 0) {
+        const decoded = decoder.decode(retained, { stream: true });
+        output.push(decoded);
+        inspect(decoded, false);
+      }
       if (retained.byteLength < value.byteLength) {
         outputLimitExceeded();
         return `${output.join("")}${decoder.decode()}`;
@@ -127,6 +154,11 @@ export async function runBoundedCommand(
   if (!Number.isSafeInteger(options.maxOutputBytes) || options.maxOutputBytes < 1) {
     throw new Error("bounded command output limit must be a positive integer");
   }
+  const terminationGraceMilliseconds =
+    options.terminationGraceMilliseconds ?? TERMINATION_GRACE_MILLISECONDS;
+  if (!Number.isSafeInteger(terminationGraceMilliseconds) || terminationGraceMilliseconds < 1) {
+    throw new Error("bounded command termination grace must be a positive integer");
+  }
   let reapOwnedProcessGroup = (): void => undefined;
   const unregisterProcessGroup = registerProcessGroup(() => reapOwnedProcessGroup());
   const child = (() => {
@@ -151,8 +183,9 @@ export async function runBoundedCommand(
     remainingOutputBytes -= retainedBytes;
     return retainedBytes === value.byteLength ? value : value.subarray(0, retainedBytes);
   };
-  let forcedTermination: "output_limit_exceeded" | "timed_out" | undefined;
+  let forcedTermination: "accepted" | "output_limit_exceeded" | "timed_out" | undefined;
   let hardDeadline: ReturnType<typeof setTimeout> | undefined;
+  let pipeDeadline: ReturnType<typeof setTimeout> | undefined;
   let stdout: ReturnType<typeof capturePipe> | undefined;
   let stderr: ReturnType<typeof capturePipe> | undefined;
 
@@ -175,7 +208,7 @@ export async function runBoundedCommand(
     stderr?.cancel();
   };
   reapOwnedProcessGroup = () => signalTree("SIGKILL");
-  const stop = (reason: "output_limit_exceeded" | "timed_out"): void => {
+  const stop = (reason: "accepted" | "output_limit_exceeded" | "timed_out"): void => {
     if (forcedTermination !== undefined) return;
     forcedTermination = reason;
     signalTree("SIGTERM");
@@ -183,20 +216,28 @@ export async function runBoundedCommand(
     hardDeadline = setTimeout(() => {
       signalTree("SIGKILL");
       cancelPipes();
-    }, TERMINATION_GRACE_MILLISECONDS);
+    }, terminationGraceMilliseconds);
     hardDeadline.unref?.();
   };
-  stdout = capturePipe(child.stdout, retain, () => stop("output_limit_exceeded"));
+  stdout = capturePipe(
+    child.stdout,
+    retain,
+    () => stop("output_limit_exceeded"),
+    options.acceptStdoutLine,
+    () => stop("accepted"),
+  );
   stderr = capturePipe(child.stderr, retain, () => stop("output_limit_exceeded"));
   const deadline = setTimeout(() => stop("timed_out"), options.timeoutMilliseconds);
   deadline.unref?.();
+  const exit = child.exited.then((exitCode) => {
+    signalTree("SIGKILL");
+    pipeDeadline = setTimeout(cancelPipes, terminationGraceMilliseconds);
+    pipeDeadline.unref?.();
+    return exitCode;
+  });
 
   try {
-    const [exitCode, stdoutText, stderrText] = await Promise.all([
-      child.exited,
-      stdout.text,
-      stderr.text,
-    ]);
+    const [exitCode, stdoutText, stderrText] = await Promise.all([exit, stdout.text, stderr.text]);
     return {
       exitCode,
       signalCode: child.signalCode,
@@ -207,6 +248,7 @@ export async function runBoundedCommand(
   } finally {
     clearTimeout(deadline);
     if (hardDeadline !== undefined) clearTimeout(hardDeadline);
+    if (pipeDeadline !== undefined) clearTimeout(pipeDeadline);
     signalTree("SIGKILL");
     unregisterProcessGroup();
   }

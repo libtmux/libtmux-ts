@@ -13,8 +13,8 @@ import { MAX_PACKED_ARGV_BYTES } from "libtmux/engine";
 /** How much a tool may return before it starts linking instead of inlining. */
 export const DEFAULT_MAX_RESULT_LINES = 200;
 
-/** Largest tmux-derived UTF-8 payload per result; fixed notices may add a small overhead. */
-export const MAX_RESULT_BYTES = 256 * 1024;
+/** Largest complete serialized MCP result, including its protocol envelope. */
+export const MAX_RESULT_BYTES = 1_000_000;
 
 /** Largest UTF-8 payload a request may stage or collect across repeated items. */
 export const MAX_REQUEST_BYTES = MAX_RESULT_BYTES;
@@ -47,23 +47,9 @@ const BLOCKING_WAIT_LIMIT_MS = 120_000;
 const COMMAND_TIMEOUT_LIMIT_MS = 2_147_483_647;
 const MAX_RESULT_LINES_LIMIT = 10_000;
 
-/**
- * Which tools this server offers.
- *
- * A tier is a hidden-tool decision rather than a refusal at call time: a tool an
- * agent cannot see is one it cannot spend a turn being denied.
- */
-export type SafetyTier = "destructive" | "mutating" | "readonly";
-
-const TIER_RANK: Readonly<Record<SafetyTier, number>> = {
-  destructive: 2,
-  mutating: 1,
-  readonly: 0,
-};
-
-function isSafetyTier(value: unknown): value is SafetyTier {
-  return value === "readonly" || value === "mutating" || value === "destructive";
-}
+export const TOOLSETS = ["inspect", "manage", "execute", "teardown"] as const;
+export type Toolset = (typeof TOOLSETS)[number];
+const CONSERVATIVE_DEFAULT_TOOLSETS: readonly Toolset[] = ["inspect", "manage", "execute"];
 
 export interface Policy {
   /** Ceiling on a wait that blocks the caller. */
@@ -72,19 +58,12 @@ export interface Policy {
   /** Whether tools may hold one control-mode connection for streaming. */
   readonly liveEnabled: boolean;
   readonly maxResultLines: number;
-  readonly safety: SafetyTier;
-  /**
-   * The only tools to offer, when an operator has narrowed it that far.
-   *
-   * A tier answers "how much may this agent change"; this answers "which of it".
-   * Pointing a fleet at one tmux server is where the difference matters: read
-   * and type, never kill, is a shape no tier has because killing is not a
-   * degree of typing.
-   *
-   * Undefined offers everything the tier allows, which is the common case and
-   * the one that needs no configuration.
-   */
-  readonly tools: ReadonlySet<string> | undefined;
+  /** Toolsets selected before named inclusion and exclusion. */
+  readonly toolsets: ReadonlySet<Toolset>;
+  /** Tool names added after toolset expansion. */
+  readonly tools: ReadonlySet<string>;
+  /** Tool names removed last, winning over both inclusion paths. */
+  readonly excludeTools: ReadonlySet<string>;
 }
 
 function clamp(value: number, floor: number, limit: number): number {
@@ -105,39 +84,45 @@ function readInteger(raw: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** Read a comma-separated allowlist, preserving whether the variable was set. */
-function readToolAllowlist(raw: string | undefined): ReadonlySet<string> | undefined {
-  if (raw === undefined) return undefined;
-  const names = raw
-    .split(",")
-    .map((name) => name.trim())
-    .filter((name) => name !== "");
-  return new Set(names);
-}
-
-/**
- * Read a tier, narrowing rather than widening on a name nobody recognises.
- *
- * Falling back is right for the same reason {@link readInteger} does it: the
- * variable comes from wherever the process was started, and a server that
- * refuses to launch takes its explanation with it. Falling back *upward* is
- * not. `read-only` and `read_only` are how `readonly` is usually mistyped, and
- * answering them with the default hands an agent the tools the operator was
- * trying to withhold — a mistake that looks exactly like a working
- * configuration. The startup line names the tier in force, which is where
- * this becomes visible.
- */
-function readSafety(raw: string | undefined): SafetyTier {
-  if (raw === undefined) return "readonly";
-  const named = raw.trim().toLowerCase();
-  if (named === "readonly" || named === "read-only") return "readonly";
-  if (named === "mutating" || named === "destructive") return named;
-  return "readonly";
+function readList(
+  variable: string,
+  raw: string | undefined,
+  allowEmpty = false,
+): ReadonlySet<string> {
+  if (raw === undefined) return new Set();
+  if (raw === "") {
+    if (allowEmpty) return new Set();
+    throw new TypeError(`${variable} contains an empty token`);
+  }
+  const values = raw.split(",").map((value) => value.trim());
+  if (values.some((value) => value === "")) {
+    throw new TypeError(`${variable} contains an empty token`);
+  }
+  return new Set(values);
 }
 
 export function resolvePolicy(
   environment: Readonly<Record<string, string | undefined>> = process.env,
+  defaultToolsets: readonly Toolset[] = CONSERVATIVE_DEFAULT_TOOLSETS,
 ): Policy {
+  if (Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_SAFETY")) {
+    throw new TypeError("LIBTMUX_SAFETY is no longer supported; use LIBTMUX_TOOLSETS");
+  }
+  if (Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_MCP_TOOLS")) {
+    throw new TypeError(
+      "LIBTMUX_MCP_TOOLS is no longer supported; use LIBTMUX_TOOLSETS and LIBTMUX_TOOLS",
+    );
+  }
+  const selected = readList(
+    "LIBTMUX_TOOLSETS",
+    environment.LIBTMUX_TOOLSETS ?? defaultToolsets.join(","),
+    true,
+  );
+  for (const name of selected) {
+    if (!(TOOLSETS as readonly string[]).includes(name)) {
+      throw new TypeError(`LIBTMUX_TOOLSETS names unknown toolset ${name}`);
+    }
+  }
   return {
     blockingWaitMaxMs: clamp(
       readInteger(environment.LIBTMUX_MCP_WAIT_MAX_MS, DEFAULT_BLOCKING_WAIT_MS),
@@ -154,8 +139,9 @@ export function resolvePolicy(
       1,
       MAX_RESULT_LINES_LIMIT,
     ),
-    safety: readSafety(environment.LIBTMUX_SAFETY),
-    tools: readToolAllowlist(environment.LIBTMUX_MCP_TOOLS),
+    excludeTools: readList("LIBTMUX_EXCLUDE_TOOLS", environment.LIBTMUX_EXCLUDE_TOOLS),
+    tools: readList("LIBTMUX_TOOLS", environment.LIBTMUX_TOOLS),
+    toolsets: new Set(selected as ReadonlySet<Toolset>),
   };
 }
 
@@ -171,12 +157,15 @@ export function snapshotPolicy(policy: Policy): Policy {
     throw new TypeError("policy must be an object");
   }
 
-  const { blockingWaitMaxMs, commandTimeoutMs, liveEnabled, maxResultLines, safety, tools } =
-    policy;
-
-  if (!isSafetyTier(safety)) {
-    throw new TypeError("policy.safety must be readonly, mutating, or destructive");
-  }
+  const {
+    blockingWaitMaxMs,
+    commandTimeoutMs,
+    excludeTools,
+    liveEnabled,
+    maxResultLines,
+    tools,
+    toolsets,
+  } = policy;
   requireInteger(
     "blockingWaitMaxMs",
     blockingWaitMaxMs,
@@ -188,22 +177,26 @@ export function snapshotPolicy(policy: Policy): Policy {
     throw new TypeError("policy.liveEnabled must be a boolean");
   }
   requireInteger("maxResultLines", maxResultLines, 1, MAX_RESULT_LINES_LIMIT);
-  let toolSnapshot: ReadonlySet<string> | undefined;
-  if (tools !== undefined) {
+  const copySet = (field: string, source: ReadonlySet<unknown>): ReadonlySet<string> => {
     const copy = new Set<string>();
-    let invalidTool = false;
     try {
-      Set.prototype.forEach.call(tools, (name: unknown): void => {
-        if (typeof name === "string") copy.add(name);
-        else invalidTool = true;
+      Set.prototype.forEach.call(source, (name: unknown): void => {
+        if (typeof name !== "string" || name === "") {
+          throw new TypeError(`policy.${field} must contain only nonempty strings`);
+        }
+        copy.add(name);
       });
-    } catch {
-      throw new TypeError("policy.tools must be a Set or undefined");
+    } catch (error) {
+      if (error instanceof TypeError && error.message.startsWith("policy.")) throw error;
+      throw new TypeError(`policy.${field} must be a Set`);
     }
-    if (invalidTool) {
-      throw new TypeError("policy.tools must contain only strings");
+    return copy;
+  };
+  const toolsetSnapshot = copySet("toolsets", toolsets);
+  for (const name of toolsetSnapshot) {
+    if (!(TOOLSETS as readonly string[]).includes(name)) {
+      throw new TypeError(`policy.toolsets contains unknown toolset ${name}`);
     }
-    toolSnapshot = copy;
   }
 
   return {
@@ -211,8 +204,9 @@ export function snapshotPolicy(policy: Policy): Policy {
     commandTimeoutMs,
     liveEnabled,
     maxResultLines,
-    safety,
-    tools: toolSnapshot,
+    excludeTools: copySet("excludeTools", excludeTools),
+    tools: copySet("tools", tools),
+    toolsets: new Set(toolsetSnapshot as ReadonlySet<Toolset>),
   };
 }
 
@@ -227,11 +221,6 @@ export function effectiveResultLines(policy: Policy, requested: number | undefin
       ? ceiling
       : clamp(requested, 1, MAX_RESULT_LINES_LIMIT);
   return Math.min(desired, ceiling);
-}
-
-/** Whether a tool needing `required` is offered under `active`. */
-export function tierAllows(active: SafetyTier, required: SafetyTier): boolean {
-  return isSafetyTier(active) && isSafetyTier(required) && TIER_RANK[active] >= TIER_RANK[required];
 }
 
 /**

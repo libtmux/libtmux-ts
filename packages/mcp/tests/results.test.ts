@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import { MAX_RESULT_BYTES } from "../src/policy.js";
 import { fail, ok, renderOutput, tailLines } from "../src/results.js";
-import { paneContentUri } from "../src/uris.js";
 
 describe("results", () => {
   test("keeps the tail, because a verdict is at the end", () => {
@@ -40,11 +39,5 @@ describe("results", () => {
       expect(Buffer.byteLength(content.text, "utf8")).toBeLessThanOrEqual(MAX_RESULT_BYTES + 256);
       expect(content.text).toContain("bytes omitted by the result ceiling");
     }
-  });
-});
-
-describe("uris", () => {
-  test("escape a pane id so its % does not read as an escape", () => {
-    expect(paneContentUri("%1")).toBe("tmux://panes/%251/content");
   });
 });

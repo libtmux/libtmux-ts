@@ -2,26 +2,40 @@
  * Writing to panes.
  *
  * Two shapes, and choosing the wrong one is the most common way an agent wastes
- * a turn here. `run_command` is for a shell command you wrote and want the
+ * a turn here. `run_shell_command` is for a shell command you wrote and want the
  * result of; `send_keys` is for keystrokes — a TUI, a signal, a partial line.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { randomUUID } from "node:crypto";
+
+import { TmuxTransportError, type Pane } from "libtmux";
 import { z } from "zod";
 
+import {
+  isPaneInputConflict,
+  reserveFramedCommand,
+  reservePaneInput,
+  runFramedCommand,
+} from "../command.js";
 import type { ToolContext } from "../context.js";
+import {
+  busyPane,
+  dispatchPaneKeys,
+  paneInputChanged,
+  planPaneInput,
+  type PaneInputPlan,
+} from "../pane_input.js";
 import type { Policy } from "../policy.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { offers, OPEN_WORLD } from "../register.js";
+import { OPEN_WORLD, type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
-import { isFailure, requireWritablePane } from "../target_resolution.js";
-import { activeFramedCommand, reserveFramedCommand, runFramedCommand } from "../command.js";
+import { isFailure } from "../target_resolution.js";
 
 /**
  * Shells whose syntax the command framing is written in.
  *
- * `run_command` uses POSIX subshells, positional parameters, `printf`, and `$?`.
+ * `run_shell_command` uses POSIX subshells, positional parameters, `printf`, and `$?`.
  * fish, csh, and PowerShell do not share that grammar, so a command framed for
  * them fails to parse and the wait runs to its deadline against a syntax error.
  */
@@ -47,38 +61,71 @@ function commandFollowups(policy: Policy, paneId: string): string[] {
     policy.liveEnabled && offered("wait_for_text")
       ? `wait_for_text on ${paneId} keeps waiting for it`
       : "",
-    offered("send_keys") ? `send_keys with keys="C-c", enter=false, and force=true stops it` : "",
   ].filter((text) => text !== "");
 }
 
-function busyPane(policy: Policy, paneId: string, active: string): ReturnType<typeof fail> {
-  const followups = commandFollowups(policy, paneId);
+interface RunPreflight {
+  readonly pane: Pane;
+  readonly plan: PaneInputPlan;
+  readonly signature: string;
+}
+
+const RUN_TRANSITION = Symbol("run-transition");
+
+function runPreflight(plan: PaneInputPlan, paneId: string): ReturnType<typeof fail> | RunPreflight {
+  const { pane, resolvedPaneIds } = plan;
+  if (resolvedPaneIds.length !== 1 || resolvedPaneIds[0] !== paneId) {
+    return fail({
+      hint: "Disable synchronize-panes for this pane before running a framed command.",
+      reason:
+        `Refusing to run in ${paneId}: its configured input cohort contains ` +
+        `${String(resolvedPaneIds.length)} panes (${resolvedPaneIds.join(", ")}).`,
+    });
+  }
+
+  const rawCommand = pane.currentCommand;
+  const running = shellName(typeof rawCommand === "string" ? rawCommand : "");
+  if (!POSIX_SHELLS.has(running)) {
+    return fail({
+      hint: OTHER_SHELLS.has(running)
+        ? "Use send_keys, or run the command in a pane running sh, bash, dash, or zsh."
+        : "Use send_keys if input belongs to that program, or choose a pane at a supported POSIX shell prompt.",
+      reason:
+        running === ""
+          ? `Pane ${paneId} has no trusted foreground shell state.`
+          : `Pane ${paneId} is running ${running}, which run_shell_command cannot address.`,
+    });
+  }
+
+  return {
+    pane,
+    plan,
+    signature: plan.signature,
+  };
+}
+
+function runTransitionFailure(paneId: string): ReturnType<typeof fail> {
   return fail({
-    hint:
-      followups.length === 0
-        ? "Wait for that command to finish before writing to the pane."
-        : `Wait for that command to finish, or ${followups.join(", or ")}.`,
-    reason: `Refusing to write into ${paneId}: run_command ${active} is still active.`,
+    hint: "Take a fresh snapshot and retry only after the pane is stable and unattended.",
+    reason: `Pane ${paneId} changed during run_shell_command setup; no command was sent.`,
   });
 }
 
-export function registerInput(mcp: McpServer, context: ToolContext): void {
-  if (!offers(context.policy, "mutating")) return;
-
+export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "send_keys",
     {
       annotations: OPEN_WORLD,
       description:
         "Send keystrokes to a pane. Use for TUIs, control keys (C-c), and partial " +
-        "lines. For a shell command whose result you want, use run_command — it " +
+        "lines. For a shell command whose result you want, use run_shell_command — it " +
         "waits for completion and reports exit status, which this does not.",
       inputSchema: {
         enter: z.boolean().optional().describe("Press Enter afterwards. Default true."),
         force: z
           .boolean()
           .optional()
-          .describe("Write even to this server's pane or one a person is watching. Default false."),
+          .describe("Write to this server's exact caller pane. Never overrides attention."),
         keys: inlineRequestText("keys").describe(
           "Keys to send. tmux key names like C-c work unless literal is true.",
         ),
@@ -89,29 +136,47 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         paneId: paneIdSchema,
       },
       outputSchema: {
-        attended: z.boolean().describe("A person is watching the pane this was sent to."),
+        attended: z.boolean().describe("A person is watching a configured cohort member."),
         paneId: paneIdSchema,
+        resolvedPaneIds: z
+          .array(paneIdSchema)
+          .describe("Configured cohort at the immediate preflight, not a delivery receipt."),
         sent: z.boolean(),
       },
       title: "Send keys",
     },
     async ({ enter, force, keys, literal, paneId }) => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const pane = requireWritablePane(snapshot, identity, paneId, force, "type into");
-      if (isFailure(pane)) return pane;
-      const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
-
-      await pane.sendKeys(keys, {
-        ...(enter === undefined ? {} : { enter }),
-        ...(literal === undefined ? {} : { literal }),
-      });
-      const attended = identity.attendedPaneIds.includes(paneId);
-      return ok(
-        { attended, paneId, sent: true },
-        attended ? `Sent to ${paneId}. Somebody is watching that pane.` : `Sent to ${paneId}.`,
+      const initial = planPaneInput(await context.observeInput(), paneId, force, "type into");
+      if (isFailure(initial)) return initial;
+      const reserved = reservePaneInput(
+        initial.observation.authority,
+        initial.resolvedPaneIds,
+        "input",
+        "send_keys",
       );
+      if (isPaneInputConflict(reserved)) return busyPane(reserved);
+      try {
+        const final = planPaneInput(await context.observeInput(), paneId, force, "type into");
+        if (isFailure(final) || final.signature !== initial.signature) {
+          return paneInputChanged(paneId, "send_keys");
+        }
+        await dispatchPaneKeys(final.pane, keys, {
+          ...(enter === undefined ? {} : { enter }),
+          ...(literal === undefined ? {} : { literal }),
+        });
+        const attended = final.resolvedPaneIds.some((id) =>
+          final.observation.identity.attendedPaneIds.includes(id),
+        );
+        const targetText = final.resolvedPaneIds.join(", ");
+        return ok(
+          { attended, paneId, resolvedPaneIds: final.resolvedPaneIds, sent: true },
+          attended
+            ? `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}. Somebody is watching a configured member.`
+            : `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}.`,
+        );
+      } finally {
+        reserved.release();
+      }
     },
   );
 
@@ -128,7 +193,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to this server's pane or one a person is watching. Default false."),
+          .describe("Write to this server's exact caller pane. Never overrides attention."),
         paneId: paneIdSchema,
         text: inlineRequestText("text"),
       },
@@ -136,22 +201,91 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
       title: "Paste text",
     },
     async ({ enter, force, paneId, text }) => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const pane = requireWritablePane(snapshot, identity, paneId, force, "paste into");
-      if (isFailure(pane)) return pane;
-      const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
-      await pane.sendKeys(text, { enter: enter ?? false, literal: true });
-      return ok(
-        { bytes: Buffer.byteLength(text, "utf8"), paneId },
-        `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId}.`,
+      const initial = planPaneInput(await context.observeInput(), paneId, force, "paste into");
+      if (isFailure(initial)) return initial;
+
+      if (text === "" && enter !== true) {
+        return ok({ bytes: 0, paneId }, `Pasted 0 bytes into ${paneId}.`);
+      }
+
+      const reserved = reservePaneInput(
+        initial.observation.authority,
+        initial.resolvedPaneIds,
+        "input",
+        "paste_text",
       );
+      if (isPaneInputConflict(reserved)) return busyPane(reserved);
+      const bufferName = `ltx-mcp-paste-${randomUUID().replaceAll("-", "")}`;
+      let cleanupRequired = false;
+      let operationFailure: { readonly error: unknown } | undefined;
+      let cleanupFailure: { readonly error: unknown } | undefined;
+      let refusal: ReturnType<typeof fail> | undefined;
+      try {
+        cleanupRequired = true;
+        try {
+          await context.tmux.cmd("load-buffer", ["-b", bufferName, "-"], {
+            stdin: enter === true ? `${text}\n` : text,
+            target: null,
+            timeoutMs: context.policy.commandTimeoutMs,
+          });
+        } catch (error) {
+          if (error instanceof TmuxTransportError && error.delivery === "not_started") {
+            cleanupRequired = false;
+          }
+          operationFailure = { error };
+        }
+        if (operationFailure === undefined) {
+          try {
+            const final = planPaneInput(await context.observeInput(), paneId, force, "paste into");
+            if (isFailure(final) || final.signature !== initial.signature) {
+              refusal = paneInputChanged(paneId, "paste_text");
+            } else {
+              await final.pane.pasteBuffer(bufferName);
+            }
+          } catch (error) {
+            operationFailure = { error };
+          }
+        }
+        if (cleanupRequired) {
+          try {
+            await context.tmux.cmd("delete-buffer", ["-b", bufferName], {
+              target: null,
+              timeoutMs: context.policy.commandTimeoutMs,
+            });
+          } catch (error) {
+            cleanupFailure = { error };
+          }
+        }
+        if (operationFailure !== undefined && cleanupFailure !== undefined) {
+          throw new AggregateError(
+            [operationFailure.error, cleanupFailure.error],
+            "paste failed and private buffer cleanup also failed",
+          );
+        }
+        if (refusal !== undefined && cleanupFailure !== undefined) {
+          const content = refusal.content[0];
+          const reason =
+            content?.type === "text" ? content.text : "pane input changed before paste";
+          throw new AggregateError(
+            [new Error(reason, { cause: refusal }), cleanupFailure.error],
+            "paste was refused and private buffer cleanup also failed",
+          );
+        }
+        if (operationFailure !== undefined) throw operationFailure.error;
+        if (cleanupFailure !== undefined) throw cleanupFailure.error;
+        if (refusal !== undefined) return refusal;
+        return ok(
+          { bytes: Buffer.byteLength(text, "utf8"), paneId },
+          `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId} only.`,
+        );
+      } finally {
+        reserved.release();
+      }
     },
   );
 
   mcp.registerTool(
-    "run_command",
+    "run_shell_command",
     {
       annotations: OPEN_WORLD,
       description:
@@ -168,7 +302,7 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Override pane-attention and shell-prompt checks. Default false."),
+          .describe("Write to this server's exact caller pane. Never overrides attention."),
         maxLines: z.number().int().positive().optional(),
         paneId: paneIdSchema,
         timeoutMs: z
@@ -225,61 +359,59 @@ export function registerInput(mcp: McpServer, context: ToolContext): void {
           .boolean()
           .describe("Whether the command may still be running after this call returned."),
       },
-      title: "Run a command and wait",
+      title: "Run a shell command and wait",
     },
     async ({ command, force, maxLines, paneId, timeoutMs }, extra) => {
       if (command.trim() === "") {
         return fail({ reason: "command must not be empty." });
       }
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const pane = requireWritablePane(snapshot, identity, paneId, force, "run in");
-      if (isFailure(pane)) return pane;
-      const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) {
-        return busyPane(context.policy, paneId, active);
-      }
-      if (pane.dead === true) {
-        // Not a `force` case: a dead pane has no process to read the command,
-        // so forcing it would spend the whole timeout waiting for a marker
-        // that cannot be printed. The shell check below would pass — a dead
-        // pane still reports the command it last ran.
-        return fail({
-          hint: "respawn_pane restarts a pane's command, keeping the pane and its id.",
-          reason:
-            `Pane ${paneId} is dead: its process exited and the pane is kept only because ` +
-            `remain-on-exit is set, so nothing there can run a command.`,
-        });
-      }
-      const running = shellName(pane.currentCommand ?? "");
-      if (OTHER_SHELLS.has(running)) {
-        // Not a `force` case: forcing it would send POSIX syntax to a shell
-        // that cannot parse it, and the wait would run to its deadline against
-        // an error message.
-        return fail({
-          hint:
-            "This tool frames commands in POSIX shell syntax, which that shell does not " +
-            "share. Use send_keys, or run the command in a pane running sh, bash, or zsh.",
-          reason: `Pane ${paneId} is running ${running}, which run_command cannot address.`,
-        });
-      }
-      if (force !== true && !POSIX_SHELLS.has(running)) {
-        return fail({
-          hint:
-            "A shell command typed into a program that is not a shell goes to that program. " +
-            "Use send_keys if that is what you meant, or pass force.",
-          reason: `Pane ${paneId} is running ${running === "" ? "an unknown command" : running}, not a shell.`,
-        });
-      }
-
-      const reservation = reserveFramedCommand(context, paneId, command);
-
-      const result = await runFramedCommand(context, pane, command, timeoutMs, extra.signal).catch(
-        (error: unknown) => {
-          reservation.release();
-          throw error;
-        },
+      const initialPlan = planPaneInput(
+        await context.observeInput(extra.signal),
+        paneId,
+        force,
+        "run in",
       );
+      if (isFailure(initialPlan)) return initialPlan;
+      const initial = runPreflight(initialPlan, paneId);
+      if (isFailure(initial)) return initial;
+
+      const reservation = reserveFramedCommand(initial.plan.observation.authority, paneId, command);
+      if (isPaneInputConflict(reservation)) return busyPane(reservation);
+      let result: Awaited<ReturnType<typeof runFramedCommand>>;
+      try {
+        result = await runFramedCommand(
+          context,
+          initial.pane,
+          command,
+          timeoutMs,
+          extra.signal,
+          true,
+          async () => {
+            let final: ReturnType<typeof runPreflight>;
+            try {
+              const finalPlan = planPaneInput(
+                await context.observeInput(),
+                paneId,
+                force,
+                "run in",
+              );
+              if (isFailure(finalPlan)) throw RUN_TRANSITION;
+              final = runPreflight(finalPlan, paneId);
+            } catch {
+              throw RUN_TRANSITION;
+            }
+            if (isFailure(final) || final.signature !== initial.signature) {
+              throw RUN_TRANSITION;
+            }
+            return final.pane;
+          },
+          initial.plan.observation.authority,
+        );
+      } catch (error) {
+        reservation.release();
+        if (error === RUN_TRANSITION) return runTransitionFailure(paneId);
+        throw error;
+      }
       reservation.settleWith(result.settled);
       const bounded = boundText(
         result.output === "" ? [] : result.output.split("\n"),

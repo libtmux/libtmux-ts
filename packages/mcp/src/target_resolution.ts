@@ -51,6 +51,61 @@ type PaneWrite = "kill" | "pasteBuffer" | "respawn" | "sendKeys";
  */
 export type ReadablePane = Omit<Pane, PaneWrite>;
 
+interface PaneInputTarget {
+  readonly id: string;
+  readonly synchronized: boolean | null;
+  readonly window:
+    | {
+        readonly panes: {
+          toArray(): readonly {
+            readonly id: string;
+            readonly synchronized: boolean | null;
+          }[];
+        };
+      }
+    | undefined;
+}
+
+/** The configured panes tmux input can reach from one snapshot. */
+export function resolvedPaneInputTargetIds(
+  pane: PaneInputTarget,
+): CallToolResult | readonly string[] {
+  if (typeof pane.synchronized !== "boolean") {
+    return fail({
+      hint: "Refresh the pane snapshot before sending input.",
+      reason: `Pane ${pane.id} has no usable effective synchronize-panes state.`,
+    });
+  }
+  if (!pane.synchronized) return [pane.id];
+  const window = pane.window;
+  if (window === undefined) {
+    return fail({
+      hint: "Refresh the pane snapshot before sending input.",
+      reason: `Pane ${pane.id} has no window from which to resolve its configured input cohort.`,
+    });
+  }
+  const panes = window.panes.toArray();
+  const unknown = panes.find((candidate) => typeof candidate.synchronized !== "boolean");
+  if (unknown !== undefined) {
+    return fail({
+      hint: "Refresh the pane snapshot before sending input.",
+      reason: `Pane ${unknown.id} has no usable effective synchronize-panes state.`,
+    });
+  }
+  const resolved = [
+    ...new Set(
+      panes.filter((candidate) => candidate.synchronized === true).map((candidate) => candidate.id),
+    ),
+  ].sort();
+  if (!resolved.includes(pane.id)) {
+    return fail({
+      hint: "Refresh the pane snapshot before sending input.",
+      reason: `Pane ${pane.id} is absent from its configured synchronized input cohort.`,
+    });
+  }
+  return resolved;
+}
+
 export interface SourcePlacement {
   readonly sourceIndex?: number;
   readonly sourceSession?: string;
@@ -122,7 +177,7 @@ function paneNotFound(snapshot: ServerSnapshot, paneId: string): CallToolResult 
   return fail({
     hint:
       available.length === 0
-        ? "This server has no panes. Create one with new_session."
+        ? "This server has no panes. Create one with create_session."
         : `Panes on this server: ${suggest(available, "list_panes")}`,
     reason: `No pane ${paneId} on this server.`,
   });
@@ -146,9 +201,8 @@ export function requirePane(
  *
  * Refuses the terminal this server is running in and panes a person is
  * watching: typing into either puts irreversible input in front of a person.
- * `force` is how a caller says it meant that pane. `verb` names the act in the
- * refusal, because "refusing to restart" and "refusing to type into" send a
- * caller to different remedies.
+ * `force` confirms only this server's exact caller pane; it never overrides a
+ * separate attended client. `verb` keeps the refusal specific to the act.
  */
 export function requireWritablePane(
   snapshot: ServerSnapshot,
@@ -159,16 +213,71 @@ export function requireWritablePane(
 ): CallToolResult | Pane {
   const pane = panePlacements(snapshot, paneId)[0] as Pane | undefined;
   if (pane === undefined) return paneNotFound(snapshot, paneId);
+  if (identity.inputProblem !== undefined) {
+    return fail({
+      hint: "Refresh the caller and client topology before writing to the pane.",
+      reason: `Refusing to ${verb} ${paneId}: ${identity.inputProblem}`,
+    });
+  }
   if (force !== true && isCallerPane(identity, paneId)) {
     return fail({
       hint: "That is this server's own terminal. Pick another pane, or pass force to mean it.",
       reason: `Refusing to ${verb} ${paneId}: it is the pane this MCP server runs in.`,
     });
   }
-  if (force !== true && isAttended(identity, paneId)) {
+  if (isAttended(identity, paneId)) {
     return fail({
-      hint: "whoami lists who is attached. Pick another pane, or pass force to mean it.",
+      hint: "list_panes identifies watched panes. Pick another pane or wait until it is unattended.",
       reason: `Refusing to ${verb} ${paneId}: a person is watching that pane.`,
+    });
+  }
+  return pane;
+}
+
+/** Find a live pane outside human-owned modes for immediate input. */
+export function requirePaneInputTarget(
+  snapshot: ServerSnapshot,
+  identity: CallerIdentity,
+  paneId: string,
+  force: boolean | undefined,
+  verb = "write into",
+): CallToolResult | Pane {
+  const pane = requireWritablePane(snapshot, identity, paneId, force, verb);
+  if (isFailure(pane)) return pane;
+  if (typeof pane.dead !== "boolean") {
+    return fail({
+      hint: "Refresh with snapshot_pane before sending input.",
+      reason: `Refusing to ${verb} ${paneId}: its liveness state is unavailable.`,
+    });
+  }
+  if (pane.dead) {
+    return fail({
+      hint: "respawn_pane restarts the pane's command while keeping its id.",
+      reason: `Refusing to ${verb} ${paneId}: the pane is dead and has no input reader.`,
+    });
+  }
+  if (typeof pane.inputOff !== "boolean") {
+    return fail({
+      hint: "Refresh with snapshot_pane before sending input.",
+      reason: `Refusing to ${verb} ${paneId}: its input-enabled state is unavailable.`,
+    });
+  }
+  if (pane.inputOff) {
+    return fail({
+      hint: "Enable pane input before sending keys or commands.",
+      reason: `Refusing to ${verb} ${paneId}: pane input is disabled.`,
+    });
+  }
+  if (typeof pane.inMode !== "number" || !Number.isSafeInteger(pane.inMode) || pane.inMode < 0) {
+    return fail({
+      hint: "Refresh with snapshot_pane before sending input.",
+      reason: `Refusing to ${verb} ${paneId}: its pane-mode state is unavailable.`,
+    });
+  }
+  if (pane.inMode !== 0) {
+    return fail({
+      hint: "Use capture_pane or snapshot_pane to read it, then wait for the person to leave the mode.",
+      reason: `Refusing to ${verb} ${paneId}: its human-owned mode is active.`,
     });
   }
   return pane;
@@ -187,7 +296,7 @@ export function requireSession(snapshot: ServerSnapshot, target: string): CallTo
   return fail({
     hint:
       available.length === 0
-        ? "This server has no sessions. Create one with new_session."
+        ? "This server has no sessions. Create one with create_session."
         : `Sessions on this server: ${suggest(available, "list_sessions")}`,
     reason: `No session ${target} on this server.`,
   });

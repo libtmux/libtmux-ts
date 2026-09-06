@@ -18,6 +18,7 @@ describe("selection package boundary", () => {
     expect(Object.keys(rootModule)).toContain("Server");
     expect(Object.keys(rootModule)).not.toContain("Selection");
     expect(Object.keys(selectionModule).sort()).toEqual([
+      "compileBoundedRegex",
       "decodeWhereDocument",
       "encodeWhereDocument",
       "parseLegacyWhere",

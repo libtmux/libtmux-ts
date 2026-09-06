@@ -400,6 +400,16 @@ const document = decodeWhereDocument(JSON.parse(encoded) as unknown);
 if (document.model === "pane") snapshot.panes.where(document.where);
 ```
 
+Use `compileBoundedRegex` when arbitrary input needs the same bounded regular-
+expression grammar as selection criteria:
+
+```ts
+import { compileBoundedRegex } from "libtmux";
+
+const matcher = compileBoundedRegex("^ready-[0-9]+$");
+if (!matcher.test("ready-12")) throw new Error("expected a match");
+```
+
 A criterion is spelled like the handle accessor it filters, so a pane reads
 `pane.currentCommand` and filters on `currentCommand`. Only the serialized name
 is fixed by the schema. A field keeps its prefix in the rare case where dropping
@@ -1279,7 +1289,8 @@ Two working consumers live in this repository:
 
 - [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
   Its waits stream tmux's notifications rather than polling, and its
-  `run_command` frames what it sends so a pane's echo cannot be read as output.
+  `run_shell_command` frames what it sends so a pane's echo cannot be read as
+  output.
 - [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
   Applying a workspace twice converges the running session rather than
   duplicating it.

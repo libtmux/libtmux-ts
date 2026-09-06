@@ -3,8 +3,8 @@
  *
  * A projection, not a dump. tmux exposes hundreds of format fields per object
  * and an agent pays for every one it is shown, so these carry what targeting
- * and diagnosis need and nothing else — the rest stays one `display_message`
- * away.
+ * and diagnosis need and nothing else — the rest stays one explicit format
+ * query away.
  */
 
 import { z } from "zod";

@@ -1,41 +1,70 @@
 import { randomUUID } from "node:crypto";
 
+const INHERITED_TRAP_LIMIT = 64 * 1024;
+
+function captureInheritedTraps(scope: string, traps: string, status: string): string {
+  const stem = `_t${scope.slice(-10)}`;
+  const kind = `${stem}k`;
+  const directory = `${stem}d`;
+  const owned = `${stem}o`;
+  const bytes = `${stem}b`;
+  return (
+    `${traps}=;${status}=0;${kind}=;` +
+    `case "\${BASH_VERSION-}:\${ZSH_VERSION-}" in ?*:*)${kind}=b;; :?*)${kind}=z;;esac;` +
+    `if [ -n "\${${kind}}" ];then ${status}=125;${directory}='/tmp/${scope}-traps';${owned}=0;` +
+    `if /bin/mkdir -m 700 "\${${directory}}" 2>/dev/null;then ${owned}=1;fi;` +
+    `case "\${${kind}}" in ` +
+    `b)[ "\${${owned}}" -eq 1 ]&&trap -p ERR DEBUG >"\${${directory}}/d"&&${status}=0;` +
+    `set +T||${status}=125;trap - DEBUG RETURN ERR||${status}=125;;` +
+    `z)if trap - $signals[1,-3];then ` +
+    `[ "\${${owned}}" -eq 1 ]&&trap >"\${${directory}}/d"&&${status}=0;fi;` +
+    `trap - ERR DEBUG||${status}=125;;esac;` +
+    `if [ "\${${status}}" -eq 0 ];then ` +
+    `if ${traps}=$(LC_ALL=C /usr/bin/head -c ${INHERITED_TRAP_LIMIT} "\${${directory}}/d")&&` +
+    `${bytes}=$(LC_ALL=C /usr/bin/wc -c <"\${${directory}}/d")&&` +
+    `[ "\${${bytes}}" -le ${INHERITED_TRAP_LIMIT} ];then :;else ${traps}=;${status}=125;fi;fi;` +
+    `if [ "\${${owned}}" -eq 1 ]&&` +
+    `! { /bin/rm -f "\${${directory}}/d"&&/bin/rmdir "\${${directory}}"; };then ` +
+    `${traps}=;${status}=125;fi;unset ${directory} ${owned} ${bytes};fi;unset ${kind};`
+  );
+}
+
 /**
  * Build one shell input line whose optional leading space suppresses history.
- * The wrapper removes its parsed release marker before command evaluation.
+ * The wrapper keeps its marker out of the command's inherited environment.
  */
-export function frame(command: string, ready: string, suppressHistory: boolean): string {
+export function frame(command: string, id: string, suppressHistory: boolean): string {
+  if (!/^ltx[0-9a-f]{10}$/u.test(id)) throw new TypeError("invalid command frame id");
   const prefix = suppressHistory ? " " : "";
   const scope = `__ltx_${randomId()}`;
   const marker = `${scope}_marker`;
-  const markerPattern = `ltx${"[0-9a-f]".repeat(10)}`;
   const options = `${scope}_options`;
   const payload = `${scope}_payload`;
   const traps = `${scope}_traps`;
+  const trapStatus = `${scope}_trap_status`;
   const normalized = command.replace(/\r\n?/gu, "\n");
   if (normalized.includes("\0")) throw new TypeError("command must not contain NUL bytes");
   const encoded = [...Buffer.from(normalized, "utf8")]
     .map((byte) => `\\0${byte.toString(8).padStart(3, "0")}`)
     .join("");
+  const encodedMarker = [...Buffer.from(id, "utf8")]
+    .map((byte) => `\\0${byte.toString(8).padStart(3, "0")}`)
+    .join("");
   return (
-    `${prefix}( ${options}=$-; set +x; set +e; ${traps}=; ` +
-    `case "\${BASH_VERSION-}" in ?*) ${traps}=$(trap -p DEBUG RETURN ERR); ` +
-    `set +T; trap - DEBUG RETURN ERR;; esac; ` +
-    `case "\${ZSH_VERSION-}" in ?*) ${traps}=$(typeset -f TRAPDEBUG); ` +
-    `unfunction TRAPDEBUG 2>/dev/null || :;; esac; ` +
-    `${payload}=$(printf '%bX' '${encoded}'); ${payload}=\${${payload}%X}; ` +
-    `printf '%s%s\\n' '${ready}' '_R'; ` +
-    `while IFS= read -r ${marker}; do ` +
-    `case "\${${marker}}" in ${markerPattern}) break;; esac; done; ` +
-    `case "\${${marker}}" in ${markerPattern}) :;; *) exit 125;; esac; ` +
-    `${scope}() { printf '%s\\n' "\${${marker}}_S"; ` +
+    `${prefix}( ${options}=$-; set +x; set +e; ` +
+    captureInheritedTraps(scope, traps, trapStatus) +
+    `${payload}=$(command printf '%bX' '${encoded}'); ${payload}=\${${payload}%X}; ` +
+    `${marker}=$(command printf '%b' '${encodedMarker}'); ` +
+    `${scope}() { command printf '%s\\n' "\${${marker}}_S"; ` +
     `( unset ${marker}; set --; ` +
-    `eval "\${${traps}}"; unset ${traps}; ` +
+    `if [ "\${${trapStatus}}" -ne 0 ]; then ` +
+    `unset ${traps} ${trapStatus} ${options} ${payload}; exit 125; fi; ` +
+    `eval "\${${traps}}"; unset ${traps} ${trapStatus}; ` +
     `case "\${BASH_VERSION-}:\${${options}}" in ?*:*T*) set -T;; esac; ` +
     `case "\${${options}}" in *e*) set -e;; esac; ` +
     `case "\${${options}}" in *x*) set -x;; esac; ` +
     `unset ${options}; eval "\${${payload}}" ); ` +
-    `printf '%s %s %s\\n' "\${${marker}}_E" "$?" "\${${marker}}_D"; }; ${scope} )`
+    `command printf '%s %s %s\\n' "\${${marker}}_E" "$?" "\${${marker}}_D"; }; ${scope} )`
   );
 }
 
