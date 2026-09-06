@@ -16,6 +16,7 @@ export function compileBoundedRegex(pattern: string): RegExp {
   return compileRegex(pattern);
 }
 
+/** Which of the four criteria shapes a handle type is matched with. */
 type ModelKindOf<Model> = Model extends Client
   ? "client"
   : Model extends Pane
@@ -65,6 +66,12 @@ type StringFilterFields<Value = never, Raw extends string = string> = {
   readonly startsWith?: string;
 };
 
+/**
+ * A text comparison, of which exactly one form must be given.
+ *
+ * Written as a union so the type rejects `{}` — criteria that constrain
+ * nothing would match everything, which is never what a caller meant.
+ */
 type StringFilter<Value = never, Raw extends string = string> = StringFilterFields<Value, Raw> &
   (
     | { readonly contains: string }
@@ -76,6 +83,7 @@ type StringFilter<Value = never, Raw extends string = string> = StringFilterFiel
     | { readonly startsWith: string }
   );
 
+/** A leading digit, which tmux never writes as `0` in a multi-digit number. */
 type NonZeroDigit = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 /** The decimal text tmux sends for a field it reports as a number or timestamp. */
@@ -87,27 +95,62 @@ type RawNumber =
 /** The text tmux sends for a flag: it writes these two and nothing else. */
 type RawFlag = "0" | "1";
 
+/**
+ * One field's criteria: a value to equal, or a filter describing how to
+ * compare.
+ *
+ * The bare value is shorthand for `{ equals: value }`, and `null` matches a
+ * field tmux reports as unset rather than empty.
+ */
 type ScalarCriteria<Value = never, Raw extends string = string> =
   | Value
   | Raw
   | null
   | StringFilter<Value, Raw>;
 
+/**
+ * How criteria apply to a collection: to any of it, all of it, or none.
+ *
+ * At least one of the three must be given. `every` and `none` both hold
+ * vacuously for an empty collection, which is set theory rather than a bug,
+ * and `some` is what a caller usually wants instead.
+ */
 type ManyRelation<Where> =
   | { readonly every?: Where; readonly none?: Where; readonly some: Where }
   | { readonly every: Where; readonly none?: Where; readonly some?: Where }
   | { readonly every?: Where; readonly none: Where; readonly some?: Where };
 
+/**
+ * How criteria apply to a single related object, which may be absent.
+ *
+ * `null` matches the absence itself — a pane whose window is no longer in the
+ * snapshot — rather than matching anything.
+ */
 type OneRelation<Where> =
   | { readonly is: Where | null; readonly isNot?: Where | null }
   | { readonly is?: Where | null; readonly isNot: Where | null };
 
+/**
+ * A pattern and its flags, kept apart from any regular-expression object.
+ *
+ * Criteria are serialised and sent to servers that are not this process, so
+ * they carry the source text rather than a compiled `RegExp`. Only multiline
+ * and dot-all are offered: the others change meaning across engines.
+ */
 export interface RegexCriteriaData {
   readonly flags: "" | "m" | "s" | "ms";
   readonly pattern: string;
 }
 
 // <libtmux-generated-where-types>
+/**
+ * Criteria matching a session, evaluated against one snapshot.
+ *
+ * Fields given together must all hold. `AND`, `OR` and `NOT` take whole
+ * criteria rather than field names, so they nest, and a relation such as
+ * `some` or `every` is satisfied against the objects the snapshot holds —
+ * not against tmux as it stands now.
+ */
 export interface SessionWhere {
   readonly AND?: readonly SessionWhere[];
   readonly OR?: readonly SessionWhere[];
@@ -146,6 +189,14 @@ export interface SessionWhere {
   readonly activePane?: OneRelation<PaneWhere>;
 }
 
+/**
+ * Criteria matching a window, evaluated against one snapshot.
+ *
+ * Fields given together must all hold. `AND`, `OR` and `NOT` take whole
+ * criteria rather than field names, so they nest, and a relation such as
+ * `some` or `every` is satisfied against the objects the snapshot holds —
+ * not against tmux as it stands now.
+ */
 export interface WindowWhere {
   readonly AND?: readonly WindowWhere[];
   readonly OR?: readonly WindowWhere[];
@@ -190,6 +241,14 @@ export interface WindowWhere {
   readonly activePane?: OneRelation<PaneWhere>;
 }
 
+/**
+ * Criteria matching a pane, evaluated against one snapshot.
+ *
+ * Fields given together must all hold. `AND`, `OR` and `NOT` take whole
+ * criteria rather than field names, so they nest, and a relation such as
+ * `some` or `every` is satisfied against the objects the snapshot holds —
+ * not against tmux as it stands now.
+ */
 export interface PaneWhere {
   readonly AND?: readonly PaneWhere[];
   readonly OR?: readonly PaneWhere[];
@@ -276,6 +335,14 @@ export interface PaneWhere {
   readonly session?: OneRelation<SessionWhere>;
 }
 
+/**
+ * Criteria matching a client, evaluated against one snapshot.
+ *
+ * Fields given together must all hold. `AND`, `OR` and `NOT` take whole
+ * criteria rather than field names, so they nest, and a relation such as
+ * `some` or `every` is satisfied against the objects the snapshot holds —
+ * not against tmux as it stands now.
+ */
 export interface ClientWhere {
   readonly AND?: readonly ClientWhere[];
   readonly OR?: readonly ClientWhere[];
@@ -312,6 +379,7 @@ export interface ClientWhere {
 
 // </libtmux-generated-where-types>
 
+/** The criteria shape belonging to one model kind. */
 type WhereForKind<Kind> = Kind extends "session"
   ? SessionWhere
   : Kind extends "window"
@@ -322,6 +390,12 @@ type WhereForKind<Kind> = Kind extends "session"
         ? ClientWhere
         : never;
 
+/**
+ * The criteria a selection of this handle type accepts.
+ *
+ * Written in terms of the handle rather than the kind so a caller holding a
+ * `Selection<Pane>` gets pane criteria without naming the kind twice.
+ */
 export type WhereOf<Model> = WhereForKind<ModelKindOf<Model>>;
 
 /**
@@ -502,6 +576,14 @@ export interface Selection<Model> extends Iterable<Model> {
   count(criteria?: WhereOf<Model>): number;
 }
 
+/**
+ * Criteria as a portable document: which model, which version, and the
+ * criteria themselves.
+ *
+ * The version is in the payload because these cross a process boundary — an
+ * MCP client, a config file — where the reader's library may be older than
+ * the writer's. Nothing widens `1` in place; a new shape gets a new number.
+ */
 export type WhereDocumentV1 =
   | { readonly model: "session"; readonly version: 1; readonly where: SessionWhere }
   | { readonly model: "window"; readonly version: 1; readonly where: WindowWhere }

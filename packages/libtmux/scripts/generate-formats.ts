@@ -210,6 +210,17 @@ export function renderGeneratedWhereTypeRegion(
   const lines = [generatedWhereRegionStart];
   for (const model of criteriaModels) {
     const interfaceName = criteriaInterfaceNames[model];
+    // The generated interfaces reached the reference with no summary, because
+    // nothing here emitted one. Every field below is self-describing; what a
+    // reader needs from the type itself is how the parts combine.
+    lines.push("/**");
+    lines.push(` * Criteria matching a ${model}, evaluated against one snapshot.`);
+    lines.push(" *");
+    lines.push(" * Fields given together must all hold. `AND`, `OR` and `NOT` take whole");
+    lines.push(" * criteria rather than field names, so they nest, and a relation such as");
+    lines.push(" * `some` or `every` is satisfied against the objects the snapshot holds —");
+    lines.push(" * not against tmux as it stands now.");
+    lines.push(" */");
     lines.push(`export interface ${interfaceName} {`);
     lines.push(`  readonly AND?: readonly ${interfaceName}[];`);
     lines.push(`  readonly OR?: readonly ${interfaceName}[];`);
@@ -686,6 +697,13 @@ function renderAliasMapTypes(fields: readonly GeneratedFormatField[]): string[] 
   const lines: string[] = [];
   for (const model of ALIAS_MODELS) {
     const typeName = `${model[0]!.toUpperCase()}${model.slice(1)}AliasMap`;
+    lines.push("/**");
+    lines.push(` * The readable name this library gives each ${model} format field.`);
+    lines.push(" *");
+    lines.push(" * A handle exposes both spellings: the alias, and tmux's own token through");
+    lines.push(" * `format`. The alias is this library's, so a field with no entry here is");
+    lines.push(" * reachable only by its tmux name.");
+    lines.push(" */");
     lines.push(`export type ${typeName} = {`);
     for (const [alias, token] of aliasesForModel(fields, model)) {
       lines.push(`  readonly ${alias}: "${token}";`);
@@ -775,7 +793,35 @@ function renderPublicFieldTypesSource(
     "",
     'import type { PaneId, SafeInteger, SessionId, WindowId } from "./common.js";',
     "",
-    fieldNamesSource.trimEnd(),
+    // The two vocabulary types arrive from the format-field fixture, which
+    // carries names and no prose. Documenting them here is what puts a
+    // summary on their reference pages.
+    fieldNamesSource
+      .trimEnd()
+      .replace(
+        "export type FormatScope =",
+        [
+          "/**",
+          " * Which kind of object a format field describes.",
+          " *",
+          " * A field belongs to exactly one scope, and asking a pane for a session's",
+          " * field is what `#{}` silently answers as empty rather than as an error.",
+          " */",
+          "export type FormatScope =",
+        ].join("\n"),
+      )
+      .replace(
+        "export type FormatFieldName =",
+        [
+          "/**",
+          " * Every format field this tmux vocabulary knows, by tmux's own token.",
+          " *",
+          " * Read from tmux's `format.c` rather than written by hand, so a field a",
+          " * newer tmux added is here as soon as the vocabulary is regenerated.",
+          " */",
+          "export type FormatFieldName =",
+        ].join("\n"),
+      ),
     "",
     "/** The shapes tmux writes that are not simply text. */",
     "export type FormatValueType =",
@@ -785,6 +831,12 @@ function renderPublicFieldTypesSource(
     '  | "session-id"',
     '  | "time"',
     '  | "window-id";',
+    "/**",
+    " * The three shapes that name a tmux object rather than describe one.",
+    " *",
+    " * A field of one of these types carries an id a handle can be rebuilt from,",
+    " * which is why the row types refuse to report them as empty.",
+    " */",
     'export type FormatIdentityType = "pane-id" | "session-id" | "window-id";',
     "",
     "/**",
