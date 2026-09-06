@@ -221,6 +221,12 @@ typed failures without allowing child processes to block indefinitely. (#11)
 Server handles remain bound to the daemon identity they observed and refuse
 operations after that identity changes. (#11)
 
+#### Runtime support
+
+Development and release tooling uses Bun 1.4.0, and CI runs the gates on both
+Bun 1.3.14 and 1.4.0. The published floors are unchanged: Bun 1.3.14, Node 22,
+and tmux 3.2a.
+
 ### `@libtmux/mcp`
 
 #### Safety and policy
