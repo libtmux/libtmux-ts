@@ -46,7 +46,6 @@ export interface SessionPlans {
   readonly newWindow: (options?: NewWindowOptions) => PlannedOperation<Window>;
 }
 
-// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 /**
  * One session on one tmux server, as a handle rather than a copy of it.
  *
@@ -59,6 +58,7 @@ export interface SessionPlans {
  * leaves the session running, which is the property the whole tool is built
  * around.
  */
+// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Session {
   declare private readonly sessionBrand: undefined;
   /**

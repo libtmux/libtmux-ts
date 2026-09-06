@@ -14,7 +14,6 @@ import {
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
-// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 /**
  * One client attached to a tmux server, as a handle rather than a copy of it.
  *
@@ -23,6 +22,7 @@ import type { Server } from "./server.js";
  * {@link Client.session} reports `undefined` once it has detached, and every
  * other read reflects the moment the handle was made.
  */
+// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Client {
   declare private readonly clientBrand: undefined;
   /**

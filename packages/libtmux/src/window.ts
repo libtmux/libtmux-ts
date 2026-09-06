@@ -91,7 +91,6 @@ function placementTarget(window: Window): string {
   return `${window.format.session_id}:${window.format.window_index}`;
 }
 
-// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 /**
  * One window on one tmux server, as a handle rather than a copy of it.
  *
@@ -104,6 +103,7 @@ function placementTarget(window: Window): string {
  * is the session this handle was reached through rather than the only one
  * showing it.
  */
+// eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Window {
   declare private readonly windowBrand: undefined;
   /**
