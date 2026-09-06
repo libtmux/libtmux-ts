@@ -1604,6 +1604,17 @@ describe("swapping a config", () => {
     expect((await stat(lock)).nlink).toBe(1);
   });
 
+  // Every swap-lock guard says "lock", so matching that word proves only that
+  // something refused. Each case names the guard it is here to hold, which is
+  // how a case keeps failing for its own reason rather than a neighbour's.
+  const ALIAS_REFUSAL = {
+    // A hardlinked config is a second link to the lock, and the link-count
+    // guard refuses that before alias detection is reached. This case pins
+    // that ordering; symlink is the one that exercises alias detection.
+    hardlink: /swap lock must have one link/u,
+    symlink: /cursor config aliases swap lock/u,
+  } as const;
+
   test.each(["symlink", "hardlink"] as const)(
     "rejects a selected config that aliases the lock by %s in use and dry-run",
     async (aliasKind) => {
@@ -1633,13 +1644,25 @@ describe("swapping a config", () => {
           ...(planOnly ? ["--dry-run"] : []),
         ]);
         expect(result.status).toBe(1);
-        expect(result.stderr).toMatch(/lock/u);
+        expect(result.stderr).toMatch(ALIAS_REFUSAL[aliasKind]);
       }
 
       expect(await fileState(lock)).toEqual(before);
       expect(await Bun.file(nativeStatePath()).exists()).toBe(false);
     },
   );
+
+  // As above: the guard each defect must trip, so a case cannot pass because a
+  // different guard happened to fire. `directory` and `file-symlink` share one
+  // guard — neither is a regular file — and that is the honest pairing.
+  const LOCK_REFUSAL = {
+    directory: /swap lock is not a regular file/u,
+    "directory-mode": /swap lock directory mode must be 0700/u,
+    "directory-symlink": /swap lock directory is not a regular directory/u,
+    "file-symlink": /swap lock is not a regular file/u,
+    "link-count": /swap lock must have one link/u,
+    mode: /swap lock mode must be 0600/u,
+  } as const;
 
   test.each([
     "mode",
@@ -1689,7 +1712,7 @@ describe("swapping a config", () => {
         ...(planOnly ? ["--dry-run"] : []),
       ]);
       expect(result.status).toBe(1);
-      expect(result.stderr).toMatch(/lock/u);
+      expect(result.stderr).toMatch(LOCK_REFUSAL[defect]);
     }
 
     expect(await fileState(info.configPath)).toEqual(configBefore);
