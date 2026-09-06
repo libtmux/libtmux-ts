@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ServerSnapshot } from "libtmux";
+import { TmuxTransportError, type ServerSnapshot } from "libtmux";
 
 import type { CallerIdentity } from "../src/caller.js";
 import { isPaneInputConflict, reserveFramedCommand } from "../src/command.js";
@@ -489,7 +489,7 @@ test.each(["paste_text", "send_keys_batch"] as const)(
         return observation(observed);
       },
       policy: resolvePolicy({}),
-      tmux: { deleteBuffer: async () => {}, loadBuffer: async () => {} },
+      tmux: { cmd: async () => {} },
     } as unknown as ToolContext;
     const handler =
       name === "paste_text"
@@ -521,15 +521,12 @@ test("paste_text rechecks state after buffer setup and always cleans up", async 
     hub: {},
     identity: async () => identity,
     observeInput: async () => observation(snapshots[snapshotIndex++] as ServerSnapshot),
-    policy: {},
+    policy: resolvePolicy({}),
     snapshot: async () =>
       snapshots[Math.min(snapshotIndex, snapshots.length - 1)] as ServerSnapshot,
     tmux: {
-      deleteBuffer: async () => {
-        events.push("delete");
-      },
-      loadBuffer: async () => {
-        events.push("load");
+      cmd: async (command: string) => {
+        events.push(command === "load-buffer" ? "load" : "delete");
       },
     },
   } as unknown as ToolContext;
@@ -559,15 +556,12 @@ test("paste_text attempts cleanup when buffer setup fails", async () => {
     hub: {},
     identity: async () => identity,
     observeInput: async () => observation(snapshot({})),
-    policy: {},
+    policy: resolvePolicy({}),
     snapshot: async () => snapshot({}),
     tmux: {
-      deleteBuffer: async () => {
-        events.push("delete");
-      },
-      loadBuffer: async () => {
-        events.push("load");
-        throw new Error("load failed");
+      cmd: async (command: string) => {
+        events.push(command === "load-buffer" ? "load" : "delete");
+        if (command === "load-buffer") throw new Error("load failed");
       },
     },
   } as unknown as ToolContext;
@@ -576,4 +570,97 @@ test("paste_text attempts cleanup when buffer setup fails", async () => {
   if (handler === undefined) throw new Error("paste_text was not registered");
   await expect(handler({ paneId: "%1", text: "payload" }, {})).rejects.toThrow("load failed");
   expect(events).toEqual(["load", "delete"]);
+});
+
+test("paste_text reports cleanup failure after an indeterminate load", async () => {
+  const loadFailure = new TmuxTransportError("load reply was lost", {
+    delivery: "indeterminate",
+    kind: "pipe",
+  });
+  const cleanupFailure = new Error("delete failed");
+  const context = {
+    hub: {},
+    observeInput: async () => observation(snapshot({})),
+    policy: resolvePolicy({}),
+    tmux: {
+      cmd: async (command: string) => {
+        if (command === "load-buffer") throw loadFailure;
+        throw cleanupFailure;
+      },
+    },
+  } as unknown as ToolContext;
+  const handler = collectInputHandlers(context).get("paste_text");
+  if (handler === undefined) throw new Error("paste_text was not registered");
+
+  let failure: unknown;
+  try {
+    await handler({ paneId: "%1", text: "payload" }, {});
+  } catch (error) {
+    failure = error;
+  }
+  expect(failure).toBeInstanceOf(AggregateError);
+  expect((failure as AggregateError).errors).toEqual([loadFailure, cleanupFailure]);
+});
+
+test("paste_text bounds private buffer commands independently", async () => {
+  const events: Array<{
+    readonly args: readonly string[];
+    readonly command: string;
+    readonly options: Readonly<Record<string, unknown>>;
+  }> = [];
+  const observed = snapshot({});
+  const pane = observed.panes.toArray()[0] as unknown as {
+    pasteBuffer(name: string): Promise<void>;
+  };
+  pane.pasteBuffer = async () => {};
+  const context = {
+    hub: {},
+    observeInput: async () => observation(observed),
+    policy: resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "1234" }),
+    tmux: {
+      cmd: async (
+        command: string,
+        args: readonly string[],
+        options: Readonly<Record<string, unknown>>,
+      ) => {
+        events.push({ args, command, options });
+      },
+    },
+  } as unknown as ToolContext;
+  const handler = collectInputHandlers(context).get("paste_text");
+  if (handler === undefined) throw new Error("paste_text was not registered");
+
+  await handler({ enter: true, paneId: "%1", text: "payload" }, {});
+
+  expect(events.map(({ command }) => command)).toEqual(["load-buffer", "delete-buffer"]);
+  expect(events[0]?.args.at(-1)).toBe("-");
+  for (const event of events) {
+    expect(event.options).toMatchObject({ target: null, timeoutMs: 1234 });
+    expect(event.options.signal).toBeUndefined();
+  }
+});
+
+test("an empty paste without Enter stays guarded and buffer-free", async () => {
+  let observations = 0;
+  let commands = 0;
+  const context = {
+    observeInput: async () => {
+      observations += 1;
+      return observation(snapshot({}));
+    },
+    policy: resolvePolicy({}),
+    tmux: {
+      cmd: async () => {
+        commands += 1;
+      },
+    },
+  } as unknown as ToolContext;
+  const handler = collectInputHandlers(context).get("paste_text");
+  if (handler === undefined) throw new Error("paste_text was not registered");
+
+  const result = (await handler({ enter: false, paneId: "%1", text: "" }, {})) as {
+    readonly isError?: boolean;
+  };
+  expect(result.isError).toBeUndefined();
+  expect({ commands, observations }).toEqual({ commands: 0, observations: 1 });
 });

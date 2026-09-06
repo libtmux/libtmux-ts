@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { Pane } from "libtmux";
+import { TmuxTransportError, type Pane } from "libtmux";
 import { z } from "zod";
 
 import {
@@ -216,28 +216,45 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       );
       if (isPaneInputConflict(reserved)) return busyPane(reserved);
       const bufferName = `ltx-mcp-paste-${randomUUID().replaceAll("-", "")}`;
-      let loaded = false;
+      let cleanupRequired = false;
       let operationFailure: { readonly error: unknown } | undefined;
       let cleanupFailure: { readonly error: unknown } | undefined;
       let refusal: ReturnType<typeof fail> | undefined;
       try {
+        cleanupRequired = true;
         try {
-          await context.tmux.loadBuffer(bufferName, enter === true ? `${text}\n` : text);
-          loaded = true;
-
-          const final = planPaneInput(await context.observeInput(), paneId, force, "paste into");
-          if (isFailure(final) || final.signature !== initial.signature) {
-            refusal = paneInputChanged(paneId, "paste_text");
-          } else {
-            await final.pane.pasteBuffer(bufferName);
-          }
+          await context.tmux.cmd("load-buffer", ["-b", bufferName, "-"], {
+            stdin: enter === true ? `${text}\n` : text,
+            target: null,
+            timeoutMs: context.policy.commandTimeoutMs,
+          });
         } catch (error) {
+          if (error instanceof TmuxTransportError && error.delivery === "not_started") {
+            cleanupRequired = false;
+          }
           operationFailure = { error };
         }
-        try {
-          await context.tmux.deleteBuffer(bufferName);
-        } catch (error) {
-          if (loaded) cleanupFailure = { error };
+        if (operationFailure === undefined) {
+          try {
+            const final = planPaneInput(await context.observeInput(), paneId, force, "paste into");
+            if (isFailure(final) || final.signature !== initial.signature) {
+              refusal = paneInputChanged(paneId, "paste_text");
+            } else {
+              await final.pane.pasteBuffer(bufferName);
+            }
+          } catch (error) {
+            operationFailure = { error };
+          }
+        }
+        if (cleanupRequired) {
+          try {
+            await context.tmux.cmd("delete-buffer", ["-b", bufferName], {
+              target: null,
+              timeoutMs: context.policy.commandTimeoutMs,
+            });
+          } catch (error) {
+            cleanupFailure = { error };
+          }
         }
         if (operationFailure !== undefined && cleanupFailure !== undefined) {
           throw new AggregateError(
