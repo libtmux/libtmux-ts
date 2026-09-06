@@ -21,6 +21,7 @@ jobs:
   gates:
     name: Gates (Bun ${{ matrix.bun-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Runtime compatibility crosses every package, example and executed document.
     # Keep that axis complete while the tmux job below varies only tmux.
     strategy:
@@ -176,6 +177,7 @@ jobs:
   macos-package:
     name: macOS package canary
     runs-on: macos-15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -222,6 +224,7 @@ jobs:
   # once per release buys a repeat rather than a reading.
   tmux:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
