@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   backupPath,
+  BUILD_ENTRY,
   blankJsonc,
   buildSpec,
   classifySpec,
@@ -337,18 +338,28 @@ describe("source specs", () => {
     const info = cliFor("cursor");
     const bin = join(home, "build-bin");
     const marker = join(home, "build-ran");
+    // Its own repository, so the entry this asserts on is the one the stubbed
+    // build emitted. Pointed at the checkout it passes only where a previous
+    // real build already left `dist` behind, which is not a clean machine.
+    const repo = join(home, "build-repo");
+    const emitted = join(repo, BUILD_ENTRY);
     await seed(info, originalConfig(info));
+    await mkdir(dirname(emitted), { recursive: true });
     await mkdir(bin);
-    await writeFile(join(bin, "bun"), `#!/bin/sh\n: > ${JSON.stringify(marker)}\n`);
+    await writeFile(
+      join(bin, "bun"),
+      `#!/bin/sh\n: > ${JSON.stringify(marker)}\n: > ${JSON.stringify(emitted)}\n`,
+    );
     await chmod(join(bin, "bun"), 0o700);
 
     const result = await runSwap(
-      ["use", "--source", "build", "--repo", repositoryRoot, "--no-preflight", "--cli", "cursor"],
+      ["use", "--source", "build", "--repo", repo, "--no-preflight", "--cli", "cursor"],
       { PATH: bin },
     );
 
     expect(result.status).toBe(0);
     expect(await Bun.file(marker).exists()).toBe(true);
+    expect(await Bun.file(emitted).exists()).toBe(true);
     expect(await readServer(info, "libtmux")).toMatchObject({ command: "node" });
   });
 
@@ -1593,6 +1604,98 @@ describe("swapping a config", () => {
     expect((await stat(lock)).nlink).toBe(1);
   });
 
+  test.each(["symlink", "hardlink"] as const)(
+    "rejects a selected config that aliases the lock by %s in use and dry-run",
+    async (aliasKind) => {
+      const info = cliFor("cursor");
+      const lock = swapLockPath();
+      await mkdir(dirname(lock), { mode: 0o700, recursive: true });
+      await chmod(dirname(lock), 0o700);
+      await writeFile(lock, originalConfig(info), { mode: 0o600 });
+      await chmod(lock, 0o600);
+      await mkdir(dirname(info.configPath), { recursive: true });
+      if (aliasKind === "symlink") {
+        await symlink(relative(dirname(info.configPath), lock), info.configPath);
+      } else {
+        await link(lock, info.configPath);
+      }
+      const before = await fileState(lock);
+
+      for (const planOnly of [true, false]) {
+        // eslint-disable-next-line no-await-in-loop -- the dry run must refuse before the live one is tried.
+        const result = await runSwap([
+          "use",
+          "--source",
+          "dev",
+          "--no-preflight",
+          "--cli",
+          "cursor",
+          ...(planOnly ? ["--dry-run"] : []),
+        ]);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toMatch(/lock/u);
+      }
+
+      expect(await fileState(lock)).toEqual(before);
+      expect(await Bun.file(nativeStatePath()).exists()).toBe(false);
+    },
+  );
+
+  test.each([
+    "mode",
+    "link-count",
+    "directory",
+    "file-symlink",
+    "directory-symlink",
+    "directory-mode",
+  ] as const)("rejects unsafe lock %s topology before live and dry-run writes", async (defect) => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+    const lock = swapLockPath();
+    const directory = dirname(lock);
+    if (defect === "directory-symlink") {
+      const target = join(home, "lock-directory-target");
+      await mkdir(target, { mode: 0o700, recursive: true });
+      await mkdir(dirname(directory), { recursive: true });
+      await symlink(target, directory);
+      await writeFile(join(target, "state.lock"), "", { mode: 0o600 });
+    } else {
+      await mkdir(directory, { mode: 0o700, recursive: true });
+      await chmod(directory, defect === "directory-mode" ? 0o755 : 0o700);
+      if (defect === "directory") {
+        await mkdir(lock);
+      } else if (defect === "file-symlink") {
+        const target = join(home, "lock-target");
+        await writeFile(target, "", { mode: 0o600 });
+        await symlink(target, lock);
+      } else {
+        await writeFile(lock, "", { mode: defect === "mode" ? 0o640 : 0o600 });
+        await chmod(lock, defect === "mode" ? 0o640 : 0o600);
+        if (defect === "link-count") await link(lock, join(home, "extra-lock-link"));
+      }
+    }
+    const configBefore = await fileState(info.configPath);
+    const treeBefore = (await readdir(home, { recursive: true })).toSorted();
+
+    for (const planOnly of [true, false]) {
+      // eslint-disable-next-line no-await-in-loop -- the dry run must refuse before the live one is tried.
+      const result = await runSwap([
+        "use",
+        "--source",
+        "dev",
+        "--no-preflight",
+        "--cli",
+        "cursor",
+        ...(planOnly ? ["--dry-run"] : []),
+      ]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/lock/u);
+    }
+
+    expect(await fileState(info.configPath)).toEqual(configBefore);
+    expect((await readdir(home, { recursive: true })).toSorted()).toEqual(treeBefore);
+  });
+
   test("kernel-releases the record lock when the lock worker dies", async () => {
     const lock = swapLockPath();
     const directory = dirname(lock);
@@ -1680,6 +1783,8 @@ describe("swapping a config", () => {
     await chmod(first.configPath, 0o600);
     await chmod(later.configPath, 0o640);
 
+    // Named rather than detected: detection needs both clients installed on the
+    // machine running the test, which a clean runner does not have.
     const { status, stderr } = await runSwap([
       "use",
       "--source",
@@ -1687,6 +1792,8 @@ describe("swapping a config", () => {
       "--repo",
       repositoryRoot,
       "--no-preflight",
+      "--cli",
+      "claude,cursor",
     ]);
 
     expect(status).toBe(1);
