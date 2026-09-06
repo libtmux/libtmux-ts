@@ -82,6 +82,8 @@ function makeReleaseIO(
   options: {
     readonly npmVersion?: string;
     readonly publishUpdatesRegistry?: boolean;
+    readonly registryLagReads?: number;
+    readonly publishSkipsDistTag?: boolean;
     readonly queryVersionError?: Error;
     readonly queryVersionErrorPackage?: string;
   } = {},
@@ -99,6 +101,18 @@ function makeReleaseIO(
     { readonly integrity: string; readonly name: string; readonly version: string }
   >();
   const initialVersionQueries = new Set<string>();
+  // SPIKE: npm accepts a publish and reveals it to readers later. Writes land
+  // here first and move into `registry` only after `registryLagReads` reads.
+  const pending: { apply: () => void }[] = [];
+  let readsUntilVisible = options.registryLagReads ?? 0;
+  const settleReads = (): void => {
+    if (pending.length === 0) return;
+    if (readsUntilVisible > 0) {
+      readsUntilVisible -= 1;
+      return;
+    }
+    for (const write of pending.splice(0)) write.apply();
+  };
 
   const io: ReleaseIO = {
     npmVersion: async () => options.npmVersion ?? "11.5.1",
@@ -123,12 +137,14 @@ function makeReleaseIO(
     },
     queryPackage: async (name): Promise<RegistryPackageState> => {
       calls.push(`package:${name}`);
+      settleReads();
       const found = registry.get(name);
       if (found === undefined) throw new RegistryPackageNotFound(name);
       return { distTags: { ...found.distTags } };
     },
     queryVersion: async (name, target): Promise<RegistryVersionState | undefined> => {
       calls.push(`version:${name}`);
+      settleReads();
       initialVersionQueries.add(name);
       if (options.queryVersionError !== undefined && options.queryVersionErrorPackage === name) {
         throw options.queryVersionError;
@@ -148,8 +164,12 @@ function makeReleaseIO(
       if (dryRun || options.publishUpdatesRegistry === false) return;
       const target = registry.get(artifact.name);
       if (target === undefined) throw new Error(`missing registry package ${artifact.name}`);
-      target.versions.set(artifact.version, artifact.integrity);
-      target.distTags[tag] = artifact.version;
+      const apply = (): void => {
+        target.versions.set(artifact.version, artifact.integrity);
+        if (options.publishSkipsDistTag !== true) target.distTags[tag] = artifact.version;
+      };
+      if ((options.registryLagReads ?? 0) === 0) apply();
+      else pending.push({ apply });
     },
   };
   return { calls, io, packed, publishes };
@@ -209,6 +229,7 @@ describe("coordinated release", () => {
         published: packages.map(([, name]) => name),
         skipped: [],
         version: "1.0.0",
+        warnings: [],
       });
       expect(publishes).toEqual(
         packages.map(([directory, name]) => ({
@@ -285,6 +306,7 @@ describe("coordinated release", () => {
         published: ["@libtmux/mcp", "@libtmux/workspace"],
         skipped: ["libtmux"],
         version: "1.0.0",
+        warnings: [],
       });
       expect(publishes.map(({ name }) => name)).toEqual(["@libtmux/mcp", "@libtmux/workspace"]);
     } finally {
@@ -674,7 +696,7 @@ describe("coordinated release", () => {
         io,
       );
 
-      expect(waits).toEqual([1_000]);
+      expect(waits).toEqual([30_000]);
       expect([...queries.values()]).toEqual([3, 3, 3]);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
@@ -841,4 +863,55 @@ describe("coordinated release", () => {
       }
     },
   );
+});
+
+// SPIKE: reproduce the v0.1.0-alpha.8 failure — the publishes all succeeded and
+// the job still failed, because the registry revealed them after the budget.
+describe("registry read lag after publishing", () => {
+  test("succeeds once the registry reveals a publish it accepted", async () => {
+    const fixture = await makeReleaseFixture("1.0.0");
+    const { io, publishes } = makeReleaseIO(makeRegistry(), { registryLagReads: 40 });
+    try {
+      const report = await coordinateRelease(
+        {
+          artifactDirectory: fixture.artifacts,
+          dryRun: false,
+          eventName: "push",
+          refName: "v1.0.0",
+          repositoryRoot: fixture.root,
+        },
+        io,
+      );
+
+      expect(report.published).toEqual(packages.map(([, name]) => name));
+      expect(publishes).toHaveLength(3);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("a dist-tag the registry has not caught up on", () => {
+  test("reports the lag and still succeeds", async () => {
+    const fixture = await makeReleaseFixture("1.0.0");
+    const { io } = makeReleaseIO(makeRegistry(), { publishSkipsDistTag: true });
+    io.wait = async () => {};
+    try {
+      const report = await coordinateRelease(
+        {
+          artifactDirectory: fixture.artifacts,
+          dryRun: false,
+          eventName: "push",
+          refName: "v1.0.0",
+          repositoryRoot: fixture.root,
+        },
+        io,
+      );
+
+      expect(report.published).toEqual(packages.map(([, name]) => name));
+      expect(report.warnings).toEqual(packages.map(([, name]) => `${name}@latest: expected 1.0.0`));
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
 });
