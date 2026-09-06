@@ -876,8 +876,9 @@ which the integration suite runs against a real tmux server:
 const session = await server.newSession({ name: "agent" });
 const pane = session.activePane;
 if (pane === undefined) throw new Error("a new session always has one pane");
-return pane.run(command, {
+const output = await pane.run(command, {
   until: marker,
+});
 ```
 
 ### Build a workspace

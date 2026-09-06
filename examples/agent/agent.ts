@@ -15,10 +15,12 @@ export async function runAndWait(
   const session = await server.newSession({ name: "agent" });
   const pane = session.activePane;
   if (pane === undefined) throw new Error("a new session always has one pane");
-  return pane.run(command, {
+  const output = await pane.run(command, {
     until: marker,
     ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   });
+
+  return output;
 }
 
 /**
