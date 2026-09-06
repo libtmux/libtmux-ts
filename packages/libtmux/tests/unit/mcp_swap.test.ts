@@ -1657,23 +1657,29 @@ describe("swapping a config", () => {
     await writeFile(
       helper,
       `
-        const { buildSpec, knownClis, writeServer } = await import(${JSON.stringify(swapModule)});
+        const { buildSpec, knownClis, useNativeConfigs } = await import(${JSON.stringify(swapModule)});
         const [scratch, marker, release, repo, pause] = process.argv.slice(2);
-        const info = knownClis({ XDG_CONFIG_HOME: scratch + "/.config" }, scratch)
-          .find((candidate) => candidate.name === "cursor");
+        const all = knownClis({ XDG_CONFIG_HOME: scratch + "/.config" }, scratch);
+        const info = all.find((candidate) => candidate.name === "cursor");
         await Bun.write(marker + ".started", "started\\n");
-        const outcome = await writeServer(
-          info,
+        const outcome = await useNativeConfigs(
+          all,
+          [info],
           "libtmux",
+          repo,
+          "user",
           buildSpec({ kind: "dev", repo }),
-          { afterStaging: async () => {
+          false,
+          { dryRun: false,
+            hooks: { afterStaging: async () => {
               await Bun.write(marker, "ready\\n");
               if (pause === "yes") {
                 while (!(await Bun.file(release).exists())) await Bun.sleep(2);
               }
             } },
+            skipPreflight: true },
         );
-        console.log(outcome);
+        console.log(outcome.length);
       `,
     );
     const environment = {
@@ -1728,11 +1734,24 @@ describe("swapping a config", () => {
     await seed(info, originalConfig(info));
     let observation = "not-run";
 
-    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }), {
-      afterStaging: async () => {
-        observation = await tryPythonRecordLock(swapLockPath());
+    await useNativeConfigs(
+      knownClis({ XDG_CONFIG_HOME: join(home, ".config") }, home),
+      [info],
+      "libtmux",
+      resolve(repositoryRoot),
+      "user",
+      buildSpec({ kind: "dev", repo: resolve(repositoryRoot) }),
+      false,
+      {
+        dryRun: false,
+        hooks: {
+          afterStaging: async () => {
+            observation = await tryPythonRecordLock(swapLockPath());
+          },
+        },
+        skipPreflight: true,
       },
-    });
+    );
 
     expect(observation).toBe("blocked");
     expect(await tryPythonRecordLock(swapLockPath())).toBe("acquired");
@@ -1819,14 +1838,16 @@ describe("swapping a config", () => {
     const info = cliFor("cursor");
     await seed(info, originalConfig(info));
 
-    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+    expect(
+      (await runSwap(["use", "--source", "dev", "--no-preflight", "--cli", "cursor"])).status,
+    ).toBe(0);
     const lock = swapLockPath();
     const before = await pathIdentity(lock);
     const metadata = await stat(lock);
     expect(metadata.mode & 0o777).toBe(0o600);
     expect(metadata.nlink).toBe(1);
 
-    await revertConfig(info);
+    expect((await runSwap(["revert", "--cli", "cursor"])).status).toBe(0);
     expect(await pathIdentity(lock)).toBe(before);
     expect((await stat(lock)).nlink).toBe(1);
   });
