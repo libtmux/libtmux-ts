@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
-import { TmuxTransportError, type Pane } from "libtmux";
+import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
 
 import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
 import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "../src/command_frame.js";
@@ -15,10 +15,17 @@ describe("command framing", () => {
   const authority: InputAuthority = {
     endpointDevice: "2096",
     endpointInode: "9408963",
-    pid: "42",
+    pid: String(process.pid),
     routeSelector: "path:/tmp/libtmux-command-frame",
     socketPath: "/tmp/libtmux-command-frame",
     startTime: "700",
+  };
+  const detachedIdentity = {
+    attendedPaneIds: [],
+    callerPaneId: undefined,
+    callerPaneIsOnThisServer: false,
+    clients: [],
+    serverPid: authority.pid,
   };
   const shells = [
     ...new Set(
@@ -57,6 +64,61 @@ describe("command framing", () => {
       String.fromCharCode(Number.parseInt(octal, 8)),
     );
     return { id, source };
+  }
+
+  async function startCancelledCommand(
+    paneId: string,
+    observeInput: ToolContext["observeInput"],
+    capturedAuthority: InputAuthority = authority,
+  ): Promise<{
+    readonly id: string;
+    readonly result: Awaited<ReturnType<typeof runFramedCommand>>;
+    readonly tail: PaneTail;
+  }> {
+    const controller = new AbortController();
+    const tail = new PaneTail(paneId);
+    let id = "";
+    const pane = {
+      format: { session_id: "$1" },
+      id: paneId,
+      cmd: async (_command: string, args: readonly string[]) => {
+        id = dispatchedFrame(args).id;
+        tail.append(`${id}_S\n`);
+        controller.abort();
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      observeInput,
+      policy: resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "250" }),
+    } as unknown as ToolContext;
+    const result = await runFramedCommand(
+      context,
+      pane,
+      "true",
+      1_000,
+      controller.signal,
+      true,
+      undefined,
+      capturedAuthority,
+    );
+    return { id, result, tail };
+  }
+
+  async function settlesBeforeMarker(
+    result: Awaited<ReturnType<typeof runFramedCommand>>,
+    tail: PaneTail,
+    id: string,
+  ): Promise<boolean> {
+    let settled = false;
+    void result.settled.then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    const beforeMarker = settled;
+    tail.append(`${id}_E 0 ${id}_D\n`);
+    await result.settled;
+    return beforeMarker;
   }
 
   test("parses a complete framed result without pane state", () => {
@@ -781,6 +843,78 @@ describe("command framing", () => {
 
     tail.append(`${id}_E 0 ${id}_D\n`);
     await result.settled;
+  });
+
+  test.each([
+    ["conflicting", [true, false]],
+    ["missing", [true, undefined]],
+    ["malformed", [true, 1]],
+  ] as const)("retains ownership across %s linked dead state", async (_name, deadStates) => {
+    const panes = deadStates.map((dead) => ({ dead, id: "%92" }));
+    const { id, result, tail } = await startCancelledCommand("%92", async () => ({
+      authority,
+      identity: detachedIdentity,
+      snapshot: {
+        panes: { first: () => panes[0], toArray: () => panes },
+      } as unknown as ServerSnapshot,
+    }));
+    expect(await settlesBeforeMarker(result, tail, id)).toBe(false);
+  });
+
+  test("settles when every linked view authenticates pane death", async () => {
+    const panes = [
+      { dead: true, id: "%93" },
+      { dead: true, id: "%93" },
+    ];
+    const { result } = await startCancelledCommand("%93", async () => ({
+      authority,
+      identity: detachedIdentity,
+      snapshot: {
+        panes: { first: () => panes[0], toArray: () => panes },
+      } as unknown as ServerSnapshot,
+    }));
+
+    await expect(result.settled).resolves.toBeUndefined();
+  });
+
+  test("settles when the captured daemon PID no longer exists", async () => {
+    const probe = spyOn(process, "kill").mockImplementation((pid, signal) => {
+      expect({ pid, signal }).toEqual({ pid: process.pid, signal: 0 });
+      throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+    });
+    try {
+      const { id, result, tail } = await startCancelledCommand("%94", async () => {
+        throw new Error("tmux is gone");
+      });
+      expect(await settlesBeforeMarker(result, tail, id)).toBe(true);
+      expect(probe).toHaveBeenCalledTimes(1);
+    } finally {
+      probe.mockRestore();
+    }
+  });
+
+  test.each([
+    ["permission denial", authority.pid, "EPERM", 1],
+    ["unexpected probe error", authority.pid, "EIO", 1],
+    ["noncanonical captured PID", `0${authority.pid}`, "ESRCH", 0],
+  ] as const)("retains ownership after %s", async (_name, pid, code, expectedProbes) => {
+    const captured = { ...authority, pid };
+    const probe = spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error(code), { code });
+    });
+    try {
+      const { id, result, tail } = await startCancelledCommand(
+        "%95",
+        async () => {
+          throw new Error("ambiguous observation");
+        },
+        captured,
+      );
+      expect(await settlesBeforeMarker(result, tail, id)).toBe(false);
+      expect(probe).toHaveBeenCalledTimes(expectedProbes);
+    } finally {
+      probe.mockRestore();
+    }
   });
 
   test("settles only when the captured daemon generation disappears", async () => {

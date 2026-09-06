@@ -145,6 +145,29 @@ const SETTLEMENT_POLL_MS = 1_000;
 /** How often settlement confirms that a quiet pane still exists. */
 const SETTLEMENT_LIVENESS_MS = 5_000;
 
+function observedPaneState(
+  snapshot: Awaited<ReturnType<ToolContext["snapshot"]>>,
+  paneId: string,
+): "alive" | "gone" | "unknown" {
+  const panes = snapshot.panes.toArray().filter((pane) => pane.id === paneId);
+  if (panes.length === 0) return "gone";
+  const dead = panes[0]?.dead;
+  if (typeof dead !== "boolean" || panes.some((pane) => pane.dead !== dead)) return "unknown";
+  return dead ? "gone" : "alive";
+}
+
+function localProcessEnded(rawPid: string): boolean {
+  if (!/^[1-9][0-9]*$/u.test(rawPid)) return false;
+  const pid = Number(rawPid);
+  if (!Number.isSafeInteger(pid)) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return error instanceof Error && (error as NodeJS.ErrnoException).code === "ESRCH";
+  }
+}
+
 async function capturedPaneState(
   context: ToolContext,
   paneId: string,
@@ -155,13 +178,11 @@ async function capturedPaneState(
     if (authority !== undefined && typeof context.observeInput === "function") {
       const current = await context.observeInput(signal);
       if (!sameInputAuthority(authority, current.authority)) return "gone";
-      const pane = current.snapshot.panes.first({ id: paneId });
-      return pane === undefined || pane.dead === true ? "gone" : "alive";
+      return observedPaneState(current.snapshot, paneId);
     }
-    const pane = (await context.snapshot(signal)).panes.first({ id: paneId });
-    return pane === undefined || pane.dead === true ? "gone" : "alive";
+    return observedPaneState(await context.snapshot(signal), paneId);
   } catch {
-    return "unknown";
+    return authority !== undefined && localProcessEnded(authority.pid) ? "gone" : "unknown";
   }
 }
 
