@@ -34,6 +34,7 @@ import {
   removeServerTable,
   renderServerTable,
   revertConfig,
+  revertConfigs,
   spliceEntry,
   toEntry,
   writeServer,
@@ -94,6 +95,14 @@ async function seed(info: CliInfo, contents: string): Promise<void> {
 async function pathIdentity(path: string): Promise<string> {
   const metadata = await lstat(path, { bigint: true });
   return [metadata.dev, metadata.ino, metadata.birthtimeNs].map(String).join(":");
+}
+
+async function fileState(path: string): Promise<{ identity: string; mode: number; raw: string }> {
+  return {
+    identity: await pathIdentity(path),
+    mode: (await stat(path)).mode & 0o777,
+    raw: await readFile(path, "utf8"),
+  };
 }
 
 async function seedSymlink(
@@ -462,9 +471,9 @@ describe("swapping a config", () => {
         expect((await stat(info.configPath)).mode & 0o777).toBe(index % 2 === 0 ? 0o600 : 0o640);
       }),
     );
+    expect(await revertConfigs(infos)).toEqual(infos.map(() => true));
     await Promise.all(
       infos.map(async (info, index) => {
-        expect(await revertConfig(info)).toBe(true);
         const original = originals.get(info.name);
         if (original === undefined) throw new Error(`missing ${info.name} fixture`);
         expect((await lstat(info.configPath)).isSymbolicLink()).toBe(true);
@@ -474,7 +483,42 @@ describe("swapping a config", () => {
         expect(await Bun.file(backupRoutePath(info.configPath)).exists()).toBe(false);
       }),
     );
+    expect(
+      (await readdir(home, { recursive: true })).some((path) => /\.mcp-swap-\d+-/u.test(path)),
+    ).toBe(false);
   });
+
+  test.each(["config commit", "recovery retirement"] as const)(
+    "rolls back an earlier %s with exact inode identities",
+    async (failure) => {
+      const infos = [cliFor("claude"), cliFor("cursor")];
+      await Promise.all(infos.map(async (info) => seed(info, originalConfig(info))));
+      await writeServers(infos, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+      const paths = infos.flatMap((info) => [
+        info.configPath,
+        backupPath(info.configPath),
+        backupRoutePath(info.configPath),
+      ]);
+      const before = await Promise.all(paths.map(fileState));
+      const failLater = (_info: CliInfo, index: number): void => {
+        if (index === 1) throw new Error("injected later restore failure");
+      };
+
+      await expect(
+        revertConfigs(
+          infos,
+          failure === "config commit"
+            ? { beforeConfigCommit: failLater }
+            : { beforeRecoveryRetire: failLater },
+        ),
+      ).rejects.toThrow(/injected later restore failure/u);
+
+      expect(await Promise.all(paths.map(fileState))).toEqual(before);
+      expect(
+        (await readdir(home, { recursive: true })).some((path) => /\.mcp-swap-\d+-/u.test(path)),
+      ).toBe(false);
+    },
+  );
 
   test("rejects selected configs that resolve to one target", async () => {
     const first = cliFor("claude");
@@ -1173,6 +1217,64 @@ describe("dry-run", () => {
       }
     },
   );
+
+  test("validates every selected revert before reporting success", async () => {
+    const first = cliFor("claude");
+    const later = cliFor("cursor");
+    await seed(first, originalConfig(first));
+    await seed(later, originalConfig(later));
+    await writeServers([first, later], "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+    await writeFile(backupRoutePath(later.configPath), "{ malformed\n", { mode: 0o600 });
+    const beforeTree = (await readdir(home, { recursive: true })).toSorted();
+    const firstBefore = await Promise.all(
+      [first.configPath, backupPath(first.configPath), backupRoutePath(first.configPath)].map(
+        fileState,
+      ),
+    );
+
+    const result = await runSwap(["revert", "--dry-run"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/cursor .*recovery route/u);
+    expect(result.stdout).not.toContain("would restore");
+    expect(
+      await Promise.all(
+        [first.configPath, backupPath(first.configPath), backupRoutePath(first.configPath)].map(
+          fileState,
+        ),
+      ),
+    ).toEqual(firstBefore);
+    expect((await readdir(home, { recursive: true })).toSorted()).toEqual(beforeTree);
+  });
+
+  test("validates every selected revert before restoring any", async () => {
+    const first = cliFor("claude");
+    const later = cliFor("cursor");
+    await seed(first, originalConfig(first));
+    await seed(later, originalConfig(later));
+    await writeServers([first, later], "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+    await writeFile(backupRoutePath(later.configPath), "{ malformed\n", { mode: 0o600 });
+    const beforeTree = (await readdir(home, { recursive: true })).toSorted();
+    const firstBefore = await Promise.all(
+      [first.configPath, backupPath(first.configPath), backupRoutePath(first.configPath)].map(
+        fileState,
+      ),
+    );
+
+    const result = await runSwap(["revert"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/cursor .*recovery route/u);
+    expect(result.stdout).not.toContain("restored");
+    expect(
+      await Promise.all(
+        [first.configPath, backupPath(first.configPath), backupRoutePath(first.configPath)].map(
+          fileState,
+        ),
+      ),
+    ).toEqual(firstBefore);
+    expect((await readdir(home, { recursive: true })).toSorted()).toEqual(beforeTree);
+  });
 });
 
 describe("CLI table", () => {
