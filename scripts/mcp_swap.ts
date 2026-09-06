@@ -1,16 +1,20 @@
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { constants } from "node:fs";
+import { closeSync, constants, fchmodSync, fstatSync, lstatSync, openSync } from "node:fs";
 import {
   access,
   chmod,
+  link,
   lstat,
+  mkdtemp,
   mkdir,
+  open,
   readFile,
   realpath,
   rename,
-  rm,
+  rmdir,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
@@ -63,6 +67,11 @@ export interface ServerSpec {
 }
 
 const MAX_PREFLIGHT_OUTPUT_BYTES = 4 * 1024 * 1024;
+const LOCK_WORKER_COMMAND = "__mcp-swap-lock-worker";
+const LOCK_EX = 2;
+const LOCK_UN = 8;
+const O_CLOEXEC =
+  (constants as unknown as Readonly<Record<string, number | undefined>>).O_CLOEXEC ?? 0;
 
 /**
  * `$XDG_CONFIG_HOME` when absolute, else `<home>/.config`.
@@ -81,6 +90,21 @@ export function xdgConfigHome(
   // backup path that resolves against the working directory, so a revert from
   // anywhere else could no longer find it.
   return raw !== undefined && raw !== "" && isAbsolute(raw) ? raw : join(home, ".config");
+}
+
+export function xdgStateHome(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  home: string = homedir(),
+): string {
+  const raw = environment.XDG_STATE_HOME;
+  return raw !== undefined && raw !== "" && isAbsolute(raw) ? raw : join(home, ".local", "state");
+}
+
+export function swapLockPath(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+  home: string = homedir(),
+): string {
+  return join(xdgStateHome(environment, home), "libtmux-mcp-dev", "swap", "state.lock");
 }
 
 export function knownClis(
@@ -562,6 +586,321 @@ function linkIdentity(metadata: {
   return `${fileIdentity(metadata)}:${String(metadata.ctimeNs)}`;
 }
 
+function sameFileMetadata(
+  expected: Parameters<typeof fileIdentity>[0] & { readonly mode: bigint; readonly nlink: bigint },
+  actual: Parameters<typeof fileIdentity>[0] & { readonly mode: bigint; readonly nlink: bigint },
+): boolean {
+  return (
+    fileIdentity(expected) === fileIdentity(actual) &&
+    expected.mode === actual.mode &&
+    expected.nlink === actual.nlink
+  );
+}
+
+interface LockDirectoryState {
+  readonly identity: string;
+  readonly logicalPath: string;
+  readonly mode: number;
+  readonly physicalPath: string;
+}
+
+interface SwapLockState {
+  readonly directory: LockDirectoryState | undefined;
+  readonly identity: string | undefined;
+  readonly links: number | undefined;
+  readonly logicalPath: string;
+  readonly mode: number | undefined;
+  readonly physicalPath: string;
+}
+
+interface LockWorkerMessage {
+  readonly error?: string;
+  readonly kind: "acquired" | "error" | "released";
+  readonly state?: SwapLockState;
+}
+
+interface NativeLockLibrary {
+  close(): void;
+  readonly symbols: {
+    flock(descriptor: number, operation: number): number;
+    openat(directory: number, path: Buffer, flags: number, mode: number): number;
+  };
+}
+
+function sameSwapLock(expected: SwapLockState, actual: SwapLockState): boolean {
+  return (
+    expected.directory?.identity === actual.directory?.identity &&
+    expected.directory?.logicalPath === actual.directory?.logicalPath &&
+    expected.directory?.mode === actual.directory?.mode &&
+    expected.directory?.physicalPath === actual.directory?.physicalPath &&
+    expected.identity === actual.identity &&
+    expected.links === actual.links &&
+    expected.logicalPath === actual.logicalPath &&
+    expected.mode === actual.mode &&
+    expected.physicalPath === actual.physicalPath
+  );
+}
+
+function lockMatchesMetadata(
+  lock: SwapLockState,
+  metadata: Parameters<typeof fileIdentity>[0] & { readonly mode: bigint; readonly nlink: bigint },
+): boolean {
+  return (
+    lock.identity !== undefined &&
+    lock.identity === fileIdentity(metadata) &&
+    lock.mode === Number(metadata.mode & 0o7777n) &&
+    lock.links === Number(metadata.nlink)
+  );
+}
+
+async function inspectLockDirectory(path: string): Promise<LockDirectoryState | undefined> {
+  let before;
+  try {
+    before = await lstat(path, { bigint: true });
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw error;
+  }
+  if (before.isSymbolicLink() || !before.isDirectory()) {
+    throw new TypeError(`swap lock directory is not a regular directory: ${path}`);
+  }
+  const physicalPath = await realpath(path);
+  const after = await lstat(path, { bigint: true });
+  const mode = Number(after.mode & 0o7777n);
+  if (!sameFileMetadata(before, after)) {
+    throw new Error(`swap lock directory changed while it was inspected: ${path}`);
+  }
+  if (mode !== 0o700) throw new TypeError(`swap lock directory mode must be 0700: ${path}`);
+  return { identity: fileIdentity(after), logicalPath: path, mode, physicalPath };
+}
+
+async function inspectSwapLockAt(logicalPath: string): Promise<SwapLockState> {
+  const directory = await inspectLockDirectory(dirname(logicalPath));
+  const physicalPath =
+    directory === undefined
+      ? await canonicalMissingPath(logicalPath)
+      : join(directory.physicalPath, basename(logicalPath));
+  let before;
+  try {
+    before = await lstat(logicalPath, { bigint: true });
+  } catch (error) {
+    if (isMissing(error)) {
+      return {
+        directory,
+        identity: undefined,
+        links: undefined,
+        logicalPath,
+        mode: undefined,
+        physicalPath,
+      };
+    }
+    throw error;
+  }
+  if (before.isSymbolicLink() || !before.isFile()) {
+    throw new TypeError(`swap lock is not a regular file: ${logicalPath}`);
+  }
+  const resolved = await realpath(logicalPath);
+  const after = await lstat(logicalPath, { bigint: true });
+  const mode = Number(after.mode & 0o7777n);
+  if (resolved !== physicalPath || !sameFileMetadata(before, after)) {
+    throw new Error(`swap lock changed while it was inspected: ${logicalPath}`);
+  }
+  if (mode !== 0o600) throw new TypeError(`swap lock mode must be 0600: ${logicalPath}`);
+  if (after.nlink !== 1n) throw new TypeError(`swap lock must have one link: ${logicalPath}`);
+  return {
+    directory,
+    identity: fileIdentity(after),
+    links: Number(after.nlink),
+    logicalPath,
+    mode,
+    physicalPath,
+  };
+}
+
+async function inspectSwapLock(): Promise<SwapLockState> {
+  return inspectSwapLockAt(swapLockPath());
+}
+
+function nativeLibraryName(): string {
+  if (process.platform === "darwin") return "/usr/lib/libSystem.B.dylib";
+  if (process.platform === "linux") return "libc.so.6";
+  throw new Error(`swap locking is unsupported on ${process.platform}`);
+}
+
+async function runLockWorker(directoryPath: string, lockName: string): Promise<number> {
+  let directoryDescriptor: number | undefined;
+  let lockDescriptor: number | undefined;
+  let library: NativeLockLibrary | undefined;
+  const send = (message: LockWorkerMessage): void => {
+    process.stdout.write(`${JSON.stringify(message)}\n`);
+  };
+  try {
+    if (typeof constants.O_NOFOLLOW !== "number" || typeof constants.O_DIRECTORY !== "number") {
+      throw new Error("platform cannot open the swap lock without following links");
+    }
+    const { dlopen, FFIType } = await import("bun:ffi");
+    library = dlopen(nativeLibraryName(), {
+      flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+      openat: {
+        args: [FFIType.i32, FFIType.cstring, FFIType.i32, FFIType.i32],
+        returns: FFIType.i32,
+      },
+    }) as unknown as NativeLockLibrary;
+    directoryDescriptor = openSync(
+      directoryPath,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW | O_CLOEXEC,
+    );
+    const openedDirectory = fstatSync(directoryDescriptor, { bigint: true });
+    const directoryAtPath = lstatSync(directoryPath, { bigint: true });
+    if (
+      directoryAtPath.isSymbolicLink() ||
+      !directoryAtPath.isDirectory() ||
+      !sameFileMetadata(openedDirectory, directoryAtPath) ||
+      Number(openedDirectory.mode & 0o7777n) !== 0o700
+    ) {
+      throw new Error("swap lock directory changed before descriptor authentication");
+    }
+    const flags = constants.O_RDWR | constants.O_NOFOLLOW | O_CLOEXEC;
+    const encodedLockName = Buffer.from(`${lockName}\0`);
+    lockDescriptor = library.symbols.openat(
+      directoryDescriptor,
+      encodedLockName,
+      flags | constants.O_CREAT | constants.O_EXCL,
+      0o600,
+    );
+    if (lockDescriptor === -1) {
+      lockDescriptor = library.symbols.openat(directoryDescriptor, encodedLockName, flags, 0);
+    } else {
+      fchmodSync(lockDescriptor, 0o600);
+    }
+    if (lockDescriptor === -1) throw new Error("could not open the persistent swap lock");
+    if (library.symbols.flock(lockDescriptor, LOCK_EX) !== 0) {
+      throw new Error("could not acquire the persistent swap lock");
+    }
+    const state = await inspectSwapLockAt(join(directoryPath, lockName));
+    const openedLock = fstatSync(lockDescriptor, { bigint: true });
+    if (!lockMatchesMetadata(state, openedLock)) {
+      throw new Error("swap lock descriptor does not match its public path");
+    }
+    send({ kind: "acquired", state });
+    await Bun.stdin.text();
+    const current = await inspectSwapLockAt(join(directoryPath, lockName));
+    const openedAgain = fstatSync(lockDescriptor, { bigint: true });
+    if (!sameSwapLock(state, current) || !lockMatchesMetadata(state, openedAgain)) {
+      throw new Error("swap lock changed before release");
+    }
+    if (library.symbols.flock(lockDescriptor, LOCK_UN) !== 0) {
+      throw new Error("could not release the persistent swap lock");
+    }
+    send({ kind: "released" });
+    return 0;
+  } catch (error) {
+    send({ kind: "error", error: (error as Error).message });
+    return 1;
+  } finally {
+    if (lockDescriptor !== undefined && lockDescriptor !== -1) closeSync(lockDescriptor);
+    if (directoryDescriptor !== undefined) closeSync(directoryDescriptor);
+    library?.close();
+  }
+}
+
+interface SwapLockHandle {
+  readonly assert: () => Promise<void>;
+  readonly release: () => Promise<void>;
+  readonly state: SwapLockState;
+}
+
+async function acquireSwapLock(): Promise<SwapLockHandle> {
+  const logicalPath = swapLockPath();
+  const directoryPath = dirname(logicalPath);
+  const before = await inspectLockDirectory(directoryPath);
+  if (before === undefined) await mkdir(directoryPath, { mode: 0o700, recursive: true });
+  const directory = await inspectLockDirectory(directoryPath);
+  if (directory === undefined) throw new Error("swap lock directory was not created");
+  const child = Bun.spawn(
+    [process.execPath, import.meta.path, LOCK_WORKER_COMMAND, directoryPath, basename(logicalPath)],
+    { env: { ...process.env }, stderr: "pipe", stdin: "pipe", stdout: "pipe" },
+  );
+  const stderr = new Response(child.stderr).text();
+  const reader = child.stdout.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  const readMessage = async (): Promise<LockWorkerMessage> => {
+    for (;;) {
+      const newline = buffered.indexOf("\n");
+      if (newline !== -1) {
+        const line = buffered.slice(0, newline);
+        buffered = buffered.slice(newline + 1);
+        return JSON.parse(line) as LockWorkerMessage;
+      }
+      // eslint-disable-next-line no-await-in-loop -- one framed lock message is read in order.
+      const next = await reader.read();
+      if (next.done) {
+        // eslint-disable-next-line no-await-in-loop -- diagnostics are consumed only after EOF.
+        throw new Error(`swap lock worker exited unexpectedly: ${(await stderr).trim()}`);
+      }
+      buffered += decoder.decode(next.value, { stream: true });
+    }
+  };
+  const acquired = await readMessage();
+  if (acquired.kind !== "acquired" || acquired.state === undefined) {
+    child.stdin.end();
+    await child.exited;
+    throw new Error(`swap lock is unusable: ${acquired.error ?? "invalid worker protocol"}`);
+  }
+  const state = acquired.state;
+  const assert = async (): Promise<void> => {
+    const current = await inspectSwapLock();
+    if (!sameSwapLock(state, current)) throw new Error("swap lock path changed while held");
+  };
+  try {
+    await assert();
+  } catch (error) {
+    child.stdin.end();
+    await child.exited;
+    throw error;
+  }
+  let released = false;
+  return {
+    assert,
+    release: async () => {
+      if (released) return;
+      released = true;
+      child.stdin.end();
+      const message = await readMessage();
+      const status = await child.exited;
+      const diagnostic = (await stderr).trim();
+      if (message.kind !== "released" || status !== 0) {
+        throw new Error(
+          `swap lock release failed: ${message.error ?? (diagnostic || "invalid worker protocol")}`,
+        );
+      }
+    },
+    state,
+  };
+}
+
+async function withSwapLock<T>(action: (lock: SwapLockHandle) => Promise<T>): Promise<T> {
+  const lock = await acquireSwapLock();
+  let result: T | undefined;
+  let failure: unknown;
+  try {
+    result = await action(lock);
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await lock.release();
+  } catch (error) {
+    if (failure !== undefined) {
+      throw new AggregateError([failure, error], "transaction and swap lock release both failed");
+    }
+    throw error;
+  }
+  if (failure !== undefined) throw failure;
+  return result!;
+}
+
 function contentDigest(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
@@ -677,19 +1016,59 @@ function recoveryRoutePath(configPath: string): string {
  * rename swaps them in whole.
  */
 export async function writeAtomic(path: string, data: string, mode?: number): Promise<void> {
-  const route = await inspectConfigRoute(path);
-  const temporary = await stageFile(
-    route.targetPath,
-    data,
-    mode ?? (await fileMode(route.targetPath)),
-  );
-  try {
-    await assertConfigRoute(route);
-    await rename(temporary.path, route.targetPath);
-  } catch (error) {
-    await rm(temporary.path, { force: true });
-    throw error;
-  }
+  const inspect = async (lock?: SwapLockState) => {
+    const route = await inspectConfigRoute(path);
+    const current =
+      route.kind === "missing"
+        ? undefined
+        : await readRecoveryFile(route.targetPath, "atomic write target");
+    if (route.kind !== "missing" && current?.identity !== route.targetIdentity) {
+      throw new Error(`atomic write target changed while it was planned: ${path}`);
+    }
+    await assertDistinctTransactionArtifacts(
+      [
+        {
+          info: { configPath: path, name: "atomic write" },
+          recovery: { backup: undefined, route: undefined },
+          route,
+        },
+      ],
+      lock ?? (await inspectSwapLock()),
+    );
+    return { current, route };
+  };
+  await inspect();
+  await withSwapLock(async (lock) => {
+    const hooks: SwapTransactionHooks = {};
+    const { current, route } = await inspect(lock.state);
+    const temporary = await stageFile(route.targetPath, data, mode ?? current?.mode);
+    const operation = fileReplacement(temporary, route.targetPath, current, "config");
+    try {
+      await applyReplacement(operation, hooks, lock);
+      await assertConfigState(committedRoute(route, temporary.identity), data, temporary.mode);
+    } catch (error) {
+      const rollbackFailures: unknown[] = [
+        ...(await collectFailures([operation], async (candidate) =>
+          rollbackReplacement(candidate, hooks, lock),
+        )),
+      ];
+      rollbackFailures.push(...(await cleanupFiles([temporary], hooks, lock)));
+      if (rollbackFailures.length > 0) {
+        throw new AggregateError(
+          [error, ...rollbackFailures],
+          "atomic write failed and rollback was incomplete",
+        );
+      }
+      throw error;
+    }
+    const cleanupFailures = [
+      ...(await cleanupReplacements([operation], hooks, lock)),
+      ...(await cleanupFiles([temporary], hooks, lock)),
+    ];
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(cleanupFailures, "atomic write cleanup was incomplete");
+    }
+  });
 }
 
 /**
@@ -700,42 +1079,70 @@ export async function writeAtomic(path: string, data: string, mode?: number): Pr
  */
 export async function backupOnce(path: string): Promise<string | undefined> {
   const backup = `${path}${BACKUP_SUFFIX}`;
-  const route = await inspectConfigRoute(path);
-  const recovery = await readRecoveryState(path, route);
-  if (recovery.backup !== undefined) return backup;
-  if (route.kind === "missing") return undefined;
-  const mode = await fileMode(route.targetPath);
-  if (mode === undefined) return undefined;
-  const raw = await readFile(route.targetPath, "utf8");
-  const backupTemporary = await stageFile(backup, raw, mode);
-  const routePath = recoveryRoutePath(path);
-  let routeTemporary: StagedFile | undefined;
-  let publishedBackup = false;
-  try {
-    routeTemporary = await stageFile(
-      routePath,
-      serializeRecoveryRoute(
-        recoveryRouteRecord(
+  const inspect = async (lock?: SwapLockState) => {
+    const route = await inspectConfigRoute(path);
+    const recovery = await readRecoveryState(path, route);
+    const current =
+      route.kind === "missing" ? undefined : await readRecoveryFile(route.targetPath, "config");
+    if (route.kind !== "missing" && current?.identity !== route.targetIdentity) {
+      throw new Error(`config changed while backup was planned: ${path}`);
+    }
+    await assertDistinctTransactionArtifacts(
+      [
+        {
+          info: { configPath: path, name: "backup" },
+          recovery,
           route,
-          { identity: route.targetIdentity!, mode, raw },
-          { identity: backupTemporary.identity, mode, raw },
-        ),
-      ),
+        },
+      ],
+      lock ?? (await inspectSwapLock()),
+    );
+    return { current, recovery, route };
+  };
+  const observed = await inspect();
+  if (observed.recovery.backup !== undefined) return backup;
+  if (observed.current === undefined) return undefined;
+  return withSwapLock(async (lock) => {
+    const hooks: SwapTransactionHooks = {};
+    const { current, recovery, route } = await inspect(lock.state);
+    if (recovery.backup !== undefined) return backup;
+    if (current === undefined) return undefined;
+    const backupTemporary = await stageFile(backup, current.raw, current.mode);
+    const routePath = recoveryRoutePath(path);
+    const routeTemporary = await stageFile(
+      routePath,
+      serializeRecoveryRoute(recoveryRouteRecord(route, current, backupTemporary)),
       0o600,
     );
-    await assertConfigRoute(route);
-    await assertPathMissing(backup, "recovery backup");
-    await assertPathMissing(routePath, "recovery route sidecar");
-    await rename(backupTemporary.path, backup);
-    publishedBackup = true;
-    await rename(routeTemporary.path, routePath);
+    const backupOperation = fileReplacement(backupTemporary, backup, undefined, "backup");
+    const routeOperation = fileReplacement(routeTemporary, routePath, undefined, "state");
+    try {
+      await assertConfigState(route, current.raw, current.mode);
+      await applyReplacement(backupOperation, hooks, lock);
+      await applyReplacement(routeOperation, hooks, lock);
+    } catch (error) {
+      const rollbackFailures: unknown[] = [
+        ...(await collectFailures([routeOperation, backupOperation], async (operation) =>
+          rollbackReplacement(operation, hooks, lock),
+        )),
+      ];
+      rollbackFailures.push(
+        ...(await cleanupFiles([backupTemporary, routeTemporary], hooks, lock)),
+      );
+      if (rollbackFailures.length > 0) {
+        throw new AggregateError(
+          [error, ...rollbackFailures],
+          "backup failed and rollback was incomplete",
+        );
+      }
+      throw error;
+    }
+    const cleanupFailures = await cleanupFiles([backupTemporary, routeTemporary], hooks, lock);
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(cleanupFailures, "backup cleanup was incomplete");
+    }
     return backup;
-  } catch (error) {
-    await rm(backupTemporary.path, { force: true });
-    if (routeTemporary !== undefined) await rm(routeTemporary.path, { force: true });
-    if (publishedBackup) await rm(backup, { force: true });
-    throw error;
-  }
+  });
 }
 
 export function backupPath(configPath: string): string {
@@ -758,24 +1165,52 @@ async function readRecoveryFile(
   label: string,
   maximumBytes?: number,
 ): Promise<RecoveryFile | undefined> {
-  let metadata;
+  let handle;
   try {
-    metadata = await lstat(path, { bigint: true });
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | O_CLOEXEC);
   } catch (error) {
     if (isMissing(error)) return undefined;
-    throw error;
+    throw new TypeError(`${label} is not a readable regular file: ${path}`, { cause: error });
   }
-  if (!metadata.isFile() || metadata.isSymbolicLink()) {
-    throw new TypeError(`${label} is not a regular file: ${path}`);
+  try {
+    const before = await handle.stat({ bigint: true });
+    const atPath = await lstat(path, { bigint: true });
+    if (
+      !before.isFile() ||
+      atPath.isSymbolicLink() ||
+      !atPath.isFile() ||
+      fileIdentity(before) !== fileIdentity(atPath)
+    ) {
+      throw new TypeError(`${label} is not a stable regular file: ${path}`);
+    }
+    if (maximumBytes !== undefined && before.size > BigInt(maximumBytes)) {
+      throw new TypeError(`${label} exceeds ${String(maximumBytes)} bytes: ${path}`);
+    }
+    const raw = await handle.readFile({ encoding: "utf8" });
+    const after = await handle.stat({ bigint: true });
+    const afterPath = await lstat(path, { bigint: true });
+    if (
+      fileIdentity(before) !== fileIdentity(after) ||
+      fileIdentity(after) !== fileIdentity(afterPath) ||
+      before.ctimeNs !== after.ctimeNs ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.mode !== after.mode ||
+      before.size !== after.size ||
+      after.ctimeNs !== afterPath.ctimeNs ||
+      after.mtimeNs !== afterPath.mtimeNs ||
+      after.mode !== afterPath.mode ||
+      after.size !== afterPath.size
+    ) {
+      throw new Error(`${label} changed while it was read: ${path}`);
+    }
+    return {
+      identity: fileIdentity(after),
+      mode: Number(after.mode & 0o7777n),
+      raw,
+    };
+  } finally {
+    await handle.close();
   }
-  if (maximumBytes !== undefined && metadata.size > BigInt(maximumBytes)) {
-    throw new TypeError(`${label} exceeds ${String(maximumBytes)} bytes: ${path}`);
-  }
-  return {
-    identity: fileIdentity(metadata),
-    mode: Number(metadata.mode & 0o7777n),
-    raw: await readFile(path, "utf8"),
-  };
 }
 
 function parseRecoveryRoute(raw: string): RecoveryRouteRecord {
@@ -939,8 +1374,14 @@ export async function readServer(info: CliInfo, name: string): Promise<ServerSpe
 export type WriteServerOutcome = "added" | "replaced";
 
 export interface SwapTransactionHooks {
+  readonly afterLockAcquired?: () => Promise<void> | void;
   readonly afterStaging?: () => Promise<void> | void;
   readonly beforeConfigCommit?: (info: CliInfo, index: number) => Promise<void> | void;
+  readonly beforeFileOperation?: (operation: {
+    readonly boundary: string;
+    readonly destination?: string;
+    readonly source: string;
+  }) => Promise<void> | void;
   readonly beforeRecoveryRetire?: (info: CliInfo, index: number) => Promise<void> | void;
 }
 
@@ -1021,8 +1462,12 @@ async function planServerWrite(
   };
 }
 
-interface StagedFile {
-  readonly identity: string;
+interface StagedFile extends RecoveryFile {
+  readonly path: string;
+}
+
+interface HeldFile extends RecoveryFile {
+  readonly directory: string;
   readonly path: string;
 }
 
@@ -1035,14 +1480,8 @@ interface StagedServerWrite {
   readonly temporary: StagedFile;
 }
 
-interface PublishedRoute {
-  readonly entry: StagedServerWrite;
-  readonly previousPath: string | undefined;
-}
-
-interface CommittedServerWrite {
-  readonly entry: StagedServerWrite;
-  readonly previousPath: string | undefined;
+interface PlannedReplacement<Entry> extends FileReplacement {
+  readonly entry: Entry;
 }
 
 async function stageFile(
@@ -1051,60 +1490,425 @@ async function stageFile(
   mode: number | undefined,
 ): Promise<StagedFile> {
   const temporary = `${path}.mcp-swap-${String(process.pid)}-${randomUUID()}`;
+  await writeFile(temporary, data, mode === undefined ? { flag: "wx" } : { flag: "wx", mode });
+  if (mode !== undefined) await chmod(temporary, mode);
+  const staged = await readRecoveryFile(temporary, "transaction stage");
+  if (staged === undefined || staged.raw !== data || (mode !== undefined && staged.mode !== mode)) {
+    throw new Error(`transaction stage is not exact; retained at ${temporary}`);
+  }
+  return { ...staged, path: temporary };
+}
+
+function sameRecoveryFile(expected: RecoveryFile, actual: RecoveryFile | undefined): boolean {
+  return (
+    actual !== undefined &&
+    actual.identity === expected.identity &&
+    actual.mode === expected.mode &&
+    actual.raw === expected.raw
+  );
+}
+
+interface FileTransition {
+  readonly delayed: Error | undefined;
+  readonly file: RecoveryFile;
+}
+
+interface TakeAsideTransition {
+  readonly delayed: Error | undefined;
+  readonly held: HeldFile;
+}
+
+async function callFileOperationHook(
+  hooks: SwapTransactionHooks,
+  boundary: string,
+  source: string,
+  destination?: string,
+): Promise<void> {
+  await hooks.beforeFileOperation?.(
+    destination === undefined ? { boundary, source } : { boundary, destination, source },
+  );
+}
+
+async function publishAbsent(
+  source: string,
+  destination: string,
+  expected: RecoveryFile,
+  boundary: string,
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<FileTransition> {
+  await lock.assert();
+  await callFileOperationHook(hooks, boundary, source, destination);
+  const sourceBefore = await readRecoveryFile(source, "publication source");
+  if (!sameRecoveryFile(expected, sourceBefore)) {
+    throw new Error(`publication source changed before ${boundary}: ${source}`);
+  }
+  await assertPathMissing(destination, `${boundary} destination`);
+  await lock.assert();
+  let delayed: Error | undefined;
   try {
-    await writeFile(temporary, data, mode === undefined ? { flag: "wx" } : { flag: "wx", mode });
-    if (mode !== undefined) await chmod(temporary, mode);
-    return { identity: fileIdentity(await lstat(temporary, { bigint: true })), path: temporary };
+    await link(source, destination);
   } catch (error) {
-    await rm(temporary, { force: true });
+    const committed = await readRecoveryFile(destination, `${boundary} destination`);
+    if (!sameRecoveryFile(expected, committed)) throw error;
+    delayed = error as Error;
+  }
+  const committed = await readRecoveryFile(destination, `${boundary} destination`);
+  if (!sameRecoveryFile(expected, committed)) {
+    throw new Error(`atomic publication was not exact at ${boundary}: ${destination}`);
+  }
+  const sourceAfter = await readRecoveryFile(source, "publication source");
+  if (!sameRecoveryFile(expected, sourceAfter) && delayed === undefined) {
+    delayed = new Error(`publication source changed during ${boundary}: ${source}`);
+  }
+  await lock.assert();
+  return { delayed, file: committed! };
+}
+
+async function takeAsideExact(
+  source: string,
+  expected: RecoveryFile,
+  boundary: string,
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<TakeAsideTransition> {
+  await lock.assert();
+  const directory = await mkdtemp(join(dirname(source), `.${basename(source)}.mcp-swap-retained-`));
+  await chmod(directory, 0o700);
+  const destination = join(directory, "artifact");
+  try {
+    await callFileOperationHook(hooks, boundary, source, destination);
+    const sourceBefore = await readRecoveryFile(source, `${boundary} source`);
+    if (!sameRecoveryFile(expected, sourceBefore)) {
+      throw new Error(`${boundary} source changed before take-aside: ${source}`);
+    }
+    await assertPathMissing(destination, `${boundary} quarantine`);
+    await lock.assert();
+    let delayed: Error | undefined;
+    try {
+      await rename(source, destination);
+    } catch (error) {
+      const moved = await readRecoveryFile(destination, `${boundary} quarantine`);
+      if (!sameRecoveryFile(expected, moved)) throw error;
+      delayed = error as Error;
+    }
+    const moved = await readRecoveryFile(destination, `${boundary} quarantine`);
+    if (!sameRecoveryFile(expected, moved)) {
+      throw new Error(`${boundary} moved an unexpected inode; retained at ${directory}`);
+    }
+    try {
+      await lstat(source);
+      delayed ??= new Error(`${boundary} source reappeared during take-aside: ${source}`);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    await lock.assert();
+    return { delayed, held: { ...moved!, directory, path: destination } };
+  } catch (error) {
+    try {
+      await rmdir(directory);
+    } catch {
+      // A non-empty quarantine contains evidence that must survive the failure.
+    }
     throw error;
   }
 }
 
-async function cleanupTemporaries(paths: readonly string[]): Promise<void> {
-  await Promise.all(paths.map((path) => rm(path, { force: true })));
+async function destroyHeldExact(
+  held: HeldFile,
+  lock: SwapLockHandle,
+  hooks?: SwapTransactionHooks,
+  boundary?: string,
+): Promise<void> {
+  await lock.assert();
+  if (hooks !== undefined && boundary !== undefined) {
+    await callFileOperationHook(hooks, boundary, held.path);
+  }
+  const before = await readRecoveryFile(held.path, "private transaction artifact");
+  if (!sameRecoveryFile(held, before)) {
+    throw new Error(`private transaction artifact changed; retained at ${held.directory}`);
+  }
+  await unlink(held.path);
+  try {
+    await lstat(held.path);
+    throw new Error(`private transaction artifact reappeared; retained at ${held.directory}`);
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+  }
+  await rmdir(held.directory);
+  await lock.assert();
 }
 
-function transientPath(path: string): string {
-  return `${path}.mcp-swap-${String(process.pid)}-${randomUUID()}`;
+async function removeExact(
+  path: string,
+  expected: RecoveryFile,
+  boundary: string,
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<void> {
+  const transition = await takeAsideExact(path, expected, boundary, hooks, lock);
+  await destroyHeldExact(transition.held, lock);
+  if (transition.delayed !== undefined) throw transition.delayed;
+}
+
+async function collectFailures<T>(
+  items: readonly T[],
+  action: (item: T) => Promise<void>,
+): Promise<readonly Error[]> {
+  const failures: Error[] = [];
+  for (const item of items) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- transaction steps stay deterministically ordered.
+      await action(item);
+    } catch (error) {
+      failures.push(error as Error);
+    }
+  }
+  return failures;
+}
+
+async function cleanupFiles(
+  files: readonly StagedFile[],
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<readonly Error[]> {
+  return collectFailures(files, async (file) =>
+    removeExact(file.path, file, "stage-cleanup", hooks, lock),
+  );
+}
+
+interface FileReplacement {
+  committed?: RecoveryFile;
+  readonly cleanupBoundary: string;
+  readonly destination: string;
+  readonly original: RecoveryFile | undefined;
+  previous?: HeldFile;
+  readonly publishBoundary: string | undefined;
+  readonly rollbackPublishBoundary: string;
+  readonly rollbackTakeBoundary: string;
+  readonly source: StagedFile | undefined;
+  readonly takeBoundary: string;
+}
+
+function fileReplacement(
+  source: StagedFile,
+  destination: string,
+  original: RecoveryFile | undefined,
+  role: "backup" | "config" | "state",
+): FileReplacement {
+  return {
+    cleanupBoundary: `${role}-cleanup`,
+    destination,
+    original,
+    publishBoundary: `${role}-publish`,
+    rollbackPublishBoundary: `${role}-rollback-publish`,
+    rollbackTakeBoundary: `${role}-rollback-take-aside`,
+    source,
+    takeBoundary: `${role}-take-aside`,
+  };
+}
+
+function fileRemoval(
+  destination: string,
+  original: RecoveryFile,
+  role: "backup" | "state",
+): FileReplacement {
+  return {
+    cleanupBoundary: `${role}-cleanup`,
+    destination,
+    original,
+    publishBoundary: undefined,
+    rollbackPublishBoundary: `${role}-rollback-publish`,
+    rollbackTakeBoundary: `${role}-rollback-take-aside`,
+    source: undefined,
+    takeBoundary: `${role}-take-aside`,
+  };
+}
+
+async function applyReplacement(
+  operation: FileReplacement,
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<void> {
+  if (operation.original !== undefined) {
+    const removal = await takeAsideExact(
+      operation.destination,
+      operation.original,
+      operation.takeBoundary,
+      hooks,
+      lock,
+    );
+    operation.previous = removal.held;
+    if (removal.delayed !== undefined) throw removal.delayed;
+  }
+  if (operation.source !== undefined && operation.publishBoundary !== undefined) {
+    const publication = await publishAbsent(
+      operation.source.path,
+      operation.destination,
+      operation.source,
+      operation.publishBoundary,
+      hooks,
+      lock,
+    );
+    operation.committed = publication.file;
+    if (publication.delayed !== undefined) throw publication.delayed;
+  }
+}
+
+async function rollbackReplacement(
+  operation: FileReplacement,
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<void> {
+  let displaced: HeldFile | undefined;
+  let delayed: Error | undefined;
+  if (operation.committed !== undefined) {
+    const removal = await takeAsideExact(
+      operation.destination,
+      operation.committed,
+      operation.rollbackTakeBoundary,
+      hooks,
+      lock,
+    );
+    displaced = removal.held;
+    delayed = removal.delayed;
+  }
+  if (operation.previous !== undefined) {
+    const restoration = await publishAbsent(
+      operation.previous.path,
+      operation.destination,
+      operation.previous,
+      operation.rollbackPublishBoundary,
+      hooks,
+      lock,
+    );
+    delayed ??= restoration.delayed;
+    await destroyHeldExact(operation.previous, lock);
+  } else if (operation.original === undefined) {
+    await assertPathMissing(operation.destination, `${operation.takeBoundary} rollback target`);
+  } else {
+    await assertRecoveryFile(
+      operation.destination,
+      operation.original,
+      operation.original.raw,
+      `${operation.takeBoundary} rollback target`,
+      operation.original.mode,
+    );
+  }
+  if (displaced !== undefined) await destroyHeldExact(displaced, lock);
+  if (delayed !== undefined) throw delayed;
+}
+
+async function cleanupReplacements(
+  operations: readonly FileReplacement[],
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+): Promise<readonly Error[]> {
+  return collectFailures(operations, async (operation) => {
+    if (operation.previous !== undefined) {
+      await destroyHeldExact(operation.previous, lock, hooks, operation.cleanupBoundary);
+    }
+  });
+}
+
+async function rollbackReplacements<T extends FileReplacement, Plan>(
+  operations: readonly T[],
+  failedPlans: Set<Plan>,
+  planFor: (operation: T) => Plan,
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
+  checks: {
+    readonly after?: (operation: T) => Promise<void>;
+    readonly before?: (operation: T) => Promise<void>;
+    readonly skipFailedPlans?: boolean;
+  } = {},
+): Promise<readonly Error[]> {
+  const failures: Error[] = [];
+  for (const operation of operations.toReversed()) {
+    const plan = planFor(operation);
+    if (checks.skipFailedPlans !== false && failedPlans.has(plan)) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop -- topology must still address the owned target.
+      await checks.before?.(operation);
+      // eslint-disable-next-line no-await-in-loop -- rollback is exact reverse commit order.
+      await rollbackReplacement(operation, hooks, lock);
+      // eslint-disable-next-line no-await-in-loop -- restored topology is verified before advancing.
+      await checks.after?.(operation);
+    } catch (error) {
+      failures.push(error as Error);
+      failedPlans.add(plan);
+    }
+  }
+  return failures;
 }
 
 async function assertDistinctTransactionArtifacts(
-  plans: readonly TransactionPlan[],
+  plans: readonly {
+    readonly info: Pick<CliInfo, "configPath" | "name">;
+    readonly recovery: RecoveryState;
+    readonly route: ConfigRoute;
+  }[],
+  lock: SwapLockState,
 ): Promise<void> {
   const paths = new Map<string, string>();
   const identities = new Map<string, string>();
+  const claim = (
+    label: string,
+    artifactPaths: readonly string[],
+    artifactIdentities: readonly (string | undefined)[],
+  ): void => {
+    for (const path of new Set(artifactPaths)) {
+      const owner = paths.get(path);
+      if (owner !== undefined) {
+        throw new Error(
+          `${label} has the same resolved target or same transaction artifact as ${owner}`,
+        );
+      }
+      paths.set(path, label);
+    }
+    for (const identity of new Set(artifactIdentities)) {
+      if (identity === undefined) continue;
+      const owner = identities.get(identity);
+      if (owner !== undefined) {
+        throw new Error(
+          `${label} has the same resolved target or same transaction artifact as ${owner}`,
+        );
+      }
+      identities.set(identity, label);
+    }
+  };
+  claim("swap lock", [lock.logicalPath, lock.physicalPath], [lock.identity]);
   const artifactGroups = await Promise.all(
     plans.map(async (plan) => [
       {
-        identity: plan.route.targetIdentity,
+        identities: [
+          plan.route.targetIdentity,
+          plan.route.logicalIdentity?.split(":").slice(0, 3).join(":"),
+        ],
         label: `${plan.info.name} config`,
-        path: plan.route.targetPath,
+        paths: [plan.route.logicalPath, plan.route.targetPath],
       },
       {
-        identity: plan.recovery.backup?.identity,
+        identities: [plan.recovery.backup?.identity],
         label: `${plan.info.name} recovery backup`,
-        path: await canonicalMissingPath(backupPath(plan.info.configPath)),
+        paths: [
+          backupPath(plan.info.configPath),
+          await canonicalMissingPath(backupPath(plan.info.configPath)),
+        ],
       },
       {
-        identity: plan.recovery.route?.identity,
+        identities: [plan.recovery.route?.identity],
         label: `${plan.info.name} recovery route sidecar`,
-        path: await canonicalMissingPath(recoveryRoutePath(plan.info.configPath)),
+        paths: [
+          recoveryRoutePath(plan.info.configPath),
+          await canonicalMissingPath(recoveryRoutePath(plan.info.configPath)),
+        ],
       },
     ]),
   );
   for (const artifacts of artifactGroups) {
     for (const artifact of artifacts) {
-      const pathOwner = paths.get(artifact.path);
-      const identityOwner =
-        artifact.identity === undefined ? undefined : identities.get(artifact.identity);
-      if (pathOwner !== undefined || identityOwner !== undefined) {
-        throw new Error(
-          `${artifact.label} has the same resolved target or same transaction artifact as ${pathOwner ?? identityOwner}`,
-        );
-      }
-      paths.set(artifact.path, artifact.label);
-      if (artifact.identity !== undefined) identities.set(artifact.identity, artifact.label);
+      claim(artifact.label, artifact.paths, artifact.identities);
     }
   }
 }
@@ -1158,7 +1962,9 @@ async function planServerWrites(
   infos: readonly CliInfo[],
   name: string,
   spec: ServerSpec,
+  lock?: SwapLockState,
 ): Promise<readonly ServerWritePlan[]> {
+  const lockState = lock ?? (await inspectSwapLock());
   const plans: ServerWritePlan[] = [];
   for (const info of infos) {
     try {
@@ -1168,7 +1974,7 @@ async function planServerWrites(
       throw planError(info, error);
     }
   }
-  await assertDistinctTransactionArtifacts(plans);
+  await assertDistinctTransactionArtifacts(plans, lockState);
   for (const plan of plans) {
     try {
       // eslint-disable-next-line no-await-in-loop -- stable client ownership keeps failures actionable.
@@ -1280,7 +2086,11 @@ async function assertRevertPlan(plan: RevertPlan): Promise<void> {
   await assertRecoveryState(plan);
 }
 
-async function planReverts(infos: readonly CliInfo[]): Promise<readonly RevertPlan[]> {
+async function planReverts(
+  infos: readonly CliInfo[],
+  lock?: SwapLockState,
+): Promise<readonly RevertPlan[]> {
+  const lockState = lock ?? (await inspectSwapLock());
   const plans: RevertPlan[] = [];
   for (const info of infos) {
     try {
@@ -1291,7 +2101,7 @@ async function planReverts(infos: readonly CliInfo[]): Promise<readonly RevertPl
     }
   }
   const active = plans.filter((plan) => plan.recovery.backup !== undefined);
-  await assertDistinctTransactionArtifacts(active);
+  await assertDistinctTransactionArtifacts(active, lockState);
   for (const plan of active) {
     try {
       // eslint-disable-next-line no-await-in-loop -- each active route needs writable sibling slots.
@@ -1340,17 +2150,14 @@ async function assertRecoveryUnit(entry: StagedServerWrite): Promise<void> {
   }
 }
 
-/** Update a selected client set as one rollback-capable transaction. */
-export async function writeServers(
-  infos: readonly CliInfo[],
-  name: string,
-  spec: ServerSpec,
-  hooks: SwapTransactionHooks = {},
+async function writeServersLocked(
+  plans: readonly ServerWritePlan[],
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
 ): Promise<readonly WriteServerOutcome[]> {
-  const plans = await planServerWrites(infos, name, spec);
-
+  await lock.assert();
   const staged: StagedServerWrite[] = [];
-  const temporaryPaths: string[] = [];
+  const temporaryFiles: StagedFile[] = [];
   try {
     for (const plan of plans) {
       // eslint-disable-next-line no-await-in-loop -- staging preserves deterministic failure ownership.
@@ -1360,10 +2167,10 @@ export async function writeServers(
           ? undefined
           : // eslint-disable-next-line no-await-in-loop -- all backups stage before target changes.
             await stageFile(backupPath(plan.info.configPath), plan.raw, plan.mode);
-      if (backupTemporary !== undefined) temporaryPaths.push(backupTemporary.path);
+      if (backupTemporary !== undefined) temporaryFiles.push(backupTemporary);
       // eslint-disable-next-line no-await-in-loop -- all configs stage before target changes.
       const temporary = await stageFile(plan.route.targetPath, plan.data, plan.mode);
-      temporaryPaths.push(temporary.path);
+      temporaryFiles.push(temporary);
       const backup =
         plan.recovery.backup ??
         (backupTemporary === undefined || plan.mode === undefined
@@ -1384,7 +2191,7 @@ export async function writeServers(
           ? undefined
           : // eslint-disable-next-line no-await-in-loop -- ownership stages beside its recovery unit.
             await stageFile(recoveryRoutePath(plan.info.configPath), routeRaw, 0o600);
-      if (routeTemporary !== undefined) temporaryPaths.push(routeTemporary.path);
+      if (routeTemporary !== undefined) temporaryFiles.push(routeTemporary);
       staged.push({
         backupTemporary,
         committedRoute: committedRoute(plan.route, temporary.identity),
@@ -1396,55 +2203,49 @@ export async function writeServers(
     }
     await hooks.afterStaging?.();
   } catch (error) {
-    await cleanupTemporaries(temporaryPaths);
+    const cleanupFailures = await cleanupFiles(temporaryFiles, hooks, lock);
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupFailures],
+        `swap staging failed and ${String(cleanupFailures.length)} owned stage(s) were retained`,
+      );
+    }
     throw error;
   }
 
-  const createdBackups = new Set<ServerWritePlan>();
-  const publishedRoutes: PublishedRoute[] = [];
-  const committed: CommittedServerWrite[] = [];
+  const recoveries: PlannedReplacement<StagedServerWrite>[] = [];
+  const configs: PlannedReplacement<StagedServerWrite>[] = [];
   try {
     for (const entry of staged) {
       if (entry.backupTemporary !== undefined) {
-        const destination = backupPath(entry.plan.info.configPath);
         // eslint-disable-next-line no-await-in-loop -- no selected state may drift before publication.
         await assertServerWritePlan(entry.plan);
-        // eslint-disable-next-line no-await-in-loop -- publication must not replace a new artifact.
-        await assertPathMissing(destination, "recovery backup");
-        // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
-        await rename(entry.backupTemporary.path, destination);
-        createdBackups.add(entry.plan);
+        const operation = {
+          ...fileReplacement(
+            entry.backupTemporary,
+            backupPath(entry.plan.info.configPath),
+            undefined,
+            "backup",
+          ),
+          entry,
+        };
+        recoveries.push(operation);
+        // eslint-disable-next-line no-await-in-loop -- transaction transitions are strictly ordered.
+        await applyReplacement(operation, hooks, lock);
       }
       if (entry.routeTemporary !== undefined) {
-        const destination = recoveryRoutePath(entry.plan.info.configPath);
-        let previousPath: string | undefined;
-        if (entry.plan.recovery.route === undefined) {
-          // eslint-disable-next-line no-await-in-loop -- publication must not replace a new artifact.
-          await assertPathMissing(destination, "recovery route sidecar");
-        } else {
-          // eslint-disable-next-line no-await-in-loop -- preserve the owned inode until commit succeeds.
-          await assertRecoveryFile(
-            destination,
+        const operation = {
+          ...fileReplacement(
+            entry.routeTemporary,
+            recoveryRoutePath(entry.plan.info.configPath),
             entry.plan.recovery.route,
-            entry.plan.recovery.route.raw,
-            "recovery route sidecar",
-            0o600,
-          );
-          previousPath = transientPath(destination);
-          // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
-          await assertPathMissing(previousPath, "recovery route rollback slot");
-          // eslint-disable-next-line no-await-in-loop -- move preserves exact pre-call inode identity.
-          await rename(destination, previousPath);
-        }
-        try {
-          // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
-          await rename(entry.routeTemporary.path, destination);
-        } catch (error) {
-          // eslint-disable-next-line no-await-in-loop -- restore the owned inode before unwinding.
-          if (previousPath !== undefined) await rename(previousPath, destination);
-          throw error;
-        }
-        publishedRoutes.push({ entry, previousPath });
+            "state",
+          ),
+          entry,
+        };
+        recoveries.push(operation);
+        // eslint-disable-next-line no-await-in-loop -- transaction transitions are strictly ordered.
+        await applyReplacement(operation, hooks, lock);
       }
     }
     for (const [index, entry] of staged.entries()) {
@@ -1454,131 +2255,60 @@ export async function writeServers(
       await assertConfigState(entry.plan.route, entry.plan.raw, entry.plan.mode);
       // eslint-disable-next-line no-await-in-loop -- recovery must remain usable before target change.
       await assertRecoveryUnit(entry);
-      let previousPath: string | undefined;
-      if (entry.plan.route.kind !== "missing") {
-        previousPath = transientPath(entry.plan.route.targetPath);
-        // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
-        await assertPathMissing(previousPath, "config rollback slot");
-        // eslint-disable-next-line no-await-in-loop -- move preserves exact pre-call inode identity.
-        await rename(entry.plan.route.targetPath, previousPath);
-      }
-      try {
-        // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
-        await rename(entry.temporary.path, entry.plan.route.targetPath);
-      } catch (error) {
-        // eslint-disable-next-line no-await-in-loop -- restore the owned inode before unwinding.
-        if (previousPath !== undefined) await rename(previousPath, entry.plan.route.targetPath);
-        throw error;
-      }
-      committed.push({ entry, previousPath });
+      const original =
+        entry.plan.route.kind === "missing"
+          ? undefined
+          : {
+              identity: entry.plan.route.targetIdentity!,
+              mode: entry.plan.mode!,
+              raw: entry.plan.raw,
+            };
+      const operation = {
+        ...fileReplacement(entry.temporary, entry.plan.route.targetPath, original, "config"),
+        entry,
+      };
+      configs.push(operation);
+      // eslint-disable-next-line no-await-in-loop -- transaction transitions are strictly ordered.
+      await applyReplacement(operation, hooks, lock);
+      // eslint-disable-next-line no-await-in-loop -- committed state is verified before advancing.
+      await assertConfigState(entry.committedRoute, entry.plan.data, entry.temporary.mode);
     }
   } catch (error) {
-    const rollbackFailures: unknown[] = [];
     const failedRollbacks = new Set<ServerWritePlan>();
-    for (const committedEntry of committed.toReversed()) {
-      const { entry, previousPath } = committedEntry;
-      const { plan } = entry;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- never overwrite an unexpected replacement target.
-        await assertConfigRoute(entry.committedRoute);
-        const displaced = transientPath(plan.route.targetPath);
-        // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
-        await assertPathMissing(displaced, "config rollback discard");
-        // eslint-disable-next-line no-await-in-loop -- retain the failed write until restore verifies.
-        await rename(plan.route.targetPath, displaced);
-        try {
-          if (previousPath !== undefined) {
-            // eslint-disable-next-line no-await-in-loop -- restore the exact pre-call inode.
-            await rename(previousPath, plan.route.targetPath);
-          }
-          // eslint-disable-next-line no-await-in-loop -- rollback proves the exact pre-call state.
-          await assertConfigState(plan.route, plan.raw, plan.mode);
-        } catch (rollbackError) {
-          // eslint-disable-next-line no-await-in-loop -- recovery must finish in transaction order.
-          if (previousPath !== undefined && (await exists(previousPath))) {
-            // eslint-disable-next-line no-await-in-loop -- restore the displaced current target.
-            await rename(displaced, plan.route.targetPath);
-          }
-          throw rollbackError;
-        }
-        // eslint-disable-next-line no-await-in-loop -- discard only after exact restore is proven.
-        await rm(displaced, { force: true });
-      } catch (rollbackError) {
-        rollbackFailures.push(rollbackError);
-        failedRollbacks.add(plan);
-      }
-    }
-    for (const published of publishedRoutes.toReversed()) {
-      const { entry, previousPath } = published;
-      const { plan } = entry;
-      if (failedRollbacks.has(plan)) continue;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- authenticate the current sidecar before moving it.
-        await assertRecoveryFile(
-          recoveryRoutePath(plan.info.configPath),
-          entry.routeTemporary!,
-          entry.routeRaw!,
-          "recovery route sidecar",
-          0o600,
-        );
-        const displaced = transientPath(recoveryRoutePath(plan.info.configPath));
-        // eslint-disable-next-line no-await-in-loop -- retain the new sidecar until restore verifies.
-        await rename(recoveryRoutePath(plan.info.configPath), displaced);
-        try {
-          if (previousPath === undefined) {
-            // eslint-disable-next-line no-await-in-loop -- absence was the exact pre-call state.
-            await assertPathMissing(
-              recoveryRoutePath(plan.info.configPath),
-              "recovery route sidecar",
-            );
-          } else {
-            // eslint-disable-next-line no-await-in-loop -- restore the exact pre-call sidecar inode.
-            await rename(previousPath, recoveryRoutePath(plan.info.configPath));
-            // eslint-disable-next-line no-await-in-loop -- restoration includes bytes, mode, and identity.
-            await assertRecoveryFile(
-              recoveryRoutePath(plan.info.configPath),
-              plan.recovery.route!,
-              plan.recovery.route!.raw,
-              "recovery route sidecar",
-              0o600,
-            );
-          }
-        } catch (rollbackError) {
-          // eslint-disable-next-line no-await-in-loop -- recovery must finish in transaction order.
-          if (previousPath !== undefined && (await exists(previousPath))) {
-            // eslint-disable-next-line no-await-in-loop -- restore the displaced current sidecar.
-            await rename(displaced, recoveryRoutePath(plan.info.configPath));
-          }
-          throw rollbackError;
-        }
-        // eslint-disable-next-line no-await-in-loop -- discard only after exact restore is proven.
-        await rm(displaced, { force: true });
-      } catch (rollbackError) {
-        rollbackFailures.push(rollbackError);
-        failedRollbacks.add(plan);
-      }
-    }
-    for (const plan of createdBackups) {
-      if (failedRollbacks.has(plan)) continue;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- new recovery is removed only after exact restore.
-        await rm(backupPath(plan.info.configPath), { force: true });
-      } catch (rollbackError) {
-        rollbackFailures.push(rollbackError);
-        failedRollbacks.add(plan);
-      }
-    }
-    await cleanupTemporaries(temporaryPaths);
+    const rollbackFailures: unknown[] = [
+      ...(await rollbackReplacements(
+        configs,
+        failedRollbacks,
+        ({ entry }) => entry.plan,
+        hooks,
+        lock,
+        {
+          after: async ({ entry }) =>
+            assertConfigState(entry.plan.route, entry.plan.raw, entry.plan.mode),
+          before: async ({ entry }) =>
+            assertConfigState(entry.committedRoute, entry.plan.data, entry.temporary.mode),
+        },
+      )),
+      ...(await rollbackReplacements(
+        recoveries,
+        failedRollbacks,
+        ({ entry }) => entry.plan,
+        hooks,
+        lock,
+      )),
+    ];
+    rollbackFailures.push(...(await cleanupFiles(temporaryFiles, hooks, lock)));
     if (rollbackFailures.length > 0) {
       const retainedRecovery = [...failedRollbacks].flatMap((plan) => {
         const paths = new Set([
           backupPath(plan.info.configPath),
           recoveryRoutePath(plan.info.configPath),
         ]);
-        const committedEntry = committed.find((candidate) => candidate.entry.plan === plan);
-        if (committedEntry?.previousPath !== undefined) paths.add(committedEntry.previousPath);
-        const published = publishedRoutes.find((candidate) => candidate.entry.plan === plan);
-        if (published?.previousPath !== undefined) paths.add(published.previousPath);
+        for (const operation of [...configs, ...recoveries]) {
+          if (operation.entry.plan === plan && operation.previous !== undefined) {
+            paths.add(operation.previous.directory);
+          }
+        }
         return [...paths];
       });
       const retained =
@@ -1592,16 +2322,32 @@ export async function writeServers(
     }
     throw error;
   }
-  await cleanupTemporaries(
-    committed.flatMap(({ previousPath }) => (previousPath === undefined ? [] : [previousPath])),
-  );
-  await cleanupTemporaries(
-    publishedRoutes.flatMap(({ previousPath }) =>
-      previousPath === undefined ? [] : [previousPath],
-    ),
-  );
-  await cleanupTemporaries(temporaryPaths);
+  const cleanupFailures = [
+    ...(await cleanupReplacements(configs, hooks, lock)),
+    ...(await cleanupReplacements(recoveries, hooks, lock)),
+  ];
+  cleanupFailures.push(...(await cleanupFiles(temporaryFiles, hooks, lock)));
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(cleanupFailures, "swap committed but owned cleanup was incomplete");
+  }
+  await lock.assert();
   return plans.map(({ outcome }) => outcome);
+}
+
+/** Update a selected client set as one rollback-capable transaction. */
+export async function writeServers(
+  infos: readonly CliInfo[],
+  name: string,
+  spec: ServerSpec,
+  hooks: SwapTransactionHooks = {},
+): Promise<readonly WriteServerOutcome[]> {
+  await planServerWrites(infos, name, spec);
+  return withSwapLock(async (lock) => {
+    await hooks.afterLockAcquired?.();
+    await lock.assert();
+    const plans = await planServerWrites(infos, name, spec, lock.state);
+    return writeServersLocked(plans, hooks, lock);
+  });
 }
 
 /** Point one CLI at `spec`, backing the file up first. */
@@ -1620,35 +2366,27 @@ interface StagedRevert {
   readonly temporary: StagedFile;
 }
 
-interface CommittedRevert {
-  readonly currentPath: string;
-  readonly entry: StagedRevert;
-}
-
-interface RetiredRecovery {
-  readonly destination: string;
-  readonly expected: RecoveryFile;
-  readonly holdPath: string;
+interface RecoveryRemoval extends FileReplacement {
   readonly label: string;
   readonly mode: number;
   readonly plan: RevertPlan;
 }
 
-/** Restore a selected client set as one rollback-capable transaction. */
-export async function revertConfigs(
-  infos: readonly CliInfo[],
-  hooks: SwapTransactionHooks = {},
+async function revertConfigsLocked(
+  plans: readonly RevertPlan[],
+  hooks: SwapTransactionHooks,
+  lock: SwapLockHandle,
 ): Promise<readonly boolean[]> {
-  const plans = await planReverts(infos);
+  await lock.assert();
   const active = plans.filter((plan) => plan.recovery.backup !== undefined);
   const staged: StagedRevert[] = [];
-  const temporaryPaths: string[] = [];
+  const temporaryFiles: StagedFile[] = [];
   try {
     for (const plan of active) {
       const backup = plan.recovery.backup!;
       // eslint-disable-next-line no-await-in-loop -- all restores stage before any config changes.
       const temporary = await stageFile(plan.route.targetPath, backup.raw, backup.mode);
-      temporaryPaths.push(temporary.path);
+      temporaryFiles.push(temporary);
       staged.push({
         plan,
         restoredRoute: committedRoute(plan.route, temporary.identity),
@@ -1657,12 +2395,18 @@ export async function revertConfigs(
     }
     await hooks.afterStaging?.();
   } catch (error) {
-    await cleanupTemporaries(temporaryPaths);
+    const cleanupFailures = await cleanupFiles(temporaryFiles, hooks, lock);
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupFailures],
+        `revert staging failed and ${String(cleanupFailures.length)} owned stage(s) were retained`,
+      );
+    }
     throw error;
   }
 
-  const committed: CommittedRevert[] = [];
-  const retired: RetiredRecovery[] = [];
+  const configs: PlannedReplacement<StagedRevert>[] = [];
+  const retired: RecoveryRemoval[] = [];
   try {
     for (const [index, entry] of staged.entries()) {
       const { plan } = entry;
@@ -1670,20 +2414,18 @@ export async function revertConfigs(
       await hooks.beforeConfigCommit?.(plan.info, index);
       // eslint-disable-next-line no-await-in-loop -- each restore reauthenticates the complete unit.
       await assertRevertPlan(plan);
-      const currentPath = transientPath(plan.route.targetPath);
-      // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
-      await assertPathMissing(currentPath, "config rollback slot");
-      // eslint-disable-next-line no-await-in-loop -- retain the current inode until all restores commit.
-      await rename(plan.route.targetPath, currentPath);
-      try {
-        // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
-        await rename(entry.temporary.path, plan.route.targetPath);
-      } catch (error) {
-        // eslint-disable-next-line no-await-in-loop -- restore the current inode before unwinding.
-        await rename(currentPath, plan.route.targetPath);
-        throw error;
-      }
-      committed.push({ currentPath, entry });
+      const operation = {
+        ...fileReplacement(
+          entry.temporary,
+          plan.route.targetPath,
+          { identity: plan.route.targetIdentity!, mode: plan.mode!, raw: plan.raw },
+          "config",
+        ),
+        entry,
+      };
+      configs.push(operation);
+      // eslint-disable-next-line no-await-in-loop -- transaction transitions are strictly ordered.
+      await applyReplacement(operation, hooks, lock);
       // eslint-disable-next-line no-await-in-loop -- restored bytes, mode, topology, and inode must agree.
       await assertConfigState(
         entry.restoredRoute,
@@ -1731,79 +2473,64 @@ export async function revertConfigs(
           artifact.label,
           artifact.mode,
         );
-        const holdPath = transientPath(artifact.destination);
-        // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
-        await assertPathMissing(holdPath, `${artifact.label} tombstone`);
-        // eslint-disable-next-line no-await-in-loop -- move retains exact recovery inode for rollback.
-        await rename(artifact.destination, holdPath);
-        retired.push({ ...artifact, holdPath, plan });
+        const operation = {
+          ...fileRemoval(
+            artifact.destination,
+            artifact.expected,
+            artifact.label === "recovery backup" ? "backup" : "state",
+          ),
+          label: artifact.label,
+          mode: artifact.mode,
+          plan,
+        };
+        retired.push(operation);
+        // eslint-disable-next-line no-await-in-loop -- recovery retirement is strictly ordered.
+        await applyReplacement(operation, hooks, lock);
       }
     }
   } catch (error) {
-    const rollbackFailures: unknown[] = [];
     const failedPlans = new Set<RevertPlan>();
-    for (const artifact of retired.toReversed()) {
-      try {
-        // eslint-disable-next-line no-await-in-loop -- never overwrite a replacement recovery artifact.
-        await assertPathMissing(artifact.destination, artifact.label);
-        // eslint-disable-next-line no-await-in-loop -- restore exact pre-call recovery inode identity.
-        await rename(artifact.holdPath, artifact.destination);
-        // eslint-disable-next-line no-await-in-loop -- restoration includes bytes, mode, and identity.
-        await assertRecoveryFile(
-          artifact.destination,
-          artifact.expected,
-          artifact.expected.raw,
-          artifact.label,
-          artifact.mode,
-        );
-      } catch (rollbackError) {
-        rollbackFailures.push(rollbackError);
-        failedPlans.add(artifact.plan);
-      }
-    }
-    for (const committedEntry of committed.toReversed()) {
-      const { currentPath, entry } = committedEntry;
-      const { plan } = entry;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- never overwrite an unexpected replacement target.
-        await assertConfigState(
-          entry.restoredRoute,
-          plan.recovery.backup!.raw,
-          plan.recovery.backup!.mode,
-        );
-        const displaced = transientPath(plan.route.targetPath);
-        // eslint-disable-next-line no-await-in-loop -- retain restored bytes until rollback verifies.
-        await rename(plan.route.targetPath, displaced);
-        try {
-          // eslint-disable-next-line no-await-in-loop -- restore the exact pre-call config inode.
-          await rename(currentPath, plan.route.targetPath);
-          // eslint-disable-next-line no-await-in-loop -- rollback proves the exact pre-call state.
-          await assertConfigState(plan.route, plan.raw, plan.mode);
-        } catch (rollbackError) {
-          // eslint-disable-next-line no-await-in-loop -- retain the successfully restored config on failure.
-          if (await exists(currentPath)) await rename(displaced, plan.route.targetPath);
-          throw rollbackError;
-        }
-        // eslint-disable-next-line no-await-in-loop -- discard only after exact restore is proven.
-        await rm(displaced, { force: true });
-      } catch (rollbackError) {
-        rollbackFailures.push(rollbackError);
-        failedPlans.add(plan);
-      }
-    }
-    await cleanupTemporaries(temporaryPaths);
+    const rollbackFailures: unknown[] = [
+      ...(await rollbackReplacements(retired, failedPlans, ({ plan }) => plan, hooks, lock, {
+        after: async (artifact) =>
+          assertRecoveryFile(
+            artifact.destination,
+            artifact.original!,
+            artifact.original!.raw,
+            artifact.label,
+            artifact.mode,
+          ),
+        skipFailedPlans: false,
+      })),
+      ...(await rollbackReplacements(configs, failedPlans, ({ entry }) => entry.plan, hooks, lock, {
+        after: async ({ entry }) =>
+          assertConfigState(entry.plan.route, entry.plan.raw, entry.plan.mode),
+        before: async ({ entry }) =>
+          assertConfigState(
+            entry.restoredRoute,
+            entry.plan.recovery.backup!.raw,
+            entry.plan.recovery.backup!.mode,
+          ),
+        skipFailedPlans: false,
+      })),
+    ];
+    rollbackFailures.push(...(await cleanupFiles(temporaryFiles, hooks, lock)));
     if (rollbackFailures.length > 0) {
       const retained = [...failedPlans]
         .flatMap((plan) => [
           plan.info.configPath,
           backupPath(plan.info.configPath),
           recoveryRoutePath(plan.info.configPath),
-          ...committed
+          ...configs
             .filter((candidate) => candidate.entry.plan === plan)
-            .map((candidate) => candidate.currentPath),
+            .flatMap((candidate) =>
+              candidate.previous === undefined ? [] : [candidate.previous.directory],
+            ),
           ...retired
             .filter((candidate) => candidate.plan === plan)
-            .map((candidate) => candidate.holdPath),
+            .flatMap((candidate) =>
+              candidate.previous === undefined ? [] : [candidate.previous.directory],
+            ),
         ])
         .join(", ");
       throw new AggregateError(
@@ -1814,11 +2541,31 @@ export async function revertConfigs(
     throw error;
   }
 
-  await cleanupTemporaries(committed.map(({ currentPath }) => currentPath));
-  await cleanupTemporaries(retired.map(({ holdPath }) => holdPath));
-  await cleanupTemporaries(temporaryPaths);
+  const cleanupFailures: Error[] = [
+    ...(await cleanupReplacements(configs, hooks, lock)),
+    ...(await cleanupReplacements(retired, hooks, lock)),
+  ];
+  cleanupFailures.push(...(await cleanupFiles(temporaryFiles, hooks, lock)));
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(cleanupFailures, "revert committed but owned cleanup was incomplete");
+  }
+  await lock.assert();
   const activePlans = new Set(active);
   return plans.map((plan) => activePlans.has(plan));
+}
+
+/** Restore a selected client set as one rollback-capable transaction. */
+export async function revertConfigs(
+  infos: readonly CliInfo[],
+  hooks: SwapTransactionHooks = {},
+): Promise<readonly boolean[]> {
+  await planReverts(infos);
+  return withSwapLock(async (lock) => {
+    await hooks.afterLockAcquired?.();
+    await lock.assert();
+    const plans = await planReverts(infos, lock.state);
+    return revertConfigsLocked(plans, hooks, lock);
+  });
 }
 
 /** Restore one config from the backup a swap wrote. */
@@ -2031,5 +2778,8 @@ async function main(argv: readonly string[]): Promise<number> {
 
 const invokedAs = process.argv[1];
 if (invokedAs !== undefined && import.meta.path === invokedAs) {
-  process.exitCode = await main(process.argv.slice(2));
+  process.exitCode =
+    process.argv[2] === LOCK_WORKER_COMMAND
+      ? await runLockWorker(process.argv[3]!, process.argv[4]!)
+      : await main(process.argv.slice(2));
 }
