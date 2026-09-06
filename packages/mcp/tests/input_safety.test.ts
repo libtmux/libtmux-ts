@@ -5,6 +5,7 @@ import type { ServerSnapshot } from "libtmux";
 import type { CallerIdentity } from "../src/caller.js";
 import { isPaneInputConflict, reserveFramedCommand } from "../src/command.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";
+import { planPaneInput } from "../src/pane_input.js";
 import type { ToolRegistrar, ToolRegistry } from "../src/register.js";
 import { resolvePolicy } from "../src/policy.js";
 import {
@@ -86,7 +87,7 @@ function snapshot(fields: Readonly<Record<string, unknown>>): ServerSnapshot {
   const pane = {
     currentCommand: "sh",
     dead: false,
-    format: { session_id: "$1", window_index: "0" },
+    format: { session_id: "$1", window_id: "@1", window_index: "0" },
     id: "%1",
     inMode: 0,
     inputOff: false,
@@ -95,6 +96,53 @@ function snapshot(fields: Readonly<Record<string, unknown>>): ServerSnapshot {
     ...fields,
   };
   return { panes: { toArray: () => [pane] } } as unknown as ServerSnapshot;
+}
+
+function linkedSnapshot(
+  second: Readonly<Record<string, unknown>> = {},
+  reverse = false,
+): ServerSnapshot {
+  let firstPane: unknown;
+  let secondPane: unknown;
+  const firstWindow = {
+    active: true,
+    id: "@1",
+    index: 0,
+    panes: { toArray: () => [firstPane] },
+  };
+  const secondWindow = {
+    active: false,
+    id: "@1",
+    index: 4,
+    panes: { toArray: () => [secondPane] },
+    ...second,
+  };
+  const state = {
+    currentCommand: "sh",
+    dead: false,
+    id: "%1",
+    inMode: 0,
+    inputOff: false,
+    synchronized: false,
+  };
+  firstPane = {
+    ...state,
+    format: { session_id: "$1", window_id: "@1", window_index: "0" },
+    window: firstWindow,
+  };
+  secondPane = {
+    ...state,
+    ...second,
+    format: {
+      session_id: "$2",
+      window_id: "@1",
+      window_index: String(secondWindow.index),
+      ...(typeof second.format === "object" ? second.format : {}),
+    },
+    window: secondWindow,
+  };
+  const panes = reverse ? [secondPane, firstPane] : [firstPane, secondPane];
+  return { panes: { toArray: () => panes } } as unknown as ServerSnapshot;
 }
 
 function refusal(fields: Readonly<Record<string, unknown>>, force = false): string {
@@ -239,6 +287,50 @@ describe("pane input state", () => {
 
     expect(isFailure(resolvedPaneInputTargetIds(pane))).toBe(true);
   });
+
+  test("rejects conflicting state across linked pane placements", () => {
+    const planned = planPaneInput(
+      observation(linkedSnapshot({ inputOff: true })),
+      "%1",
+      false,
+      "type into",
+    );
+
+    expect(isFailure(planned)).toBe(true);
+  });
+
+  test("rejects duplicate linked pane placements", () => {
+    const planned = planPaneInput(
+      observation(linkedSnapshot({ format: { session_id: "$1" }, index: 0 })),
+      "%1",
+      false,
+      "type into",
+    );
+
+    expect(isFailure(planned)).toBe(true);
+  });
+
+  test("signs every linked window placement in stable order", () => {
+    const initial = planPaneInput(observation(linkedSnapshot()), "%1", false, "type into");
+    const reordered = planPaneInput(
+      observation(linkedSnapshot({}, true)),
+      "%1",
+      false,
+      "type into",
+    );
+    const changed = planPaneInput(
+      observation(linkedSnapshot({ active: true, index: 5 })),
+      "%1",
+      false,
+      "type into",
+    );
+    if (isFailure(initial) || isFailure(reordered) || isFailure(changed)) {
+      throw new Error("linked input plan was refused");
+    }
+
+    expect(reordered.signature).toBe(initial.signature);
+    expect(changed.signature).not.toBe(initial.signature);
+  });
 });
 
 test("send_keys applies attention policy to every configured member", async () => {
@@ -248,7 +340,7 @@ test("send_keys applies attention policy to every configured member", async () =
   const source = {
     currentCommand: "sh",
     dead: false,
-    format: { session_id: "$1", window_index: "0" },
+    format: { session_id: "$1", window_id: "@1", window_index: "0" },
     id: "%1",
     inMode: 0,
     inputOff: false,
