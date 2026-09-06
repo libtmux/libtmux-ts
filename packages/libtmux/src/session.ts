@@ -47,6 +47,18 @@ export interface SessionPlans {
 }
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
+/**
+ * One session on one tmux server, as a handle rather than a copy of it.
+ *
+ * Reached from {@link Server.sessions} or by creating one; the constructor
+ * throws. The tmux format row the handle was built from reads back through
+ * `format`, and by tmux's own field names directly on the handle — a snapshot
+ * taken when the handle was made, not a live view.
+ *
+ * A session outlives the clients attached to it: killing the last client
+ * leaves the session running, which is the property the whole tool is built
+ * around.
+ */
 export class Session {
   declare private readonly sessionBrand: undefined;
   /**

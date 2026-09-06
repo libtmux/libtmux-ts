@@ -2,6 +2,13 @@ import { types as nodeTypes } from "node:util";
 
 import type { DeliveryStatus } from "./common.js";
 
+/**
+ * The criteria a lookup was given, carried on the error it raised.
+ *
+ * Kept as the caller wrote it rather than as a formatted sentence, so a
+ * caller that built the criteria from a form or a config file can point at
+ * the field that was wrong. The message renders it; this is the source.
+ */
 export type Query = Readonly<Record<string, unknown>>;
 
 interface ExceptionOptions {
@@ -109,6 +116,12 @@ function formatQuery(query: Query): string {
     .join(", ");
 }
 
+/**
+ * What a failed `tmux` invocation reported, before it is turned into a message.
+ *
+ * `args` excludes the connection flags this library adds, so it reads as the
+ * command a user would have typed.
+ */
 export interface TmuxCommandFailureOptions extends ExceptionOptions {
   /** The full argument vector, without the connection flags. */
   readonly args: readonly string[];
@@ -120,6 +133,14 @@ export interface TmuxCommandFailureOptions extends ExceptionOptions {
   readonly target?: string | undefined;
 }
 
+/**
+ * The base of every error this library raises.
+ *
+ * Catching this catches all of them, including the ones a future version
+ * adds. `subcommand` names the tmux command that was running, and replaces
+ * the class name in `toString()` when it is known — an error reading
+ * `list-panes: …` says more than one reading `LibTmuxException: …`.
+ */
 export class LibTmuxException extends Error {
   readonly subcommand: string | undefined;
 
@@ -187,6 +208,12 @@ export class TmuxTransportError extends LibTmuxException {
   }
 }
 
+/**
+ * What the transport observed when a command did not come back.
+ *
+ * `delivery` says how far the command got, which is the part a caller needs
+ * to decide whether retrying is safe.
+ */
 export interface TmuxTransportErrorOptions extends ExceptionOptions {
   readonly delivery: DeliveryStatus;
   readonly kind: TmuxTransportErrorKind;
@@ -195,6 +222,13 @@ export interface TmuxTransportErrorOptions extends ExceptionOptions {
   readonly stdout?: Uint8Array;
 }
 
+/**
+ * A lookup that required one object found none.
+ *
+ * The criteria are on {@link ObjectDoesNotExist.query} as they were written,
+ * and rendered into the message. Raised by the strict lookups; the lenient
+ * ones return `undefined` instead.
+ */
 export class ObjectDoesNotExist extends LibTmuxException {
   readonly query: Query | undefined;
 
@@ -208,6 +242,13 @@ export class ObjectDoesNotExist extends LibTmuxException {
   }
 }
 
+/**
+ * A lookup that required one object found several.
+ *
+ * `count` is how many, when the lookup counted them. Distinct from
+ * {@link ObjectDoesNotExist} because the two want opposite fixes: this one
+ * needs narrower criteria, that one needs wider.
+ */
 export class MultipleObjectsReturned extends LibTmuxException {
   readonly count: number | undefined;
   readonly query: Query | undefined;
@@ -224,6 +265,12 @@ export class MultipleObjectsReturned extends LibTmuxException {
   }
 }
 
+/**
+ * A tmux object named by id was not in the list tmux returned.
+ *
+ * Carries the listing command that was run, so the message can say what was
+ * searched rather than only what was not found.
+ */
 export class TmuxObjectDoesNotExist extends ObjectDoesNotExist {
   constructor(
     options: {
@@ -280,13 +327,31 @@ export class VersionTooLow extends LibTmuxException {
   }
 }
 
+/**
+ * A wait reached its deadline with the condition still unmet.
+ *
+ * Says nothing about the condition — it may have become true immediately
+ * after. A caller that needs to know must read the state again.
+ */
 export class WaitTimeout extends LibTmuxException {}
 
+/** A selection that required exactly one match found none. */
 export class NoMatchError extends ObjectDoesNotExist {}
+/** A selection that required exactly one match found several. */
 export class MultipleMatchesError extends MultipleObjectsReturned {}
 
+/**
+ * Which half of a lookup was malformed: the id, or the criteria around it.
+ */
 export type QueryValidationErrorCode = "invalid-id" | "invalid-query";
 
+/**
+ * Criteria that could not be evaluated, rejected before any command ran.
+ *
+ * This is a caller mistake rather than a tmux one, so nothing was sent and
+ * nothing needs undoing. {@link QueryValidationError.code} separates a bad id
+ * from bad criteria, and the path locates the field.
+ */
 export class QueryValidationError extends LibTmuxException {
   readonly code: QueryValidationErrorCode;
   /**

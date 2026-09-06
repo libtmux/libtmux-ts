@@ -92,6 +92,18 @@ function placementTarget(window: Window): string {
 }
 
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
+/**
+ * One window on one tmux server, as a handle rather than a copy of it.
+ *
+ * Reached from {@link Session.windows} or {@link Session.activeWindow}; the
+ * constructor throws. The tmux format row the handle was built from reads back
+ * through `format`, and by tmux's own field names directly on the handle —
+ * a snapshot taken when the handle was made, not a live view.
+ *
+ * A window can be linked into more than one session, so {@link Window.session}
+ * is the session this handle was reached through rather than the only one
+ * showing it.
+ */
 export class Window {
   declare private readonly windowBrand: undefined;
   /**
