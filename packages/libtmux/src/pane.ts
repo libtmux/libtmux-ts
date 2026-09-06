@@ -598,6 +598,13 @@ export class Pane {
   }
 }
 
+/**
+ * The tmux format fields a pane handle is built from, by tmux's own names.
+ *
+ * Read through `format` when the aliased property names on the handle are not
+ * what a caller wants — a field tmux added in a later version has a token
+ * here whether or not this library has given it a name.
+ */
 type PaneRow = RowWithIdentities<"pane_id" | "session_id" | "window_id" | "window_index">;
 
 export interface Pane extends AliasedFields<PaneRow, PaneAliasMap> {

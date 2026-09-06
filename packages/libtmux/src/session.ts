@@ -455,6 +455,13 @@ export class Session {
   }
 }
 
+/**
+ * The tmux format fields a session handle is built from, by tmux's own names.
+ *
+ * Read through `format` when the aliased property names on the handle are not
+ * what a caller wants — a field tmux added in a later version has a token
+ * here whether or not this library has given it a name.
+ */
 type SessionRow = RowWithIdentities<"session_id">;
 
 export interface Session extends AliasedFields<SessionRow, SessionAliasMap> {

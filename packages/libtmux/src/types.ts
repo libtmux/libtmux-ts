@@ -53,6 +53,12 @@ export interface SnapshotOptions {
   readonly signal?: AbortLike;
 }
 
+/**
+ * What a new session starts as, and what it is grouped with.
+ *
+ * A grouped session shares another's window list, so it creates no first
+ * window and the fields describing one are ignored — see `groupWith`.
+ */
 export interface NewSessionOptions extends CommandOptions {
   /**
    * Share another session's windows, tmux's `-t`.
@@ -113,6 +119,12 @@ export interface NewSessionOptions extends CommandOptions {
   readonly windowName?: string;
 }
 
+/**
+ * Where a new window lands, and what runs in it.
+ *
+ * tmux moves existing windows up to make room when a direction is given, so
+ * an index a caller is holding can change.
+ */
 export interface NewWindowOptions extends CommandOptions {
   /**
    * Variables to set in the process this starts, tmux's `-e`.
@@ -244,6 +256,11 @@ export function splitSize(value: number | string): SplitSize {
   throw new TypeError("size must be an integer percentage from 0% to 100%");
 }
 
+/**
+ * Which side the new pane takes, how big it is, and what runs in it.
+ *
+ * Without a size tmux halves the pane it splits.
+ */
 export interface SplitOptions extends CommandOptions {
   /**
    * Variables to set in the process this starts, tmux's `-e`.
@@ -280,6 +297,13 @@ export interface SplitOptions extends CommandOptions {
   readonly vertical?: boolean;
 }
 
+/**
+ * How the keys are interpreted before tmux delivers them.
+ *
+ * The default resolves key names, so `\"C-c\"` interrupts rather than typing
+ * three characters; `literal` turns that off for text that happens to look
+ * like a key name.
+ */
 export interface SendKeysOptions extends CommandOptions {
   /** Append Enter after the keys. Defaults to true. */
   readonly enter?: boolean;
@@ -310,6 +334,12 @@ export interface SetOptionOptions extends CommandOptions {
   readonly append?: boolean;
 }
 
+/**
+ * Which part of a pane is read, and in what form.
+ *
+ * A capture reads what the pane is showing, not what the program in it
+ * intended: a redrawn screen and a scrolled-off line are both gone.
+ */
 export interface CaptureOptions extends CommandOptions {
   /**
    * Capture the screen saved underneath a full-screen program, tmux's `-a`.
@@ -342,6 +372,7 @@ export interface CaptureOptions extends CommandOptions {
   readonly start?: number;
 }
 
+/** Which hook table the binding is written to, and whether it replaces or adds. */
 export interface SetHookOptions extends CommandOptions {
   /**
    * Add to the commands this hook already holds, tmux's `-a`.
@@ -353,6 +384,11 @@ export interface SetHookOptions extends CommandOptions {
   readonly append?: boolean;
 }
 
+/**
+ * Where a window is moved to, and what happens if something is already there.
+ *
+ * Moving is not linking: the window leaves the session it was in.
+ */
 export interface MoveWindowOptions extends CommandOptions {
   /** Destination index; tmux picks the next free one when omitted. */
   readonly index?: number;
@@ -366,6 +402,12 @@ export interface MoveWindowOptions extends CommandOptions {
   readonly session?: string;
 }
 
+/**
+ * How far a pane boundary moves, and in which direction.
+ *
+ * A resize takes the space from a neighbour, so a pane with none on that side
+ * cannot grow that way.
+ */
 export interface ResizeOptions extends CommandOptions {
   /**
    * Adjust by `amount` cells in this direction instead of setting a size.
@@ -380,6 +422,13 @@ export interface ResizeOptions extends CommandOptions {
   readonly width?: number;
 }
 
+/**
+ * How far a window's own size moves, or what it is set to outright.
+ *
+ * Resizing a window has a side effect: tmux sets that window's `window-size`
+ * option to `manual`, so it stops following the attached clients' terminals
+ * until the option is put back.
+ */
 export interface ResizeWindowOptions extends ResizeOptions {
   /**
    * Grow to the largest size its attached clients allow, tmux's `-A`.
@@ -392,11 +441,23 @@ export interface ResizeWindowOptions extends ResizeOptions {
   readonly smallest?: boolean;
 }
 
+/**
+ * Where the shell command runs, and whether the call waits for it.
+ *
+ * The command runs on the machine the tmux *server* is on, not the caller's.
+ */
 export interface RunShellOptions extends CommandOptions {
   /** Pane the command's `#{pane_*}` formats resolve against. */
   readonly target?: string | null;
 }
 
+/**
+ * How the condition is decided: by running it, or by expanding it.
+ *
+ * By default tmux runs it with `/bin/sh` and reads the exit status. Asked to
+ * treat it as a format instead, tmux expands it and counts it true when the
+ * result is neither empty nor zero — no shell, and no process.
+ */
 export interface IfShellOptions extends CommandOptions {
   /** Command to run when the condition fails. */
   readonly otherwise?: string;
@@ -405,6 +466,11 @@ export interface IfShellOptions extends CommandOptions {
   readonly target?: string | null;
 }
 
+/**
+ * Whether a pane whose process is still alive may be restarted.
+ *
+ * Without it tmux refuses rather than killing what is running.
+ */
 export interface RespawnOptions extends CommandOptions {
   /** Replace a target that is still running rather than only a dead one. */
   readonly kill?: boolean;
@@ -418,6 +484,13 @@ export interface RespawnOptions extends CommandOptions {
   readonly environment?: Readonly<Record<string, string>>;
 }
 
+/**
+ * Size, placement and lifetime of a popup, which floats over the window
+ * rather than taking space from it.
+ *
+ * A popup is displayed on a target client rather than in the window, so it
+ * needs one attached to be seen at all.
+ */
 export interface PopupOptions extends CommandOptions {
   readonly directory?: string;
   /** Close the popup when its command exits. */
@@ -426,6 +499,11 @@ export interface PopupOptions extends CommandOptions {
   readonly width?: string;
 }
 
+/**
+ * One selectable line of a menu: its label, its shortcut, and what it runs.
+ *
+ * A separator is not one of these — see {@link MenuItem}.
+ */
 export interface MenuEntry {
   /** Single-character shortcut tmux binds to this entry. */
   readonly key: string;
@@ -442,6 +520,12 @@ export interface MenuEntry {
  */
 export type MenuItem = MenuEntry | "separator";
 
+/**
+ * What the interactive chooser shows and what selecting a row runs.
+ *
+ * The chooser takes over a client's pane until it is dismissed, so this
+ * needs an attached client to be visible at all.
+ */
 export interface ChooseTreeOptions extends CommandOptions {
   readonly sessionsOnly?: boolean;
   readonly windowsOnly?: boolean;
@@ -710,6 +794,14 @@ export interface TmuxReconnectingEvent {
   readonly kind: "reconnecting";
 }
 
+/**
+ * Anything a control-mode connection can deliver, as one discriminated union.
+ *
+ * tmux pushes these; nothing here asked for them, and they arrive interleaved
+ * with command replies. The union is open in practice — an unrecognised
+ * notification arrives as {@link TmuxUnknownEvent} rather than being dropped,
+ * so a `switch` should still have a default.
+ */
 export type TmuxEvent =
   | TmuxClientDetachedEvent
   | TmuxClientSessionChangedEvent

@@ -60,6 +60,14 @@ export type DaemonGuard = {
 /** One nonempty tmux command, before command-list separators are inserted. */
 export type TmuxCommand = readonly [name: string, ...args: string[]];
 
+/**
+ * What an engine is asked to run: one ordered command list, and the daemon it
+ * must still be talking to.
+ *
+ * tmux runs a command list until one fails and discards the rest, so the list
+ * is the unit of atomicity a caller gets. The daemon guard is what stops a
+ * raw tmux id being applied to whatever a restarted server reissued it to.
+ */
 export type TmuxInvocationRequest = {
   /** Nonempty commands tmux receives as one ordered command list. */
   readonly commands: readonly [TmuxCommand, ...TmuxCommand[]];
@@ -98,6 +106,13 @@ export type GuardedTmuxRequest = {
   readonly refusedBy: (returncode: number, stderr: Uint8Array) => boolean;
 };
 
+/**
+ * What an engine reports back: the process's own exit, not tmux's opinion of
+ * it.
+ *
+ * A `returncode` of zero and a `signal` of `null` together mean tmux ran and
+ * answered; either one set means it did not finish, and `stderr` says why.
+ */
 export type TmuxCommandResult = {
   readonly cmd: readonly string[];
   readonly returncode: number;
