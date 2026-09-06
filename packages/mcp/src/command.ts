@@ -150,14 +150,15 @@ async function capturedPaneState(
   paneId: string,
   authority?: InputAuthority,
 ): Promise<"alive" | "gone" | "unknown"> {
+  const signal = AbortSignal.timeout(context.policy.commandTimeoutMs);
   try {
     if (authority !== undefined && typeof context.observeInput === "function") {
-      const current = await context.observeInput();
+      const current = await context.observeInput(signal);
       if (!sameInputAuthority(authority, current.authority)) return "gone";
       const pane = current.snapshot.panes.first({ id: paneId });
       return pane === undefined || pane.dead === true ? "gone" : "alive";
     }
-    const pane = (await context.snapshot()).panes.first({ id: paneId });
+    const pane = (await context.snapshot(signal)).panes.first({ id: paneId });
     return pane === undefined || pane.dead === true ? "gone" : "alive";
   } catch {
     return "unknown";
@@ -198,7 +199,7 @@ async function waitForSettlement(
     let stream: string;
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- each capture follows the previous observation.
-      stream = await fallbackStream(pane);
+      stream = await fallbackStream(pane, { timeoutMs: context.policy.commandTimeoutMs });
     } else {
       stream = tail.read(cursor).text;
       if (tail.endReason !== undefined) tail = undefined;
@@ -219,8 +220,12 @@ async function waitForSettlement(
       });
       continue;
     }
-    // eslint-disable-next-line no-await-in-loop -- each wait follows the previous read.
-    await tail.changed(SETTLEMENT_POLL_MS);
+    try {
+      // eslint-disable-next-line no-await-in-loop -- each wait follows the previous read.
+      await tail.changed(SETTLEMENT_POLL_MS);
+    } catch {
+      tail = undefined;
+    }
   }
 }
 
@@ -321,11 +326,15 @@ export async function runFramedCommand(
         if (!isCancelled(signal)) throw error;
       }
     } else {
-      // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
-      await tail.changed(
-        Math.min(FALLBACK_POLL_MS * 4, Math.max(1, deadline - Date.now())),
-        signal,
-      );
+      try {
+        // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
+        await tail.changed(
+          Math.min(FALLBACK_POLL_MS * 4, Math.max(1, deadline - Date.now())),
+          signal,
+        );
+      } catch {
+        tail = undefined;
+      }
     }
   }
   const cancelled = isCancelled(signal);
@@ -346,7 +355,10 @@ export async function runFramedCommand(
 
   // Timed out, or the pane died under it — which is a different answer, and the
   // only one where calling again would wait on something that cannot arrive.
-  const partial = tail === undefined ? await fallbackStream(pane) : tail.read(cursor).text;
+  const partial =
+    tail === undefined
+      ? await fallbackStream(pane, { timeoutMs: context.policy.commandTimeoutMs })
+      : tail.read(cursor).text;
   const startAt = partial.indexOf(`${id}_S`);
   const afterStart = startAt < 0 ? -1 : partial.indexOf("\n", startAt);
   const output = afterStart < 0 ? partial : partial.slice(afterStart + 1);

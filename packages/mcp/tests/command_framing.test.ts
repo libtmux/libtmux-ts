@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { TmuxTransportError, type Pane } from "libtmux";
 
-import { runFramedCommand } from "../src/command.js";
+import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
 import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "../src/command_frame.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";
 import { PaneTail } from "../src/pane_tail.js";
@@ -358,6 +358,43 @@ describe("command framing", () => {
     expect(result.exitStatus).toBe(127);
   });
 
+  test("falls back when a live tail wait fails after dispatch", async () => {
+    const tail = new PaneTail("%1");
+    let captureTimeoutMs: number | undefined;
+    let id = "";
+    let waitFailures = 0;
+    tail.changed = async () => {
+      waitFailures += 1;
+      throw new Error("transient live-tail failure");
+    };
+    const pane = {
+      capture: async (options: { readonly timeoutMs?: number }) => {
+        captureTimeoutMs = options.timeoutMs;
+        return id === "" ? [] : [`${id}_S`, "finished", `${id}_E 0 ${id}_D`];
+      },
+      format: { session_id: "$1" },
+      height: 8,
+      id: "%1",
+      cmd: async (_command: string, args: readonly string[]) => {
+        id = dispatchedFrame(args).id;
+      },
+      width: 80,
+    } as unknown as Pane;
+    const policy = resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "250" });
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy,
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "true", 500);
+
+    expect(result.outcome).toBe("completed");
+    expect(result.output).toBe("finished");
+    expect(waitFailures).toBe(1);
+    expect(captureTimeoutMs).toBeGreaterThan(0);
+    expect(captureTimeoutMs).toBeLessThanOrEqual(500);
+  });
+
   test("recognizes a right-padded, soft-wrapped fallback marker", async () => {
     let id = "";
     const pane = {
@@ -505,6 +542,76 @@ describe("command framing", () => {
     tail.append(`${id}_E 0 ${id}_D\n`);
     await result.settled;
     expect(settled).toBe(true);
+  });
+
+  test("retries retained settlement after a live-tail failure", async () => {
+    const controller = new AbortController();
+    const tail = new PaneTail("%91");
+    const observedSignals: (AbortSignal | undefined)[] = [];
+    let captureTimeoutMs: number | undefined;
+    let id = "";
+    let tailFailed = false;
+    tail.changed = async () => {
+      tailFailed = true;
+      throw new Error("transient live-tail failure");
+    };
+    const pane = {
+      capture: async (options: { readonly timeoutMs?: number }) => {
+        captureTimeoutMs = options.timeoutMs;
+        return tailFailed ? [`${id}_S`, `${id}_E 0 ${id}_D`] : [];
+      },
+      format: { session_id: "$1" },
+      height: 8,
+      id: "%91",
+      cmd: async (_command: string, args: readonly string[]) => {
+        id = dispatchedFrame(args).id;
+        tail.append(`${id}_S\n`);
+        controller.abort();
+      },
+      width: 80,
+    } as unknown as Pane;
+    const policy = resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "250" });
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      observeInput: async (signal?: AbortSignal) => {
+        observedSignals.push(signal);
+        return {
+          authority,
+          identity: {},
+          snapshot: { panes: { first: () => pane } },
+        };
+      },
+      policy,
+    } as unknown as ToolContext;
+    const reservation = reserveFramedCommand(authority, pane.id, "cancelled run");
+    if (isPaneInputConflict(reservation)) throw new Error("reservation conflicted");
+
+    try {
+      const result = await runFramedCommand(
+        context,
+        pane,
+        "true",
+        1_000,
+        controller.signal,
+        true,
+        undefined,
+        authority,
+      );
+      reservation.settleWith(result.settled);
+
+      expect(result.outcome).toBe("cancelled");
+      await expect(result.settled).resolves.toBeUndefined();
+      await Promise.resolve();
+
+      const next = reserveFramedCommand(authority, pane.id, "next run");
+      expect(isPaneInputConflict(next)).toBe(false);
+      if (!isPaneInputConflict(next)) next.release();
+      expect(observedSignals[0]).toBeDefined();
+      expect(observedSignals[0]).not.toBe(controller.signal);
+      expect(captureTimeoutMs).toBe(policy.commandTimeoutMs);
+    } finally {
+      reservation.release();
+    }
   });
 
   test("reads a complete marker buffered before the live tail closes", async () => {
