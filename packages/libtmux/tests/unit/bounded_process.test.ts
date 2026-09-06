@@ -121,6 +121,28 @@ describe("bounded subprocesses", () => {
     },
   );
 
+  test.skipIf(process.platform !== "linux")(
+    "does not wait for pipes held by a detached descendant",
+    async () => {
+      let descendantPid = 0;
+      try {
+        const started = performance.now();
+        const result = await runBoundedCommand(["sh", "-c", "setsid sh -c 'sleep 60' & echo $!"], {
+          env: { ...process.env },
+          maxOutputBytes: 1_024,
+          terminationGraceMilliseconds: 50,
+          timeoutMilliseconds: 1_000,
+        });
+        descendantPid = Number(result.stdout.trim());
+
+        expect(result.termination).toBe("exited");
+        expect(performance.now() - started).toBeLessThan(500);
+      } finally {
+        if (descendantPid > 0) killIfRunning(descendantPid);
+      }
+    },
+  );
+
   for (const [signal, exitCode] of [
     ["SIGHUP", 129],
     ["SIGINT", 130],
