@@ -1,5 +1,6 @@
 import {
   chmod,
+  link,
   lstat,
   mkdir,
   readFile,
@@ -88,6 +89,11 @@ function backupRoutePath(configPath: string): string {
 async function seed(info: CliInfo, contents: string): Promise<void> {
   await mkdir(join(info.configPath, ".."), { recursive: true });
   await writeFile(info.configPath, contents);
+}
+
+async function pathIdentity(path: string): Promise<string> {
+  const metadata = await lstat(path, { bigint: true });
+  return [metadata.dev, metadata.ino, metadata.birthtimeNs].map(String).join(":");
 }
 
 async function seedSymlink(
@@ -495,6 +501,33 @@ describe("swapping a config", () => {
     expect(await Bun.file(backupPath(later.configPath)).exists()).toBe(false);
   });
 
+  test("rejects a config target aliased to another client's backup", async () => {
+    const first = cliFor("claude");
+    const later = cliFor("cursor");
+    const original = originalConfig(first);
+    await seed(first, original);
+    await writeServer(first, "libtmux", buildSpec({ kind: "dev", repo: "/one" }));
+    await mkdir(dirname(later.configPath), { recursive: true });
+    await link(backupPath(first.configPath), later.configPath);
+    const firstBefore = await readFile(first.configPath, "utf8");
+    const backupBefore = await readFile(backupPath(first.configPath), "utf8");
+    const backupIdentity = await pathIdentity(backupPath(first.configPath));
+
+    const dryRun = await runSwap(["use", "--source", "dev", "--dry-run"]);
+    expect(dryRun.status).toBe(1);
+    expect(dryRun.stderr).toMatch(/same transaction artifact/u);
+    expect(dryRun.stdout).not.toContain("would update");
+
+    await expect(
+      writeServers([first, later], "libtmux", buildSpec({ kind: "dev", repo: "/two" })),
+    ).rejects.toThrow(/same transaction artifact/u);
+
+    expect(await readFile(first.configPath, "utf8")).toBe(firstBefore);
+    expect(await readFile(backupPath(first.configPath), "utf8")).toBe(backupBefore);
+    expect(await pathIdentity(backupPath(first.configPath))).toBe(backupIdentity);
+    expect(await readFile(later.configPath, "utf8")).toBe(backupBefore);
+  });
+
   test.each(["symlink", "file"] as const)(
     "refuses a config link replaced by a %s after staging",
     async (replacementKind) => {
@@ -728,6 +761,141 @@ describe("swapping a config", () => {
     },
   );
 
+  test("refuses an in-place edit after use and retains recovery", async () => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+    const backupIdentity = await pathIdentity(backupPath(info.configPath));
+    const routeIdentity = await pathIdentity(backupRoutePath(info.configPath));
+    const edited = '{\n  "human": "edit"\n}\n';
+    await writeFile(info.configPath, edited);
+
+    await expect(revertConfig(info)).rejects.toThrow(/config.*changed since swap/u);
+
+    expect(await readFile(info.configPath, "utf8")).toBe(edited);
+    expect(await pathIdentity(backupPath(info.configPath))).toBe(backupIdentity);
+    expect(await pathIdentity(backupRoutePath(info.configPath))).toBe(routeIdentity);
+  });
+
+  test("refuses a mode change after use and retains recovery", async () => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+    await chmod(info.configPath, 0o600);
+    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+    const backupIdentity = await pathIdentity(backupPath(info.configPath));
+    const routeIdentity = await pathIdentity(backupRoutePath(info.configPath));
+    await chmod(info.configPath, 0o640);
+
+    await expect(revertConfig(info)).rejects.toThrow(/config.*changed since swap/u);
+
+    expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
+    expect(await pathIdentity(backupPath(info.configPath))).toBe(backupIdentity);
+    expect(await pathIdentity(backupRoutePath(info.configPath))).toBe(routeIdentity);
+  });
+
+  test.each(["contents", "inode", "mode"] as const)(
+    "refuses recovery backup %s changes",
+    async (change) => {
+      const info = cliFor("cursor");
+      await seed(info, originalConfig(info));
+      await chmod(info.configPath, 0o600);
+      await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+      const swapped = await readFile(info.configPath, "utf8");
+      const sidecarIdentity = await pathIdentity(backupRoutePath(info.configPath));
+      const backup = backupPath(info.configPath);
+      if (change === "contents") {
+        await writeFile(backup, '{\n  "tampered": true\n}\n');
+      } else if (change === "inode") {
+        const replacement = `${backup}.replacement`;
+        await writeFile(replacement, originalConfig(info), { mode: 0o600 });
+        await rename(replacement, backup);
+      } else {
+        await chmod(backup, 0o640);
+      }
+      const backupIdentity = await pathIdentity(backup);
+
+      await expect(revertConfig(info)).rejects.toThrow(/recovery backup changed since swap/u);
+
+      expect(await readFile(info.configPath, "utf8")).toBe(swapped);
+      expect(await pathIdentity(backup)).toBe(backupIdentity);
+      expect(await pathIdentity(backupRoutePath(info.configPath))).toBe(sidecarIdentity);
+    },
+  );
+
+  test.each(["regular", "symlink"] as const)(
+    "refuses a same-path %s target replacement after use",
+    async (kind) => {
+      const info = cliFor("cursor");
+      const original = originalConfig(info);
+      let target: string;
+      if (kind === "symlink") {
+        target = (await seedSymlink(info, original, 0o640)).target;
+      } else {
+        await seed(info, original);
+        target = info.configPath;
+      }
+      await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/repo" }));
+      const backupIdentity = await pathIdentity(backupPath(info.configPath));
+      const routeIdentity = await pathIdentity(backupRoutePath(info.configPath));
+      const replacement = '{\n  "replacement": true\n}\n';
+      const temporary = `${target}.replacement`;
+      await writeFile(temporary, replacement);
+      await rename(temporary, target);
+
+      await expect(revertConfig(info)).rejects.toThrow(/config.*changed since swap/u);
+
+      expect(await readFile(target, "utf8")).toBe(replacement);
+      expect(await pathIdentity(backupPath(info.configPath))).toBe(backupIdentity);
+      expect(await pathIdentity(backupRoutePath(info.configPath))).toBe(routeIdentity);
+    },
+  );
+
+  test("updates recovery ownership on repeat use", async () => {
+    const info = cliFor("cursor");
+    const original = originalConfig(info);
+    await seed(info, original);
+    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/one" }));
+    const firstRoute = await readFile(backupRoutePath(info.configPath), "utf8");
+    const firstRouteIdentity = await pathIdentity(backupRoutePath(info.configPath));
+
+    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/two" }));
+
+    const secondRoute = await readFile(backupRoutePath(info.configPath), "utf8");
+    expect(secondRoute).not.toBe(firstRoute);
+    expect(await pathIdentity(backupRoutePath(info.configPath))).not.toBe(firstRouteIdentity);
+    expect(JSON.parse(secondRoute)).toMatchObject({
+      backupIdentity: await pathIdentity(backupPath(info.configPath)),
+      targetIdentity: await pathIdentity(info.configPath),
+      version: 2,
+    });
+    expect(await revertConfig(info)).toBe(true);
+    expect(await readFile(info.configPath, "utf8")).toBe(original);
+  });
+
+  test("restores an existing recovery sidecar inode when repeat use fails", async () => {
+    const info = cliFor("cursor");
+    await seed(info, originalConfig(info));
+    await writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/one" }));
+    const configBefore = await pathIdentity(info.configPath);
+    const backupBefore = await pathIdentity(backupPath(info.configPath));
+    const routeBefore = await pathIdentity(backupRoutePath(info.configPath));
+
+    await expect(
+      writeServer(info, "libtmux", buildSpec({ kind: "dev", repo: "/two" }), {
+        beforeConfigCommit: () => {
+          throw new Error("injected config commit failure");
+        },
+      }),
+    ).rejects.toThrow(/injected config commit failure/u);
+
+    expect(await pathIdentity(info.configPath)).toBe(configBefore);
+    expect(await pathIdentity(backupPath(info.configPath))).toBe(backupBefore);
+    expect(await pathIdentity(backupRoutePath(info.configPath))).toBe(routeBefore);
+    expect(
+      (await readdir(dirname(info.configPath))).some((name) => /\.mcp-swap-\d+-/u.test(name)),
+    ).toBe(false);
+  });
+
   test("refuses a legacy symlink backup without route metadata", async () => {
     const info = cliFor("cursor");
     const original = originalConfig(info);
@@ -804,9 +972,6 @@ describe("swapping a config", () => {
       expect((await stat(info.configPath)).mode & 0o777).toBe(0o600);
       expect((await stat(backupPath(info.configPath))).mode & 0o777).toBe(0o600);
 
-      await chmod(info.configPath, 0o640);
-      expect((await stat(info.configPath)).mode & 0o777).toBe(0o640);
-
       expect(await revertConfig(info)).toBe(true);
       expect(await readFile(info.configPath, "utf8")).toBe(original);
       expect((await stat(info.configPath)).mode & 0o777).toBe(0o600);
@@ -843,7 +1008,7 @@ describe("swapping a config", () => {
     await writeServer(info, "libtmux", buildSpec({ kind: "build", repo: "/two" }));
     await writeServer(info, "libtmux", buildSpec({ kind: "published", version: "9" }));
     expect(await readFile(backupPath(info.configPath))).toEqual(firstBackup);
-    expect(await readFile(backupRoutePath(info.configPath))).toEqual(firstRoute);
+    expect(await readFile(backupRoutePath(info.configPath))).not.toEqual(firstRoute);
     await revertConfig(info);
 
     // Not the state before the last swap — the state before any of them.

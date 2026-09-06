@@ -13,7 +13,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process.js";
 
@@ -530,10 +530,16 @@ interface ConfigRoute {
 }
 
 interface RecoveryRouteRecord {
+  readonly backupDigest: string;
+  readonly backupIdentity: string;
+  readonly backupMode: number;
   readonly kind: Exclude<ConfigPathKind, "missing">;
   readonly logicalIdentity: string | null;
+  readonly targetDigest: string;
+  readonly targetIdentity: string;
+  readonly targetMode: number;
   readonly targetPath: string;
-  readonly version: 1;
+  readonly version: 2;
 }
 
 const RECOVERY_ROUTE_SUFFIX = ".route.json";
@@ -554,6 +560,10 @@ function linkIdentity(metadata: {
   readonly ino: bigint;
 }): string {
   return `${fileIdentity(metadata)}:${String(metadata.ctimeNs)}`;
+}
+
+function contentDigest(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
 }
 
 async function canonicalMissingPath(path: string): Promise<string> {
@@ -636,12 +646,22 @@ function committedRoute(route: ConfigRoute, targetIdentity: string): ConfigRoute
   };
 }
 
-function recoveryRouteRecord(route: ConfigRoute): RecoveryRouteRecord {
+function recoveryRouteRecord(
+  route: ConfigRoute,
+  target: RecoveryFile,
+  backup: RecoveryFile,
+): RecoveryRouteRecord {
   return {
+    backupDigest: contentDigest(backup.raw),
+    backupIdentity: backup.identity,
+    backupMode: backup.mode,
     kind: route.kind === "symlink" ? "symlink" : "regular",
     logicalIdentity: route.kind === "symlink" ? (route.logicalIdentity ?? null) : null,
+    targetDigest: contentDigest(target.raw),
+    targetIdentity: target.identity,
+    targetMode: target.mode,
     targetPath: route.targetPath,
-    version: 1,
+    version: 2,
   };
 }
 
@@ -686,14 +706,21 @@ export async function backupOnce(path: string): Promise<string | undefined> {
   if (route.kind === "missing") return undefined;
   const mode = await fileMode(route.targetPath);
   if (mode === undefined) return undefined;
-  const backupTemporary = await stageFile(backup, await readFile(route.targetPath, "utf8"), mode);
+  const raw = await readFile(route.targetPath, "utf8");
+  const backupTemporary = await stageFile(backup, raw, mode);
   const routePath = recoveryRoutePath(path);
   let routeTemporary: StagedFile | undefined;
   let publishedBackup = false;
   try {
     routeTemporary = await stageFile(
       routePath,
-      serializeRecoveryRoute(recoveryRouteRecord(route)),
+      serializeRecoveryRoute(
+        recoveryRouteRecord(
+          route,
+          { identity: route.targetIdentity!, mode, raw },
+          { identity: backupTemporary.identity, mode, raw },
+        ),
+      ),
       0o600,
     );
     await assertConfigRoute(route);
@@ -763,10 +790,13 @@ function parseRecoveryRoute(raw: string): RecoveryRouteRecord {
   }
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record).toSorted();
-  if (keys.join(",") !== "kind,logicalIdentity,targetPath,version") {
+  if (
+    keys.join(",") !==
+    "backupDigest,backupIdentity,backupMode,kind,logicalIdentity,targetDigest,targetIdentity,targetMode,targetPath,version"
+  ) {
     throw new TypeError("recovery route metadata has unknown or missing fields");
   }
-  if (record.version !== 1 || (record.kind !== "regular" && record.kind !== "symlink")) {
+  if (record.version !== 2 || (record.kind !== "regular" && record.kind !== "symlink")) {
     throw new TypeError("recovery route metadata has an unsupported version or kind");
   }
   if (typeof record.targetPath !== "string" || !isAbsolute(record.targetPath)) {
@@ -780,11 +810,37 @@ function parseRecoveryRoute(raw: string): RecoveryRouteRecord {
   ) {
     throw new TypeError("recovery route metadata has an invalid logical identity");
   }
+  const identityPattern = /^\d+:\d+:-?\d+$/u;
+  const digestPattern = /^[0-9a-f]{64}$/u;
+  if (
+    typeof record.backupIdentity !== "string" ||
+    !identityPattern.test(record.backupIdentity) ||
+    typeof record.targetIdentity !== "string" ||
+    !identityPattern.test(record.targetIdentity) ||
+    typeof record.backupDigest !== "string" ||
+    !digestPattern.test(record.backupDigest) ||
+    typeof record.targetDigest !== "string" ||
+    !digestPattern.test(record.targetDigest) ||
+    !Number.isInteger(record.backupMode) ||
+    (record.backupMode as number) < 0 ||
+    (record.backupMode as number) > 0o7777 ||
+    !Number.isInteger(record.targetMode) ||
+    (record.targetMode as number) < 0 ||
+    (record.targetMode as number) > 0o7777
+  ) {
+    throw new TypeError("recovery route metadata has invalid file ownership");
+  }
   return {
+    backupDigest: record.backupDigest,
+    backupIdentity: record.backupIdentity,
+    backupMode: record.backupMode as number,
     kind: record.kind,
     logicalIdentity: record.logicalIdentity as string | null,
+    targetDigest: record.targetDigest,
+    targetIdentity: record.targetIdentity,
+    targetMode: record.targetMode as number,
     targetPath: record.targetPath,
-    version: 1,
+    version: 2,
   };
 }
 
@@ -796,6 +852,7 @@ function persistentRouteMatches(route: ConfigRoute, record: RecoveryRouteRecord)
   return (
     route.kind === record.kind &&
     route.targetPath === record.targetPath &&
+    route.targetIdentity === record.targetIdentity &&
     (record.kind === "regular" || route.logicalIdentity === record.logicalIdentity)
   );
 }
@@ -822,7 +879,22 @@ async function readRecoveryState(configPath: string, route: ConfigRoute): Promis
   }
   const routeRecord = parseRecoveryRoute(routeFile.raw);
   if (!persistentRouteMatches(route, routeRecord)) {
-    throw new Error(`config path changed since backup: ${configPath}`);
+    throw new Error(`config path changed since swap: ${configPath}`);
+  }
+  if (
+    backup.identity !== routeRecord.backupIdentity ||
+    backup.mode !== routeRecord.backupMode ||
+    contentDigest(backup.raw) !== routeRecord.backupDigest
+  ) {
+    throw new Error(`recovery backup changed since swap: ${configPath}`);
+  }
+  const targetRaw = await readFile(route.targetPath, "utf8");
+  const targetMode = await fileMode(route.targetPath);
+  if (
+    targetMode !== routeRecord.targetMode ||
+    contentDigest(targetRaw) !== routeRecord.targetDigest
+  ) {
+    throw new Error(`config contents changed since swap: ${configPath}`);
   }
   return { backup, route: routeFile };
 }
@@ -868,6 +940,7 @@ export type WriteServerOutcome = "added" | "replaced";
 
 export interface SwapTransactionHooks {
   readonly afterStaging?: () => Promise<void> | void;
+  readonly beforeConfigCommit?: (info: CliInfo, index: number) => Promise<void> | void;
 }
 
 interface ServerWritePlan {
@@ -945,8 +1018,19 @@ interface StagedServerWrite {
   readonly backupTemporary: StagedFile | undefined;
   readonly committedRoute: ConfigRoute;
   readonly plan: ServerWritePlan;
+  readonly routeRaw: string | undefined;
   readonly routeTemporary: StagedFile | undefined;
   readonly temporary: StagedFile;
+}
+
+interface PublishedRoute {
+  readonly entry: StagedServerWrite;
+  readonly previousPath: string | undefined;
+}
+
+interface CommittedServerWrite {
+  readonly entry: StagedServerWrite;
+  readonly previousPath: string | undefined;
 }
 
 async function stageFile(
@@ -969,16 +1053,47 @@ async function cleanupTemporaries(paths: readonly string[]): Promise<void> {
   await Promise.all(paths.map((path) => rm(path, { force: true })));
 }
 
-function assertDistinctConfigTargets(plans: readonly ServerWritePlan[]): void {
-  const paths = new Set<string>();
-  const identities = new Set<string>();
-  for (const plan of plans) {
-    const { targetIdentity, targetPath } = plan.route;
-    if (paths.has(targetPath) || (targetIdentity !== undefined && identities.has(targetIdentity))) {
-      throw new Error(`${plan.info.name} resolves to the same resolved target: ${targetPath}`);
+function transientPath(path: string): string {
+  return `${path}.mcp-swap-${String(process.pid)}-${randomUUID()}`;
+}
+
+async function assertDistinctTransactionArtifacts(
+  plans: readonly ServerWritePlan[],
+): Promise<void> {
+  const paths = new Map<string, string>();
+  const identities = new Map<string, string>();
+  const artifactGroups = await Promise.all(
+    plans.map(async (plan) => [
+      {
+        identity: plan.route.targetIdentity,
+        label: `${plan.info.name} config`,
+        path: plan.route.targetPath,
+      },
+      {
+        identity: plan.recovery.backup?.identity,
+        label: `${plan.info.name} recovery backup`,
+        path: await canonicalMissingPath(backupPath(plan.info.configPath)),
+      },
+      {
+        identity: plan.recovery.route?.identity,
+        label: `${plan.info.name} recovery route sidecar`,
+        path: await canonicalMissingPath(recoveryRoutePath(plan.info.configPath)),
+      },
+    ]),
+  );
+  for (const artifacts of artifactGroups) {
+    for (const artifact of artifacts) {
+      const pathOwner = paths.get(artifact.path);
+      const identityOwner =
+        artifact.identity === undefined ? undefined : identities.get(artifact.identity);
+      if (pathOwner !== undefined || identityOwner !== undefined) {
+        throw new Error(
+          `${artifact.label} has the same resolved target or same transaction artifact as ${pathOwner ?? identityOwner}`,
+        );
+      }
+      paths.set(artifact.path, artifact.label);
+      if (artifact.identity !== undefined) identities.set(artifact.identity, artifact.label);
     }
-    paths.add(targetPath);
-    if (targetIdentity !== undefined) identities.add(targetIdentity);
   }
 }
 
@@ -1041,11 +1156,19 @@ async function planServerWrites(
       throw planError(info, error);
     }
   }
-  assertDistinctConfigTargets(plans);
+  await assertDistinctTransactionArtifacts(plans);
   for (const plan of plans) {
     try {
       // eslint-disable-next-line no-await-in-loop -- stable client ownership keeps failures actionable.
       await assertPlanFeasible(plan);
+    } catch (error) {
+      throw planError(plan.info, error);
+    }
+  }
+  for (const plan of plans) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- all selected state authenticates before staging.
+      await assertServerWritePlan(plan);
     } catch (error) {
       throw planError(plan.info, error);
     }
@@ -1085,6 +1208,47 @@ async function assertRecoveryFile(
   }
 }
 
+async function assertConfigState(
+  route: ConfigRoute,
+  raw: string,
+  mode: number | undefined,
+): Promise<void> {
+  await assertConfigRoute(route);
+  if (route.kind === "missing") return;
+  if (
+    (await readFile(route.targetPath, "utf8")) !== raw ||
+    (await fileMode(route.targetPath)) !== mode
+  ) {
+    throw new Error(`config contents changed after planning: ${route.logicalPath}`);
+  }
+}
+
+async function assertServerWritePlan(plan: ServerWritePlan): Promise<void> {
+  await assertConfigState(plan.route, plan.raw, plan.mode);
+  if (plan.recovery.backup === undefined) {
+    await assertPathMissing(backupPath(plan.info.configPath), "recovery backup");
+  } else {
+    await assertRecoveryFile(
+      backupPath(plan.info.configPath),
+      plan.recovery.backup,
+      plan.recovery.backup.raw,
+      "recovery backup",
+      plan.recovery.backup.mode,
+    );
+  }
+  if (plan.recovery.route === undefined) {
+    await assertPathMissing(recoveryRoutePath(plan.info.configPath), "recovery route sidecar");
+  } else {
+    await assertRecoveryFile(
+      recoveryRoutePath(plan.info.configPath),
+      plan.recovery.route,
+      plan.recovery.route.raw,
+      "recovery route sidecar",
+      0o600,
+    );
+  }
+}
+
 async function assertRecoveryUnit(entry: StagedServerWrite): Promise<void> {
   const { plan } = entry;
   const backup = entry.backupTemporary ?? plan.recovery.backup;
@@ -1096,14 +1260,12 @@ async function assertRecoveryUnit(entry: StagedServerWrite): Promise<void> {
       "recovery backup",
     );
   }
-  const route = entry.routeTemporary ?? plan.recovery.route;
+  const route = entry.routeTemporary;
   if (route !== undefined) {
     await assertRecoveryFile(
       recoveryRoutePath(plan.info.configPath),
       route,
-      entry.routeTemporary === undefined
-        ? plan.recovery.route!.raw
-        : serializeRecoveryRoute(recoveryRouteRecord(plan.route)),
+      entry.routeRaw!,
       "recovery route sidecar",
       0o600,
     );
@@ -1122,21 +1284,6 @@ async function replaceExpectedRoute(
   } catch (error) {
     await rm(temporary.path, { force: true });
     throw error;
-  }
-}
-
-async function assertRestoredPlan(plan: ServerWritePlan): Promise<void> {
-  const actual = await inspectConfigRoute(plan.info.configPath);
-  const topologyMatches =
-    actual.kind === plan.route.kind &&
-    actual.targetPath === plan.route.targetPath &&
-    (actual.kind !== "symlink" || actual.logicalIdentity === plan.route.logicalIdentity);
-  if (
-    !topologyMatches ||
-    (await readFile(actual.targetPath, "utf8")) !== plan.raw ||
-    (await fileMode(actual.targetPath)) !== plan.mode
-  ) {
-    throw new Error(`config rollback could not be verified: ${plan.info.configPath}`);
   }
 }
 
@@ -1161,24 +1308,35 @@ export async function writeServers(
           : // eslint-disable-next-line no-await-in-loop -- all backups stage before target changes.
             await stageFile(backupPath(plan.info.configPath), plan.raw, plan.mode);
       if (backupTemporary !== undefined) temporaryPaths.push(backupTemporary.path);
-      const needsRoute = plan.mode !== undefined || plan.recovery.backup !== undefined;
-      const routeTemporary =
-        !needsRoute || plan.recovery.route !== undefined
-          ? undefined
-          : // eslint-disable-next-line no-await-in-loop -- recovery metadata stages with its backup.
-            await stageFile(
-              recoveryRoutePath(plan.info.configPath),
-              serializeRecoveryRoute(recoveryRouteRecord(plan.route)),
-              0o600,
-            );
-      if (routeTemporary !== undefined) temporaryPaths.push(routeTemporary.path);
       // eslint-disable-next-line no-await-in-loop -- all configs stage before target changes.
       const temporary = await stageFile(plan.route.targetPath, plan.data, plan.mode);
       temporaryPaths.push(temporary.path);
+      const backup =
+        plan.recovery.backup ??
+        (backupTemporary === undefined || plan.mode === undefined
+          ? undefined
+          : { identity: backupTemporary.identity, mode: plan.mode, raw: plan.raw });
+      const routeRaw =
+        backup === undefined || plan.mode === undefined
+          ? undefined
+          : serializeRecoveryRoute(
+              recoveryRouteRecord(
+                plan.route,
+                { identity: temporary.identity, mode: plan.mode, raw: plan.data },
+                backup,
+              ),
+            );
+      const routeTemporary =
+        routeRaw === undefined
+          ? undefined
+          : // eslint-disable-next-line no-await-in-loop -- ownership stages beside its recovery unit.
+            await stageFile(recoveryRoutePath(plan.info.configPath), routeRaw, 0o600);
+      if (routeTemporary !== undefined) temporaryPaths.push(routeTemporary.path);
       staged.push({
         backupTemporary,
         committedRoute: committedRoute(plan.route, temporary.identity),
         plan,
+        routeRaw,
         routeTemporary,
         temporary,
       });
@@ -1189,89 +1347,185 @@ export async function writeServers(
     throw error;
   }
 
-  const createdRecovery = new Map<ServerWritePlan, string[]>();
-  const committed: StagedServerWrite[] = [];
-  const recordRecovery = (plan: ServerWritePlan, path: string): void => {
-    const paths = createdRecovery.get(plan) ?? [];
-    paths.push(path);
-    createdRecovery.set(plan, paths);
-  };
+  const createdBackups = new Set<ServerWritePlan>();
+  const publishedRoutes: PublishedRoute[] = [];
+  const committed: CommittedServerWrite[] = [];
   try {
     for (const entry of staged) {
       if (entry.backupTemporary !== undefined) {
         const destination = backupPath(entry.plan.info.configPath);
-        // eslint-disable-next-line no-await-in-loop -- backup bytes must still name this config.
-        await assertConfigRoute(entry.plan.route);
+        // eslint-disable-next-line no-await-in-loop -- no selected state may drift before publication.
+        await assertServerWritePlan(entry.plan);
         // eslint-disable-next-line no-await-in-loop -- publication must not replace a new artifact.
         await assertPathMissing(destination, "recovery backup");
         // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
         await rename(entry.backupTemporary.path, destination);
-        recordRecovery(entry.plan, destination);
+        createdBackups.add(entry.plan);
       }
       if (entry.routeTemporary !== undefined) {
         const destination = recoveryRoutePath(entry.plan.info.configPath);
-        // eslint-disable-next-line no-await-in-loop -- route metadata must still name this config.
-        await assertConfigRoute(entry.plan.route);
-        // eslint-disable-next-line no-await-in-loop -- publication must not replace a new artifact.
-        await assertPathMissing(destination, "recovery route sidecar");
-        // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
-        await rename(entry.routeTemporary.path, destination);
-        recordRecovery(entry.plan, destination);
+        let previousPath: string | undefined;
+        if (entry.plan.recovery.route === undefined) {
+          // eslint-disable-next-line no-await-in-loop -- publication must not replace a new artifact.
+          await assertPathMissing(destination, "recovery route sidecar");
+        } else {
+          // eslint-disable-next-line no-await-in-loop -- preserve the owned inode until commit succeeds.
+          await assertRecoveryFile(
+            destination,
+            entry.plan.recovery.route,
+            entry.plan.recovery.route.raw,
+            "recovery route sidecar",
+            0o600,
+          );
+          previousPath = transientPath(destination);
+          // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
+          await assertPathMissing(previousPath, "recovery route rollback slot");
+          // eslint-disable-next-line no-await-in-loop -- move preserves exact pre-call inode identity.
+          await rename(destination, previousPath);
+        }
+        try {
+          // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
+          await rename(entry.routeTemporary.path, destination);
+        } catch (error) {
+          // eslint-disable-next-line no-await-in-loop -- restore the owned inode before unwinding.
+          if (previousPath !== undefined) await rename(previousPath, destination);
+          throw error;
+        }
+        publishedRoutes.push({ entry, previousPath });
       }
     }
-    for (const entry of staged) {
-      // eslint-disable-next-line no-await-in-loop -- every write reauthenticates its logical route.
-      await assertConfigRoute(entry.plan.route);
+    for (const [index, entry] of staged.entries()) {
+      // eslint-disable-next-line no-await-in-loop -- tests can force a precise transition boundary.
+      await hooks.beforeConfigCommit?.(entry.plan.info, index);
+      // eslint-disable-next-line no-await-in-loop -- every write reauthenticates bytes, mode, and route.
+      await assertConfigState(entry.plan.route, entry.plan.raw, entry.plan.mode);
       // eslint-disable-next-line no-await-in-loop -- recovery must remain usable before target change.
       await assertRecoveryUnit(entry);
-      // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
-      await rename(entry.temporary.path, entry.plan.route.targetPath);
-      committed.push(entry);
+      let previousPath: string | undefined;
+      if (entry.plan.route.kind !== "missing") {
+        previousPath = transientPath(entry.plan.route.targetPath);
+        // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
+        await assertPathMissing(previousPath, "config rollback slot");
+        // eslint-disable-next-line no-await-in-loop -- move preserves exact pre-call inode identity.
+        await rename(entry.plan.route.targetPath, previousPath);
+      }
+      try {
+        // eslint-disable-next-line no-await-in-loop -- commit order is deterministic for rollback.
+        await rename(entry.temporary.path, entry.plan.route.targetPath);
+      } catch (error) {
+        // eslint-disable-next-line no-await-in-loop -- restore the owned inode before unwinding.
+        if (previousPath !== undefined) await rename(previousPath, entry.plan.route.targetPath);
+        throw error;
+      }
+      committed.push({ entry, previousPath });
     }
   } catch (error) {
     const rollbackFailures: unknown[] = [];
     const failedRollbacks = new Set<ServerWritePlan>();
-    for (const entry of committed.toReversed()) {
+    for (const committedEntry of committed.toReversed()) {
+      const { entry, previousPath } = committedEntry;
       const { plan } = entry;
       try {
-        if (plan.mode === undefined) {
-          // eslint-disable-next-line no-await-in-loop -- never remove a replacement target.
-          await assertConfigRoute(entry.committedRoute);
-          // eslint-disable-next-line no-await-in-loop -- rollback must finish before reporting failure.
-          await rm(plan.route.targetPath, { force: true });
-          // eslint-disable-next-line no-await-in-loop -- removal is complete only after verification.
-          await assertConfigRoute(plan.route);
-        } else {
-          // eslint-disable-next-line no-await-in-loop -- rollback must finish before reporting failure.
-          await replaceExpectedRoute(entry.committedRoute, plan.raw, plan.mode);
-          // eslint-disable-next-line no-await-in-loop -- restored bytes, mode, and topology must agree.
-          await assertRestoredPlan(plan);
+        // eslint-disable-next-line no-await-in-loop -- never overwrite an unexpected replacement target.
+        await assertConfigRoute(entry.committedRoute);
+        const displaced = transientPath(plan.route.targetPath);
+        // eslint-disable-next-line no-await-in-loop -- a transaction never adopts an existing hold.
+        await assertPathMissing(displaced, "config rollback discard");
+        // eslint-disable-next-line no-await-in-loop -- retain the failed write until restore verifies.
+        await rename(plan.route.targetPath, displaced);
+        try {
+          if (previousPath !== undefined) {
+            // eslint-disable-next-line no-await-in-loop -- restore the exact pre-call inode.
+            await rename(previousPath, plan.route.targetPath);
+          }
+          // eslint-disable-next-line no-await-in-loop -- rollback proves the exact pre-call state.
+          await assertConfigState(plan.route, plan.raw, plan.mode);
+        } catch (rollbackError) {
+          // eslint-disable-next-line no-await-in-loop -- recovery must finish in transaction order.
+          if (previousPath !== undefined && (await exists(previousPath))) {
+            // eslint-disable-next-line no-await-in-loop -- restore the displaced current target.
+            await rename(displaced, plan.route.targetPath);
+          }
+          throw rollbackError;
         }
+        // eslint-disable-next-line no-await-in-loop -- discard only after exact restore is proven.
+        await rm(displaced, { force: true });
       } catch (rollbackError) {
         rollbackFailures.push(rollbackError);
         failedRollbacks.add(plan);
       }
     }
-    for (const [plan, paths] of createdRecovery) {
+    for (const published of publishedRoutes.toReversed()) {
+      const { entry, previousPath } = published;
+      const { plan } = entry;
       if (failedRollbacks.has(plan)) continue;
-      for (const path of paths) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- authenticate the current sidecar before moving it.
+        await assertRecoveryFile(
+          recoveryRoutePath(plan.info.configPath),
+          entry.routeTemporary!,
+          entry.routeRaw!,
+          "recovery route sidecar",
+          0o600,
+        );
+        const displaced = transientPath(recoveryRoutePath(plan.info.configPath));
+        // eslint-disable-next-line no-await-in-loop -- retain the new sidecar until restore verifies.
+        await rename(recoveryRoutePath(plan.info.configPath), displaced);
         try {
-          // eslint-disable-next-line no-await-in-loop -- recovery is discarded only after restore.
-          await rm(path, { force: true });
+          if (previousPath === undefined) {
+            // eslint-disable-next-line no-await-in-loop -- absence was the exact pre-call state.
+            await assertPathMissing(
+              recoveryRoutePath(plan.info.configPath),
+              "recovery route sidecar",
+            );
+          } else {
+            // eslint-disable-next-line no-await-in-loop -- restore the exact pre-call sidecar inode.
+            await rename(previousPath, recoveryRoutePath(plan.info.configPath));
+            // eslint-disable-next-line no-await-in-loop -- restoration includes bytes, mode, and identity.
+            await assertRecoveryFile(
+              recoveryRoutePath(plan.info.configPath),
+              plan.recovery.route!,
+              plan.recovery.route!.raw,
+              "recovery route sidecar",
+              0o600,
+            );
+          }
         } catch (rollbackError) {
-          rollbackFailures.push(rollbackError);
-          break;
+          // eslint-disable-next-line no-await-in-loop -- recovery must finish in transaction order.
+          if (previousPath !== undefined && (await exists(previousPath))) {
+            // eslint-disable-next-line no-await-in-loop -- restore the displaced current sidecar.
+            await rename(displaced, recoveryRoutePath(plan.info.configPath));
+          }
+          throw rollbackError;
         }
+        // eslint-disable-next-line no-await-in-loop -- discard only after exact restore is proven.
+        await rm(displaced, { force: true });
+      } catch (rollbackError) {
+        rollbackFailures.push(rollbackError);
+        failedRollbacks.add(plan);
+      }
+    }
+    for (const plan of createdBackups) {
+      if (failedRollbacks.has(plan)) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop -- new recovery is removed only after exact restore.
+        await rm(backupPath(plan.info.configPath), { force: true });
+      } catch (rollbackError) {
+        rollbackFailures.push(rollbackError);
+        failedRollbacks.add(plan);
       }
     }
     await cleanupTemporaries(temporaryPaths);
     if (rollbackFailures.length > 0) {
       const retainedRecovery = [...failedRollbacks].flatMap((plan) => {
-        const paths = new Set(createdRecovery.get(plan) ?? []);
-        if (plan.recovery.backup !== undefined) paths.add(backupPath(plan.info.configPath));
-        if (plan.recovery.route !== undefined) {
-          paths.add(recoveryRoutePath(plan.info.configPath));
-        }
+        const paths = new Set([
+          backupPath(plan.info.configPath),
+          recoveryRoutePath(plan.info.configPath),
+        ]);
+        const committedEntry = committed.find((candidate) => candidate.entry.plan === plan);
+        if (committedEntry?.previousPath !== undefined) paths.add(committedEntry.previousPath);
+        const published = publishedRoutes.find((candidate) => candidate.entry.plan === plan);
+        if (published?.previousPath !== undefined) paths.add(published.previousPath);
         return [...paths];
       });
       const retained =
@@ -1285,6 +1539,14 @@ export async function writeServers(
     }
     throw error;
   }
+  await cleanupTemporaries(
+    committed.flatMap(({ previousPath }) => (previousPath === undefined ? [] : [previousPath])),
+  );
+  await cleanupTemporaries(
+    publishedRoutes.flatMap(({ previousPath }) =>
+      previousPath === undefined ? [] : [previousPath],
+    ),
+  );
   await cleanupTemporaries(temporaryPaths);
   return plans.map(({ outcome }) => outcome);
 }
