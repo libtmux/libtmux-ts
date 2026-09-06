@@ -1,75 +1,54 @@
-import { z } from "zod";
+import { workspaceSchema } from "./schema.js";
 
-import { OWNERSHIP_OPTION } from "./ownership.js";
-import { isTmuxName } from "libtmux";
+/** A value tmux stores for a session or window option. */
+export type WorkspaceOptionValue = string | number | boolean;
 
-// The library refuses a name tmux would not store unchanged. Asking it here
-// names the offending field instead of surfacing a TypeError from the call.
-const NAME_MESSAGE = 'must not be empty or hold ":", ".", a control character, or DEL';
+/** A pane: a bare command string, or the settings the pane is created with. */
+export type WorkspacePane =
+  | string
+  | {
+      focus?: boolean | undefined;
+      shell_command?: string | string[] | undefined;
+      start_directory?: string | undefined;
+    };
 
-/**
- * Every object here is strict, and that is the point.
- *
- * A workspace is applied to a running server, so a key this schema does not
- * know is a key that will not happen — and `z.object` would drop it silently,
- * turning `window_nam: "editor"` into an unnamed window and a puzzled user.
- * Refusing the document is the only failure a caller can act on.
- */
-const paneSchema = z.union([
-  z.string(),
-  z.strictObject({
-    focus: z.boolean().optional(),
-    shell_command: z.union([z.string(), z.array(z.string())]).optional(),
-    start_directory: z.string().optional(),
-  }),
-]);
+/** A window with every schema default applied. */
+export type WorkspaceWindow = {
+  focus?: boolean | undefined;
+  layout?: string | undefined;
+  options?: Record<string, WorkspaceOptionValue> | undefined;
+  panes: WorkspacePane[];
+  shell_command_before?: string | string[] | undefined;
+  start_directory?: string | undefined;
+  window_name?: string | undefined;
+};
 
-const optionValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+/** A window as written, before `panes` defaults to one implicit pane. */
+export type WorkspaceWindowInput = {
+  focus?: boolean | undefined;
+  layout?: string | undefined;
+  options?: Record<string, WorkspaceOptionValue> | undefined;
+  panes?: WorkspacePane[] | undefined;
+  shell_command_before?: string | string[] | undefined;
+  start_directory?: string | undefined;
+  window_name?: string | undefined;
+};
 
-const workspaceOptionsSchema = z
-  .record(z.string(), optionValueSchema)
-  .refine((options) => !Object.hasOwn(options, OWNERSHIP_OPTION), {
-    message: `${OWNERSHIP_OPTION} is reserved for workspace ownership`,
-  });
-
-const windowSchema = z.strictObject({
-  focus: z.boolean().optional(),
-  layout: z.string().optional(),
-  options: z.record(z.string(), optionValueSchema).optional(),
-  panes: z
-    .array(paneSchema)
-    .default([])
-    .transform((panes) => (panes.length === 0 ? panes.concat({}) : panes)),
-  shell_command_before: z.union([z.string(), z.array(z.string())]).optional(),
-  start_directory: z.string().optional(),
-  window_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }).optional(),
-});
-
-/**
- * A tmuxp-shaped workspace description.
- *
- * The field names follow tmuxp's snake_case config vocabulary rather than this
- * package's camelCase API, because the config is data a user already has on
- * disk. Renaming their keys to suit our API would break the very compatibility
- * the format is here to provide.
- */
-export const workspaceSchema = z.strictObject({
-  options: workspaceOptionsSchema.optional(),
-  session_name: z.string().refine(isTmuxName, { message: NAME_MESSAGE }),
-  start_directory: z.string().optional(),
-  // A session always has at least one window, so a workspace with none does not
-  // describe a reachable state: applying it would create a session and then try
-  // to prune its windows to zero.
-  windows: z.array(windowSchema).min(1),
-});
+/** A validated workspace with every schema default and transform applied. */
+export type Workspace = {
+  options?: Record<string, WorkspaceOptionValue> | undefined;
+  session_name: string;
+  start_directory?: string | undefined;
+  windows: WorkspaceWindow[];
+};
 
 /** Workspace data before schema defaults and transforms are applied. */
-export type WorkspaceInput = z.input<typeof workspaceSchema>;
-/** A validated workspace with every schema default and transform applied. */
-export type Workspace = z.output<typeof workspaceSchema>;
-export type WorkspaceWindow = z.output<typeof windowSchema>;
-export type WorkspacePane = z.output<typeof paneSchema>;
-export type WorkspaceOptionValue = z.output<typeof optionValueSchema>;
+export type WorkspaceInput = {
+  options?: Record<string, WorkspaceOptionValue> | undefined;
+  session_name: string;
+  start_directory?: string | undefined;
+  windows: WorkspaceWindowInput[];
+};
 
 /** Validate a parsed workspace, rejecting anything the schema does not allow. */
 export function parseWorkspace(value: unknown): Workspace {

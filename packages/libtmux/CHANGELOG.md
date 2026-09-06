@@ -12,6 +12,17 @@ remember.
 
 ## Unreleased
 
+### `@libtmux/workspace`
+
+**Breaking.** `workspaceSchema` is no longer exported, and the published types
+are declared rather than inferred from it. Installing the package no longer
+makes a consumer's `tsc` resolve zod's own declarations, which since zod 4.5.4
+name the `URL` global and fail under a `lib` without `DOM` and no `@types/node`.
+`parseWorkspace` and `parseWorkspaceYaml` are unchanged. (#19)
+
+`WorkspaceWindowInput` is exported, naming a window as written — before `panes`
+defaults to one implicit pane. (#19)
+
 ## 0.1.0-alpha.7 (2026-08-30)
 
 ### `libtmux`
