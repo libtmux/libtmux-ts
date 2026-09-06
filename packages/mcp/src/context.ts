@@ -11,9 +11,11 @@ import type { Server } from "libtmux/server";
 
 import {
   readCallerEnvironment,
+  readServerAuthority,
   resolveCallerIdentity,
   type CallerEnvironment,
   type CallerIdentity,
+  type ServerAuthority,
 } from "./caller.js";
 import { LiveHub } from "./live.js";
 import type { PaneTail } from "./pane_tail.js";
@@ -25,10 +27,30 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 export interface ToolContext {
   readonly hub: LiveHub;
   identity(snapshot: ServerSnapshot): Promise<CallerIdentity>;
+  observeInput(signal?: AbortSignal): Promise<PaneInputObservation>;
   readonly policy: Policy;
   readonly route: PinnedTmuxRoute;
   snapshot(signal?: AbortSignal): Promise<ServerSnapshot>;
   readonly tmux: Server;
+}
+
+export interface InputAuthority extends ServerAuthority {
+  readonly routeSelector: string;
+}
+
+export interface PaneInputObservation {
+  readonly authority: InputAuthority;
+  readonly identity: CallerIdentity;
+  readonly snapshot: ServerSnapshot;
+}
+
+export function sameInputAuthority(left: InputAuthority, right: InputAuthority): boolean {
+  return (
+    left.routeSelector === right.routeSelector &&
+    left.socketPath === right.socketPath &&
+    left.pid === right.pid &&
+    left.startTime === right.startTime
+  );
 }
 
 /**
@@ -93,13 +115,32 @@ export function createContext(
 ): ToolContext & { close(): Promise<void> } {
   const route = pinTmuxRoute(tmux);
   const hub = new LiveHub(tmux, { connectTimeoutMs: policy.commandTimeoutMs });
+  const snapshot = (signal?: AbortSignal): Promise<ServerSnapshot> =>
+    withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal }));
+  const authority = async (signal?: AbortSignal): Promise<InputAuthority> => ({
+    ...(await withRecovery(tmux, readServerAuthority(tmux, signal))),
+    routeSelector: route.selector,
+  });
   return {
     close: () => hub.close(),
     hub,
     identity: (snapshot) => resolveCallerIdentity(tmux, snapshot, caller),
+    observeInput: async (signal) => {
+      const before = await authority(signal);
+      const observed = await snapshot(signal);
+      const after = await authority(signal);
+      if (!sameInputAuthority(before, after)) {
+        throw new Error("tmux daemon identity changed while observing pane input state");
+      }
+      return {
+        authority: before,
+        identity: await resolveCallerIdentity(tmux, observed, caller, before),
+        snapshot: observed,
+      };
+    },
     policy,
     route,
-    snapshot: (signal) => withRecovery(tmux, tmux.snapshot(signal === undefined ? {} : { signal })),
+    snapshot,
     tmux,
   };
 }

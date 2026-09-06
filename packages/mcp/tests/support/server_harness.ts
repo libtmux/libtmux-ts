@@ -1,9 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   assertOwnedSocketPath,
+  makeTestDirectory,
   runWithCleanup,
   TestServer,
   withOwnedRunRoot,
@@ -34,27 +37,38 @@ export async function withClient(
   body: (client: Client) => Promise<void>,
   callerEnvironment: Readonly<Record<string, string>> = {},
 ): Promise<void> {
+  const clientHome = await makeTestDirectory("ltx-mcp-client-");
   const client = new Client({ name: "libtmux-test", version: "0.0.0" });
+  const environment: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+    ...fixture.controllerEnvironment,
+    ...callerEnvironment,
+    HOME: clientHome,
+    LIBTMUX_SOCKET_PATH: fixture.socketPath,
+    LIBTMUX_TMUX_BIN: fixture.tmuxExecutable,
+    LIBTMUX_TOOLSETS: "inspect,manage,execute,teardown",
+    XDG_CACHE_HOME: join(clientHome, "cache"),
+    XDG_CONFIG_HOME: join(clientHome, "config"),
+    XDG_DATA_HOME: join(clientHome, "data"),
+    XDG_STATE_HOME: join(clientHome, "state"),
+  };
+  if (!("TMUX" in callerEnvironment)) delete environment.TMUX;
+  if (!("TMUX_PANE" in callerEnvironment)) delete environment.TMUX_PANE;
   const transport = new StdioClientTransport({
     args: [fileURLToPath(new URL("../../src/server.ts", import.meta.url))],
     command: process.execPath,
-    env: {
-      ...(process.env as Record<string, string>),
-      ...fixture.controllerEnvironment,
-      LIBTMUX_SOCKET_PATH: fixture.socketPath,
-      LIBTMUX_TMUX_BIN: fixture.tmuxExecutable,
-      LIBTMUX_TOOLSETS: "inspect,manage,execute,teardown",
-      TMUX: "",
-      TMUX_PANE: "",
-      ...callerEnvironment,
-    },
+    env: environment,
   });
   await runWithCleanup(
-    async () => {
-      await client.connect(transport);
-      await body(client);
-    },
-    () => client.close(),
+    () =>
+      runWithCleanup(
+        async () => {
+          await client.connect(transport);
+          await body(client);
+        },
+        () => client.close(),
+      ),
+    () => rm(clientHome, { force: true, recursive: true }),
   );
 }
 

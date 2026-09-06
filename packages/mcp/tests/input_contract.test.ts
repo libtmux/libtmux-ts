@@ -240,6 +240,17 @@ test("a modal, dead, or caller cohort peer blocks input", async () => {
 
     if (pair === undefined) throw new Error("pane pair was not created");
     const guardedPair = pair;
+    const callerSession = await fixture.executeText([
+      "display-message",
+      "-p",
+      "-t",
+      guardedPair.peerPaneId,
+      "#{session_id}",
+    ]);
+    const callerSessionId = callerSession.stdout[0];
+    if (callerSessionId === undefined || !/^\$[0-9]+$/u.test(callerSessionId)) {
+      throw new Error("caller pane has no canonical session id");
+    }
 
     await withClient(
       fixture,
@@ -258,7 +269,7 @@ test("a modal, dead, or caller cohort peer blocks input", async () => {
         expect(await capture(client, guardedPair.sourcePaneId)).not.toContain(callerMarker);
       },
       {
-        TMUX: `${fixture.socketPath},${fixture.daemonIdentity.pid},0`,
+        TMUX: `${fixture.socketPath},${fixture.daemonIdentity.pid},${callerSessionId.slice(1)}`,
         TMUX_PANE: guardedPair.peerPaneId,
       },
     );

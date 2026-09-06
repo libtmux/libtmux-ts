@@ -7,6 +7,8 @@
  * typing into someone else's.
  */
 
+import { isAbsolute } from "node:path";
+
 import type { ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
 
@@ -14,13 +16,16 @@ import type { Server } from "libtmux/server";
  * What tmux exported into the process it started.
  *
  * `TMUX` is `socketPath,serverPid,sessionIndex`. The pane comes from
- * `TMUX_PANE` rather than from that session index: moving a pane between
- * sessions leaves the exported index naming the session it left.
+ * `TMUX_PANE` rather than from that session index. Input authorization checks
+ * both against a fresh topology; a moved pane makes the inherited context stale.
  */
 export interface CallerEnvironment {
+  readonly problem: string | undefined;
   readonly paneId: string | undefined;
   readonly serverPid: string | undefined;
+  readonly sessionId: string | undefined;
   readonly socketPath: string | undefined;
+  readonly status: "attached" | "detached" | "invalid";
 }
 
 /**
@@ -28,23 +33,87 @@ export interface CallerEnvironment {
  *
  * Parsed from the right. tmux writes `"%s,%ld,%d"` with the path first, so the
  * last two fields are the pid and the session index however many commas the
- * path holds — and a socket path may hold one. tmux's own reader truncates at
- * the first comma instead, so the path here is ambiguous in exactly the way it
- * is for tmux; the pid, which is what identifies the daemon, is not.
+ * path holds — and a socket path may hold one. Only a complete pair of
+ * variables is attached; partial or malformed context is unsafe, not detached.
  */
 export function readCallerEnvironment(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): CallerEnvironment {
   const raw = environment.TMUX;
-  const parts = raw === undefined || raw === "" ? [] : raw.split(",");
-  const paneId = environment.TMUX_PANE;
-  const serverPid = parts.length >= 3 ? parts[parts.length - 2] : undefined;
-  const socketPath = parts.length >= 3 ? parts.slice(0, -2).join(",") : parts[0];
+  const pane = environment.TMUX_PANE;
+  if (raw === undefined && pane === undefined) {
+    return {
+      paneId: undefined,
+      problem: undefined,
+      serverPid: undefined,
+      sessionId: undefined,
+      socketPath: undefined,
+      status: "detached",
+    };
+  }
+  const parts = raw?.split(",") ?? [];
+  const sessionIndex = parts.at(-1);
+  const serverPid = parts.at(-2);
+  const socketPath = parts.slice(0, -2).join(",");
+  if (
+    raw === undefined ||
+    pane === undefined ||
+    parts.length < 3 ||
+    !isAbsolute(socketPath) ||
+    !/^[1-9][0-9]*$/u.test(serverPid ?? "") ||
+    !/^(?:0|[1-9][0-9]*)$/u.test(sessionIndex ?? "") ||
+    !/^%(?:0|[1-9][0-9]*)$/u.test(pane)
+  ) {
+    return {
+      paneId: undefined,
+      problem: "The caller's TMUX and TMUX_PANE environment is incomplete or malformed.",
+      serverPid: undefined,
+      sessionId: undefined,
+      socketPath: undefined,
+      status: "invalid",
+    };
+  }
   return {
-    paneId: paneId === undefined || paneId === "" ? undefined : paneId,
-    serverPid: serverPid === undefined || serverPid === "" ? undefined : serverPid,
-    socketPath: socketPath === undefined || socketPath === "" ? undefined : socketPath,
+    paneId: pane,
+    problem: undefined,
+    serverPid,
+    sessionId: `$${sessionIndex}`,
+    socketPath,
+    status: "attached",
   };
+}
+
+export interface ServerAuthority {
+  readonly pid: string;
+  readonly socketPath: string;
+  readonly startTime: string;
+}
+
+const AUTHORITY_FORMAT = "#{socket_path}\t#{pid}\t#{start_time}";
+
+/** Read one daemon's physical socket and complete process generation together. */
+export async function readServerAuthority(
+  tmux: Server,
+  signal?: AbortSignal,
+): Promise<ServerAuthority> {
+  const lines = await tmux.cmd("display-message", ["-p", AUTHORITY_FORMAT], {
+    ...(signal === undefined ? {} : { signal }),
+    target: null,
+  });
+  const fields = lines.length === 1 ? lines[0]?.split("\t") : undefined;
+  const socketPath = fields?.[0];
+  const pid = fields?.[1];
+  const startTime = fields?.[2];
+  if (
+    fields?.length !== 3 ||
+    socketPath === undefined ||
+    !isAbsolute(socketPath) ||
+    !/^[1-9][0-9]*$/u.test(pid ?? "") ||
+    !/^[1-9][0-9]*$/u.test(startTime ?? "")
+  ) {
+    throw new TypeError("tmux returned no usable socket and daemon identity");
+  }
+  return Object.freeze({ pid: pid ?? "", socketPath, startTime: startTime ?? "" });
 }
 
 /** A client tmux is currently drawing for, and what it is showing. */
@@ -66,12 +135,15 @@ export interface CallerIdentity {
   /**
    * Whether the caller's pane lives on the server this process drives.
    *
-   * Compared by daemon pid rather than socket path, because a path names a
-   * place and not a process: `kill-server` and a restart put a different daemon
-   * at the same path, numbering its panes from `%0` again.
+   * Requires the physical socket, daemon process, pane, and session to agree
+   * with one authenticated observation.
    */
   readonly callerPaneIsOnThisServer: boolean;
+  /** A malformed or incoherent caller/client context blocks every pane input route. */
+  readonly inputProblem?: string;
   readonly serverPid: string | undefined;
+  readonly serverSocketPath?: string;
+  readonly serverStartTime?: string;
 }
 
 /**
@@ -84,12 +156,15 @@ export async function resolveCallerIdentity(
   tmux: Server,
   snapshot: ServerSnapshot,
   caller: CallerEnvironment = readCallerEnvironment(),
+  authority?: ServerAuthority,
 ): Promise<CallerIdentity> {
-  const identity = await tmux.daemonIdentity();
+  const observed = authority ?? (await readServerAuthority(tmux));
   const attachedClients = snapshot.clients.toArray();
+  const panePlacements = snapshot.panes.toArray();
+  let inputProblem = caller.problem;
   const clients = attachedClients.map((client): AttachedClient => ({
     activePaneId: client.pane?.id,
-    controlMode: client.controlMode ?? false,
+    controlMode: client.controlMode === true,
     name: client.name ?? "",
     sessionName: client.session?.name ?? undefined,
     tty: client.tty ?? undefined,
@@ -98,24 +173,93 @@ export async function resolveCallerIdentity(
   // A terminal client sees every split in its window. Only a confirmed zoom
   // narrows that to its active pane; an absent flag keeps the conservative set.
   const attended = attachedClients.flatMap((client) => {
+    if (typeof client.controlMode !== "boolean") {
+      inputProblem ??= "A tmux client has no usable control-mode state.";
+      return [];
+    }
+    if (client.controlMode) return [];
     const pane = client.pane;
-    if (client.controlMode === true || pane === undefined) return [];
+    if (pane === undefined || !/^%(?:0|[1-9][0-9]*)$/u.test(pane.id)) {
+      inputProblem ??= "A terminal tmux client has no usable active-pane state.";
+      return [];
+    }
     const window = client.window;
-    if (window?.zoomedFlag === true) return [pane.id];
-    return (window?.panes.toArray() ?? [pane]).map((visible) => visible.id);
+    if (window === undefined || typeof window.zoomedFlag !== "boolean") {
+      inputProblem ??= "A terminal tmux client has no usable zoom state.";
+      return [];
+    }
+    const sessionId = client.session?.id;
+    if (
+      !/^\$(?:0|[1-9][0-9]*)$/u.test(sessionId ?? "") ||
+      !/^@(?:0|[1-9][0-9]*)$/u.test(window.id)
+    ) {
+      inputProblem ??= "A terminal tmux client has no usable session or window state.";
+      return [];
+    }
+    const matchesPlacement = (candidate: (typeof panePlacements)[number]): boolean =>
+      candidate.format.session_id === sessionId &&
+      (candidate.window?.id ?? candidate.format.window_id) === window.id;
+    if (
+      !panePlacements.some((candidate) => candidate.id === pane.id && matchesPlacement(candidate))
+    ) {
+      inputProblem ??=
+        "A terminal tmux client's active pane disagrees with its session or window placement.";
+      return [];
+    }
+    if (window.zoomedFlag) return [pane.id];
+    const visible = window.panes.toArray();
+    if (visible.some((candidate) => !/^%(?:0|[1-9][0-9]*)$/u.test(candidate.id))) {
+      inputProblem ??= "A terminal tmux client has malformed visible-pane state.";
+      return [];
+    }
+    if (
+      visible.some(
+        (candidate) =>
+          !panePlacements.some(
+            (placement) => placement.id === candidate.id && matchesPlacement(placement),
+          ),
+      )
+    ) {
+      inputProblem ??=
+        "A terminal tmux client's visible panes disagree with its session or window placement.";
+      return [];
+    }
+    if (!visible.some((candidate) => candidate.id === pane.id)) {
+      inputProblem ??= "A terminal tmux client's active pane is absent from its visible window.";
+      return [];
+    }
+    return visible.map((candidate) => candidate.id);
   });
 
-  const sameServer =
-    caller.paneId !== undefined &&
-    caller.serverPid !== undefined &&
-    caller.serverPid === identity.pid;
+  let sameServer = false;
+  if (caller.status === "attached" && caller.socketPath !== observed.socketPath) {
+    // A complete context for another socket is valid, but it does not select
+    // this server and grants no force exception here.
+  } else if (caller.status === "attached") {
+    const paneMatchesSession = panePlacements.some(
+      (candidate) =>
+        candidate.id === caller.paneId && candidate.format.session_id === caller.sessionId,
+    );
+    const sessionExists = snapshot.sessions
+      .toArray()
+      .some((session) => session.id === caller.sessionId);
+    if (caller.serverPid !== observed.pid || !paneMatchesSession || !sessionExists) {
+      inputProblem ??=
+        "The caller's tmux pane, session, or daemon generation is no longer current.";
+    } else {
+      sameServer = true;
+    }
+  }
 
   return {
     attendedPaneIds: [...new Set(attended)],
     callerPaneId: caller.paneId,
     callerPaneIsOnThisServer: sameServer,
     clients,
-    serverPid: identity.pid,
+    ...(inputProblem === undefined ? {} : { inputProblem }),
+    serverPid: observed.pid,
+    serverSocketPath: observed.socketPath,
+    serverStartTime: observed.startTime,
   };
 }
 

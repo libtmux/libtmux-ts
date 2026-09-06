@@ -8,27 +8,29 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { Pane, ServerSnapshot } from "libtmux";
+import type { Pane } from "libtmux";
 import { z } from "zod";
 
-import type { CallerIdentity } from "../caller.js";
 import {
-  activeFramedCommand,
+  isPaneInputConflict,
   reserveFramedCommand,
+  reservePaneInput,
   runFramedCommand,
-  type FramedCommandReservation,
 } from "../command.js";
 import type { ToolContext } from "../context.js";
+import {
+  busyPane,
+  dispatchPaneKeys,
+  paneInputChanged,
+  planPaneInput,
+  type PaneInputPlan,
+} from "../pane_input.js";
 import type { Policy } from "../policy.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
 import { OPEN_WORLD, type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
-import {
-  isFailure,
-  requirePaneInputTarget,
-  resolvedPaneInputTargetIds,
-} from "../target_resolution.js";
+import { isFailure } from "../target_resolution.js";
 
 /**
  * Shells whose syntax the command framing is written in.
@@ -59,52 +61,19 @@ function commandFollowups(policy: Policy, paneId: string): string[] {
     policy.liveEnabled && offered("wait_for_text")
       ? `wait_for_text on ${paneId} keeps waiting for it`
       : "",
-    offered("send_keys") ? `send_keys with keys="C-c", enter=false, and force=true stops it` : "",
   ].filter((text) => text !== "");
-}
-
-function busyPane(policy: Policy, paneId: string, active: string): ReturnType<typeof fail> {
-  const followups = commandFollowups(policy, paneId);
-  return fail({
-    hint:
-      followups.length === 0
-        ? "Wait for that command to finish before writing to the pane."
-        : `Wait for that command to finish, or ${followups.join(", or ")}.`,
-    reason: `Refusing to write into ${paneId}: run_shell_command ${active} is still active.`,
-  });
 }
 
 interface RunPreflight {
   readonly pane: Pane;
+  readonly plan: PaneInputPlan;
   readonly signature: string;
 }
 
 const RUN_TRANSITION = Symbol("run-transition");
 
-function runPreflight(
-  context: ToolContext,
-  snapshot: ServerSnapshot,
-  identity: CallerIdentity,
-  paneId: string,
-  force: boolean | undefined,
-  reservation?: FramedCommandReservation,
-): ReturnType<typeof fail> | RunPreflight {
-  const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "run in");
-  if (isFailure(pane)) return pane;
-  const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
-  if (isFailure(resolvedPaneIds)) return resolvedPaneIds;
-
-  for (const resolvedPaneId of resolvedPaneIds) {
-    const writable = requirePaneInputTarget(snapshot, identity, resolvedPaneId, force, "run in");
-    if (isFailure(writable)) return writable;
-    const active =
-      reservation?.conflictingCommand(resolvedPaneId) ??
-      (reservation === undefined ? activeFramedCommand(context, resolvedPaneId) : undefined);
-    if (active !== undefined && force !== true) {
-      return busyPane(context.policy, resolvedPaneId, active);
-    }
-  }
-
+function runPreflight(plan: PaneInputPlan, paneId: string): ReturnType<typeof fail> | RunPreflight {
+  const { pane, resolvedPaneIds } = plan;
   if (resolvedPaneIds.length !== 1 || resolvedPaneIds[0] !== paneId) {
     return fail({
       hint: "Disable synchronize-panes for this pane before running a framed command.",
@@ -128,35 +97,10 @@ function runPreflight(
     });
   }
 
-  const sessionId = pane.format.session_id;
-  const windowId = pane.window?.id ?? pane.format.window_id;
-  if (
-    typeof identity.serverPid !== "string" ||
-    identity.serverPid === "" ||
-    typeof sessionId !== "string" ||
-    sessionId === "" ||
-    typeof windowId !== "string" ||
-    windowId === ""
-  ) {
-    return fail({
-      hint: "Refresh the pane snapshot before running a framed command.",
-      reason: `Pane ${paneId} has no usable daemon or placement identity.`,
-    });
-  }
-
   return {
     pane,
-    signature: JSON.stringify({
-      cohort: resolvedPaneIds,
-      command: rawCommand,
-      dead: pane.dead,
-      mode: pane.inMode,
-      paneId,
-      serverPid: identity.serverPid,
-      sessionId,
-      synchronized: pane.synchronized,
-      windowId,
-    }),
+    plan,
+    signature: plan.signature,
   };
 }
 
@@ -181,7 +125,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to this server's pane or one a person is watching. Default false."),
+          .describe("Write to this server's exact caller pane. Never overrides attention."),
         keys: inlineRequestText("keys").describe(
           "Keys to send. tmux key names like C-c work unless literal is true.",
         ),
@@ -202,39 +146,37 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       title: "Send keys",
     },
     async ({ enter, force, keys, literal, paneId }) => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const pane = requirePaneInputTarget(snapshot, identity, paneId, force, "type into");
-      if (isFailure(pane)) return pane;
-      const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
-      if (isFailure(resolvedPaneIds)) return resolvedPaneIds;
-      for (const resolvedPaneId of resolvedPaneIds) {
-        const writable = requirePaneInputTarget(
-          snapshot,
-          identity,
-          resolvedPaneId,
-          force,
-          "type into",
-        );
-        if (isFailure(writable)) return writable;
-        const active = activeFramedCommand(context, resolvedPaneId);
-        if (active !== undefined && force !== true) {
-          return busyPane(context.policy, resolvedPaneId, active);
-        }
-      }
-
-      await pane.sendKeys(keys, {
-        ...(enter === undefined ? {} : { enter }),
-        ...(literal === undefined ? {} : { literal }),
-      });
-      const attended = resolvedPaneIds.some((id) => identity.attendedPaneIds.includes(id));
-      const targetText = resolvedPaneIds.join(", ");
-      return ok(
-        { attended, paneId, resolvedPaneIds, sent: true },
-        attended
-          ? `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}. Somebody is watching a configured member.`
-          : `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}.`,
+      const initial = planPaneInput(await context.observeInput(), paneId, force, "type into");
+      if (isFailure(initial)) return initial;
+      const reserved = reservePaneInput(
+        initial.observation.authority,
+        initial.resolvedPaneIds,
+        "input",
+        "send_keys",
       );
+      if (isPaneInputConflict(reserved)) return busyPane(reserved);
+      try {
+        const final = planPaneInput(await context.observeInput(), paneId, force, "type into");
+        if (isFailure(final) || final.signature !== initial.signature) {
+          return paneInputChanged(paneId, "send_keys");
+        }
+        await dispatchPaneKeys(final.pane, keys, {
+          ...(enter === undefined ? {} : { enter }),
+          ...(literal === undefined ? {} : { literal }),
+        });
+        const attended = final.resolvedPaneIds.some((id) =>
+          final.observation.identity.attendedPaneIds.includes(id),
+        );
+        const targetText = final.resolvedPaneIds.join(", ");
+        return ok(
+          { attended, paneId, resolvedPaneIds: final.resolvedPaneIds, sent: true },
+          attended
+            ? `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}. Somebody is watching a configured member.`
+            : `Sent once to ${paneId}; configured input cohort at preflight: ${targetText}.`,
+        );
+      } finally {
+        reserved.release();
+      }
     },
   );
 
@@ -251,7 +193,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write even to this server's pane or one a person is watching. Default false."),
+          .describe("Write to this server's exact caller pane. Never overrides attention."),
         paneId: paneIdSchema,
         text: inlineRequestText("text"),
       },
@@ -259,72 +201,60 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       title: "Paste text",
     },
     async ({ enter, force, paneId, text }) => {
-      const firstSnapshot = await context.snapshot();
-      const firstIdentity = await context.identity(firstSnapshot);
-      const firstPane = requirePaneInputTarget(
-        firstSnapshot,
-        firstIdentity,
-        paneId,
-        force,
-        "paste into",
-      );
-      if (isFailure(firstPane)) return firstPane;
-      const active = activeFramedCommand(context, paneId);
-      if (active !== undefined && force !== true) return busyPane(context.policy, paneId, active);
+      const initial = planPaneInput(await context.observeInput(), paneId, force, "paste into");
+      if (isFailure(initial)) return initial;
 
       if (text === "" && enter !== true) {
         return ok({ bytes: 0, paneId }, `Pasted 0 bytes into ${paneId}.`);
       }
 
+      const reserved = reservePaneInput(
+        initial.observation.authority,
+        initial.resolvedPaneIds,
+        "input",
+        "paste_text",
+      );
+      if (isPaneInputConflict(reserved)) return busyPane(reserved);
       const bufferName = `ltx-mcp-paste-${randomUUID().replaceAll("-", "")}`;
       let loaded = false;
       let operationFailure: { readonly error: unknown } | undefined;
       let cleanupFailure: { readonly error: unknown } | undefined;
       let refusal: ReturnType<typeof fail> | undefined;
       try {
-        await context.tmux.loadBuffer(bufferName, enter === true ? `${text}\n` : text);
-        loaded = true;
+        try {
+          await context.tmux.loadBuffer(bufferName, enter === true ? `${text}\n` : text);
+          loaded = true;
 
-        const finalSnapshot = await context.snapshot();
-        const finalIdentity = await context.identity(finalSnapshot);
-        const finalPane = requirePaneInputTarget(
-          finalSnapshot,
-          finalIdentity,
-          paneId,
-          force,
-          "paste into",
-        );
-        if (isFailure(finalPane)) {
-          refusal = finalPane;
-        } else {
-          const finalActive = activeFramedCommand(context, paneId);
-          if (finalActive !== undefined && force !== true) {
-            refusal = busyPane(context.policy, paneId, finalActive);
+          const final = planPaneInput(await context.observeInput(), paneId, force, "paste into");
+          if (isFailure(final) || final.signature !== initial.signature) {
+            refusal = paneInputChanged(paneId, "paste_text");
           } else {
-            await finalPane.pasteBuffer(bufferName);
+            await final.pane.pasteBuffer(bufferName);
           }
+        } catch (error) {
+          operationFailure = { error };
         }
-      } catch (error) {
-        operationFailure = { error };
-      }
-      try {
-        await context.tmux.deleteBuffer(bufferName);
-      } catch (error) {
-        if (loaded) cleanupFailure = { error };
-      }
-      if (operationFailure !== undefined && cleanupFailure !== undefined) {
-        throw new AggregateError(
-          [operationFailure.error, cleanupFailure.error],
-          "paste failed and private buffer cleanup also failed",
+        try {
+          await context.tmux.deleteBuffer(bufferName);
+        } catch (error) {
+          if (loaded) cleanupFailure = { error };
+        }
+        if (operationFailure !== undefined && cleanupFailure !== undefined) {
+          throw new AggregateError(
+            [operationFailure.error, cleanupFailure.error],
+            "paste failed and private buffer cleanup also failed",
+          );
+        }
+        if (operationFailure !== undefined) throw operationFailure.error;
+        if (cleanupFailure !== undefined) throw cleanupFailure.error;
+        if (refusal !== undefined) return refusal;
+        return ok(
+          { bytes: Buffer.byteLength(text, "utf8"), paneId },
+          `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId} only.`,
         );
+      } finally {
+        reserved.release();
       }
-      if (operationFailure !== undefined) throw operationFailure.error;
-      if (cleanupFailure !== undefined) throw cleanupFailure.error;
-      if (refusal !== undefined) return refusal;
-      return ok(
-        { bytes: Buffer.byteLength(text, "utf8"), paneId },
-        `Pasted ${String(Buffer.byteLength(text, "utf8"))} bytes into ${paneId} only.`,
-      );
     },
   );
 
@@ -346,7 +276,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write despite caller or pane-attention protection. Default false."),
+          .describe("Write to this server's exact caller pane. Never overrides attention."),
         maxLines: z.number().int().positive().optional(),
         paneId: paneIdSchema,
         timeoutMs: z
@@ -409,12 +339,18 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       if (command.trim() === "") {
         return fail({ reason: "command must not be empty." });
       }
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
-      const initial = runPreflight(context, snapshot, identity, paneId, force);
+      const initialPlan = planPaneInput(
+        await context.observeInput(extra.signal),
+        paneId,
+        force,
+        "run in",
+      );
+      if (isFailure(initialPlan)) return initialPlan;
+      const initial = runPreflight(initialPlan, paneId);
       if (isFailure(initial)) return initial;
 
-      const reservation = reserveFramedCommand(context, paneId, command);
+      const reservation = reserveFramedCommand(initial.plan.observation.authority, paneId, command);
+      if (isPaneInputConflict(reservation)) return busyPane(reservation);
       let result: Awaited<ReturnType<typeof runFramedCommand>>;
       try {
         result = await runFramedCommand(
@@ -427,16 +363,14 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           async () => {
             let final: ReturnType<typeof runPreflight>;
             try {
-              const finalSnapshot = await context.snapshot(extra.signal);
-              const finalIdentity = await context.identity(finalSnapshot);
-              final = runPreflight(
-                context,
-                finalSnapshot,
-                finalIdentity,
+              const finalPlan = planPaneInput(
+                await context.observeInput(),
                 paneId,
                 force,
-                reservation,
+                "run in",
               );
+              if (isFailure(finalPlan)) throw RUN_TRANSITION;
+              final = runPreflight(finalPlan, paneId);
             } catch {
               throw RUN_TRANSITION;
             }
@@ -445,6 +379,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             }
             return final.pane;
           },
+          initial.plan.observation.authority,
         );
       } catch (error) {
         reservation.release();

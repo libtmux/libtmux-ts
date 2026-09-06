@@ -9,13 +9,14 @@ import { z } from "zod";
 import type { ServerSnapshot } from "libtmux";
 
 import type { ToolContext } from "../context.js";
-import { activeFramedCommand } from "../command.js";
+import { isPaneInputConflict, reservePaneInput } from "../command.js";
 import {
   effectiveResultLines,
   effectiveWaitMs,
   MAX_REQUEST_ITEMS,
   MAX_RESULT_BYTES,
 } from "../policy.js";
+import { busyPane, dispatchPaneKeys, paneInputChanged, planPaneInput } from "../pane_input.js";
 import {
   MUTATING,
   OPEN_WORLD,
@@ -36,8 +37,6 @@ import {
   isFailure,
   panePlacements,
   requirePane,
-  requirePaneInputTarget,
-  resolvedPaneInputTargetIds,
   requireSession,
   requireWindow,
   windowPlacements,
@@ -478,69 +477,58 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
       let completed = 0;
       for (const [index, operation] of operations.entries()) {
         // eslint-disable-next-line no-await-in-loop -- each operation observes the prior mutation.
-        const snapshot = await context.snapshot();
-        // eslint-disable-next-line no-await-in-loop -- identity must match this operation's snapshot.
-        const identity = await context.identity(snapshot);
-        const pane = requirePaneInputTarget(
-          snapshot,
-          identity,
-          operation.paneId,
-          operation.force,
-          "send keys to",
+        const observed = await context.observeInput();
+        const initial = planPaneInput(observed, operation.paneId, operation.force, "send keys to");
+        if (isFailure(initial)) {
+          const reason =
+            initial.content[0]?.type === "text" ? initial.content[0].text : "Pane refused input.";
+          failures.push({ index, reason });
+          if (onError !== "continue") break;
+          continue;
+        }
+        const reserved = reservePaneInput(
+          initial.observation.authority,
+          initial.resolvedPaneIds,
+          "input",
+          "send_keys_batch",
         );
-        if (isFailure(pane)) {
+        if (isPaneInputConflict(reserved)) {
+          const blocked = busyPane(reserved);
           const reason =
-            pane.content[0]?.type === "text" ? pane.content[0].text : "Pane refused input.";
+            blocked.content[0]?.type === "text"
+              ? blocked.content[0].text
+              : "Pane input is still active.";
           failures.push({ index, reason });
           if (onError !== "continue") break;
           continue;
         }
-        const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
-        if (isFailure(resolvedPaneIds)) {
+        let refusal: CallToolResult | undefined;
+        try {
+          // eslint-disable-next-line no-await-in-loop -- dispatch follows its authenticated recheck.
+          const rechecked = await context.observeInput();
+          const final = planPaneInput(rechecked, operation.paneId, operation.force, "send keys to");
+          if (isFailure(final) || final.signature !== initial.signature) {
+            refusal = paneInputChanged(operation.paneId, "send_keys_batch");
+          } else {
+            // eslint-disable-next-line no-await-in-loop -- batch input is deliberately ordered.
+            await dispatchPaneKeys(final.pane, operation.keys, {
+              ...(operation.enter === undefined ? {} : { enter: operation.enter }),
+              ...(operation.literal === undefined ? {} : { literal: operation.literal }),
+            });
+            targets.push({ index, resolvedPaneIds: final.resolvedPaneIds });
+            completed += 1;
+          }
+        } finally {
+          reserved.release();
+        }
+        if (refusal !== undefined) {
           const reason =
-            resolvedPaneIds.content[0]?.type === "text"
-              ? resolvedPaneIds.content[0].text
-              : "Configured pane cohort could not be resolved.";
+            refusal.content[0]?.type === "text"
+              ? refusal.content[0].text
+              : "Pane changed before input.";
           failures.push({ index, reason });
           if (onError !== "continue") break;
-          continue;
         }
-        let resolvedFailure: string | undefined;
-        for (const resolvedPaneId of resolvedPaneIds) {
-          const writable = requirePaneInputTarget(
-            snapshot,
-            identity,
-            resolvedPaneId,
-            operation.force,
-            "send keys to",
-          );
-          if (isFailure(writable)) {
-            resolvedFailure =
-              writable.content[0]?.type === "text"
-                ? writable.content[0].text
-                : "Resolved pane refused input.";
-            break;
-          }
-          const active = activeFramedCommand(context, resolvedPaneId);
-          if (active !== undefined && operation.force !== true) {
-            resolvedFailure =
-              `Refusing to send keys to ${resolvedPaneId}: ` +
-              `run_shell_command ${active} is still active.`;
-            break;
-          }
-        }
-        if (resolvedFailure !== undefined) {
-          failures.push({ index, reason: resolvedFailure });
-          if (onError !== "continue") break;
-          continue;
-        }
-        // eslint-disable-next-line no-await-in-loop -- batch input is deliberately ordered.
-        await pane.sendKeys(operation.keys, {
-          enter: operation.enter ?? true,
-          literal: operation.literal ?? false,
-        });
-        targets.push({ index, resolvedPaneIds });
-        completed += 1;
       }
       return ok(
         { completed, failures, targets },

@@ -11,7 +11,7 @@ import { z } from "zod";
 import type { ServerSnapshot } from "libtmux";
 import { PaneDirection } from "libtmux/constants";
 
-import { isAttended, isCallerPane, type CallerIdentity } from "../caller.js";
+import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
 import { MAX_INLINE_REQUEST_BYTES } from "../policy.js";
 import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, type ToolRegistrar } from "../register.js";
@@ -278,9 +278,7 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
         force: z
           .boolean()
           .optional()
-          .describe(
-            "Restart even in this server's pane or one a person is watching. Default false.",
-          ),
+          .describe("Restart this server's exact caller pane. Never overrides attention."),
         killFirst: z
           .boolean()
           .optional()
@@ -292,15 +290,9 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
       title: "Respawn pane",
     },
     async ({ force, killFirst, paneId, startDirectory }) => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
+      const { identity, snapshot } = await context.observeInput();
       const pane = requireWritablePane(snapshot, identity, paneId, force, "restart");
       if (isFailure(pane)) return pane;
-      if (killFirst === true) {
-        // Replacing a running process has delete semantics even though the pane survives.
-        const guard = guardDestructive(identity, paneId, force);
-        if (guard !== undefined) return guard;
-      }
       await pane.respawn(undefined, {
         ...(killFirst === undefined ? {} : { kill: killFirst }),
         ...(startDirectory === undefined ? {} : { startDirectory }),
@@ -317,20 +309,15 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
       annotations: DESTRUCTIVE,
       description:
         "Close a pane and the process in it. Refuses the pane this server runs in " +
-        "and any pane a person is watching unless you pass force.",
+        "and every pane a person is watching; force confirms only this server's exact caller pane.",
       inputSchema: { force: z.boolean().optional(), paneId: paneIdSchema },
       outputSchema: { killed: paneIdSchema },
       title: "Kill pane",
     },
     async ({ force, paneId }) => {
-      const snapshot = await context.snapshot();
-      const identity = await context.identity(snapshot);
+      const { identity, snapshot } = await context.observeInput();
       const pane = requireWritablePane(snapshot, identity, paneId, force, "kill");
       if (isFailure(pane)) return pane;
-      // requireWritablePane already refused this server's own pane; this adds
-      // the refusal for a pane somebody else is watching.
-      const guard = guardDestructive(identity, paneId, force);
-      if (guard !== undefined) return guard;
       await pane.kill();
       return ok({ killed: paneId }, `Killed ${paneId}.`);
     },
@@ -346,16 +333,15 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
       title: "Kill window",
     },
     async ({ force, windowId }) => {
-      const snapshot = await context.snapshot();
+      const { identity, snapshot } = await context.observeInput();
       const window = requireWindow(snapshot, windowId);
       if (isFailure(window)) return window;
-      const identity = await context.identity(snapshot);
       const inside = paneEntities(
         snapshot.panes.toArray().filter((pane) => pane.format.window_id === windowId),
       );
       for (const pane of inside) {
-        const guard = guardDestructive(identity, pane.id, force);
-        if (guard !== undefined) return guard;
+        const writable = requireWritablePane(snapshot, identity, pane.id, force, "kill");
+        if (isFailure(writable)) return writable;
       }
       await window.kill();
       return ok({ killed: windowId }, `Killed ${windowId} and its ${String(inside.length)} panes.`);
@@ -373,16 +359,15 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
       title: "Kill session",
     },
     async ({ force, session }) => {
-      const snapshot = await context.snapshot();
+      const { identity, snapshot } = await context.observeInput();
       const found = requireSession(snapshot, session);
       if (isFailure(found)) return found;
-      const identity = await context.identity(snapshot);
       const inside = paneEntities(
         snapshot.panes.toArray().filter((pane) => pane.format.session_id === found.id),
       );
       for (const pane of inside) {
-        const guard = guardDestructive(identity, pane.id, force);
-        if (guard !== undefined) return guard;
+        const writable = requireWritablePane(snapshot, identity, pane.id, force, "kill");
+        if (isFailure(writable)) return writable;
       }
       await found.kill();
       return ok(
@@ -391,32 +376,4 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
       );
     },
   );
-}
-
-/**
- * Refuse to end something in use.
- *
- * A killed pane cannot be brought back, and the two panes worth refusing are
- * this process's own terminal and one somebody is looking at. `force` is how a
- * caller says it meant that one.
- */
-function guardDestructive(
-  identity: CallerIdentity,
-  paneId: string,
-  force: boolean | undefined,
-): ReturnType<typeof fail> | undefined {
-  if (force === true) return undefined;
-  if (isCallerPane(identity, paneId)) {
-    return fail({
-      hint: "Pass force if you mean to end the terminal this server runs in.",
-      reason: `Refusing to kill ${paneId}: it is the pane this MCP server runs in.`,
-    });
-  }
-  if (isAttended(identity, paneId)) {
-    return fail({
-      hint: "list_panes identifies watched panes. Pass force if you mean it.",
-      reason: `Refusing to kill ${paneId}: somebody is watching it.`,
-    });
-  }
-  return undefined;
 }

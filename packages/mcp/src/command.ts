@@ -1,14 +1,15 @@
 import { setTimeout as delay } from "node:timers/promises";
 
-import type { Pane } from "libtmux";
+import { TmuxTransportError, type Pane } from "libtmux";
 
-import type { ToolContext } from "./context.js";
+import { sameInputAuthority, type InputAuthority, type ToolContext } from "./context.js";
 import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "./command_frame.js";
 import { captureGridBounded } from "./grid_capture.js";
+import { dispatchPaneKeys } from "./pane_input.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";
 
 interface FramedResultBase {
-  /** Whether the marker that releases the staged command was delivered. */
+  /** Whether the sole wrapper dispatch may have reached the pane. */
   readonly commandStarted: boolean;
   readonly effectiveTimeoutMs: number;
   /** Another writer was seen in this command's own output. */
@@ -51,51 +52,79 @@ function isCancelled(signal: AbortSignal | undefined): boolean {
 }
 
 export interface FramedCommandReservation {
-  /** Describe an unfinished command other than this reservation. */
-  conflictingCommand(paneId: string): string | undefined;
   release(): void;
   settleWith(settled: Promise<void>): void;
 }
 
-const activeCommands = new WeakMap<ToolContext, Map<string, Map<symbol, string>>>();
-
-/** Describe the first unfinished command this server started in a pane. */
-export function activeFramedCommand(context: ToolContext, paneId: string): string | undefined {
-  return activeCommands.get(context)?.get(paneId)?.values().next().value;
+export interface PaneInputConflict {
+  readonly description: string;
+  readonly kind: "input" | "run";
+  readonly paneId: string;
 }
 
-/** Reserve a pane until the command's framing proves that it settled. */
-export function reserveFramedCommand(
-  context: ToolContext,
-  paneId: string,
-  command: string,
-): FramedCommandReservation {
-  const byPane = activeCommands.get(context) ?? new Map<string, Map<symbol, string>>();
-  const commands = byPane.get(paneId) ?? new Map<symbol, string>();
-  const token = Symbol(paneId);
-  commands.set(token, JSON.stringify(command.slice(0, 80)));
-  byPane.set(paneId, commands);
-  activeCommands.set(context, byPane);
+export type PaneInputReservation = FramedCommandReservation | PaneInputConflict;
 
+interface ActiveInput {
+  readonly description: string;
+  readonly kind: "input" | "run";
+  readonly token: symbol;
+}
+
+const activeInputs = new Map<string, ActiveInput>();
+
+function paneInputKey(authority: InputAuthority, paneId: string): string {
+  return JSON.stringify([authority.socketPath, authority.pid, authority.startTime, paneId]);
+}
+
+/** Describe the first unfinished command this server started in a pane. */
+export function activeFramedCommand(authority: InputAuthority, paneId: string): string | undefined {
+  const active = activeInputs.get(paneInputKey(authority, paneId));
+  return active?.kind === "run" ? active.description : undefined;
+}
+
+/** Reserve a complete configured cohort without queueing behind another writer. */
+export function reservePaneInput(
+  authority: InputAuthority,
+  paneIds: readonly string[],
+  kind: "input" | "run",
+  description: string,
+): PaneInputReservation {
+  const keys = [...new Set(paneIds)].map((paneId) => ({
+    key: paneInputKey(authority, paneId),
+    paneId,
+  }));
+  for (const { key, paneId } of keys) {
+    const active = activeInputs.get(key);
+    if (active !== undefined) return { description: active.description, kind: active.kind, paneId };
+  }
+  const token = Symbol(description);
+  for (const { key } of keys) activeInputs.set(key, { description, kind, token });
   const release = (): void => {
-    commands.delete(token);
-    if (commands.size === 0) byPane.delete(paneId);
-    if (byPane.size === 0) activeCommands.delete(context);
+    for (const { key } of keys) {
+      if (activeInputs.get(key)?.token === token) activeInputs.delete(key);
+    }
   };
   return {
-    conflictingCommand: (targetPaneId) => {
-      const active = byPane.get(targetPaneId);
-      if (active === undefined) return undefined;
-      for (const [candidate, description] of active) {
-        if (candidate !== token) return description;
-      }
-      return undefined;
-    },
     release,
     settleWith: (settled) => {
       void settled.then(release, () => undefined);
     },
   };
+}
+
+export function isPaneInputConflict(
+  reservation: PaneInputReservation,
+): reservation is PaneInputConflict {
+  return "paneId" in reservation;
+}
+
+/** Reserve a pane until the command's framing proves that it settled. */
+export function reserveFramedCommand(
+  authority: InputAuthority,
+  paneId: string,
+  command: string,
+): PaneInputReservation {
+  return reservePaneInput(authority, [paneId], "run", JSON.stringify(command.slice(0, 80)));
 }
 
 /** How far back a fallback capture reads, so a marker that scrolled is still found. */
@@ -109,6 +138,25 @@ const SETTLEMENT_POLL_MS = 1_000;
 
 /** How often settlement confirms that a quiet pane still exists. */
 const SETTLEMENT_LIVENESS_MS = 5_000;
+
+async function capturedPaneState(
+  context: ToolContext,
+  paneId: string,
+  authority?: InputAuthority,
+): Promise<"alive" | "gone" | "unknown"> {
+  try {
+    if (authority !== undefined && typeof context.observeInput === "function") {
+      const current = await context.observeInput();
+      if (!sameInputAuthority(authority, current.authority)) return "gone";
+      const pane = current.snapshot.panes.first({ id: paneId });
+      return pane === undefined || pane.dead === true ? "gone" : "alive";
+    }
+    const pane = (await context.snapshot()).panes.first({ id: paneId });
+    return pane === undefined || pane.dead === true ? "gone" : "alive";
+  } catch {
+    return "unknown";
+  }
+}
 
 /** Read a bounded tail of the rendered grid when no live stream is available. */
 async function fallbackStream(
@@ -136,33 +184,25 @@ async function waitForSettlement(
   id: string,
   cursor: string | undefined,
   initialTail: Awaited<ReturnType<ToolContext["hub"]["tail"]>>,
+  authority?: InputAuthority,
 ): Promise<void> {
   let tail = initialTail;
   let askedAlive = 0;
   for (;;) {
-    if (context.hub.closed) return;
-    if (tail?.endReason !== undefined) {
-      if (tail.endReason === "hub_closed") return;
-      tail = undefined;
-    }
-
     let stream: string;
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- each capture follows the previous observation.
       stream = await fallbackStream(pane);
     } else {
       stream = tail.read(cursor).text;
+      if (tail.endReason !== undefined) tail = undefined;
     }
     if (parseFramedOutput(stream, id) !== undefined) return;
 
     if (Date.now() - askedAlive >= SETTLEMENT_LIVENESS_MS) {
       askedAlive = Date.now();
       // eslint-disable-next-line no-await-in-loop -- liveness is sampled over time.
-      const current = await context
-        .snapshot()
-        .then((snapshot) => snapshot.panes.first({ id: pane.id }))
-        .catch(() => undefined);
-      if (current === undefined || current.dead === true) return;
+      if ((await capturedPaneState(context, pane.id, authority)) === "gone") return;
     }
 
     if (tail === undefined) {
@@ -174,17 +214,12 @@ async function waitForSettlement(
       continue;
     }
     // eslint-disable-next-line no-await-in-loop -- each wait follows the previous read.
-    const changed = await tail.changed(SETTLEMENT_POLL_MS);
-    if (changed === "closed" && tail.endReason === "hub_closed") return;
+    await tail.changed(SETTLEMENT_POLL_MS);
   }
 }
 
 async function sendLiteralLine(pane: Pane, line: string): Promise<void> {
-  await pane.sendKeys(line, { literal: true });
-}
-
-function hasExactLine(stream: string, expected: string): boolean {
-  return stream.split("\n").some((line) => line.trimEnd() === expected);
+  await dispatchPaneKeys(pane, line, { literal: true });
 }
 
 /**
@@ -202,12 +237,12 @@ export async function runFramedCommand(
   signal?: AbortSignal,
   suppressHistory = true,
   beforeDispatch?: () => Promise<Pane>,
+  authority?: InputAuthority,
 ): Promise<FramedResult> {
   const budget = effectiveWaitMs(context.policy, timeoutMs);
   if (isCancelled(signal)) return beforeStartResult(budget, "cancelled");
   const id = `ltx${randomId()}`;
-  const ready = `ltxr${randomId()}`;
-  const source = frame(command, ready, suppressHistory);
+  const source = frame(command, id, suppressHistory);
   const sessionId = pane.format.session_id;
 
   let tail = context.policy.liveEnabled
@@ -223,15 +258,25 @@ export async function runFramedCommand(
   let commandStarted = false;
   let usedFallback = tail === undefined;
   const dispatchPane = beforeDispatch === undefined ? pane : await beforeDispatch();
-  await sendLiteralLine(dispatchPane, source);
-  for (;;) {
-    if (Date.now() >= deadline || isCancelled(signal)) break;
-    if (tail?.endReason !== undefined) {
-      tail = undefined;
-      usedFallback = true;
+  if (isCancelled(signal) || Date.now() >= deadline) {
+    return beforeStartResult(budget, isCancelled(signal) ? "cancelled" : "timed_out");
+  }
+  try {
+    await sendLiteralLine(dispatchPane, source);
+    commandStarted = true;
+  } catch (error) {
+    if (!(error instanceof TmuxTransportError) || error.delivery === "not_started") {
+      throw error;
     }
+    // The pane may have received the only dispatch even though its reply was
+    // lost. Treat it as started until a marker or authenticated disappearance
+    // proves otherwise.
+    commandStarted = true;
+  }
+  for (;;) {
     let stream: string;
     if (tail === undefined) {
+      usedFallback = true;
       // eslint-disable-next-line no-await-in-loop -- each read follows the last.
       stream = await fallbackStream(pane, {
         ...(signal === undefined ? {} : { signal }),
@@ -241,26 +286,21 @@ export async function runFramedCommand(
       const reading = tail.read(cursor);
       stream = reading.text;
       missedBytes = Math.max(missedBytes, reading.missedBytes);
-    }
-    if (!commandStarted && hasExactLine(stream, `${ready}_R`)) {
-      if (Date.now() >= deadline || isCancelled(signal)) break;
-      // eslint-disable-next-line no-await-in-loop -- input follows the readiness observation.
-      await sendLiteralLine(pane, id);
-      commandStarted = true;
-    }
-    if (commandStarted) {
-      const found = parseFramedOutput(stream, id);
-      if (found !== undefined) {
-        return {
-          commandStarted: true,
-          effectiveTimeoutMs: budget,
-          missedBytes,
-          ...found,
-          outcome: "completed",
-          outputComplete: found.outputComplete && !usedFallback,
-          settled: Promise.resolve(),
-        };
+      if (tail.endReason !== undefined) {
+        tail = undefined;
       }
+    }
+    const found = parseFramedOutput(stream, id);
+    if (found !== undefined) {
+      return {
+        commandStarted: true,
+        effectiveTimeoutMs: budget,
+        missedBytes,
+        ...found,
+        outcome: "completed",
+        outputComplete: found.outputComplete && !usedFallback,
+        settled: Promise.resolve(),
+      };
     }
     if (Date.now() >= deadline || isCancelled(signal)) break;
     if (tail === undefined) {
@@ -276,26 +316,14 @@ export async function runFramedCommand(
       }
     } else {
       // eslint-disable-next-line no-await-in-loop -- the wait follows its read.
-      const change = await tail.changed(
+      await tail.changed(
         Math.min(FALLBACK_POLL_MS * 4, Math.max(1, deadline - Date.now())),
         signal,
       );
-      if (change === "closed") {
-        tail = undefined;
-        usedFallback = true;
-      }
     }
   }
   const cancelled = isCancelled(signal);
-  if (!commandStarted) {
-    await pane.sendKeys("C-c", { enter: false });
-    if (cancelled) return beforeStartResult(budget, "cancelled");
-    const after = (await context.snapshot()).panes.first({ id: pane.id });
-    return beforeStartResult(
-      budget,
-      after !== undefined && after.dead !== true ? "timed_out" : "pane_died",
-    );
-  }
+  if (!commandStarted) return beforeStartResult(budget, cancelled ? "cancelled" : "timed_out");
   if (cancelled) {
     return {
       commandStarted: true,
@@ -306,7 +334,7 @@ export async function runFramedCommand(
       outcome: "cancelled",
       output: "",
       outputComplete: false,
-      settled: waitForSettlement(context, pane, id, cursor, tail),
+      settled: waitForSettlement(context, pane, id, cursor, tail, authority),
     };
   }
 
@@ -322,8 +350,8 @@ export async function runFramedCommand(
 
   // Present is not alive: a pane kept by remain-on-exit still exists, and
   // reporting timed_out for it says the command may yet finish.
-  const after = (await context.snapshot()).panes.first({ id: pane.id });
-  const alive = after !== undefined && after.dead !== true;
+  const state = await capturedPaneState(context, pane.id, authority);
+  const alive = state !== "gone";
   return {
     commandStarted: true,
     effectiveTimeoutMs: budget,
@@ -333,6 +361,8 @@ export async function runFramedCommand(
     outcome: alive ? "timed_out" : "pane_died",
     output: cleaned.text,
     outputComplete: startAt >= 0 && missedBytes === 0 && !usedFallback,
-    settled: alive ? waitForSettlement(context, pane, id, cursor, tail) : Promise.resolve(),
+    settled: alive
+      ? waitForSettlement(context, pane, id, cursor, tail, authority)
+      : Promise.resolve(),
   };
 }

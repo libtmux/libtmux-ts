@@ -31,13 +31,13 @@ function captureInheritedTraps(scope: string, traps: string, status: string): st
 
 /**
  * Build one shell input line whose optional leading space suppresses history.
- * The wrapper removes its parsed release marker before command evaluation.
+ * The wrapper keeps its marker out of the command's inherited environment.
  */
-export function frame(command: string, ready: string, suppressHistory: boolean): string {
+export function frame(command: string, id: string, suppressHistory: boolean): string {
+  if (!/^ltx[0-9a-f]{10}$/u.test(id)) throw new TypeError("invalid command frame id");
   const prefix = suppressHistory ? " " : "";
   const scope = `__ltx_${randomId()}`;
   const marker = `${scope}_marker`;
-  const markerPattern = `ltx${"[0-9a-f]".repeat(10)}`;
   const options = `${scope}_options`;
   const payload = `${scope}_payload`;
   const traps = `${scope}_traps`;
@@ -47,14 +47,14 @@ export function frame(command: string, ready: string, suppressHistory: boolean):
   const encoded = [...Buffer.from(normalized, "utf8")]
     .map((byte) => `\\0${byte.toString(8).padStart(3, "0")}`)
     .join("");
+  const encodedMarker = [...Buffer.from(id, "utf8")]
+    .map((byte) => `\\0${byte.toString(8).padStart(3, "0")}`)
+    .join("");
   return (
     `${prefix}( ${options}=$-; set +x; set +e; ` +
     captureInheritedTraps(scope, traps, trapStatus) +
     `${payload}=$(command printf '%bX' '${encoded}'); ${payload}=\${${payload}%X}; ` +
-    `command printf '%s%s\\n' '${ready}' '_R'; ` +
-    `while IFS= read -r ${marker}; do ` +
-    `case "\${${marker}}" in ${markerPattern}) break;; esac; done; ` +
-    `case "\${${marker}}" in ${markerPattern}) :;; *) exit 125;; esac; ` +
+    `${marker}=$(command printf '%b' '${encodedMarker}'); ` +
     `${scope}() { command printf '%s\\n' "\${${marker}}_S"; ` +
     `( unset ${marker}; set --; ` +
     `if [ "\${${trapStatus}}" -ne 0 ]; then ` +
