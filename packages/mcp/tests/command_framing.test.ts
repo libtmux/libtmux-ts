@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 import { describe, expect, test } from "bun:test";
 
@@ -28,6 +29,12 @@ describe("command framing", () => {
 
   function quote(value: string): string {
     return `'${value.replaceAll("'", `'"'"'`)}'`;
+  }
+
+  function trapDirectory(source: string): string {
+    const path = /'(\/tmp\/__ltx_[0-9a-f]+-traps)'/u.exec(source)?.[1];
+    if (path === undefined) throw new Error("frame has no trap directory");
+    return path;
   }
 
   test("parses a complete framed result without pane state", () => {
@@ -71,6 +78,10 @@ describe("command framing", () => {
         "ltxready_R\nltxabc123def0_S\none\n\u2603\ndone\nltxabc123def0_E 0 ltxabc123def0_D\n",
       );
     }
+  });
+
+  test("leaves headroom below the interactive PTY line boundary", () => {
+    expect(Buffer.byteLength(frame("true", "ltxr0123456789", true))).toBeLessThan(3 * 1024);
   });
 
   test("closes the protocol after a command ending in a comment", () => {
@@ -178,6 +189,7 @@ describe("command framing", () => {
       expect(result.status, shell).toBe(0);
       expect(result.stdout, shell).toContain(`${id}_S\ninner-exit\n${id}_E 23 ${id}_D\n`);
       expect(result.stdout, shell).toEndWith("parent-stable\nouter-exit\n");
+      expect(result.stdout.split("outer-exit\n"), shell).toHaveLength(2);
     }
   });
 
@@ -246,6 +258,74 @@ describe("command framing", () => {
     expect(result.stdout).toBe(
       "ltxready_R\nltxabc123def0_S\n_E 0\nafter-debug\nltxabc123def0_E 7 ltxabc123def0_D\n",
     );
+  });
+
+  test.each([
+    ["bash", "ERR"],
+    ["zsh", "ZERR"],
+  ] as const)("preserves inherited error and debug traps in %s commands", (name, errorSignal) => {
+    const shell = Bun.which(name);
+    if (shell === null) return;
+    const id = "ltxabc123def0";
+    const debug = `command printf 'debug:%s\\n' "$LTX_TRAP_SCOPE"`;
+    const error = `command printf 'error:%s\\n' "$LTX_TRAP_SCOPE"`;
+    const source =
+      `LTX_TRAP_SCOPE=parent\n` +
+      `trap ${quote(debug)} DEBUG\n` +
+      `trap ${quote(error)} ${errorSignal}\n` +
+      `${frame("LTX_TRAP_SCOPE=child; command printf 'body\\n'; false", "ltxready", false)}\n` +
+      `false\n` +
+      `command printf 'parent-finished\\n'`;
+    const result = run(shell, source, `${id}\n`);
+    const parsed = parseFramedOutput(result.stdout, id);
+
+    expect(result.status, name).toBe(0);
+    expect(parsed?.exitStatus, name).toBe(1);
+    expect(parsed?.output, name).toContain("body");
+    expect(parsed?.output, name).toContain("debug:child");
+    expect(parsed?.output, name).toContain("error:child");
+    expect(result.stdout.slice(result.stdout.indexOf(`${id}_D`) + id.length + 2), name).toContain(
+      "error:parent",
+    );
+    expect(result.stdout, name).toEndWith("parent-finished\n");
+    expect(existsSync(trapDirectory(source)), name).toBe(false);
+  });
+
+  test.each([
+    ["bash", "ERR"],
+    ["zsh", "ZERR"],
+  ] as const)("refuses inherited %s trap declarations beyond 64 KiB", (name, errorSignal) => {
+    const shell = Bun.which(name);
+    if (shell === null) return;
+    const id = "ltxabc123def0";
+    const oversized = `__ltx_large=${"x".repeat(64 * 1024)}; true`;
+    const framed = frame("command printf 'SHOULD-NOT-RUN\\n'", "ltxready", false);
+    const result = run(shell, `trap ${quote(oversized)} ${errorSignal}\n${framed}`, `${id}\n`);
+    const parsed = parseFramedOutput(result.stdout, id);
+
+    expect(result.status, name).toBe(0);
+    expect(parsed?.exitStatus, name).toBe(125);
+    expect(parsed?.output, name).not.toContain("SHOULD-NOT-RUN");
+    expect(existsSync(trapDirectory(framed)), name).toBe(false);
+  });
+
+  test("preserves inherited noglob in the command and parent shell", () => {
+    const id = "ltxabc123def0";
+    for (const shell of shells) {
+      const source =
+        `set -f\n` +
+        `${frame(
+          "case $- in *f*) command printf 'child-noglob\\n';; *) exit 95;; esac",
+          "ltxready",
+          false,
+        )}\n` +
+        `case $- in *f*) command printf 'parent-noglob\\n';; *) exit 96;; esac`;
+      const result = run(shell, source, `${id}\n`);
+
+      expect(result.status, shell).toBe(0);
+      expect(parseFramedOutput(result.stdout, id)?.output, shell).toBe("child-noglob");
+      expect(result.stdout, shell).toEndWith("parent-noglob\n");
+    }
   });
 
   test("waits for the complete exit-status line", async () => {
