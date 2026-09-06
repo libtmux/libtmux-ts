@@ -3,6 +3,7 @@ import {
   decodeWhereDocument as decodeDocument,
   encodeWhereDocument as encodeDocument,
 } from "./_internal/selection/serialization.js";
+import { compileBoundedRegex as compileRegex } from "./_internal/selection/regex.js";
 import type { Client } from "./client.js";
 import type { PaneIdInput, SafeInteger, SessionIdInput, WindowIdInput } from "./common.js";
 import type { Pane } from "./pane.js";
@@ -10,7 +11,10 @@ import type { Server } from "./server.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 
-export { compileBoundedRegex } from "./_internal/selection/regex.js";
+/** Compile a regex under the deterministic selection-query work budget. */
+export function compileBoundedRegex(pattern: string): RegExp {
+  return compileRegex(pattern);
+}
 
 type ModelKindOf<Model> = Model extends Client
   ? "client"
