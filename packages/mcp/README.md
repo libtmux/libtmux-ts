@@ -271,8 +271,8 @@ Routes removed or renamed since the previous alpha migrate as follows:
 
 Pane rows identify the active pane, the MCP caller's pane when that identity can
 be proven, and panes watched by attached clients. That context matters before a
-write or teardown call: the server refuses its own pane and attended panes by
-default, while `force` records that the caller deliberately chose one.
+write or teardown call: the server refuses its own pane unless `force` confirms
+that exact caller, and always refuses panes watched by an attached client.
 
 ### Read what panes show
 
@@ -336,10 +336,9 @@ before sending the first one, then takes a fresh snapshot for each row.
 When a source pane's effective `synchronize-panes` value is off, its configured
 input cohort is only that source. When it is on, the cohort is the sorted,
 deduplicated set of same-window panes whose own effective value is on. Every
-member must be alive and outside a human-owned mode. Caller, attended-pane, and
-active framed-command protections also apply to every member by default;
-`force` retains its existing override for those policy checks, but never
-overrides mode or liveness.
+member must be alive, input-enabled, and outside a human-owned mode. Caller,
+attended-pane, and active input protections also apply to every member. `force`
+can confirm only the exact MCP caller pane; it never overrides the other checks.
 
 Input results disclose that configured membership at the immediate preflight,
 not observed recipients or a delivery receipt. State can change after any
@@ -349,11 +348,12 @@ cannot authorize a later one.
 `run_shell_command` additionally requires a singular configured cohort and a
 supported POSIX foreground shell. It checks once before reservation and live
 tail setup, then takes one fresh check after setup immediately before the first
-wrapper byte. A change in pane identity, daemon, placement, liveness, mode,
-shell, or cohort refuses the command without sending the wrapper or its release
-marker. The final check also reapplies caller, attended-pane, and competing-run
-policy. These are exactly two observational checks, not an atomic tmux
-transaction, so another process can still race the final check.
+and only wrapper dispatch. A change in pane identity, daemon, placement,
+liveness, input state, mode, shell, or cohort refuses the command without
+sending the wrapper. The final check also reapplies caller, attended-pane, and
+competing-input policy. These are exactly two observational checks and one
+dispatch, not an atomic tmux transaction, so another process can still race the
+final check.
 
 The frame uses the shell's `command printf` primitive so an inherited `printf`
 alias or function cannot forge its bookkeeping. The caller's command still
@@ -421,10 +421,11 @@ the returned content appropriately.
 `clear_pane_scrollback`, `kill_pane`, `kill_window`, and `kill_session` belong
 to the `teardown` toolset.
 
-Those tools refuse to end the pane hosting the MCP process or a pane an attached
-person is watching unless `force` is true. This protects direct teardown calls;
-it is not a sandbox. A command typed into another pane still has the authority
-of the tmux user and may perform an equivalent action.
+Those tools refuse to end the pane hosting the MCP process unless `force`
+confirms that exact caller, and always refuse a pane an attached person is
+watching. This protects direct teardown calls; it is not a sandbox. A command
+typed into another pane still has the authority of the tmux user and may perform
+an equivalent action.
 
 To opt into teardown on an explicitly selected server, name it deliberately:
 
