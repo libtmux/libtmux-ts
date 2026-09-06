@@ -7,6 +7,7 @@ import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { TmuxTransportError } from "libtmux/exc";
 import { Server } from "libtmux/server";
 
 import { readCallerEnvironment } from "./caller.js";
@@ -288,6 +289,38 @@ function isProgram(entry: string | undefined): boolean {
   }
 }
 
+/**
+ * One actionable line for a failure that happened before serving began.
+ *
+ * stdout is the protocol, so stderr is the whole diagnostic channel, and an MCP
+ * client surfaces it as the reason a server would not start. `spawn`/`ENOENT`
+ * is separated because Node reports it as `spawn tmux ENOENT`, which reads as
+ * tmux refusing rather than tmux being absent.
+ */
+export function describeStartupFailure(
+  error: unknown,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  if (error instanceof TmuxTransportError && error.kind === "spawn") {
+    const cause: unknown = error.cause;
+    const code =
+      typeof cause === "object" && cause !== null && "code" in cause
+        ? (cause as { readonly code?: unknown }).code
+        : undefined;
+    if (code === "ENOENT") {
+      const configured = environment.LIBTMUX_TMUX_BIN;
+      const named = configured === undefined || configured === "" ? "tmux" : configured;
+      return `cannot execute ${named}: install tmux, or set LIBTMUX_TMUX_BIN to its path`;
+    }
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 if (isProgram(process.argv[1])) {
-  await main();
+  try {
+    await main();
+  } catch (error) {
+    process.stderr.write(`libtmux-mcp: ${describeStartupFailure(error)}\n`);
+    process.exitCode = 1;
+  }
 }

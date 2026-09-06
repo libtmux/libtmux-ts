@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
+import { describeStartupFailure } from "../src/server.js";
 import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
 
 test("the stdio server executes the retained capability surface end to end", async () => {
@@ -231,3 +233,50 @@ test("the stdio server executes the retained capability surface end to end", asy
     });
   });
 }, 60_000);
+
+/**
+ * Run the server as a program, the way a client launches it, and report what a
+ * failed launch wrote. `bun` rather than the emitted build: the failure is in
+ * the entry guard, which the source and the build share.
+ */
+async function launchFailing(environment: Record<string, string>): Promise<{
+  readonly code: number | null;
+  readonly stderr: string;
+}> {
+  const entry = fileURLToPath(new URL("../src/server.ts", import.meta.url));
+  const child = Bun.spawn([process.execPath, entry], {
+    env: { ...process.env, ...environment },
+    stderr: "pipe",
+    stdin: "pipe",
+    stdout: "pipe",
+  });
+  const stderr = await new Response(child.stderr).text();
+  return { code: await child.exited, stderr };
+}
+
+test("a launch that cannot reach tmux names the executable instead of a stack", async () => {
+  const { code, stderr } = await launchFailing({ LIBTMUX_TMUX_BIN: "/nonexistent/tmux" });
+
+  expect(code).not.toBe(0);
+  expect(stderr).toContain("cannot execute /nonexistent/tmux");
+  expect(stderr).toContain("install tmux, or set LIBTMUX_TMUX_BIN");
+  // The whole point is that a person reads one line: no frames, no `throw` dump.
+  expect(stderr).not.toContain("    at ");
+  expect(stderr.trimEnd().split("\n")).toHaveLength(1);
+}, 30_000);
+
+test("a retired variable refuses with its own message and no stack", async () => {
+  const { code, stderr } = await launchFailing({ LIBTMUX_SAFETY: "readonly" });
+
+  expect(code).not.toBe(0);
+  expect(stderr).toContain("LIBTMUX_SAFETY");
+  expect(stderr).not.toContain("    at ");
+  expect(stderr.trimEnd().split("\n")).toHaveLength(1);
+}, 30_000);
+
+test("describeStartupFailure falls back to the message for an unrecognized failure", () => {
+  expect(describeStartupFailure(new TypeError("LIBTMUX_SOCKET must not be empty"), {})).toBe(
+    "LIBTMUX_SOCKET must not be empty",
+  );
+  expect(describeStartupFailure("not an error", {})).toBe("not an error");
+});
