@@ -50,6 +50,7 @@ export interface CoordinateReleaseOptions {
 }
 
 export interface ReleaseReport {
+  readonly warnings: readonly string[];
   readonly distTag: string;
   readonly dryRun: boolean;
   readonly published: readonly string[];
@@ -168,39 +169,51 @@ function existingArtifactFailure(
   return undefined;
 }
 
+/**
+ * npm accepts a publish and reveals it to readers later, and the delay is not
+ * bounded by anything npm documents. zod's release workflow records versions
+ * that sat unreadable for 16 and 25 minutes, so the wait is minutes-scale.
+ */
+const POSTCONDITION_ATTEMPTS = 60;
+const POSTCONDITION_INTERVAL_MS = 30_000;
+
+interface PostconditionFindings {
+  /** The release did not land: a version is absent or is not our tarball. */
+  readonly absent: readonly string[];
+  /** The release landed; only the dist-tag has not caught up yet. */
+  readonly lagging: readonly string[];
+}
+
 async function verifyPostcondition(
   manifests: readonly ReleaseManifest[],
   artifacts: readonly PackedArtifact[],
   distTag: string,
   io: ReleaseIO,
-): Promise<void> {
+): Promise<PostconditionFindings> {
   const packageStates = await queryPackages(manifests, io);
   const versionStates = await Promise.all(
     manifests.map(async ({ name, version }) => await io.queryVersion(name, version)),
   );
-  const failures: string[] = [];
+  const absent: string[] = [];
+  const lagging: string[] = [];
   for (const [index, manifest] of manifests.entries()) {
     const packageState = packageStates[index];
     const versionState = versionStates[index];
     const artifact = artifacts[index];
     if (packageState === undefined || artifact === undefined) {
-      failures.push(`${manifest.name}: release state was not read`);
+      absent.push(`${manifest.name}: release state was not read`);
       continue;
     }
     if (versionState === undefined) {
-      failures.push(`${manifest.name}@${manifest.version}: version is missing`);
+      absent.push(`${manifest.name}@${manifest.version}: version is missing`);
     } else if (versionState.integrity !== artifact.integrity) {
-      failures.push(`${manifest.name}@${manifest.version}: integrity differs from the tarball`);
+      absent.push(`${manifest.name}@${manifest.version}: integrity differs from the tarball`);
     }
     if (packageState.distTags[distTag] !== manifest.version) {
-      failures.push(`${manifest.name}@${distTag}: expected ${manifest.version}`);
+      lagging.push(`${manifest.name}@${distTag}: expected ${manifest.version}`);
     }
   }
-  if (failures.length > 0) {
-    throw new Error(
-      `release postcondition failed:\n${failures.map((failure) => `  ${failure}`).join("\n")}`,
-    );
-  }
+  return { absent, lagging };
 }
 
 function npmErrorCode(result: NpmCommandResult): string | undefined {
@@ -380,23 +393,24 @@ export async function coordinateRelease(
     await io.publish(artifact.tarballPath, distTag, options.dryRun);
     published.push(artifact.name);
   }
+  const warnings: string[] = [];
   if (!options.dryRun) {
-    let postconditionError: unknown;
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
-      try {
-        // eslint-disable-next-line no-await-in-loop -- each read follows the prior delay.
-        await verifyPostcondition(manifests, artifacts, distTag, io);
-        postconditionError = undefined;
-        break;
-      } catch (error) {
-        postconditionError = error;
-        // eslint-disable-next-line no-await-in-loop -- bound registry convergence between reads.
-        if (attempt < 5) await io.wait(1_000);
-      }
+    let findings: PostconditionFindings = { absent: [], lagging: [] };
+    for (let attempt = 1; attempt <= POSTCONDITION_ATTEMPTS; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop -- each read follows the prior delay.
+      findings = await verifyPostcondition(manifests, artifacts, distTag, io);
+      if (findings.absent.length === 0 && findings.lagging.length === 0) break;
+      // eslint-disable-next-line no-await-in-loop -- bound registry convergence between reads.
+      if (attempt < POSTCONDITION_ATTEMPTS) await io.wait(POSTCONDITION_INTERVAL_MS);
     }
-    if (postconditionError !== undefined) throw postconditionError;
+    if (findings.absent.length > 0) {
+      throw new Error(
+        `release postcondition failed:\n${[...findings.absent, ...findings.lagging].map((failure) => `  ${failure}`).join("\n")}`,
+      );
+    }
+    warnings.push(...findings.lagging);
   }
-  return { distTag, dryRun: options.dryRun, published, skipped, version };
+  return { distTag, dryRun: options.dryRun, published, skipped, version, warnings };
 }
 
 async function main(): Promise<void> {
@@ -414,6 +428,11 @@ async function main(): Promise<void> {
       },
       createReleaseIO(createNpmCommandRunner()),
     );
+    // A dist-tag the registry has not caught up on is reported, not fatal: the
+    // packages are published by here and failing the job cannot unpublish them.
+    for (const warning of report.warnings) {
+      process.stdout.write(`::warning::${warning}; the release itself succeeded\n`);
+    }
     process.stdout.write(
       `${report.dryRun ? "dry-run" : "release"} ${report.version} under ${report.distTag}: ${String(report.published.length)} tarballs, ${String(report.skipped.length)} already published\n`,
     );
