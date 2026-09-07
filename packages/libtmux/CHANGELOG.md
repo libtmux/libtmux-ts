@@ -12,6 +12,12 @@ remember.
 
 ## Unreleased
 
+### Development
+
+Every CI job now carries a timeout. No lane here has hung, but three sibling
+ports reached GitHub's six-hour ceiling on a single stuck job; a bound turns
+that into a failure in minutes. (#22)
+
 ## 0.1.0-alpha.8 (2026-09-06)
 
 ### `libtmux`
