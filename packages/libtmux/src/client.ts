@@ -14,6 +14,14 @@ import {
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
+/**
+ * One client attached to a tmux server, as a handle rather than a copy of it.
+ *
+ * Reached from {@link Server.clients}; the constructor throws. A client is the
+ * shortest-lived thing here — it goes away when its terminal does — so
+ * {@link Client.session} reports `undefined` once it has detached, and every
+ * other read reflects the moment the handle was made.
+ */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Client {
   declare private readonly clientBrand: undefined;
@@ -102,6 +110,13 @@ export class Client {
   }
 }
 
+/**
+ * The tmux format fields a client handle is built from, by tmux's own names.
+ *
+ * Read through `format` when the aliased property names on the handle are not
+ * what a caller wants — a field tmux added in a later version has a token
+ * here whether or not this library has given it a name.
+ */
 type ClientRow = RowWithIdentities<"client_name">;
 
 export interface Client extends AliasedFields<ClientRow, ClientAliasMap> {

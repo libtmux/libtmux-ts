@@ -91,6 +91,18 @@ function placementTarget(window: Window): string {
   return `${window.format.session_id}:${window.format.window_index}`;
 }
 
+/**
+ * One window on one tmux server, as a handle rather than a copy of it.
+ *
+ * Reached from {@link Session.windows} or {@link Session.activeWindow}; the
+ * constructor throws. The tmux format row the handle was built from reads back
+ * through `format`, and by tmux's own field names directly on the handle —
+ * a snapshot taken when the handle was made, not a live view.
+ *
+ * A window can be linked into more than one session, so {@link Window.session}
+ * is the session this handle was reached through rather than the only one
+ * showing it.
+ */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Window {
   declare private readonly windowBrand: undefined;
@@ -522,6 +534,13 @@ export class Window {
   }
 }
 
+/**
+ * The tmux format fields a window handle is built from, by tmux's own names.
+ *
+ * Read through `format` when the aliased property names on the handle are not
+ * what a caller wants — a field tmux added in a later version has a token
+ * here whether or not this library has given it a name.
+ */
 type WindowRow = RowWithIdentities<"session_id" | "window_id" | "window_index">;
 
 export interface Window extends AliasedFields<WindowRow, WindowAliasMap> {

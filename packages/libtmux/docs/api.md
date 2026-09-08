@@ -226,6 +226,19 @@ void size;
 
 ## Server
 
+One tmux server, addressed by the socket it listens on.
+
+Constructing this starts no process. tmux spawns the daemon on the first
+command that needs one, and a daemon already listening on that socket is
+used rather than replaced, so two `Server` values built from the same
+options address the same tmux.
+
+Sessions, windows and panes are reached from here and carry the server with
+them. Handles taken from one daemon do not survive its restart: the
+replacement numbers panes from `%0` again — see `DaemonIdentity`.
+
+@throws TypeError if both `socketName` and `socketPath` are given.
+
 [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties

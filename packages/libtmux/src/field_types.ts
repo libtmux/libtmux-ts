@@ -2,6 +2,12 @@
 
 import type { PaneId, SafeInteger, SessionId, WindowId } from "./common.js";
 
+/**
+ * Which kind of object a format field describes.
+ *
+ * A field belongs to exactly one scope, and asking a pane for a session's
+ * field is what `#{}` silently answers as empty rather than as an error.
+ */
 export type FormatScope =
   | "buffer"
   | "client"
@@ -12,6 +18,12 @@ export type FormatScope =
   | "universal"
   | "window";
 
+/**
+ * Every format field this tmux vocabulary knows, by tmux's own token.
+ *
+ * Read from tmux's `format.c` rather than written by hand, so a field a
+ * newer tmux added is here as soon as the vocabulary is regenerated.
+ */
 export type FormatFieldName =
   | "active_window_index"
   | "alternate_on"
@@ -213,6 +225,12 @@ export type FormatValueType =
   | "session-id"
   | "time"
   | "window-id";
+/**
+ * The three shapes that name a tmux object rather than describe one.
+ *
+ * A field of one of these types carries an id a handle can be rebuilt from,
+ * which is why the row types refuse to report them as empty.
+ */
 export type FormatIdentityType = "pane-id" | "session-id" | "window-id";
 
 /**
@@ -398,6 +416,13 @@ export type RowWithIdentities<Identities extends FormatFieldName> = {
     : RawFormatValue<Key> | null;
 };
 
+/**
+ * The readable name this library gives each session format field.
+ *
+ * A handle exposes both spellings: the alias, and tmux's own token through
+ * `format`. The alias is this library's, so a field with no entry here is
+ * reachable only by its tmux name.
+ */
 export type SessionAliasMap = {
   readonly activeWindowIndex: "active_window_index";
   readonly configFiles: "config_files";
@@ -438,6 +463,13 @@ export type SessionAliasMap = {
   readonly version: "version";
 };
 
+/**
+ * The readable name this library gives each window format field.
+ *
+ * A handle exposes both spellings: the alias, and tmux's own token through
+ * `format`. The alias is this library's, so a field with no entry here is
+ * reachable only by its tmux name.
+ */
 export type WindowAliasMap = {
   readonly configFiles: "config_files";
   readonly line: "line";
@@ -484,6 +516,13 @@ export type WindowAliasMap = {
   readonly zoomedFlag: "window_zoomed_flag";
 };
 
+/**
+ * The readable name this library gives each pane format field.
+ *
+ * A handle exposes both spellings: the alias, and tmux's own token through
+ * `format`. The alias is this library's, so a field with no entry here is
+ * reachable only by its tmux name.
+ */
 export type PaneAliasMap = {
   readonly alternateOn: "alternate_on";
   readonly alternateSavedX: "alternate_saved_x";
@@ -574,6 +613,13 @@ export type PaneAliasMap = {
   readonly wrapFlag: "wrap_flag";
 };
 
+/**
+ * The readable name this library gives each client format field.
+ *
+ * A handle exposes both spellings: the alias, and tmux's own token through
+ * `format`. The alias is this library's, so a field with no entry here is
+ * reachable only by its tmux name.
+ */
 export type ClientAliasMap = {
   readonly activity: "client_activity";
   readonly cellHeight: "client_cell_height";

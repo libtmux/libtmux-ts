@@ -73,6 +73,20 @@ export interface PanePlans {
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
+/**
+ * One pane on one tmux server, as a handle rather than a copy of it.
+ *
+ * Reached from {@link Window.panes}, {@link Session.activePane} or a split;
+ * the constructor throws. The tmux format row the handle was built from reads
+ * back through {@link Pane.format}, and by tmux's own field names directly on
+ * the handle. Those values are a snapshot taken when the handle was made and
+ * do not follow the pane — {@link Pane.refreshed} takes a new one.
+ *
+ * Identity is the socket, the daemon that answered on it, and `%n` together,
+ * because a restarted server issues `%0` again to a different pane.
+ * {@link Pane.equals} asks that question; {@link Pane.sameTmuxIdAs} asks the
+ * weaker one.
+ */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Pane {
   declare private readonly paneBrand: undefined;
@@ -584,6 +598,13 @@ export class Pane {
   }
 }
 
+/**
+ * The tmux format fields a pane handle is built from, by tmux's own names.
+ *
+ * Read through `format` when the aliased property names on the handle are not
+ * what a caller wants — a field tmux added in a later version has a token
+ * here whether or not this library has given it a name.
+ */
 type PaneRow = RowWithIdentities<"pane_id" | "session_id" | "window_id" | "window_index">;
 
 export interface Pane extends AliasedFields<PaneRow, PaneAliasMap> {

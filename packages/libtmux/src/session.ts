@@ -46,6 +46,18 @@ export interface SessionPlans {
   readonly newWindow: (options?: NewWindowOptions) => PlannedOperation<Window>;
 }
 
+/**
+ * One session on one tmux server, as a handle rather than a copy of it.
+ *
+ * Reached from {@link Server.sessions} or by creating one; the constructor
+ * throws. The tmux format row the handle was built from reads back through
+ * `format`, and by tmux's own field names directly on the handle — a snapshot
+ * taken when the handle was made, not a live view.
+ *
+ * A session outlives the clients attached to it: killing the last client
+ * leaves the session running, which is the property the whole tool is built
+ * around.
+ */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Session {
   declare private readonly sessionBrand: undefined;
@@ -443,6 +455,13 @@ export class Session {
   }
 }
 
+/**
+ * The tmux format fields a session handle is built from, by tmux's own names.
+ *
+ * Read through `format` when the aliased property names on the handle are not
+ * what a caller wants — a field tmux added in a later version has a token
+ * here whether or not this library has given it a name.
+ */
 type SessionRow = RowWithIdentities<"session_id">;
 
 export interface Session extends AliasedFields<SessionRow, SessionAliasMap> {
