@@ -47,10 +47,17 @@ $ node packages/workspace-cli/dist/main.js freeze dev \
     --json
 ```
 
-Detached loading preserves an existing session. Explicit append adds windows
+Loading reuses an existing session. Without `-d`, it attaches the final workspace
+or switches the current tmux client. Attachment uses the controlling terminal,
+including when standard streams are redirected; no terminal means failure
+before creating sessions. Inside tmux, attached load stays on the current server;
+use `-d` to load on another server. Explicit append adds windows
 to the current pane's session. Bootstrap failure removes a session created by
 that load; it preserves a session borrowed for append. Other partial failures
 report the created objects and the failed stage.
+
+When clients share a session, tmux selects its most recently active client before
+loading. The CLI captures that client and targets the switch explicitly.
 
 ## Output
 
@@ -91,8 +98,7 @@ on Node 22 and Bun. It needs the optional Python runtime described above:
 $ bun run --cwd packages/workspace-cli test:install
 ```
 
-Plugin/custom-builder loading, interactive load/attachment and prompts,
-progress presets, log flags,
+Plugin/custom-builder loading, interactive prompts, progress presets, log flags,
 generated references/completions, and benchmarks remain unfinished.
 
 The core library keeps its zero-runtime-dependency contract. Commander and YAML

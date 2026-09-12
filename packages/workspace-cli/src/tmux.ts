@@ -17,7 +17,7 @@ import {
 import { normalize, type PaneSpec, type WorkspaceSpec } from "./normalize.ts";
 import { CliError, colorEnabled, emitJson, OperationOutput, styled, write } from "./output.ts";
 import type { Request } from "./parser.ts";
-import { processRun } from "./process.ts";
+import { openTerminal, processRun } from "./process.ts";
 import type { ProcessResult } from "./process.ts";
 
 type LoadResult = {
@@ -58,6 +58,76 @@ export function connection(values: Record<string, unknown>, context: CLIContext)
     ...(context.env.TMUX_BIN ? { tmuxBin: context.env.TMUX_BIN } : {}),
   };
   return new Server(options);
+}
+function terminalArguments(server: Server): string[] {
+  return [
+    server.tmuxBin,
+    ...(server.socketPath
+      ? ["-S", server.socketPath]
+      : server.socketName
+        ? ["-L", server.socketName]
+        : []),
+  ];
+}
+async function currentSession(server: Server, context: CLIContext): Promise<Session> {
+  const endpoint = currentEndpoint(context);
+  if (!endpoint || !context.env.TMUX_PANE)
+    throw new CliError(
+      "input_required",
+      "This operation requires TMUX and TMUX_PANE from a current pane",
+    );
+  const acquisition = context.signal ? { signal: context.signal } : {};
+  const [current, selected] = await Promise.all([
+    connection({}, context).daemonIdentity(acquisition),
+    server.daemonIdentity(acquisition),
+  ]);
+  if (
+    current.pid !== endpoint.pid ||
+    current.pid !== selected.pid ||
+    current.startTime !== selected.startTime
+  )
+    throw new CliError(
+      "tmux_context",
+      "This operation must target the current pane's tmux server; use -d to load elsewhere",
+    );
+  const session = (await server.snapshot(acquisition)).panes.one({
+    id: context.env.TMUX_PANE,
+  }).session;
+  if (!session)
+    throw new CliError("input_required", "The current pane has no session on this server");
+  return session;
+}
+async function attachmentClient(server: Server, context: CLIContext): Promise<string | undefined> {
+  try {
+    const terminal = await openTerminal(context);
+    await terminal.close();
+  } catch (error) {
+    if (context.signal?.aborted) throw error;
+    throw new CliError(
+      "terminal_required",
+      "Attached load needs a controlling terminal; pass -d",
+      2,
+    );
+  }
+  if (!currentEndpoint(context)) return undefined;
+  const session = await currentSession(server, context);
+  const query = await processRun(
+    [...terminalArguments(server), "display-message", "-p", "#{client_name}"],
+    {
+      cwd: context.cwd,
+      env: context.env,
+      terminal: "input",
+      ...(context.signal ? { signal: context.signal } : {}),
+    },
+  );
+  const name = query.stdout.trim();
+  const clients = (await server.snapshot(context.signal ? { signal: context.signal } : {})).clients;
+  if (
+    query.code !== 0 ||
+    !clients.toArray().some((client) => client.name === name && client.session?.id === session.id)
+  )
+    throw new CliError("tmux_context", "The current pane has no attached client; pass -d");
+  return name;
 }
 async function options(
   target: Session | Window,
@@ -272,28 +342,11 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     inputs.push({ path, spec });
   }
   const server = connection(request.values, context);
+  const attached = request.mode === "human" && !request.values.detached && !request.values.append;
+  const client = attached ? await attachmentClient(server, context) : undefined;
   let append: Session | undefined;
   if (request.values.append) {
-    const endpoint = currentEndpoint(context);
-    if (!endpoint || !context.env.TMUX_PANE)
-      throw new CliError(
-        "input_required",
-        "Append requires TMUX and TMUX_PANE from a current pane",
-      );
-    const acquisition = context.signal ? { signal: context.signal } : {};
-    const [current, selected] = await Promise.all([
-      connection({}, context).daemonIdentity(acquisition),
-      server.daemonIdentity(acquisition),
-    ]);
-    if (
-      current.pid !== endpoint.pid ||
-      current.pid !== selected.pid ||
-      current.startTime !== selected.startTime
-    )
-      throw new CliError("tmux_context", "Append must target the current pane's tmux server");
-    append = (await server.snapshot(acquisition)).panes.one({ id: context.env.TMUX_PANE }).session;
-    if (!append)
-      throw new CliError("input_required", "The current pane has no session on this server");
+    append = await currentSession(server, context);
     const reserved = new Set(append.windows.toArray().map((window) => Number(window.index)));
     for (const input of inputs)
       for (const window of input.spec.windows)
@@ -349,6 +402,30 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         );
       }
     }
+    const last = results.at(-1);
+    if (attached && last?.session_id) {
+      last.stage = client ? "switching-client" : "attaching";
+      const args = terminalArguments(server);
+      if (request.values.colors) args.push(request.values.colors === 256 ? "-2" : "-8");
+      args.push(
+        ...(client ? ["switch-client", "-c", client] : ["attach-session"]),
+        "-t",
+        last.session_id,
+      );
+      const child = await processRun(args, {
+        cwd: context.cwd,
+        env: context.env,
+        terminal: client ? "input" : true,
+        ...(context.signal ? { signal: context.signal } : {}),
+      });
+      if (child.code !== 0)
+        throw new CliError(
+          "attach_failed",
+          `tmux attachment failed${child.stderr.trim() ? ": " + child.stderr.trim() : ""}`,
+          child.code,
+        );
+      last.stage = "completed";
+    }
     await output.result({ status: "ok", results, errors: [] });
     return 0;
   } catch (error) {
@@ -372,7 +449,15 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         },
       ],
     });
-    if (request.mode === "human") throw error;
+    if (request.mode === "human") {
+      for (const result of results)
+        if (result.session_id && !result.session_removed)
+          await write(
+            context.stderr,
+            `Session ${styled("subject", result.session_name, false)} remains available (${result.stage}).\n`,
+          );
+      throw error;
+    }
     return interrupted ? 130 : 1;
   }
 }
