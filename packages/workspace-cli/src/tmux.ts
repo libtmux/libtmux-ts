@@ -602,7 +602,8 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
   const server = connection(request.values, context);
   const name = request.values.session_name;
   if (!name) throw new CliError("input_required", "Specify the session to freeze");
-  const session = (await server.snapshot()).sessions.one({ name: scalarText(name) });
+  const acquisition = context.signal ? { signal: context.signal } : {};
+  const session = (await server.snapshot(acquisition)).sessions.one({ name: scalarText(name) });
   const windows: Document[] = [];
   for (const window of session.windows.toArray()) {
     const panes = window.panes.toArray().map((pane) => ({
@@ -610,7 +611,7 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
       start_directory: pane.currentPath ?? context.cwd,
       ...(pane.active === true ? { focus: true } : {}),
     }));
-    const options = Object.fromEntries(await window.showOptions());
+    const options = Object.fromEntries(await window.showOptions(acquisition));
     windows.push({
       window_name: window.name,
       window_index: Number(window.index),
@@ -623,7 +624,7 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
   const document: Document = {
     session_name: session.name,
     windows,
-    options: Object.fromEntries(await session.showOptions()),
+    options: Object.fromEntries(await session.showOptions(acquisition)),
   };
   const destination = request.values.save_to
     ? resolve(context.cwd, scalarText(request.values.save_to))
@@ -634,7 +635,14 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
       "input_required",
       "Specify --save-to or choose --json/--ndjson capture output",
     );
-  if (destination) await saveDocument(document, destination, format, Boolean(request.values.force));
+  if (destination)
+    await saveDocument(
+      document,
+      destination,
+      format,
+      Boolean(request.values.force),
+      context.signal,
+    );
   if (request.mode === "json")
     await emitJson(
       context.stdout,
