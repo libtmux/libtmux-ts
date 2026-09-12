@@ -13,7 +13,7 @@ import {
   type SessionId,
   type WindowId,
 } from "./common.js";
-import type { Server } from "./server.js";
+import type { DaemonIdentity, Server } from "./server.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
@@ -42,6 +42,8 @@ import { isName } from "./_internal/operations/names.js";
  */
 export interface ServerSnapshot {
   readonly clients: Selection<Client>;
+  /** The daemon that answered this acquisition, including when no sessions exist. */
+  readonly daemonIdentity: DaemonIdentity;
   readonly panes: Selection<Pane>;
   readonly sessions: Selection<Session>;
   readonly windows: Selection<Window>;

@@ -1,5 +1,6 @@
 import type { AbortLike, ServerSnapshot } from "../../types.js";
 import type { Server } from "../../server.js";
+import { LibTmuxException } from "../../exc.js";
 import type { NormalizedGraph } from "../graph/model.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { acquireServerGraph } from "./acquire.js";
@@ -18,6 +19,10 @@ export async function buildSnapshotFromGraph(
   server: Server,
   graph: NormalizedGraph,
 ): Promise<ServerSnapshot> {
+  const daemonIdentity = graph.capture.daemon;
+  if (daemonIdentity === undefined) {
+    throw new LibTmuxException("live acquisition omitted the daemon identity");
+  }
   const [sessions, windows, panes, clients] = await Promise.all([
     selectionOfModel(server, graph, "session"),
     selectionOfModel(server, graph, "window"),
@@ -25,7 +30,7 @@ export async function buildSnapshotFromGraph(
     selectionOfModel(server, graph, "client"),
   ]);
 
-  return Object.freeze({ clients, panes, sessions, windows });
+  return Object.freeze({ clients, daemonIdentity, panes, sessions, windows });
 }
 
 /** Acquire the server and build every selection from that one instant. */
