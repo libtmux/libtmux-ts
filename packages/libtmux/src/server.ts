@@ -531,8 +531,8 @@ export class Server {
    * options.get("escape-time");
    * ```
    */
-  showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForServer(this), "server");
+  showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForServer(this), "server", null, options);
   }
 
   /**
@@ -546,8 +546,8 @@ export class Server {
    * (await server.showResolvedOptions()).get("message-limit");
    * ```
    */
-  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
-    return showResolvedOptions(runtimeForServer(this), "server", null);
+  showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForServer(this), "server", null, options);
   }
 
   /**
@@ -601,8 +601,11 @@ export class Server {
    * defaults.get("default-shell");
    * ```
    */
-  showGlobalOptions(scope: "session" | "window"): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForServer(this), scope, null, { global: true });
+  showGlobalOptions(
+    scope: "session" | "window",
+    options?: CommandOptions,
+  ): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForServer(this), scope, null, { ...options, global: true });
   }
 
   /**

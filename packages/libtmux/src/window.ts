@@ -1,3 +1,4 @@
+import type { CommandOptions } from "./common.js";
 import type { CmdOptions, PlannedOperation } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
 import type { SetHookOptions, SetOptionOptions } from "./types.js";
@@ -216,8 +217,8 @@ export class Window {
    * options.get("automatic-rename");
    * ```
    */
-  showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForHandle(this), "window", this.id);
+  showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForHandle(this), "window", this.id, options);
   }
 
   /**
@@ -231,8 +232,8 @@ export class Window {
    * (await window.showResolvedOptions()).get("main-pane-width");
    * ```
    */
-  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
-    return showResolvedOptions(runtimeForHandle(this), "window", this.id);
+  showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "window", this.id, options);
   }
 
   /**

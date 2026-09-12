@@ -1,3 +1,4 @@
+import type { CommandOptions } from "./common.js";
 import {
   getEnvironment,
   removeEnvironment,
@@ -101,8 +102,8 @@ export class Session {
    * options.get("status");
    * ```
    */
-  showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForHandle(this), "session", this.id);
+  showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForHandle(this), "session", this.id, options);
   }
 
   /**
@@ -116,8 +117,8 @@ export class Session {
    * (await session.showResolvedOptions()).get("history-limit");
    * ```
    */
-  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
-    return showResolvedOptions(runtimeForHandle(this), "session", this.id);
+  showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "session", this.id, options);
   }
 
   /**

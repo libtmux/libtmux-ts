@@ -47,6 +47,34 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
 }
 
 describe("option reads", () => {
+  test("cancels own, inherited and global reads before dispatch", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const snapshot = await server.snapshot();
+      const options = { signal: AbortSignal.abort() };
+      const scopes = [
+        server,
+        snapshot.sessions.one(),
+        snapshot.windows.one(),
+        snapshot.panes.one(),
+      ];
+      const results = await Promise.allSettled([
+        ...scopes.flatMap((scope) => [
+          scope.showOptions(options),
+          scope.showResolvedOptions(options),
+        ]),
+        ...(["session", "window"] as const).map((scope) =>
+          server.showGlobalOptions(scope, options),
+        ),
+      ]);
+      for (const result of results) {
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected")
+          expect(result.reason).toMatchObject({ kind: "cancelled" });
+      }
+    });
+  });
+
   test("reads a server option that was just set", async () => {
     await withServer(async (fixture) => {
       await fixture.executeText(["set-option", "-s", "history-file", "/tmp/ltx history"]);
