@@ -1,5 +1,4 @@
 /* eslint-disable no-await-in-loop -- Output follows record order and awaits stream backpressure. */
-import { load, freeze } from "./tmux.ts";
 import type { Readable, Writable } from "node:stream";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { CommanderError } from "commander";
@@ -94,8 +93,11 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
       );
       return 0;
     }
-    if (request.command === "load") return await load(request, context);
-    if (request.command === "freeze") return await freeze(request, context);
+    if (request.command === "load" || request.command === "freeze") {
+      const operation = (await import("./tmux.ts"))[request.command];
+      context.signal?.throwIfAborted();
+      return await operation(request, context);
+    }
     if (request.command === "edit") return await edit(request, context);
     if (request.command === "debug-info") return await debugInfo(request, context);
     if (request.command === "shell") return await shell(request, context);
