@@ -291,10 +291,16 @@ export function winlinkRefForHandle(handle: Child): WinlinkRef | null {
  */
 export function requireSameServer(
   left: { readonly server: Server },
-  right: { readonly server: Server },
+  right: Child,
   operation: string,
 ): void {
-  if (left.server.equals(right.server)) return;
+  if (left.server.equals(right.server)) {
+    // Same address is not the same daemon. A handle read before a restart
+    // names an id the new daemon has reissued, so it is refused here exactly
+    // as it would be if the caller addressed it directly.
+    runtimeForHandle(right);
+    return;
+  }
   throw new TypeError(
     `${operation} needs both objects on one tmux server: ${left.server.toString()} and ${right.server.toString()} are different servers, and a tmux id means something else on each.`,
   );
@@ -305,11 +311,12 @@ export function requireSameServer(
  *
  * A string is passed through: a caller naming `"other:1"` has said which
  * server they mean by having no other. A handle is checked first, because a
- * handle carries the server it came from and can therefore be wrong.
+ * handle carries the server and the daemon it came from, and can therefore be
+ * wrong about both.
  */
 export function targetOf(
   self: { readonly server: Server },
-  target: { readonly id: string; readonly server: Server } | string,
+  target: (Child & { readonly id: string }) | string,
   operation: string,
 ): string {
   if (typeof target === "string") return target;

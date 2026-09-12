@@ -155,6 +155,35 @@ describe("handle identity", () => {
     });
   });
 
+  // Owns its socket for the reason the test below gives.
+  test("a restarted daemon invalidates a handle passed as a target", async () => {
+    const directory = await makeTestDirectory("ltx-restart-target-");
+    const socketPath = join(directory, "s");
+    assertOwnedSocketPath(socketPath);
+    const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
+    try {
+      await server.newSession({ name: "before" });
+      const stale = (await server.snapshot()).sessions.one({ name: "before" });
+      await server.cmd("kill-server").catch(() => undefined);
+      await waitForServerExit(server);
+
+      const replacement = await server.newSession({ name: "after" });
+      await replacement.newWindow({ name: "movable" });
+      const window = (await server.snapshot()).windows.one({ name: "movable" });
+
+      // The same socket is not the same daemon. Addressing the stale session
+      // directly was already refused; reducing it to an id for someone else's
+      // command has to be refused on the same terms, or the guard is only a
+      // guard against the calls that did not need one.
+      expect(() => window.link({ session: stale })).toThrow(TmuxServerRestarted);
+      expect(() => window.move({ session: stale })).toThrow(TmuxServerRestarted);
+      expect(() => stale.selectWindow(window)).toThrow(TmuxServerRestarted);
+    } finally {
+      await server.cmd("kill-server").catch(() => undefined);
+      await rm(directory, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   // Owns its socket rather than borrowing the fixture's: replacing the daemon
   // at a fixture's path is exactly what that harness refuses to reap, and it is
   // right to — the socket it recorded is not the socket it would be deleting.
