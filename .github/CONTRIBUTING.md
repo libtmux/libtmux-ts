@@ -342,15 +342,15 @@ matrix. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
 locally to use its dry-run mode without an npm identity.
 
 The release coordinator first requires every package version and internal
-`libtmux` dependency to agree. It then builds all three npm tarballs and reads
+`libtmux` dependency to agree. It then builds every npm tarball and reads
 every package, target version, integrity digest, and dist-tag before publishing
-any of them. It publishes those exact tarballs, then checks all three registry
+any of them. It publishes those exact tarballs, then checks all registry
 artifacts and tags again. A partial rerun skips an existing version only when
 its integrity and intended tag match. A different artifact, a missing
 established package, or any registry error other than a target-version 404
 stops the release.
 
-npm cannot publish three packages as one transaction. A failure can therefore
+npm cannot publish the packages as one transaction. A failure can therefore
 leave a prefix published for the next run to verify and resume. Trusted
 publishing authenticates `npm publish`, not `npm dist-tag add`, so a matching
 artifact with the wrong tag also stops with a manual-repair diagnostic instead
@@ -358,7 +358,7 @@ of adding a long-lived token to the workflow.
 
 ### Stable release gate
 
-`0.1.0` is a coordinated release of all three packages. Cut it only when:
+`0.1.0` is a coordinated release of every release package. Cut it only when:
 
 - no known P0 or P1 correctness or security finding remains;
 - both Bun versions, Node 22 package consumers, every advertised tmux version,
@@ -366,12 +366,12 @@ of adding a long-lived token to the workflow.
 - real-tmux cancellation and process ownership pass on each advertised host
   platform, or the platform contract names the narrower set;
 - the published declaration graph, examples, and install canaries cover all
-  three packages; and
+  release packages; and
 - one release candidate has spent 30 days in production-like use without a new
   P0 or P1 finding.
 
-The three packages keep one release number. A tag names the tested state of the
-library, MCP server, and workspace package together.
+The packages keep one release number. A tag names the tested state of the
+library, MCP server, workspace builder, and workspace CLI together.
 
 `test:package` reads the tarball and `test:install` uses it — a clean
 directory, `npm install` of the packed file, and a Node 22 process that imports
