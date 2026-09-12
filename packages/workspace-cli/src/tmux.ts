@@ -437,7 +437,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         ? scalarText(request.values.new_session_name)
         : undefined,
     );
-    if (spec.data.plugins || spec.data.workspace_builder)
+    const hasPlugins = Array.isArray(spec.data.plugins)
+      ? spec.data.plugins.length > 0
+      : Boolean(spec.data.plugins);
+    if (hasPlugins || spec.data.workspace_builder)
       throw new CliError(
         "compatibility_bridge_required",
         "Python plugins and custom builders require the optional Python bridge",
