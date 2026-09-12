@@ -127,9 +127,18 @@ export interface NewWindowOptions extends CommandOptions {
    *
    * Relative to whichever window the session has selected, not to a window
    * named here — the command addresses the session, so that is the anchor tmux
-   * measures from. Without this the window goes at the first free index.
+   * measures from. Without this or `index`, tmux uses the first free index.
+   * Cannot be combined with `index`.
    */
   readonly direction?: WindowDirection;
+  /**
+   * Create at this exact index, including below the session's `base-index`.
+   *
+   * Accepts integers from 0 through 2147483647. An occupied index fails without
+   * replacing its window. Invalid values and combining this with `direction`
+   * throw TypeError before sending a command.
+   */
+  readonly index?: number;
   /**
    * The window's name.
    *
