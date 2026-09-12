@@ -124,6 +124,44 @@ Python-specific regex syntax is outside the native search contract.
 Code passed with `-c` runs in tmuxp's Python context. An interactive shell needs
 a controlling terminal.
 
+## Reference and completion
+
+The [command reference](docs/command-reference.md) and
+[command metadata](docs/commands.json) come from the native parser. Regenerate
+them after changing command definitions:
+
+```console
+$ bun run --cwd packages/workspace-cli docs:generate
+```
+
+The build checks that the reference and packaged completion scripts are current.
+The scripts complete commands, options, enum values, and file paths without
+starting Node, Bun, or tmux. Saved workspace names and live sessions are outside
+their completion scope.
+
+Completion is tested on Linux with Bash 5.2, Zsh 5.9, and fish 4.8. Bash 3.2 is
+a syntax target; older shells and filenames containing newlines remain unverified.
+
+After installing the local package, load the script for your shell. Bash:
+
+```console
+$ source <(tmux-workspace completion bash)
+```
+
+Zsh, with its completion system initialized:
+
+```console
+$ autoload -Uz compinit && compinit && source <(tmux-workspace completion zsh)
+```
+
+fish:
+
+```console
+$ tmux-workspace completion fish | source
+```
+
+For automation, `--json` and `--ndjson` wrap the script in a structured result.
+
 ## Development status
 
 Native discovery, conversion, imports, common searches, detached load, append,
@@ -136,8 +174,9 @@ on Node 22 and Bun. It needs the optional Python runtime described above:
 $ bun run --cwd packages/workspace-cli test:install
 ```
 
-Plugin/custom-builder loading, interactive prompts,
-generated references/completions, and benchmarks remain unfinished.
+Plugin/custom-builder loading, interactive prompts, and broader configuration
+and platform coverage remain unfinished. Benchmark results cover isolated Linux
+fixtures; they do not establish cross-port or interactive performance.
 
 The core library keeps its zero-runtime-dependency contract. Commander, YAML,
 and terminal text helpers are bundled into this CLI; `libtmux` remains a separate
