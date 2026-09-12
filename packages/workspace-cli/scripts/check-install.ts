@@ -41,6 +41,14 @@ await runWithCleanup(
     const core = await npmPack(coreRoot, artifacts);
     const cli = await npmPack(packageRoot, artifacts);
     assert(cli.entries.includes("dist/main.js"));
+    for (const entry of [
+      "command-reference.md",
+      "commands.json",
+      "completions/tmux-workspace.bash",
+      "completions/_tmux-workspace",
+      "completions/tmux-workspace.fish",
+    ])
+      assert(cli.entries.includes(`docs/${entry}`), `missing packaged ${entry}`);
     assert(
       !cli.entries.some((path) => path.startsWith("node_modules/") || path.startsWith("tests/")),
     );
@@ -131,6 +139,9 @@ await runWithCleanup(
                   ["import", "tmuxinator", "tmuxinator.yaml"],
                   ["edit", workspace],
                   ["debug-info"],
+                  ["completion", "bash"],
+                  ["completion", "zsh"],
+                  ["completion", "fish"],
                   [
                     "shell",
                     session,
@@ -223,6 +234,15 @@ await runWithCleanup(
                     assert.equal(records[0].stdout, workspace);
                   } else if (args[0] === "debug-info") {
                     assert.equal(records[0].port, "typescript");
+                  } else if (args[0] === "completion") {
+                    const file =
+                      args[1] === "zsh" ? "_tmux-workspace" : `tmux-workspace.${args[1]}`;
+                    const expected = await readFile(
+                      join(project, "node_modules/@libtmux/workspace-cli/docs/completions", file),
+                      "utf8",
+                    );
+                    assert.equal(records[0].shell, args[1]);
+                    assert.equal(records[0].script, expected);
                   }
                   checked++;
                 }

@@ -1,0 +1,1125 @@
+{
+  "schema_version": 1,
+  "program": "tmux-workspace",
+  "commands": [
+    {
+      "path": [],
+      "description": "Manage tmux workspaces from YAML and JSON configuration.",
+      "arguments": [],
+      "options": [
+        {
+          "flags": "-V, --version",
+          "short": "-V",
+          "long": "--version",
+          "description": "output the version number",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--log-level <log_level>",
+          "long": "--log-level",
+          "description": "log level (debug, info, warning, error, critical) (default \"warning\")",
+          "value": "required",
+          "variadic": false,
+          "choices": ["debug", "info", "warning", "error", "critical"],
+          "default": "warning"
+        },
+        {
+          "flags": "--color <color>",
+          "long": "--color",
+          "description": "when to use colors: auto (default), always, or never",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"],
+          "default": "auto"
+        },
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": [
+        "load",
+        "shell",
+        "import",
+        "convert",
+        "debug-info",
+        "ls",
+        "search",
+        "edit",
+        "freeze",
+        "completion"
+      ]
+    },
+    {
+      "path": ["load"],
+      "description": "Load workspace files, attach to existing sessions, or append windows.",
+      "arguments": [
+        {
+          "name": "workspace_files",
+          "required": true,
+          "variadic": true,
+          "description": "filepath to session or filename of session in tmuxp workspace directory",
+          "choices": [],
+          "completion": "file"
+        }
+      ],
+      "options": [
+        {
+          "flags": "-L <socket_name>",
+          "short": "-L",
+          "description": "passthru to tmux(1) -L",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-S <socket_path>",
+          "short": "-S",
+          "description": "passthru to tmux(1) -S",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "-f <tmux_config_file>",
+          "short": "-f",
+          "description": "passthru to tmux(1) -f",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "-s <new_session_name>",
+          "short": "-s",
+          "description": "start new session with new session name",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-y, --yes",
+          "short": "-y",
+          "long": "--yes",
+          "description": "always answer yes",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-d",
+          "short": "-d",
+          "description": "load the session without attaching it",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-a, --append",
+          "short": "-a",
+          "long": "--append",
+          "description": "load workspace, appending windows to the current session",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-2",
+          "short": "-2",
+          "description": "force tmux to assume the terminal supports 256 colours.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-8",
+          "short": "-8",
+          "description": "Reject unsupported legacy 88-color mode before loading.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--log-file <log_file>",
+          "long": "--log-file",
+          "description": "file to log errors/output to",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "--progress-format <progress_format>",
+          "long": "--progress-format",
+          "description": "Progress line format: preset name (default, minimal, window, pane, verbose) or a format string with tokens {session}, {window}, {progress}, {window_progress}, {pane_progress}, etc. Env: TMUXP_PROGRESS_FORMAT",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--progress-lines <panel_lines>",
+          "long": "--progress-lines",
+          "description": "Recent script-output lines in the terminal panel (default: 3). 0 forwards each stream directly; -1 uses terminal height. Retention is bounded. Env: TMUXP_PROGRESS_LINES",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--no-progress",
+          "long": "--no-progress",
+          "description": "Disable terminal progress. Env: TMUXP_PROGRESS=0",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["shell"],
+      "description": "Open the Python tmuxp shell with the selected tmux context.",
+      "arguments": [
+        {
+          "name": "session_name",
+          "required": false,
+          "variadic": false,
+          "description": "",
+          "choices": []
+        },
+        {
+          "name": "window_name",
+          "required": false,
+          "variadic": false,
+          "description": "",
+          "choices": []
+        }
+      ],
+      "options": [
+        {
+          "flags": "-S <socket_path>",
+          "short": "-S",
+          "description": "pass-through for tmux -S",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "-L <socket_name>",
+          "short": "-L",
+          "description": "pass-through for tmux -L",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-c <command>",
+          "short": "-c",
+          "description": "instead of opening shell, execute python code in libtmux and exit",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--best",
+          "long": "--best",
+          "description": "use best shell available in site packages",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": "best"
+        },
+        {
+          "flags": "--pdb",
+          "long": "--pdb",
+          "description": "use plain pdb",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--code",
+          "long": "--code",
+          "description": "use stdlib's code.interact()",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ptipython",
+          "long": "--ptipython",
+          "description": "use ptpython + ipython",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ptpython",
+          "long": "--ptpython",
+          "description": "use ptpython",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ipython",
+          "long": "--ipython",
+          "description": "use ipython",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--bpython",
+          "long": "--bpython",
+          "description": "use bpython",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--use-pythonrc",
+          "long": "--use-pythonrc",
+          "description": "load PYTHONSTARTUP env var and ~/.pythonrc.py script in --code",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--no-startup",
+          "long": "--no-startup",
+          "description": "Do not load Python startup files.",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--use-vi-mode",
+          "long": "--use-vi-mode",
+          "description": "use vi-mode in ptpython/ptipython",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--no-vi-mode",
+          "long": "--no-vi-mode",
+          "description": "Disable vi editing mode.",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["import"],
+      "description": "Import a teamocil or tmuxinator workspace.",
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": ["teamocil", "tmuxinator"]
+    },
+    {
+      "path": ["import", "teamocil"],
+      "description": "Convert a teamocil workspace to tmuxp configuration.",
+      "arguments": [
+        {
+          "name": "workspace_file",
+          "required": true,
+          "variadic": false,
+          "description": "checks current ~/.teamocil and current directory for yaml files",
+          "choices": [],
+          "completion": "file"
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "--save-to <path>",
+          "long": "--save-to",
+          "description": "Write to this destination instead of machine stdout.",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "--workspace-format <format>",
+          "long": "--workspace-format",
+          "description": "Document format: yaml or json.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["yaml", "json"]
+        },
+        {
+          "flags": "--force",
+          "long": "--force",
+          "description": "Allow replacing an existing destination.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["import", "tmuxinator"],
+      "description": "Convert a tmuxinator workspace to tmuxp configuration.",
+      "arguments": [
+        {
+          "name": "workspace_file",
+          "required": true,
+          "variadic": false,
+          "description": "checks current ~/.tmuxinator and current directory for yaml files",
+          "choices": [],
+          "completion": "file"
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "--save-to <path>",
+          "long": "--save-to",
+          "description": "Write to this destination instead of machine stdout.",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "--workspace-format <format>",
+          "long": "--workspace-format",
+          "description": "Document format: yaml or json.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["yaml", "json"]
+        },
+        {
+          "flags": "--force",
+          "long": "--force",
+          "description": "Allow replacing an existing destination.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["convert"],
+      "description": "Convert a workspace between YAML and JSON.",
+      "arguments": [
+        {
+          "name": "workspace_file",
+          "required": true,
+          "variadic": false,
+          "description": "checks tmuxp and current directory for workspace files.",
+          "choices": [],
+          "completion": "file"
+        }
+      ],
+      "options": [
+        {
+          "flags": "-y, --yes",
+          "short": "-y",
+          "long": "--yes",
+          "description": "always answer yes",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "--save-to <path>",
+          "long": "--save-to",
+          "description": "Write to this destination instead of machine stdout.",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "--workspace-format <format>",
+          "long": "--workspace-format",
+          "description": "Document format: yaml or json.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["yaml", "json"]
+        },
+        {
+          "flags": "--force",
+          "long": "--force",
+          "description": "Allow replacing an existing destination.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["debug-info"],
+      "description": "Show runtime, configuration, and tmux diagnostics.",
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "output as JSON",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["ls"],
+      "description": "List project and saved workspace files.",
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--tree",
+          "long": "--tree",
+          "description": "display workspaces grouped by directory",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "output as JSON",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "output as NDJSON (one JSON per line)",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--full",
+          "long": "--full",
+          "description": "include full config content in output",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["search"],
+      "description": "Search workspace names, sessions, windows, and pane commands.",
+      "arguments": [
+        {
+          "name": "query_terms",
+          "required": false,
+          "variadic": true,
+          "description": "search patterns (prefix with field: for field-scoped search)",
+          "choices": []
+        }
+      ],
+      "options": [
+        {
+          "flags": "-f, --field <field>",
+          "short": "-f",
+          "long": "--field",
+          "description": "restrict search to field(s): name, session/s, path/p, window/w, pane",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-i, --ignore-case",
+          "short": "-i",
+          "long": "--ignore-case",
+          "description": "case-insensitive matching",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-S, --smart-case",
+          "short": "-S",
+          "long": "--smart-case",
+          "description": "case-insensitive unless pattern has uppercase",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-F, --fixed-strings",
+          "short": "-F",
+          "long": "--fixed-strings",
+          "description": "treat patterns as literal strings, not regex",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-w, --word-regexp",
+          "short": "-w",
+          "long": "--word-regexp",
+          "description": "match whole words only",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-v, --invert-match",
+          "short": "-v",
+          "long": "--invert-match",
+          "description": "show workspaces that do NOT match",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--any",
+          "long": "--any",
+          "description": "match ANY pattern (OR logic); default is ALL (AND logic)",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "output as JSON",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "output as NDJSON (one JSON per line)",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["edit"],
+      "description": "Open a discovered workspace in your editor.",
+      "arguments": [
+        {
+          "name": "workspace_file",
+          "required": true,
+          "variadic": false,
+          "description": "checks current tmuxp and current directory for workspace files.",
+          "choices": [],
+          "completion": "file"
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["freeze"],
+      "description": "Capture a live tmux session as a workspace document.",
+      "arguments": [
+        {
+          "name": "session_name",
+          "required": false,
+          "variadic": false,
+          "description": "",
+          "choices": []
+        }
+      ],
+      "options": [
+        {
+          "flags": "-S <socket_path>",
+          "short": "-S",
+          "description": "pass-through for tmux -S",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "-L <socket_name>",
+          "short": "-L",
+          "description": "pass-through for tmux -L",
+          "value": "required",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "-f, --workspace-format <workspace_format>",
+          "short": "-f",
+          "long": "--workspace-format",
+          "description": "format to save in",
+          "value": "required",
+          "variadic": false,
+          "choices": ["yaml", "json"]
+        },
+        {
+          "flags": "-o, --save-to <save_to>",
+          "short": "-o",
+          "long": "--save-to",
+          "description": "file to save to",
+          "value": "required",
+          "variadic": false,
+          "choices": [],
+          "completion": "file"
+        },
+        {
+          "flags": "-y, --yes",
+          "short": "-y",
+          "long": "--yes",
+          "description": "always answer yes",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "-q, --quiet",
+          "short": "-q",
+          "long": "--quiet",
+          "description": "don't prompt for confirmation",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--force",
+          "long": "--force",
+          "description": "overwrite the workspace file",
+          "value": "none",
+          "variadic": false,
+          "choices": [],
+          "default": false
+        },
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    },
+    {
+      "path": ["completion"],
+      "description": "Print a shell completion script.",
+      "arguments": [
+        {
+          "name": "shell",
+          "required": true,
+          "variadic": false,
+          "description": "Shell to complete in.",
+          "choices": ["bash", "zsh", "fish"]
+        }
+      ],
+      "options": [
+        {
+          "flags": "--json",
+          "long": "--json",
+          "description": "Write JSON; machine operations never prompt.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--ndjson",
+          "long": "--ndjson",
+          "description": "Stream NDJSON; takes precedence over --json.",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        },
+        {
+          "flags": "--color <mode>",
+          "long": "--color",
+          "description": "Human color: auto, always, or never. Machine output disables color.",
+          "value": "required",
+          "variadic": false,
+          "choices": ["auto", "always", "never"]
+        },
+        {
+          "flags": "-h, --help",
+          "short": "-h",
+          "long": "--help",
+          "description": "display help for command",
+          "value": "none",
+          "variadic": false,
+          "choices": []
+        }
+      ],
+      "subcommands": []
+    }
+  ]
+}

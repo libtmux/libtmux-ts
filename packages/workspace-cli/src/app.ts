@@ -101,6 +101,29 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     if (request.command === "edit") return await edit(request, context);
     if (request.command === "debug-info") return await debugInfo(request, context);
     if (request.command === "shell") return await shell(request, context);
+    if (request.command === "completion") {
+      const [{ commandCatalog }, { completionScript }] = await Promise.all([
+        import("./reference.ts"),
+        import("./completions.ts"),
+      ]);
+      const shell = request.values.shell as "bash" | "zsh" | "fish";
+      const script = completionScript(commandCatalog(parser), shell);
+      if (mode === "human") await write(context.stdout, script, context.signal);
+      else
+        await emitJson(
+          context.stdout,
+          {
+            schema_version: 1,
+            command: "completion",
+            status: "ok",
+            shell,
+            script,
+          },
+          mode === "json",
+          context.signal,
+        );
+      return 0;
+    }
     if (request.command === "ls") {
       const result = await discover(context, Boolean(request.values.full));
       if (mode === "json") await emitJson(context.stdout, result, true, context.signal);

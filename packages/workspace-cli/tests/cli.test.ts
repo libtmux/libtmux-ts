@@ -52,11 +52,35 @@ test("every reference command has executable help", async () => {
     ["edit"],
     ["debug-info"],
     ["shell"],
+    ["completion"],
   ]) {
     const result = await run([...command, "--help"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Usage:");
     expect(result.stderr).toBe("");
+  }
+});
+
+test("completion prints sourceable scripts or structured content without a backend", async () => {
+  for (const shell of ["bash", "zsh", "fish"]) {
+    const script = await run(["completion", shell], { TMUX_BIN: "/missing-tmux" });
+    expect(script.code).toBe(0);
+    expect(script.stderr).toBe("");
+    expect(script.stdout).toContain("tmux-workspace");
+    for (const flag of ["--json", "--ndjson"]) {
+      const machine = await run(["completion", shell, flag, "--color", "always"], {
+        TMUX_BIN: "/missing-tmux",
+      });
+      expect(machine.code).toBe(0);
+      expect(machine.stderr).toBe("");
+      expect(JSON.parse(machine.stdout)).toMatchObject({
+        schema_version: 1,
+        command: "completion",
+        status: "ok",
+        shell,
+        script: script.stdout,
+      });
+    }
   }
 });
 

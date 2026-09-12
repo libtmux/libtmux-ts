@@ -1,9 +1,11 @@
-import { Command, InvalidArgumentError, Option } from "commander";
+import { Argument, Command, InvalidArgumentError, Option } from "commander";
 import grammar from "./grammar.json" with { type: "json" };
 
 export type OutputMode = "human" | "json" | "ndjson";
 export type Request = { command: string; values: Record<string, unknown>; mode: OutputMode };
 export type ParserIO = { stdout: (text: string) => void; stderr: (text: string) => void };
+export type CompletionHint = "file" | "directory";
+export const completionShells = ["bash", "zsh", "fish"] as const;
 type Action = {
   dest: string;
   default: unknown;
@@ -20,7 +22,34 @@ type Definition = {
   exclusive_groups: string[][];
   required_groups?: string[][];
 };
-const inventory: Definition[] = grammar;
+const inventory: Definition[] = grammar.map((definition) => ({
+  ...definition,
+  command: definition.command.replace(/^tmuxp ?/, ""),
+}));
+inventory.push({
+  command: "completion",
+  exclusive_groups: [],
+  actions: [
+    {
+      dest: "shell",
+      default: null,
+      required: true,
+      nargs: null,
+      choices: [...completionShells],
+      const: null,
+      help: "Shell to complete in.",
+      flags: [],
+    },
+  ],
+});
+const fileValues = new Set([
+  "workspace_file",
+  "workspace_files",
+  "socket_path",
+  "tmux_config_file",
+  "log_file",
+  "save_to",
+]);
 
 const descriptions: Record<string, string> = {
   "": "Manage tmux workspaces from YAML and JSON configuration.",
@@ -35,6 +64,7 @@ const descriptions: Record<string, string> = {
   import: "Import a teamocil or tmuxinator workspace.",
   "import teamocil": "Convert a teamocil workspace to tmuxp configuration.",
   "import tmuxinator": "Convert a tmuxinator workspace to tmuxp configuration.",
+  completion: "Print a shell completion script.",
 };
 
 function optionFor(item: Action): Option {
@@ -53,23 +83,28 @@ function optionFor(item: Action): Option {
     });
   if (item.flags.includes("--no-startup")) option.description = "Do not load Python startup files.";
   if (item.flags.includes("--no-vi-mode")) option.description = "Disable vi editing mode.";
+  if (item.flags.includes("-8"))
+    option.description = "Reject unsupported legacy 88-color mode before loading.";
   return option;
 }
 
 export function createParser(io: ParserIO): {
   command: Command;
   commands: Map<string, Command>;
+  completionHints: Map<Option | Argument, CompletionHint>;
   request: () => Request;
 } {
   const root = new Command("tmux-workspace").enablePositionalOptions();
   const commands = new Map<string, Command>([["", root]]);
+  const completionHints = new Map<Option | Argument, CompletionHint>();
   const events: { scope: string; dest: string; value: unknown }[] = [];
   let request: Request | undefined;
   const definitions = [...inventory].sort(
-    (a, b) => a.command.split(" ").length - b.command.split(" ").length,
+    (a, b) =>
+      a.command.split(" ").filter(Boolean).length - b.command.split(" ").filter(Boolean).length,
   );
   for (const spec of definitions) {
-    const name = spec.command.replace(/^tmuxp ?/, "");
+    const name = spec.command;
     const words = name.split(" ");
     let command = commands.get(name);
     if (!command) {
@@ -100,11 +135,15 @@ export function createParser(io: ParserIO): {
               : item.nargs === "?" && !required
                 ? `[${item.dest}]`
                 : `<${item.dest}>`;
-        current.argument(argument, item.help ?? "");
+        const operand = new Argument(argument, item.help ?? "");
+        if (item.choices) operand.choices(item.choices);
+        current.addArgument(operand);
+        if (fileValues.has(item.dest)) completionHints.set(operand, "file");
         continue;
       }
       const option = optionFor(item);
       current.addOption(option);
+      if (fileValues.has(item.dest)) completionHints.set(option, "file");
       current.on(`option:${option.name()}`, () =>
         events.push({
           scope: name,
@@ -149,6 +188,7 @@ export function createParser(io: ParserIO): {
         const option = new Option(flag, description);
         if (dest === "workspace_format") option.choices(["yaml", "json"]);
         current.addOption(option);
+        if (dest === "save_to") completionHints.set(option, "file");
         current.on(`option:${option.name()}`, () =>
           events.push({ scope: name, dest, value: current.getOptionValue(option.attributeName()) }),
         );
@@ -156,10 +196,8 @@ export function createParser(io: ParserIO): {
     }
     current.action(() => {
       const values: Record<string, unknown> = {};
-      for (const definition of definitions.filter(
-        (item) => item.command === "tmuxp" || item === spec,
-      )) {
-        const node = commands.get(definition.command.replace(/^tmuxp ?/, ""))!;
+      for (const definition of definitions.filter((item) => item.command === "" || item === spec)) {
+        const node = commands.get(definition.command)!;
         let position = 0;
         for (const item of definition.actions) {
           if (["help", "version"].includes(item.dest)) continue;
@@ -182,6 +220,7 @@ export function createParser(io: ParserIO): {
   return {
     command: root,
     commands,
+    completionHints,
     request: () => {
       if (!request) throw new Error("No command was parsed");
       return request;

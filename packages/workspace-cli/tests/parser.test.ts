@@ -48,4 +48,12 @@ describe("tmuxp argument compatibility", () => {
   test("double dash preserves a hyphenated filename", () => {
     expect(parse(["load", "-d", "--", "--json"]).values.workspace_files).toEqual(["--json"]);
   });
+  test("native completion validates shells and keeps shared output options", () => {
+    for (const shell of ["bash", "zsh", "fish"]) {
+      expect(parse(["--json", "completion", shell, "--ndjson"]).values.shell).toBe(shell);
+      expect(parse(["completion", shell, "--ndjson"]).mode).toBe("ndjson");
+    }
+    expect(() => parse(["completion", "unknown"])).toThrow();
+    expect(() => parse(["completion"])).toThrow();
+  });
 });
