@@ -181,6 +181,46 @@ test("the script panel follows arrival order across incomplete streams", async (
   expect(f.chunks.at(-1)).toBe("project\nnew");
 });
 
+test.each([
+  {
+    name: "joined CRLF",
+    chunks: [["stdout", "first\r\n\r\nlast\r"]],
+    expected: "project\nfirst\n\nlast",
+  },
+  {
+    name: "split CRLF with an empty chunk",
+    chunks: [
+      ["stdout", "first\r"],
+      ["stdout", ""],
+      ["stdout", "\n\r"],
+      ["stdout", "\nlast\r"],
+    ],
+    expected: "project\nfirst\n\nlast",
+  },
+  {
+    name: "interleaved stream delimiters",
+    chunks: [
+      ["stdout", "first\r"],
+      ["stderr", "\nerr\n"],
+      ["stdout", "\nlast\r"],
+    ],
+    expected: "project\nfirst\n\nerr\nlast",
+  },
+])("the script panel preserves lines across $name", async ({ chunks, expected }) => {
+  const f = fixture({ panel_lines: -1, progress_format: "{session}" });
+  const progress = f.create();
+  await progress.event("workspace-started", start);
+  await Promise.all(
+    chunks.map(([stream, text]) => progress.event("script-output", { stream, text })),
+  );
+  await progress.clear();
+  await progress.event("warning", {});
+  expect(f.chunks.at(-1)).toBe(expected);
+  await progress.event("workspace-started", start);
+  await progress.event("script-output", { stream: "stdout", text: "\nnext" });
+  expect(f.chunks.at(-1)).toBe("\r\u001b[0Jproject\n\nnext");
+});
+
 test("clearing after a width change covers the frame's reflowed rows", async () => {
   const f = fixture({ progress_format: "x".repeat(70) });
   const progress = f.create();
