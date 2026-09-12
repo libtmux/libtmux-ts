@@ -206,7 +206,11 @@ async function create(
         output: async (stream, text) => {
           await output.event("script-output", { input_index: inputIndex, stream, text });
           if (output.mode === "human")
-            await write(stream === "stdout" ? context.stdout : context.stderr, text);
+            await write(
+              stream === "stdout" ? context.stdout : context.stderr,
+              text,
+              context.signal,
+            );
         },
       });
       result.script_output = child;
@@ -362,22 +366,28 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           reserved.add(window.index);
         }
   }
-  const output = new OperationOutput("load", request.mode, context.stdout, async (event, data) => {
-    const level =
-      event === "failed"
-        ? "error"
-        : event === "warning"
-          ? "warning"
-          : ["started", "completed", "script-output", "workspace-completed"].includes(event)
-            ? "info"
-            : "debug";
-    await context.diagnostics?.record(
-      level,
-      event,
-      data,
-      request.mode !== "human" || event !== "script-output",
-    );
-  });
+  const output = new OperationOutput(
+    "load",
+    request.mode,
+    context.stdout,
+    context.signal,
+    async (event, data) => {
+      const level =
+        event === "failed"
+          ? "error"
+          : event === "warning"
+            ? "warning"
+            : ["started", "completed", "script-output", "workspace-completed"].includes(event)
+              ? "info"
+              : "debug";
+      await context.diagnostics?.record(
+        level,
+        event,
+        data,
+        request.mode !== "human" || event !== "script-output",
+      );
+    },
+  );
   const results: LoadResult[] = [];
   await output.event("started", { input_count: inputs.length });
   try {
@@ -417,6 +427,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         await write(
           context.stdout,
           `${styled("success", exists ? "Reused" : append ? "Appended" : "Loaded", color)} ${styled("subject", session.name, color)}\n`,
+          context.signal,
         );
       }
     }
@@ -474,6 +485,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           await write(
             context.stderr,
             `Session ${styled("subject", result.session_name, false)} remains available (${result.stage}).\n`,
+            context.signal,
           );
       throw error;
     }
@@ -530,16 +542,22 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
           }
         : document,
       true,
+      context.signal,
     );
   else if (request.mode === "ndjson")
-    await emitJson(context.stdout, {
-      schema_version: 1,
-      command: "freeze",
-      status: "ok",
-      ...(destination
-        ? { destination: privatePath(destination, context), format }
-        : { workspace: document }),
-    });
-  else await write(context.stdout, `Saved ${destination}\n`);
+    await emitJson(
+      context.stdout,
+      {
+        schema_version: 1,
+        command: "freeze",
+        status: "ok",
+        ...(destination
+          ? { destination: privatePath(destination, context), format }
+          : { workspace: document }),
+      },
+      false,
+      context.signal,
+    );
+  else await write(context.stdout, `Saved ${destination}\n`, context.signal);
   return 0;
 }

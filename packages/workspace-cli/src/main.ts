@@ -25,3 +25,5 @@ const exitCode = await run(process.argv.slice(2), {
   signal: controller.signal,
 });
 process.exitCode = pipeClosed ? 141 : controller.signal.aborted ? 130 : exitCode;
+// Cleanup has finished; an unread stdout pipe must not keep an interrupted CLI alive.
+if (controller.signal.aborted) process.exit(process.exitCode);

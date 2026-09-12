@@ -21,23 +21,28 @@ export async function edit(request: Request, context: CLIContext): Promise<numbe
     ...(request.mode === "human"
       ? {
           output: async (stream: "stdout" | "stderr", text: string) => {
-            await write(context[stream], text);
+            await write(context[stream], text, context.signal);
           },
         }
       : {}),
   });
   if (request.mode !== "human")
-    await emitJson(context.stdout, {
-      schema_version: 1,
-      command: "edit",
-      status: child.code ? "error" : "ok",
-      file: privatePath(file, context),
-      child_status: child.code,
-      stdout: child.stdout,
-      stderr: child.stderr,
-      truncated: child.truncated,
-      encoding: "utf-8-with-replacement",
-    });
+    await emitJson(
+      context.stdout,
+      {
+        schema_version: 1,
+        command: "edit",
+        status: child.code ? "error" : "ok",
+        file: privatePath(file, context),
+        child_status: child.code,
+        stdout: child.stdout,
+        stderr: child.stderr,
+        truncated: child.truncated,
+        encoding: "utf-8-with-replacement",
+      },
+      false,
+      context.signal,
+    );
   return child.code;
 }
 
@@ -72,7 +77,8 @@ export async function debugInfo(request: Request, context: CLIContext): Promise<
       ),
     ),
   };
-  if (request.mode !== "human") await emitJson(context.stdout, document, request.mode === "json");
+  if (request.mode !== "human")
+    await emitJson(context.stdout, document, request.mode === "json", context.signal);
   else {
     const color = colorEnabled(
       request.mode,
@@ -80,11 +86,16 @@ export async function debugInfo(request: Request, context: CLIContext): Promise<
       context.env,
       Boolean((context.stdout as { isTTY?: boolean }).isTTY),
     );
-    await write(context.stdout, styled("heading", "Workspace diagnostics", color) + "\n");
+    await write(
+      context.stdout,
+      styled("heading", "Workspace diagnostics", color) + "\n",
+      context.signal,
+    );
     for (const [label, value] of Object.entries(document))
       await write(
         context.stdout,
         `${styled("subject", label, color)}: ${styled("info", typeof value === "string" ? value : JSON.stringify(value), color)}\n`,
+        context.signal,
       );
   }
   return 0;
@@ -138,14 +149,14 @@ export async function shell(request: Request, context: CLIContext): Promise<numb
   );
   for (const key of ["session_name", "window_name"])
     if (request.values[key]) args.push(scalarText(request.values[key]));
-  const output = new OperationOutput("shell", request.mode, context.stdout);
+  const output = new OperationOutput("shell", request.mode, context.stdout, context.signal);
   const child = await processRun(args, {
     cwd: context.cwd,
     env: context.env,
     terminal: interactive,
     ...(context.signal ? { signal: context.signal } : {}),
     output: async (stream, text) => {
-      if (request.mode === "human") await write(context[stream], text);
+      if (request.mode === "human") await write(context[stream], text, context.signal);
       else
         await output.event("script-output", { stream, text, encoding: "utf-8-with-replacement" });
     },

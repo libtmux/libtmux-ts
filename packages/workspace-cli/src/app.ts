@@ -63,7 +63,15 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     }
   };
   try {
-    parser.command.parse(argv, { from: "user" });
+    try {
+      parser.command.parse(argv, { from: "user" });
+    } catch (error) {
+      if (error instanceof CommanderError && error.exitCode === 0) {
+        await write(context.stdout, help, context.signal);
+        return 0;
+      }
+      throw error;
+    }
     const request = parser.request();
     mode = request.mode;
     diagnostics = await Diagnostics.open(request.values, request.mode, context);
@@ -79,7 +87,11 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     const render = (role: Parameters<typeof styled>[0], value: unknown) =>
       styled(role, value, color);
     if (!request.command || request.command === "import") {
-      await write(context.stdout, parser.commands.get(request.command)!.helpInformation());
+      await write(
+        context.stdout,
+        parser.commands.get(request.command)!.helpInformation(),
+        context.signal,
+      );
       return 0;
     }
     if (request.command === "load") return await load(request, context);
@@ -89,9 +101,10 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     if (request.command === "shell") return await shell(request, context);
     if (request.command === "ls") {
       const result = await discover(context, Boolean(request.values.full));
-      if (mode === "json") await emitJson(context.stdout, result, true);
+      if (mode === "json") await emitJson(context.stdout, result, true, context.signal);
       else if (mode === "ndjson")
-        for (const record of result.workspaces) await emitJson(context.stdout, record);
+        for (const record of result.workspaces)
+          await emitJson(context.stdout, record, false, context.signal);
       else {
         let heading = "";
         for (const record of result.workspaces) {
@@ -99,40 +112,52 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
             ? dirname(record.path)
             : `${record.source === "local" ? "Local" : "Global"} workspaces`;
           if (group !== heading) {
-            await write(context.stdout, render("heading", group) + ":\n");
+            await write(context.stdout, render("heading", group) + ":\n", context.signal);
             heading = group;
           }
           await write(
             context.stdout,
             `  ${render("subject", record.name)}  ${render("info", record.path)}\n`,
+            context.signal,
           );
           if (request.values.full && record.config)
-            await write(context.stdout, JSON.stringify(record.config, null, 2) + "\n");
+            await write(
+              context.stdout,
+              JSON.stringify(record.config, null, 2) + "\n",
+              context.signal,
+            );
         }
         if (!result.workspaces.length)
-          await write(context.stdout, render("warning", "No workspaces found.") + "\n");
+          await write(
+            context.stdout,
+            render("warning", "No workspaces found.") + "\n",
+            context.signal,
+          );
         await write(
           context.stdout,
           "\n" + render("heading", "Global workspace directories:") + "\n",
+          context.signal,
         );
         for (const entry of result.global_workspace_dirs)
           await write(
             context.stdout,
             `  ${render("secondary", entry.source)}: ${render("info", entry.path)} (${render(entry.active ? "success" : "secondary", entry.exists ? `${entry.workspace_count} workspaces${entry.active ? ", active" : ""}` : "not found")})\n`,
+            context.signal,
           );
       }
       return 0;
     }
     if (request.command === "search") {
       const results = await search(request.values, context);
-      if (mode === "json") await emitJson(context.stdout, results, true);
+      if (mode === "json") await emitJson(context.stdout, results, true, context.signal);
       else if (mode === "ndjson")
-        for (const result of results) await emitJson(context.stdout, result);
+        for (const result of results) await emitJson(context.stdout, result, false, context.signal);
       else
         for (const result of results)
           await write(
             context.stdout,
             `${render("subject", result.name)}  ${render("info", result.path)}  ${render("secondary", (result.matched_fields as string[]).join(", "))}\n`,
+            context.signal,
           );
       return 0;
     }
@@ -182,25 +207,27 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
           await write(
             context.stdout,
             `${render("success", "Saved")} ${render("info", destination)}\n`,
+            context.signal,
           );
-        else await emitJson(context.stdout, result);
-      } else if (mode === "json") await emitJson(context.stdout, document, true);
+        else await emitJson(context.stdout, result, false, context.signal);
+      } else if (mode === "json") await emitJson(context.stdout, document, true, context.signal);
       else
-        await emitJson(context.stdout, {
-          schema_version: 1,
-          command: request.command,
-          status: "ok",
-          workspace: document,
-        });
+        await emitJson(
+          context.stdout,
+          {
+            schema_version: 1,
+            command: request.command,
+            status: "ok",
+            workspace: document,
+          },
+          false,
+          context.signal,
+        );
       return 0;
     }
     throw new CliError("not_implemented", `${request.command} service is not implemented yet`);
   } catch (error) {
     if (context.signal?.aborted) return 130;
-    if (error instanceof CommanderError && error.exitCode === 0) {
-      await write(context.stdout, help);
-      return 0;
-    }
     const usage = error instanceof CommanderError;
     const code = usage ? "usage" : error instanceof CliError ? error.code : "workspace_error";
     const message = usage
