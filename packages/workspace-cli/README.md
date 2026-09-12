@@ -59,6 +59,9 @@ report the created objects and the failed stage.
 When clients share a session, tmux selects its most recently active client before
 loading. The CLI captures that client and targets the switch explicitly.
 
+`load -2` forces 256-color terminal handling. Legacy `-8` is rejected before
+calling tmux because supported tmux versions do not implement that legacy flag.
+
 Pane readiness waits apply before sending commands. Empty panes skip the wait,
 including with `workspace_builder_options.pane_readiness: always`.
 

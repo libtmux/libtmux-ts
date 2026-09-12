@@ -413,6 +413,12 @@ async function create(
   return (await server.snapshot()).sessions.one({ id: session.id });
 }
 export async function load(request: Request, context: CLIContext): Promise<number> {
+  if (request.values.colors === 88)
+    throw new CliError(
+      "unsupported_color_mode",
+      "tmux 3.2a+ rejects the legacy 88-color flag (-8); remove it or use -2 for 256 colors",
+      2,
+    );
   if (request.mode !== "human" && !request.values.detached && !request.values.append)
     throw new CliError("usage", "Machine load requires -d or an explicit append operation", 2);
   const progress =
