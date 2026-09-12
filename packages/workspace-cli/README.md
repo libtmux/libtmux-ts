@@ -80,6 +80,10 @@ New log files use owner-only permissions. Nonregular destinations are rejected
 before session creation; existing log contents are preserved.
 If logging fails during execution, stderr reports `log_error` and the command
 keeps its result and exit status. Cancellation closes the owned log handle.
+Interrupting a blocked output write still joins owned children and exits 130.
+An interrupted load allows up to 100ms to emit its final machine result before
+exiting; an unread pipe cannot hold the process open. Cancelled output may be
+incomplete.
 
 Bootstrap and editor commands use quoted argv directly. Child output is UTF-8
 with replacement for invalid bytes. Captured results retain at most 64 KiB of

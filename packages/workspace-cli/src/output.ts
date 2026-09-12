@@ -84,8 +84,13 @@ export function styled(role: keyof typeof styles, value: unknown, color: boolean
   );
   return color ? `\u001b[${styles[role]}m${text}\u001b[0m` : text;
 }
-export async function emitJson(stream: Writable, value: unknown, pretty = false): Promise<void> {
-  await write(stream, JSON.stringify(value, null, pretty ? 2 : undefined) + "\n");
+export async function emitJson(
+  stream: Writable,
+  value: unknown,
+  pretty = false,
+  signal?: AbortSignal,
+): Promise<void> {
+  await write(stream, JSON.stringify(value, null, pretty ? 2 : undefined) + "\n", signal);
 }
 export class OperationOutput {
   private sequence = 0;
@@ -93,6 +98,7 @@ export class OperationOutput {
   readonly command: string;
   readonly mode: OutputMode;
   readonly stdout: Writable;
+  readonly signal: AbortSignal | undefined;
   get isFinished(): boolean {
     return this.finished;
   }
@@ -101,33 +107,50 @@ export class OperationOutput {
     command: string,
     mode: OutputMode,
     stdout: Writable,
+    signal?: AbortSignal,
     observe?: (event: string, data: Record<string, unknown>) => Promise<void>,
   ) {
     this.command = command;
     this.mode = mode;
     this.stdout = stdout;
+    this.signal = signal;
     if (observe !== undefined) this.observe = observe;
   }
   async event(event: string, data: Record<string, unknown> = {}): Promise<void> {
     if (this.finished) throw new Error("Cannot emit after the terminal result");
-    await this.observe?.(event, data);
-    if (["completed", "failed"].includes(event)) this.finished = true;
+    const terminal = ["completed", "failed"].includes(event);
+    if (!terminal) this.signal?.throwIfAborted();
+    if (!this.signal?.aborted) await this.observe?.(event, data);
+    if (terminal) this.finished = true;
     if (this.mode === "ndjson")
-      await emitJson(this.stdout, {
-        schema_version: 1,
-        command: this.command,
-        event,
-        sequence: ++this.sequence,
-        ...data,
-      });
+      await emitJson(
+        this.stdout,
+        {
+          schema_version: 1,
+          command: this.command,
+          event,
+          sequence: ++this.sequence,
+          ...data,
+        },
+        false,
+        this.completionSignal(terminal),
+      );
   }
   async result(data: Record<string, unknown>): Promise<void> {
     const event = data.status === "error" || data.status === "partial" ? "failed" : "completed";
     if (this.mode === "ndjson") return this.event(event, data);
     if (this.finished) throw new Error("Cannot emit after the terminal result");
-    await this.observe?.(event, data);
+    if (!this.signal?.aborted) await this.observe?.(event, data);
     this.finished = true;
     if (this.mode === "json")
-      await emitJson(this.stdout, { schema_version: 1, command: this.command, ...data });
+      await emitJson(
+        this.stdout,
+        { schema_version: 1, command: this.command, ...data },
+        false,
+        this.completionSignal(true),
+      );
+  }
+  private completionSignal(terminal: boolean): AbortSignal | undefined {
+    return terminal && this.signal?.aborted ? AbortSignal.timeout(100) : this.signal;
   }
 }

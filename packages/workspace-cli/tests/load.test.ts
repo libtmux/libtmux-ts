@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Readable, Writable } from "node:stream";
 import { Server } from "libtmux";
+import { run as runCli } from "../src/app.ts";
 import { processRun } from "../src/process.ts";
 import {
   assertOwnedSocketPath,
@@ -376,6 +378,48 @@ test("append resolves the explicit current pane and preserves existing windows",
     expect(after.windows.one({ id: original.id }).panes.length).toBe(1);
     expect(after.windows.one({ name: "added" }).panes.length).toBe(2);
     expect(await server.hasSession("append-cli")).toBe(false);
+  });
+});
+
+test.each(["json", "ndjson"])("bootstrap cancellation retains a final %s result", async (mode) => {
+  await fixture(async (server, root) => {
+    const config = join(root, "input.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "interrupted-cli",
+        before_script: `'${process.execPath}' -e 'process.stdout.write("ready");setInterval(()=>{},1000)'`,
+        windows: [{}],
+      }),
+    );
+    const controller = new AbortController();
+    let text = "";
+    const code = await runCli(
+      ["--log-level", "info", "load", config, "-d", `--${mode}`, "-S", server.socketPath!],
+      {
+        cwd: root,
+        env: { ...process.env, HOME: root, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
+        stdin: Readable.from([]),
+        stdout: new Writable({
+          write(chunk, _encoding, done) {
+            text += String(chunk);
+            done();
+          },
+        }),
+        stderr: new Writable({
+          write(chunk, _encoding, done) {
+            if (JSON.parse(String(chunk)).event === "script-output") controller.abort();
+            done();
+          },
+        }),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+      },
+    );
+    expect(code).toBe(130);
+    const result = JSON.parse(text.trim().split("\n").at(-1)!);
+    expect(result.errors[0]).toMatchObject({ code: "interrupted", failed_stage: "before-script" });
+    expect(result.results[0].session_removed).toBe(true);
+    expect(await server.hasSession("interrupted-cli")).toBe(false);
   });
 });
 
