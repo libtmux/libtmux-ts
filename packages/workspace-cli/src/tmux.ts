@@ -38,13 +38,15 @@ type LoadResult = {
 function option(value: Json): string {
   return typeof value === "boolean" ? (value ? "on" : "off") : scalarText(value);
 }
+function currentEndpoint(context: CLIContext): { socketPath: string; pid: string } | undefined {
+  if (!context.env.TMUX) return undefined;
+  const match = /^(.*),([0-9]+),[0-9]+$/s.exec(context.env.TMUX);
+  if (!match?.[1]) throw new CliError("tmux_context", "TMUX does not identify a valid socket");
+  return { socketPath: match[1], pid: match[2]! };
+}
 export function connection(values: Record<string, unknown>, context: CLIContext): Server {
   let path = values.socket_path ? expandPath(scalarText(values.socket_path), context) : undefined;
-  if (!path && !values.socket_name && context.env.TMUX) {
-    const match = /^(.*),[0-9]+,[0-9]+$/s.exec(context.env.TMUX);
-    if (!match?.[1]) throw new CliError("tmux_context", "TMUX does not identify a valid socket");
-    path = match[1];
-  }
+  if (!path && !values.socket_name) path = currentEndpoint(context)?.socketPath;
   const options: ConstructorParameters<typeof Server>[0] = {
     environment: { ...context.env, TMUX: undefined, TMUX_PANE: undefined },
     ...(path ? { socketPath: path } : {}),
@@ -272,8 +274,22 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
   const server = connection(request.values, context);
   let append: Session | undefined;
   if (request.values.append) {
-    if (!context.env.TMUX_PANE)
-      throw new CliError("input_required", "Append requires a current tmux pane");
+    const endpoint = currentEndpoint(context);
+    if (!endpoint || !context.env.TMUX_PANE)
+      throw new CliError(
+        "input_required",
+        "Append requires TMUX and TMUX_PANE from a current pane",
+      );
+    const [current, selected] = await Promise.all([
+      connection({}, context).daemonIdentity(),
+      server.daemonIdentity(),
+    ]);
+    if (
+      current.pid !== endpoint.pid ||
+      current.pid !== selected.pid ||
+      current.startTime !== selected.startTime
+    )
+      throw new CliError("tmux_context", "Append must target the current pane's tmux server");
     append = (await server.snapshot()).panes.one({ id: context.env.TMUX_PANE }).session;
     if (!append)
       throw new CliError("input_required", "The current pane has no session on this server");
