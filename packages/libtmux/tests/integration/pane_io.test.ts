@@ -77,6 +77,38 @@ describe("pane input and capture", () => {
     });
   }, 40_000);
 
+  test("leaves copy mode on the keys, and delivers Enter to the pane after it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      // vi mode-keys binds `q` to cancel, which is what makes the second key
+      // resolve against a pane that is no longer in a mode.
+      await server.setGlobalOption("window", "mode-keys", "vi");
+      const pane = (await server.snapshot()).panes.one();
+      // A shell this test controls, so the Enter that follows the keys has
+      // something that answers it.
+      await pane.respawn("sh", { kill: true });
+
+      await pane.enterCopyMode();
+      expect((await pane.refreshed()).format.pane_in_mode).toBe("1");
+
+      // One `send-keys` carrying both would resolve Enter as a copy-mode
+      // binding against the mode `q` had just cancelled, and tmux would answer
+      // `not in a mode`.
+      await pane.sendKeys("q");
+      expect((await pane.refreshed()).format.pane_in_mode).toBe("0");
+
+      // The Enter after the keys has to reach the pane, which it only does
+      // when tmux resolves it as its own command rather than as a binding for
+      // the mode the key before it just cancelled.
+      await pane.sendKeys("echo after-copy-mode");
+      await captureUntil(
+        await pane.refreshed(),
+        (lines) => lines.some((line) => line.trim() === "after-copy-mode"),
+        400,
+      );
+    });
+  }, 40_000);
+
   test("capture returns lines without a trailing blank", async () => {
     await withServer(async (fixture) => {
       const pane = (await serverFor(fixture).snapshot()).panes.one();

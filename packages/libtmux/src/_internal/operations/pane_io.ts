@@ -1,16 +1,21 @@
 import type { CaptureOptions, SendKeysOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { runCommand } from "./command.js";
+import { runCommand, runCommands } from "./command.js";
 
 /**
  * Send keys to a pane.
  *
- * Enter stays a key rather than a newline appended to the string, because `-l`
- * would send a literal line feed where the key sends a carriage return. So
- * `literal` needs its own invocation for Enter, and the default form does not:
- * `send-keys` takes any number of keys, resolves each on its own, and one
- * invocation leaves no window in which another writer submits a half-typed
- * line.
+ * Enter stays its own `send-keys` rather than another argument beside the
+ * text, because tmux resolves a command's keys against the pane's state when
+ * that command runs: in copy mode, `send-keys q Enter` cancels the mode on `q`
+ * and then fails `Enter` with `not in a mode`, where a second command sees the
+ * mode already gone and reaches the shell. It also keeps `-l` meaning only
+ * what it says about the caller's text, since `-l` applies to every argument
+ * and Enter is a carriage return where a literal newline is a line feed.
+ *
+ * Both travel as one invocation. tmux runs an invocation's commands in order
+ * on its own queue, so there is no gap in which another writer's Enter submits
+ * this caller's half-typed line.
  */
 export async function sendKeys(
   runtime: RuntimeContext,
@@ -18,14 +23,13 @@ export async function sendKeys(
   keys: string,
   options: SendKeysOptions = {},
 ): Promise<void> {
-  const target = paneId == null ? [] : ["-t", paneId];
-  const enter = options.enter !== false;
-  if (options.literal !== true) {
-    await runCommand(runtime, ["send-keys", ...target, keys, ...(enter ? ["Enter"] : [])], options);
+  const at = paneId == null ? [] : ["-t", paneId];
+  const text = ["send-keys", ...at, ...(options.literal === true ? ["-l"] : []), keys];
+  if (options.enter === false) {
+    await runCommand(runtime, text, options);
     return;
   }
-  await runCommand(runtime, ["send-keys", ...target, "-l", keys], options);
-  if (enter) await runCommand(runtime, ["send-keys", ...target, "Enter"], options);
+  await runCommands(runtime, [text, ["send-keys", ...at, "Enter"]], options);
 }
 
 /** Capture a pane's contents as lines, without the trailing blank line tmux emits. */

@@ -229,14 +229,19 @@ describe("lifecycle command arguments", () => {
 });
 
 describe("pane input command arguments", () => {
-  test("carries the default form's keys and Enter in one invocation", async () => {
-    const invocations = await invocationsFor((transport) =>
-      sendKeys(runtimeFor(transport), "%0", "echo hello"),
-    );
+  test("sends the keys and Enter as two commands in one invocation", async () => {
+    const transport = recorder(0);
+    await sendKeys(runtimeFor(transport), "%0", "echo hello").catch(() => undefined);
 
-    // Two invocations leave a window in which another writer's Enter submits
-    // this caller's half-typed line.
-    expect(invocations).toEqual([["send-keys", "-t", "%0", "echo hello", "Enter"]]);
+    // Two invocations leave a gap in which another writer's Enter submits this
+    // caller's half-typed line. One command leaves tmux resolving Enter
+    // against the state the keys before it produced, which in copy mode is a
+    // mode that is no longer there.
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.commands).toEqual([
+      ["send-keys", "-t", "%0", "echo hello"],
+      ["send-keys", "-t", "%0", "Enter"],
+    ]);
   });
 
   test("omits Enter when the caller does", async () => {

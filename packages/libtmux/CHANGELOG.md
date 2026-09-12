@@ -27,10 +27,11 @@ invocation, so no reader sees a selected pane that is not yet zoomed. Any
 ordinary `resize` unzooms first, which is tmux's behaviour rather than this
 package's.
 
-`Pane.sendKeys` now sends the keys and Enter as one `send-keys` unless
-`literal` is set. Two invocations left a window in which another writer's Enter
-submitted this caller's half-typed line. The literal form still sends Enter
-separately, because `-l` applies to every argument.
+`Pane.sendKeys` now sends the keys and Enter as two `send-keys` commands in one
+tmux invocation. Two invocations left a window in which another writer's Enter
+submitted this caller's half-typed line; one command carrying both would let
+tmux resolve Enter against whatever the keys before it had just done, which in
+copy mode is a mode that is no longer there.
 
 #### Cross-object targets
 

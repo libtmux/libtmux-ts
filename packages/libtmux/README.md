@@ -955,7 +955,10 @@ const changed = lines.filter((line) => line.trim() !== "").length;
 
 `capture()` reads the visible pane; pass `start` to reach into the scrollback.
 `sendKeys` presses Enter unless you say otherwise, and takes keys literally with
-`{ literal: true }` when the text could be read as a tmux key name.
+`{ literal: true }` when the text could be read as a tmux key name. The keys and
+the Enter travel as two commands in one tmux invocation, so nothing interleaves
+between them and tmux resolves each against the pane as it finds it — a key
+that leaves copy mode is followed by an Enter the pane itself receives.
 
 ### Watch for a change and react to it
 
