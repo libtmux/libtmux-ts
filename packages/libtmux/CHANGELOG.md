@@ -43,7 +43,10 @@ success.
 `Window.move`, `Window.link`, `Pane.joinTo` and `Session.selectWindow` accept a
 handle as well as a string, and check a handle the same way. A handle read
 before the daemon restarted raises `TmuxServerRestarted` as it already did when
-addressed directly, since the same socket is not the same daemon. A string is
+addressed directly, since the same socket is not the same daemon.
+`Session.selectWindow` keeps the placement a window handle names, because a
+window linked twice into one session holds two indexes behind one id, and
+refuses a window placed in another session. A string is
 still accepted unchecked, because it carries neither to check.
 
 #### Server
