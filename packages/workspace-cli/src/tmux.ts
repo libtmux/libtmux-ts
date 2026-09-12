@@ -80,18 +80,18 @@ async function currentSession(server: Server, context: CLIContext): Promise<Sess
   const acquisition = context.signal ? { signal: context.signal } : {};
   const [current, selected] = await Promise.all([
     connection({}, context).daemonIdentity(acquisition),
-    server.daemonIdentity(acquisition),
+    server.snapshot(acquisition),
   ]);
   if (
     current.pid !== endpoint.pid ||
-    current.pid !== selected.pid ||
-    current.startTime !== selected.startTime
+    current.pid !== selected.daemonIdentity.pid ||
+    current.startTime !== selected.daemonIdentity.startTime
   )
     throw new CliError(
       "tmux_context",
       "This operation must target the current pane's tmux server; use -d to load elsewhere",
     );
-  const session = (await server.snapshot(acquisition)).panes.one({
+  const session = selected.panes.one({
     id: context.env.TMUX_PANE,
   }).session;
   if (!session)
