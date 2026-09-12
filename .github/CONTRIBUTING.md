@@ -103,6 +103,12 @@ $ bun run typecheck:readme
 $ bun run docs:links
 ```
 
+Build the CLI before checking commands that reference its executable:
+
+```console
+$ bun run --cwd packages/workspace-cli build
+```
+
 ```console
 $ bun run docs:claims
 ```
@@ -198,7 +204,13 @@ it does not take. `packages/mcp` and `packages/workspace` compile their tests
 in their one `typecheck`.
 
 `packages/mcp` and `packages/workspace` each run `typecheck`, `test` and
-`test:package`. `examples` runs `typecheck` and `test`: every example is a
+`test:package`. `packages/workspace-cli` runs `typecheck`, `test`, and
+`test:install`. Its installed-package suite uses Node 22 and Bun; `test:package`
+runs the portable package checks on macOS. CLI completion tests require bash,
+fish, and zsh. CI provisions an isolated `tmuxp==1.74.0` runtime for optional
+Python extension tests through `LIBTMUX_TEST_PYTHON` and `TMUX_WORKSPACE_PYTHON`.
+The native commands do not need Python. `examples` runs `typecheck` and `test`:
+every example is a
 package of its own, and the umbrella runs each sibling, so adding one adds no
 step here.
 
