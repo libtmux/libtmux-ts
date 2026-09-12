@@ -33,6 +33,7 @@ type LoadResult = {
   created_panes: string[];
   session_removed?: boolean;
   script_output?: ProcessResult;
+  renumber_restore_error?: string;
 };
 
 function option(value: Json): string {
@@ -167,6 +168,46 @@ async function ready(pane: Pane, context: CLIContext): Promise<boolean> {
   }
   return false;
 }
+function freeIndex(occupied: ReadonlySet<number>, first: number): number {
+  let index = first;
+  while (occupied.has(index)) {
+    if (index === 2147483647)
+      throw new CliError("window_index_exhausted", `No free window index at or above ${first}`);
+    index++;
+  }
+  return index;
+}
+
+async function removePlaceholder(
+  session: Session,
+  placeholder: Window,
+  result: LoadResult,
+): Promise<void> {
+  const renumber = (await session.showResolvedOptions()).get("renumber-windows") === "on";
+  const previous = renumber ? (await session.showOptions()).get("renumber-windows") : undefined;
+  let failure: unknown;
+  try {
+    if (renumber) await session.setOption("renumber-windows", "off");
+    await placeholder.kill();
+    result.created_windows = result.created_windows.filter((id) => id !== placeholder.id);
+    const removed = new Set<string>(placeholder.panes.toArray().map((pane) => pane.id));
+    result.created_panes = result.created_panes.filter((id) => !removed.has(id));
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (renumber) {
+      try {
+        if (previous === undefined) await session.unsetOption("renumber-windows");
+        else await session.setOption("renumber-windows", previous);
+      } catch (error) {
+        result.renumber_restore_error = error instanceof Error ? error.message : String(error);
+        failure ??= error;
+      }
+    }
+  }
+  if (failure) throw failure;
+}
+
 async function create(
   server: Server,
   spec: WorkspaceSpec,
@@ -174,6 +215,7 @@ async function create(
   output: OperationOutput,
   result: LoadResult,
   existing?: Session,
+  futureIndexes: ReadonlySet<number> = new Set(),
 ): Promise<Session> {
   const inputIndex = result.input_index;
   context.signal?.throwIfAborted();
@@ -189,6 +231,11 @@ async function create(
     }));
   result.session_id = session.id;
   result.session_name = session.name ?? spec.name;
+  if (!existing) {
+    const bootstrap = session.windows.at(0)!;
+    result.created_windows.push(bootstrap.id);
+    result.created_panes.push(...bootstrap.panes.toArray().map((pane) => pane.id));
+  }
   result.completed_stages.push(existing ? "session-resolved" : "session-created");
   if (!existing)
     await output.event("session-created", {
@@ -258,19 +305,44 @@ async function create(
       (spec.readiness === "auto" &&
         /(^|\/)zsh$/.test((await session.showResolvedOptions()).get("default-shell") ?? "")));
   result.completed_stages.push("session-options");
-  const placeholder = existing ? undefined : session.windows.at(0)!;
-  const reserved = new Set(
-    spec.windows.map((window) => window.index).filter((index) => index !== undefined),
+  result.stage = "window-allocation";
+  const current = (await server.snapshot()).sessions.one({ id: session.id });
+  const placeholder = existing
+    ? undefined
+    : current.windows.toArray().find((window) => window.id === session.windows.at(0)?.id);
+  const occupied = new Set(
+    current.windows
+      .toArray()
+      .filter((window) => window.id !== placeholder?.id)
+      .map((window) => Number(window.index)),
   );
-  let spare = 1;
-  while (reserved.has(spare)) spare++;
-  if (placeholder) await placeholder.move({ index: spare });
+  const reserved = new Set([...occupied, ...futureIndexes]);
+  for (const window of spec.windows) {
+    if (window.index === undefined) continue;
+    if (occupied.has(window.index))
+      throw new CliError("window_index_conflict", `Window index ${window.index} already exists`);
+    reserved.add(window.index);
+  }
+  let next = spec.windows.some((window) => window.index === undefined)
+    ? Number((await session.showResolvedOptions()).get("base-index") ?? "0")
+    : 0;
+  const indexes = spec.windows.map((window) => {
+    if (window.index !== undefined) return window.index;
+    next = freeIndex(reserved, next);
+    reserved.add(next);
+    return next;
+  });
+  if (placeholder) {
+    const spare = freeIndex(reserved, 0);
+    if (Number(placeholder.index) !== spare) await placeholder.move({ index: spare });
+  }
   let focusWindow: Window | undefined;
   for (const [windowIndex, desired] of spec.windows.entries()) {
     context.signal?.throwIfAborted();
     const first = desired.panes[0]!;
     result.stage = "creating-window";
-    let window = await session.newWindow({
+    const window = await session.newWindow({
+      index: indexes[windowIndex]!,
       ...(desired.name ? { name: desired.name } : {}),
       ...(first.directory ? { startDirectory: first.directory } : {}),
       ...(first.shell ? { shellCommand: first.shell } : {}),
@@ -278,10 +350,11 @@ async function create(
       ...(context.signal ? { signal: context.signal } : {}),
     });
     result.created_windows.push(window.id);
-    if (desired.index !== undefined && Number(window.index) !== desired.index)
-      await window.move({ index: desired.index });
-    if (windowIndex === 0 && placeholder) await placeholder.kill();
-    window = (await server.snapshot()).windows.one({ id: window.id });
+    result.created_panes.push(window.panes.at(0)!.id);
+    if (windowIndex === 0 && placeholder) {
+      result.stage = "bootstrap-removal";
+      await removePlaceholder(session, placeholder, result);
+    }
     result.stage = "window-options";
     await options(window, desired.data.options, context.signal);
     await output.event("window-created", {
@@ -305,7 +378,7 @@ async function create(
               environment: paneSpec.environment,
               ...(context.signal ? { signal: context.signal } : {}),
             });
-      result.created_panes.push(pane.id);
+      if (paneIndex > 0) result.created_panes.push(pane.id);
       previous = pane;
       await output.event("pane-created", {
         input_index: inputIndex,
@@ -369,6 +442,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
   const attached = request.mode === "human" && !request.values.detached && !request.values.append;
   const client = attached ? await attachmentClient(server, context) : undefined;
   let append: Session | undefined;
+  const futureIndexes = new Set<number>();
   if (request.values.append) {
     append = await currentSession(server, context);
     const reserved = new Set(append.windows.toArray().map((window) => Number(window.index)));
@@ -381,6 +455,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
               `Append cannot replace existing window index ${window.index}`,
             );
           reserved.add(window.index);
+          futureIndexes.add(window.index);
         }
   }
   const output = new OperationOutput(
@@ -429,10 +504,12 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         created_panes: [],
       };
       results.push(result);
+      for (const window of input.spec.windows)
+        if (window.index !== undefined) futureIndexes.delete(window.index);
       const exists = !append && (await server.hasSession(input.spec.name));
       const session = exists
         ? (await server.snapshot()).sessions.one({ name: input.spec.name })
-        : await create(server, input.spec, context, output, result, append);
+        : await create(server, input.spec, context, output, result, append, futureIndexes);
       result.session_id = session.id;
       result.session_name = session.name ?? input.spec.name;
       result.reused = exists;

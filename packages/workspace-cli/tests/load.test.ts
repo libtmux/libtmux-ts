@@ -82,6 +82,113 @@ async function fixture(
   );
 }
 
+test.each(["off", "on"])(
+  "load reserves explicit window indexes before implicit allocation with renumbering %s",
+  async (renumber) => {
+    await fixture(async (server, root, run) => {
+      const config = join(root, "indexes.json");
+      await server.setGlobalOption("session", "base-index", "3");
+      await server.setGlobalOption("session", "renumber-windows", renumber);
+      await writeFile(
+        config,
+        JSON.stringify({
+          session_name: "indexes",
+          windows: [
+            { window_name: "implicit" },
+            { window_name: "reserved", window_index: 3 },
+            { window_name: "maximum", window_index: 2147483647 },
+          ],
+        }),
+      );
+      const result = await run(["load", config, "-d", "--json"]);
+      expect(result.code, result.stdout + result.stderr).toBe(0);
+      const session = (await server.snapshot()).sessions.one({ name: "indexes" });
+      expect(
+        Object.fromEntries(
+          session.windows.toArray().map((window) => [window.name, Number(window.index)]),
+        ),
+      ).toEqual({ implicit: 4, reserved: 3, maximum: 2147483647 });
+      expect((await session.showOptions()).has("renumber-windows")).toBe(false);
+      expect((await session.showResolvedOptions()).get("renumber-windows")).toBe(renumber);
+    });
+  },
+);
+
+test("append reserves indexes requested by later workspace files", async () => {
+  await fixture(async (server, root, run) => {
+    const before = (await server.snapshot()).sessions.one({ name: "fixture" });
+    const original = before.windows.at(0)!;
+    const implicit = join(root, "implicit.json");
+    const explicit = join(root, "explicit.json");
+    await writeFile(
+      implicit,
+      JSON.stringify({ session_name: "ignored-one", windows: [{ window_name: "implicit" }] }),
+    );
+    await writeFile(
+      explicit,
+      JSON.stringify({
+        session_name: "ignored-two",
+        windows: [{ window_name: "reserved", window_index: 1 }],
+      }),
+    );
+    const result = await run(["load", implicit, explicit, "--append", "--json"], {
+      TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
+      TMUX_PANE: original.panes.at(0)!.id,
+    });
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const after = (await server.snapshot()).sessions.one({ id: before.id });
+    expect(Number(after.windows.one({ name: "implicit" }).index)).toBe(2);
+    expect(Number(after.windows.one({ name: "reserved" }).index)).toBe(1);
+    expect(after.windows.one({ id: original.id }).panes.length).toBe(1);
+  });
+});
+
+test.each(["remove", "restore", "both", "disable"])(
+  "bootstrap %s failure preserves its cause and reports renumbering state",
+  async (failure) => {
+    await fixture(async (server, root, run) => {
+      await server.setGlobalOption("session", "renumber-windows", "on");
+      const wrapper = join(root, "tmux-failure");
+      const remove = failure === "remove" || failure === "both";
+      const restore = failure === "restore" || failure === "both";
+      const actual = `'${server.tmuxBin.replaceAll("'", "'\\''")}'`;
+      const rules = [
+        remove ? "*kill-window*) echo removal-failed >&2; exit 1;;" : "",
+        restore ? "*set-option*-u*renumber-windows*) echo restore-failed >&2; exit 1;;" : "",
+        failure === "disable"
+          ? `*set-option*renumber-windows*off*) ${actual} "$@"; echo disable-failed >&2; exit 1;;`
+          : "",
+      ].join("\n");
+      await writeFile(wrapper, `#!/bin/sh\ncase "$*" in\n${rules}\nesac\nexec ${actual} "$@"\n`, {
+        mode: 0o700,
+      });
+      const config = join(root, "cleanup.json");
+      await writeFile(
+        config,
+        JSON.stringify({ session_name: "cleanup", windows: [{ window_index: 4 }] }),
+      );
+      const response = await run(["load", config, "-d", "--json"], { TMUX_BIN: wrapper });
+      expect(response.code, response.stdout + response.stderr).toBe(1);
+      const summary = JSON.parse(response.stdout);
+      expect(summary.errors[0].message).toContain(
+        failure === "disable" ? "disable-failed" : remove ? "removal-failed" : "restore-failed",
+      );
+      expect(summary.results[0].stage).toBe("bootstrap-removal");
+      const session = (await server.snapshot()).sessions.one({ name: "cleanup" });
+      expect(new Set(summary.results[0].created_windows)).toEqual(
+        new Set(session.windows.toArray().map((window) => window.id)),
+      );
+      expect(new Set(summary.results[0].created_panes)).toEqual(
+        new Set(session.panes.toArray().map((pane) => pane.id)),
+      );
+      if (restore) {
+        expect(summary.results[0].renumber_restore_error).toContain("restore-failed");
+        expect((await session.showResolvedOptions()).get("renumber-windows")).toBe("off");
+      } else expect((await session.showOptions()).has("renumber-windows")).toBe(false);
+    });
+  },
+);
+
 test("native load sets environment before commands and preserves existing sessions", async () => {
   await fixture(async (server, root, run) => {
     const marker = join(root, "marker");

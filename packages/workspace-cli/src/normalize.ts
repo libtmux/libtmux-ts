@@ -155,9 +155,20 @@ export function normalize(
     const name = windowName === undefined ? undefined : expand(windowName, context);
     if (name !== undefined && !isTmuxName(name))
       throw new Error("window_name must be a valid tmux name");
-    const index = window.window_index === undefined ? undefined : Number(window.window_index);
-    if (index !== undefined && (!Number.isSafeInteger(index) || index < 0 || indexes.has(index)))
-      throw new Error("window_index must be a distinct nonnegative integer");
+    const rawIndex = window.window_index;
+    const index =
+      rawIndex == null
+        ? undefined
+        : typeof rawIndex === "number"
+          ? rawIndex
+          : typeof rawIndex === "string" && /^\d+$/.test(rawIndex)
+            ? Number(rawIndex)
+            : Number.NaN;
+    if (
+      index !== undefined &&
+      (!Number.isSafeInteger(index) || index < 0 || index > 2147483647 || indexes.has(index))
+    )
+      throw new Error("window_index must be a distinct integer from 0 through 2147483647");
     if (index !== undefined) indexes.add(index);
     const windowDirectory = directory(window.start_directory, cwd, base, context);
     const windowEnvironment = environment(window.environment, context);
