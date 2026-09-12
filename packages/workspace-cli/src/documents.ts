@@ -142,6 +142,7 @@ async function directories(context: FileContext) {
   candidates.push(["~/.tmuxp", "Legacy"]);
   for (const [path, source] of candidates) {
     const expanded = resolve(context.cwd, expandPath(path, context));
+    if (entries.some((entry) => entry.path === expanded)) continue;
     entries.push({
       path: expanded,
       source,
@@ -198,11 +199,13 @@ export async function discover(
   const global_workspace_dirs: DirectoryRecord[] = [];
   for (const entry of entries) {
     const names = entry.exists ? (await readdir(entry.path)).sort() : [];
-    const eligible = names.filter((name) => extensions.includes(extname(name).toLowerCase()));
+    const eligible = names.filter(
+      (name) => !name.startsWith(".") && extensions.includes(extname(name).toLowerCase()),
+    );
     global_workspace_dirs.push({
       ...entry,
       path: privatePath(entry.path, context),
-      workspace_count: eligible.filter((name) => !name.startsWith(".")).length,
+      workspace_count: eligible.length,
       active: entry.path === active,
     });
     if (entry.path === active)
