@@ -64,7 +64,9 @@ import {
   installLiveHandlePrototype,
   liveHandlesEqual,
   liveHandlesShareTmuxId,
+  requireSameServer,
   runtimeForHandle,
+  targetOf,
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
@@ -340,6 +342,7 @@ export class Pane {
    * ```
    */
   swapWith(other: Pane): Promise<void> {
+    requireSameServer(this, other, "swapWith");
     return swapPanes(runtimeForHandle(this), this.id, other.id);
   }
 
@@ -455,8 +458,8 @@ export class Pane {
    * await pane.joinTo(window.id, { vertical: true });
    * ```
    */
-  joinTo(target: string, options?: JoinOptions): Promise<void> {
-    return joinPane(runtimeForHandle(this), this.id, target, options);
+  joinTo(target: Pane | Window | string, options?: JoinOptions): Promise<void> {
+    return joinPane(runtimeForHandle(this), this.id, targetOf(this, target, "joinTo"), options);
   }
 
   /**

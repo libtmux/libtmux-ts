@@ -51,10 +51,22 @@ import type { Session } from "./session.js";
 import {
   installLiveHandlePrototype,
   liveHandlesEqual,
+  requireSameServer,
+  targetOf,
   liveHandlesShareTmuxId,
   runtimeForHandle,
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
+
+/** Resolve a destination session to its id, refusing one on another server. */
+function destinationFor(
+  self: Window,
+  options: MoveWindowOptions,
+  operation: string,
+): MoveWindowOptions {
+  if (options.session === undefined || typeof options.session === "string") return options;
+  return { ...options, session: targetOf(self, options.session, operation) };
+}
 
 /** What {@link Window.plan} offers, one entry per mutation it can describe. */
 export interface WindowPlans {
@@ -395,6 +407,7 @@ export class Window {
    * ```
    */
   move(options: MoveWindowOptions = {}): Promise<void> {
+    options = destinationFor(this, options, "move");
     return moveWindow(runtimeForHandle(this), placementTarget(this), inThisSession(this, options));
   }
 
@@ -406,6 +419,7 @@ export class Window {
    * ```
    */
   link(options: MoveWindowOptions): Promise<void> {
+    options = destinationFor(this, options, "link");
     return linkWindow(runtimeForHandle(this), this.id, inThisSession(this, options));
   }
 
@@ -450,6 +464,7 @@ export class Window {
    * ```
    */
   swapWith(other: Window): Promise<void> {
+    requireSameServer(this, other, "swapWith");
     return swapWindows(runtimeForHandle(this), placementTarget(this), placementTarget(other));
   }
 

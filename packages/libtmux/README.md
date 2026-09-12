@@ -503,6 +503,21 @@ await pane.joinTo("other:1");
 await pane.swapWith(otherPane);
 ```
 
+Each of those takes a handle as readily as a string, and a handle is checked
+against this object's server before the command runs:
+
+```ts
+const otherSession = await server.newSession({ name: "other-session" });
+await window.link({ session: otherSession });
+await pane.joinTo(otherPane);
+await session.selectWindow(window);
+```
+
+A tmux id is unique only within one running daemon, so `@1` exists on every
+server that has a window. Passing a handle from a different server raises
+`TypeError` rather than addressing whatever holds that id here — which is what
+a bare id cannot be checked for, since a string carries no server.
+
 A handle names a placement rather than a window, because one window can sit in
 two sessions at once. Moving a window leaves the handle pointing at a placement
 that no longer exists, so read the moved window back from a fresh snapshot

@@ -362,8 +362,12 @@ export interface MoveWindowOptions extends CommandOptions {
    * Omitted means this window's session, not tmux's current one — tmux reads a
    * destination of `:3` as index 3 of whichever session it happens to consider
    * current, which is rarely the one a caller holding this window means.
+   *
+   * A {@link Session} handle is checked against this window's server before
+   * the command runs. A string is not: a tmux id means something else on every
+   * other daemon, and only a handle carries which one it came from.
    */
-  readonly session?: string;
+  readonly session?: Session | string;
 }
 
 export interface ResizeOptions extends CommandOptions {

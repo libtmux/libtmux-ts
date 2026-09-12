@@ -1354,7 +1354,7 @@ await session.rename("renamed");
 #### `Session.selectWindow`
 
 ```ts
-selectWindow(target: WindowTarget): Promise<void>
+selectWindow(target: Window | WindowTarget): Promise<void>
 ```
 
 Select the last, next, or previous window, or one named by target.
@@ -2284,7 +2284,7 @@ await pane.breakOut("extracted");
 #### `Pane.joinTo`
 
 ```ts
-joinTo(target: string, options?: JoinOptions): Promise<void>
+joinTo(target: Pane | Window | string, options?: JoinOptions): Promise<void>
 ```
 
 Move this pane into another window as a split.

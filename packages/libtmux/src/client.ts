@@ -9,6 +9,7 @@ import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 import {
   installLiveHandlePrototype,
+  requireSameServer,
   liveHandlesEqual,
   runtimeForHandle,
 } from "./_internal/runtime/live_handle.js";
@@ -94,6 +95,7 @@ export class Client {
    * ```
    */
   switchTo(session: Session): Promise<void> {
+    requireSameServer(this, session, "switchTo");
     return switchClient(runtimeForHandle(this), this.name, session.id);
   }
 

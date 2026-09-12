@@ -9,7 +9,8 @@ import { assertName } from "./names.js";
 
 function destination(options: MoveWindowOptions): readonly string[] {
   if (options.session === undefined && options.index === undefined) return [];
-  const session = options.session ?? "";
+  const session =
+    typeof options.session === "string" ? options.session : (options.session?.id ?? "");
   return ["-t", `${session}:${options.index === undefined ? "" : String(options.index)}`];
 }
 

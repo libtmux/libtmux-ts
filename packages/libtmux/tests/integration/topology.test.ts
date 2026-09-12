@@ -402,6 +402,44 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("refuses a target from another server, and takes a handle from this one", async () => {
+    await withServer(async (first) => {
+      await withServer(async (second) => {
+        const here = serverFor(first);
+        const there = serverFor(second);
+        expect(here.equals(there)).toBe(false);
+
+        const hereSession = (await here.snapshot()).sessions.one();
+        await hereSession.newWindow({ name: "local" });
+        const thereSession = (await there.snapshot()).sessions.one();
+        await thereSession.newWindow({ name: "foreign" });
+
+        const local = (await here.snapshot()).windows.one({ name: "local" });
+        const foreign = (await there.snapshot()).windows.one({ name: "foreign" });
+
+        // `@1` exists on both daemons, so without a guard this addresses
+        // whatever holds that id here and reports success.
+        expect(() => local.swapWith(foreign)).toThrow(TypeError);
+        expect(() => local.swapWith(foreign)).toThrow("one tmux server");
+        expect(() => local.move({ session: thereSession })).toThrow("one tmux server");
+        expect(() => local.link({ session: thereSession })).toThrow("one tmux server");
+        expect(() => hereSession.selectWindow(foreign)).toThrow("one tmux server");
+        const localPane = local.panes.one();
+        const foreignPane = foreign.panes.one();
+        expect(() => localPane.swapWith(foreignPane)).toThrow("one tmux server");
+        expect(() => localPane.joinTo(foreign)).toThrow("one tmux server");
+
+        // A handle from this server is the point of accepting one at all.
+        await hereSession.selectWindow(local);
+        expect((await here.snapshot()).windows.one({ active: true }).name).toBe("local");
+
+        const destination = await here.newSession({ name: "destination" });
+        await local.link({ session: destination });
+        expect((await local.refreshed()).linkedSessions.count()).toBe(2);
+      });
+    });
+  }, 60_000);
+
   test("swaps two windows", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

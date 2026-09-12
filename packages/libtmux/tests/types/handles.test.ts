@@ -78,6 +78,7 @@ type ExpectedServerOptions = {
   // part of the API rather than an internal one that happens to be reachable.
   readonly engine?: TmuxEngine;
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly maxInFlight?: number;
   readonly socketName?: string;
   readonly socketPath?: string;
   readonly timeoutMs?: number;

@@ -28,6 +28,18 @@ unzooms first, which is tmux's behaviour rather than this package's.
 submitted this caller's half-typed line. The literal form still sends Enter
 separately, because `-l` applies to every argument.
 
+#### Cross-object targets
+
+`Pane.swapWith`, `Window.swapWith` and `Client.switchTo` now refuse an object
+from another tmux server with a `TypeError`. A tmux id is unique only within
+one running daemon, so `@1` exists on every server that has a window: the
+command previously ran against whichever object held that id here and reported
+success.
+
+`Window.move`, `Window.link`, `Pane.joinTo` and `Session.selectWindow` accept a
+handle as well as a string, and check a handle the same way. A string is still
+accepted unchecked, because it carries no server to check.
+
 #### Server
 
 `ServerOptions.maxInFlight` bounds how many tmux invocations one server runs at

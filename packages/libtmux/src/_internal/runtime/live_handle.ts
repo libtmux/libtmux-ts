@@ -279,3 +279,40 @@ export function snapshotForHandle(handle: Child): CompleteFormatRow {
 export function winlinkRefForHandle(handle: Child): WinlinkRef | null {
   return requireState(handle).winlink;
 }
+
+/**
+ * Refuse an operation whose two objects came from different tmux servers.
+ *
+ * tmux ids are unique only within one running daemon, so `@1` exists on every
+ * server that has a window. Without this, a handle read from one server is
+ * accepted as a target on another and the command silently addresses whatever
+ * holds that id there — a swap that appears to succeed and moved the wrong
+ * pair.
+ */
+export function requireSameServer(
+  left: { readonly server: Server },
+  right: { readonly server: Server },
+  operation: string,
+): void {
+  if (left.server.equals(right.server)) return;
+  throw new TypeError(
+    `${operation} needs both objects on one tmux server: ${left.server.toString()} and ${right.server.toString()} are different servers, and a tmux id means something else on each.`,
+  );
+}
+
+/**
+ * Resolve a cross-object target to the id tmux addresses it by.
+ *
+ * A string is passed through: a caller naming `"other:1"` has said which
+ * server they mean by having no other. A handle is checked first, because a
+ * handle carries the server it came from and can therefore be wrong.
+ */
+export function targetOf(
+  self: { readonly server: Server },
+  target: { readonly id: string; readonly server: Server } | string,
+  operation: string,
+): string {
+  if (typeof target === "string") return target;
+  requireSameServer(self, target, operation);
+  return target.id;
+}
