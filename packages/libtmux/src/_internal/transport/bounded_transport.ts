@@ -168,13 +168,23 @@ export class BoundedTransport implements CommandTransport {
 
       // Hoisted so `leave` can name the listener it removes and `abort` can
       // call `leave`; neither can be a const declared before the other.
-      function leave(queue: Waiter[], waiter: Waiter, signal: CommandRequest["signal"]): boolean {
+      // `dequeued` says the caller already removed this waiter. Searching for
+      // it anyway scans the whole queue and finds nothing, which turns
+      // draining a large burst into quadratic work.
+      function leave(
+        queue: Waiter[],
+        waiter: Waiter,
+        signal: CommandRequest["signal"],
+        dequeued = false,
+      ): boolean {
         if (settled) return false;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
-        const at = queue.indexOf(waiter);
-        if (at !== -1) queue.splice(at, 1);
+        if (!dequeued) {
+          const at = queue.indexOf(waiter);
+          if (at !== -1) queue.splice(at, 1);
+        }
         return true;
       }
 
@@ -192,7 +202,8 @@ export class BoundedTransport implements CommandTransport {
       const deadline = request.timeoutMs === undefined ? undefined : Date.now() + request.timeoutMs;
       const waiter: Waiter = {
         grant: () => {
-          if (!leave(queue, waiter, request.signal)) return false;
+          // Reached only from `#handOn`, which has already shifted this off.
+          if (!leave(queue, waiter, request.signal, true)) return false;
           // The timer that would have refused this is an ordinary task, so a
           // busy loop can leave it pending past its own deadline. Deciding
           // here as well means one answer either way, and a mutation whose
