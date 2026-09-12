@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { Server } from "libtmux";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { npmPack } from "../../../scripts/npm_pack.js";
@@ -69,7 +69,11 @@ await runWithCleanup(
       120_000,
     );
     const executable = join(project, "node_modules/.bin/tmux-workspace");
-    assert((await realpath(executable)).startsWith(join(project, "node_modules/")));
+    assert(
+      (await realpath(executable)).startsWith(
+        `${await realpath(join(project, "node_modules"))}${sep}`,
+      ),
+    );
     const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
     const packageEnvironment = {
       ...process.env,
