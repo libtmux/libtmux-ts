@@ -73,6 +73,14 @@ NDJSON takes precedence when both are present. Machine load requires `-d` or
 destination is given. `--save-to` writes a file; `--force` permits replacement.
 The file format is separate from the JSON/NDJSON output mode.
 
+`--log-level` filters diagnostics on stderr: `debug`, `info`, `warning` (default),
+`error`, or `critical`. Machine diagnostics are NDJSON. `load --log-file` appends
+the selected diagnostics as NDJSON, including script output at `info` level.
+New log files use owner-only permissions. Nonregular destinations are rejected
+before session creation; existing log contents are preserved.
+If logging fails during execution, stderr reports `log_error` and the command
+keeps its result and exit status. Cancellation closes the owned log handle.
+
 Bootstrap and editor commands use quoted argv directly. Child output is UTF-8
 with replacement for invalid bytes. Captured results retain at most 64 KiB of
 source bytes per stream and report truncation; NDJSON forwards output as it
@@ -101,7 +109,7 @@ on Node 22 and Bun. It needs the optional Python runtime described above:
 $ bun run --cwd packages/workspace-cli test:install
 ```
 
-Plugin/custom-builder loading, interactive prompts, progress presets, log flags,
+Plugin/custom-builder loading, interactive prompts, progress presets,
 generated references/completions, and benchmarks remain unfinished.
 
 The core library keeps its zero-runtime-dependency contract. Commander and YAML
