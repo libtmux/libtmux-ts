@@ -10,7 +10,7 @@ import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
 import { sendKeys } from "../../src/_internal/operations/pane_io.js";
-import { setPaneZoom } from "../../src/_internal/operations/topology.js";
+import { unzoomTarget, zoomPane } from "../../src/_internal/operations/topology.js";
 import {
   planKillPaneIfUnshared,
   planNewSession,
@@ -262,22 +262,36 @@ describe("pane input command arguments", () => {
 });
 
 describe("zoom command arguments", () => {
-  test("asks tmux to decide the toggle, in one invocation", async () => {
-    const zoom = await invocationsFor((transport) =>
-      setPaneZoom(runtimeFor(transport), "%0", true),
-    );
-    const unzoom = await invocationsFor((transport) =>
-      setPaneZoom(runtimeFor(transport), "%0", false),
+  test("selects the pane, then lets tmux decide the toggle", async () => {
+    const invocations = await invocationsFor((transport) => zoomPane(runtimeFor(transport), "%0"));
+
+    // `if-shell -t` sets where the condition expands, not where its branch
+    // acts, so the branch carries its own target or it toggles whatever tmux
+    // currently points at. The selection is what drops a sibling's zoom, since
+    // `window_zoomed_flag` is true for every pane in a zoomed window.
+    expect(invocations).toEqual([
+      ["select-pane", "-t", "%0"],
+      ["if-shell", "-F", "-t", "%0", "#{?window_zoomed_flag,0,1}", "'resize-pane' '-Z' '-t' '%0'"],
+    ]);
+  });
+
+  test("sends both zoom commands as one invocation", async () => {
+    const transport = recorder(0);
+    await zoomPane(runtimeFor(transport), "%0").catch(() => undefined);
+
+    // Two invocations would leave a pane selected but not zoomed for anyone
+    // reading in between.
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.commands).toHaveLength(2);
+  });
+
+  test("unzooms without selecting anything", async () => {
+    const invocations = await invocationsFor((transport) =>
+      unzoomTarget(runtimeFor(transport), "@3"),
     );
 
-    // tmux offers only a toggle. Reading the flag here and toggling from the
-    // answer races anyone else resizing the window, so the condition travels
-    // with the command.
-    expect(zoom).toEqual([
-      ["if-shell", "-F", "-t", "%0", "#{?window_zoomed_flag,0,1}", "'resize-pane' '-Z'"],
-    ]);
-    expect(unzoom).toEqual([
-      ["if-shell", "-F", "-t", "%0", "#{window_zoomed_flag}", "'resize-pane' '-Z'"],
+    expect(invocations).toEqual([
+      ["if-shell", "-F", "-t", "@3", "#{window_zoomed_flag}", "'resize-pane' '-Z' '-t' '@3'"],
     ]);
   });
 });

@@ -4,7 +4,7 @@ import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.j
 import type { RuntimeContext } from "../runtime/context.js";
 import { carriesTmuxId } from "../transport/daemon_guard.js";
 import type { RawCommandResult } from "../transport/types.js";
-import { adaptRawResult, prepareCommandRequest } from "./request.js";
+import { adaptRawResult, prepareCommandRequest, prepareInvocationRequest } from "./request.js";
 
 interface ExecutedCommand {
   readonly raw: RawCommandResult;
@@ -81,4 +81,46 @@ export async function runCommandBytes(
   options: CommandOptions = {},
 ): Promise<Uint8Array> {
   return new Uint8Array((await executeCommand(runtime, args, options, true)).raw.stdout);
+}
+
+/**
+ * Run several tmux commands as one invocation, raising on the first failure.
+ *
+ * tmux runs them in order on its own command queue, so nothing interleaves
+ * between them. That is what a caller reaches for when two commands have to
+ * describe one state change — the state cannot be observed halfway.
+ */
+export async function runCommands(
+  runtime: RuntimeContext,
+  commands: readonly (readonly string[])[],
+  options: CommandOptions = {},
+): Promise<readonly string[]> {
+  const deadline = options.timeoutMs ?? runtime.timeoutMs;
+  const flat = commands.flat();
+  const daemon = carriesTmuxId(flat) ? lastObservedDaemon(runtime) : undefined;
+  let raw: RawCommandResult;
+  try {
+    raw = await runtime.transport.execute(
+      prepareInvocationRequest(runtime.connection, commands, {
+        ...options,
+        ...(daemon === undefined ? {} : { daemonGuard: daemon }),
+        ...(deadline === undefined ? {} : { timeoutMs: deadline }),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof TmuxServerRestarted) invalidateRuntimeEpoch(runtime);
+    throw error;
+  }
+  const result = adaptRawResult(raw);
+  if (result.returncode !== 0) {
+    const target = flat.indexOf("-t");
+    throw new TmuxCommandError({
+      args: flat,
+      exitCode: result.returncode,
+      stderr: result.stderr,
+      stdout: result.stdout,
+      ...(target === -1 ? {} : { target: flat[target + 1] }),
+    });
+  }
+  return result.stdout;
 }

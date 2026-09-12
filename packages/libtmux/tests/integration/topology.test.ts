@@ -369,36 +369,60 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
-  test("zooms and unzooms a pane idempotently, and a resize restores the layout", async () => {
+  test("zooms the pane it was asked for, in the window it is in", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const window = (await server.snapshot()).windows.one();
-      await window.split();
+      const first = (await server.snapshot()).windows.one();
+      await first.split();
+      // A second window, selected, so the zoom target is not what tmux
+      // currently points at. `if-shell -t` sets only where its condition
+      // expands, so a branch without its own target lands here instead.
+      const elsewhere = await (await first.refreshed()).session!.newWindow({ name: "elsewhere" });
+      await elsewhere.select();
 
-      const zoomed = async (): Promise<boolean | null> =>
+      const zoomed = async (window: { readonly id: string }): Promise<boolean | null> =>
         (await server.snapshot()).windows.one({ id: window.id }).zoomedFlag;
+      const activePane = async (): Promise<string> =>
+        (await server.snapshot()).panes.one({ active: true, window: { is: { id: first.id } } }).id;
 
-      const pane = (await server.snapshot()).panes.first({ window: { is: { id: window.id } } });
-      if (pane === undefined) throw new Error("expected a pane to zoom");
+      const panes = (await server.snapshot()).panes
+        .where({ window: { is: { id: first.id } } })
+        .toArray();
+      const [top, bottom] = panes;
+      if (top === undefined || bottom === undefined) throw new Error("expected two panes");
 
-      expect(await zoomed()).toBe(false);
-      await pane.zoom();
-      expect(await zoomed()).toBe(true);
-      // tmux offers a toggle; a second call must not undo the first.
-      await pane.zoom();
-      expect(await zoomed()).toBe(true);
+      expect(await zoomed(first)).toBe(false);
+      await top.zoom();
+      expect(await zoomed(first)).toBe(true);
+      expect(await zoomed(elsewhere)).toBe(false);
+      expect(await activePane()).toBe(top.id);
 
-      await pane.unzoom();
-      expect(await zoomed()).toBe(false);
-      await pane.unzoom();
-      expect(await zoomed()).toBe(false);
+      // A toggle would undo the first call; a state does not.
+      await top.zoom();
+      expect(await zoomed(first)).toBe(true);
+      expect(await activePane()).toBe(top.id);
+
+      // `window_zoomed_flag` is the window's, so a condition reading it alone
+      // calls this pane zoomed while its sibling is the zoomed one.
+      await bottom.zoom();
+      expect(await zoomed(first)).toBe(true);
+      expect(await activePane()).toBe(bottom.id);
+
+      await bottom.unzoom();
+      expect(await zoomed(first)).toBe(false);
+      await bottom.unzoom();
+      expect(await zoomed(first)).toBe(false);
+
+      await top.zoom();
+      await (await first.refreshed()).unzoom();
+      expect(await zoomed(first)).toBe(false);
 
       // Any ordinary resize unzooms, which is tmux's behaviour and not this
       // package's: `cmd_resize_pane_exec` calls `server_unzoom_window` first.
-      await pane.zoom();
-      expect(await zoomed()).toBe(true);
-      await pane.resize({ height: 5 });
-      expect(await zoomed()).toBe(false);
+      await top.zoom();
+      expect(await zoomed(first)).toBe(true);
+      await top.resize({ height: 5 });
+      expect(await zoomed(first)).toBe(false);
     });
   }, 40_000);
 

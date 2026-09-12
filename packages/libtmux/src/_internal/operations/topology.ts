@@ -3,7 +3,7 @@ import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { quoteCommand } from "../transport/lexer.js";
-import { runCommand } from "./command.js";
+import { runCommand, runCommands } from "./command.js";
 import { planRemoveWindowPlacement } from "./plans.js";
 import { assertName } from "./names.js";
 
@@ -99,29 +99,58 @@ export async function selectLayout(
 }
 
 /**
- * Zoom or unzoom a pane without reading its state first.
+ * Zoom a pane, whatever the window was showing before.
  *
- * tmux offers only `resize-pane -Z`, which toggles, so setting a state from a
- * separate read races whoever else resizes that window. `if-shell -F` decides
- * the flag and runs the toggle inside tmux's own command queue instead, which
- * makes each call idempotent and costs one invocation. The inner command
- * inherits `-t`, so no id is interpolated into a command string.
+ * Three facts decide this shape. `resize-pane -Z` toggles rather than sets, so
+ * a state read here and acted on there races anyone else resizing the window.
+ * `window_zoomed_flag` is the window's, not the pane's, so it says a pane is
+ * zoomed when a sibling is the zoomed one — and `pane_zoomed_flag` arrived in
+ * tmux 3.7, above this package's floor. And `if-shell -t` sets the context its
+ * condition expands in, not the target its branch acts on, so the branch
+ * carries its own `-t` or it toggles whatever tmux currently points at.
+ *
+ * So: select the pane, which makes it active and drops a sibling's zoom, then
+ * zoom unless the window already is. One invocation, because tmux runs an
+ * invocation's commands in order on its own queue and a half-applied zoom is
+ * not a state anything should be able to observe.
  */
-export async function setPaneZoom(
+export async function zoomPane(
   runtime: RuntimeContext,
   paneId: string | null,
-  zoomed: boolean,
   options: CommandOptions = {},
 ): Promise<void> {
-  await runCommand(
+  const at = target(paneId);
+  await runCommands(
     runtime,
     [
-      "if-shell",
-      "-F",
-      ...target(paneId),
-      zoomed ? "#{?window_zoomed_flag,0,1}" : "#{window_zoomed_flag}",
-      quoteCommand(["resize-pane", "-Z"]),
+      ["select-pane", ...at],
+      [
+        "if-shell",
+        "-F",
+        ...at,
+        "#{?window_zoomed_flag,0,1}",
+        quoteCommand(["resize-pane", "-Z", ...at]),
+      ],
     ],
+    options,
+  );
+}
+
+/**
+ * Restore a window's layout, whichever of its panes was zoomed.
+ *
+ * Unzooming names no pane, so this needs no selection: the condition and the
+ * toggle both address the window the target names.
+ */
+export async function unzoomTarget(
+  runtime: RuntimeContext,
+  id: string | null,
+  options: CommandOptions = {},
+): Promise<void> {
+  const at = target(id);
+  await runCommand(
+    runtime,
+    ["if-shell", "-F", ...at, "#{window_zoomed_flag}", quoteCommand(["resize-pane", "-Z", ...at])],
     options,
   );
 }

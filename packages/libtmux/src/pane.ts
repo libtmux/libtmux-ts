@@ -52,7 +52,8 @@ import {
   resizePane,
   selectTarget,
   setPaneTitle,
-  setPaneZoom,
+  unzoomTarget,
+  zoomPane,
   swapPanes,
 } from "./_internal/operations/topology.js";
 import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
@@ -317,7 +318,7 @@ export class Pane {
    * ```
    */
   zoom(options?: CommandOptions): Promise<void> {
-    return setPaneZoom(runtimeForHandle(this), this.id, true, options);
+    return zoomPane(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -331,7 +332,7 @@ export class Pane {
    * ```
    */
   unzoom(options?: CommandOptions): Promise<void> {
-    return setPaneZoom(runtimeForHandle(this), this.id, false, options);
+    return unzoomTarget(runtimeForHandle(this), this.id, options);
   }
 
   /**

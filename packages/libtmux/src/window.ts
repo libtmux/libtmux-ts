@@ -37,7 +37,7 @@ import {
   rotateWindow,
   selectLayout,
   selectTarget,
-  setPaneZoom,
+  unzoomTarget,
   swapWindows,
   unlinkWindow,
 } from "./_internal/operations/topology.js";
@@ -368,7 +368,7 @@ export class Window {
    * ```
    */
   unzoom(options?: CommandOptions): Promise<void> {
-    return setPaneZoom(runtimeForHandle(this), this.id, false, options);
+    return unzoomTarget(runtimeForHandle(this), this.id, options);
   }
 
   /**
