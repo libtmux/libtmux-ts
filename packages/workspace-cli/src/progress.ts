@@ -34,6 +34,7 @@ export class LoadProgress {
   private workspace = "";
   private history: ScriptLine[] = [];
   private pending: Partial<Record<"stdout" | "stderr", ScriptLine>> = {};
+  private afterCarriageReturn = { stdout: false, stderr: false };
   private scriptOrder = 0;
   private rawLineOpen = false;
   private pendingWrite = Promise.resolve();
@@ -89,6 +90,9 @@ export class LoadProgress {
   }
 
   private script(stream: "stdout" | "stderr", text: string): void {
+    if (!text) return;
+    if (this.afterCarriageReturn[stream] && text.startsWith("\n")) text = text.slice(1);
+    this.afterCarriageReturn[stream] = text.endsWith("\r");
     const chunks = ((this.pending[stream]?.text ?? "") + text)
       .slice(-retainedCharacters)
       .split(/\r\n|[\r\n]/);
@@ -248,6 +252,7 @@ export class LoadProgress {
             0;
         this.history = [];
         this.pending = {};
+        this.afterCarriageReturn.stdout = this.afterCarriageReturn.stderr = false;
         await this.draw(true);
         break;
       case "window-created":
