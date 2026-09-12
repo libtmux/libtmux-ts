@@ -121,6 +121,121 @@ async function until(ready: () => Promise<boolean>) {
   }
 }
 
+test("human load renders native progress in its terminal and clears before the result", async () => {
+  await fixture(async (server, root, env) => {
+    const file = join(root, "progress.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        session_name: "progress",
+        before_script: "/usr/bin/printf 'ready\\n'",
+        windows: [{ window_name: "first", panes: [{}, {}] }, { window_name: "last" }],
+      }),
+    );
+    await terminal(
+      [
+        runtime,
+        entry,
+        "load",
+        file,
+        "-d",
+        "-S",
+        server.socketPath!,
+        "--progress-format",
+        "{session}:{window_index}/{window_total}:{session_pane_progress}",
+        "--progress-lines",
+        "2",
+      ],
+      root,
+      env,
+      async (result) => {
+        const output = await result;
+        expect(output.code).toBe(0);
+        expect(output.stdout).toContain("progress:0/2:0/3");
+        expect(output.stdout).toContain("ready");
+        expect(output.stdout).toContain("\u001b[0J");
+        expect(output.stdout.lastIndexOf("\u001b[0J")).toBeLessThan(
+          output.stdout.lastIndexOf("Loaded"),
+        );
+        expect((await server.snapshot()).sessions.one({ name: "progress" }).windows.length).toBe(2);
+      },
+    );
+  });
+});
+
+test.each(["json", "ndjson", "disabled"])(
+  "terminal load keeps %s output free of progress controls",
+  async (mode) => {
+    await fixture(async (server, root, env) => {
+      const file = join(root, "plain.json");
+      await writeFile(file, JSON.stringify({ session_name: "plain", windows: [{}] }));
+      await terminal(
+        [
+          runtime,
+          entry,
+          "load",
+          file,
+          "-d",
+          "-S",
+          server.socketPath!,
+          mode === "disabled" ? "--no-progress" : `--${mode}`,
+        ],
+        root,
+        { ...env, NO_COLOR: "1" },
+        async (result) => {
+          const output = await result;
+          expect(output.code).toBe(0);
+          expect(output.stdout).not.toContain("\u001b");
+          if (mode === "disabled") expect(output.stdout).toContain("Loaded plain");
+          else {
+            const records = output.stdout
+              .trim()
+              .split("\n")
+              .map((line) => JSON.parse(line));
+            expect(records.at(-1).status).toBe("ok");
+          }
+        },
+      );
+    });
+  },
+);
+
+test("raw script output starts subsequent terminal progress on a fresh line", async () => {
+  await fixture(async (server, root, env) => {
+    const file = join(root, "raw.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        session_name: "raw",
+        before_script: "/usr/bin/printf 'partial'",
+        windows: [{}],
+      }),
+    );
+    await terminal(
+      [
+        runtime,
+        entry,
+        "load",
+        file,
+        "-d",
+        "-S",
+        server.socketPath!,
+        "--progress-lines",
+        "0",
+        "--progress-format",
+        "NEXT:{session}",
+      ],
+      root,
+      { ...env, NO_COLOR: "1" },
+      async (result) => {
+        const output = await result;
+        expect(output.code).toBe(0);
+        expect(output.stdout).toContain("partial\r\nNEXT:raw");
+      },
+    );
+  });
+});
+
 test("human load without a controlling terminal fails before creating a session", async () => {
   await fixture(async (server, root, env) => {
     const file = join(root, "input.json");

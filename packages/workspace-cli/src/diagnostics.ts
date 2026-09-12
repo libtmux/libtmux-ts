@@ -71,13 +71,17 @@ export class Diagnostics {
     );
   }
 
+  accepts(level: DiagnosticLevel): boolean {
+    return !this.failed && levels[level] >= levels[this.level];
+  }
+
   async record(
     level: DiagnosticLevel,
     event: string,
     data: Record<string, unknown> = {},
     echo = true,
   ): Promise<void> {
-    if (this.failed || levels[level] < levels[this.level]) return;
+    if (!this.accepts(level)) return;
     const record = { ...data, schema_version: 1, level, event, time: new Date().toISOString() };
     this.pending = this.pending.then(async () => {
       this.signal?.throwIfAborted();

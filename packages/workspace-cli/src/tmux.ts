@@ -204,8 +204,12 @@ async function create(
         env: context.env,
         ...(context.signal ? { signal: context.signal } : {}),
         output: async (stream, text) => {
-          await output.event("script-output", { input_index: inputIndex, stream, text });
-          if (output.mode === "human")
+          const handled = await output.event("script-output", {
+            input_index: inputIndex,
+            stream,
+            text,
+          });
+          if (output.mode === "human" && !handled)
             await write(
               stream === "stdout" ? context.stdout : context.stderr,
               text,
@@ -284,6 +288,8 @@ async function create(
       input_index: inputIndex,
       window_id: window.id,
       window_name: window.name,
+      window_ordinal: windowIndex + 1,
+      pane_total: desired.panes.length,
     });
     let previous = window.panes.at(0)!;
     let focusPane: Pane | undefined;
@@ -305,6 +311,7 @@ async function create(
         input_index: inputIndex,
         pane_id: pane.id,
         window_id: window.id,
+        pane_ordinal: paneIndex + 1,
       });
       if (paneSpec.commands.length > 0 && !paneSpec.shell && wait && !(await ready(pane, context)))
         await output.event("warning", {
@@ -315,11 +322,17 @@ async function create(
       if (desired.data.layout) await window.selectLayout(scalarText(desired.data.layout));
       result.stage = "pane-commands";
       await send(pane, paneSpec, context);
+      await output.event("pane-completed", {
+        input_index: inputIndex,
+        pane_id: pane.id,
+        window_id: window.id,
+      });
       if (paneSpec.data.focus) focusPane = pane;
     }
     if (focusPane) await focusPane.select();
     result.stage = "window-options-after";
     await options(window, desired.data.options_after, context.signal);
+    await output.event("window-completed", { input_index: inputIndex, window_id: window.id });
     if (desired.data.focus || !focusWindow) focusWindow = window;
   }
   if (focusWindow) await focusWindow.select();
@@ -329,6 +342,10 @@ async function create(
 export async function load(request: Request, context: CLIContext): Promise<number> {
   if (request.mode !== "human" && !request.values.detached && !request.values.append)
     throw new CliError("usage", "Machine load requires -d or an explicit append operation", 2);
+  const progress =
+    request.mode === "human" && (context.stderr as { isTTY?: boolean }).isTTY
+      ? (await import("./progress.ts")).LoadProgress.create(request, context)
+      : undefined;
   const inputs: { path: string; spec: WorkspaceSpec }[] = [];
   const files = request.values.workspace_files as string[];
   for (const [index, input] of files.entries()) {
@@ -380,12 +397,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
             : ["started", "completed", "script-output", "workspace-completed"].includes(event)
               ? "info"
               : "debug";
-      await context.diagnostics?.record(
-        level,
-        event,
-        data,
-        request.mode !== "human" || event !== "script-output",
-      );
+      const echo = request.mode !== "human" || event !== "script-output";
+      if (echo && context.diagnostics?.accepts(level)) await progress?.clear();
+      await context.diagnostics?.record(level, event, data, echo);
+      return progress?.event(event, data);
     },
   );
   const results: LoadResult[] = [];
@@ -395,6 +410,12 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
       await output.event("workspace-started", {
         input_index: index,
         workspace: privatePath(input.path, context),
+        session_name: input.spec.name,
+        window_total: input.spec.windows.length,
+        session_pane_total: input.spec.windows.reduce(
+          (total, window) => total + window.panes.length,
+          0,
+        ),
       });
       const result: LoadResult = {
         input_index: index,
@@ -490,6 +511,8 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
       throw error;
     }
     return interrupted ? 130 : 1;
+  } finally {
+    await progress?.clear(AbortSignal.timeout(100)).catch(() => {});
   }
 }
 export async function freeze(request: Request, context: CLIContext): Promise<number> {

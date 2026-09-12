@@ -102,13 +102,16 @@ export class OperationOutput {
   get isFinished(): boolean {
     return this.finished;
   }
-  private readonly observe?: (event: string, data: Record<string, unknown>) => Promise<void>;
+  private readonly observe?: (
+    event: string,
+    data: Record<string, unknown>,
+  ) => Promise<boolean | void>;
   constructor(
     command: string,
     mode: OutputMode,
     stdout: Writable,
     signal?: AbortSignal,
-    observe?: (event: string, data: Record<string, unknown>) => Promise<void>,
+    observe?: (event: string, data: Record<string, unknown>) => Promise<boolean | void>,
   ) {
     this.command = command;
     this.mode = mode;
@@ -116,11 +119,11 @@ export class OperationOutput {
     this.signal = signal;
     if (observe !== undefined) this.observe = observe;
   }
-  async event(event: string, data: Record<string, unknown> = {}): Promise<void> {
+  async event(event: string, data: Record<string, unknown> = {}): Promise<boolean> {
     if (this.finished) throw new Error("Cannot emit after the terminal result");
     const terminal = ["completed", "failed"].includes(event);
     if (!terminal) this.signal?.throwIfAborted();
-    if (!this.signal?.aborted) await this.observe?.(event, data);
+    const handled = !this.signal?.aborted && (await this.observe?.(event, data));
     if (terminal) this.finished = true;
     if (this.mode === "ndjson")
       await emitJson(
@@ -135,10 +138,14 @@ export class OperationOutput {
         false,
         this.completionSignal(terminal),
       );
+    return handled === true;
   }
   async result(data: Record<string, unknown>): Promise<void> {
     const event = data.status === "error" || data.status === "partial" ? "failed" : "completed";
-    if (this.mode === "ndjson") return this.event(event, data);
+    if (this.mode === "ndjson") {
+      await this.event(event, data);
+      return;
+    }
     if (this.finished) throw new Error("Cannot emit after the terminal result");
     if (!this.signal?.aborted) await this.observe?.(event, data);
     this.finished = true;
