@@ -254,6 +254,7 @@ test("append resolves the explicit current pane and preserves existing windows",
       }),
     );
     const result = await run(["load", config, "--append", "--json"], {
+      TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
       TMUX_PANE: original.panes.at(0)!.id,
     });
     expect(result.code).toBe(0);
@@ -266,6 +267,26 @@ test("append resolves the explicit current pane and preserves existing windows",
     expect(after.windows.one({ id: original.id }).panes.length).toBe(1);
     expect(after.windows.one({ name: "added" }).panes.length).toBe(2);
     expect(await server.hasSession("append-cli")).toBe(false);
+  });
+});
+
+test("append rejects another server even when its pane ID matches", async () => {
+  await fixture(async (selected, root, run) => {
+    await fixture(async (current) => {
+      const selectedPane = (await selected.snapshot()).panes.at(0)!;
+      const currentPane = (await current.snapshot()).panes.at(0)!;
+      expect(selectedPane.id).toBe(currentPane.id);
+      const config = join(root, "input.json");
+      await writeFile(config, JSON.stringify({ session_name: "append-cli", windows: [{}] }));
+      const result = await run(["load", config, "--append", "--json"], {
+        TMUX: `${current.socketPath},${(await current.daemonIdentity()).pid},0`,
+        TMUX_PANE: currentPane.id,
+      });
+      expect(result.code).toBe(1);
+      expect(JSON.parse(result.stderr).code).toBe("tmux_context");
+      expect((await selected.snapshot()).windows.length).toBe(1);
+      expect((await current.snapshot()).windows.length).toBe(1);
+    });
   });
 });
 
@@ -282,6 +303,7 @@ test("a failed append bootstrap preserves the borrowed session", async () => {
       }),
     );
     const result = await run(["load", config, "--append", "--json"], {
+      TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
       TMUX_PANE: original.windows.at(0)!.panes.at(0)!.id,
     });
     expect(result.code).toBe(1);
