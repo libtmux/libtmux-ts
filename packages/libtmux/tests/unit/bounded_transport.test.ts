@@ -233,6 +233,9 @@ describe("bounded transport", () => {
     // argument list, so the list has to carry both spellings.
     ["wait", ["wait", "channel"], ["wait", "-S", "channel"]],
     ["popup", ["popup", "-t", "%0", "less x"], ["popup", "-C"]],
+    // tmux resolves any unambiguous abbreviation, so the limiter has to reach
+    // the same command the server will.
+    ["wait-f", ["wait-f", "channel"], ["wait-f", "-S", "channel"]],
     ["display-popup", ["display-popup", "-t", "%0", "less x"], ["display-popup", "-C"]],
     [
       "display-menu",
@@ -321,5 +324,37 @@ describe("bounded transport", () => {
 
     await flush();
     await holding;
+  });
+
+  test("dispatches an uncontended request without suspending first", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 2);
+    const run = bounded.execute(requestFor({ timeoutMs: 100 }));
+
+    // No await has run yet. A suspension here would put a caller's own
+    // synchronous work between the request and the engine, and charge the
+    // deadline for it.
+    expect(inner.started()).toBe(1);
+    expect(inner.budgets()).toEqual([100]);
+
+    inner.release();
+    await run;
+  });
+
+  test("bounds a command whose abbreviation is ambiguous among the blocking ones", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 1);
+    // `display` reaches display-menu, display-panes and display-popup, which
+    // is a prefix tmux rejects as ambiguous rather than one it resolves.
+    const holding = bounded.execute(requestFor({ commands: [["display"]] }));
+    await flush();
+    const queued = bounded.execute(requestFor({ commands: [["display"]] }));
+    await flush();
+    expect(inner.started()).toBe(1);
+
+    inner.release();
+    await flush();
+    inner.release();
+    await Promise.all([holding, queued]);
   });
 });

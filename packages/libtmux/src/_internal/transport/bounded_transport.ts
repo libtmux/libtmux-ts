@@ -41,8 +41,27 @@ const UNBOUNDED_COMMANDS: ReadonlySet<string> = new Set([
   "wait-for",
 ]);
 
+/**
+ * Whether `name` reaches one of those commands, abbreviations included.
+ *
+ * tmux resolves any unambiguous prefix, so `wait-f` runs `wait-for` and would
+ * otherwise be counted while its release was not. Ambiguity is judged within
+ * this set: a prefix that reaches two of them is one tmux rejects as ambiguous
+ * too, and the worst this can do is exempt a command that blocks anyway.
+ */
+function reachesUnboundedCommand(name: string): boolean {
+  if (UNBOUNDED_COMMANDS.has(name)) return true;
+  let found: string | undefined;
+  for (const candidate of UNBOUNDED_COMMANDS) {
+    if (!candidate.startsWith(name)) continue;
+    if (found !== undefined) return false;
+    found = candidate;
+  }
+  return found !== undefined;
+}
+
 function waitsOnSomethingElse(request: CommandRequest): boolean {
-  return request.commands.every((command) => UNBOUNDED_COMMANDS.has(command[0]));
+  return request.commands.every((command) => reachesUnboundedCommand(command[0]));
 }
 
 interface Waiter {
@@ -90,9 +109,25 @@ export class BoundedTransport implements CommandTransport {
     this.#limit = limit;
   }
 
-  async execute(request: CommandRequest): Promise<RawCommandResult> {
+  execute(request: CommandRequest): Promise<RawCommandResult> {
     if (waitsOnSomethingElse(request)) return this.#inner.execute(request);
+    // Dispatched without suspending when a slot is free, so an uncontended
+    // command reaches tmux exactly as it did before there was a ceiling: an
+    // await here would put the caller's own synchronous work between the
+    // request and the engine, and spend a deadline on it.
+    if (this.#active < this.#limit) {
+      this.#active += 1;
+      return this.#dispatch(request, 0);
+    }
+    return this.#waitThenDispatch(request);
+  }
+
+  async #waitThenDispatch(request: CommandRequest): Promise<RawCommandResult> {
     const queuedAt = await this.#acquire(request);
+    return this.#dispatch(request, queuedAt);
+  }
+
+  async #dispatch(request: CommandRequest, queuedAt: number): Promise<RawCommandResult> {
     try {
       return await this.#inner.execute(afterWaiting(request, queuedAt));
     } finally {
@@ -117,10 +152,6 @@ export class BoundedTransport implements CommandTransport {
    * of the deadline is left by then.
    */
   #acquire(request: CommandRequest): Promise<number> {
-    if (this.#active < this.#limit) {
-      this.#active += 1;
-      return Promise.resolve(0);
-    }
     // Monotonic: a system clock that moves while a request is queued would
     // otherwise turn a twenty millisecond wait into a second of credit or a
     // premature expiry. `observer_transport` measures its budgets the same way.

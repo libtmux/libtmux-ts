@@ -63,8 +63,12 @@ not a fresh copy — and a request that never gets one raises
 blocks until something outside it releases it is not counted — `wait-for` on a
 channel, a popup or menu on its dismissal, a prompt on an answer. Each occupies
 a client and no throughput, and counting one would let it hold the slot its own
-release needs. Commands that wait on tmux doing work, such as `run-shell`, are
-counted, because they finish on their own.
+release needs. Each is recognised by its canonical name, its built-in short
+name and any unambiguous abbreviation, because tmux resolves all three.
+Commands that wait on tmux doing work, such as `run-shell`, are counted,
+because they finish on their own, and a request that finds a free slot is
+dispatched without suspending, so an uncontended command reaches tmux exactly
+as it did before.
 
 ### `@libtmux/mcp`
 
