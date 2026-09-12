@@ -19,9 +19,13 @@ remember.
 `Pane.zoom`, `Pane.unzoom` and `Window.unzoom` set the zoom state rather than
 flipping it. tmux offers only `resize-pane -Z`, which toggles, so each call
 carries its condition through `if-shell -F` and lets tmux decide inside its own
-command queue: idempotent, one invocation, and no window in which another
-resize changes the answer between a read and a write. Any ordinary `resize`
-unzooms first, which is tmux's behaviour rather than this package's.
+command queue: idempotent, and no window in which another resize changes the
+answer between a read and a write. `Pane.zoom` selects the pane first, because
+`window_zoomed_flag` belongs to the window and would otherwise report a pane
+zoomed while a sibling is the zoomed one; both commands travel as one
+invocation, so no reader sees a selected pane that is not yet zoomed. Any
+ordinary `resize` unzooms first, which is tmux's behaviour rather than this
+package's.
 
 `Pane.sendKeys` now sends the keys and Enter as one `send-keys` unless
 `literal` is set. Two invocations left a window in which another writer's Enter
@@ -37,8 +41,10 @@ command previously ran against whichever object held that id here and reported
 success.
 
 `Window.move`, `Window.link`, `Pane.joinTo` and `Session.selectWindow` accept a
-handle as well as a string, and check a handle the same way. A string is still
-accepted unchecked, because it carries no server to check.
+handle as well as a string, and check a handle the same way. A handle read
+before the daemon restarted raises `TmuxServerRestarted` as it already did when
+addressed directly, since the same socket is not the same daemon. A string is
+still accepted unchecked, because it carries neither to check.
 
 #### Server
 
@@ -48,8 +54,12 @@ own pipes, so a `Promise.all` over a whole server previously started that many.
 The ceiling costs no throughput: tmux runs commands on one thread, and measured
 capture throughput stops rising at four concurrent clients and is flat from
 there to sixty-four. Waiting for a slot spends the request's own deadline
-rather than extending it, and a request that never gets one raises
-`TmuxTransportError` with `delivery` of `"not_started"`.
+rather than extending it — the engine receives what is left of `timeoutMs`,
+not a fresh copy — and a request that never gets one raises
+`TmuxTransportError` with `delivery` of `"not_started"`. An invocation that
+only waits on another tmux command, such as `wait-for` on a channel, is not
+counted: it occupies a client and no throughput, and counting it would let a
+waiter hold the slot its own `wait-for -S` needs.
 
 ### `@libtmux/mcp`
 
