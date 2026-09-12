@@ -99,18 +99,28 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
   let failure: unknown;
   let escalation: ReturnType<typeof setTimeout> | undefined;
   let escalationDone: Promise<void> | undefined;
-  const kill = (signal: NodeJS.Signals) => {
+  let finishEscalation: (() => void) | undefined;
+  const kill = (signal: NodeJS.Signals | 0): boolean => {
     try {
-      if (grouped && !terminal && child.pid !== undefined) process.kill(-child.pid, signal);
-      else child.kill(signal);
+      if (grouped && !terminal && child.pid !== undefined) {
+        process.kill(-child.pid, signal);
+        return true;
+      }
+      return child.kill(signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") failure ??= error;
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+      failure ??= error;
+      return true;
     }
   };
   const stop = () => {
     if (escalationDone) return;
-    kill("SIGTERM");
+    if (!kill("SIGTERM")) {
+      escalationDone = Promise.resolve();
+      return;
+    }
     escalationDone = new Promise((resolve) => {
+      finishEscalation = resolve;
       escalation = setTimeout(() => {
         kill("SIGKILL");
         resolve();
@@ -121,9 +131,14 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
     child.once("error", (error) => {
       failure ??= error;
     });
-    child.once("close", (code, signal) =>
-      resolve(options.signal?.aborted ? 130 : (code ?? (signal ? 1 : 0))),
-    );
+    child.once("close", (code, signal) => {
+      // A reaped leader can leave descendants in its process group.
+      if (escalationDone && (!grouped || terminal || !kill(0))) {
+        clearTimeout(escalation);
+        finishEscalation?.();
+      }
+      resolve(options.signal?.aborted ? 130 : (code ?? (signal ? 1 : 0)));
+    });
   });
   options.signal?.addEventListener("abort", stop, { once: true });
   if (options.signal?.aborted) stop();
