@@ -236,6 +236,9 @@ describe("bounded transport", () => {
     // tmux resolves any unambiguous abbreviation, so the limiter has to reach
     // the same command the server will.
     ["wait-f", ["wait-f", "channel"], ["wait-f", "-S", "channel"]],
+    // tmux prefix-matches canonical names only, so `wa` is unambiguous even
+    // though `wait` is also an alias of the same command.
+    ["wa", ["wa", "channel"], ["wa", "-S", "channel"]],
     ["display-popup", ["display-popup", "-t", "%0", "less x"], ["display-popup", "-C"]],
     [
       "display-menu",

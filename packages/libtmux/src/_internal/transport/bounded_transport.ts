@@ -29,28 +29,34 @@ export const DEFAULT_MAX_IN_FLIGHT = 16;
  */
 const UNBOUNDED_COMMANDS: ReadonlySet<string> = new Set([
   "command-prompt",
-  "confirm",
   "confirm-before",
   "display-menu",
   "display-panes",
   "display-popup",
+  "wait-for",
+]);
+
+/** Their built-in short names, which tmux matches whole rather than by prefix. */
+const UNBOUNDED_ALIASES: ReadonlySet<string> = new Set([
+  "confirm",
   "displayp",
   "menu",
   "popup",
   "wait",
-  "wait-for",
 ]);
 
 /**
  * Whether `name` reaches one of those commands, abbreviations included.
  *
- * tmux resolves any unambiguous prefix, so `wait-f` runs `wait-for` and would
- * otherwise be counted while its release was not. Ambiguity is judged within
- * this set: a prefix that reaches two of them is one tmux rejects as ambiguous
- * too, and the worst this can do is exempt a command that blocks anyway.
+ * tmux resolves any unambiguous prefix of a canonical name, so `wa` runs
+ * `wait-for` and would otherwise be counted while its release was not. An
+ * alias is not prefix-matched — tmux compares those whole — so treating one as
+ * a candidate would make `wa` look ambiguous between `wait` and `wait-for`
+ * when tmux sees only the second. Ambiguity is judged within this set, so the
+ * worst a prefix can do is exempt a command that blocks anyway.
  */
 function reachesUnboundedCommand(name: string): boolean {
-  if (UNBOUNDED_COMMANDS.has(name)) return true;
+  if (UNBOUNDED_ALIASES.has(name) || UNBOUNDED_COMMANDS.has(name)) return true;
   let found: string | undefined;
   for (const candidate of UNBOUNDED_COMMANDS) {
     if (!candidate.startsWith(name)) continue;
