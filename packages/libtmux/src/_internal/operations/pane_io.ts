@@ -5,10 +5,12 @@ import { runCommand } from "./command.js";
 /**
  * Send keys to a pane.
  *
- * Enter is a separate `send-keys` rather than a newline appended to the string,
- * because `-l` would send a literal newline character while an unquoted `Enter`
- * is a key name tmux resolves. Keeping them separate makes `literal` mean only
- * what it says about the caller's own text.
+ * Enter stays a key rather than a newline appended to the string, because `-l`
+ * would send a literal line feed where the key sends a carriage return. So
+ * `literal` needs its own invocation for Enter, and the default form does not:
+ * `send-keys` takes any number of keys, resolves each on its own, and one
+ * invocation leaves no window in which another writer submits a half-typed
+ * line.
  */
 export async function sendKeys(
   runtime: RuntimeContext,
@@ -17,13 +19,13 @@ export async function sendKeys(
   options: SendKeysOptions = {},
 ): Promise<void> {
   const target = paneId == null ? [] : ["-t", paneId];
-  await runCommand(
-    runtime,
-    ["send-keys", ...target, ...(options.literal === true ? ["-l"] : []), keys],
-    options,
-  );
-  if (options.enter !== false)
-    await runCommand(runtime, ["send-keys", ...target, "Enter"], options);
+  const enter = options.enter !== false;
+  if (options.literal !== true) {
+    await runCommand(runtime, ["send-keys", ...target, keys, ...(enter ? ["Enter"] : [])], options);
+    return;
+  }
+  await runCommand(runtime, ["send-keys", ...target, "-l", keys], options);
+  if (enter) await runCommand(runtime, ["send-keys", ...target, "Enter"], options);
 }
 
 /** Capture a pane's contents as lines, without the trailing blank line tmux emits. */
