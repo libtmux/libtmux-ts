@@ -16,6 +16,9 @@ remember.
 
 `@libtmux/workspace-cli` participates in coordinated version checks, package
 canaries, and publication with the library, MCP server, and workspace builder.
+Its first publication requires an explicit package-and-version opt-in and the
+coordinated `latest` channel. Normal tag releases continue to require every
+package to exist in the registry.
 
 ## 0.1.0-alpha.9 (2026-09-12)
 
