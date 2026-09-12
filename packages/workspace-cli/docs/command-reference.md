@@ -206,7 +206,7 @@ Usage: `tmux-workspace freeze [options] [session_name]`
 - `-f, --workspace-format <workspace_format>`: format to save in Choices: `yaml`, `json`.
 - `-o, --save-to <save_to>`: file to save to
 - `-y, --yes`: always answer yes Default: `false`.
-- `-q, --quiet`: don't prompt for confirmation Default: `false`.
+- `-q, --quiet`: Suppress human status messages. Default: `false`.
 - `--force`: overwrite the workspace file Default: `false`.
 - `--json`: Write JSON; machine operations never prompt.
 - `--ndjson`: Stream NDJSON; takes precedence over --json.
