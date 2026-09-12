@@ -457,7 +457,7 @@ panes.where({ currentCommand: "vim" }).count();
 #### `Server.daemonIdentity`
 
 ```ts
-async daemonIdentity(): Promise<DaemonIdentity>
+async daemonIdentity(options: SnapshotOptions = {}): Promise<DaemonIdentity>
 ```
 
 Which daemon is answering on this socket right now.

@@ -502,8 +502,8 @@ export class Server {
    * before.pid === after.pid;
    * ```
    */
-  async daemonIdentity(): Promise<DaemonIdentity> {
-    const graph = await acquireServerGraph(runtimeForServer(this));
+  async daemonIdentity(options: SnapshotOptions = {}): Promise<DaemonIdentity> {
+    const graph = await acquireServerGraph(runtimeForServer(this), options.signal);
     const identity = graph.capture.daemon;
     if (identity === undefined) {
       throw new LibTmuxException("live acquisition omitted the daemon identity");
