@@ -280,9 +280,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         "input_required",
         "Append requires TMUX and TMUX_PANE from a current pane",
       );
+    const acquisition = context.signal ? { signal: context.signal } : {};
     const [current, selected] = await Promise.all([
-      connection({}, context).daemonIdentity(),
-      server.daemonIdentity(),
+      connection({}, context).daemonIdentity(acquisition),
+      server.daemonIdentity(acquisition),
     ]);
     if (
       current.pid !== endpoint.pid ||
@@ -290,7 +291,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
       current.startTime !== selected.startTime
     )
       throw new CliError("tmux_context", "Append must target the current pane's tmux server");
-    append = (await server.snapshot()).panes.one({ id: context.env.TMUX_PANE }).session;
+    append = (await server.snapshot(acquisition)).panes.one({ id: context.env.TMUX_PANE }).session;
     if (!append)
       throw new CliError("input_required", "The current pane has no session on this server");
     const reserved = new Set(append.windows.toArray().map((window) => Number(window.index)));

@@ -295,7 +295,7 @@ describe("server graph acquisition", () => {
     });
   }, 30_000);
 
-  test("carries snapshot cancellation through acquisition", async () => {
+  test("carries cancellation through snapshot and daemon acquisition", async () => {
     await withServer(async (fixture) => {
       const requests: CommandRequest[] = [];
       const raw = new NodeSpawnTransport({ terminationGraceMs: 100 });
@@ -318,6 +318,9 @@ describe("server graph acquisition", () => {
       expect(requests[0]?.signal).toBeDefined();
       expect(requests[0]?.signal).not.toBe(controller.signal);
       expect(requests[1]?.signal).toBe(controller.signal);
+      controller.abort();
+      await expect(server.daemonIdentity({ signal: controller.signal })).rejects.toThrow();
+      expect(requests).toHaveLength(2);
     });
   }, 30_000);
 
