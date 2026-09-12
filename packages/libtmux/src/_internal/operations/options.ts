@@ -106,14 +106,18 @@ export async function showOptions(
   runtime: RuntimeContext,
   scope: OptionScope,
   target?: string | null,
-  flags: { readonly global?: boolean } = {},
+  flags: CommandOptions & { readonly global?: boolean } = {},
 ): Promise<ReadonlyMap<string, string>> {
-  const lines = await runCommand(runtime, [
-    "show-options",
-    ...scopeArguments(scope),
-    ...(flags.global === true ? ["-g"] : []),
-    ...(target == null ? [] : ["-t", target]),
-  ]);
+  const lines = await runCommand(
+    runtime,
+    [
+      "show-options",
+      ...scopeArguments(scope),
+      ...(flags.global === true ? ["-g"] : []),
+      ...(target == null ? [] : ["-t", target]),
+    ],
+    flags,
+  );
 
   const options = new Map<string, string>();
   for (const line of lines) {
@@ -139,13 +143,13 @@ export async function showResolvedOptions(
   runtime: RuntimeContext,
   scope: OptionScope,
   target?: string | null,
+  commandOptions: CommandOptions = {},
 ): Promise<ReadonlyMap<string, string>> {
-  const lines = await runCommand(runtime, [
-    "show-options",
-    "-A",
-    ...scopeArguments(scope),
-    ...(target == null ? [] : ["-t", target]),
-  ]);
+  const lines = await runCommand(
+    runtime,
+    ["show-options", "-A", ...scopeArguments(scope), ...(target == null ? [] : ["-t", target])],
+    commandOptions,
+  );
 
   const options = new Map<string, string>();
   for (const line of lines) {

@@ -490,7 +490,7 @@ clients.map((entry) => entry.tty);
 #### `Server.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every server-scope option tmux currently reports.
@@ -503,7 +503,7 @@ options.get("escape-time");
 #### `Server.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this server, own and inherited together.
@@ -559,7 +559,7 @@ await server.saveBuffer("captured", "/tmp/build.log");
 #### `Server.showGlobalOptions`
 
 ```ts
-showGlobalOptions(scope: "session" | "window"): Promise<ReadonlyMap<string, string>>
+showGlobalOptions( scope: "session" | "window", options?: CommandOptions, ): Promise<ReadonlyMap<string, string>>
 ```
 
 Read the defaults every session or window inherits.
@@ -1150,7 +1150,7 @@ const [editor, logs] = await server.batch([
 #### `Session.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every option set on this session itself, not the ones it inherits.
@@ -1167,7 +1167,7 @@ options.get("status");
 #### `Session.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this session, own and inherited together.
@@ -1584,7 +1584,7 @@ await window.unsetHook("window-renamed");
 #### `Window.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every option set on this window itself, not the ones it inherits.
@@ -1601,7 +1601,7 @@ options.get("automatic-rename");
 #### `Window.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this window, own and inherited together.
@@ -2037,7 +2037,7 @@ await pane.unsetHook("pane-title-changed");
 #### `Pane.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every option set on this pane itself, not the ones it inherits.
@@ -2054,7 +2054,7 @@ options.get("remain-on-exit");
 #### `Pane.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this pane, own and inherited together.
