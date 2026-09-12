@@ -37,9 +37,11 @@ import {
   rotateWindow,
   selectLayout,
   selectTarget,
+  setPaneZoom,
   swapWindows,
   unlinkWindow,
 } from "./_internal/operations/topology.js";
+import type { CommandOptions } from "./common.js";
 import { respawnWindow } from "./_internal/operations/shell.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
@@ -340,6 +342,21 @@ export class Window {
    */
   respawn(command?: string, options?: RespawnOptions): Promise<void> {
     return respawnWindow(runtimeForHandle(this), this.id, command, options);
+  }
+
+  /**
+   * Restore this window's layout, whichever of its panes was zoomed.
+   *
+   * Idempotent and one tmux command, for the reason {@link Pane.zoom} gives.
+   * Zooming is reached from the pane that should fill the window; unzooming
+   * has no such choice to make, so it is here as well.
+   *
+   * ```ts
+   * await window.unzoom();
+   * ```
+   */
+  unzoom(options?: CommandOptions): Promise<void> {
+    return setPaneZoom(runtimeForHandle(this), this.id, false, options);
   }
 
   /**

@@ -1,6 +1,8 @@
+import type { CommandOptions } from "../../common.js";
 import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { quoteCommand } from "../transport/lexer.js";
 import { runCommand } from "./command.js";
 import { planRemoveWindowPlacement } from "./plans.js";
 import { assertName } from "./names.js";
@@ -95,7 +97,41 @@ export async function selectLayout(
   await runCommand(runtime, ["select-layout", ...target(windowId), layout]);
 }
 
-/** Resize a pane; tmux ignores a dimension its layout cannot honour. */
+/**
+ * Zoom or unzoom a pane without reading its state first.
+ *
+ * tmux offers only `resize-pane -Z`, which toggles, so setting a state from a
+ * separate read races whoever else resizes that window. `if-shell -F` decides
+ * the flag and runs the toggle inside tmux's own command queue instead, which
+ * makes each call idempotent and costs one invocation. The inner command
+ * inherits `-t`, so no id is interpolated into a command string.
+ */
+export async function setPaneZoom(
+  runtime: RuntimeContext,
+  paneId: string | null,
+  zoomed: boolean,
+  options: CommandOptions = {},
+): Promise<void> {
+  await runCommand(
+    runtime,
+    [
+      "if-shell",
+      "-F",
+      ...target(paneId),
+      zoomed ? "#{?window_zoomed_flag,0,1}" : "#{window_zoomed_flag}",
+      quoteCommand(["resize-pane", "-Z"]),
+    ],
+    options,
+  );
+}
+
+/**
+ * Resize a pane; tmux ignores a dimension its layout cannot honour.
+ *
+ * Every form here unzooms the window first — `cmd_resize_pane_exec` calls
+ * `server_unzoom_window` before it reads any size — so a resize on a zoomed
+ * window both restores the layout and applies the new size.
+ */
 export async function resizePane(
   runtime: RuntimeContext,
   paneId: string | null,

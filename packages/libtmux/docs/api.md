@@ -1426,7 +1426,7 @@ session.sameTmuxIdAs(await session.refreshed()); // true
 
 ## Window
 
-[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showHooks`](#windowshowhooks) · [`setHook`](#windowsethook) · [`unsetHook`](#windowunsethook) · [`showOptions`](#windowshowoptions) · [`showResolvedOptions`](#windowshowresolvedoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`removePlacement`](#windowremoveplacement) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
+[`server`](#windowserver) · [`panes`](#windowpanes) · [`session`](#windowsession) · [`activePane`](#windowactivepane) · [`linkedSessions`](#windowlinkedsessions) · [`showHooks`](#windowshowhooks) · [`setHook`](#windowsethook) · [`unsetHook`](#windowunsethook) · [`showOptions`](#windowshowoptions) · [`showResolvedOptions`](#windowshowresolvedoptions) · [`setOption`](#windowsetoption) · [`unsetOption`](#windowunsetoption) · [`split`](#windowsplit) · [`plan`](#windowplan) · [`nextLayout`](#windownextlayout) · [`previousLayout`](#windowpreviouslayout) · [`rotate`](#windowrotate) · [`resize`](#windowresize) · [`respawn`](#windowrespawn) · [`unzoom`](#windowunzoom) · [`kill`](#windowkill) · [`rename`](#windowrename) · [`move`](#windowmove) · [`link`](#windowlink) · [`unlink`](#windowunlink) · [`removePlacement`](#windowremoveplacement) · [`swapWith`](#windowswapwith) · [`selectLayout`](#windowselectlayout) · [`select`](#windowselect) · [`refreshed`](#windowrefreshed) · [`cmd`](#windowcmd) · [`sameTmuxIdAs`](#windowsametmuxidas)
 
 ### Properties
 
@@ -1693,6 +1693,22 @@ to replace it.
 await window.respawn("sh", { kill: true });
 ```
 
+#### `Window.unzoom`
+
+```ts
+unzoom(options?: CommandOptions): Promise<void>
+```
+
+Restore this window's layout, whichever of its panes was zoomed.
+
+Idempotent and one tmux command, for the reason [`Pane.zoom`](#panezoom) gives.
+Zooming is reached from the pane that should fill the window; unzooming
+has no such choice to make, so it is here as well.
+
+```ts
+await window.unzoom();
+```
+
 #### `Window.kill`
 
 ```ts
@@ -1866,7 +1882,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -2101,8 +2117,43 @@ resize(options: ResizeOptions): Promise<void>
 
 Resize this pane; tmux ignores a dimension its layout cannot honour.
 
+Unzooms the window first, so a resize on a zoomed window restores the
+layout as well as applying the size.
+
 ```ts
 await pane.resize({ height: 20 });
+```
+
+#### `Pane.zoom`
+
+```ts
+zoom(options?: CommandOptions): Promise<void>
+```
+
+Make this pane fill its window, whatever it was doing before.
+
+Idempotent, and one tmux command: tmux offers only a toggle, so this asks
+tmux to evaluate `#{window_zoomed_flag}` and toggle in the same
+invocation rather than reading the flag here and racing the answer.
+`window.zoomedFlag` reports the state a snapshot saw.
+
+```ts
+await pane.zoom();
+```
+
+#### `Pane.unzoom`
+
+```ts
+unzoom(options?: CommandOptions): Promise<void>
+```
+
+Restore this pane's window to its layout, whatever it was doing before.
+
+Idempotent in the same way [`Pane.zoom`](#panezoom) is, and unzooms the window
+even when a different pane in it is the zoomed one.
+
+```ts
+await pane.unzoom();
 ```
 
 #### `Pane.swapWith`

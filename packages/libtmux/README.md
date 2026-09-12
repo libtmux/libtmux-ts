@@ -452,9 +452,19 @@ await pane.pasteBuffer("scratch");
 await window.select();
 await session.selectWindow("build");
 await pane.resize({ width: 100 });
+await pane.zoom();
+await pane.unzoom();
+await window.unzoom();
 await pane.setTitle("build output");
 await pane.kill();
 ```
+
+`zoom` and `unzoom` set a state rather than flipping one. tmux offers only
+`resize-pane -Z`, which toggles, so each call asks tmux to evaluate
+`#{window_zoomed_flag}` and toggle in the same command — idempotent, one
+invocation, and no window in which someone else's resize changes the answer
+between the read and the write. Any ordinary `resize` unzooms first, so a size
+and a zoom cannot both hold.
 
 `direction` says which side a split lands on, which window a new one sits
 beside, and lets a resize adjust rather than set. tmux reaches "above" and

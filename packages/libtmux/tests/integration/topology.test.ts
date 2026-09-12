@@ -369,6 +369,39 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("zooms and unzooms a pane idempotently, and a resize restores the layout", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+
+      const zoomed = async (): Promise<boolean | null> =>
+        (await server.snapshot()).windows.one({ id: window.id }).zoomedFlag;
+
+      const pane = (await server.snapshot()).panes.first({ window: { is: { id: window.id } } });
+      if (pane === undefined) throw new Error("expected a pane to zoom");
+
+      expect(await zoomed()).toBe(false);
+      await pane.zoom();
+      expect(await zoomed()).toBe(true);
+      // tmux offers a toggle; a second call must not undo the first.
+      await pane.zoom();
+      expect(await zoomed()).toBe(true);
+
+      await pane.unzoom();
+      expect(await zoomed()).toBe(false);
+      await pane.unzoom();
+      expect(await zoomed()).toBe(false);
+
+      // Any ordinary resize unzooms, which is tmux's behaviour and not this
+      // package's: `cmd_resize_pane_exec` calls `server_unzoom_window` first.
+      await pane.zoom();
+      expect(await zoomed()).toBe(true);
+      await pane.resize({ height: 5 });
+      expect(await zoomed()).toBe(false);
+    });
+  }, 40_000);
+
   test("swaps two windows", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
