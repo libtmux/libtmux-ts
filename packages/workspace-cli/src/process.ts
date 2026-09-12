@@ -3,13 +3,14 @@ import { open } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
+import { isatty } from "node:tty";
 
 export type ProcessOptions = {
   cwd: string;
   env: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   input?: string;
-  terminal?: boolean;
+  terminal?: boolean | "input";
   output?: (stream: "stdout" | "stderr", text: string) => Promise<void>;
 };
 export type ProcessResult = {
@@ -18,6 +19,25 @@ export type ProcessResult = {
   stderr: string;
   truncated: { stdout: boolean; stderr: boolean };
 };
+export async function openTerminal(
+  options: Pick<ProcessOptions, "cwd" | "env" | "signal">,
+): Promise<{ fd: number; close(): Promise<void> }> {
+  const fd = [0, 1, 2].find(isatty);
+  // Bun cannot map fd 0 to child output; tmux rejects the generic /dev/tty name.
+  if (fd !== undefined) return open(`/dev/fd/${fd}`, "r+");
+  const query = await processRun(["ps", "-p", String(process.pid), "-o", "tty="], {
+    cwd: options.cwd,
+    env: options.env,
+    signal: AbortSignal.any([
+      ...(options.signal ? [options.signal] : []),
+      AbortSignal.timeout(1000),
+    ]),
+  });
+  const name = query.stdout.trim();
+  if (query.code !== 0 || !/^(?:\/dev\/)?[a-zA-Z0-9][a-zA-Z0-9/_-]*$/.test(name))
+    throw new Error("No controlling terminal");
+  return open(name.startsWith("/dev/") ? name : `/dev/${name}`, "r+");
+}
 export function tokenize(value: string): string[] {
   const args: string[] = [];
   let word = "";
@@ -58,14 +78,17 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
   if (options.terminal && options.input !== undefined)
     throw new Error("Terminal processes cannot also receive captured input");
   const grouped = process.platform !== "win32";
-  const terminal = options.terminal ? await open("/dev/tty", "r+") : undefined;
+  const terminal = options.terminal ? await openTerminal(options) : undefined;
   let child;
   try {
+    options.signal?.throwIfAborted();
     child = spawn(argv[0], argv.slice(1), {
       cwd: options.cwd,
       env: options.env,
       stdio: terminal
-        ? [terminal.fd, terminal.fd, terminal.fd]
+        ? options.terminal === "input"
+          ? [terminal.fd, "pipe", "pipe"]
+          : [terminal.fd, terminal.fd, terminal.fd]
         : [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       detached: grouped && !terminal,
     });
