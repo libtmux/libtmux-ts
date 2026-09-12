@@ -17,6 +17,8 @@ import { TmuxTransportError } from "../../src/exc.js";
  */
 
 interface Gate extends CommandTransport {
+  /** The deadline each invocation reached the inner engine with. */
+  readonly budgets: () => (number | undefined)[];
   /** How many executions were running at once, at the busiest moment. */
   readonly peak: () => number;
   /** Let one waiting execution finish. */
@@ -26,15 +28,18 @@ interface Gate extends CommandTransport {
 
 function gate(failWith?: Error): Gate {
   const pending: (() => void)[] = [];
+  const budgets: (number | undefined)[] = [];
   let active = 0;
   let peak = 0;
   let started = 0;
   return {
+    budgets: () => budgets,
     endpoint: "test://gate",
     peak: () => peak,
     release: () => pending.shift()?.(),
     started: () => started,
-    async execute(): Promise<RawCommandResult> {
+    async execute(request: CommandRequest): Promise<RawCommandResult> {
+      budgets.push(request.timeoutMs);
       started += 1;
       active += 1;
       peak = Math.max(peak, active);
@@ -176,5 +181,74 @@ describe("bounded transport", () => {
     for (const limit of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => new BoundedTransport(gate(), limit)).toThrow(RangeError);
     }
+  });
+
+  test("spends the wait on the caller's deadline rather than restarting it", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 1);
+    const holding = bounded.execute(requestFor({ timeoutMs: 1_000 }));
+    await flush();
+    const queued = bounded.execute(requestFor({ timeoutMs: 1_000 }));
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 60));
+    inner.release();
+    await flush();
+
+    // A fresh timer here would let a queued command outlive its own bound:
+    // the caller asked for a wall clock, not for execution time.
+    const [first, second] = inner.budgets();
+    expect(first).toBe(1_000);
+    expect(second).toBeLessThan(1_000);
+
+    inner.release();
+    await Promise.all([holding, queued]);
+  });
+
+  test("leaves a deadline alone when the caller set none", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 1);
+    const run = bounded.execute(requestFor());
+    await flush();
+    inner.release();
+    await run;
+
+    expect(inner.budgets()).toEqual([undefined]);
+  });
+
+  test("lets a command waiting on another command past the ceiling", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 1);
+    const waiting = bounded.execute(requestFor({ commands: [["wait-for", "channel"]] }));
+    await flush();
+
+    // `wait-for` blocks until another tmux command releases it. Counting it
+    // would let the waiter hold the permit its own release needs.
+    const signalling = bounded.execute(requestFor({ commands: [["wait-for", "-S", "channel"]] }));
+    await flush();
+    expect(inner.started()).toBe(2);
+
+    inner.release();
+    inner.release();
+    await Promise.all([waiting, signalling]);
+  });
+
+  test("still counts an invocation that only partly waits", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 1);
+    const holding = bounded.execute(
+      requestFor({ commands: [["wait-for", "channel"], ["kill-pane"]] }),
+    );
+    await flush();
+    const queued = bounded.execute(requestFor());
+    await flush();
+
+    // The exemption is for an invocation that does nothing but wait. One
+    // carrying real work alongside it is work, and is bounded.
+    expect(inner.started()).toBe(1);
+
+    inner.release();
+    await flush();
+    inner.release();
+    await Promise.all([holding, queued]);
   });
 });

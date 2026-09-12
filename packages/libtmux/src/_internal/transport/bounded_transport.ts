@@ -4,6 +4,21 @@ import type { CommandRequest, CommandTransport, RawCommandResult } from "./types
 /** How many invocations one server runs at once when nothing says otherwise. */
 export const DEFAULT_MAX_IN_FLIGHT = 16;
 
+/**
+ * Commands that wait on another command rather than on tmux doing work.
+ *
+ * `wait-for <channel>` blocks until `wait-for -S <channel>` runs, so counting
+ * it against the ceiling lets a waiter hold the permit its own release needs:
+ * one wait deadlocks the pair at a ceiling of one, and sixteen deadlock it at
+ * the default. It occupies a tmux client and no throughput, which is the
+ * opposite of what the ceiling exists to bound.
+ */
+const RENDEZVOUS_COMMANDS: ReadonlySet<string> = new Set(["wait-for"]);
+
+function waitsOnAnotherCommand(request: CommandRequest): boolean {
+  return request.commands.every((command) => RENDEZVOUS_COMMANDS.has(command[0]));
+}
+
 interface Waiter {
   /** Hand this waiter the permit a finished invocation released. */
   grant(): void;
@@ -19,9 +34,11 @@ interface Waiter {
  * live server throughput stops rising at a handful of clients and stays flat
  * from there to sixty-four.
  *
- * Waiting for a permit spends the caller's deadline rather than extending it,
- * so a request that never gets one fails `not_started` instead of starting
- * late. That is the one status a mutation may retry blindly.
+ * Waiting for a permit spends the caller's deadline rather than extending it:
+ * the inner engine gets what is left of `timeoutMs`, not a fresh copy of it,
+ * so queueing cannot make a bounded command outlive its bound. A request that
+ * never gets a slot fails `not_started`, the one status a mutation may retry
+ * blindly.
  *
  * No `endpoint`: server equality reads the engine a caller supplied, not the
  * transport wrapped around it, so carrying one here would be a second answer
@@ -42,9 +59,11 @@ export class BoundedTransport implements CommandTransport {
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
+    if (waitsOnAnotherCommand(request)) return this.#inner.execute(request);
+    const startedAt = Date.now();
     await this.#acquire(request);
     try {
-      return await this.#inner.execute(request);
+      return await this.#inner.execute(remainingBudget(request, startedAt));
     } finally {
       this.#active -= 1;
       this.#waiting.shift()?.grant();
@@ -113,4 +132,20 @@ export class BoundedTransport implements CommandTransport {
       queue.push(waiter);
     });
   }
+}
+
+/**
+ * Hand the inner engine what is left of the caller's deadline.
+ *
+ * Without this a queued request starts a fresh timer on arrival, so waiting
+ * behind another invocation extends the deadline instead of spending it and
+ * `timeoutMs` silently becomes execution time rather than wall clock.
+ */
+function remainingBudget(request: CommandRequest, startedAt: number): CommandRequest {
+  if (request.timeoutMs === undefined) return request;
+  const remaining = request.timeoutMs - (Date.now() - startedAt);
+  // A permit granted exactly on the deadline leaves nothing to run in. One
+  // millisecond lets the inner engine own the timeout, which reports how far
+  // the command got; refusing here could only ever say `not_started`.
+  return { ...request, timeoutMs: Math.max(1, remaining) };
 }
