@@ -235,8 +235,8 @@ for (const [shell, autoload] of [
       const script = join(root, autoload ? "_tmux-workspace" : `completion.${shell}`);
       await writeFile(script, completionScript(catalog, shell));
       const zshLoad = autoload
-        ? `fpath=(${quote(root)} $fpath); autoload -Uz compinit; compinit -u -D`
-        : `autoload -Uz compinit; compinit -D; source ${quote(script)}`;
+        ? `fpath=(${quote(root)} $fpath); autoload -Uz compinit; compinit -i -D`
+        : `autoload -Uz compinit; compinit -i -D; source ${quote(script)}`;
       const setup =
         shell === "bash"
           ? `source ${quote(script)}; bind 'set keyseq-timeout 1'; _capture() { printf '%s\\0' "$READLINE_LINE" >> ${quote(join(root, "buffers"))}; READLINE_LINE=; READLINE_POINT=0; }; bind -x '"\\C-x":_capture'`
