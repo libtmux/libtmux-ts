@@ -204,9 +204,9 @@ async function create(
         env: context.env,
         ...(context.signal ? { signal: context.signal } : {}),
         output: async (stream, text) => {
+          await output.event("script-output", { input_index: inputIndex, stream, text });
           if (output.mode === "human")
             await write(stream === "stdout" ? context.stdout : context.stderr, text);
-          else await output.event("script-output", { input_index: inputIndex, stream, text });
         },
       });
       result.script_output = child;
@@ -362,7 +362,22 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           reserved.add(window.index);
         }
   }
-  const output = new OperationOutput("load", request.mode, context.stdout);
+  const output = new OperationOutput("load", request.mode, context.stdout, async (event, data) => {
+    const level =
+      event === "failed"
+        ? "error"
+        : event === "warning"
+          ? "warning"
+          : ["started", "completed", "script-output", "workspace-completed"].includes(event)
+            ? "info"
+            : "debug";
+    await context.diagnostics?.record(
+      level,
+      event,
+      data,
+      request.mode !== "human" || event !== "script-output",
+    );
+  });
   const results: LoadResult[] = [];
   await output.event("started", { input_count: inputs.length });
   try {
@@ -432,6 +447,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     await output.result({ status: "ok", results, errors: [] });
     return 0;
   } catch (error) {
+    if (output.isFinished) throw error;
     const interrupted = context.signal?.aborted;
     const changed = results.some(
       (result) => result.stage === "completed" || (result.session_id && !result.session_removed),

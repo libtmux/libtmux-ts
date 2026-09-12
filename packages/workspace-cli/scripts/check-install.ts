@@ -142,8 +142,27 @@ await runWithCleanup(
                   ],
                 ];
                 for (const args of cases) {
-                  const result = await execute([runtime, executable, ...args, `--${mode}`], env);
-                  assert.equal(result.stderr, "", args[0]);
+                  const log = args[0] === "load" ? join(project, `${session}.ndjson`) : undefined;
+                  const result = await execute(
+                    [
+                      runtime,
+                      executable,
+                      ...(log ? ["--log-level", "info"] : []),
+                      ...args,
+                      ...(log ? ["--log-file", log] : []),
+                      `--${mode}`,
+                    ],
+                    env,
+                  );
+                  if (log) {
+                    assert.equal(result.stderr, await readFile(log, "utf8"));
+                    const records = result.stderr
+                      .trim()
+                      .split("\n")
+                      .map((line) => JSON.parse(line));
+                    assert(records.some((record) => record.event === "script-output"));
+                    assert.equal(records.at(-1).event, "completed");
+                  } else assert.equal(result.stderr, "", args[0]);
                   assert(!result.stdout.includes("\u001b"), `${args[0]} emitted raw ANSI`);
                   const records =
                     mode === "json"

@@ -1,6 +1,6 @@
 /* eslint-disable no-await-in-loop -- CLI cases run sequentially to bound child process usage. */
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -167,4 +167,41 @@ test("diagnostics reports runtime and masked paths without needing a live server
   expect(data.cwd).toBe("~");
   expect(data.runtime.version).toBeString();
   expect(data.tmux.version).toStartWith("tmux ");
+});
+
+test("load logging records preflight errors and honors the selected severity", async () => {
+  const log = join(root, "load.ndjson");
+  const result = await run([
+    "--log-level",
+    "debug",
+    "load",
+    "missing",
+    "-d",
+    "--json",
+    "--log-file",
+    log,
+  ]);
+  expect(result.code).toBe(1);
+  const records = (await readFile(log, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(
+    records.some((record) => record.level === "debug" && record.event === "command-started"),
+  ).toBe(true);
+  expect(
+    records.some((record) => record.level === "error" && record.event === "command-failed"),
+  ).toBe(true);
+  expect((await stat(log)).mode & 0o777).toBe(0o600);
+  const before = await readFile(log, "utf8");
+  await run(["--log-level", "critical", "load", "missing", "-d", "--json", "--log-file", log]);
+  expect(await readFile(log, "utf8")).toBe(before);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).not.toContain("\u001b");
+  expect(
+    result.stderr
+      .trim()
+      .split("\n")
+      .every((line) => JSON.parse(line).schema_version === 1),
+  ).toBe(true);
 });

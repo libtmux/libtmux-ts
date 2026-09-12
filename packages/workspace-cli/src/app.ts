@@ -19,15 +19,18 @@ import {
 import { CliError, colorEnabled, emitJson, styled, write } from "./output.ts";
 import { search } from "./search.ts";
 import { debugInfo, edit, shell } from "./commands.ts";
+import { Diagnostics } from "./diagnostics.ts";
 
 export type CLIContext = FileContext & {
   stdout: Writable;
   stderr: Writable;
   stdin: Readable;
   signal?: AbortSignal;
+  diagnostics?: Diagnostics;
 };
 
 export async function run(argv: string[], context: CLIContext): Promise<number> {
+  let diagnostics: Diagnostics | undefined;
   let help = "";
   let parserError = "";
   const parser = createParser({
@@ -45,10 +48,28 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     : options.includes("--json")
       ? "json"
       : "human";
+  const report = async (code: string, message: string) => {
+    const text =
+      mode === "human"
+        ? `tmux-workspace: ${message}\n`
+        : JSON.stringify({ schema_version: 1, code, message }) + "\n";
+    await write(context.stderr, text, context.signal);
+  };
+  const reportLogFailure = async (error: unknown) => {
+    try {
+      await report("log_error", error instanceof Error ? error.message : String(error));
+    } catch {
+      // A failed or cancelled diagnostic sink cannot report its own failure.
+    }
+  };
   try {
     parser.command.parse(argv, { from: "user" });
     const request = parser.request();
     mode = request.mode;
+    diagnostics = await Diagnostics.open(request.values, request.mode, context);
+    context = { ...context, diagnostics };
+    context.signal?.throwIfAborted();
+    await diagnostics.record("debug", "command-started", { command: request.command });
     const color = colorEnabled(
       request.mode,
       request.values.color,
@@ -175,6 +196,7 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     }
     throw new CliError("not_implemented", `${request.command} service is not implemented yet`);
   } catch (error) {
+    if (context.signal?.aborted) return 130;
     if (error instanceof CommanderError && error.exitCode === 0) {
       await write(context.stdout, help);
       return 0;
@@ -186,8 +208,28 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
       : error instanceof Error
         ? error.message
         : String(error);
-    if (mode === "human") await write(context.stderr, `tmux-workspace: ${message}\n`);
-    else await emitJson(context.stderr, { schema_version: 1, code, message });
-    return usage ? 2 : error instanceof CliError ? error.exitCode : 1;
+    try {
+      await report(code, message);
+    } catch {
+      // Preserve the command failure when stderr has also closed.
+    }
+    try {
+      await diagnostics?.record("error", "command-failed", { code, message }, false);
+    } catch (logError) {
+      await reportLogFailure(logError);
+    }
+    return context.signal?.aborted
+      ? 130
+      : usage
+        ? 2
+        : error instanceof CliError
+          ? error.exitCode
+          : 1;
+  } finally {
+    try {
+      await diagnostics?.close();
+    } catch (error) {
+      await reportLogFailure(error);
+    }
   }
 }

@@ -207,6 +207,17 @@ test("machine load requires a detached choice before creating anything", async (
   });
 });
 
+test("an unusable log destination fails before creating a session", async () => {
+  await fixture(async (server, root, run) => {
+    const source = join(root, "input.json");
+    await writeFile(source, JSON.stringify({ session_name: "log-refused", windows: [{}] }));
+    const result = await run(["load", source, "-d", "--json", "--log-file", root]);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(await server.hasSession("log-refused")).toBe(false);
+  });
+});
+
 test("bootstrap uses argv and config cwd, with output encoded before pane creation", async () => {
   await fixture(async (_server, root, run) => {
     const script = join(root, "before script.js");
@@ -246,6 +257,32 @@ test("bootstrap uses argv and config cwd, with output encoded before pane creati
       cwd: root,
       args: ["a b", root],
     });
+    const log = join(root, "load.ndjson");
+    const logged = await run([
+      "--log-level",
+      "info",
+      "load",
+      config,
+      "-s",
+      "bootstrap-log-cli",
+      "-d",
+      "--json",
+      "--log-file",
+      log,
+    ]);
+    expect(logged.code).toBe(0);
+    expect(JSON.parse(logged.stdout).status).toBe("ok");
+    const records = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(
+      new Set(
+        records.filter((record) => record.event === "script-output").map((record) => record.stream),
+      ),
+    ).toEqual(new Set(["stderr", "stdout"]));
+    expect(records.at(-1)).toMatchObject({ event: "completed", level: "info", status: "ok" });
+    expect(logged.stderr).toBe(await readFile(log, "utf8"));
   });
 });
 
@@ -274,6 +311,42 @@ test("a failed bootstrap removes its newly created session and reports the faile
       completed_stages: ["session-created", "session-removed"],
     });
     expect(await server.hasSession("failed-bootstrap-cli")).toBe(false);
+    if (process.platform === "linux") {
+      const limited = await processRun(
+        [
+          "/bin/sh",
+          "-c",
+          'trap "" XFSZ; ulimit -f 0; exec "$@"',
+          "log-limit",
+          process.execPath,
+          new URL("../src/main.ts", import.meta.url).pathname,
+          "load",
+          config,
+          "-d",
+          "--json",
+          "-S",
+          server.socketPath!,
+          "--log-file",
+          join(root, "full.ndjson"),
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
+          signal: AbortSignal.timeout(2000),
+        },
+      );
+      expect(limited.code).toBe(1);
+      const logged = JSON.parse(limited.stdout);
+      expect(logged.errors).toEqual(summary.errors);
+      expect(logged.results[0].session_removed).toBe(true);
+      expect(
+        limited.stderr
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .some((record) => record.code === "log_error"),
+      ).toBe(true);
+    }
   });
 });
 
