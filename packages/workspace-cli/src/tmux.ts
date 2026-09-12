@@ -55,7 +55,7 @@ export function connection(values: Record<string, unknown>, context: CLIContext)
       ? { socketName: scalarText(values.socket_name) }
       : {}),
     ...(values.tmux_config_file ? { configFile: scalarText(values.tmux_config_file) } : {}),
-    ...(values.colors ? { colors: values.colors as 88 | 256 } : {}),
+    ...(values.colors ? { colors: values.colors as 256 } : {}),
     ...(context.env.TMUX_BIN ? { tmuxBin: context.env.TMUX_BIN } : {}),
   };
   return new Server(options);
@@ -539,7 +539,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     if (attached && last?.session_id) {
       last.stage = client ? "switching-client" : "attaching";
       const args = terminalArguments(server);
-      if (request.values.colors) args.push(request.values.colors === 256 ? "-2" : "-8");
+      if (request.values.colors === 256) args.push("-2");
       args.push(
         ...(client ? ["switch-client", "-c", client] : ["attach-session"]),
         "-t",

@@ -233,10 +233,10 @@ void size;
 #### `Server.colors`
 
 ```ts
-get colors(): 88 | 256 | undefined
+get colors(): 256 | undefined
 ```
 
-How many colours this server was told the terminal has.
+The terminal color override; undefined leaves detection to tmux.
 
 ```ts
 new Server({ colors: 256 }).colors; // 256

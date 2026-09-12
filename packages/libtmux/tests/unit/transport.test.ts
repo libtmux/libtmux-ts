@@ -194,7 +194,7 @@ describe("NodeSpawnTransport", () => {
 describe("request preparation and batching", () => {
   test("prepares connection flags and caller arguments without shell syntax", () => {
     const connection = new TmuxConnection({
-      colors: 88,
+      colors: 256,
       configFile: "/tmp/tmux.conf",
       environment: { TERM: "screen-256color" },
       executable: "/usr/bin/tmux",
@@ -205,7 +205,7 @@ describe("request preparation and batching", () => {
       commands: [["display-message", ";", "hello world"]],
       environment: { TERM: "screen-256color" },
       executable: "/usr/bin/tmux",
-      globalArgs: ["-8", "-f/tmp/tmux.conf", "-S/tmp/tmux.sock"],
+      globalArgs: ["-2", "-f/tmp/tmux.conf", "-S/tmp/tmux.sock"],
     });
   });
 
