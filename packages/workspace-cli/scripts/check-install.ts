@@ -76,6 +76,34 @@ await runWithCleanup(
     await writeFile(join(project, "editor.cjs"), "process.stdout.write(process.argv.at(-1));\n");
     await writeFile(join(project, "before.cjs"), "console.log('bootstrap\\tΔ\\x1b[31m');\n");
     await writeFile(
+      join(project, "installed_extension.py"),
+      `
+from pathlib import Path
+from tmuxp.plugin import TmuxpPlugin
+class Plugin(TmuxpPlugin):
+    def before_script(self, session):
+        print("installed extension", flush=True)
+class Custom:
+    def __init__(self, session_config, server, plugins):
+        assert "windows" not in session_config
+        assert session_config["start_directory"] == str(Path(__file__).parent)
+        self.config, self.server, self.plugins = session_config, server, plugins
+    def build(self, session=None, append=False):
+        self.session = self.server.new_session(session_name=self.config["session_name"], attach=False)
+`,
+    );
+    const extension = join(project, "extension.json");
+    await writeFile(
+      extension,
+      JSON.stringify({
+        session_name: "extension",
+        start_directory: ".",
+        plugins: ["installed_extension.Plugin"],
+        workspace_builder: "installed_extension:Custom",
+        workspace_builder_paths: ["."],
+      }),
+    );
+    await writeFile(
       join(project, "teamocil.yaml"),
       "name: imported\nwindows:\n  - name: editor\n    panes:\n      - cmd: echo ready\n",
     );
@@ -103,6 +131,7 @@ await runWithCleanup(
               TMUX_PANE: "",
               TMUX_BIN: fixture.tmuxExecutable,
               PYTHONUSERBASE: userBase,
+              TMUX_WORKSPACE_PYTHON: python,
               EDITOR: `${quote(node)} ${quote(join(project, "editor.cjs"))}`,
               FORCE_COLOR: "1",
               NO_COLOR: "",
@@ -246,6 +275,29 @@ await runWithCleanup(
                   }
                   checked++;
                 }
+                const extended = await execute(
+                  [
+                    runtime,
+                    executable,
+                    "load",
+                    extension,
+                    "-s",
+                    `extension-${label}-${mode}`,
+                    "-d",
+                    ...socket,
+                    `--${mode}`,
+                  ],
+                  env,
+                );
+                assert.equal(extended.stderr, "");
+                const terminal = JSON.parse(extended.stdout.trim().split("\n").at(-1)!);
+                assert.equal(terminal.status, "ok");
+                assert.equal(terminal.results[0].effects_scope, "observed");
+                assert.equal(terminal.results[0].effects_unknown, true);
+                assert.deepEqual(terminal.results[0].created_windows, []);
+                assert.equal(terminal.results[0].observed_windows.length, 1);
+                assert.equal(terminal.results[0].script_output.stdout, "installed extension\n");
+                checked++;
               }
               const monochrome = await execute([runtime, executable, "--color", "always", "ls"], {
                 ...env,

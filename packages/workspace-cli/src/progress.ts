@@ -20,6 +20,7 @@ export class LoadProgress {
   private painted: number[] = [];
   private lastDraw = -Infinity;
   private active = false;
+  private countsKnown = true;
   private windowIndex = 0;
   private windowTotal = 0;
   private windowsDone = 0;
@@ -196,7 +197,8 @@ export class LoadProgress {
       return;
     await this.separate();
     const tokens = this.tokens();
-    const label = styled("secondary", this.format, false).replace(
+    const format = this.countsKnown ? this.format : "Loading workspace: {session}";
+    const label = styled("secondary", format, false).replace(
       /\{\{|\}\}|\{([^{}]+)\}/g,
       (match, token: string | undefined) =>
         match === "{{"
@@ -234,8 +236,9 @@ export class LoadProgress {
         this.session = scalarText(data.session_name ?? "");
         this.workspace = scalarText(data.workspace ?? "");
         this.window = "";
-        this.windowTotal = Number(data.window_total);
-        this.sessionPaneTotal = Number(data.session_pane_total);
+        this.countsKnown = data.window_total !== undefined;
+        this.windowTotal = Number(data.window_total ?? 0);
+        this.sessionPaneTotal = Number(data.session_pane_total ?? 0);
         this.windowIndex =
           this.windowsDone =
           this.paneIndex =

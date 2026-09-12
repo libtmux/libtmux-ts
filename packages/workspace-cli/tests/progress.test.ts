@@ -33,6 +33,19 @@ const start = {
   session_pane_total: 3,
 };
 
+test("extension progress omits counters and resumes native formatting for the next input", async () => {
+  const f = fixture({ progress_format: "{session}:{window_total}:{session_pane_total}" });
+  const progress = f.create();
+  await progress.event("workspace-started", {
+    session_name: "extension",
+    workspace: "custom.yaml",
+  });
+  expect(f.chunks.at(-1)).toBe("Loading workspace: extension");
+  await progress.event("workspace-completed", {});
+  await progress.event("workspace-started", start);
+  expect(f.chunks.at(-1)).toBe("project:2:3");
+});
+
 test("progress distinguishes created panes from configured panes and safely expands custom tokens", async () => {
   const f = fixture({
     progress_format:

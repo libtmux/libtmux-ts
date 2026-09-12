@@ -19,8 +19,9 @@ import { CliError, colorEnabled, emitJson, OperationOutput, styled, write } from
 import type { Request } from "./parser.ts";
 import { openTerminal, processRun } from "./process.ts";
 import type { ProcessResult } from "./process.ts";
+import type { BorrowedSession, ExtensionSpec } from "./extensions.ts";
 
-type LoadResult = {
+export type LoadResult = {
   input_index: number;
   workspace: string;
   session_name: string;
@@ -34,7 +35,16 @@ type LoadResult = {
   session_removed?: boolean;
   script_output?: ProcessResult;
   renumber_restore_error?: string;
+  effects_scope?: "observed";
+  effects_unknown?: boolean;
+  observed_windows?: string[];
+  observed_panes?: string[];
+  observation_error?: string;
 };
+type LoadInput = { path: string } & (
+  | { kind: "native"; spec: WorkspaceSpec }
+  | { kind: "extension"; spec: ExtensionSpec }
+);
 
 function option(value: Json): string {
   return typeof value === "boolean" ? (value ? "on" : "off") : scalarText(value);
@@ -70,7 +80,7 @@ function terminalArguments(server: Server): string[] {
         : []),
   ];
 }
-async function currentSession(server: Server, context: CLIContext): Promise<Session> {
+async function currentSession(server: Server, context: CLIContext): Promise<BorrowedSession> {
   const endpoint = currentEndpoint(context);
   if (!endpoint || !context.env.TMUX_PANE)
     throw new CliError(
@@ -96,7 +106,7 @@ async function currentSession(server: Server, context: CLIContext): Promise<Sess
   }).session;
   if (!session)
     throw new CliError("input_required", "The current pane has no session on this server");
-  return session;
+  return { session, daemon: selected.daemonIdentity };
 }
 async function attachmentClient(server: Server, context: CLIContext): Promise<string | undefined> {
   try {
@@ -111,7 +121,7 @@ async function attachmentClient(server: Server, context: CLIContext): Promise<st
     );
   }
   if (!currentEndpoint(context)) return undefined;
-  const session = await currentSession(server, context);
+  const { session } = await currentSession(server, context);
   const query = await processRun(
     [...terminalArguments(server), "display-message", "-p", "#{client_name}"],
     {
@@ -425,37 +435,50 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     request.mode === "human" && (context.stderr as { isTTY?: boolean }).isTTY
       ? (await import("./progress.ts")).LoadProgress.create(request, context)
       : undefined;
-  const inputs: { path: string; spec: WorkspaceSpec }[] = [];
+  const inputs: LoadInput[] = [];
+  let bridge: typeof import("./extensions.ts") | undefined;
   const files = request.values.workspace_files as string[];
   for (const [index, input] of files.entries()) {
     const path = await resolveWorkspace(input, context);
-    const spec = normalize(
-      await readDocument(path),
-      path,
-      context,
+    const document = await readDocument(path);
+    const override =
       index === files.length - 1 && request.values.new_session_name
         ? scalarText(request.values.new_session_name)
-        : undefined,
+        : undefined;
+    if (
+      ["plugins", "workspace_builder", "workspace_builder_paths"].some((key) =>
+        Object.hasOwn(document, key),
+      )
+    )
+      bridge ??= await import("./extensions.ts");
+    const extension = await bridge?.extensionPlan(
+      document,
+      path,
+      context,
+      Boolean(request.values.append),
+      override,
     );
-    const hasPlugins = Array.isArray(spec.data.plugins)
-      ? spec.data.plugins.length > 0
-      : Boolean(spec.data.plugins);
-    if (hasPlugins || spec.data.workspace_builder)
-      throw new CliError(
-        "compatibility_bridge_required",
-        "Python plugins and custom builders require the optional Python bridge",
-      );
-    inputs.push({ path, spec });
+    inputs.push(
+      extension
+        ? { path, kind: "extension", spec: extension }
+        : { path, kind: "native", spec: normalize(document, path, context, override) },
+    );
   }
+  const python = inputs.some((input) => input.kind === "extension")
+    ? await bridge!.extensionRuntime(context)
+    : undefined;
   const server = connection(request.values, context);
   const attached = request.mode === "human" && !request.values.detached && !request.values.append;
   const client = attached ? await attachmentClient(server, context) : undefined;
   let append: Session | undefined;
+  let borrowed: BorrowedSession | undefined;
   const futureIndexes = new Set<number>();
   if (request.values.append) {
-    append = await currentSession(server, context);
+    borrowed = await currentSession(server, context);
+    append = borrowed.session;
     const reserved = new Set(append.windows.toArray().map((window) => Number(window.index)));
-    for (const input of inputs)
+    for (const input of inputs) {
+      if (input.kind !== "native") continue;
       for (const window of input.spec.windows)
         if (window.index !== undefined) {
           if (reserved.has(window.index))
@@ -466,6 +489,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           reserved.add(window.index);
           futureIndexes.add(window.index);
         }
+    }
   }
   const output = new OperationOutput(
     "load",
@@ -495,11 +519,15 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         input_index: index,
         workspace: privatePath(input.path, context),
         session_name: input.spec.name,
-        window_total: input.spec.windows.length,
-        session_pane_total: input.spec.windows.reduce(
-          (total, window) => total + window.panes.length,
-          0,
-        ),
+        ...(input.kind === "native"
+          ? {
+              window_total: input.spec.windows.length,
+              session_pane_total: input.spec.windows.reduce(
+                (total, window) => total + window.panes.length,
+                0,
+              ),
+            }
+          : {}),
       });
       const result: LoadResult = {
         input_index: index,
@@ -513,15 +541,29 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         created_panes: [],
       };
       results.push(result);
-      for (const window of input.spec.windows)
-        if (window.index !== undefined) futureIndexes.delete(window.index);
-      const exists = !append && (await server.hasSession(input.spec.name));
-      const session = exists
-        ? (await server.snapshot()).sessions.one({ name: input.spec.name })
-        : await create(server, input.spec, context, output, result, append, futureIndexes);
+      if (input.kind === "native")
+        for (const window of input.spec.windows)
+          if (window.index !== undefined) futureIndexes.delete(window.index);
+      let session: Session;
+      if (input.kind === "extension") {
+        session = await bridge!.buildExtension(
+          python!,
+          input.spec,
+          input.path,
+          server,
+          context,
+          output,
+          result,
+          borrowed,
+        );
+      } else {
+        result.reused = !append && (await server.hasSession(input.spec.name));
+        session = result.reused
+          ? (await server.snapshot()).sessions.one({ name: input.spec.name })
+          : await create(server, input.spec, context, output, result, append, futureIndexes);
+      }
       result.session_id = session.id;
       result.session_name = session.name ?? input.spec.name;
-      result.reused = exists;
       result.stage = "completed";
       await output.event("workspace-completed", result);
       if (request.mode === "human") {
@@ -533,7 +575,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         );
         await write(
           context.stdout,
-          `${styled("success", exists ? "Reused" : append ? "Appended" : "Loaded", color)} ${styled("subject", session.name, color)}\n`,
+          `${styled("success", result.reused ? "Reused" : append ? "Appended" : "Loaded", color)} ${styled("subject", session.name, color)}\n`,
           context.signal,
         );
       }
@@ -568,7 +610,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     if (output.isFinished) throw error;
     const interrupted = context.signal?.aborted;
     const changed = results.some(
-      (result) => result.stage === "completed" || (result.session_id && !result.session_removed),
+      (result) =>
+        result.effects_unknown ||
+        result.stage === "completed" ||
+        (result.session_id && !result.session_removed),
     );
     await output.result({
       status: changed ? "partial" : "error",

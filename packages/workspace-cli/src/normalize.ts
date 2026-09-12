@@ -130,6 +130,14 @@ function commands(value: Json | undefined, context: FileContext): CommandSpec[] 
     return { ...item, cmd: expand(item.cmd, context) } as CommandSpec;
   });
 }
+export function workspaceName(document: Document, context: FileContext, override?: string): string {
+  const name = expand(
+    override ?? optionalString(document.session_name, "session_name") ?? "",
+    context,
+  );
+  if (!isTmuxName(name)) throw new Error("session_name must be a valid tmux name");
+  return name;
+}
 export function normalize(
   document: Document,
   path: string,
@@ -137,8 +145,7 @@ export function normalize(
   override?: string,
 ): WorkspaceSpec {
   const data = structuredClone(document);
-  const name = expand(override ?? optionalString(data.session_name, "session_name") ?? "", context);
-  if (!isTmuxName(name)) throw new Error("session_name must be a valid tmux name");
+  const name = workspaceName(data, context, override);
   const base = dirname(path);
   behavior(data, base, context);
   const policy = readiness(data);

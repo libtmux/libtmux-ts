@@ -83,6 +83,195 @@ async function fixture(
   );
 }
 
+const extensionTest = test.skipIf(!process.env.LIBTMUX_TEST_PYTHON);
+
+extensionTest("Python plugin output stays separate from native ownership records", async () => {
+  await fixture(async (server, root, run) => {
+    await writeFile(
+      join(root, "extension.py"),
+      `
+from tmuxp.plugin import TmuxpPlugin
+from libtmux.common import get_version
+import os
+class Plugin(TmuxpPlugin):
+    def __init__(self):
+        super().__init__(plugin_name="fixture")
+        assert self.tmux_version == get_version(tmux_bin=os.environ["TMUX_BIN"])
+    def before_script(self, session):
+        print("plugin finished", flush=True)
+`,
+    );
+    const config = join(root, "plugin.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "plugin",
+        plugins: ["extension.Plugin"],
+        workspace_builder: "   ",
+        workspace_builder_paths: ["."],
+        windows: [{ window_name: "main", panes: [""] }],
+      }),
+    );
+    const child = await run(["load", config, "-d", "--ndjson"], {
+      TMUX_WORKSPACE_PYTHON: process.env.LIBTMUX_TEST_PYTHON!,
+    });
+    expect(child.code, child.stdout + child.stderr).toBe(0);
+    const events = child.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(
+      events.some(
+        (event) => event.event === "script-output" && event.text.includes("plugin finished"),
+      ),
+    ).toBe(true);
+    expect(events.some((event) => event.event === "pane-created")).toBe(false);
+    const result = events.at(-1).results[0];
+    const session = (await server.snapshot()).sessions.one({ name: "plugin" });
+    expect(result).toMatchObject({
+      session_id: session.id,
+      effects_scope: "observed",
+      effects_unknown: true,
+      created_windows: [],
+      created_panes: [],
+      observed_windows: session.windows.toArray().map((window) => window.id),
+    });
+  });
+});
+
+extensionTest(
+  "cancelled Python append joins descendants and observes the retained target",
+  async () => {
+    await fixture(async (server, root) => {
+      const before = (await server.snapshot()).sessions.one({ name: "fixture" });
+      await writeFile(
+        join(root, "extension.py"),
+        `
+import json, os, subprocess, sys, time
+from pathlib import Path
+class Custom:
+    def __init__(self, session_config, server, plugins):
+        self.server, self.plugins = server, plugins
+    def build(self, session=None, append=False):
+        self.session = session
+        session.new_window(window_name="survives", attach=False)
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        Path("processes.json").write_text(json.dumps([os.getpid(), child.pid]))
+        print("extension-ready", flush=True)
+        time.sleep(30)
+`,
+      );
+      const config = join(root, "cancel.json");
+      await writeFile(
+        config,
+        JSON.stringify({
+          session_name: "unused",
+          workspace_builder: "extension:Custom",
+          workspace_builder_paths: ["."],
+        }),
+      );
+      const controller = new AbortController();
+      let stdout = "";
+      const code = await runCli(
+        ["--log-level", "info", "load", config, "--append", "--json", "-S", server.socketPath!],
+        {
+          cwd: root,
+          env: {
+            ...process.env,
+            TMUX_BIN: server.tmuxBin,
+            TMUX_WORKSPACE_PYTHON: process.env.LIBTMUX_TEST_PYTHON!,
+            TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
+            TMUX_PANE: before.windows.at(0)!.panes.at(0)!.id,
+          },
+          stdin: Readable.from([]),
+          stdout: new Writable({
+            write(chunk, _encoding, done) {
+              stdout += String(chunk);
+              done();
+            },
+          }),
+          stderr: new Writable({
+            write(chunk, _encoding, done) {
+              if (String(chunk).includes("extension-ready")) controller.abort();
+              done();
+            },
+          }),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
+        },
+      );
+      expect(controller.signal.aborted).toBe(true);
+      expect(code, stdout).toBe(130);
+      const summary = JSON.parse(stdout);
+      expect(summary.status).toBe("partial");
+      expect(summary.errors[0].code).toBe("interrupted");
+      const after = (await server.snapshot()).sessions.one({ id: before.id });
+      expect(summary.results[0]).toMatchObject({
+        session_id: before.id,
+        effects_unknown: true,
+        observed_windows: [after.windows.one({ name: "survives" }).id],
+      });
+      const pids: number[] = JSON.parse(await readFile(join(root, "processes.json"), "utf8"));
+      expect(await Promise.all(pids.map((pid) => readProcessIdentity(pid)))).toEqual(
+        pids.map(() => undefined),
+      );
+    });
+  },
+);
+
+extensionTest(
+  "custom builders may omit windows and preserve borrowed effects on failure",
+  async () => {
+    await fixture(async (server, root, run) => {
+      const before = (await server.snapshot()).sessions.one({ name: "fixture" });
+      await writeFile(
+        join(root, "extension.py"),
+        `
+from pathlib import Path
+class Custom:
+    def __init__(self, session_config, server, plugins):
+        assert "windows" not in session_config
+        assert session_config["start_directory"] == str(Path(__file__).parent)
+        self.config, self.server, self.plugins = session_config, server, plugins
+    def build(self, session=None, append=False):
+        assert append
+        self.session = session
+        session.new_window(window_name="extension", attach=False)
+        raise RuntimeError("failed after window")
+`,
+      );
+      const config = join(root, "custom.json");
+      await writeFile(
+        config,
+        JSON.stringify({
+          session_name: "unused",
+          start_directory: ".",
+          workspace_builder: "extension:Custom",
+          workspace_builder_paths: ["."],
+        }),
+      );
+      const child = await run(["load", config, "--append", "--json"], {
+        TMUX_WORKSPACE_PYTHON: process.env.LIBTMUX_TEST_PYTHON!,
+        TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
+        TMUX_PANE: before.windows.at(0)!.panes.at(0)!.id,
+      });
+      expect(child.code, child.stdout + child.stderr).toBe(1);
+      const summary = JSON.parse(child.stdout);
+      expect(summary.status).toBe("partial");
+      expect(summary.errors[0].code).toBe("extension_failed");
+      const after = (await server.snapshot()).sessions.one({ id: before.id });
+      expect(summary.results[0]).toMatchObject({
+        session_id: before.id,
+        effects_scope: "observed",
+        effects_unknown: true,
+        observed_windows: [after.windows.one({ name: "extension" }).id],
+        created_windows: [],
+        created_panes: [],
+      });
+      expect(after.windows.length).toBe(before.windows.length + 1);
+    });
+  },
+);
+
 test.each(["off", "on"])(
   "load reserves explicit window indexes before implicit allocation with renumbering %s",
   async (renumber) => {

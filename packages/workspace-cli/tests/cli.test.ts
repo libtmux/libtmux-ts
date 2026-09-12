@@ -92,6 +92,37 @@ test("empty listing retains the JSON shape and emits no NDJSON records", async (
   expect((await run(["ls", "--json", "--ndjson"])).stdout).toBe("");
 });
 
+test("all extension inputs are validated before Python or tmux starts", async () => {
+  const first = join(root, "first.json");
+  const second = join(root, "second.json");
+  await writeFile(first, JSON.stringify({ session_name: "first", windows: [{}] }));
+  for (const fields of [
+    { plugins: "module.Plugin" },
+    { workspace_builder: 4 },
+    { workspace_builder_paths: ["missing"] },
+    { workspace_builder: "module:Custom", before_script: null },
+  ]) {
+    await writeFile(second, JSON.stringify({ session_name: "second", windows: [{}], ...fields }));
+    const result = await run(["load", first, second, "--append", "--json"], {
+      TMUX_BIN: "/missing-tmux",
+      TMUX_WORKSPACE_PYTHON: "/missing-python",
+    });
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr).code).toBe("extension_config");
+  }
+  await writeFile(
+    second,
+    JSON.stringify({ session_name: "second", workspace_builder: "module:Custom" }),
+  );
+  const runtime = await run(["load", first, second, "-d", "--json"], {
+    TMUX_BIN: "/missing-tmux",
+    TMUX_WORKSPACE_PYTHON: "/missing-python",
+  });
+  expect(JSON.parse(runtime.stderr).code).toBe("python_runtime");
+  expect(runtime.stdout).toBe("");
+});
+
 test("invalid machine arguments leave stdout empty with a structured usage diagnostic", async () => {
   for (const args of [
     ["--json"],
