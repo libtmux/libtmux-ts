@@ -227,8 +227,8 @@ export function normalize(
   const beforeScript = optionalString(data.before_script, "before_script");
   let bootstrap: string[] | undefined;
   if (beforeScript !== undefined) {
-    const command = expand(beforeScript, context);
-    bootstrap = tokenize(command.startsWith(".") ? resolve(base, command) : command);
+    bootstrap = tokenize(expand(beforeScript, context));
+    if (bootstrap[0]!.startsWith(".")) bootstrap[0] = resolve(base, bootstrap[0]!);
   }
   return {
     data,

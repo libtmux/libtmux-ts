@@ -6,6 +6,24 @@ import type { Document } from "../src/documents.ts";
 
 const context = { cwd: "/project", env: { HOME: "/home/test" } };
 
+test("bootstrap resolution preserves command arguments in directories with spaces", () => {
+  const base = "/project/workspace files";
+  const bootstrap = (before_script: string) =>
+    normalize({ session_name: "dev", windows: [{}], before_script }, `${base}/dev.yaml`, context)
+      .bootstrap;
+  expect(bootstrap("./before.sh 'a b' '' ../argument")).toEqual([
+    `${base}/before.sh`,
+    "a b",
+    "",
+    "../argument",
+  ]);
+  expect(bootstrap("'./before script.sh' '$(printf literal)' ")).toEqual([
+    `${base}/before script.sh`,
+    "$(printf literal)",
+  ]);
+  expect(bootstrap("printf 'a b'")).toEqual(["printf", "a b"]);
+});
+
 test("execution shapes reject malformed options and toggles before creating anything", () => {
   const invalid: Document[] = [
     { options: [] },
