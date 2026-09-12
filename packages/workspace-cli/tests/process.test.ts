@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { processRun, tokenize } from "../src/process.ts";
 import { write } from "../src/output.ts";
-import { runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
+import { resolveNode22, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
 
 test("process arguments preserve quoted spaces and empty values without a shell", () => {
   expect(tokenize('editor --wait "a b" \'\' x\\ y "$HOME"')).toEqual([
@@ -115,14 +115,37 @@ test("stream writes observe asynchronous errors and closure before the callback"
   await expect(write(closed, "record\n")).rejects.toThrow(/closed/);
 });
 
+function parentWithDescendant(mode: "cancel" | "exit"): string {
+  const descendant = 'process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)';
+  const stdio = mode === "cancel" ? "ignore" : "inherit";
+  return `const {spawn}=require("node:child_process");const child=spawn(process.execPath,["-e",${JSON.stringify(descendant)}],{stdio:["ignore","${stdio}","${stdio}","ipc"]});child.on("message",()=>{child.disconnect();process.stdout.write(String(child.pid),()=>{${mode === "exit" ? "process.exit(0)" : ""}});});setInterval(()=>{},1000);`;
+}
+
+test("Node preserves status when inherited capture pipes require forced closure", async () => {
+  const bundle = await Bun.build({
+    entrypoints: [new URL("../src/process.ts", import.meta.url).pathname],
+    target: "node",
+  });
+  expect(bundle.success).toBe(true);
+  const module = `data:text/javascript;base64,${Buffer.from(await bundle.outputs[0]!.text()).toString("base64")}`;
+  const script = `import {processRun} from ${JSON.stringify(module)};const result=await processRun([process.execPath,"-e",${JSON.stringify(parentWithDescendant("exit"))}],{cwd:process.cwd(),env:process.env});process.stdout.write(JSON.stringify(result));`;
+  const child = await processRun([await resolveNode22(), "--input-type=module", "-e", script], {
+    cwd: process.cwd(),
+    env: process.env,
+    signal: AbortSignal.timeout(3000),
+  });
+  expect(child.code, child.stderr).toBe(0);
+  const result = JSON.parse(child.stdout);
+  expect(result.code).toBe(0);
+  expect(Number(result.stdout)).toBeGreaterThan(0);
+  expect(result.truncated.stdout).toBe(true);
+});
+
 test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
   "owned descendants terminate when the parent ends through %s",
   async (mode) => {
     const controller = new AbortController();
-    const descendant =
-      'process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)';
-    const stdio = mode === "cancel" ? "ignore" : "inherit";
-    const parent = `const {spawn}=require("node:child_process");const child=spawn(process.execPath,["-e",${JSON.stringify(descendant)}],{stdio:["ignore","${stdio}","${stdio}","ipc"]});child.on("message",()=>{child.disconnect();process.stdout.write(String(child.pid),()=>{${mode === "exit" ? "process.exit(0)" : ""}});});setInterval(()=>{},1000);`;
+    const parent = parentWithDescendant(mode);
     let pid: number | undefined;
     await runWithCleanup(
       async () => {
