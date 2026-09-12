@@ -1,5 +1,6 @@
 /* eslint-disable no-await-in-loop -- Installed CLI cases share a private server and run sequentially. */
 import assert from "node:assert/strict";
+import { Server } from "libtmux";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -118,10 +119,29 @@ class Custom:
           runRoot,
           sessionName: "fixture",
           tmuxExecutable: tmux,
+          environment: {
+            ...process.env,
+            HOME: project,
+            XDG_CONFIG_HOME: join(project, ".config"),
+            ZDOTDIR: project,
+            SHELL: "/bin/sh",
+            ENV: undefined,
+            BASH_ENV: undefined,
+            TMUX: "",
+            TMUX_PANE: "",
+          },
         });
         assertOwnedSocketPath(fixture.socketPath);
         await runWithCleanup(
           async () => {
+            const server = new Server({
+              environment: fixture.controllerEnvironment,
+              socketPath: fixture.socketPath,
+              tmuxBin: fixture.tmuxExecutable,
+            });
+            await server.setGlobalOption("session", "default-shell", "/bin/sh", {
+              signal: AbortSignal.timeout(2000),
+            });
             const env = {
               ...fixture.controllerEnvironment,
               HOME: project,
@@ -229,10 +249,58 @@ class Custom:
                         1,
                       );
                     }
-                    const deadline = performance.now() + 3000;
-                    while (!(await Bun.file(marker).exists()) && performance.now() < deadline)
-                      await sleep(20);
-                    assert.equal(await readFile(marker, "utf8"), "ready");
+                    try {
+                      const deadline = performance.now() + 3000;
+                      while (!(await Bun.file(marker).exists()) && performance.now() < deadline)
+                        await sleep(20);
+                      assert.equal(await readFile(marker, "utf8"), "ready");
+                    } catch (error) {
+                      const diagnostic: Record<string, unknown> = {
+                        event: "installed-marker-failed",
+                        runtime: label,
+                        mode,
+                        load_stdout: result.stdout.slice(0, 65536),
+                        load_stderr: result.stderr.slice(0, 65536),
+                      };
+                      try {
+                        const signal = AbortSignal.timeout(2000);
+                        const snapshot = await server.snapshot({ signal });
+                        diagnostic.daemon = snapshot.daemonIdentity;
+                        diagnostic.default_shell = (
+                          await snapshot.sessions
+                            .one({ id: item.session_id })
+                            .showResolvedOptions({ signal })
+                        ).get("default-shell");
+                        diagnostic.panes = await Promise.all(
+                          snapshot.panes
+                            .toArray()
+                            .filter((pane) => item.created_panes.includes(pane.id))
+                            .slice(0, 3)
+                            .map(async (pane) => ({
+                              id: pane.id,
+                              pid: pane.format.pane_pid,
+                              command: pane.format.pane_current_command,
+                              dead: pane.format.pane_dead,
+                              cursor_x: pane.cursorX,
+                              cursor_y: pane.cursorY,
+                              capture: (
+                                await pane.capture({ start: -100, joinWrapped: true, signal })
+                              )
+                                .slice(-100)
+                                .join("\n")
+                                .slice(0, 65536),
+                            })),
+                        );
+                      } catch (captureError) {
+                        diagnostic.capture_error = String(captureError);
+                      }
+                      try {
+                        console.error(JSON.stringify(diagnostic).replaceAll(project, "<project>"));
+                      } catch {
+                        // Diagnostic output must not replace the marker failure.
+                      }
+                      throw error;
+                    }
                   } else if (args[0] === "freeze") {
                     const document = mode === "json" ? records[0] : records[0].workspace;
                     assert.equal(document.session_name, session);
