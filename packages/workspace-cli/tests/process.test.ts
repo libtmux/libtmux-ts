@@ -90,10 +90,12 @@ test("cancellation joins a child with pending input and returns interrupt status
       output: async () => {
         interruptedAt = performance.now();
         controller.abort();
+        controller.signal.throwIfAborted();
       },
     },
   );
   expect(result.code).toBe(130);
+  expect(result.stdout).toBe("ready");
   expect(performance.now() - interruptedAt).toBeLessThan(400);
 });
 
@@ -113,26 +115,27 @@ test("stream writes observe asynchronous errors and closure before the callback"
   await expect(write(closed, "record\n")).rejects.toThrow(/closed/);
 });
 
-test.skipIf(process.platform !== "linux")(
-  "cancellation terminates a descendant after its parent closes",
-  async () => {
+test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
+  "owned descendants terminate when the parent ends through %s",
+  async (mode) => {
     const controller = new AbortController();
     const descendant =
       'process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)';
-    const parent = `const {spawn}=require("node:child_process");const child=spawn(process.execPath,["-e",${JSON.stringify(descendant)}],{stdio:["ignore","ignore","ignore","ipc"]});child.on("message",()=>{child.disconnect();process.stdout.write(String(child.pid));});setInterval(()=>{},1000);`;
+    const stdio = mode === "cancel" ? "ignore" : "inherit";
+    const parent = `const {spawn}=require("node:child_process");const child=spawn(process.execPath,["-e",${JSON.stringify(descendant)}],{stdio:["ignore","${stdio}","${stdio}","ipc"]});child.on("message",()=>{child.disconnect();process.stdout.write(String(child.pid),()=>{${mode === "exit" ? "process.exit(0)" : ""}});});setInterval(()=>{},1000);`;
     let pid: number | undefined;
     await runWithCleanup(
       async () => {
         const result = await processRun([process.execPath, "-e", parent], {
           cwd: process.cwd(),
           env: process.env,
-          signal: controller.signal,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
           output: async (_stream, text) => {
             pid = Number(text);
-            controller.abort();
+            if (mode === "cancel") controller.abort();
           },
         });
-        expect(result.code).toBe(130);
+        expect(result.code).toBe(mode === "cancel" ? 130 : 0);
         expect(pid).toBeGreaterThan(0);
         const stateOfChild = () =>
           readFile(`/proc/${pid}/stat`, "utf8").catch((error) => {
@@ -152,6 +155,7 @@ test.skipIf(process.platform !== "linux")(
           state = await stateOfChild();
         }
         expect(state === "" || state.slice(state.lastIndexOf(")") + 2).startsWith("Z ")).toBe(true);
+        pid = undefined;
       },
       async () => {
         if (pid)
