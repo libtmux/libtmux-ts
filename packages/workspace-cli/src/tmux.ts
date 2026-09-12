@@ -243,9 +243,12 @@ async function create(
       context.signal ? { signal: context.signal } : undefined,
     );
   const wait =
-    spec.readiness === "always" ||
-    (spec.readiness === "auto" &&
-      /(^|\/)zsh$/.test((await session.showResolvedOptions()).get("default-shell") ?? ""));
+    spec.windows.some((window) =>
+      window.panes.some((pane) => !pane.shell && pane.commands.length > 0),
+    ) &&
+    (spec.readiness === "always" ||
+      (spec.readiness === "auto" &&
+        /(^|\/)zsh$/.test((await session.showResolvedOptions()).get("default-shell") ?? "")));
   result.completed_stages.push("session-options");
   const placeholder = existing ? undefined : session.windows.at(0)!;
   const reserved = new Set(
@@ -299,11 +302,11 @@ async function create(
         pane_id: pane.id,
         window_id: window.id,
       });
-      if (!paneSpec.shell && wait && !(await ready(pane, context)))
+      if (paneSpec.commands.length > 0 && !paneSpec.shell && wait && !(await ready(pane, context)))
         await output.event("warning", {
           input_index: inputIndex,
           pane_id: pane.id,
-          message: "Pane readiness timed out; sending commands as tmuxp does",
+          message: "Pane readiness timed out; sending commands",
         });
       if (desired.data.layout) await window.selectLayout(scalarText(desired.data.layout));
       result.stage = "pane-commands";

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Server } from "libtmux";
+import { processRun } from "../src/process.ts";
 import {
   assertOwnedSocketPath,
   makeTestDirectory,
@@ -152,6 +153,41 @@ test("freeze machine output reloads window and pane topology", async () => {
         .windows.toArray()
         .map((window) => window.panes.length),
     ).toEqual([2, 1]);
+  });
+});
+
+test("blank panes load without waiting for a prompt", async () => {
+  await fixture(async (server, root) => {
+    await server.setGlobalOption("session", "default-command", "sleep 30");
+    const file = join(root, "blank.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        session_name: "blank-cli",
+        workspace_builder_options: { pane_readiness: "always" },
+        windows: [{ panes: [null, null] }, { panes: [null] }],
+      }),
+    );
+    const result = await processRun(
+      [
+        process.execPath,
+        new URL("../src/main.ts", import.meta.url).pathname,
+        "load",
+        file,
+        "-d",
+        "--json",
+        "-S",
+        server.socketPath!,
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
+        signal: AbortSignal.timeout(1000),
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).status).toBe("ok");
+    expect((await server.snapshot()).sessions.one({ name: "blank-cli" }).windows.length).toBe(2);
   });
 });
 
