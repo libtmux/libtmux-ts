@@ -74,6 +74,13 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      - name: Install the optional workspace Python test runtime
+        run: |
+          python3 -m venv "$RUNNER_TEMP/workspace-python"
+          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+          echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
       # Formatting, linting and the cross-package READMEs are the workspace's,
       # not any one package's.
       - run: bun run format:check
@@ -83,6 +90,7 @@ jobs:
       # failures, which reads exactly like a clean tree.
       - run: bun run typecheck:tooling
       - run: bun run typecheck:readme
+      - run: bun run --cwd packages/workspace-cli build
       # The prose around the compiled snippets: that every doc comment reaches
       # a symbol, that every link resolves, and that the shell blocks name
       # paths and packages this workspace has.
@@ -156,6 +164,10 @@ jobs:
         working-directory: packages/workspace
         run: bun run typecheck && bun run test && bun run test:package && bun run test:install
 
+      - name: Gate the workspace CLI
+        working-directory: packages/workspace-cli
+        run: bun run typecheck && bun run test && bun run test:install
+
       # The recipes above the library package, reaching across it to the
       # workspace builder and the MCP server. After those gates because each
       # runs from inside the package that owns its document, so an import means
@@ -214,14 +226,16 @@ jobs:
         working-directory: packages/workspace
         run: bun run test:package && bun run test:install
 
+      - name: Gate the emitted workspace CLI
+        working-directory: packages/workspace-cli
+        run: bun run test:package
+
   # Every tmux release the package claims to support, not a sample of them.
   # "3.2a or newer" is a claim about 3.3a, 3.5 and 3.6 too, and a matrix of the
   # ends and two favourites proves it for none of them — 3.7 already turned out
   # to be the one release that accepts `break-pane -n` and ignores it.
   #
-  # The library's suites only: the consumers are thin over it, so a tmux
-  # difference they could hit is one its own suites hit first, and running them
-  # once per release buys a repeat rather than a reading.
+  # The CLI also exercises version-sensitive loading, capture and terminal handoff.
   tmux:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -269,6 +283,13 @@ jobs:
       - name: Warm the oracle environment
         run: uv sync --project "$RUNNER_TEMP/libtmux-python"
 
+      - name: Install the optional workspace Python test runtime
+        run: |
+          uv venv --python 3.13 "$RUNNER_TEMP/workspace-python"
+          uv pip install --python "$RUNNER_TEMP/workspace-python/bin/python" 'tmuxp==1.74.0'
+          echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+          echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
       - name: Setup tmux build cache for tmux ${{ matrix.tmux-version }}
         id: tmux-build-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -306,3 +327,9 @@ jobs:
         run: |
           bun run test:integration
           bun run test:differential
+
+      - name: Exercise the workspace CLI on this tmux
+        working-directory: packages/workspace-cli
+        run: |
+          sudo apt-get install -y fish zsh
+          bun run test

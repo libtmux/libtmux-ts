@@ -16,7 +16,7 @@ every change is held to, and the map of what is where, are in
 Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.2a
 or newer.
 
-Development uses the exact Bun 1.4.0 `packageManager` pin; CI also runs the
+Development uses the exact Bun `packageManager` pin; CI also runs the
 supported 1.3.14 floor. The three-runtime regex corpus is evidence that Bun,
 Node and Python agree on a pattern, and it records which engines produced each
 answer, so running it on an unrecorded Bun is asking a question the answers do
@@ -78,6 +78,12 @@ $ bun run typecheck:readme
 
 ```console
 $ bun run docs:links
+```
+
+Build the CLI before checking commands that reference its executable:
+
+```console
+$ bun run --cwd packages/workspace-cli build
 ```
 
 ```console
@@ -167,7 +173,13 @@ the build needs the emitted declarations it produced: `typecheck:ambient-free`,
 `test:node`, and `test:coverage`.
 
 `packages/mcp` and `packages/workspace` each run `typecheck`, `test` and
-`test:package`. `examples` runs `typecheck` and `test`: every example is a
+`test:package`. `packages/workspace-cli` runs `typecheck`, `test`, and
+`test:install`. Its installed-package suite uses Node 22 and Bun; `test:package`
+runs the portable package checks on macOS. CLI completion tests require bash,
+fish, and zsh. CI provisions an isolated `tmuxp==1.74.0` runtime for optional
+Python extension tests through `LIBTMUX_TEST_PYTHON` and `TMUX_WORKSPACE_PYTHON`.
+The native commands do not need Python. `examples` runs `typecheck` and `test`:
+every example is a
 package of its own, and the umbrella runs each sibling, so adding one adds no
 step here.
 
