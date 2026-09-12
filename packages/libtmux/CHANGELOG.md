@@ -12,6 +12,14 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+#### Panes
+
+`Pane.run` sends a command and waits for `until` in the output after the
+shell's echo of the keys. Completing on that echo is refused. The control
+client it opens is disposed when the wait ends, including on timeout or abort.
+
 ### Development
 
 Every CI job now carries a timeout. No lane here has hung, but three sibling
