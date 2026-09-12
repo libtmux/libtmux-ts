@@ -235,4 +235,32 @@ describe("a supplied engine", () => {
       expect(anonymous().equals(anonymous())).toBe(false);
     });
   }, 60_000);
+
+  test("holds no permit while it issues another command, even at a ceiling of one", async () => {
+    await withServer(async (fixture) => {
+      // Every path that issues a command while another is in flight deadlocks
+      // here if one exists, so a ceiling of one is the test rather than a
+      // configuration nobody uses.
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        maxInFlight: 1,
+        socketPath: fixture.socketPath,
+        timeoutMs: 30_000,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      expect((await server.version()).raw).not.toBe("");
+      const session = (await server.snapshot()).sessions.one();
+      const [first, second] = await server.batch([
+        session.plan.newWindow({ name: "ceiling-one" }),
+        session.plan.newWindow({ name: "ceiling-two" }),
+      ]);
+      expect([first.name, second.name]).toEqual(["ceiling-one", "ceiling-two"]);
+
+      const captures = await Promise.all(
+        (await server.snapshot()).panes.toArray().map(async (pane) => pane.capture()),
+      );
+      expect(captures.length).toBeGreaterThan(1);
+    });
+  }, 60_000);
 });

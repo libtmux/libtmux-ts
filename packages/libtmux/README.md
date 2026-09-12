@@ -992,10 +992,32 @@ around that execution path:
 | **connected**  | `await server.connect()`           | Adds notifications and connection-lifetime tracking.  | A server-shaped API in a loop that also reacts to events.         |
 | **watching**   | `server.watch()`                   | Yields tmux's notifications as they happen.           | Reacting to a change without issuing commands through that value. |
 | **planned**    | `.plan` instead of the direct call | Shares one final snapshot across `server.batch([…])`. | Creating or changing several things in order.                     |
-| **concurrent** | `Promise.all`                      | Independent commands overlap.                         | Slow work on independent targets — not ordering-sensitive setup.  |
+| **concurrent** | `Promise.all`                      | Independent commands overlap, up to `maxInFlight`.    | Slow work on independent targets — not ordering-sensitive setup.  |
 
 `connect()` hands back the same handles as the base server and adds an event
 observer. Its commands still use the server engine and process boundaries.
+
+### How many commands run at once
+
+Every invocation is a tmux client process with its own pipes, so a
+`Promise.all` over a whole server starts that many processes. `maxInFlight`
+bounds them, and defaults to 16:
+
+```ts
+const bounded = new Server({ maxInFlight: 4 });
+(await bounded.snapshot()).panes.length;
+```
+
+The ceiling costs no throughput, because there was none to lose: tmux runs
+commands on one thread. Measured against a live server on one machine, capture
+throughput stops rising at four concurrent clients and is flat from there to
+sixty-four, so a wider fan-out buys queueing and process pressure rather than
+work.
+
+Waiting for a slot spends the request's own deadline rather than extending it.
+A request that never gets one raises `TmuxTransportError` with
+`delivery` of `"not_started"` — the one status a mutation may retry blindly —
+and `signal` cancels the wait as it cancels the command.
 
 ### Supplying an engine
 
