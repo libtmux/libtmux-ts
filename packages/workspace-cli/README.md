@@ -59,6 +59,9 @@ report the created objects and the failed stage.
 When clients share a session, tmux selects its most recently active client before
 loading. The CLI captures that client and targets the switch explicitly.
 
+Pane readiness waits apply before sending commands. Empty panes skip the wait,
+including with `workspace_builder_options.pane_readiness: always`.
+
 ## Output
 
 Every command accepts `--json` and `--ndjson` before or after the command name.
