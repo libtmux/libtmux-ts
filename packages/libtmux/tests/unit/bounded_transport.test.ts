@@ -26,7 +26,7 @@ interface Gate extends CommandTransport {
   readonly started: () => number;
 }
 
-function gate(failWith?: Error): Gate {
+function gate(failWith?: Error, blockMs = 0): Gate {
   const pending: (() => void)[] = [];
   const budgets: (number | undefined)[] = [];
   let active = 0;
@@ -44,6 +44,16 @@ function gate(failWith?: Error): Gate {
       active += 1;
       peak = Math.max(peak, active);
       await new Promise<void>((resolve) => pending.push(resolve));
+      // Blocking here rather than in the test body is what makes the late
+      // timer deterministic: the release resolves this, microtasks drain
+      // before any timer task, so the waiter is granted its permit with the
+      // clock already past its deadline.
+      if (blockMs > 0) {
+        const until = Date.now() + blockMs;
+        while (Date.now() < until) {
+          /* hold the loop */
+        }
+      }
       active -= 1;
       if (failWith !== undefined) throw failWith;
       return {
@@ -195,10 +205,11 @@ describe("bounded transport", () => {
     await flush();
 
     // A fresh timer here would let a queued command outlive its own bound:
-    // the caller asked for a wall clock, not for execution time.
+    // the caller asked for a wall clock, not for execution time. The first
+    // never queued, so it owes nothing and carries its deadline exactly.
     const [first, second] = inner.budgets();
     expect(first).toBe(1_000);
-    expect(second).toBeLessThan(1_000);
+    expect(second).toBeLessThan(1_000 - 50);
 
     inner.release();
     await Promise.all([holding, queued]);
@@ -250,5 +261,29 @@ describe("bounded transport", () => {
     await flush();
     inner.release();
     await Promise.all([holding, queued]);
+  });
+
+  test("refuses a permit that arrives after the deadline", async () => {
+    const inner = gate(undefined, 60);
+    const bounded = new BoundedTransport(inner, 1);
+    const holding = bounded.execute(requestFor());
+    await flush();
+    const queued = bounded.execute(requestFor({ timeoutMs: 30 }));
+    const refused = expect(queued).rejects.toMatchObject({
+      delivery: "not_started",
+      kind: "timeout",
+    });
+    await flush();
+
+    // The holder blocks past the queued request's deadline, then releases.
+    // Granting clears the queue timer, so this can only be refused by the
+    // check that runs before dispatch.
+    inner.release();
+    await refused;
+    // `not_started` is only true if nothing was started.
+    expect(inner.started()).toBe(1);
+
+    await flush();
+    await holding;
   });
 });

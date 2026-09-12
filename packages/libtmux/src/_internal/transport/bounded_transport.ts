@@ -20,8 +20,14 @@ function waitsOnAnotherCommand(request: CommandRequest): boolean {
 }
 
 interface Waiter {
-  /** Hand this waiter the permit a finished invocation released. */
-  grant(): void;
+  /**
+   * Offer this waiter the permit a finished invocation released.
+   *
+   * Answers whether it took it. A waiter whose deadline passed while it
+   * queued refuses instead, and the permit has to reach the next one rather
+   * than evaporate with it.
+   */
+  grant(): boolean;
 }
 
 /**
@@ -60,22 +66,31 @@ export class BoundedTransport implements CommandTransport {
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
     if (waitsOnAnotherCommand(request)) return this.#inner.execute(request);
-    const startedAt = Date.now();
-    await this.#acquire(request);
+    const waited = await this.#acquire(request);
     try {
-      return await this.#inner.execute(remainingBudget(request, startedAt));
+      return await this.#inner.execute(afterWaiting(request, waited));
     } finally {
       this.#active -= 1;
-      this.#waiting.shift()?.grant();
+      this.#handOn();
     }
   }
 
-  #acquire(request: CommandRequest): Promise<void> {
+  /** Give the freed permit to the first waiter that can still use it. */
+  #handOn(): void {
+    for (;;) {
+      const next = this.#waiting.shift();
+      if (next === undefined || next.grant()) return;
+    }
+  }
+
+  /** Answers how long the caller waited, which is what its deadline owes. */
+  #acquire(request: CommandRequest): Promise<number> {
     if (this.#active < this.#limit) {
       this.#active += 1;
-      return Promise.resolve();
+      return Promise.resolve(0);
     }
-    return new Promise<void>((resolve, reject) => {
+    const queuedAt = Date.now();
+    return new Promise<number>((resolve, reject) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -102,12 +117,21 @@ export class BoundedTransport implements CommandTransport {
       }
 
       const queue = this.#waiting;
+      const deadline = request.timeoutMs === undefined ? undefined : Date.now() + request.timeoutMs;
       const waiter: Waiter = {
         grant: () => {
-          if (leave(queue, waiter, request.signal)) {
-            this.#active += 1;
-            resolve();
+          if (!leave(queue, waiter, request.signal)) return false;
+          // The timer that would have refused this is an ordinary task, so a
+          // busy loop can leave it pending past its own deadline. Deciding
+          // here as well means one answer either way, and a mutation whose
+          // caller has already given up never reaches tmux.
+          if (deadline !== undefined && Date.now() >= deadline) {
+            refuse("timeout", "timed out waiting for a tmux invocation slot");
+            return false;
           }
+          this.#active += 1;
+          resolve(Date.now() - queuedAt);
+          return true;
         },
       };
 
@@ -135,17 +159,17 @@ export class BoundedTransport implements CommandTransport {
 }
 
 /**
- * Hand the inner engine what is left of the caller's deadline.
+ * Charge the wait to the caller's deadline before the engine starts timing.
  *
  * Without this a queued request starts a fresh timer on arrival, so waiting
  * behind another invocation extends the deadline instead of spending it and
- * `timeoutMs` silently becomes execution time rather than wall clock.
+ * `timeoutMs` silently becomes execution time rather than wall clock. A
+ * request that never queued owes nothing and is handed on untouched, so the
+ * uncontended path carries exactly the deadline it was given.
  */
-function remainingBudget(request: CommandRequest, startedAt: number): CommandRequest {
-  if (request.timeoutMs === undefined) return request;
-  const remaining = request.timeoutMs - (Date.now() - startedAt);
-  // A permit granted exactly on the deadline leaves nothing to run in. One
-  // millisecond lets the inner engine own the timeout, which reports how far
-  // the command got; refusing here could only ever say `not_started`.
-  return { ...request, timeoutMs: Math.max(1, remaining) };
+function afterWaiting(request: CommandRequest, waited: number): CommandRequest {
+  if (waited === 0 || request.timeoutMs === undefined) return request;
+  // A granted waiter was inside its deadline a moment ago, so what is left is
+  // positive; the floor covers only the tick between that check and this one.
+  return { ...request, timeoutMs: Math.max(1, request.timeoutMs - waited) };
 }
