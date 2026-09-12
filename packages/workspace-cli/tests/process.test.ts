@@ -62,13 +62,29 @@ test("a failed output consumer terminates and reaps its child", async () => {
   expect(performance.now() - start).toBeLessThan(2000);
 });
 
-test("cancellation waits for child termination and returns interrupt status", async () => {
+test("child input progresses while both output streams are drained", async () => {
+  const input = "payload Δ\n".repeat(30_000);
+  const result = await processRun(
+    [
+      process.execPath,
+      "-e",
+      'process.stderr.write("x".repeat(200000));let bytes=0;for await(const chunk of process.stdin)bytes+=chunk.length;process.stdout.write(String(bytes));',
+    ],
+    { cwd: process.cwd(), env: process.env, input },
+  );
+  expect(result.code).toBe(0);
+  expect(Number(result.stdout)).toBe(Buffer.byteLength(input));
+  expect(result.truncated.stderr).toBe(true);
+});
+
+test("cancellation joins a child with pending input and returns interrupt status", async () => {
   const controller = new AbortController();
   const result = await processRun(
     [process.execPath, "-e", 'process.stdout.write("ready");setInterval(()=>{},1000)'],
     {
       cwd: process.cwd(),
       env: process.env,
+      input: "x".repeat(200_000),
       signal: controller.signal,
       output: async () => {
         controller.abort();
