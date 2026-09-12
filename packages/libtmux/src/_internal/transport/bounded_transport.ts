@@ -17,16 +17,27 @@ export const DEFAULT_MAX_IN_FLIGHT = 16;
  * lets the release through too, since `wait-for -S` and `display-popup -C`
  * are the same command as the thing they end.
  *
+ * Each command's built-in short name is here too, because tmux resolves
+ * `wait` to `wait-for` and `popup` to `display-popup` after this sees the
+ * argument list. What this cannot see through is a blocking command wrapped
+ * in another one — `if-shell 'wait-for x'` reads as `if-shell` — so a caller
+ * who buries a wait inside a command owns the bound on it.
+ *
  * Commands that wait on tmux doing work — `run-shell`, `source-file`,
  * `load-buffer` — are not here. They finish on their own, and bounding them
  * is the point.
  */
 const UNBOUNDED_COMMANDS: ReadonlySet<string> = new Set([
   "command-prompt",
+  "confirm",
   "confirm-before",
   "display-menu",
   "display-panes",
   "display-popup",
+  "displayp",
+  "menu",
+  "popup",
+  "wait",
   "wait-for",
 ]);
 
@@ -110,7 +121,10 @@ export class BoundedTransport implements CommandTransport {
       this.#active += 1;
       return Promise.resolve(0);
     }
-    const queuedAt = Date.now();
+    // Monotonic: a system clock that moves while a request is queued would
+    // otherwise turn a twenty millisecond wait into a second of credit or a
+    // premature expiry. `observer_transport` measures its budgets the same way.
+    const queuedAt = performance.now();
     return new Promise<number>((resolve, reject) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -146,7 +160,7 @@ export class BoundedTransport implements CommandTransport {
           // busy loop can leave it pending past its own deadline. Deciding
           // here as well means one answer either way, and a mutation whose
           // caller has already given up never reaches tmux.
-          if (deadline !== undefined && Date.now() >= deadline) {
+          if (deadline !== undefined && performance.now() >= deadline) {
             refuse("timeout", "timed out waiting for a tmux invocation slot");
             return false;
           }
@@ -195,7 +209,7 @@ export class BoundedTransport implements CommandTransport {
  */
 function afterWaiting(request: CommandRequest, queuedAt: number): CommandRequest {
   if (queuedAt === 0 || request.timeoutMs === undefined) return request;
-  const remaining = request.timeoutMs - (Date.now() - queuedAt);
+  const remaining = Math.ceil(request.timeoutMs - (performance.now() - queuedAt));
   if (remaining <= 0) {
     throw new TmuxTransportError("timed out waiting for a tmux invocation slot", {
       delivery: "not_started",

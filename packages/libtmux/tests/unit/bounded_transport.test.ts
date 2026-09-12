@@ -229,6 +229,10 @@ describe("bounded transport", () => {
 
   const blocking: readonly (readonly [string, TmuxCommand, TmuxCommand])[] = [
     ["wait-for", ["wait-for", "channel"], ["wait-for", "-S", "channel"]],
+    // tmux resolves each command's built-in short name after this sees the
+    // argument list, so the list has to carry both spellings.
+    ["wait", ["wait", "channel"], ["wait", "-S", "channel"]],
+    ["popup", ["popup", "-t", "%0", "less x"], ["popup", "-C"]],
     ["display-popup", ["display-popup", "-t", "%0", "less x"], ["display-popup", "-C"]],
     [
       "display-menu",
