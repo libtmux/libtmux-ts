@@ -233,7 +233,7 @@ export async function buildExtension(
     result.reused = true;
     return existing;
   }
-  const directory = await mkdtemp(join(tmpdir(), "tmux-workspace-extension-"));
+  const directory = await mkdtemp(join(tmpdir(), "ltx-workspace-extension-"));
   const statePath = join(directory, "state.json");
   result.stage = "extension-build";
   result.effects_scope = "observed";
