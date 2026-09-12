@@ -516,6 +516,49 @@ process.exit(result.status ?? 1);
   },
 );
 
+test("freeze selects the sole session or an explicit session ID", async () => {
+  await fixture(async (server, _root, run) => {
+    const session = (await server.snapshot()).sessions.one({ name: "fixture" });
+    const captures = await Promise.all(
+      [[], [session.id]].map((target) => run(["freeze", ...target, "--json"])),
+    );
+    for (const result of captures) {
+      expect(result.code, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout).session_name).toBe("fixture");
+    }
+    await server.newSession({ name: "second" });
+    const ambiguous = await run(["freeze", "--json"]);
+    expect(ambiguous.code).toBe(2);
+    expect(ambiguous.stdout).toBe("");
+    expect(JSON.parse(ambiguous.stderr).code).toBe("input_required");
+  });
+});
+
+test("freeze authenticates its current pane context and permits an explicit target", async () => {
+  await fixture(async (server, _root, run) => {
+    const second = await server.newSession({ name: "second" });
+    const pane = (await server.snapshot()).sessions
+      .one({ id: second.id })
+      .windows.at(0)!
+      .panes.at(0)!;
+    const env = {
+      TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
+      TMUX_PANE: pane.id,
+    };
+    const current = await run(["freeze", "--json"], env);
+    expect(current.code, current.stderr).toBe(0);
+    expect(JSON.parse(current.stdout).session_name).toBe("second");
+    const stale = { ...env, TMUX: `${server.socketPath},1,0` };
+    const rejected = await run(["freeze", "--json"], stale);
+    expect(rejected.code).toBe(1);
+    expect(rejected.stdout).toBe("");
+    expect(JSON.parse(rejected.stderr).code).toBe("tmux_context");
+    const explicit = await run(["freeze", "fixture", "--json"], stale);
+    expect(explicit.code, explicit.stderr).toBe(0);
+    expect(JSON.parse(explicit.stdout).session_name).toBe("fixture");
+  });
+});
+
 test.each([
   ["json", [], true],
   ["JSON", [], true],

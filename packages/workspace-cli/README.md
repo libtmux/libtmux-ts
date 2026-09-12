@@ -84,6 +84,9 @@ The file format is separate from the JSON/NDJSON output mode.
 `freeze` infers JSON from a `.json` destination and otherwise saves YAML;
 `-f` overrides the inferred format. `--quiet` suppresses its human save message
 and preserves machine results.
+Capture accepts an exact session name or ID. Without one, it uses the authenticated
+current pane's session or the sole session on the selected server. Several sessions
+outside tmux require an explicit target.
 Capture reads honor cancellation. Saves check for cancellation before publishing;
 publication already in progress may still complete.
 
