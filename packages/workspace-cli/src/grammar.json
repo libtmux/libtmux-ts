@@ -109,7 +109,7 @@
         "nargs": 0,
         "choices": null,
         "const": 88,
-        "help": "like -2, but indicates that the terminal supports 88 colours.",
+        "help": "legacy 88-color mode; rejected because tmux 3.2a+ does not implement it.",
         "flags": ["-8"]
       },
       {

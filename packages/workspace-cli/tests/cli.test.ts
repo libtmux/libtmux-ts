@@ -82,6 +82,26 @@ test("invalid machine arguments leave stdout empty with a structured usage diagn
   }
 });
 
+test("legacy 88-color load fails before invoking tmux in every output mode", async () => {
+  const wrapper = join(root, "tmux-probe");
+  const marker = join(root, "called");
+  await writeFile(wrapper, '#!/bin/sh\nprintf called > "$WORKSPACE_TEST_MARKER"\nexit 99\n', {
+    mode: 0o700,
+  });
+  await writeFile(join(root, "dev.json"), JSON.stringify({ session_name: "dev", windows: [{}] }));
+  for (const mode of ["human", "json", "ndjson"]) {
+    const response = await run(
+      ["load", "dev.json", "-d", "-8", ...(mode === "human" ? [] : [`--${mode}`])],
+      { TMUX_BIN: wrapper, WORKSPACE_TEST_MARKER: marker },
+    );
+    expect(await Bun.file(marker).exists()).toBe(false);
+    expect(response.code).toBe(2);
+    expect(response.stdout).toBe("");
+    expect(response.stderr).toContain("88-color");
+    if (mode !== "human") expect(JSON.parse(response.stderr).code).toBe("unsupported_color_mode");
+  }
+});
+
 test("convert machine stdout preserves the document and performs no guessed write", async () => {
   await writeFile(
     join(root, "dev.yaml"),
