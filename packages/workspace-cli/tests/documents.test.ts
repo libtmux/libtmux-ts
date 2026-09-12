@@ -45,6 +45,16 @@ test("a bare name searches globals while an extension selects a cwd file", async
   expect(await resolveWorkspace("dev.yaml", context)).toBe(join(context.cwd, "dev.yaml"));
 });
 
+test("discovery deduplicates directory aliases and excludes hidden files", async () => {
+  const directory = join(root, ".tmuxp");
+  context.env.TMUXP_CONFIGDIR = directory;
+  await writeFile(join(directory, "dev.yaml"), "session_name: dev\n");
+  await writeFile(join(directory, ".hidden.yaml"), "session_name: hidden\n");
+  const result = await discover(context);
+  expect(result.workspaces.map((record) => record.name)).toEqual(["dev"]);
+  expect(result.global_workspace_dirs.filter((record) => record.active)).toHaveLength(1);
+});
+
 test("conversion preserves unknown fields and prevents accidental replacement", async () => {
   const path = join(root, "source.yaml");
   await writeFile(
