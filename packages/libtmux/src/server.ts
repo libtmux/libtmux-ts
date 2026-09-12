@@ -106,7 +106,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  * two ways and are mutually exclusive.
  */
 export interface ServerOptions {
-  readonly colors?: 88 | 256;
+  readonly colors?: 256;
   readonly configFile?: string;
   /**
    * The complete environment passed to every spawned `tmux` process.
@@ -297,13 +297,13 @@ export class Server {
   }
 
   /**
-   * How many colours this server was told the terminal has.
+   * The terminal color override; undefined leaves detection to tmux.
    *
    * ```ts
    * new Server({ colors: 256 }).colors; // 256
    * ```
    */
-  get colors(): 88 | 256 | undefined {
+  get colors(): 256 | undefined {
     return runtimeForServerValue(this)?.connection.colors;
   }
 

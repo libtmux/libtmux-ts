@@ -305,6 +305,7 @@ describe("server graph acquisition", () => {
       const raw = new NodeSpawnTransport({ terminationGraceMs: 100 });
       const controller = new AbortController();
       const server = new Server({
+        colors: 256,
         engine: {
           execute(request) {
             requests.push(request);
@@ -322,6 +323,7 @@ describe("server graph acquisition", () => {
       expect(snapshot.daemonIdentity.startTime).toMatch(/^\d+$/u);
       expect(Object.isFrozen(snapshot.daemonIdentity)).toBe(true);
       expect(requests.map(({ commands }) => commands.length)).toEqual([1, 5]);
+      expect(requests.every(({ globalArgs }) => globalArgs?.includes("-2"))).toBe(true);
       expect(requests[0]?.signal).toBeDefined();
       expect(requests[0]?.signal).not.toBe(controller.signal);
       expect(requests[1]?.signal).toBe(controller.signal);

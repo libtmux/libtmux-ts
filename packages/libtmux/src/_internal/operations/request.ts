@@ -14,7 +14,6 @@ import { snapshotInvocationRequest, TmuxTransportError } from "../transport/type
 export function connectionArguments(connection: TmuxConnection): string[] {
   const args: string[] = [];
   if (connection.colors === 256) args.push("-2");
-  if (connection.colors === 88) args.push("-8");
   if (connection.configFile !== undefined) args.push(`-f${connection.configFile}`);
   if (connection.socketName !== undefined) args.push(`-L${connection.socketName}`);
   if (connection.socketPath !== undefined) args.push(`-S${connection.socketPath}`);

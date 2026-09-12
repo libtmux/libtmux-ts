@@ -164,7 +164,6 @@ export class LazyCapabilityBinding implements CapabilityBinding {
   #request(signal: AbortLike): CommandRequest {
     const args = ["-N"];
     if (this.#connection.colors === 256) args.push("-2");
-    if (this.#connection.colors === 88) args.push("-8");
     if (this.#connection.configFile !== undefined) args.push(`-f${this.#connection.configFile}`);
     if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
     if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);
