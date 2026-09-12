@@ -12,6 +12,11 @@ remember.
 
 ## Unreleased
 
+### Release tooling
+
+`@libtmux/workspace-cli` participates in coordinated version checks, package
+canaries, and publication with the library, MCP server, and workspace builder.
+
 ## 0.1.0-alpha.9 (2026-09-12)
 
 ### `libtmux`

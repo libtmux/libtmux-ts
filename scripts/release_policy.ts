@@ -34,6 +34,11 @@ export const RELEASE_PACKAGES: readonly ReleasePackageDescriptor[] = [
     internalVersionFields: ["peerDependencies", "devDependencies"],
     name: "@libtmux/workspace",
   },
+  {
+    directory: "workspace-cli",
+    internalVersionFields: ["peerDependencies", "devDependencies"],
+    name: "@libtmux/workspace-cli",
+  },
 ];
 
 function parseSemanticVersion(value: string): SemanticVersion {

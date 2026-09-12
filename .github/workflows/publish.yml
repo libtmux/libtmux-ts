@@ -60,7 +60,7 @@ jobs:
       # dist in it.
       - name: Build and check every package
         run: |
-          for package in libtmux mcp workspace; do
+          for package in libtmux mcp workspace workspace-cli; do
             ( cd "packages/$package" && bun run test:package && bun run test:install )
           done
 

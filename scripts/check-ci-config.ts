@@ -299,13 +299,13 @@ if (node22 < 0 || node22Path <= node22 || node24 <= node22Path) {
 const packageCheck = publishSteps.find(
   (step) => step.name === "Build and check every package",
 )?.run;
-const expectedPackageCheck = `for package in libtmux mcp workspace; do
+const expectedPackageCheck = `for package in libtmux mcp workspace workspace-cli; do
   ( cd "packages/$package" && bun run test:package && bun run test:install )
 done
 `;
 if (packageCheck !== expectedPackageCheck) {
   failures.push(
-    ".github/workflows/publish.yml: must run test:install after test:package for libtmux, mcp, and workspace",
+    ".github/workflows/publish.yml: must run test:install after test:package for libtmux, mcp, workspace, and workspace-cli",
   );
 }
 

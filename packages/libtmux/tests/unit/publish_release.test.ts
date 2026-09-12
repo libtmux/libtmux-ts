@@ -21,6 +21,7 @@ const packages = [
   ["libtmux", "libtmux"],
   ["mcp", "@libtmux/mcp"],
   ["workspace", "@libtmux/workspace"],
+  ["workspace-cli", "@libtmux/workspace-cli"],
 ] as const;
 
 interface RegistryFixture {
@@ -51,7 +52,7 @@ async function makeReleaseFixture(version: string): Promise<{
       const internalVersions =
         directory === "mcp"
           ? { dependencies: { libtmux: version } }
-          : directory === "workspace"
+          : directory === "workspace" || directory === "workspace-cli"
             ? {
                 devDependencies: { libtmux: version },
                 peerDependencies: { libtmux: version },
@@ -162,9 +163,12 @@ function makeReleaseIO(
       publishes.push({ dryRun, name: artifact.name, tag, tarballPath });
       calls.push(`publish:${artifact.name}`);
       if (dryRun || options.publishUpdatesRegistry === false) return;
-      const target = registry.get(artifact.name);
-      if (target === undefined) throw new Error(`missing registry package ${artifact.name}`);
+      const target = registry.get(artifact.name) ?? {
+        distTags: {},
+        versions: new Map<string, string>(),
+      };
       const apply = (): void => {
+        registry.set(artifact.name, target);
         target.versions.set(artifact.version, artifact.integrity);
         if (options.publishSkipsDistTag !== true) target.distTags[tag] = artifact.version;
       };
@@ -207,7 +211,7 @@ describe("coordinated release", () => {
     },
   );
 
-  test("publishes the three stable tarballs after every preflight and verifies them", async () => {
+  test("includes the workspace CLI in every preflight and coordinated publication", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
     const registry = makeRegistry();
     const { calls, io, publishes } = makeReleaseIO(registry);
@@ -242,12 +246,12 @@ describe("coordinated release", () => {
       const firstPublish = calls.findIndex((call) => call.startsWith("publish:"));
       expect(
         calls.slice(0, firstPublish).filter((call) => call.startsWith("package:")),
-      ).toHaveLength(3);
+      ).toHaveLength(packages.length);
       expect(
         calls.slice(0, firstPublish).filter((call) => call.startsWith("version:")),
-      ).toHaveLength(3);
-      expect(calls.filter((call) => call.startsWith("package:"))).toHaveLength(6);
-      expect(calls.filter((call) => call.startsWith("version:"))).toHaveLength(6);
+      ).toHaveLength(packages.length);
+      expect(calls.filter((call) => call.startsWith("package:"))).toHaveLength(packages.length * 2);
+      expect(calls.filter((call) => call.startsWith("version:"))).toHaveLength(packages.length * 2);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -303,12 +307,16 @@ describe("coordinated release", () => {
       expect(report).toEqual({
         distTag: "latest",
         dryRun: false,
-        published: ["@libtmux/mcp", "@libtmux/workspace"],
+        published: ["@libtmux/mcp", "@libtmux/workspace", "@libtmux/workspace-cli"],
         skipped: ["libtmux"],
         version: "1.0.0",
         warnings: [],
       });
-      expect(publishes.map(({ name }) => name)).toEqual(["@libtmux/mcp", "@libtmux/workspace"]);
+      expect(publishes.map(({ name }) => name)).toEqual([
+        "@libtmux/mcp",
+        "@libtmux/workspace",
+        "@libtmux/workspace-cli",
+      ]);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -548,6 +556,8 @@ describe("coordinated release", () => {
     ["mcp", "dependencies"],
     ["workspace", "peerDependencies"],
     ["workspace", "devDependencies"],
+    ["workspace-cli", "peerDependencies"],
+    ["workspace-cli", "devDependencies"],
   ] as const)("rejects a stale %s %s libtmux edge before packing", async (directory, field) => {
     const fixture = await makeReleaseFixture("1.0.0");
     const manifestPath = join(fixture.root, "packages", directory, "package.json");
@@ -645,7 +655,7 @@ describe("coordinated release", () => {
     }
   });
 
-  test("fails when the final three-package postcondition is incomplete", async () => {
+  test("fails when the final coordinated postcondition is incomplete", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
     const { io, publishes } = makeReleaseIO(makeRegistry(), {
       publishUpdatesRegistry: false,
@@ -663,7 +673,7 @@ describe("coordinated release", () => {
           io,
         ),
       ).rejects.toThrow("release postcondition failed");
-      expect(publishes).toHaveLength(3);
+      expect(publishes).toHaveLength(packages.length);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -697,7 +707,7 @@ describe("coordinated release", () => {
       );
 
       expect(waits).toEqual([30_000]);
-      expect([...queries.values()]).toEqual([3, 3, 3]);
+      expect([...queries.values()]).toEqual(packages.map(() => 3));
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -884,7 +894,7 @@ describe("registry read lag after publishing", () => {
       );
 
       expect(report.published).toEqual(packages.map(([, name]) => name));
-      expect(publishes).toHaveLength(3);
+      expect(publishes).toHaveLength(packages.length);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
