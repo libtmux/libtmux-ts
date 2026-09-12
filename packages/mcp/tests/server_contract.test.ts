@@ -280,3 +280,56 @@ test("describeStartupFailure falls back to the message for an unrecognized failu
   );
   expect(describeStartupFailure("not an error", {})).toBe("not an error");
 });
+
+test("resize_pane treats zoom as a state rather than passing tmux's toggle through", async () => {
+  await withServer(async (fixture) => {
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string; windowId: string }>(
+        await client.callTool({
+          arguments: { height: 30, name: "mcp-zoom", width: 100, windowName: "main" },
+          name: "create_session",
+        }),
+      );
+      await client.callTool({
+        arguments: { paneId: created.paneId, vertical: true },
+        name: "split_window",
+      });
+
+      const zoomed = async (): Promise<boolean> =>
+        structured<{ window: { zoomed: boolean } }>(
+          await client.callTool({
+            arguments: { windowId: created.windowId },
+            name: "get_window_info",
+          }),
+        ).window.zoomed;
+
+      const setZoom = async (zoom: boolean): Promise<void> => {
+        const answer = await client.callTool({
+          arguments: { paneId: created.paneId, zoom },
+          name: "resize_pane",
+        });
+        expect(answer.isError, JSON.stringify(answer)).not.toBe(true);
+      };
+
+      expect(await zoomed()).toBe(false);
+      await setZoom(true);
+      expect(await zoomed()).toBe(true);
+      // A toggle would undo the first call; a state does not.
+      await setZoom(true);
+      expect(await zoomed()).toBe(true);
+
+      await setZoom(false);
+      expect(await zoomed()).toBe(false);
+      await setZoom(false);
+      expect(await zoomed()).toBe(false);
+
+      // tmux unzooms before applying a size, so the two cannot both hold.
+      const both = await client.callTool({
+        arguments: { height: 5, paneId: created.paneId, zoom: true },
+        name: "resize_pane",
+      });
+      expect(both.isError).toBe(true);
+      expect(JSON.stringify(both)).toContain("zoom cannot be combined with a size");
+    });
+  });
+}, 60_000);

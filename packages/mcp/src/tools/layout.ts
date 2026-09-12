@@ -109,7 +109,13 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
         height: z.number().int().positive().optional(),
         paneId: paneIdSchema,
         width: z.number().int().positive().optional(),
-        zoom: z.boolean().optional().describe("Toggle this pane filling its window."),
+        zoom: z
+          .boolean()
+          .optional()
+          .describe(
+            "true makes this pane fill its window, false restores the layout. " +
+              "A state, not a toggle: sending the same value twice is a no-op.",
+          ),
       },
       outputSchema: { pane: paneViewSchema },
       title: "Resize pane",
@@ -118,8 +124,22 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
       const snapshot = await context.snapshot();
       const pane = requirePane(snapshot, paneId);
       if (isFailure(pane)) return pane;
-      if (zoom === true) {
-        await pane.cmd("resize-pane", ["-Z"]);
+      if (zoom !== undefined) {
+        // tmux unzooms a window before it applies any size, so the two
+        // requests cannot both hold. Say so rather than silently dropping one.
+        if (
+          amount !== undefined ||
+          direction !== undefined ||
+          height !== undefined ||
+          width !== undefined
+        ) {
+          return fail({
+            hint: "Send zoom on its own, or send the size on its own.",
+            reason:
+              "zoom cannot be combined with a size: tmux unzooms a window before resizing it.",
+          });
+        }
+        await (zoom ? pane.zoom() : pane.unzoom());
       } else {
         await pane.resize({
           ...(amount === undefined ? {} : { amount }),
