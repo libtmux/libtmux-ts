@@ -99,6 +99,7 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
   let failure: unknown;
   let escalation: ReturnType<typeof setTimeout> | undefined;
   let drainDeadline: ReturnType<typeof setTimeout> | undefined;
+  const forcedClose = { stdout: false, stderr: false };
   let escalationDone: Promise<void> | undefined;
   let finishEscalation: (() => void) | undefined;
   const kill = (signal: NodeJS.Signals | 0): boolean => {
@@ -147,8 +148,13 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
       drainDeadline = setTimeout(() => {
         stop();
         void escalationDone?.then(() => {
-          child.stdout?.destroy();
-          child.stderr?.destroy();
+          for (const name of ["stdout", "stderr"] as const) {
+            const stream = child[name];
+            if (stream && !stream.readableEnded) {
+              forcedClose[name] = true;
+              stream.destroy();
+            }
+          }
         });
       }, 100);
     });
@@ -183,11 +189,14 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
       const final = decoder.end();
       if (final) await options.output?.(name, final);
     } catch (error) {
-      if (!options.signal?.aborted || error !== options.signal.reason) failure ??= error;
+      const cancelled = options.signal?.aborted && error === options.signal.reason;
+      const stopped =
+        forcedClose[name] && (error as NodeJS.ErrnoException).code === "ERR_STREAM_PREMATURE_CLOSE";
+      if (!cancelled && !stopped) failure ??= error;
       stop();
       stream.destroy();
     }
-    const truncated = total > bytes;
+    const truncated = total > bytes || forcedClose[name];
     return {
       text: new TextDecoder().decode(Buffer.concat(chunks), { stream: truncated }),
       truncated,
