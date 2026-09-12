@@ -62,6 +62,12 @@ loading. The CLI captures that client and targets the switch explicitly.
 Pane readiness waits apply before sending commands. Empty panes skip the wait,
 including with `workspace_builder_options.pane_readiness: always`.
 
+Explicit `window_index` values reserve their slots before implicit windows are
+allocated from the effective `base-index`; `null` leaves the index unspecified.
+Append also reserves indexes from later input files. Removing the temporary bootstrap window preserves requested
+indexes and restores the prior local or inherited `renumber-windows` setting.
+A failed restoration appears as `renumber_restore_error` in the load result.
+
 ## Output
 
 Every command accepts `--json` and `--ndjson` before or after the command name.
