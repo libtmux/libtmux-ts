@@ -33,13 +33,18 @@ windows:
 Load on a separate tmux socket:
 
 ```console
-$ node packages/workspace-cli/dist/main.js load ./workspace.yaml -L workspace-cli-demo -d --json
+$ node packages/workspace-cli/dist/main.js load ./workspace.yaml \
+    -L workspace-cli-demo \
+    -d \
+    --json
 ```
 
 Capture its live topology:
 
 ```console
-$ node packages/workspace-cli/dist/main.js freeze dev -L workspace-cli-demo --json
+$ node packages/workspace-cli/dist/main.js freeze dev \
+    -L workspace-cli-demo \
+    --json
 ```
 
 Detached loading preserves an existing session. Explicit append adds windows
@@ -74,10 +79,17 @@ a controlling terminal.
 
 Native discovery, conversion, imports, common searches, detached load, append,
 capture, editor invocation, diagnostics, and the Python shell have executable
-tests. Full Python regular-expression compatibility, plugin/custom-builder
+tests. The Linux installed-package check packs the CLI and core, installs both
+offline into an empty project, and exercises every command in JSON and NDJSON
+on Node 22 and Bun. It needs the optional Python runtime described above:
+
+```console
+$ bun run --cwd packages/workspace-cli test:install
+```
+
+Full Python regular-expression compatibility, plugin/custom-builder
 loading, interactive load/attachment and prompts, progress presets, log flags,
-generated references/completions, installed-package checks, and benchmarks
-remain unfinished.
+generated references/completions, and benchmarks remain unfinished.
 
 The core library keeps its zero-runtime-dependency contract. Commander and YAML
 are bundled into this CLI; `libtmux` remains a separate package.

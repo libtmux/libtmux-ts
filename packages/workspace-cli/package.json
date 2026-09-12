@@ -12,9 +12,10 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "bun build src/main.ts --target node --outfile dist/main.js --external libtmux",
+    "build": "rm -rf dist && bun build src/main.ts --target node --outdir dist --splitting --external libtmux",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test tests"
+    "test": "bun test tests",
+    "test:install": "bun run build && bun scripts/check-install.ts"
   },
   "devDependencies": {
     "commander": "15.0.0",

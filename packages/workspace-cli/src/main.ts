@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { run } from "./app.ts";
+// Node warns during module loading when both color variables are present.
+if (process.env.NO_COLOR) delete process.env.FORCE_COLOR;
+else if (process.env.NO_COLOR === "") delete process.env.NO_COLOR;
 
 const controller = new AbortController();
 let pipeClosed = false;
@@ -13,6 +15,7 @@ for (const stream of [process.stdout, process.stderr])
       process.exitCode = 141;
     } else throw error;
   });
+const { run } = await import("./app.ts");
 const exitCode = await run(process.argv.slice(2), {
   cwd: process.cwd(),
   env: process.env,
