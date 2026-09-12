@@ -97,10 +97,7 @@ async function currentSession(server: Server, context: CLIContext): Promise<Borr
     current.pid !== selected.daemonIdentity.pid ||
     current.startTime !== selected.daemonIdentity.startTime
   )
-    throw new CliError(
-      "tmux_context",
-      "This operation must target the current pane's tmux server; use -d to load elsewhere",
-    );
+    throw new CliError("tmux_context", "This operation must target the current pane's tmux server");
   const session = selected.panes.one({
     id: context.env.TMUX_PANE,
   }).session;
@@ -646,12 +643,35 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     await progress?.clear(AbortSignal.timeout(100)).catch(() => {});
   }
 }
+async function freezeSession(
+  server: Server,
+  request: Request,
+  context: CLIContext,
+): Promise<Session> {
+  const name = request.values.session_name;
+  const explicit = name !== null && name !== undefined;
+  if (!explicit && context.env.TMUX) return (await currentSession(server, context)).session;
+  const acquisition = context.signal ? { signal: context.signal } : {};
+  const sessions = (await server.snapshot(acquisition)).sessions.toArray();
+  if (explicit) {
+    const target = scalarText(name);
+    const session = sessions.find((item) => item.name === target || item.id === target);
+    if (!session) throw new CliError("session_not_found", `Session not found: ${target}`);
+    return session;
+  }
+  if (sessions.length === 1) return sessions[0]!;
+  if (!sessions.length) throw new CliError("session_not_found", "No live sessions to capture");
+  throw new CliError(
+    "input_required",
+    "Several sessions are available; specify a session name or ID to freeze",
+    2,
+  );
+}
+
 export async function freeze(request: Request, context: CLIContext): Promise<number> {
   const server = connection(request.values, context);
-  const name = request.values.session_name;
-  if (!name) throw new CliError("input_required", "Specify the session to freeze");
+  const session = await freezeSession(server, request, context);
   const acquisition = context.signal ? { signal: context.signal } : {};
-  const session = (await server.snapshot(acquisition)).sessions.one({ name: scalarText(name) });
   const windows: Document[] = [];
   for (const window of session.windows.toArray()) {
     const panes = window.panes.toArray().map((pane) => ({
