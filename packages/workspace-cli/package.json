@@ -17,6 +17,7 @@
     "docs:check": "bun scripts/generate-reference.ts --check",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test tests",
+    "test:package": "bun run build && bun scripts/check-install.ts --package-only",
     "test:install": "bun run build && bun scripts/check-install.ts"
   },
   "devDependencies": {

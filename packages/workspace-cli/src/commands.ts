@@ -1,5 +1,6 @@
 /* eslint-disable no-await-in-loop -- Diagnostic fields render in order to the same stream. */
 import { platform, release } from "node:os";
+import manifest from "../package.json" with { type: "json" };
 import type { CLIContext } from "./app.ts";
 import { scalarText, privatePath, resolveWorkspace } from "./documents.ts";
 import { CliError, colorEnabled, emitJson, OperationOutput, styled, write } from "./output.ts";
@@ -62,7 +63,7 @@ export async function debugInfo(request: Request, context: CLIContext): Promise<
   }
   const document = {
     port: "typescript",
-    version: "0.1.0-alpha.8",
+    version: manifest.version,
     platform: platform(),
     release: release(),
     cwd: privatePath(context.cwd, context),
