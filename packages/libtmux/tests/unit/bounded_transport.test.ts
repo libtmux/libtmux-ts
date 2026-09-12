@@ -6,6 +6,7 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import type { TmuxCommand } from "../../src/engine.js";
 import { TmuxTransportError } from "../../src/exc.js";
 
 /**
@@ -226,7 +227,7 @@ describe("bounded transport", () => {
     expect(inner.budgets()).toEqual([undefined]);
   });
 
-  test.each([
+  const blocking: readonly (readonly [string, TmuxCommand, TmuxCommand])[] = [
     ["wait-for", ["wait-for", "channel"], ["wait-for", "-S", "channel"]],
     ["display-popup", ["display-popup", "-t", "%0", "less x"], ["display-popup", "-C"]],
     [
@@ -234,22 +235,27 @@ describe("bounded transport", () => {
       ["display-menu", "-t", "%0", "Kill", "k", "kill-pane"],
       ["display-menu", "-C"],
     ],
-  ])("lets %s and the command that ends it past the ceiling", async (_name, blocks, ends) => {
-    const inner = gate();
-    const bounded = new BoundedTransport(inner, 1);
-    const waiting = bounded.execute(requestFor({ commands: [blocks] }));
-    await flush();
+  ];
 
-    // Each blocks until something outside the invocation releases it, so
-    // counting it would let it hold the permit its own release needs.
-    const releasing = bounded.execute(requestFor({ commands: [ends] }));
-    await flush();
-    expect(inner.started()).toBe(2);
+  test.each(blocking)(
+    "lets %s and the command that ends it past the ceiling",
+    async (_name, blocks, ends) => {
+      const inner = gate();
+      const bounded = new BoundedTransport(inner, 1);
+      const waiting = bounded.execute(requestFor({ commands: [blocks] }));
+      await flush();
 
-    inner.release();
-    inner.release();
-    await Promise.all([waiting, releasing]);
-  });
+      // Each blocks until something outside the invocation releases it, so
+      // counting it would let it hold the permit its own release needs.
+      const releasing = bounded.execute(requestFor({ commands: [ends] }));
+      await flush();
+      expect(inner.started()).toBe(2);
+
+      inner.release();
+      inner.release();
+      await Promise.all([waiting, releasing]);
+    },
+  );
 
   test("still bounds a command that waits on tmux doing work", async () => {
     const inner = gate();
