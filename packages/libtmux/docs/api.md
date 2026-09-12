@@ -1140,8 +1140,8 @@ so the planned mutations share one final snapshot.
 
 ```ts
 const [editor, logs] = await server.batch([
-  session.plan.newWindow({ name: "editor" }),
-  session.plan.newWindow({ name: "logs" }),
+  session.plan.newWindow({ index: 3, name: "editor" }),
+  session.plan.newWindow({ index: 4, name: "logs" }),
 ]);
 ```
 
@@ -1328,9 +1328,16 @@ handle reports those links. When the id is enough,
 `server.pipeline([session.plan.newWindow().argv])` returns it for one
 command, whatever the server's size.
 
+`index` selects an exact slot. An occupied slot fails without replacing
+its window; omitting `index` leaves placement to tmux.
+
+@throws TypeError when `index` is outside 0 through 2147483647, is not an
+integer, or is combined with `direction`.
+
 ```ts
-const created = await session.newWindow({ name: "editor" });
+const created = await session.newWindow({ index: 3, name: "editor" });
 created.name; // "editor"
+created.index; // 3
 ```
 
 #### `Session.kill`

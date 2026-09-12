@@ -22,6 +22,7 @@ import {
 } from "../../src/_internal/operations/plans.js";
 import { splitSize } from "../../src/types.js";
 import { PANE_DIRECTION_FLAG_MAP, PaneDirection } from "../../src/constants.js";
+import { WindowDirection } from "../../src/constants.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 
 /**
@@ -136,6 +137,26 @@ describe("lifecycle command arguments", () => {
         "%0",
       ]);
     }
+  });
+
+  test("creates a window at an exact session index", () => {
+    for (const index of [0, 3, 2_147_483_647]) {
+      expect(planNewWindow("$4", { index }).argv).toContain(`$4:${String(index)}`);
+    }
+    expect(planNewWindow(null, { index: 3 }).argv).toContain(":3");
+    expect(planNewWindow("$4").argv).toContain("$4");
+  });
+
+  test("refuses invalid or ambiguous window indexes before transport", () => {
+    const transport = recorder();
+    const runtime = runtimeFor(transport);
+    for (const index of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
+      expect(() => newWindow({} as never, runtime, "$4", { index })).toThrow(/index/u);
+    }
+    expect(() =>
+      newWindow({} as never, runtime, "$4", { direction: WindowDirection.After, index: 3 }),
+    ).toThrow(/direction/u);
+    expect(transport.requests).toHaveLength(0);
   });
 
   test("guards a pane kill against a shared window", () => {
