@@ -70,6 +70,29 @@ await runWithCleanup(
     );
     const executable = join(project, "node_modules/.bin/tmux-workspace");
     assert((await realpath(executable)).startsWith(join(project, "node_modules/")));
+    const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+    const packageEnvironment = {
+      ...process.env,
+      HOME: project,
+      XDG_CONFIG_HOME: join(project, ".config"),
+      TMUXP_CONFIGDIR: join(project, ".tmuxp"),
+      TMUX: "",
+      TMUX_PANE: "",
+    };
+    for (const runtime of [node, process.execPath]) {
+      const help = await execute([runtime, executable, "--help"], packageEnvironment);
+      assert(help.stdout.includes("Usage:"));
+      assert.equal(help.stderr, "");
+      const version = await execute([runtime, executable, "--version"], packageEnvironment);
+      assert(version.stdout.includes(manifest.version));
+      const listing = await execute([runtime, executable, "ls", "--json"], packageEnvironment);
+      assert.deepEqual(JSON.parse(listing.stdout).workspaces, []);
+      assert.equal(listing.stderr, "");
+    }
+    if (process.argv.includes("--package-only")) {
+      process.stdout.write("Installed workspace CLI passed Node 22 and Bun package checks\n");
+      return;
+    }
     const userBase = (
       await execute([python, "-c", "import site; print(site.USER_BASE)"], process.env)
     ).stdout.trim();

@@ -1,4 +1,5 @@
 import { Argument, Command, InvalidArgumentError, Option } from "commander";
+import manifest from "../package.json" with { type: "json" };
 import grammar from "./grammar.json" with { type: "json" };
 
 export type OutputMode = "human" | "json" | "ndjson";
@@ -121,7 +122,7 @@ export function createParser(io: ParserIO): {
     for (const item of spec.actions) {
       if (item.dest === "help") continue;
       if (item.dest === "version") {
-        current.version("0.1.0-alpha.8", "-V, --version");
+        current.version(manifest.version, "-V, --version");
         continue;
       }
       if (!item.flags.length) {
