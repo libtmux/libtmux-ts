@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop -- Each mutation and progress record depends on the preceding tmux state. */
 import { Server, type Pane, type Session, type Window } from "libtmux";
 import { setTimeout as sleep } from "node:timers/promises";
-import { resolve } from "node:path";
+import { extname, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
 import {
   scalarText,
@@ -677,7 +677,10 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
   const destination = request.values.save_to
     ? resolve(context.cwd, scalarText(request.values.save_to))
     : undefined;
-  const format = scalarText(request.values.workspace_format ?? "yaml");
+  const format = scalarText(
+    request.values.workspace_format ??
+      (destination && extname(destination).toLowerCase() === ".json" ? "json" : "yaml"),
+  );
   if (!destination && request.mode === "human")
     throw new CliError(
       "input_required",
@@ -720,6 +723,7 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
       false,
       context.signal,
     );
-  else await write(context.stdout, `Saved ${destination}\n`, context.signal);
+  else if (!request.values.quiet)
+    await write(context.stdout, `Saved ${destination}\n`, context.signal);
   return 0;
 }

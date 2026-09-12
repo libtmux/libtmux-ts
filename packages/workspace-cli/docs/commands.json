@@ -1021,7 +1021,7 @@
           "flags": "-q, --quiet",
           "short": "-q",
           "long": "--quiet",
-          "description": "don't prompt for confirmation",
+          "description": "Suppress human status messages.",
           "value": "none",
           "variadic": false,
           "choices": [],

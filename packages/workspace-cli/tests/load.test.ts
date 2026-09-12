@@ -516,6 +516,44 @@ process.exit(result.status ?? 1);
   },
 );
 
+test.each([
+  ["json", [], true],
+  ["JSON", [], true],
+  ["yml", [], false],
+  ["json", ["-f", "yaml"], false],
+] as const)("quiet freeze saves %s with format options %j", async (extension, format, json) => {
+  await fixture(async (_server, root, run) => {
+    const destination = join(root, `captured.${extension}`);
+    const result = await run(["freeze", "fixture", "--quiet", "--save-to", destination, ...format]);
+    expect(result).toEqual({ code: 0, stdout: "", stderr: "" });
+    const saved = await readFile(destination, "utf8");
+    if (json) expect(JSON.parse(saved).session_name).toBe("fixture");
+    else expect(saved).toStartWith("session_name: fixture\n");
+  });
+});
+
+test.each(["json", "ndjson"])("quiet freeze retains its %s result", async (mode) => {
+  await fixture(async (_server, root, run) => {
+    const destination = join(root, "captured.json");
+    const result = await run([
+      "freeze",
+      "fixture",
+      "--quiet",
+      "--save-to",
+      destination,
+      `--${mode}`,
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "ok",
+      command: "freeze",
+      format: "json",
+    });
+    expect(JSON.parse(await readFile(destination, "utf8")).session_name).toBe("fixture");
+  });
+});
+
 test("freeze machine output reloads window and pane topology", async () => {
   await fixture(async (server, root, run) => {
     const source = join(root, "input.json");

@@ -81,6 +81,9 @@ NDJSON takes precedence when both are present. Machine load requires `-d` or
 `convert`, import commands, and machine `freeze` return a document when no
 destination is given. `--save-to` writes a file; `--force` permits replacement.
 The file format is separate from the JSON/NDJSON output mode.
+`freeze` infers JSON from a `.json` destination and otherwise saves YAML;
+`-f` overrides the inferred format. `--quiet` suppresses its human save message
+and preserves machine results.
 Capture reads honor cancellation. Saves check for cancellation before publishing;
 publication already in progress may still complete.
 

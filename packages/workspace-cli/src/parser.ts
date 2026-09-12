@@ -84,6 +84,7 @@ function optionFor(item: Action): Option {
     });
   if (item.flags.includes("--no-startup")) option.description = "Do not load Python startup files.";
   if (item.flags.includes("--no-vi-mode")) option.description = "Disable vi editing mode.";
+  if (item.dest === "quiet") option.description = "Suppress human status messages.";
   if (item.flags.includes("-8"))
     option.description = "Reject unsupported legacy 88-color mode before loading.";
   return option;
