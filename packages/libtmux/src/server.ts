@@ -425,9 +425,11 @@ export class Server {
    * Acquisition is the only step that talks to tmux. Everything reachable from
    * the returned value resolves locally, so traversal and filtering issue no
    * commands and an earlier snapshot keeps reporting its own instant.
+   * `daemonIdentity` identifies the daemon captured with these collections.
    *
    * ```ts
    * const now = await server.snapshot();
+   * now.daemonIdentity.pid;
    * now.windows.count();
    * ```
    */
