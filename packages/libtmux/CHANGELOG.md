@@ -12,6 +12,30 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+#### Panes and windows
+
+`Pane.zoom`, `Pane.unzoom` and `Window.unzoom` set the zoom state rather than
+flipping it. tmux offers only `resize-pane -Z`, which toggles, so each call
+carries its condition through `if-shell -F` and lets tmux decide inside its own
+command queue: idempotent, one invocation, and no window in which another
+resize changes the answer between a read and a write. Any ordinary `resize`
+unzooms first, which is tmux's behaviour rather than this package's.
+
+`Pane.sendKeys` now sends the keys and Enter as one `send-keys` unless
+`literal` is set. Two invocations left a window in which another writer's Enter
+submitted this caller's half-typed line. The literal form still sends Enter
+separately, because `-l` applies to every argument.
+
+### `@libtmux/mcp`
+
+`resize_pane` treats `zoom` as a state: `true` makes the pane fill its window
+and `false` restores the layout, and sending the same value twice is a no-op.
+It previously passed tmux's toggle through, so two identical calls undid each
+other. A call carrying both `zoom` and a size is now refused, because tmux
+unzooms a window before applying any size.
+
 ### Development
 
 Every CI job now carries a timeout. No lane here has hung, but three sibling
