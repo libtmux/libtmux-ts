@@ -1,0 +1,816 @@
+[
+  {
+    "command": "tmuxp load",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "workspace_files",
+        "default": null,
+        "required": true,
+        "nargs": "+",
+        "choices": null,
+        "const": null,
+        "help": "filepath to session or filename of session in tmuxp workspace directory",
+        "flags": []
+      },
+      {
+        "dest": "socket_name",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "passthru to tmux(1) -L",
+        "flags": ["-L"]
+      },
+      {
+        "dest": "socket_path",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "passthru to tmux(1) -S",
+        "flags": ["-S"]
+      },
+      {
+        "dest": "tmux_config_file",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "passthru to tmux(1) -f",
+        "flags": ["-f"]
+      },
+      {
+        "dest": "new_session_name",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "start new session with new session name",
+        "flags": ["-s"]
+      },
+      {
+        "dest": "answer_yes",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "always answer yes",
+        "flags": ["--yes", "-y"]
+      },
+      {
+        "dest": "detached",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "load the session without attaching it",
+        "flags": ["-d"]
+      },
+      {
+        "dest": "append",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "load workspace, appending windows to the current session",
+        "flags": ["-a", "--append"]
+      },
+      {
+        "dest": "colors",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": 256,
+        "help": "force tmux to assume the terminal supports 256 colours.",
+        "flags": ["-2"]
+      },
+      {
+        "dest": "colors",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": 88,
+        "help": "like -2, but indicates that the terminal supports 88 colours.",
+        "flags": ["-8"]
+      },
+      {
+        "dest": "log_file",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "file to log errors/output to",
+        "flags": ["--log-file"]
+      },
+      {
+        "dest": "progress_format",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "Spinner line format: preset name (default, minimal, window, pane, verbose) or a format string with tokens {session}, {window}, {progress}, {window_progress}, {pane_progress}, etc. Env: TMUXP_PROGRESS_FORMAT",
+        "flags": ["--progress-format"]
+      },
+      {
+        "dest": "panel_lines",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "Number of script-output lines shown in the spinner panel (default: 3). 0 hides the panel entirely (script output goes to stdout). -1 shows unlimited lines (capped to terminal height). Env: TMUXP_PROGRESS_LINES",
+        "flags": ["--progress-lines"]
+      },
+      {
+        "dest": "no_progress",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "Disable the animated progress spinner. Env: TMUXP_PROGRESS=0",
+        "flags": ["--no-progress"]
+      }
+    ],
+    "exclusive_groups": [["colors", "colors"]],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp shell",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "session_name",
+        "default": null,
+        "required": false,
+        "nargs": "?",
+        "choices": null,
+        "const": null,
+        "help": null,
+        "flags": []
+      },
+      {
+        "dest": "window_name",
+        "default": null,
+        "required": false,
+        "nargs": "?",
+        "choices": null,
+        "const": null,
+        "help": null,
+        "flags": []
+      },
+      {
+        "dest": "socket_path",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "pass-through for tmux -S",
+        "flags": ["-S"]
+      },
+      {
+        "dest": "socket_name",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "pass-through for tmux -L",
+        "flags": ["-L"]
+      },
+      {
+        "dest": "command",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "instead of opening shell, execute python code in libtmux and exit",
+        "flags": ["-c"]
+      },
+      {
+        "dest": "shell",
+        "default": "best",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": "best",
+        "help": "use best shell available in site packages",
+        "flags": ["--best"]
+      },
+      {
+        "dest": "shell",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": "pdb",
+        "help": "use plain pdb",
+        "flags": ["--pdb"]
+      },
+      {
+        "dest": "shell",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": "code",
+        "help": "use stdlib's code.interact()",
+        "flags": ["--code"]
+      },
+      {
+        "dest": "shell",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": "ptipython",
+        "help": "use ptpython + ipython",
+        "flags": ["--ptipython"]
+      },
+      {
+        "dest": "shell",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": "ptpython",
+        "help": "use ptpython",
+        "flags": ["--ptpython"]
+      },
+      {
+        "dest": "shell",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": "ipython",
+        "help": "use ipython",
+        "flags": ["--ipython"]
+      },
+      {
+        "dest": "shell",
+        "default": null,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": "bpython",
+        "help": "use bpython",
+        "flags": ["--bpython"]
+      },
+      {
+        "dest": "use_pythonrc",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "load PYTHONSTARTUP env var and ~/.pythonrc.py script in --code",
+        "flags": ["--use-pythonrc"]
+      },
+      {
+        "dest": "use_pythonrc",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": false,
+        "help": "load PYTHONSTARTUP env var and ~/.pythonrc.py script in --code",
+        "flags": ["--no-startup"]
+      },
+      {
+        "dest": "use_vi_mode",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "use vi-mode in ptpython/ptipython",
+        "flags": ["--use-vi-mode"]
+      },
+      {
+        "dest": "use_vi_mode",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": false,
+        "help": "use vi-mode in ptpython/ptipython",
+        "flags": ["--no-vi-mode"]
+      }
+    ],
+    "exclusive_groups": [["shell", "shell", "shell", "shell", "shell", "shell", "shell"]],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp import teamocil",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "workspace_file",
+        "default": null,
+        "required": false,
+        "nargs": "?",
+        "choices": null,
+        "const": null,
+        "help": "checks current ~/.teamocil and current directory for yaml files",
+        "flags": []
+      }
+    ],
+    "exclusive_groups": [["workspace_file"]],
+    "required_groups": [["workspace_file"]]
+  },
+  {
+    "command": "tmuxp import tmuxinator",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "workspace_file",
+        "default": null,
+        "required": false,
+        "nargs": "?",
+        "choices": null,
+        "const": null,
+        "help": "checks current ~/.tmuxinator and current directory for yaml files",
+        "flags": []
+      }
+    ],
+    "exclusive_groups": [["workspace_file"]],
+    "required_groups": [["workspace_file"]]
+  },
+  {
+    "command": "tmuxp import",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp convert",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "workspace_file",
+        "default": null,
+        "required": true,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "checks tmuxp and current directory for workspace files.",
+        "flags": []
+      },
+      {
+        "dest": "answer_yes",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "always answer yes",
+        "flags": ["--yes", "-y"]
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp debug-info",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "output_json",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "output as JSON",
+        "flags": ["--json"]
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp ls",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "tree",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "display workspaces grouped by directory",
+        "flags": ["--tree"]
+      },
+      {
+        "dest": "output_json",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "output as JSON",
+        "flags": ["--json"]
+      },
+      {
+        "dest": "output_ndjson",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "output as NDJSON (one JSON per line)",
+        "flags": ["--ndjson"]
+      },
+      {
+        "dest": "full",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "include full config content in output",
+        "flags": ["--full"]
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp search",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "query_terms",
+        "default": null,
+        "required": false,
+        "nargs": "*",
+        "choices": null,
+        "const": null,
+        "help": "search patterns (prefix with field: for field-scoped search)",
+        "flags": []
+      },
+      {
+        "dest": "field",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "restrict search to field(s): name, session/s, path/p, window/w, pane",
+        "flags": ["-f", "--field"]
+      },
+      {
+        "dest": "ignore_case",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "case-insensitive matching",
+        "flags": ["-i", "--ignore-case"]
+      },
+      {
+        "dest": "smart_case",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "case-insensitive unless pattern has uppercase",
+        "flags": ["-S", "--smart-case"]
+      },
+      {
+        "dest": "fixed_strings",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "treat patterns as literal strings, not regex",
+        "flags": ["-F", "--fixed-strings"]
+      },
+      {
+        "dest": "word_regexp",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "match whole words only",
+        "flags": ["-w", "--word-regexp"]
+      },
+      {
+        "dest": "invert_match",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "show workspaces that do NOT match",
+        "flags": ["-v", "--invert-match"]
+      },
+      {
+        "dest": "match_any",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "match ANY pattern (OR logic); default is ALL (AND logic)",
+        "flags": ["--any"]
+      },
+      {
+        "dest": "output_json",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "output as JSON",
+        "flags": ["--json"]
+      },
+      {
+        "dest": "output_ndjson",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "output as NDJSON (one JSON per line)",
+        "flags": ["--ndjson"]
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp edit",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "workspace_file",
+        "default": null,
+        "required": true,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "checks current tmuxp and current directory for workspace files.",
+        "flags": []
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp freeze",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "session_name",
+        "default": null,
+        "required": false,
+        "nargs": "?",
+        "choices": null,
+        "const": null,
+        "help": null,
+        "flags": []
+      },
+      {
+        "dest": "socket_path",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "pass-through for tmux -S",
+        "flags": ["-S"]
+      },
+      {
+        "dest": "socket_name",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "pass-through for tmux -L",
+        "flags": ["-L"]
+      },
+      {
+        "dest": "workspace_format",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": ["yaml", "json"],
+        "const": null,
+        "help": "format to save in",
+        "flags": ["-f", "--workspace-format"]
+      },
+      {
+        "dest": "save_to",
+        "default": null,
+        "required": false,
+        "nargs": null,
+        "choices": null,
+        "const": null,
+        "help": "file to save to",
+        "flags": ["-o", "--save-to"]
+      },
+      {
+        "dest": "answer_yes",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "always answer yes",
+        "flags": ["--yes", "-y"]
+      },
+      {
+        "dest": "quiet",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "don't prompt for confirmation",
+        "flags": ["--quiet", "-q"]
+      },
+      {
+        "dest": "force",
+        "default": false,
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": true,
+        "help": "overwrite the workspace file",
+        "flags": ["--force"]
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  },
+  {
+    "command": "tmuxp",
+    "actions": [
+      {
+        "dest": "help",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show this help message and exit",
+        "flags": ["-h", "--help"]
+      },
+      {
+        "dest": "version",
+        "default": "==SUPPRESS==",
+        "required": false,
+        "nargs": 0,
+        "choices": null,
+        "const": null,
+        "help": "show program's version number and exit",
+        "flags": ["--version", "-V"]
+      },
+      {
+        "dest": "log_level",
+        "default": "warning",
+        "required": false,
+        "nargs": null,
+        "choices": ["debug", "info", "warning", "error", "critical"],
+        "const": null,
+        "help": "log level (debug, info, warning, error, critical) (default \"warning\")",
+        "flags": ["--log-level"]
+      },
+      {
+        "dest": "color",
+        "default": "auto",
+        "required": false,
+        "nargs": null,
+        "choices": ["auto", "always", "never"],
+        "const": null,
+        "help": "when to use colors: auto (default), always, or never",
+        "flags": ["--color"]
+      }
+    ],
+    "exclusive_groups": [],
+    "required_groups": []
+  }
+]
