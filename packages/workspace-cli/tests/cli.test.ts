@@ -1,8 +1,10 @@
-/* eslint-disable no-await-in-loop -- CLI cases run sequentially to bound child process usage. */
+/* eslint-disable no-await-in-loop -- Command cases share one isolated fixture. */
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable, Writable } from "node:stream";
+import { run as runCli } from "../src/app.ts";
 
 let root: string;
 beforeEach(async () => {
@@ -12,20 +14,46 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
+function environment(extra: Record<string, string>) {
+  return {
+    ...process.env,
+    HOME: root,
+    TMUXP_CONFIGDIR: join(root, ".tmuxp"),
+    XDG_CONFIG_HOME: join(root, ".config"),
+    TMUX: "",
+    TMUX_PANE: "",
+    ...extra,
+  };
+}
 async function run(argv: string[], extra: Record<string, string> = {}) {
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  const capture = (chunks: Buffer[]) =>
+    new Writable({
+      write(chunk, _encoding, done) {
+        chunks.push(Buffer.from(chunk));
+        done();
+      },
+    });
+  const code = await runCli(argv, {
+    cwd: root,
+    env: environment(extra),
+    stdin: Readable.from([]),
+    stdout: capture(stdout),
+    stderr: capture(stderr),
+  });
+  return {
+    stdout: Buffer.concat(stdout).toString(),
+    stderr: Buffer.concat(stderr).toString(),
+    code,
+  };
+}
+async function runExecutable(argv: string[], extra: Record<string, string> = {}) {
   const child = Bun.spawn(
     [process.execPath, new URL("../src/main.ts", import.meta.url).pathname, ...argv],
     {
       cwd: root,
-      env: {
-        ...process.env,
-        HOME: root,
-        TMUXP_CONFIGDIR: join(root, ".tmuxp"),
-        XDG_CONFIG_HOME: join(root, ".config"),
-        TMUX: "",
-        TMUX_PANE: "",
-        ...extra,
-      },
+      env: environment(extra),
       stdout: "pipe",
       stderr: "pipe",
     },
@@ -54,7 +82,7 @@ test("every reference command has executable help", async () => {
     ["shell"],
     ["completion"],
   ]) {
-    const result = await run([...command, "--help"]);
+    const result = await runExecutable([...command, "--help"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Usage:");
     expect(result.stderr).toBe("");
@@ -129,7 +157,6 @@ test("invalid machine arguments leave stdout empty with a structured usage diagn
     ["--ndjson"],
     ["import", "--json"],
     ["import", "--ndjson"],
-    ["load", "--json"],
     ["search", "--ndjson"],
     ["search", "[", "--json"],
     ["load", "x", "-2", "-8", "--json"],
@@ -139,6 +166,10 @@ test("invalid machine arguments leave stdout empty with a structured usage diagn
     expect(result.stdout).toBe("");
     expect(JSON.parse(result.stderr).code).toBe("usage");
   }
+  const executable = await runExecutable(["load", "--json"]);
+  expect(executable.code).toBe(2);
+  expect(executable.stdout).toBe("");
+  expect(JSON.parse(executable.stderr).code).toBe("usage");
 });
 
 test("legacy 88-color load fails before invoking tmux in every output mode", async () => {
@@ -221,7 +252,7 @@ test("editor uses quoted argv, returns child status, and keeps machine stdout st
     script,
     'process.stdout.write(JSON.stringify(process.argv.slice(2)));process.stderr.write("editor diagnostic");process.exit(7);',
   );
-  const result = await run(["edit", "dev", "--json"], {
+  const result = await runExecutable(["edit", "dev", "--json"], {
     EDITOR: `'${process.execPath}' '${script}' --wait`,
   });
   expect(result.code).toBe(7);
