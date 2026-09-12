@@ -357,7 +357,7 @@ test("freeze machine output reloads window and pane topology", async () => {
   });
 });
 
-test("blank panes load without waiting for a prompt", async () => {
+test("blank panes with empty plugins load natively without a prompt", async () => {
   await fixture(async (server, root) => {
     await server.setGlobalOption("session", "default-command", "sleep 30");
     const file = join(root, "blank.json");
@@ -365,6 +365,8 @@ test("blank panes load without waiting for a prompt", async () => {
       file,
       JSON.stringify({
         session_name: "blank-cli",
+        plugins: [],
+        workspace_builder: null,
         workspace_builder_options: { pane_readiness: "always" },
         windows: [{ panes: [null, null] }, { panes: [null] }],
       }),
@@ -382,11 +384,17 @@ test("blank panes load without waiting for a prompt", async () => {
       ],
       {
         cwd: root,
-        env: { ...process.env, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
+        env: {
+          ...process.env,
+          TMUX: "",
+          TMUX_PANE: "",
+          TMUX_BIN: server.tmuxBin,
+          TMUX_WORKSPACE_PYTHON: join(root, "missing-python"),
+        },
         signal: AbortSignal.timeout(1000),
       },
     );
-    expect(result.code).toBe(0);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
     expect(JSON.parse(result.stdout).status).toBe("ok");
     expect((await server.snapshot()).sessions.one({ name: "blank-cli" }).windows.length).toBe(2);
   });
