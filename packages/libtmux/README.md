@@ -507,10 +507,16 @@ Each of those takes a handle as readily as a string, and a handle is checked
 against this object's server before the command runs:
 
 ```ts
-const otherSession = await server.newSession({ name: "other-session" });
-await window.link({ session: otherSession });
-await pane.joinTo(otherPane);
-await session.selectWindow(window);
+const owner = await server.newSession({ name: "handle-targets" });
+const shared = await owner.newWindow({ name: "shared" });
+const guest = await server.newSession({ name: "handle-guest" });
+
+await shared.link({ session: guest }); // the session, not its name
+await owner.selectWindow(shared); // the window, not its index
+
+const left = await owner.newWindow({ name: "left" });
+const right = await owner.newWindow({ name: "right" });
+await right.panes.one().joinTo(left.panes.one());
 ```
 
 A tmux id is unique only within one running daemon, so `@1` exists on every
@@ -1020,7 +1026,7 @@ bounds them, and defaults to 16:
 
 ```ts
 const bounded = new Server({ maxInFlight: 4 });
-(await bounded.snapshot()).panes.length;
+bounded.tmuxBin;
 ```
 
 The ceiling costs no throughput, because there was none to lose: tmux runs
