@@ -49,14 +49,14 @@ for the whole screen again.
 ## Install
 
 ```console
-$ npx -y @libtmux/mcp@0.1.0-alpha.8
+$ npx -y @libtmux/mcp@0.1.0-alpha.9
 ```
 
 Nothing to install ahead of time: the server speaks MCP over stdio, so an MCP
 client launches it as a subprocess. To pin it in a project instead:
 
 ```console
-$ bun add --exact @libtmux/mcp@0.1.0-alpha.8
+$ bun add --exact @libtmux/mcp@0.1.0-alpha.9
 ```
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
@@ -74,7 +74,7 @@ This is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.8"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.9"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -86,7 +86,7 @@ This is the whole configuration:
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.0-alpha.8
+    npx -y @libtmux/mcp@0.1.0-alpha.9
 ```
 
 </details>
@@ -193,13 +193,13 @@ For an agent that can inspect and run pane commands but cannot rearrange or end
 topology:
 
 ```console
-$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.0-alpha.8
+$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.0-alpha.9
 ```
 
 An empty toolset plus named inclusions makes a smaller purpose-built surface:
 
 ```console
-$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.0-alpha.8
+$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.0-alpha.9
 ```
 
 Exclusions always win, including inside `call_read_tools_batch`. A tool removed
@@ -220,7 +220,7 @@ On a fresh default socket, that diagnostic is:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.0-alpha.8 serving libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
+libtmux-mcp 0.1.0-alpha.9 serving libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
 ```
 
 ## Tools
@@ -433,7 +433,7 @@ an equivalent action.
 To opt into teardown on an explicitly selected server, name it deliberately:
 
 ```console
-$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.0-alpha.8
+$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.0-alpha.9
 ```
 
 ## Choosing the right tool

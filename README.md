@@ -43,22 +43,22 @@ then query it like data.
 ## Quickstart
 
 ```console
-$ bun add --exact libtmux@0.1.0-alpha.8
+$ bun add --exact libtmux@0.1.0-alpha.9
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i --save-exact libtmux@0.1.0-alpha.8
+$ npm i --save-exact libtmux@0.1.0-alpha.9
 ```
 
 ```console
-$ pnpm add --save-exact libtmux@0.1.0-alpha.8
+$ pnpm add --save-exact libtmux@0.1.0-alpha.9
 ```
 
 ```console
-$ yarn add --exact libtmux@0.1.0-alpha.8
+$ yarn add --exact libtmux@0.1.0-alpha.9
 ```
 
 </details>
@@ -153,7 +153,7 @@ Three packages, released together, each usable on its own.
 ### [libtmux](packages/libtmux) — the library
 
 ```console
-$ bun add --exact libtmux@0.1.0-alpha.8
+$ bun add --exact libtmux@0.1.0-alpha.9
 ```
 
 ```ts
@@ -182,7 +182,7 @@ A stdio MCP server. Point it at a socket and an agent can list sessions, read a
 pane, send keys, and **wait for output** rather than polling for it.
 
 ```console
-$ npx -y @libtmux/mcp@0.1.0-alpha.8
+$ npx -y @libtmux/mcp@0.1.0-alpha.9
 ```
 
 Add it to any MCP client — this is the whole configuration:
@@ -192,7 +192,7 @@ Add it to any MCP client — this is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.8"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.9"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -204,7 +204,7 @@ Add it to any MCP client — this is the whole configuration:
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.0-alpha.8
+    npx -y @libtmux/mcp@0.1.0-alpha.9
 ```
 
 </details>
@@ -233,7 +233,7 @@ Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
 ```console
-$ bun add --exact @libtmux/workspace@0.1.0-alpha.8 libtmux@0.1.0-alpha.8
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.9 libtmux@0.1.0-alpha.9
 ```
 
 ```ts
