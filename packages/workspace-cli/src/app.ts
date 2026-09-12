@@ -197,7 +197,13 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
         );
       }
       if (destination) {
-        await saveDocument(document, destination, format, Boolean(request.values.force));
+        await saveDocument(
+          document,
+          destination,
+          format,
+          Boolean(request.values.force),
+          context.signal,
+        );
         const result = {
           schema_version: 1,
           command: request.command,

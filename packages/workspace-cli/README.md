@@ -81,6 +81,8 @@ NDJSON takes precedence when both are present. Machine load requires `-d` or
 `convert`, import commands, and machine `freeze` return a document when no
 destination is given. `--save-to` writes a file; `--force` permits replacement.
 The file format is separate from the JSON/NDJSON output mode.
+Capture reads honor cancellation. Saves check for cancellation before publishing;
+publication already in progress may still complete.
 
 Human `load` shows progress on terminal stderr. `--progress-format` accepts
 `default`, `minimal`, `window`, `pane`, `verbose`, or a template with tokens such

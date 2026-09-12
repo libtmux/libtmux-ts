@@ -8,6 +8,7 @@ import { processRun } from "../src/process.ts";
 import {
   assertOwnedSocketPath,
   makeTestDirectory,
+  readProcessIdentity,
   runWithCleanup,
   TestServer,
   withOwnedRunRoot,
@@ -234,6 +235,97 @@ test("native load sets environment before commands and preserves existing sessio
     expect((await server.snapshot()).sessions.one({ name: "local-cli" }).windows.length).toBe(3);
   });
 });
+
+test.each(["snapshot", "options"])(
+  "freeze cancellation during %s preserves the destination",
+  async (stage) => {
+    await fixture(async (server, root) => {
+      const destination = join(root, "capture.json");
+      const marker = join(root, "reading");
+      const wrapper = join(root, "tmux-wrapper");
+      await writeFile(destination, "original");
+      await writeFile(
+        wrapper,
+        `#!${process.execPath}
+import { existsSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+if (!existsSync(process.env.WORKSPACE_TEST_MARKER) &&
+    (process.env.WORKSPACE_TEST_STAGE === "snapshot" || args.some(arg => arg.includes("show-options")))) {
+  writeFileSync(process.env.WORKSPACE_TEST_MARKER, String(process.pid));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  writeFileSync(process.env.WORKSPACE_TEST_MARKER + "-continued", "yes");
+}
+const result = spawnSync(process.env.WORKSPACE_TEST_TMUX, args, { stdio: "inherit" });
+process.exit(result.status ?? 1);
+`,
+        { mode: 0o700 },
+      );
+      const controller = new AbortController();
+      const discard = () =>
+        new Writable({
+          write(_chunk, _encoding, done) {
+            done();
+          },
+        });
+      const pending = runCli(
+        [
+          "freeze",
+          "fixture",
+          "--json",
+          "--save-to",
+          destination,
+          "--force",
+          "-S",
+          server.socketPath!,
+        ],
+        {
+          cwd: root,
+          env: {
+            ...process.env,
+            HOME: root,
+            TMUX: "",
+            TMUX_PANE: "",
+            TMUX_BIN: wrapper,
+            WORKSPACE_TEST_MARKER: marker,
+            WORKSPACE_TEST_STAGE: stage,
+            WORKSPACE_TEST_TMUX: server.tmuxBin,
+          },
+          stdin: Readable.from([]),
+          stdout: discard(),
+          stderr: discard(),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
+        },
+      );
+      try {
+        /* eslint-disable no-await-in-loop -- Observe the owned client's read before interrupting it. */
+        for (
+          let attempt = 0;
+          !/^[1-9][0-9]*$/.test(
+            await Bun.file(marker)
+              .text()
+              .catch(() => ""),
+          );
+          attempt++
+        ) {
+          if (attempt >= 400) throw new Error("freeze did not reach its backend read");
+          await Bun.sleep(5);
+        }
+        /* eslint-enable no-await-in-loop */
+        const clientPid = Number(await readFile(marker, "utf8"));
+        controller.abort();
+        expect(await pending).toBe(130);
+        expect(await readProcessIdentity(clientPid)).toBeUndefined();
+        expect(await readFile(destination, "utf8")).toBe("original");
+        expect(await Bun.file(marker + "-continued").exists()).toBe(false);
+        expect(await server.hasSession("fixture")).toBe(true);
+      } finally {
+        controller.abort();
+        await pending;
+      }
+    });
+  },
+);
 
 test("freeze machine output reloads window and pane topology", async () => {
   await fixture(async (server, root, run) => {

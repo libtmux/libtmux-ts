@@ -81,6 +81,19 @@ test("conversion rejects multi-document YAML and non-JSON values", async () => {
   }
 });
 
+test("cancelled saves preserve existing files and do not publish new files", async () => {
+  const target = join(root, "target.json");
+  await writeFile(target, "original");
+  for (const existing of [true, false]) {
+    if (!existing) await rm(target);
+    await expect(
+      saveDocument({ session_name: "cancelled" }, target, "json", existing, AbortSignal.abort()),
+    ).rejects.toThrow();
+    if (existing) expect(await readFile(target, "utf8")).toBe("original");
+    else expect(await Bun.file(target).exists()).toBe(false);
+  }
+});
+
 test("tmuxinator import converts tabs, startup commands, roots and pane arrays", () => {
   expect(
     importDocument("tmuxinator", {

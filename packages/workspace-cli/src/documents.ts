@@ -97,7 +97,9 @@ export async function saveDocument(
   path: string,
   format: string,
   force: boolean,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   jsonData(document);
   if (!["json", "yaml"].includes(format))
     throw new Error(`Unsupported workspace format: ${format}`);
@@ -105,15 +107,17 @@ export async function saveDocument(
     format === "json"
       ? JSON.stringify(document, null, 2) + "\n"
       : (await import("yaml")).stringify(document);
+  signal?.throwIfAborted();
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   try {
     const handle = await open(temporary, "wx", 0o600);
     try {
-      await handle.writeFile(contents);
+      await handle.writeFile(contents, { signal });
       await handle.sync();
     } finally {
       await handle.close();
     }
+    signal?.throwIfAborted();
     // A link publishes without replacing a destination created after our check.
     if (force) await rename(temporary, path);
     else {
