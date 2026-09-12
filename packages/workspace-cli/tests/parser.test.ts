@@ -24,7 +24,8 @@ describe("tmuxp argument compatibility", () => {
     ["shell", "--code", "--ipython"],
     ["freeze", "-f", "toml"],
     ["load", "a.yaml", "--bogus"],
-    ["load", "a.yaml", "--panel-lines", "no"],
+    ["load", "a.yaml", "--progress-lines", "no"],
+    ["load", "a.yaml", "--progress-lines", "-2"],
   ])
     test(`rejects invalid argv: ${JSON.stringify(argv)}`, () => {
       expect(() => parse(argv)).toThrow();

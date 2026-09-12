@@ -129,7 +129,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "Spinner line format: preset name (default, minimal, window, pane, verbose) or a format string with tokens {session}, {window}, {progress}, {window_progress}, {pane_progress}, etc. Env: TMUXP_PROGRESS_FORMAT",
+        "help": "Progress line format: preset name (default, minimal, window, pane, verbose) or a format string with tokens {session}, {window}, {progress}, {window_progress}, {pane_progress}, etc. Env: TMUXP_PROGRESS_FORMAT",
         "flags": ["--progress-format"]
       },
       {
@@ -139,7 +139,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "Number of script-output lines shown in the spinner panel (default: 3). 0 hides the panel entirely (script output goes to stdout). -1 shows unlimited lines (capped to terminal height). Env: TMUXP_PROGRESS_LINES",
+        "help": "Recent script-output lines in the terminal panel (default: 3). 0 forwards each stream directly; -1 uses terminal height. Retention is bounded. Env: TMUXP_PROGRESS_LINES",
         "flags": ["--progress-lines"]
       },
       {
@@ -149,7 +149,7 @@
         "nargs": 0,
         "choices": null,
         "const": true,
-        "help": "Disable the animated progress spinner. Env: TMUXP_PROGRESS=0",
+        "help": "Disable terminal progress. Env: TMUXP_PROGRESS=0",
         "flags": ["--no-progress"]
       }
     ],

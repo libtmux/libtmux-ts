@@ -46,8 +46,8 @@ function optionFor(item: Action): Option {
     option.argParser((value, previous: string[] | null) => [...(previous ?? []), value]);
   if (item.dest === "panel_lines")
     option.argParser((value) => {
-      if (!/^-?\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
-        throw new InvalidArgumentError("expected an integer");
+      if (!/^-?\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < -1) {
+        throw new InvalidArgumentError("expected an integer at least -1");
       }
       return Number(value);
     });

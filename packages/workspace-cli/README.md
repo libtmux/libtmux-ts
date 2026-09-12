@@ -73,6 +73,18 @@ NDJSON takes precedence when both are present. Machine load requires `-d` or
 destination is given. `--save-to` writes a file; `--force` permits replacement.
 The file format is separate from the JSON/NDJSON output mode.
 
+Human `load` shows progress on terminal stderr. `--progress-format` accepts
+`default`, `minimal`, `window`, `pane`, `verbose`, or a template with tokens such
+as `{session}`, `{window}`, and `{session_pane_progress}`. Pane counts advance
+after configured commands are sent; they do not wait for those commands to exit.
+`--progress-lines` controls the recent script-output panel: default 3, 0 forwards
+each stream directly, and -1 uses the available terminal height. Retention is
+bounded to 64 KiB of characters for completed lines and each partial stream.
+`TMUXP_PROGRESS_FORMAT` and `TMUXP_PROGRESS_LINES` set defaults; explicit flags
+take precedence. `--no-progress`, `TMUXP_PROGRESS=0`, a dumb terminal, or redirected
+stderr disables the display. Frames update from build events without timing
+sleeps, clip to terminal width, and clear before results or attachment.
+
 `--log-level` filters diagnostics on stderr: `debug`, `info`, `warning` (default),
 `error`, or `critical`. Machine diagnostics are NDJSON. `load --log-file` appends
 the selected diagnostics as NDJSON, including script output at `info` level.
@@ -113,8 +125,9 @@ on Node 22 and Bun. It needs the optional Python runtime described above:
 $ bun run --cwd packages/workspace-cli test:install
 ```
 
-Plugin/custom-builder loading, interactive prompts, progress presets,
+Plugin/custom-builder loading, interactive prompts,
 generated references/completions, and benchmarks remain unfinished.
 
-The core library keeps its zero-runtime-dependency contract. Commander and YAML
-are bundled into this CLI; `libtmux` remains a separate package.
+The core library keeps its zero-runtime-dependency contract. Commander, YAML,
+and terminal text helpers are bundled into this CLI; `libtmux` remains a separate
+package. Machine commands skip loading the progress renderer.
