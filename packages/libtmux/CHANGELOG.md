@@ -28,6 +28,17 @@ unzooms first, which is tmux's behaviour rather than this package's.
 submitted this caller's half-typed line. The literal form still sends Enter
 separately, because `-l` applies to every argument.
 
+#### Server
+
+`ServerOptions.maxInFlight` bounds how many tmux invocations one server runs at
+once, and defaults to 16. Every invocation is a tmux client process with its
+own pipes, so a `Promise.all` over a whole server previously started that many.
+The ceiling costs no throughput: tmux runs commands on one thread, and measured
+capture throughput stops rising at four concurrent clients and is flat from
+there to sixty-four. Waiting for a slot spends the request's own deadline
+rather than extending it, and a request that never gets one raises
+`TmuxTransportError` with `delivery` of `"not_started"`.
+
 ### `@libtmux/mcp`
 
 `resize_pane` treats `zoom` as a state: `true` makes the pane fill its window
