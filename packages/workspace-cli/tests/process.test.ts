@@ -79,6 +79,7 @@ test("child input progresses while both output streams are drained", async () =>
 
 test("cancellation joins a child with pending input and returns interrupt status", async () => {
   const controller = new AbortController();
+  let interruptedAt = 0;
   const result = await processRun(
     [process.execPath, "-e", 'process.stdout.write("ready");setInterval(()=>{},1000)'],
     {
@@ -87,11 +88,13 @@ test("cancellation joins a child with pending input and returns interrupt status
       input: "x".repeat(200_000),
       signal: controller.signal,
       output: async () => {
+        interruptedAt = performance.now();
         controller.abort();
       },
     },
   );
   expect(result.code).toBe(130);
+  expect(performance.now() - interruptedAt).toBeLessThan(400);
 });
 
 test("stream writes observe asynchronous errors and closure before the callback", async () => {
