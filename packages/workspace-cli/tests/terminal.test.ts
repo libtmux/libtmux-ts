@@ -145,6 +145,8 @@ test("human load renders native progress in its terminal and clears before the r
         "{session}:{window_index}/{window_total}:{session_pane_progress}",
         "--progress-lines",
         "2",
+        "--color",
+        "never",
       ],
       root,
       env,
@@ -258,7 +260,7 @@ test("human load attaches only the final workspace through a separate terminal",
     await writeFile(first, JSON.stringify({ session_name: "first", windows: [{}] }));
     await writeFile(last, JSON.stringify({ session_name: "last", windows: [{}] }));
     await terminal(
-      [runtime, entry, "load", first, last, "-S", server.socketPath!],
+      [runtime, entry, "load", first, last, "-S", server.socketPath!, "--color", "never"],
       root,
       { ...env, WORKSPACE_TEST_STDOUT: saved },
       async (result, interrupt) => {
