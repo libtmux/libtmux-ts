@@ -5,6 +5,7 @@ import { LibTmuxException, TmuxServerRestarted } from "../../exc.js";
 import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
+import type { WindowTarget } from "../../types.js";
 import type { Window } from "../../window.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { decodeFormatValue } from "../codec/format_values.js";
@@ -322,4 +323,23 @@ export function targetOf(
   if (typeof target === "string") return target;
   requireSameServer(self, target, operation);
   return target.id;
+}
+
+/**
+ * Resolve a window target, keeping the placement a handle names.
+ *
+ * A window linked twice into one session holds two indexes behind one id, so
+ * reducing a handle to `@n` picks whichever placement tmux resolves first. The
+ * index is what tells them apart, and `selectWindowIn` qualifies it with the
+ * session, so this answers the index alone.
+ */
+export function windowTargetOf(session: Session, target: Window | WindowTarget): string {
+  if (typeof target === "string") return target;
+  requireSameServer(session, target, "selectWindow");
+  if (target.format.session_id !== session.id) {
+    throw new TypeError(
+      `selectWindow needs a window placed in this session: ${target.toString()} is placed in ${target.format.session_id}, and an index means a different window in each.`,
+    );
+  }
+  return String(target.format.window_index);
 }

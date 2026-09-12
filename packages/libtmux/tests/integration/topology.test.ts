@@ -464,6 +464,34 @@ describe("window and pane topology", () => {
     });
   }, 60_000);
 
+  test("selects the placement a window handle names, not just its id", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+      const shared = await session.newWindow({ name: "shared" });
+      // One window, two placements in one session: the id alone cannot say
+      // which of them a caller meant.
+      await shared.link({ session });
+      await session.newWindow({ name: "other" });
+
+      const placements = (await server.snapshot()).windows
+        .where({ id: shared.id })
+        .toArray()
+        .sort((left, right) => Number(left.index) - Number(right.index));
+      expect(placements.length).toBe(2);
+      const second = placements[1];
+      if (second === undefined) throw new Error("expected a second placement");
+
+      await session.selectWindow(second);
+
+      const active = (await server.snapshot()).windows.one({
+        active: true,
+        session: { is: { id: session.id } },
+      });
+      expect(Number(active.index)).toBe(Number(second.index));
+    });
+  }, 40_000);
+
   test("swaps two windows", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
