@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 
 export type ProcessOptions = {
   cwd: string;
   env: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  input?: string;
   terminal?: boolean;
   output?: (stream: "stdout" | "stderr", text: string) => Promise<void>;
 };
@@ -53,6 +55,8 @@ export function tokenize(value: string): string[] {
 export async function processRun(argv: string[], options: ProcessOptions): Promise<ProcessResult> {
   options.signal?.throwIfAborted();
   if (!argv[0]) throw new Error("Command needs an executable");
+  if (options.terminal && options.input !== undefined)
+    throw new Error("Terminal processes cannot also receive captured input");
   const grouped = process.platform !== "win32";
   const terminal = options.terminal ? await open("/dev/tty", "r+") : undefined;
   let child;
@@ -60,7 +64,9 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
     child = spawn(argv[0], argv.slice(1), {
       cwd: options.cwd,
       env: options.env,
-      stdio: terminal ? [terminal.fd, terminal.fd, terminal.fd] : ["ignore", "pipe", "pipe"],
+      stdio: terminal
+        ? [terminal.fd, terminal.fd, terminal.fd]
+        : [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       detached: grouped && !terminal,
     });
   } catch (error) {
@@ -98,6 +104,16 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
   });
   options.signal?.addEventListener("abort", stop, { once: true });
   if (options.signal?.aborted) stop();
+  const input = child.stdin
+    ? pipeline(
+        Readable.from([options.input!]),
+        child.stdin,
+        options.signal ? { signal: options.signal } : {},
+      ).catch((error: unknown) => {
+        if (!options.signal?.aborted) failure ??= error;
+        stop();
+      })
+    : Promise.resolve();
   const drain = async (stream: Readable | null, name: "stdout" | "stderr") => {
     if (!stream) return { text: "", truncated: false };
     const decoder = new StringDecoder("utf8");
@@ -132,6 +148,7 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
       closed,
       drain(child.stdout, "stdout"),
       drain(child.stderr, "stderr"),
+      input,
     ]);
     if (failure) throw failure;
     return {
