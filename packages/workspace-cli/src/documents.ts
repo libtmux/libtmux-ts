@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { link, open, readFile, readdir, rename, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
-import { parse, stringify } from "yaml";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Document = { [key: string]: Json };
@@ -86,7 +85,9 @@ export async function readDocument(path: string): Promise<Document> {
   if (!extensions.includes(extension))
     throw new Error(`Unsupported workspace extension: ${extension}`);
   const value: unknown =
-    extension === ".json" ? JSON.parse(source) : parse(source, { merge: true, maxAliasCount: 100 });
+    extension === ".json"
+      ? JSON.parse(source)
+      : (await import("yaml")).parse(source, { merge: true, maxAliasCount: 100 });
   jsonData(value);
   return mapping(value);
 }
@@ -100,13 +101,15 @@ export async function saveDocument(
   jsonData(document);
   if (!["json", "yaml"].includes(format))
     throw new Error(`Unsupported workspace format: ${format}`);
+  const contents =
+    format === "json"
+      ? JSON.stringify(document, null, 2) + "\n"
+      : (await import("yaml")).stringify(document);
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   try {
     const handle = await open(temporary, "wx", 0o600);
     try {
-      await handle.writeFile(
-        format === "json" ? JSON.stringify(document, null, 2) + "\n" : stringify(document),
-      );
+      await handle.writeFile(contents);
       await handle.sync();
     } finally {
       await handle.close();
