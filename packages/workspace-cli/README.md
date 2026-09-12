@@ -70,6 +70,10 @@ arrives. A nonzero editor status becomes the CLI exit status.
 
 ## Python compatibility
 
+Search uses native JavaScript regular expressions. `-F` treats patterns as
+literal text; `-w` applies whole-word matching to the complete expression.
+Python-specific regex syntax is outside the native search contract.
+
 `shell` uses an interpreter with tmuxp 1.74.0 installed. Set
 `TMUX_WORKSPACE_PYTHON` to choose its executable; otherwise it uses `python3`.
 Code passed with `-c` runs in tmuxp's Python context. An interactive shell needs
@@ -87,8 +91,8 @@ on Node 22 and Bun. It needs the optional Python runtime described above:
 $ bun run --cwd packages/workspace-cli test:install
 ```
 
-Full Python regular-expression compatibility, plugin/custom-builder
-loading, interactive load/attachment and prompts, progress presets, log flags,
+Plugin/custom-builder loading, interactive load/attachment and prompts,
+progress presets, log flags,
 generated references/completions, and benchmarks remain unfinished.
 
 The core library keeps its zero-runtime-dependency contract. Commander and YAML
