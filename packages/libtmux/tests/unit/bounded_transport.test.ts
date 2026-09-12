@@ -226,21 +226,47 @@ describe("bounded transport", () => {
     expect(inner.budgets()).toEqual([undefined]);
   });
 
-  test("lets a command waiting on another command past the ceiling", async () => {
+  test.each([
+    ["wait-for", ["wait-for", "channel"], ["wait-for", "-S", "channel"]],
+    ["display-popup", ["display-popup", "-t", "%0", "less x"], ["display-popup", "-C"]],
+    [
+      "display-menu",
+      ["display-menu", "-t", "%0", "Kill", "k", "kill-pane"],
+      ["display-menu", "-C"],
+    ],
+  ])("lets %s and the command that ends it past the ceiling", async (_name, blocks, ends) => {
     const inner = gate();
     const bounded = new BoundedTransport(inner, 1);
-    const waiting = bounded.execute(requestFor({ commands: [["wait-for", "channel"]] }));
+    const waiting = bounded.execute(requestFor({ commands: [blocks] }));
     await flush();
 
-    // `wait-for` blocks until another tmux command releases it. Counting it
-    // would let the waiter hold the permit its own release needs.
-    const signalling = bounded.execute(requestFor({ commands: [["wait-for", "-S", "channel"]] }));
+    // Each blocks until something outside the invocation releases it, so
+    // counting it would let it hold the permit its own release needs.
+    const releasing = bounded.execute(requestFor({ commands: [ends] }));
     await flush();
     expect(inner.started()).toBe(2);
 
     inner.release();
     inner.release();
-    await Promise.all([waiting, signalling]);
+    await Promise.all([waiting, releasing]);
+  });
+
+  test("still bounds a command that waits on tmux doing work", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 1);
+    const holding = bounded.execute(requestFor({ commands: [["run-shell", "sleep 1"]] }));
+    await flush();
+    const queued = bounded.execute(requestFor({ commands: [["source-file", "/tmp/x"]] }));
+    await flush();
+
+    // These finish on their own, so bounding them is the point rather than a
+    // deadlock waiting to happen.
+    expect(inner.started()).toBe(1);
+
+    inner.release();
+    await flush();
+    inner.release();
+    await Promise.all([holding, queued]);
   });
 
   test("still counts an invocation that only partly waits", async () => {

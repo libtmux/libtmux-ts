@@ -5,18 +5,33 @@ import type { CommandRequest, CommandTransport, RawCommandResult } from "./types
 export const DEFAULT_MAX_IN_FLIGHT = 16;
 
 /**
- * Commands that wait on another command rather than on tmux doing work.
+ * Commands that block until something outside this invocation releases them.
  *
- * `wait-for <channel>` blocks until `wait-for -S <channel>` runs, so counting
- * it against the ceiling lets a waiter hold the permit its own release needs:
- * one wait deadlocks the pair at a ceiling of one, and sixteen deadlock it at
- * the default. It occupies a tmux client and no throughput, which is the
- * opposite of what the ceiling exists to bound.
+ * Each returns `CMD_RETURN_WAIT` and then waits on a second command or on a
+ * person: `wait-for <channel>` on `wait-for -S <channel>`, a popup or menu on
+ * its dismissal, a prompt on an answer. Counting one against the ceiling lets
+ * it hold the permit its own release needs — a single wait deadlocks the pair
+ * at a ceiling of one, and sixteen popups deadlock it at the default. They
+ * occupy a tmux client and no throughput, which is the opposite of what the
+ * ceiling exists to bound. Naming the command rather than the flag is what
+ * lets the release through too, since `wait-for -S` and `display-popup -C`
+ * are the same command as the thing they end.
+ *
+ * Commands that wait on tmux doing work — `run-shell`, `source-file`,
+ * `load-buffer` — are not here. They finish on their own, and bounding them
+ * is the point.
  */
-const RENDEZVOUS_COMMANDS: ReadonlySet<string> = new Set(["wait-for"]);
+const UNBOUNDED_COMMANDS: ReadonlySet<string> = new Set([
+  "command-prompt",
+  "confirm-before",
+  "display-menu",
+  "display-panes",
+  "display-popup",
+  "wait-for",
+]);
 
-function waitsOnAnotherCommand(request: CommandRequest): boolean {
-  return request.commands.every((command) => RENDEZVOUS_COMMANDS.has(command[0]));
+function waitsOnSomethingElse(request: CommandRequest): boolean {
+  return request.commands.every((command) => UNBOUNDED_COMMANDS.has(command[0]));
 }
 
 interface Waiter {
@@ -65,10 +80,10 @@ export class BoundedTransport implements CommandTransport {
   }
 
   async execute(request: CommandRequest): Promise<RawCommandResult> {
-    if (waitsOnAnotherCommand(request)) return this.#inner.execute(request);
-    const waited = await this.#acquire(request);
+    if (waitsOnSomethingElse(request)) return this.#inner.execute(request);
+    const queuedAt = await this.#acquire(request);
     try {
-      return await this.#inner.execute(afterWaiting(request, waited));
+      return await this.#inner.execute(afterWaiting(request, queuedAt));
     } finally {
       this.#active -= 1;
       this.#handOn();
@@ -83,7 +98,13 @@ export class BoundedTransport implements CommandTransport {
     }
   }
 
-  /** Answers how long the caller waited, which is what its deadline owes. */
+  /**
+   * Answers when the caller started waiting, or zero if it never did.
+   *
+   * A timestamp rather than a duration: the continuation that resumes after
+   * this can itself be delayed, and only the moment of dispatch knows how much
+   * of the deadline is left by then.
+   */
   #acquire(request: CommandRequest): Promise<number> {
     if (this.#active < this.#limit) {
       this.#active += 1;
@@ -130,7 +151,7 @@ export class BoundedTransport implements CommandTransport {
             return false;
           }
           this.#active += 1;
-          resolve(Date.now() - queuedAt);
+          resolve(queuedAt);
           return true;
         },
       };
@@ -166,10 +187,21 @@ export class BoundedTransport implements CommandTransport {
  * `timeoutMs` silently becomes execution time rather than wall clock. A
  * request that never queued owes nothing and is handed on untouched, so the
  * uncontended path carries exactly the deadline it was given.
+ *
+ * Measured here rather than at the grant, because the continuation between
+ * the two is an ordinary task and a busy loop delays it: a request granted
+ * inside its deadline can still reach this line outside it, and starting a
+ * mutation whose caller has already given up is the thing worth refusing.
  */
-function afterWaiting(request: CommandRequest, waited: number): CommandRequest {
-  if (waited === 0 || request.timeoutMs === undefined) return request;
-  // A granted waiter was inside its deadline a moment ago, so what is left is
-  // positive; the floor covers only the tick between that check and this one.
-  return { ...request, timeoutMs: Math.max(1, request.timeoutMs - waited) };
+function afterWaiting(request: CommandRequest, queuedAt: number): CommandRequest {
+  if (queuedAt === 0 || request.timeoutMs === undefined) return request;
+  const remaining = request.timeoutMs - (Date.now() - queuedAt);
+  if (remaining <= 0) {
+    throw new TmuxTransportError("timed out waiting for a tmux invocation slot", {
+      delivery: "not_started",
+      kind: "timeout",
+      subcommand: request.commands[0][0],
+    });
+  }
+  return { ...request, timeoutMs: remaining };
 }

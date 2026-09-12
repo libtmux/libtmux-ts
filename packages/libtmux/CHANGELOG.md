@@ -57,9 +57,11 @@ there to sixty-four. Waiting for a slot spends the request's own deadline
 rather than extending it — the engine receives what is left of `timeoutMs`,
 not a fresh copy — and a request that never gets one raises
 `TmuxTransportError` with `delivery` of `"not_started"`. An invocation that
-only waits on another tmux command, such as `wait-for` on a channel, is not
-counted: it occupies a client and no throughput, and counting it would let a
-waiter hold the slot its own `wait-for -S` needs.
+blocks until something outside it releases it is not counted — `wait-for` on a
+channel, a popup or menu on its dismissal, a prompt on an answer. Each occupies
+a client and no throughput, and counting one would let it hold the slot its own
+release needs. Commands that wait on tmux doing work, such as `run-shell`, are
+counted, because they finish on their own.
 
 ### `@libtmux/mcp`
 
