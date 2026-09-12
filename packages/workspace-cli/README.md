@@ -112,6 +112,8 @@ Bootstrap and editor commands use quoted argv directly. Child output is UTF-8
 with replacement for invalid bytes. Captured results retain at most 64 KiB of
 source bytes per stream and report truncation; NDJSON forwards output as it
 arrives. A nonzero editor status becomes the CLI exit status.
+After a captured child exits, its streams have 100ms to drain before owned
+descendants are stopped. Remaining capture streams close after group cleanup.
 
 ## Python compatibility
 
@@ -123,6 +125,27 @@ Python-specific regex syntax is outside the native search contract.
 `TMUX_WORKSPACE_PYTHON` to choose its executable; otherwise it uses `python3`.
 Code passed with `-c` runs in tmuxp's Python context. An interactive shell needs
 a controlling terminal.
+
+`load` uses the same optional interpreter when a workspace selects Python
+`plugins` or a `workspace_builder`. Ordinary workspaces, empty plugin lists,
+and blank builder names use the native builder without starting Python.
+`workspace_builder_paths` adds existing import directories relative to the
+workspace file. These directories contain executable extension code.
+
+The adapter expands common configuration fields and supplies the tmuxp builder
+protocol. Explicit custom builders may omit `windows` and consume their own
+configuration. Append retains the authenticated current session across input
+files. Python extension append rejects `before_script`; run that script
+separately. Native append retains its bootstrap support.
+
+Extension output uses the bounded child streams described above. Human progress
+shows a workspace label and script output without native pane counters.
+Extension results report `effects_scope: "observed"`, `effects_unknown: true`,
+and newly observed window and pane IDs. These observations include concurrent
+changes and do not establish ownership; failures do not roll back opaque
+extension effects. Cancellation joins the owned Python process group, then
+allows up to one second to observe surviving topology. A changed daemon or
+failed observation is reported without comparing IDs across daemon lifetimes.
 
 ## Reference and completion
 
