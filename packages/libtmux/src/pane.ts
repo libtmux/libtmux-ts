@@ -1,4 +1,3 @@
-import type { CommandOptions } from "./common.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
 import type {
   CaptureOptions,

@@ -1,4 +1,3 @@
-import type { CommandOptions } from "./common.js";
 import type { CmdOptions, PlannedOperation } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
 import type { SetHookOptions, SetOptionOptions } from "./types.js";
