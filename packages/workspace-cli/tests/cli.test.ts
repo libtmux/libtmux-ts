@@ -94,6 +94,10 @@ test("empty listing retains the JSON shape and emits no NDJSON records", async (
 
 test("invalid machine arguments leave stdout empty with a structured usage diagnostic", async () => {
   for (const args of [
+    ["--json"],
+    ["--ndjson"],
+    ["import", "--json"],
+    ["import", "--ndjson"],
     ["load", "--json"],
     ["search", "--ndjson"],
     ["search", "[", "--json"],
