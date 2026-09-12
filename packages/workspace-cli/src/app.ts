@@ -86,6 +86,14 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     const render = (role: Parameters<typeof styled>[0], value: unknown) =>
       styled(role, value, color);
     if (!request.command || request.command === "import") {
+      if (mode !== "human")
+        throw new CliError(
+          "usage",
+          request.command
+            ? "Choose import teamocil or import tmuxinator."
+            : "Choose a workspace command.",
+          2,
+        );
       await write(
         context.stdout,
         parser.commands.get(request.command)!.helpInformation(),
