@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { Server } from "libtmux";
@@ -613,6 +613,30 @@ test("an unusable log destination fails before creating a session", async () => 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
     expect(await server.hasSession("log-refused")).toBe(false);
+  });
+});
+
+test("relative bootstrap paths preserve spaces and literal arguments", async () => {
+  await fixture(async (_server, root, run) => {
+    const directory = join(root, "workspace files");
+    await mkdir(directory);
+    await writeFile(join(directory, "before script.sh"), '#!/bin/sh\nprintf "%s\\n" "$@"\n', {
+      mode: 0o700,
+    });
+    const config = join(directory, "input.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "relative-bootstrap",
+        before_script: "'./before script.sh' 'a b' '' '$(printf literal)'",
+        windows: [{}],
+      }),
+    );
+    const result = await run(["load", config, "-d", "--json"]);
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+    expect(JSON.parse(result.stdout).results[0].script_output.stdout).toBe(
+      "a b\n\n$(printf literal)\n",
+    );
   });
 });
 
