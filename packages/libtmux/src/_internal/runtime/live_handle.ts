@@ -289,17 +289,17 @@ export function winlinkRefForHandle(handle: Child): WinlinkRef | null {
  * holds that id there — a swap that appears to succeed and moved the wrong
  * pair.
  */
-export function requireSameServer(
-  left: { readonly server: Server },
-  right: Child,
-  operation: string,
-): void {
+export function requireSameServer(left: Child, right: Child, operation: string): void {
   if (left.server.equals(right.server)) {
-    // Same address is not the same daemon. A handle read before a restart
-    // names an id the new daemon has reissued, so it is refused here exactly
-    // as it would be if the caller addressed it directly.
-    runtimeForHandle(right);
-    return;
+    // Same address is not the same daemon, and a local epoch cannot settle it:
+    // two `Server` values over one socket keep their own, so the one holding
+    // the stale handle may never have read the restart. Comparing what each
+    // capture recorded about the daemon that answered asks the handles instead
+    // of the servers.
+    if (sameCapturedDaemon(requireState(left).graph, requireState(right).graph)) return;
+    throw new TmuxServerRestarted(
+      `${operation} was given an object read from a different run of this tmux server; tmux reissues ids from the start, so that id names whatever holds it now.`,
+    );
   }
   throw new TypeError(
     `${operation} needs both objects on one tmux server: ${left.server.toString()} and ${right.server.toString()} are different servers, and a tmux id means something else on each.`,
@@ -315,7 +315,7 @@ export function requireSameServer(
  * wrong about both.
  */
 export function targetOf(
-  self: { readonly server: Server },
+  self: Child,
   target: (Child & { readonly id: string }) | string,
   operation: string,
 ): string {
