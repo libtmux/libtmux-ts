@@ -395,7 +395,7 @@
       "typescriptSymbols": ["./pane#instance:Pane.index"]
     },
     {
-      "adaptation": null,
+      "adaptation": "zoom is Pane.zoom and Pane.unzoom, which set a state where tmux's -Z toggles; mouse is omitted because resize-pane -M consumes a mouse event from a key binding and has nothing to read when a detached caller sends it; trim_below is omitted because -T returns before any resize and removes history below the cursor, which is a different operation rather than a resize flag",
       "declarationTest": null,
       "kind": "compatibility-alias",
       "owner": "libtmux.pane.Pane",
@@ -403,7 +403,7 @@
       "realTmuxScenario": "tests/integration/topology.test.ts",
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py",
-      "status": "implemented",
+      "status": "adapted",
       "typescript": "Pane.resize",
       "unitTest": null,
       "evidenceApplicability": {
@@ -6988,7 +6988,7 @@
       "typescriptSymbols": ["./pane#instance:Pane.clearHistory"]
     },
     {
-      "adaptation": null,
+      "adaptation": "zoom is Pane.zoom and Pane.unzoom, which set a state where tmux's -Z toggles; mouse is omitted because resize-pane -M consumes a mouse event from a key binding and has nothing to read when a detached caller sends it; trim_below is omitted because -T returns before any resize and removes history below the cursor, which is a different operation rather than a resize flag",
       "declarationTest": null,
       "kind": "method",
       "owner": "libtmux.pane.Pane",
@@ -6996,7 +6996,7 @@
       "realTmuxScenario": "tests/integration/topology.test.ts",
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/pane.py",
-      "status": "implemented",
+      "status": "adapted",
       "typescript": "Pane.resize",
       "unitTest": null,
       "evidenceApplicability": {

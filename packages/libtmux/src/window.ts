@@ -37,9 +37,11 @@ import {
   rotateWindow,
   selectLayout,
   selectTarget,
+  unzoomTarget,
   swapWindows,
   unlinkWindow,
 } from "./_internal/operations/topology.js";
+import type { CommandOptions } from "./common.js";
 import { respawnWindow } from "./_internal/operations/shell.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
@@ -49,10 +51,22 @@ import type { Session } from "./session.js";
 import {
   installLiveHandlePrototype,
   liveHandlesEqual,
+  requireSameServer,
+  targetOf,
   liveHandlesShareTmuxId,
   runtimeForHandle,
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
+
+/** Resolve a destination session to its id, refusing one on another server. */
+function destinationFor(
+  self: Window,
+  options: MoveWindowOptions,
+  operation: string,
+): MoveWindowOptions {
+  if (options.session === undefined || typeof options.session === "string") return options;
+  return { ...options, session: targetOf(self, options.session, operation) };
+}
 
 /** What {@link Window.plan} offers, one entry per mutation it can describe. */
 export interface WindowPlans {
@@ -343,6 +357,21 @@ export class Window {
   }
 
   /**
+   * Restore this window's layout, whichever of its panes was zoomed.
+   *
+   * Idempotent and one tmux command, for the reason {@link Pane.zoom} gives.
+   * Zooming is reached from the pane that should fill the window; unzooming
+   * has no such choice to make, so it is here as well.
+   *
+   * ```ts
+   * await window.unzoom();
+   * ```
+   */
+  unzoom(options?: CommandOptions): Promise<void> {
+    return unzoomTarget(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
    * Destroy this window, unlinking it from every session it is in.
    *
    * ```ts
@@ -378,6 +407,7 @@ export class Window {
    * ```
    */
   move(options: MoveWindowOptions = {}): Promise<void> {
+    options = destinationFor(this, options, "move");
     return moveWindow(runtimeForHandle(this), placementTarget(this), inThisSession(this, options));
   }
 
@@ -389,6 +419,7 @@ export class Window {
    * ```
    */
   link(options: MoveWindowOptions): Promise<void> {
+    options = destinationFor(this, options, "link");
     return linkWindow(runtimeForHandle(this), this.id, inThisSession(this, options));
   }
 
@@ -433,6 +464,7 @@ export class Window {
    * ```
    */
   swapWith(other: Window): Promise<void> {
+    requireSameServer(this, other, "swapWith");
     return swapWindows(runtimeForHandle(this), placementTarget(this), placementTarget(other));
   }
 

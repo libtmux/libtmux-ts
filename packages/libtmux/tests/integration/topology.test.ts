@@ -369,6 +369,129 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("zooms the pane it was asked for, in the window it is in", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const first = (await server.snapshot()).windows.one();
+      await first.split();
+      // A second window, selected, so the zoom target is not what tmux
+      // currently points at. `if-shell -t` sets only where its condition
+      // expands, so a branch without its own target lands here instead.
+      const elsewhere = await (await first.refreshed()).session!.newWindow({ name: "elsewhere" });
+      await elsewhere.select();
+
+      const zoomed = async (window: { readonly id: string }): Promise<boolean | null> =>
+        (await server.snapshot()).windows.one({ id: window.id }).zoomedFlag;
+      const activePane = async (): Promise<string> =>
+        (await server.snapshot()).panes.one({ active: true, window: { is: { id: first.id } } }).id;
+
+      const panes = (await server.snapshot()).panes
+        .where({ window: { is: { id: first.id } } })
+        .toArray();
+      const [top, bottom] = panes;
+      if (top === undefined || bottom === undefined) throw new Error("expected two panes");
+
+      expect(await zoomed(first)).toBe(false);
+      await top.zoom();
+      expect(await zoomed(first)).toBe(true);
+      expect(await zoomed(elsewhere)).toBe(false);
+      expect(await activePane()).toBe(top.id);
+
+      // A toggle would undo the first call; a state does not.
+      await top.zoom();
+      expect(await zoomed(first)).toBe(true);
+      expect(await activePane()).toBe(top.id);
+
+      // `window_zoomed_flag` is the window's, so a condition reading it alone
+      // calls this pane zoomed while its sibling is the zoomed one.
+      await bottom.zoom();
+      expect(await zoomed(first)).toBe(true);
+      expect(await activePane()).toBe(bottom.id);
+
+      await bottom.unzoom();
+      expect(await zoomed(first)).toBe(false);
+      await bottom.unzoom();
+      expect(await zoomed(first)).toBe(false);
+
+      await top.zoom();
+      await (await first.refreshed()).unzoom();
+      expect(await zoomed(first)).toBe(false);
+
+      // Any ordinary resize unzooms, which is tmux's behaviour and not this
+      // package's: `cmd_resize_pane_exec` calls `server_unzoom_window` first.
+      await top.zoom();
+      expect(await zoomed(first)).toBe(true);
+      await top.resize({ height: 5 });
+      expect(await zoomed(first)).toBe(false);
+    });
+  }, 40_000);
+
+  test("refuses a target from another server, and takes a handle from this one", async () => {
+    await withServer(async (first) => {
+      await withServer(async (second) => {
+        const here = serverFor(first);
+        const there = serverFor(second);
+        expect(here.equals(there)).toBe(false);
+
+        const hereSession = (await here.snapshot()).sessions.one();
+        await hereSession.newWindow({ name: "local" });
+        const thereSession = (await there.snapshot()).sessions.one();
+        await thereSession.newWindow({ name: "foreign" });
+
+        const local = (await here.snapshot()).windows.one({ name: "local" });
+        const foreign = (await there.snapshot()).windows.one({ name: "foreign" });
+
+        // `@1` exists on both daemons, so without a guard this addresses
+        // whatever holds that id here and reports success.
+        expect(() => local.swapWith(foreign)).toThrow(TypeError);
+        expect(() => local.swapWith(foreign)).toThrow("one tmux server");
+        expect(() => local.move({ session: thereSession })).toThrow("one tmux server");
+        expect(() => local.link({ session: thereSession })).toThrow("one tmux server");
+        expect(() => hereSession.selectWindow(foreign)).toThrow("one tmux server");
+        const localPane = local.panes.one();
+        const foreignPane = foreign.panes.one();
+        expect(() => localPane.swapWith(foreignPane)).toThrow("one tmux server");
+        expect(() => localPane.joinTo(foreign)).toThrow("one tmux server");
+
+        // A handle from this server is the point of accepting one at all.
+        await hereSession.selectWindow(local);
+        expect((await here.snapshot()).windows.one({ active: true }).name).toBe("local");
+
+        const destination = await here.newSession({ name: "destination" });
+        await local.link({ session: destination });
+        expect((await local.refreshed()).linkedSessions.count()).toBe(2);
+      });
+    });
+  }, 60_000);
+
+  test("selects the placement a window handle names, not just its id", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+      const shared = await session.newWindow({ name: "shared" });
+      // One window, two placements in one session: the id alone cannot say
+      // which of them a caller meant.
+      await shared.link({ session });
+      await session.newWindow({ name: "other" });
+
+      const placements = (await server.snapshot()).windows
+        .where({ id: shared.id })
+        .toArray()
+        .sort((left, right) => Number(left.index) - Number(right.index));
+      expect(placements.length).toBe(2);
+      const second = placements[1];
+      if (second === undefined) throw new Error("expected a second placement");
+
+      await session.selectWindow(second);
+
+      const active = (await server.snapshot()).windows.one({
+        active: true,
+        session: { is: { id: session.id } },
+      });
+      expect(Number(active.index)).toBe(Number(second.index));
+    });
+  }, 40_000);
+
   test("swaps two windows", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

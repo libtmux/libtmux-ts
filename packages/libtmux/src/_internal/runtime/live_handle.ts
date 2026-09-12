@@ -5,6 +5,7 @@ import { LibTmuxException, TmuxServerRestarted } from "../../exc.js";
 import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
+import type { WindowTarget } from "../../types.js";
 import type { Window } from "../../window.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { decodeFormatValue } from "../codec/format_values.js";
@@ -278,4 +279,67 @@ export function snapshotForHandle(handle: Child): CompleteFormatRow {
 
 export function winlinkRefForHandle(handle: Child): WinlinkRef | null {
   return requireState(handle).winlink;
+}
+
+/**
+ * Refuse an operation whose two objects came from different tmux servers.
+ *
+ * tmux ids are unique only within one running daemon, so `@1` exists on every
+ * server that has a window. Without this, a handle read from one server is
+ * accepted as a target on another and the command silently addresses whatever
+ * holds that id there — a swap that appears to succeed and moved the wrong
+ * pair.
+ */
+export function requireSameServer(left: Child, right: Child, operation: string): void {
+  if (left.server.equals(right.server)) {
+    // Same address is not the same daemon, and a local epoch cannot settle it:
+    // two `Server` values over one socket keep their own, so the one holding
+    // the stale handle may never have read the restart. Comparing what each
+    // capture recorded about the daemon that answered asks the handles instead
+    // of the servers.
+    if (sameCapturedDaemon(requireState(left).graph, requireState(right).graph)) return;
+    throw new TmuxServerRestarted(
+      `${operation} was given an object read from a different run of this tmux server; tmux reissues ids from the start, so that id names whatever holds it now.`,
+    );
+  }
+  throw new TypeError(
+    `${operation} needs both objects on one tmux server: ${left.server.toString()} and ${right.server.toString()} are different servers, and a tmux id means something else on each.`,
+  );
+}
+
+/**
+ * Resolve a cross-object target to the id tmux addresses it by.
+ *
+ * A string is passed through: a caller naming `"other:1"` has said which
+ * server they mean by having no other. A handle is checked first, because a
+ * handle carries the server and the daemon it came from, and can therefore be
+ * wrong about both.
+ */
+export function targetOf(
+  self: Child,
+  target: (Child & { readonly id: string }) | string,
+  operation: string,
+): string {
+  if (typeof target === "string") return target;
+  requireSameServer(self, target, operation);
+  return target.id;
+}
+
+/**
+ * Resolve a window target, keeping the placement a handle names.
+ *
+ * A window linked twice into one session holds two indexes behind one id, so
+ * reducing a handle to `@n` picks whichever placement tmux resolves first. The
+ * index is what tells them apart, and `selectWindowIn` qualifies it with the
+ * session, so this answers the index alone.
+ */
+export function windowTargetOf(session: Session, target: Window | WindowTarget): string {
+  if (typeof target === "string") return target;
+  requireSameServer(session, target, "selectWindow");
+  if (target.format.session_id !== session.id) {
+    throw new TypeError(
+      `selectWindow needs a window placed in this session: ${target.toString()} is placed in ${target.format.session_id}, and an index means a different window in each.`,
+    );
+  }
+  return String(target.format.window_index);
 }

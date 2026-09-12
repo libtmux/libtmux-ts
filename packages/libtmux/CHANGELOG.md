@@ -12,6 +12,73 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+#### Panes and windows
+
+`Pane.zoom`, `Pane.unzoom` and `Window.unzoom` set the zoom state rather than
+flipping it. tmux offers only `resize-pane -Z`, which toggles, so each call
+carries its condition through `if-shell -F` and lets tmux decide inside its own
+command queue: idempotent, and no window in which another resize changes the
+answer between a read and a write. `Pane.zoom` selects the pane first, because
+`window_zoomed_flag` belongs to the window and would otherwise report a pane
+zoomed while a sibling is the zoomed one; both commands travel as one
+invocation, so no reader sees a selected pane that is not yet zoomed. Any
+ordinary `resize` unzooms first, which is tmux's behaviour rather than this
+package's.
+
+`Pane.sendKeys` now sends the keys and Enter as two `send-keys` commands in one
+tmux invocation. Two invocations left a window in which another writer's Enter
+submitted this caller's half-typed line; one command carrying both would let
+tmux resolve Enter against whatever the keys before it had just done, which in
+copy mode is a mode that is no longer there.
+
+#### Cross-object targets
+
+`Pane.swapWith`, `Window.swapWith` and `Client.switchTo` now refuse an object
+from another tmux server with a `TypeError`. A tmux id is unique only within
+one running daemon, so `@1` exists on every server that has a window: the
+command previously ran against whichever object held that id here and reported
+success.
+
+`Window.move`, `Window.link`, `Pane.joinTo` and `Session.selectWindow` accept a
+handle as well as a string, and check a handle the same way. A handle read
+before the daemon restarted raises `TmuxServerRestarted` as it already did when
+addressed directly, since the same socket is not the same daemon.
+`Session.selectWindow` keeps the placement a window handle names, because a
+window linked twice into one session holds two indexes behind one id, and
+refuses a window placed in another session. A string is
+still accepted unchecked, because it carries neither to check.
+
+#### Server
+
+`ServerOptions.maxInFlight` bounds how many tmux invocations one server runs at
+once, and defaults to 16. Every invocation is a tmux client process with its
+own pipes, so a `Promise.all` over a whole server previously started that many.
+The ceiling costs no throughput: tmux runs commands on one thread, and measured
+capture throughput stops rising at four concurrent clients and is flat from
+there to sixty-four. Waiting for a slot spends the request's own deadline
+rather than extending it — the engine receives what is left of `timeoutMs`,
+not a fresh copy — and a request that never gets one raises
+`TmuxTransportError` with `delivery` of `"not_started"`. An invocation that
+blocks until something outside it releases it is not counted — `wait-for` on a
+channel, a popup or menu on its dismissal, a prompt on an answer. Each occupies
+a client and no throughput, and counting one would let it hold the slot its own
+release needs. Each is recognised by its canonical name, its built-in short
+name and any unambiguous abbreviation, because tmux resolves all three.
+Commands that wait on tmux doing work, such as `run-shell`, are counted,
+because they finish on their own, and a request that finds a free slot is
+dispatched without suspending, so an uncontended command reaches tmux exactly
+as it did before.
+
+### `@libtmux/mcp`
+
+`resize_pane` treats `zoom` as a state: `true` makes the pane fill its window
+and `false` restores the layout, and sending the same value twice is a no-op.
+It previously passed tmux's toggle through, so two identical calls undid each
+other. A call carrying both `zoom` and a size is now refused, because tmux
+unzooms a window before applying any size.
+
 ### Development
 
 Every CI job now carries a timeout. No lane here has hung, but three sibling

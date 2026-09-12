@@ -37,6 +37,7 @@ import {
   liveHandlesEqual,
   liveHandlesShareTmuxId,
   runtimeForHandle,
+  windowTargetOf,
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
@@ -347,8 +348,8 @@ export class Session {
    * await session.selectWindow("next");
    * ```
    */
-  selectWindow(target: WindowTarget): Promise<void> {
-    return selectWindowIn(runtimeForHandle(this), this.id, target);
+  selectWindow(target: Window | WindowTarget): Promise<void> {
+    return selectWindowIn(runtimeForHandle(this), this.id, windowTargetOf(this, target));
   }
 
   /**

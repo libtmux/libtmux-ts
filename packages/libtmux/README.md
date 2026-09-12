@@ -452,9 +452,19 @@ await pane.pasteBuffer("scratch");
 await window.select();
 await session.selectWindow("build");
 await pane.resize({ width: 100 });
+await pane.zoom();
+await pane.unzoom();
+await window.unzoom();
 await pane.setTitle("build output");
 await pane.kill();
 ```
+
+`zoom` and `unzoom` set a state rather than flipping one. tmux offers only
+`resize-pane -Z`, which toggles, so each call asks tmux to evaluate
+`#{window_zoomed_flag}` and toggle in the same command — idempotent, one
+invocation, and no window in which someone else's resize changes the answer
+between the read and the write. Any ordinary `resize` unzooms first, so a size
+and a zoom cannot both hold.
 
 `direction` says which side a split lands on, which window a new one sits
 beside, and lets a resize adjust rather than set. tmux reaches "above" and
@@ -492,6 +502,27 @@ await pane.breakOut();
 await pane.joinTo("other:1");
 await pane.swapWith(otherPane);
 ```
+
+Each of those takes a handle as readily as a string, and a handle is checked
+against this object's server before the command runs:
+
+```ts
+const owner = await server.newSession({ name: "handle-targets" });
+const shared = await owner.newWindow({ name: "shared" });
+const guest = await server.newSession({ name: "handle-guest" });
+
+await shared.link({ session: guest }); // the session, not its name
+await owner.selectWindow(shared); // the window, not its index
+
+const left = await owner.newWindow({ name: "left" });
+const right = await owner.newWindow({ name: "right" });
+await right.panes.one().joinTo(left.panes.one());
+```
+
+A tmux id is unique only within one running daemon, so `@1` exists on every
+server that has a window. Passing a handle from a different server raises
+`TypeError` rather than addressing whatever holds that id here — which is what
+a bare id cannot be checked for, since a string carries no server.
 
 A handle names a placement rather than a window, because one window can sit in
 two sessions at once. Moving a window leaves the handle pointing at a placement
@@ -924,7 +955,10 @@ const changed = lines.filter((line) => line.trim() !== "").length;
 
 `capture()` reads the visible pane; pass `start` to reach into the scrollback.
 `sendKeys` presses Enter unless you say otherwise, and takes keys literally with
-`{ literal: true }` when the text could be read as a tmux key name.
+`{ literal: true }` when the text could be read as a tmux key name. The keys and
+the Enter travel as two commands in one tmux invocation, so nothing interleaves
+between them and tmux resolves each against the pane as it finds it — a key
+that leaves copy mode is followed by an Enter the pane itself receives.
 
 ### Watch for a change and react to it
 
@@ -982,10 +1016,32 @@ around that execution path:
 | **connected**  | `await server.connect()`           | Adds notifications and connection-lifetime tracking.  | A server-shaped API in a loop that also reacts to events.         |
 | **watching**   | `server.watch()`                   | Yields tmux's notifications as they happen.           | Reacting to a change without issuing commands through that value. |
 | **planned**    | `.plan` instead of the direct call | Shares one final snapshot across `server.batch([…])`. | Creating or changing several things in order.                     |
-| **concurrent** | `Promise.all`                      | Independent commands overlap.                         | Slow work on independent targets — not ordering-sensitive setup.  |
+| **concurrent** | `Promise.all`                      | Independent commands overlap, up to `maxInFlight`.    | Slow work on independent targets — not ordering-sensitive setup.  |
 
 `connect()` hands back the same handles as the base server and adds an event
 observer. Its commands still use the server engine and process boundaries.
+
+### How many commands run at once
+
+Every invocation is a tmux client process with its own pipes, so a
+`Promise.all` over a whole server starts that many processes. `maxInFlight`
+bounds them, and defaults to 16:
+
+```ts
+const bounded = new Server({ maxInFlight: 4 });
+bounded.tmuxBin;
+```
+
+The ceiling costs no throughput, because there was none to lose: tmux runs
+commands on one thread. Measured against a live server on one machine, capture
+throughput stops rising at four concurrent clients and is flat from there to
+sixty-four, so a wider fan-out buys queueing and process pressure rather than
+work.
+
+Waiting for a slot spends the request's own deadline rather than extending it.
+A request that never gets one raises `TmuxTransportError` with
+`delivery` of `"not_started"` — the one status a mutation may retry blindly —
+and `signal` cancels the wait as it cancels the command.
 
 ### Supplying an engine
 

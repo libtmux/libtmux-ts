@@ -14,6 +14,7 @@ import type {
   PlannedOperation,
   SplitOptions,
 } from "./types.js";
+import type { CommandOptions } from "./common.js";
 import { PANE_ALIASES } from "./_generated/field_aliases.js";
 import type { AliasedFields, PaneAliasMap, RowWithIdentities } from "./field_types.js";
 import {
@@ -51,6 +52,8 @@ import {
   resizePane,
   selectTarget,
   setPaneTitle,
+  unzoomTarget,
+  zoomPane,
   swapPanes,
 } from "./_internal/operations/topology.js";
 import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
@@ -62,7 +65,9 @@ import {
   installLiveHandlePrototype,
   liveHandlesEqual,
   liveHandlesShareTmuxId,
+  requireSameServer,
   runtimeForHandle,
+  targetOf,
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 
@@ -289,12 +294,45 @@ export class Pane {
   /**
    * Resize this pane; tmux ignores a dimension its layout cannot honour.
    *
+   * Unzooms the window first, so a resize on a zoomed window restores the
+   * layout as well as applying the size.
+   *
    * ```ts
    * await pane.resize({ height: 20 });
    * ```
    */
   resize(options: ResizeOptions): Promise<void> {
     return resizePane(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Make this pane fill its window, whatever it was doing before.
+   *
+   * Idempotent, and one tmux command: tmux offers only a toggle, so this asks
+   * tmux to evaluate `#{window_zoomed_flag}` and toggle in the same
+   * invocation rather than reading the flag here and racing the answer.
+   * `window.zoomedFlag` reports the state a snapshot saw.
+   *
+   * ```ts
+   * await pane.zoom();
+   * ```
+   */
+  zoom(options?: CommandOptions): Promise<void> {
+    return zoomPane(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Restore this pane's window to its layout, whatever it was doing before.
+   *
+   * Idempotent in the same way {@link Pane.zoom} is, and unzooms the window
+   * even when a different pane in it is the zoomed one.
+   *
+   * ```ts
+   * await pane.unzoom();
+   * ```
+   */
+  unzoom(options?: CommandOptions): Promise<void> {
+    return unzoomTarget(runtimeForHandle(this), this.id, options);
   }
 
   /**
@@ -305,6 +343,7 @@ export class Pane {
    * ```
    */
   swapWith(other: Pane): Promise<void> {
+    requireSameServer(this, other, "swapWith");
     return swapPanes(runtimeForHandle(this), this.id, other.id);
   }
 
@@ -420,8 +459,8 @@ export class Pane {
    * await pane.joinTo(window.id, { vertical: true });
    * ```
    */
-  joinTo(target: string, options?: JoinOptions): Promise<void> {
-    return joinPane(runtimeForHandle(this), this.id, target, options);
+  joinTo(target: Pane | Window | string, options?: JoinOptions): Promise<void> {
+    return joinPane(runtimeForHandle(this), this.id, targetOf(this, target, "joinTo"), options);
   }
 
   /**

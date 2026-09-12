@@ -1,13 +1,16 @@
+import type { CommandOptions } from "../../common.js";
 import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { runCommand } from "./command.js";
+import { quoteCommand } from "../transport/lexer.js";
+import { runCommand, runCommands } from "./command.js";
 import { planRemoveWindowPlacement } from "./plans.js";
 import { assertName } from "./names.js";
 
 function destination(options: MoveWindowOptions): readonly string[] {
   if (options.session === undefined && options.index === undefined) return [];
-  const session = options.session ?? "";
+  const session =
+    typeof options.session === "string" ? options.session : (options.session?.id ?? "");
   return ["-t", `${session}:${options.index === undefined ? "" : String(options.index)}`];
 }
 
@@ -95,7 +98,70 @@ export async function selectLayout(
   await runCommand(runtime, ["select-layout", ...target(windowId), layout]);
 }
 
-/** Resize a pane; tmux ignores a dimension its layout cannot honour. */
+/**
+ * Zoom a pane, whatever the window was showing before.
+ *
+ * Three facts decide this shape. `resize-pane -Z` toggles rather than sets, so
+ * a state read here and acted on there races anyone else resizing the window.
+ * `window_zoomed_flag` is the window's, not the pane's, so it says a pane is
+ * zoomed when a sibling is the zoomed one — and `pane_zoomed_flag` arrived in
+ * tmux 3.7, above this package's floor. And `if-shell -t` sets the context its
+ * condition expands in, not the target its branch acts on, so the branch
+ * carries its own `-t` or it toggles whatever tmux currently points at.
+ *
+ * So: select the pane, which makes it active and drops a sibling's zoom, then
+ * zoom unless the window already is. One invocation, because tmux runs an
+ * invocation's commands in order on its own queue and a half-applied zoom is
+ * not a state anything should be able to observe.
+ */
+export async function zoomPane(
+  runtime: RuntimeContext,
+  paneId: string | null,
+  options: CommandOptions = {},
+): Promise<void> {
+  const at = target(paneId);
+  await runCommands(
+    runtime,
+    [
+      ["select-pane", ...at],
+      [
+        "if-shell",
+        "-F",
+        ...at,
+        "#{?window_zoomed_flag,0,1}",
+        quoteCommand(["resize-pane", "-Z", ...at]),
+      ],
+    ],
+    options,
+  );
+}
+
+/**
+ * Restore a window's layout, whichever of its panes was zoomed.
+ *
+ * Unzooming names no pane, so this needs no selection: the condition and the
+ * toggle both address the window the target names.
+ */
+export async function unzoomTarget(
+  runtime: RuntimeContext,
+  id: string | null,
+  options: CommandOptions = {},
+): Promise<void> {
+  const at = target(id);
+  await runCommand(
+    runtime,
+    ["if-shell", "-F", ...at, "#{window_zoomed_flag}", quoteCommand(["resize-pane", "-Z", ...at])],
+    options,
+  );
+}
+
+/**
+ * Resize a pane; tmux ignores a dimension its layout cannot honour.
+ *
+ * Every form here unzooms the window first — `cmd_resize_pane_exec` calls
+ * `server_unzoom_window` before it reads any size — so a resize on a zoomed
+ * window both restores the layout and applies the new size.
+ */
 export async function resizePane(
   runtime: RuntimeContext,
   paneId: string | null,

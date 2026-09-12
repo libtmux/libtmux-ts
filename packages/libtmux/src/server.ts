@@ -75,6 +75,10 @@ import type { RuntimeConstructors } from "./_internal/runtime/constructors.js";
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
 import { createConnectedServer } from "./_internal/control/connected_server.js";
 import { observerBoundTransport } from "./_internal/control/observer_transport.js";
+import {
+  BoundedTransport,
+  DEFAULT_MAX_IN_FLIGHT,
+} from "./_internal/transport/bounded_transport.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
 
@@ -99,6 +103,17 @@ export interface ServerOptions {
    * this unset to inherit the current process environment unchanged.
    */
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  /**
+   * How many tmux invocations this server runs at once. Defaults to 16.
+   *
+   * Every invocation is a tmux client process with its own pipes, so a caller
+   * that fans out over a whole server turns its own concurrency into process
+   * and descriptor pressure. tmux runs commands on one thread, so measured
+   * throughput stops rising at a handful of clients: the ceiling bounds the
+   * cost without bounding the work. Waiting for a slot spends the request's
+   * own deadline, and a request that never gets one fails `not_started`.
+   */
+  readonly maxInFlight?: number;
   readonly socketName?: string;
   readonly socketPath?: string;
   /**
@@ -195,7 +210,10 @@ export class Server {
       daemonEpoch: 0 as DaemonEpoch,
       ...(options?.engine === undefined ? {} : { engine: options.engine }),
       ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-      transport: options?.engine ?? new NodeSpawnTransport(),
+      transport: new BoundedTransport(
+        options?.engine ?? new NodeSpawnTransport(),
+        options?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT,
+      ),
     });
     registerServerRuntime(this, runtime, runtimeConstructors);
   }

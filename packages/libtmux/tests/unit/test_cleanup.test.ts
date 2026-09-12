@@ -37,8 +37,10 @@ describe("runWithCleanup", () => {
     const cleanup = new Error("secondary cleanup failure");
     const reports: unknown[] = [];
     const cleanupChannel = channel("libtmux.test.cleanup-failure");
+    // The channel is global and other files publish to it concurrently, so
+    // record only the reports this test caused.
     const listener = (message: unknown): void => {
-      reports.push(message);
+      if ((message as { cleanupError?: unknown }).cleanupError === cleanup) reports.push(message);
     };
     cleanupChannel.subscribe(listener);
     try {
@@ -100,8 +102,10 @@ describe("runWithCleanup", () => {
     const cleanup = new Error("secondary cleanup failure");
     const reports: unknown[] = [];
     const cleanupChannel = channel("libtmux.test.cleanup-failure");
+    // The channel is global and other files publish to it concurrently, so
+    // record only the reports this test caused.
     const listener = (message: unknown): void => {
-      reports.push(message);
+      if ((message as { cleanupError?: unknown }).cleanupError === cleanup) reports.push(message);
     };
     cleanupChannel.subscribe(listener);
     try {

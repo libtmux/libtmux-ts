@@ -9,6 +9,8 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
+import { sendKeys } from "../../src/_internal/operations/pane_io.js";
+import { unzoomTarget, zoomPane } from "../../src/_internal/operations/topology.js";
 import {
   planKillPaneIfUnshared,
   planNewSession,
@@ -31,17 +33,19 @@ interface Recorder extends CommandTransport {
   readonly requests: CommandRequest[];
 }
 
-function recorder(): Recorder {
+function recorder(returncode = 1): Recorder {
   const requests: CommandRequest[] = [];
   return {
     requests,
     // Resolving the created object needs a snapshot this fixture does not
-    // build, so the call fails after the arguments have been recorded.
+    // build, so the call fails after the arguments have been recorded. A call
+    // that issues more than one command passes 0, or it never reaches the
+    // second.
     execute(request: CommandRequest): Promise<RawCommandResult> {
       requests.push(request);
       return Promise.resolve({
         cmd: [request.executable, ...flattenInvocation(request)],
-        returncode: 1,
+        returncode,
         signal: null,
         // The transport boundary is bytes; decoding happens above it.
         stderr: new TextEncoder().encode("stopped\n"),
@@ -68,6 +72,15 @@ async function argumentsFor(
   const request = transport.requests[0];
   if (request === undefined) throw new Error("no command was issued");
   return request.commands[0];
+}
+
+/** Every tmux invocation a call made, as one argument list each. */
+async function invocationsFor(
+  run: (transport: Recorder) => Promise<unknown>,
+): Promise<readonly (readonly string[])[]> {
+  const transport = recorder(0);
+  await run(transport).catch(() => undefined);
+  return transport.requests.flatMap((request) => request.commands);
 }
 
 describe("lifecycle command arguments", () => {
@@ -212,5 +225,78 @@ describe("lifecycle command arguments", () => {
     expect(() => planNewSession({ windowName: "a:b" })).toThrow("window name");
     expect(() => planNewWindow(null, { name: "a.b" })).toThrow("window name");
     expect(planNewSession({ name: "work" }).argv).toContain("work");
+  });
+});
+
+describe("pane input command arguments", () => {
+  test("sends the keys and Enter as two commands in one invocation", async () => {
+    const transport = recorder(0);
+    await sendKeys(runtimeFor(transport), "%0", "echo hello").catch(() => undefined);
+
+    // Two invocations leave a gap in which another writer's Enter submits this
+    // caller's half-typed line. One command leaves tmux resolving Enter
+    // against the state the keys before it produced, which in copy mode is a
+    // mode that is no longer there.
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.commands).toEqual([
+      ["send-keys", "-t", "%0", "echo hello"],
+      ["send-keys", "-t", "%0", "Enter"],
+    ]);
+  });
+
+  test("omits Enter when the caller does", async () => {
+    const invocations = await invocationsFor((transport) =>
+      sendKeys(runtimeFor(transport), "%0", "q", { enter: false }),
+    );
+
+    expect(invocations).toEqual([["send-keys", "-t", "%0", "q"]]);
+  });
+
+  test("keeps Enter a separate key when the text is literal", async () => {
+    const invocations = await invocationsFor((transport) =>
+      sendKeys(runtimeFor(transport), "%0", "Enter", { literal: true }),
+    );
+
+    // `-l` applies to every argument, so an Enter beside literal text would be
+    // sent as the six characters rather than as the key.
+    expect(invocations).toEqual([
+      ["send-keys", "-t", "%0", "-l", "Enter"],
+      ["send-keys", "-t", "%0", "Enter"],
+    ]);
+  });
+});
+
+describe("zoom command arguments", () => {
+  test("selects the pane, then lets tmux decide the toggle", async () => {
+    const invocations = await invocationsFor((transport) => zoomPane(runtimeFor(transport), "%0"));
+
+    // `if-shell -t` sets where the condition expands, not where its branch
+    // acts, so the branch carries its own target or it toggles whatever tmux
+    // currently points at. The selection is what drops a sibling's zoom, since
+    // `window_zoomed_flag` is true for every pane in a zoomed window.
+    expect(invocations).toEqual([
+      ["select-pane", "-t", "%0"],
+      ["if-shell", "-F", "-t", "%0", "#{?window_zoomed_flag,0,1}", "'resize-pane' '-Z' '-t' '%0'"],
+    ]);
+  });
+
+  test("sends both zoom commands as one invocation", async () => {
+    const transport = recorder(0);
+    await zoomPane(runtimeFor(transport), "%0").catch(() => undefined);
+
+    // Two invocations would leave a pane selected but not zoomed for anyone
+    // reading in between.
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.commands).toHaveLength(2);
+  });
+
+  test("unzooms without selecting anything", async () => {
+    const invocations = await invocationsFor((transport) =>
+      unzoomTarget(runtimeFor(transport), "@3"),
+    );
+
+    expect(invocations).toEqual([
+      ["if-shell", "-F", "-t", "@3", "#{window_zoomed_flag}", "'resize-pane' '-Z' '-t' '@3'"],
+    ]);
   });
 });
