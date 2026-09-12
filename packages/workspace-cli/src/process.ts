@@ -98,6 +98,7 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
   }
   let failure: unknown;
   let escalation: ReturnType<typeof setTimeout> | undefined;
+  let drainDeadline: ReturnType<typeof setTimeout> | undefined;
   let escalationDone: Promise<void> | undefined;
   let finishEscalation: (() => void) | undefined;
   const kill = (signal: NodeJS.Signals | 0): boolean => {
@@ -132,6 +133,7 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
       failure ??= error;
     });
     child.once("close", (code, signal) => {
+      clearTimeout(drainDeadline);
       // A reaped leader can leave descendants in its process group.
       if (escalationDone && (!grouped || terminal || !kill(0))) {
         clearTimeout(escalation);
@@ -140,6 +142,16 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
       resolve(options.signal?.aborted ? 130 : (code ?? (signal ? 1 : 0)));
     });
   });
+  if (!terminal)
+    child.once("exit", () => {
+      drainDeadline = setTimeout(() => {
+        stop();
+        void escalationDone?.then(() => {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+        });
+      }, 100);
+    });
   options.signal?.addEventListener("abort", stop, { once: true });
   if (options.signal?.aborted) stop();
   const input = child.stdin
@@ -171,7 +183,7 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
       const final = decoder.end();
       if (final) await options.output?.(name, final);
     } catch (error) {
-      failure ??= error;
+      if (!options.signal?.aborted || error !== options.signal.reason) failure ??= error;
       stop();
       stream.destroy();
     }
@@ -199,6 +211,7 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
     options.signal?.removeEventListener("abort", stop);
     await escalationDone;
     clearTimeout(escalation);
+    clearTimeout(drainDeadline);
     await terminal?.close();
   }
 }
