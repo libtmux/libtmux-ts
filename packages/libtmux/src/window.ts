@@ -473,6 +473,7 @@ export class Window {
    *
    * Names accept unique abbreviations. Checksums and tree structure are checked
    * before dispatch; tmux remains responsible for geometry and pruning.
+   * This API limits custom layouts to 8192 characters and 256 nested groups.
    *
    * @throws TypeError when the layout name or serialized tree is invalid.
    *

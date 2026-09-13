@@ -660,6 +660,7 @@ Check every planned window layout before setup scripts or mutations.
 Names accept unique abbreviations. Only version-sensitive names query the
 daemon; a cold endpoint uses the selected client. Checksums, bounded tree
 structure and pane counts are checked locally; tmux owns geometry and pruning.
+This API limits custom layouts to 8192 characters and 256 nested groups.
 
 @throws TypeError when a layout, pane count or version reply is invalid.
 @throws TmuxCommandError when the daemon or client version cannot be read.
@@ -1852,6 +1853,7 @@ Apply a named or custom layout.
 
 Names accept unique abbreviations. Checksums and tree structure are checked
 before dispatch; tmux remains responsible for geometry and pruning.
+This API limits custom layouts to 8192 characters and 256 nested groups.
 
 @throws TypeError when the layout name or serialized tree is invalid.
 
