@@ -85,6 +85,92 @@ async function fixture(
 
 const extensionTest = test.skipIf(!process.env.LIBTMUX_TEST_PYTHON);
 
+test.each([
+  ["before_scrip", { before_scrip: "touch ignored" }],
+  ["shell_command_befor", { windows: [{ shell_command_befor: "touch ignored" }] }],
+  ["shell_commmand", { windows: [{ panes: [{ shell_commmand: "touch ignored" }] }] }],
+  [
+    "entter",
+    { windows: [{ panes: [{ shell_command: [{ cmd: "touch executed", entter: false }] }] }] },
+  ],
+  ["pane_readines", { workspace_builder_options: { pane_readines: "never" } }],
+])(
+  "native load rejects %s in later inputs before scripts or topology change",
+  async (key, fields) => {
+    await fixture(async (server, root, run) => {
+      const before = await server.snapshot();
+      const first = join(root, "first.json");
+      const second = join(root, "second.json");
+      await writeFile(join(root, "before.sh"), "#!/bin/sh\ntouch bootstrap-ran\n");
+      await writeFile(
+        first,
+        JSON.stringify({
+          session_name: "first",
+          before_script: "/bin/sh ./before.sh",
+          windows: [{}],
+        }),
+      );
+      await writeFile(second, JSON.stringify({ session_name: "second", windows: [{}], ...fields }));
+      const child = await run(["load", first, second, "-d", "--json"]);
+      expect(child.code, child.stdout + child.stderr).toBe(1);
+      expect(child.stdout).toBe("");
+      expect(JSON.parse(child.stderr).message).toContain(`.${key}`);
+      expect(await Bun.file(join(root, "bootstrap-ran")).exists()).toBe(false);
+      const after = await server.snapshot();
+      expect(after.daemonIdentity).toEqual(before.daemonIdentity);
+      expect(after.sessions.toArray().map((session) => session.id)).toEqual(
+        before.sessions.toArray().map((session) => session.id),
+      );
+      expect(after.windows.toArray().map((window) => window.id)).toEqual(
+        before.windows.toArray().map((window) => window.id),
+      );
+      expect(after.panes.toArray().map((pane) => pane.id)).toEqual(
+        before.panes.toArray().map((pane) => pane.id),
+      );
+    });
+  },
+);
+
+test("native metadata and empty extensions preserve enter false command control", async () => {
+  await fixture(async (server, root, run) => {
+    const before = (await server.snapshot()).sessions.one({ name: "fixture" });
+    const source = join(root, "controls.json");
+    const marker = join(root, "command-ran");
+    const cmd = "printf executed > command-ran";
+    await writeFile(
+      source,
+      JSON.stringify({
+        session_name: "controls",
+        start_directory: root,
+        description: "Session description",
+        plugins: [],
+        workspace_builder: " ",
+        workspace_builder_options: { pane_readiness: "never" },
+        windows: [
+          {
+            description: "Window description",
+            panes: [{ description: "Pane description", shell_command: [{ cmd, enter: false }] }],
+          },
+        ],
+      }),
+    );
+    const child = await run(["load", source, "-d", "--json"], {
+      TMUX_WORKSPACE_PYTHON: "/missing-python",
+    });
+    expect(child.code, child.stdout + child.stderr).toBe(0);
+    const snapshot = await server.snapshot();
+    const pane = snapshot.sessions.one({ name: "controls" }).windows.at(0)!.panes.at(0)!;
+    expect((await pane.capture()).join("\n")).toContain(cmd);
+    expect(await Bun.file(marker).exists()).toBe(false);
+    await pane.sendKeys("Enter", { literal: false, enter: false });
+    const deadline = Date.now() + 5000;
+    // eslint-disable-next-line no-await-in-loop -- Observe the submitted command's side effect.
+    while (Date.now() < deadline && !(await Bun.file(marker).exists())) await Bun.sleep(10);
+    expect(await readFile(marker, "utf8")).toBe("executed");
+    expect(snapshot.sessions.one({ name: "fixture" }).id).toBe(before.id);
+  });
+});
+
 extensionTest("Python plugin output stays separate from native ownership records", async () => {
   await fixture(async (server, root, run) => {
     await writeFile(

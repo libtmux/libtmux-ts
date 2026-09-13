@@ -58,7 +58,7 @@ export async function extensionPlan(
       "Python extension append cannot use before_script; run the script separately",
     );
   const name = workspaceName(data, context, override);
-  if (!builder.trim()) normalize(data, path, context, override);
+  if (!builder.trim()) normalize(data, path, context, override, { allowExtensionFields: true });
   const config = structuredClone(data);
   if (!builder.trim()) delete config.workspace_builder;
   return { data: config, name };
