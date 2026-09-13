@@ -396,6 +396,12 @@ loaded configuration, and the supported foreground shell.
 `select_pane`, `select_window`, `select_layout`, `swap_pane`, `move_window`, and
 `set_pane_title`.
 
+`select_layout` accepts tmux's named layouts, unique abbreviations for the
+running daemon, and checksummed saved layouts. The native core validates the
+input before dispatch; tmux owns geometry and may resize or prune saved cells.
+The result's `window.layout` comes from a fresh snapshot. Check
+`metadataComplete` before reusing it as input.
+
 Copy mode and other client modes are human-owned, modal state. A nonzero
 `snapshot_pane.inMode` reports that state; input may be interpreted by the
 active tmux key table instead of reaching the pane's program. Report the mode
