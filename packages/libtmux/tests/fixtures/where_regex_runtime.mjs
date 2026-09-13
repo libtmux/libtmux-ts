@@ -22,7 +22,7 @@ assert.ok(implementation === "bun" || implementation === "node");
 
 const fixture = JSON.parse(await readFile(new URL("./where_regex.json", import.meta.url), "utf8"));
 assert.equal(fixture.protocol, protocol);
-assert.deepEqual(fixture.runtimes, { bun: ["1.3.14", "1.4.0"], node: "22", python: "3" });
+assert.deepEqual(fixture.runtimes, { bun: ["1.3.14", "1.4.0", "1.4.2"], node: "22", python: "3" });
 
 // Checked against the corpus rather than a repeated literal: what makes this
 // evidence is that the engine running the cases is the one that recorded them.
