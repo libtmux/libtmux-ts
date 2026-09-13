@@ -47,8 +47,7 @@ async function fixture(
                 process.execPath,
                 new URL("../src/main.ts", import.meta.url).pathname,
                 ...args,
-                "-S",
-                fixture.socketPath,
+                ...(args[0] === "import" ? [] : ["-S", fixture.socketPath]),
               ],
               {
                 cwd: directory,
@@ -82,6 +81,131 @@ async function fixture(
     process.env.LIBTMUX_TEST_TMUX ?? "tmux",
   );
 }
+
+test("imported command groups load after relocation with native pane order", async () => {
+  await fixture(async (server, root, command) => {
+    const keeper = (await server.snapshot()).sessions.one({ name: "fixture" });
+    const keeperPane = keeper.panes.one().id;
+    const project = join(root, "project");
+    const saved = join(root, "elsewhere");
+    await mkdir(project);
+    await mkdir(saved);
+    const source = join(root, "import-source.json");
+    const target = join(saved, "imported.json");
+    await writeFile(
+      source,
+      JSON.stringify({
+        name: "imported-groups",
+        root: "project",
+        pre_window: ["false", "printf prefix > prefix.marker"],
+        windows: [
+          {
+            main: {
+              pre: ["false", "touch forbidden.marker"],
+              panes: [["printf first > order.marker", "printf second >> order.marker"]],
+            },
+          },
+        ],
+      }),
+    );
+    const imported = await command([
+      "import",
+      "tmuxinator",
+      source,
+      "--save-to",
+      target,
+      "--workspace-format",
+      "json",
+      "--json",
+    ]);
+    expect(imported.code, imported.stderr).toBe(0);
+    const loaded = await command(["load", target, "-d", "--json"]);
+    expect(loaded.code, loaded.stderr).toBe(0);
+    const session = (await server.snapshot()).sessions.one({ name: "imported-groups" });
+    expect(session.panes.count()).toBe(1);
+    const marker = join(project, "order.marker");
+    const deadline = Date.now() + 3000;
+    let contents = "";
+    /* eslint-disable no-await-in-loop -- Wait for complete command output within the deadline. */
+    while (Date.now() < deadline && contents !== "firstsecond") {
+      contents = await readFile(marker, "utf8").catch(() => "");
+      if (contents !== "firstsecond") await Bun.sleep(10);
+    }
+    /* eslint-enable no-await-in-loop */
+    expect(contents).toBe("firstsecond");
+    expect(await readFile(join(project, "prefix.marker"), "utf8")).toBe("prefix");
+    expect(await Bun.file(join(project, "forbidden.marker")).exists()).toBe(false);
+    expect((await server.snapshot()).sessions.one({ id: keeper.id }).panes.one().id).toBe(
+      keeperPane,
+    );
+  });
+});
+
+test.each(["before", "after", "teamocil"])(
+  "imported %s synchronization preserves command delivery and focus",
+  async (phase) => {
+    await fixture(async (server, root, command) => {
+      const keeper = (await server.snapshot()).sessions.one({ name: "fixture" });
+      const keeperPane = keeper.panes.one().id;
+      const input = join(root, "source.json");
+      const saved = join(root, "workspace.json");
+      const first = 'printf first >> "$(printenv TMUX_PANE).marker"';
+      const second = 'printf second >> "$(printenv TMUX_PANE).marker"';
+      const document =
+        phase === "teamocil"
+          ? {
+              name: "import-sync",
+              windows: [
+                {
+                  name: "main",
+                  options: { "synchronize-panes": true },
+                  panes: [
+                    { commands: ["false", first] },
+                    { commands: ["false", second], focus: true },
+                  ],
+                },
+              ],
+            }
+          : {
+              name: "import-sync",
+              windows: [{ main: { synchronize: phase, panes: [first, second] } }],
+            };
+      await writeFile(input, JSON.stringify(document));
+      const imported = await command([
+        "import",
+        phase === "teamocil" ? "teamocil" : "tmuxinator",
+        input,
+        "--save-to",
+        saved,
+        "--workspace-format",
+        "json",
+        "--json",
+      ]);
+      expect(imported.code, imported.stderr).toBe(0);
+      const loaded = await command(["load", saved, "-d", "--json"]);
+      expect(loaded.code, loaded.stderr).toBe(0);
+      const session = (await server.snapshot()).sessions.one({ name: "import-sync" });
+      const panes = session.panes.toArray();
+      expect(panes).toHaveLength(2);
+      const expected = [phase === "after" ? "first" : "firstsecond", "second"];
+      const paths = panes.map((pane) => join(root, `${pane.id}.marker`));
+      let observed: string[] = [];
+      const deadline = Date.now() + 3000;
+      /* eslint-disable no-await-in-loop -- Observe each pane's completed writes within the deadline. */
+      while (Date.now() < deadline) {
+        observed = await Promise.all(paths.map((path) => readFile(path, "utf8").catch(() => "")));
+        if (observed.every((value, index) => value === expected[index])) break;
+        await Bun.sleep(10);
+      }
+      /* eslint-enable no-await-in-loop */
+      expect(observed).toEqual(expected);
+      expect(session.activePane?.id).toBe(panes[phase === "teamocil" ? 1 : 0]!.id);
+      expect((await server.snapshot()).sessions.one({ id: keeper.id }).panes.one().id).toBe(
+        keeperPane,
+      );
+    });
+  },
+);
 
 const extensionTest = test.skipIf(!process.env.LIBTMUX_TEST_PYTHON);
 

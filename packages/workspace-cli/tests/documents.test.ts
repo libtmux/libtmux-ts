@@ -4,12 +4,14 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type Document,
   discover,
-  importDocument,
   readDocument,
   resolveWorkspace,
   saveDocument,
 } from "../src/documents.ts";
+
+import { importDocument } from "../src/imports.ts";
 
 let root: string;
 let context: { cwd: string; env: Record<string, string> };
@@ -94,52 +96,162 @@ test("cancelled saves preserve existing files and do not publish new files", asy
   }
 });
 
-test("tmuxinator import converts tabs, startup commands, roots and pane arrays", () => {
-  expect(
-    importDocument("tmuxinator", {
+test("tmuxinator import converts legacy names, tabs and pane roots", () => {
+  const result = importDocument(
+    "tmuxinator",
+    {
       project_name: "dev",
       root: "/tmp",
-      pre: "echo ready",
+      pre_window: "echo ready",
       tabs: [{ editor: { root: "/", panes: ["vim", null], layout: "even-horizontal" } }],
-    }),
-  ).toEqual({
-    session_name: "dev",
-    start_directory: "/tmp",
-    shell_command_before: ["echo ready"],
-    windows: [
-      {
-        window_name: "editor",
-        start_directory: "/",
-        panes: ["vim", null],
-        layout: "even-horizontal",
-      },
-    ],
-  });
+    },
+    context,
+  );
+  expect(result.session_name).toBe("dev");
+  expect(result.start_directory).toBe("/tmp");
+  expect(result.shell_command_before).toEqual([{ cmd: "echo ready" }]);
+  expect(result.windows).toEqual([
+    {
+      window_name: "editor",
+      start_directory: "/",
+      layout: "even-horizontal",
+      focus: true,
+      panes: [{ shell_command: [{ cmd: "vim" }], focus: true }, { shell_command: [] }],
+    },
+  ]);
 });
 
-test("teamocil import handles nested sessions, filters, splits and commands", () => {
-  expect(
-    importDocument("teamocil", {
-      session: {
-        name: "dev",
-        windows: [
-          {
-            name: "edit",
-            filters: { before: ["echo before"], after: ["echo after"] },
-            splits: [{ cmd: "vim", width: 50 }],
-          },
-        ],
-      },
-    }),
-  ).toEqual({
-    session_name: "dev",
-    windows: [
-      {
-        window_name: "edit",
-        shell_command_before: ["echo before"],
-        shell_command_after: ["echo after"],
-        panes: [{ shell_command: "vim" }],
-      },
-    ],
-  });
+test("teamocil import handles nested sessions and legacy splits", () => {
+  const result = importDocument(
+    "teamocil",
+    {
+      session: { name: "dev", windows: [{ name: "edit", splits: [{ cmd: "vim" }] }] },
+    },
+    context,
+  );
+  expect(result.session_name).toBe("dev");
+  expect(result.windows).toEqual([
+    {
+      window_name: "edit",
+      focus: true,
+      panes: [{ shell_command: [{ cmd: "vim" }], focus: true }],
+    },
+  ]);
 });
+
+test("native imports preserve Teamocil command groups and modern pane fields", () => {
+  const source: Document = {
+    session: {
+      name: "modern",
+      windows: [
+        {
+          name: "main",
+          focus: true,
+          options: { "automatic-rename": false },
+          panes: [{ commands: ["cd project", "printf ready"], focus: true }, "blank"],
+        },
+      ],
+    },
+  };
+  const before = structuredClone(source);
+  const result = importDocument("teamocil", source, context);
+  expect(result.start_directory).toBe(context.cwd);
+  expect(result.windows).toEqual([
+    {
+      window_name: "main",
+      focus: true,
+      options: { "automatic-rename": false },
+      panes: [
+        { shell_command: [{ cmd: "cd project; printf ready" }], focus: true },
+        { shell_command: [{ cmd: "blank" }] },
+      ],
+    },
+  ]);
+  expect(source).toEqual(before);
+});
+
+test("native imports preserve one-pane command arrays and pre-window sequences", () => {
+  const result = importDocument(
+    "tmuxinator",
+    {
+      name: "grouped",
+      root: "project",
+      pre_window: ["false", "printf unreachable"],
+      windows: [{ main: ["printf first", "printf second"] }],
+    },
+    context,
+  );
+  expect(result.start_directory).toBe(join(context.cwd, "project"));
+  expect(result.shell_command_before).toEqual([{ cmd: "false; printf unreachable" }]);
+  expect(result.windows).toEqual([
+    {
+      window_name: "main",
+      focus: true,
+      panes: [{ shell_command: [{ cmd: "printf first" }, { cmd: "printf second" }], focus: true }],
+    },
+  ]);
+});
+
+test("native imports keep window pre failure groups distinct from project pre_window", () => {
+  const result = importDocument(
+    "tmuxinator",
+    {
+      name: "grouped",
+      windows: [{ main: { pre: ["false", "printf unreachable"], panes: ["true"] } }],
+    },
+    context,
+  );
+  expect((result.windows as Document[])[0]?.shell_command_before).toEqual([
+    { cmd: "false && printf unreachable" },
+  ]);
+});
+
+test("native imports resolve non-null aliases and reject ERB templates", () => {
+  const result = importDocument(
+    "tmuxinator",
+    {
+      name: "aliases",
+      project_name: null,
+      root: null,
+      project_root: "project",
+      windows: [{ main: "true" }],
+      tabs: null,
+    },
+    context,
+  );
+  expect(result.session_name).toBe("aliases");
+  expect(result.start_directory).toBe(join(context.cwd, "project"));
+  expect(() =>
+    importDocument(
+      "tmuxinator",
+      {
+        name: "template",
+        windows: [{ main: "printf <%= command %>" }],
+      },
+      context,
+    ),
+  ).toThrow("ERB");
+});
+
+test.each([
+  ["tmuxinator", { name: "x", pre: "touch project-hook", windows: [{ main: "true" }] }],
+  ["tmuxinator", { name: "x", socket_name: "other", windows: [{ main: "true" }] }],
+  ["tmuxinator", { name: "x", windows: [{ main: { panes: [{ editor: ["true"] }] } }] }],
+  ["tmuxinator", { name: "x", windows: [{ main: { pre: "touch unused" } }] }],
+  ["tmuxinator", { name: "x", windows: [] }],
+  ["teamocil", { name: "x", windows: [{ name: "main", clear: true, panes: [{ cmd: "true" }] }] }],
+  [
+    "teamocil",
+    {
+      name: "x",
+      windows: [{ name: "main", filters: { after: ["touch after"] }, panes: [{ cmd: "true" }] }],
+    },
+  ],
+  ["teamocil", { name: "x", windows: [{ name: "main", panes: [{ cmd: "true", width: 50 }] }] }],
+  ["teamocil", { name: "x", windows: [{ name: "main", panes: [{ commands: [42] }] }] }],
+] satisfies ["tmuxinator" | "teamocil", Document][])(
+  "native imports refuse unsupported or invalid %s fields",
+  (kind, source) => {
+    expect(() => importDocument(kind, structuredClone(source), context)).toThrow();
+  },
+);

@@ -192,6 +192,68 @@ test("legacy 88-color load fails before invoking tmux in every output mode", asy
   }
 });
 
+test("native imports validate before preview, creation or replacement", async () => {
+  const source = join(root, "source.json");
+  const destination = join(root, "saved.json");
+  const cases = [
+    ["tmuxinator", { name: "x", pre: "touch unsupported", windows: [{ main: "true" }] }],
+    ["tmuxinator", { name: "x", windows: [] }],
+    ["tmuxinator", { windows: [{ main: "true" }] }],
+    ["teamocil", { name: "x", windows: [{ name: "main", filters: { after: "true" } }] }],
+    ["teamocil", { name: "x", windows: [{ name: "main", panes: [{ commands: [42] }] }] }],
+  ] as const;
+  for (const [kind, document] of cases) {
+    await writeFile(source, JSON.stringify(document));
+    for (const mode of [[], ["--json"], ["--ndjson"]]) {
+      for (const publication of ["preview", "create", "replace"]) {
+        await rm(destination, { force: true });
+        if (publication === "replace") await writeFile(destination, "original bytes");
+        const args = ["import", kind, source, ...mode];
+        if (publication !== "preview") args.push("--save-to", destination, "--force");
+        const result = await run(args, {
+          TMUX_BIN: "/missing-tmux",
+          TMUX_WORKSPACE_PYTHON: "/missing-python",
+        });
+        expect(result.code, result.stderr).toBe(1);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).not.toContain("missing-tmux");
+        expect(result.stderr).not.toContain("missing-python");
+        if (publication === "replace")
+          expect(await readFile(destination, "utf8")).toBe("original bytes");
+        else expect(await Bun.file(destination).exists()).toBe(false);
+      }
+    }
+  }
+});
+
+test("native imports save without checking the backend or directory availability", async () => {
+  await writeFile(
+    join(root, "source.json"),
+    JSON.stringify({
+      name: "later",
+      root: "not-created",
+      windows: [{ main: "true" }],
+    }),
+  );
+  const result = await run(
+    [
+      "import",
+      "tmuxinator",
+      "source.json",
+      "--save-to",
+      "saved.json",
+      "--workspace-format",
+      "json",
+      "--json",
+    ],
+    { TMUX_BIN: "/missing-tmux", TMUX_WORKSPACE_PYTHON: "/missing-python" },
+  );
+  expect(result.code, result.stderr).toBe(0);
+  expect(JSON.parse(await readFile(join(root, "saved.json"), "utf8")).start_directory).toBe(
+    join(root, "not-created"),
+  );
+});
+
 test("convert machine stdout preserves the document and performs no guessed write", async () => {
   await writeFile(
     join(root, "dev.yaml"),

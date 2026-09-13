@@ -8,7 +8,6 @@ import {
   discover,
   expandPath,
   home,
-  importDocument,
   privatePath,
   readDocument,
   resolveWorkspace,
@@ -16,6 +15,7 @@ import {
   type FileContext,
 } from "./documents.ts";
 import { CliError, colorEnabled, emitJson, styled, write } from "./output.ts";
+import { importDocument } from "./imports.ts";
 import { search } from "./search.ts";
 import { debugInfo, edit, shell } from "./commands.ts";
 import { Diagnostics } from "./diagnostics.ts";
@@ -209,7 +209,7 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
         importerRoot,
       );
       const raw = await readDocument(source);
-      const document = kind ? importDocument(kind, raw) : raw;
+      const document = kind ? importDocument(kind, raw, context) : raw;
       let destination = request.values.save_to
         ? resolve(context.cwd, expandPath(scalarText(request.values.save_to), context))
         : undefined;
