@@ -59,6 +59,10 @@ client launches it as a subprocess. To pin it in a project instead:
 $ bun add --exact @libtmux/mcp@0.1.0-alpha.9
 ```
 
+Closing the subprocess's stdin cancels pending waits and joins its control
+connections before exit. Existing tmux sessions and panes keep running.
+Backend cleanup failures produce a nonzero exit status.
+
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
