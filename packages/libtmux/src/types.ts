@@ -263,7 +263,9 @@ export interface SplitOptions extends CommandOptions {
   /**
    * Which side of this pane the new one takes.
    *
-   * Defaults to below. Combining this with `vertical` throws `TypeError`.
+   * tmux splits below by default and offers no other way to say "above" or
+   * "left" than pairing the axis with `-b`, so a boolean cannot express half
+   * of the choices. Combining this with `vertical` throws `TypeError`.
    */
   readonly direction?: PaneDirection;
   readonly startDirectory?: string;

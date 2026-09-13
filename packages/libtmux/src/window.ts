@@ -72,6 +72,7 @@ function destinationFor(
 export interface WindowPlans {
   readonly kill: () => PlannedOperation<void>;
   readonly removePlacement: () => PlannedOperation<void>;
+  /** @throws TypeError when `options` combines `direction` with `vertical`. */
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
@@ -265,6 +266,8 @@ export class Window {
    * const created = await window.split({ direction: PaneDirection.Below });
    * created.id;
    * ```
+   *
+   * @throws TypeError when `options` combines `direction` with `vertical`.
    */
   split(options?: SplitOptions): Promise<Pane> {
     return splitWindow(this.server, runtimeForHandle(this), this.id, options);

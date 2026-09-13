@@ -1627,6 +1627,8 @@ split(options?: SplitOptions): Promise<Pane>
 
 Split this window and resolve the created pane.
 
+@throws TypeError when `options` combines `direction` with `vertical`.
+
 ```ts
 import { PaneDirection } from "libtmux";
 const created = await window.split({ direction: PaneDirection.Below });
@@ -2054,6 +2056,8 @@ split(options?: SplitOptions): Promise<Pane>
 ```
 
 Split this pane and resolve the created pane.
+
+@throws TypeError when `options` combines `direction` with `vertical`.
 
 ```ts
 import { PaneDirection } from "libtmux";
