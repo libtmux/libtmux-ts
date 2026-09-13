@@ -121,11 +121,14 @@ test("tmuxinator import converts legacy names, tabs and pane roots", () => {
   ]);
 });
 
-test("teamocil import handles nested sessions and legacy splits", () => {
+test("teamocil import handles nested sessions, legacy splits and literal ERB-like text", () => {
   const result = importDocument(
     "teamocil",
     {
-      session: { name: "dev", windows: [{ name: "edit", splits: [{ cmd: "vim" }] }] },
+      session: {
+        name: "dev",
+        windows: [{ name: "edit", splits: [{ cmd: "echo <%= literal %>" }] }],
+      },
     },
     context,
   );
@@ -134,7 +137,7 @@ test("teamocil import handles nested sessions and legacy splits", () => {
     {
       window_name: "edit",
       focus: true,
-      panes: [{ shell_command: [{ cmd: "vim" }], focus: true }],
+      panes: [{ shell_command: [{ cmd: "echo <%= literal %>" }], focus: true }],
     },
   ]);
 });

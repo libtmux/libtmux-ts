@@ -201,6 +201,9 @@ test("native imports validate before preview, creation or replacement", async ()
     ["tmuxinator", { windows: [{ main: "true" }] }],
     ["teamocil", { name: "x", windows: [{ name: "main", filters: { after: "true" } }] }],
     ["teamocil", { name: "x", windows: [{ name: "main", panes: [{ commands: [42] }] }] }],
+    ["tmuxinator", { name: "x", root: "<%= dynamic_root %>", windows: [{ main: "true" }] }],
+    ["tmuxinator", { name: "x", windows: [{ main: "echo <%= dynamic_command %>" }] }],
+    ["tmuxinator", { name: "x", windows: [{ "<%= dynamic_window %>": "true" }] }],
   ] as const;
   for (const [kind, document] of cases) {
     await writeFile(source, JSON.stringify(document));
@@ -218,6 +221,7 @@ test("native imports validate before preview, creation or replacement", async ()
         expect(result.stdout).toBe("");
         expect(result.stderr).not.toContain("missing-tmux");
         expect(result.stderr).not.toContain("missing-python");
+        if (JSON.stringify(document).includes("<%")) expect(result.stderr).toContain("ERB");
         if (publication === "replace")
           expect(await readFile(destination, "utf8")).toBe("original bytes");
         else expect(await Bun.file(destination).exists()).toBe(false);
