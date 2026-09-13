@@ -129,6 +129,35 @@ reads and cursors.
 Closing the MCP subprocess's stdin cancels pending waits and joins its control
 connections. The loaded workspace remains available in tmux.
 
+## Imports
+
+`import tmuxinator` and `import teamocil` translate source documents and validate
+native configuration fields before previewing or saving. Unknown fields,
+conflicting non-null aliases, malformed command shapes and ERB templates fail
+without replacing a destination. Generic `convert` preserves arbitrary fields.
+
+Tmuxinator window command arrays stay in one pane. Explicit `panes` lists create
+separate panes. Project `pre_window` arrays form one `; `-joined command; window
+`pre` arrays form one `&&`-joined command before each explicit pane. Window
+`pre` requires nonempty explicit panes. `synchronize: true` and `before` apply
+before sequential pane creation and command delivery; `after` applies afterward.
+
+Teamocil `commands` arrays form one `; `-joined command. Legacy `cmd` and `splits`
+are accepted. Window options apply before pane commands. The first requested
+window and pane focus wins; absent focus selects the first item. Both formats
+retain window order, pane order and layouts.
+
+Imports save an absolute project root relative to the invocation directory,
+including when the source omits it. Window roots resolve relative to that root, so
+moving the saved file preserves working directories. Import requires neither
+tmux nor Python and does not check directory existence. Layout compatibility
+is checked against the selected tmux during load. Commands use native load's
+environment expansion from the invoking process before shell delivery.
+
+Project lifecycle hooks, endpoint/runtime overrides, named pane titles,
+Teamocil `clear`, filters and pane widths are refused. Use an explicit native
+workspace or the source tool for those behaviors.
+
 ## Output
 
 Every command accepts `--json` and `--ndjson` before or after the command name.
