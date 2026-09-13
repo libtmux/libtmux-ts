@@ -229,7 +229,7 @@ export function serverFromEnvironment(
   });
 }
 
-/** Serve over stdio when run directly. */
+/** Serve until stdin or the protocol closes, then join the backend. */
 export async function main(): Promise<void> {
   // Resolved once and handed to both, so the line cannot describe a policy
   // other than the one the tools were registered under.
@@ -265,7 +265,23 @@ export async function main(): Promise<void> {
       version: PACKAGE_VERSION,
     })}\n`,
   );
-  await mcp.connect(boundRequestIds(new StdioServerTransport()));
+  const closed = Promise.withResolvers<void>();
+  const onClose = mcp.server.onclose;
+  mcp.server.onclose = (): void => {
+    onClose?.();
+    closed.resolve();
+  };
+  const onEnd = (): void => {
+    closed.resolve();
+  };
+  process.stdin.once("end", onEnd);
+  try {
+    await mcp.connect(boundRequestIds(new StdioServerTransport()));
+    if (!process.stdin.readableEnded && !process.stdin.destroyed) await closed.promise;
+  } finally {
+    process.stdin.off("end", onEnd);
+    await mcp.close();
+  }
 }
 
 /**
