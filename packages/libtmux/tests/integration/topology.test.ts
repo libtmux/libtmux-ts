@@ -348,6 +348,48 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("rejects unsafe layouts before dispatch", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const before = await server.snapshot();
+      const window = before.windows.one();
+      await expect(window.selectLayout("not-a-layout")).rejects.toBeInstanceOf(TypeError);
+      const after = await server.snapshot();
+      expect(after.daemonIdentity).toEqual(before.daemonIdentity);
+      expect(after.panes.toArray().map((pane) => pane.id)).toEqual(
+        before.panes.toArray().map((pane) => pane.id),
+      );
+    });
+  }, 40_000);
+
+  test("layout preflight reads cold and empty endpoints without creating sessions", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const mirror = await server.versionAtLeast("3.5");
+      const layouts = [{ layout: mirror ? "main-horizontal-m" : "main-h", panes: 1 }];
+      const directory = await makeTestDirectory("ltx-layout-cold-");
+      const cold = new Server({
+        socketPath: join(directory, "s"),
+        tmuxBin: fixture.tmuxExecutable,
+        environment: fixture.controllerEnvironment,
+      });
+      try {
+        await cold.validateLayouts(layouts);
+        expect(await cold.isAlive()).toBe(false);
+        const before = await server.snapshot();
+        await server.setOption("exit-empty", "off");
+        await before.sessions.one().kill();
+        await server.validateLayouts(layouts);
+        const after = await server.snapshot();
+        expect(after.daemonIdentity).toEqual(before.daemonIdentity);
+        expect(after.sessions.length).toBe(0);
+      } finally {
+        if (await cold.isAlive()) await cold.kill();
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+  }, 40_000);
+
   test("applies a layout and resizes a pane", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

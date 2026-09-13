@@ -6,6 +6,7 @@ import { quoteCommand } from "../transport/lexer.js";
 import { runCommand, runCommands } from "./command.js";
 import { planRemoveWindowPlacement } from "./plans.js";
 import { assertName } from "./names.js";
+import { validateLayouts } from "./layout.js";
 
 function destination(options: MoveWindowOptions): readonly string[] {
   if (options.session === undefined && options.index === undefined) return [];
@@ -95,6 +96,7 @@ export async function selectLayout(
   windowId: string | null,
   layout: string,
 ): Promise<void> {
+  await validateLayouts(runtime, [{ layout, panes: 1 }]);
   await runCommand(runtime, ["select-layout", ...target(windowId), layout]);
 }
 

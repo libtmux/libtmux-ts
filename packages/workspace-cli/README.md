@@ -47,6 +47,13 @@ $ node packages/workspace-cli/dist/main.js freeze dev \
     --json
 ```
 
+All native input layouts are checked before scripts run or sessions change.
+Names accept unique abbreviations supported by the running daemon. Only
+version-sensitive names query it; a cold endpoint uses the selected client.
+Saved layouts require a valid checksum, a nonempty tree and enough pane cells.
+tmux still owns geometry correction and pruning, and may reject a layout when
+it is applied.
+
 Loading reuses an existing session. Without `-d`, it attaches the final workspace
 or switches the current tmux client. Attachment uses the controlling terminal,
 including when standard streams are redirected; no terminal means failure
