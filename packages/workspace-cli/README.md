@@ -290,9 +290,11 @@ on Node 22 and Bun. It needs the optional Python runtime described above:
 $ bun run --cwd packages/workspace-cli test:install
 ```
 
-Plugin/custom-builder loading, interactive prompts, and broader configuration
-and platform coverage remain unfinished. Benchmark results cover isolated Linux
-fixtures; they do not establish cross-port or interactive performance.
+Plugin and custom-builder execution has output, cancellation and borrowed-state
+tests using the optional interpreter. Confirmation and destination choices use
+explicit command-line flags. Native process and terminal evidence covers Linux;
+macOS coverage is a package canary. Benchmark results cover isolated Linux
+fixtures.
 
 The core library keeps its zero-runtime-dependency contract. Commander, YAML,
 and terminal text helpers are bundled into this CLI; `libtmux` remains a separate
