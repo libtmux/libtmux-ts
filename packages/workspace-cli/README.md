@@ -133,8 +133,8 @@ connections. The loaded workspace remains available in tmux.
 
 `import tmuxinator` and `import teamocil` translate source documents and validate
 native configuration fields before previewing or saving. Unknown fields,
-conflicting non-null aliases, malformed command shapes and ERB templates fail
-without replacing a destination. Generic `convert` preserves arbitrary fields.
+conflicting non-null aliases and malformed command shapes fail without
+replacing a destination. Generic `convert` preserves arbitrary fields.
 
 Tmuxinator window command arrays stay in one pane. Explicit `panes` lists create
 separate panes. Project `pre_window` arrays form one `; `-joined command; window
@@ -157,6 +157,10 @@ environment expansion from the invoking process before shell delivery.
 Project lifecycle hooks, endpoint/runtime overrides, named pane titles,
 Teamocil `clear`, filters and pane widths are refused. Use an explicit native
 workspace or the source tool for those behaviors.
+
+Tmuxinator expands ERB through Ruby before parsing; unexpanded `<%` markup in a
+Tmuxinator key or value fails before output or overwrite. Teamocil evaluates no
+templates, so `<%` in a Teamocil source is ordinary text and is preserved.
 
 ## Output
 
