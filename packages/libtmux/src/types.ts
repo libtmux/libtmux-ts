@@ -264,8 +264,8 @@ export interface SplitOptions extends CommandOptions {
    * Which side of this pane the new one takes.
    *
    * tmux splits below by default and offers no other way to say "above" or
-   * "left" than pairing the axis with `-b`, so a boolean cannot express half of
-   * the choices. When both this and `vertical` are given, this one decides.
+   * "left" than pairing the axis with `-b`, so a boolean cannot express half
+   * of the choices. Combining this with `vertical` throws `TypeError`.
    */
   readonly direction?: PaneDirection;
   readonly startDirectory?: string;
@@ -277,6 +277,10 @@ export interface SplitOptions extends CommandOptions {
    * closes, unless `remain-on-exit` says otherwise.
    */
   readonly shellCommand?: string;
+  /**
+   * @deprecated Use `direction: PaneDirection.Below` for `true` or
+   * `direction: PaneDirection.Right` for `false`. Do not combine with `direction`.
+   */
   readonly vertical?: boolean;
 }
 
@@ -832,7 +836,7 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
    * because every caller otherwise writes the same loop, deadline, and cleanup,
    * and forgetting the deadline turns a missed event into a hang.
    *
-   * @throws LibTmuxException when the stream ends under the wait — the server
+   * @throws LibTmuxError when the stream ends under the wait — the server
    * went away, or the connection dropped. Closing it on purpose is not that: a
    * caller cancelling, or a scope ending, answers undefined, because deciding
    * to stop waiting is not a failure anyone should have to catch. Undefined
@@ -864,10 +868,10 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
 }
 
 /**
- * A server bound to one control-mode connection.
+ * A server with a persistent observation connection and daemon-lifetime tracking.
  *
- * Same API as {@link Server}, with its commands travelling over the open
- * connection rather than a process per call. Disposing it ends the connection.
+ * Commands use the ordinary command engine. Disposing it closes the observation
+ * connection and leaves the tmux server and its resources running.
  */
 export interface ConnectedServer extends Server, AsyncDisposable {
   /** End the connection. Safe to call more than once. */
@@ -916,8 +920,8 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    * await live.waitFor((server) => server.windows.exists({ name: "build" }));
    * ```
    *
-   * @throws WaitTimeout when the deadline passes with the condition unmet.
-   * @throws LibTmuxException when the connection ends first, which says nothing
+   * @throws WaitTimeoutError when the deadline passes with the condition unmet.
+   * @throws LibTmuxError when the connection ends first, which says nothing
    * about the condition and so is not the same answer.
    */
   waitFor(

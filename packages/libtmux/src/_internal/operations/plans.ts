@@ -1,5 +1,5 @@
 import { PANE_DIRECTION_FLAG_MAP, WINDOW_DIRECTION_FLAG_MAP } from "../../constants.js";
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import {
   splitSize as authenticateSplitSize,
   type NewSessionOptions,
@@ -17,7 +17,7 @@ import { assertName } from "./names.js";
 function requireIdentity(lines: readonly string[], command: string): string {
   const identity = lines[0];
   if (identity === undefined || identity === "") {
-    throw new LibTmuxException(`${command} did not report the created object's identity`);
+    throw new LibTmuxError(`${command} did not report the created object's identity`);
   }
   return identity;
 }
@@ -25,7 +25,7 @@ function requireIdentity(lines: readonly string[], command: string): string {
 /** Shared by every plan that creates something and then has to find it again. */
 function found<T>(created: T | undefined, command: string, identity: string): T {
   if (created === undefined) {
-    throw new LibTmuxException(`${command} created ${identity} but it was gone before it resolved`);
+    throw new LibTmuxError(`${command} created ${identity} but it was gone before it resolved`);
   }
   return created;
 }
@@ -80,15 +80,15 @@ function renderSplitSize(value: NonNullable<SplitOptions["size"]>): string {
 }
 
 function splitWindowArgs(target: string | null, options: SplitOptions): readonly string[] {
+  if (options.direction !== undefined && options.vertical !== undefined) {
+    throw new TypeError("Choose direction without the deprecated vertical option");
+  }
   return [
     "split-window",
     "-d",
     "-P",
     "-F",
     "#{pane_id}",
-    // `direction` names the side, which needs the axis and tmux's `-b` for the
-    // two sides a boolean cannot reach at all. `vertical` remains for callers
-    // that only care about the axis.
     ...(options.direction === undefined
       ? options.vertical === false
         ? ["-h"]

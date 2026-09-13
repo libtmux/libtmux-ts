@@ -1,5 +1,5 @@
 import type { TmuxCommand, TmuxInvocationRequest } from "../../engine.js";
-import { TmuxTransportError } from "../../exc.js";
+import { TmuxTransportError } from "../../errors.js";
 
 /**
  * The most command bytes tmux will pack into one client message.

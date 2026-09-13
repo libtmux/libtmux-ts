@@ -1,6 +1,6 @@
 import { types as nodeTypes } from "node:util";
 
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 
 export interface ParseState {
   readonly active: WeakSet<object>;

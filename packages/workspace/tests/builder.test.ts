@@ -56,7 +56,7 @@ function shellEngine(onInvocation: () => void): TmuxEngine {
     ]);
     return {
       cmd: [request.executable, ...args],
-      returncode: code,
+      exitCode: code,
       signal: null,
       stderr: new Uint8Array(stderr),
       stdout: new Uint8Array(stdout),

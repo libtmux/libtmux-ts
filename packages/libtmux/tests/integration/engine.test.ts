@@ -53,7 +53,7 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
     ]);
     return {
       cmd: [executable, ...args],
-      returncode: code,
+      exitCode: code,
       signal: null,
       stderr: new Uint8Array(stderr),
       stdout: new Uint8Array(stdout),
@@ -80,7 +80,7 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
         guarded.request.environment,
         guarded.request.stdin,
       );
-      if (guarded.refusedBy(result.returncode, result.stderr)) {
+      if (guarded.refusedBy(result.exitCode, result.stderr)) {
         throw new TmuxServerRestarted("the daemon this handle was read from is gone");
       }
       return result;

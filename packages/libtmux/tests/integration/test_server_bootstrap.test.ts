@@ -311,7 +311,7 @@ describe("TestServer bootstrap", () => {
         "-g",
         record.generation.name,
       ]);
-      expect(globalGeneration.returncode).toBe(0);
+      expect(globalGeneration.exitCode).toBe(0);
       expect(new TextDecoder().decode(globalGeneration.stdout)).toBe(
         `${record.generation.name}=${record.generation.value}\n`,
       );
@@ -320,7 +320,7 @@ describe("TestServer bootstrap", () => {
         "-p",
         "ordinary-generation-environment-probe",
       ]);
-      expect(ordinary.returncode).toBe(0);
+      expect(ordinary.exitCode).toBe(0);
       expect(new TextDecoder().decode(ordinary.stdout)).toBe(
         "ordinary-generation-environment-probe\n",
       );

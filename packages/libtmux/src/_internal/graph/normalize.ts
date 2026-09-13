@@ -9,7 +9,7 @@ import type {
   WindowId,
   WindowRef,
 } from "../../common.js";
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 import type { DaemonIdentity } from "../runtime/context.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand } from "../codec/format_types.js";

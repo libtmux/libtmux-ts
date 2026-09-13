@@ -128,7 +128,7 @@ describe("guarded format codec", () => {
           async execute() {
             return {
               cmd: ["tmux", "list-sessions", ";", "list-windows"],
-              returncode: 1,
+              exitCode: 1,
               signal: null,
               stderr: encoder.encode("one command failed\n"),
               stdout: new Uint8Array(),
@@ -155,7 +155,7 @@ describe("guarded format codec", () => {
     const execute = (
       listings: readonly { readonly listCommand: "list-sessions" | "list-windows" }[],
       options: {
-        readonly returncode?: number;
+        readonly exitCode?: number;
         readonly signal?: string | null;
         readonly withSessionRow?: boolean;
       } = {},
@@ -177,7 +177,7 @@ describe("guarded format codec", () => {
                 : "";
             return {
               cmd: ["tmux"],
-              returncode: options.returncode ?? 1,
+              exitCode: options.exitCode ?? 1,
               signal: options.signal ?? null,
               stderr: encoder.encode("no current target\n"),
               stdout: encoder.encode(`ltxI101;202\n${sessionRow}`),
@@ -197,9 +197,9 @@ describe("guarded format codec", () => {
     await expect(execute([{ listCommand: "list-windows" }])).rejects.toThrow("no current target");
     await Promise.all(
       [
-        { returncode: 0, signal: null },
-        { returncode: 2, signal: null },
-        { returncode: 1, signal: "SIGTERM" },
+        { exitCode: 0, signal: null },
+        { exitCode: 2, signal: null },
+        { exitCode: 1, signal: "SIGTERM" },
       ].map((result) =>
         expect(
           execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], result),
@@ -224,7 +224,7 @@ describe("guarded format codec", () => {
           async execute() {
             return {
               cmd: ["tmux"],
-              returncode: 0,
+              exitCode: 0,
               signal: null,
               stderr: new Uint8Array(),
               stdout: encoder.encode("not-an-identity\n"),

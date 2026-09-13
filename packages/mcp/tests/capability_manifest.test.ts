@@ -309,7 +309,7 @@ test("one manifest governs every toolset subset, selection, metadata, and report
         execute: (request) =>
           Promise.resolve({
             cmd: [...request.commands[0]],
-            returncode: 1,
+            exitCode: 1,
             signal: null,
             stderr: new TextEncoder().encode("stopped nested call"),
             stdout: new Uint8Array(),
@@ -585,7 +585,7 @@ test("tmux-format-bearing input is literalized exactly once", async () => {
       commands.push(request.commands[0]);
       return Promise.resolve({
         cmd: [],
-        returncode: 1,
+        exitCode: 1,
         signal: null,
         stderr: new TextEncoder().encode("stop after recording arguments"),
         stdout: new Uint8Array(),
@@ -686,7 +686,7 @@ test("minimal startup authenticates the daemon creator after start-server", asyn
             : "";
       return Promise.resolve({
         cmd: [],
-        returncode: 0,
+        exitCode: 0,
         signal: null,
         stderr: new Uint8Array(),
         stdout: new TextEncoder().encode(stdout),
@@ -715,7 +715,7 @@ test("minimal startup authenticates the daemon creator after start-server", asyn
     execute: (request) =>
       Promise.resolve({
         cmd: [],
-        returncode: 0,
+        exitCode: 0,
         signal: null,
         stderr: new Uint8Array(),
         stdout: new TextEncoder().encode(
@@ -869,7 +869,7 @@ test("read batch preserves nested results within the shared result ceiling", asy
         execute: (request) =>
           Promise.resolve({
             cmd: [...request.commands[0]],
-            returncode: 1,
+            exitCode: 1,
             signal: null,
             stderr: new TextEncoder().encode("stopped nested call"),
             stdout: new Uint8Array(),

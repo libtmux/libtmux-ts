@@ -1,6 +1,6 @@
 import type { EnvironmentScope, EnvironmentValue, SetEnvironmentOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { TmuxCommandError } from "../../exc.js";
+import { TmuxCommandError } from "../../errors.js";
 import { runCommand } from "./command.js";
 
 function scopeArguments(

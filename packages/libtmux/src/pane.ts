@@ -75,6 +75,7 @@ import type { Server } from "./server.js";
 export interface PanePlans {
   readonly kill: () => PlannedOperation<void>;
   readonly killIfWindowUnshared: () => PlannedOperation<void>;
+  /** @throws TypeError when `options` combines `direction` with `vertical`. */
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
@@ -207,9 +208,12 @@ export class Pane {
    * Split this pane and resolve the created pane.
    *
    * ```ts
-   * const created = await pane.split({ vertical: true });
+   * import { PaneDirection } from "libtmux";
+   * const created = await pane.split({ direction: PaneDirection.Below });
    * created.id;
    * ```
+   *
+   * @throws TypeError when `options` combines `direction` with `vertical`.
    */
   split(options?: SplitOptions): Promise<Pane> {
     return splitWindow(this.server, runtimeForHandle(this), this.id, options);

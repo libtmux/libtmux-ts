@@ -80,19 +80,19 @@ export type {
 export { isSplitSize, isTmuxName, splitSize } from "./types.js";
 
 export {
-  LibTmuxException,
+  LibTmuxError,
   MultipleMatchesError,
-  MultipleObjectsReturned,
+  MultipleObjectsError,
   NoMatchError,
-  ObjectDoesNotExist,
+  ObjectNotFoundError,
   QueryValidationError,
   TmuxCommandError,
-  TmuxServerRestarted,
+  TmuxServerRestartedError,
   TmuxTransportError,
   type TmuxTransportErrorKind,
-  VersionTooLow,
-  WaitTimeout,
-} from "./exc.js";
+  VersionTooLowError,
+  WaitTimeoutError,
+} from "./errors.js";
 export type {
   CommandOptions,
   DeliveryStatus,
@@ -114,3 +114,16 @@ export {
   ResizeAdjustmentDirection,
   WindowDirection,
 } from "./constants.js";
+
+/** @deprecated Use {@link LibTmuxError}. */
+export { LibTmuxException } from "./errors.js";
+/** @deprecated Use {@link ObjectNotFoundError}. */
+export { ObjectDoesNotExist } from "./errors.js";
+/** @deprecated Use {@link MultipleObjectsError}. */
+export { MultipleObjectsReturned } from "./errors.js";
+/** @deprecated Use {@link VersionTooLowError}. */
+export { VersionTooLow } from "./errors.js";
+/** @deprecated Use {@link WaitTimeoutError}. */
+export { WaitTimeout } from "./errors.js";
+/** @deprecated Use {@link TmuxServerRestartedError}. */
+export { TmuxServerRestarted } from "./errors.js";

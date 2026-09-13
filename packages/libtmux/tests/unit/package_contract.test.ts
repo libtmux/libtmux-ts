@@ -172,11 +172,14 @@ describe("package contract", () => {
     // The root entrypoint is the surface a consumer actually imports.
     expect(Object.keys(await import("../../src/index.js")).toSorted()).toEqual([
       "Client",
+      "LibTmuxError",
       "LibTmuxException",
       "MultipleMatchesError",
+      "MultipleObjectsError",
       "MultipleObjectsReturned",
       "NoMatchError",
       "ObjectDoesNotExist",
+      "ObjectNotFoundError",
       "OptionScope",
       "Pane",
       "PaneDirection",
@@ -186,9 +189,12 @@ describe("package contract", () => {
       "Session",
       "TmuxCommandError",
       "TmuxServerRestarted",
+      "TmuxServerRestartedError",
       "TmuxTransportError",
       "VersionTooLow",
+      "VersionTooLowError",
       "WaitTimeout",
+      "WaitTimeoutError",
       "Window",
       "WindowDirection",
       "compileBoundedRegex",
@@ -247,6 +253,7 @@ describe("package contract", () => {
       ".",
       "./package.json",
       "./common",
+      "./errors",
       "./exc",
       "./constants",
       "./formats",
@@ -272,6 +279,12 @@ describe("package contract", () => {
       bun: "./src/common.ts",
       import: "./dist/common.js",
       default: "./dist/common.js",
+    });
+    expect(packageManifest.exports["./errors"]).toEqual({
+      types: "./dist/errors.d.ts",
+      bun: "./src/errors.ts",
+      import: "./dist/errors.js",
+      default: "./dist/errors.js",
     });
     expect(packageManifest.exports["./exc"]).toEqual({
       types: "./dist/exc.d.ts",

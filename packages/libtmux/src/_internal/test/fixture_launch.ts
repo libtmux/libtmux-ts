@@ -329,7 +329,7 @@ export async function validateGenerationAuthority(
     timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
-  if (result.returncode !== 0) throw new Error("fixture generation validation request failed");
+  if (result.exitCode !== 0) throw new Error("fixture generation validation request failed");
   if (output === `${mismatchMarker}\n`) {
     throw new ForeignSocketEvidenceError("fixture socket server generation mismatch");
   }

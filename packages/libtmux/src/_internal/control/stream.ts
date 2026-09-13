@@ -1,4 +1,4 @@
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import type { TmuxEvent, TmuxEventStream as PublicEventStream } from "../../types.js";
 import { timerDuration } from "../timing.js";
 
@@ -184,7 +184,7 @@ class BufferedEventStream implements PublicEventStream {
       // stopped waiting. The connection going away is not an answer about the
       // wait at all, and reported as one it sends a reader to their workload.
       if (this.#ended === "finished") {
-        throw new LibTmuxException("the tmux event stream ended before a match");
+        throw new LibTmuxError("the tmux event stream ended before a match");
       }
       return undefined;
     } finally {

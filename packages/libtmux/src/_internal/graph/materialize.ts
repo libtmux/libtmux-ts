@@ -1,5 +1,5 @@
 import type { Client } from "../../client.js";
-import { LibTmuxException, QueryValidationError } from "../../exc.js";
+import { LibTmuxError, QueryValidationError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
@@ -81,10 +81,10 @@ function resolveProjectionRecord(
 
 function assertCurrentCapture(runtime: RuntimeContext, graph: NormalizedGraph): void {
   if (graph.capture.connection !== runtime.connectionAlias) {
-    throw new LibTmuxException("normalized graph belongs to another runtime");
+    throw new LibTmuxError("normalized graph belongs to another runtime");
   }
   if (graph.capture.epoch !== runtime.daemonEpoch) {
-    throw new LibTmuxException("normalized graph daemon epoch is stale");
+    throw new LibTmuxError("normalized graph daemon epoch is stale");
   }
 }
 
@@ -100,7 +100,7 @@ async function validateRuntimeCapture(server: Server, graph: NormalizedGraph): P
     capabilities.daemonEpoch !== runtime.daemonEpoch ||
     capabilities.fingerprint !== graph.capture.capabilityFingerprint
   ) {
-    throw new LibTmuxException("normalized graph capability binding is stale");
+    throw new LibTmuxError("normalized graph capability binding is stale");
   }
 }
 

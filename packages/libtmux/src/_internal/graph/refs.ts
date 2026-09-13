@@ -10,7 +10,7 @@ import type {
   WindowId,
   WindowIdInput,
 } from "../../common.js";
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 import { snapshotPlainDataRecord } from "./data_snapshot.js";
 import type { GraphEntityRef } from "./model.js";
 

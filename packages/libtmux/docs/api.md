@@ -226,7 +226,7 @@ void size;
 
 ## Server
 
-[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -949,10 +949,10 @@ if (await server.isAlive()) {
 }
 ```
 
-#### `Server.raiseIfDead`
+#### `Server.checkAlive`
 
 ```ts
-raiseIfDead(): Promise<void>
+checkAlive(): Promise<void>
 ```
 
 Assert the server is reachable, raising with tmux's reason if not.
@@ -961,6 +961,20 @@ Every read already raises on an unreachable server, so this is not what
 tells an empty result from a missing one — it is the assertion form of
 [`isAlive`](#serverisalive), for a caller that wants the check and the reason without a
 read to hang it on.
+
+```ts
+await server.checkAlive(); // throws when no tmux server is listening
+```
+
+#### `Server.raiseIfDead`
+
+```ts
+raiseIfDead(): Promise<void>
+```
+
+Assert the server is reachable, raising with tmux's reason if not.
+
+@deprecated Use [`checkAlive`](#servercheckalive).
 
 ```ts
 await server.raiseIfDead(); // throws when no tmux server is listening
@@ -1615,8 +1629,11 @@ split(options?: SplitOptions): Promise<Pane>
 
 Split this window and resolve the created pane.
 
+@throws TypeError when `options` combines `direction` with `vertical`.
+
 ```ts
-const created = await window.split({ vertical: true });
+import { PaneDirection } from "libtmux";
+const created = await window.split({ direction: PaneDirection.Below });
 created.id;
 ```
 
@@ -2042,8 +2059,11 @@ split(options?: SplitOptions): Promise<Pane>
 
 Split this pane and resolve the created pane.
 
+@throws TypeError when `options` combines `direction` with `vertical`.
+
 ```ts
-const created = await pane.split({ vertical: true });
+import { PaneDirection } from "libtmux";
+const created = await pane.split({ direction: PaneDirection.Below });
 created.id;
 ```
 
@@ -2668,7 +2688,7 @@ Criteria are data: equality, string operators, `AND`/`OR`/`NOT`, regular
 expressions expressed as `{ pattern, flags }`, and quantifiers over
 relations. Matching is case-sensitive unless a criterion says otherwise.
 
-@throws VersionTooLow when a criterion names a field newer than the tmux
+@throws VersionTooLowError when a criterion names a field newer than the tmux
 that answered. Such a field is not absent from the data, it is absent from
 that release, and matching it against nothing would answer "no member has
 this" — which is a different statement and the one a caller would act on.

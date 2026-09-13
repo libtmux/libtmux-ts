@@ -59,7 +59,7 @@ function rawResult(
 ): RawCommandResult {
   return {
     cmd: [request.executable, ...request.globalArgs, ...request.commands.flat()],
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: encoder.encode(output.stderr ?? ""),
     stdout: encoder.encode(output.stdout ?? ""),

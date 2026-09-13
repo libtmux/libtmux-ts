@@ -8,7 +8,7 @@ import { singleCommandTransport } from "../support/transport_double.js";
 function success(request: TmuxInvocationRequest): TmuxCommandResult {
   return {
     cmd: [request.executable, ...flattenInvocation(request)],
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
     stdout: new Uint8Array(),

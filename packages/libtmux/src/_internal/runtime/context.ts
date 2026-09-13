@@ -5,7 +5,7 @@ import type {
   TmuxLogger,
   TmuxWarningSink,
 } from "../../common.js";
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import type { DaemonIdentity, Server } from "../../server.js";
 import { decodeLogicalRef } from "../graph/refs.js";
 import type { CommandTransport } from "../transport/types.js";
@@ -36,7 +36,7 @@ function sameDaemon(left: DaemonIdentity, right: DaemonIdentity): boolean {
 function nextDaemonRevision(state: RuntimeEpochState): number {
   const revision = state.daemonRevision + 1;
   if (!Number.isSafeInteger(revision)) {
-    throw new LibTmuxException("daemon observation cannot exceed the safe integer range");
+    throw new LibTmuxError("daemon observation cannot exceed the safe integer range");
   }
   return revision;
 }
@@ -89,17 +89,17 @@ export interface RuntimeContext {
 
 function epochStateFor(runtime: RuntimeContext): RuntimeEpochState {
   const state = runtimeEpochStates.get(runtime);
-  if (state === undefined) throw new LibTmuxException("runtime context is not authentic");
+  if (state === undefined) throw new LibTmuxError("runtime context is not authentic");
   return state;
 }
 
 function assertLogicalRefRuntime(runtime: RuntimeContext, ref: LogicalRef): void {
   const daemonEpoch = epochStateFor(runtime).daemonEpoch;
   if (ref.connection !== runtime.connectionAlias) {
-    throw new LibTmuxException("logical reference belongs to another runtime");
+    throw new LibTmuxError("logical reference belongs to another runtime");
   }
   if (ref.epoch !== daemonEpoch) {
-    throw new LibTmuxException("logical reference daemon epoch is stale");
+    throw new LibTmuxError("logical reference daemon epoch is stale");
   }
 }
 
@@ -142,7 +142,7 @@ export function registerServerRuntime(
 ): void {
   epochStateFor(runtime);
   if (serverRuntimes.has(server)) {
-    throw new LibTmuxException("Server already has a runtime context");
+    throw new LibTmuxError("Server already has a runtime context");
   }
   serverRuntimes.set(server, runtime);
   registerRuntimeConstructors(server, constructors);
@@ -169,7 +169,7 @@ export function invalidateRuntimeEpoch(runtime: RuntimeContext): DaemonEpoch {
   const state = epochStateFor(runtime);
   const daemonEpoch = state.daemonEpoch + 1;
   if (!Number.isSafeInteger(daemonEpoch)) {
-    throw new LibTmuxException("daemon epoch cannot exceed the safe integer range");
+    throw new LibTmuxError("daemon epoch cannot exceed the safe integer range");
   }
   state.daemonEpoch = daemonEpoch as DaemonEpoch;
   return state.daemonEpoch;
@@ -226,7 +226,7 @@ export function lastObservedDaemon(runtime: RuntimeContext): DaemonIdentity | un
 
 export function runtimeForServer(server: Server): RuntimeContext {
   const runtime = runtimeForServerValue(server);
-  if (runtime === undefined) throw new LibTmuxException("Server has no runtime context");
+  if (runtime === undefined) throw new LibTmuxError("Server has no runtime context");
   return runtime;
 }
 
@@ -241,7 +241,7 @@ export async function bindLogicalRef(runtime: RuntimeContext, value: unknown): P
     capabilities.connectionAlias !== runtime.connectionAlias ||
     capabilities.daemonEpoch !== runtime.daemonEpoch
   ) {
-    throw new LibTmuxException("capability binding belongs to another runtime epoch");
+    throw new LibTmuxError("capability binding belongs to another runtime epoch");
   }
   return ref;
 }

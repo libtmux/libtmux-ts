@@ -33,7 +33,7 @@ import { acquireServerGraph } from "./_internal/operations/acquire.js";
 import { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch } from "./common.js";
 import type { DaemonGuard, TmuxEngine } from "./engine.js";
-import { LibTmuxException } from "./exc.js";
+import { LibTmuxError } from "./errors.js";
 import { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import { Session } from "./session.js";
@@ -50,7 +50,7 @@ import { ifShell, runShell } from "./_internal/operations/shell.js";
 import {
   deleteBuffer,
   isAlive,
-  raiseIfDead,
+  checkAlive,
   hasSession,
   listBuffers,
   listCommands,
@@ -180,7 +180,7 @@ function serverAddress(runtime: RuntimeContext): string | undefined {
  */
 function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
   if (runtime.engine === undefined) return;
-  throw new LibTmuxException(
+  throw new LibTmuxError(
     `${method}() holds a local tmux control process open, which a server built with an engine has no way to reach. Use snapshot() and the mutating methods, which travel through the engine, or build a Server without one to watch a local daemon.`,
   );
 }
@@ -399,7 +399,7 @@ export class Server {
       await connection.ready();
     } catch (error) {
       await connection.close();
-      throw new LibTmuxException(
+      throw new LibTmuxError(
         error instanceof Error ? error.message : "tmux control mode could not attach",
         { cause: error },
       );
@@ -506,7 +506,7 @@ export class Server {
     const graph = await acquireServerGraph(runtimeForServer(this));
     const identity = graph.capture.daemon;
     if (identity === undefined) {
-      throw new LibTmuxException("live acquisition omitted the daemon identity");
+      throw new LibTmuxError("live acquisition omitted the daemon identity");
     }
     return identity;
   }
@@ -967,11 +967,24 @@ export class Server {
    * read to hang it on.
    *
    * ```ts
+   * await server.checkAlive(); // throws when no tmux server is listening
+   * ```
+   */
+  checkAlive(): Promise<void> {
+    return checkAlive(runtimeForServer(this));
+  }
+
+  /**
+   * Assert the server is reachable, raising with tmux's reason if not.
+   *
+   * @deprecated Use {@link checkAlive}.
+   *
+   * ```ts
    * await server.raiseIfDead(); // throws when no tmux server is listening
    * ```
    */
   raiseIfDead(): Promise<void> {
-    return raiseIfDead(runtimeForServer(this));
+    return this.checkAlive();
   }
 
   /**

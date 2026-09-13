@@ -14,7 +14,7 @@ import {
 } from "./invocation.js";
 import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
 import { guardRequest } from "./daemon_guard.js";
-import { TmuxServerRestarted } from "../../exc.js";
+import { TmuxServerRestartedError } from "../../errors.js";
 import { timerDelay } from "../timing.js";
 
 export interface NodeSpawnTransportOptions {
@@ -350,7 +350,7 @@ export class NodeSpawnTransport {
 
     const stderr = stderrState.status === "fulfilled" ? stderrState.value : new Uint8Array();
     if (guarded.refusedBy(terminal.code, stderr)) {
-      throw new TmuxServerRestarted(
+      throw new TmuxServerRestartedError(
         "tmux refused the command: the daemon on this socket is not the one these ids came from",
         { subcommand: request.commands[0][0] },
       );
@@ -358,7 +358,7 @@ export class NodeSpawnTransport {
 
     return {
       cmd: Object.freeze([submitted.executable, ...args]),
-      returncode: terminal.code,
+      exitCode: terminal.code,
       signal: terminal.signal,
       stderr,
       stdout: stdoutState.status === "fulfilled" ? stdoutState.value : new Uint8Array(),
