@@ -107,7 +107,7 @@ export class WorkspaceApplyError extends Error {
  * of an option's current values this file is responsible for.
  *
  * @throws ZodError when the workspace does not satisfy the strict config schema.
- * @throws TypeError when the operation options are invalid.
+ * @throws TypeError when operation options, layouts or version replies are invalid.
  * @throws WorkspaceApplyError when tmux fails after applying may have started.
  */
 export async function applyWorkspace(
@@ -117,6 +117,11 @@ export async function applyWorkspace(
 ): Promise<Session> {
   const workspace = parseWorkspace(workspaceInput);
   const { commands, prune } = normalizeApplyWorkspaceOptions(options);
+  await server.validateLayouts(
+    workspace.windows.flatMap((window) =>
+      window.layout ? [{ layout: window.layout, panes: window.panes.length }] : [],
+    ),
+  );
   const completed: WorkspaceApplyMilestone[] = [];
   let failed: WorkspaceApplyStage = { action: "lookup", kind: "session" };
   try {
@@ -308,7 +313,7 @@ async function applyWindow(
 
   // Layout requires the final pane count and stays last so its failure cannot
   // strand new panes before create-only command delivery.
-  if (desired.layout !== undefined) await current.selectLayout(desired.layout);
+  if (desired.layout) await current.selectLayout(desired.layout);
 }
 
 async function pruneWindows(session: Session, wanted: number): Promise<Session> {

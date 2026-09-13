@@ -1,0 +1,193 @@
+import { expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { Writable } from "node:stream";
+import { processRun, tokenize } from "../src/process.ts";
+import { write } from "../src/output.ts";
+import { resolveNode22, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
+
+test("process arguments preserve quoted spaces and empty values without a shell", () => {
+  expect(tokenize('editor --wait "a b" \'\' x\\ y "$HOME"')).toEqual([
+    "editor",
+    "--wait",
+    "a b",
+    "",
+    "x y",
+    "$HOME",
+  ]);
+  expect(() => tokenize('editor "unfinished')).toThrow(/quote/);
+  expect(tokenize('cmd "\\$HOME" "\\`"')).toEqual(["cmd", "\\$HOME", "\\`"]);
+  expect(tokenize('cmd "a\\\nb"')).toEqual(["cmd", "a\\\nb"]);
+});
+
+test("child output drains both streams and decodes split Unicode with bounded retention", async () => {
+  let stdout = "";
+  let stderr = "";
+  const result = await processRun(
+    [
+      process.execPath,
+      "-e",
+      'process.stdout.write(Buffer.from([0xf0,0x9f]));setTimeout(()=>{process.stdout.write(Buffer.from([0x8c,0x90]));process.stdout.write("a".repeat(200000));process.stderr.write("b".repeat(200000));},30)',
+    ],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      output: async (stream, text) => {
+        if (stream === "stdout") stdout += text;
+        else stderr += text;
+      },
+    },
+  );
+  expect(result.code).toBe(0);
+  expect(stdout).toBe("🌐" + "a".repeat(200000));
+  expect(stderr).toBe("b".repeat(200000));
+  expect(result.stdout).toStartWith("🌐");
+  expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(65536);
+  expect(result.truncated).toEqual({ stdout: true, stderr: true });
+});
+
+test("a failed output consumer terminates and reaps its child", async () => {
+  const start = performance.now();
+  await expect(
+    processRun(
+      [process.execPath, "-e", 'setInterval(()=>process.stdout.write("x".repeat(100000)),5)'],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        output: async () => {
+          throw new Error("consumer closed");
+        },
+      },
+    ),
+  ).rejects.toThrow("consumer closed");
+  expect(performance.now() - start).toBeLessThan(2000);
+});
+
+test("child input progresses while both output streams are drained", async () => {
+  const input = "payload Δ\n".repeat(30_000);
+  const result = await processRun(
+    [
+      process.execPath,
+      "-e",
+      'process.stderr.write("x".repeat(200000));let bytes=0;for await(const chunk of process.stdin)bytes+=chunk.length;process.stdout.write(String(bytes));',
+    ],
+    { cwd: process.cwd(), env: process.env, input },
+  );
+  expect(result.code).toBe(0);
+  expect(Number(result.stdout)).toBe(Buffer.byteLength(input));
+  expect(result.truncated.stderr).toBe(true);
+});
+
+test("cancellation joins a child with pending input and returns interrupt status", async () => {
+  const controller = new AbortController();
+  let interruptedAt = 0;
+  const result = await processRun(
+    [process.execPath, "-e", 'process.stdout.write("ready");setInterval(()=>{},1000)'],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      input: "x".repeat(200_000),
+      signal: controller.signal,
+      output: async () => {
+        interruptedAt = performance.now();
+        controller.abort();
+        controller.signal.throwIfAborted();
+      },
+    },
+  );
+  expect(result.code).toBe(130);
+  expect(result.stdout).toBe("ready");
+  expect(performance.now() - interruptedAt).toBeLessThan(400);
+});
+
+test("stream writes observe asynchronous errors and closure before the callback", async () => {
+  const failure = new Error("writer failed");
+  const broken = new Writable({
+    write(_chunk, _encoding, callback) {
+      setImmediate(() => callback(failure));
+    },
+  });
+  await expect(write(broken, "record\n")).rejects.toThrow("writer failed");
+  const closed = new Writable({
+    write() {
+      this.destroy();
+    },
+  });
+  await expect(write(closed, "record\n")).rejects.toThrow(/closed/);
+});
+
+function parentWithDescendant(mode: "cancel" | "exit"): string {
+  const descendant = 'process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)';
+  const stdio = mode === "cancel" ? "ignore" : "inherit";
+  return `const {spawn}=require("node:child_process");const child=spawn(process.execPath,["-e",${JSON.stringify(descendant)}],{stdio:["ignore","${stdio}","${stdio}","ipc"]});child.on("message",()=>{child.disconnect();process.stdout.write(String(child.pid),()=>{${mode === "exit" ? "process.exit(0)" : ""}});});setInterval(()=>{},1000);`;
+}
+
+test("Node preserves status when inherited capture pipes require forced closure", async () => {
+  const bundle = await Bun.build({
+    entrypoints: [new URL("../src/process.ts", import.meta.url).pathname],
+    target: "node",
+  });
+  expect(bundle.success).toBe(true);
+  const module = `data:text/javascript;base64,${Buffer.from(await bundle.outputs[0]!.text()).toString("base64")}`;
+  const script = `import {processRun} from ${JSON.stringify(module)};const result=await processRun([process.execPath,"-e",${JSON.stringify(parentWithDescendant("exit"))}],{cwd:process.cwd(),env:process.env});process.stdout.write(JSON.stringify(result));`;
+  const child = await processRun([await resolveNode22(), "--input-type=module", "-e", script], {
+    cwd: process.cwd(),
+    env: process.env,
+    signal: AbortSignal.timeout(3000),
+  });
+  expect(child.code, child.stderr).toBe(0);
+  const result = JSON.parse(child.stdout);
+  expect(result.code).toBe(0);
+  expect(Number(result.stdout)).toBeGreaterThan(0);
+  expect(result.truncated.stdout).toBe(true);
+});
+
+test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
+  "owned descendants terminate when the parent ends through %s",
+  async (mode) => {
+    const controller = new AbortController();
+    const parent = parentWithDescendant(mode);
+    let pid: number | undefined;
+    await runWithCleanup(
+      async () => {
+        const result = await processRun([process.execPath, "-e", parent], {
+          cwd: process.cwd(),
+          env: process.env,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+          output: async (_stream, text) => {
+            pid = Number(text);
+            if (mode === "cancel") controller.abort();
+          },
+        });
+        expect(result.code).toBe(mode === "cancel" ? 130 : 0);
+        expect(pid).toBeGreaterThan(0);
+        const stateOfChild = () =>
+          readFile(`/proc/${pid}/stat`, "utf8").catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+            throw error;
+          });
+        let state = await stateOfChild();
+        const deadline = Date.now() + 500;
+        while (
+          state !== "" &&
+          !state.slice(state.lastIndexOf(")") + 2).startsWith("Z ") &&
+          Date.now() < deadline
+        ) {
+          // eslint-disable-next-line no-await-in-loop -- Signal delivery precedes the process exit transition.
+          await Bun.sleep(10);
+          // eslint-disable-next-line no-await-in-loop -- Observe that same owned process after signal delivery.
+          state = await stateOfChild();
+        }
+        expect(state === "" || state.slice(state.lastIndexOf(")") + 2).startsWith("Z ")).toBe(true);
+        pid = undefined;
+      },
+      async () => {
+        if (pid)
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+      },
+    );
+  },
+);

@@ -66,6 +66,33 @@ async function captureUntil(
 }
 
 describe("lifecycle mutations", () => {
+  test("creates exact indexes directly and in batches without replacing occupied windows", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.setGlobalOption("session", "base-index", "3");
+      const session = await server.newSession({ name: "indexed", windowName: "kept" });
+      const kept = session.windows.one();
+      expect(kept.index).toBe(safeInteger(3));
+
+      const first = await session.newWindow({ index: 0, name: "zero" });
+      expect(first.index).toBe(safeInteger(0));
+      expect(first.session?.id).toBe(session.id);
+      const [sparse, last] = await server.batch([
+        session.plan.newWindow({ index: 7, name: "sparse" }),
+        session.plan.newWindow({ index: 2_147_483_647, name: "last" }),
+      ]);
+      expect(sparse.index).toBe(safeInteger(7));
+      expect(last.index).toBe(safeInteger(2_147_483_647));
+
+      await expect(session.newWindow({ index: 3, name: "collision" })).rejects.toThrow(
+        /index.*in use/u,
+      );
+      const after = (await server.snapshot()).sessions.one({ id: session.id });
+      expect(after.windows.one({ index: safeInteger(3) }).id).toBe(kept.id);
+      expect(after.windows.length).toBe(4);
+    });
+  }, 40_000);
+
   test("creates a session, window, and pane, resolving each as a handle", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

@@ -162,8 +162,8 @@ export class Pane {
    * options.get("remain-on-exit");
    * ```
    */
-  showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForHandle(this), "pane", this.id);
+  showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForHandle(this), "pane", this.id, options);
   }
 
   /**
@@ -177,8 +177,8 @@ export class Pane {
    * (await pane.showResolvedOptions()).get("allow-rename");
    * ```
    */
-  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
-    return showResolvedOptions(runtimeForHandle(this), "pane", this.id);
+  showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "pane", this.id, options);
   }
 
   /**

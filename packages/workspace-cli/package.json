@@ -1,0 +1,46 @@
+{
+  "name": "@libtmux/workspace-cli",
+  "version": "0.1.0-alpha.9",
+  "description": "A tmuxp-compatible workspace manager for Node and Bun.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/libtmux/libtmux-ts.git",
+    "directory": "packages/workspace-cli"
+  },
+  "bin": {
+    "tmux-workspace": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "docs"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run docs:check && rm -rf dist && bun build src/main.ts --target node --outdir dist --splitting --external libtmux",
+    "docs:generate": "bun scripts/generate-reference.ts",
+    "docs:check": "bun scripts/generate-reference.ts --check",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test tests",
+    "test:package": "bun run build && bun scripts/check-install.ts --package-only",
+    "test:install": "bun run build && bun scripts/check-install.ts"
+  },
+  "devDependencies": {
+    "cli-truncate": "6.1.1",
+    "commander": "15.0.0",
+    "libtmux": "0.1.0-alpha.9",
+    "oxfmt": "0.66.0",
+    "string-width": "8.2.2",
+    "yaml": "2.9.0"
+  },
+  "peerDependencies": {
+    "libtmux": "0.1.0-alpha.9"
+  },
+  "engines": {
+    "bun": ">=1.3.14",
+    "node": ">=22.12.0"
+  }
+}

@@ -210,17 +210,21 @@ describe("server graph acquisition", () => {
 
       const graph = await acquireServerGraph(runtimeFor(server));
       const daemon = graph.capture.daemon;
-      const publicIdentity = await new Server({
+      const publicServer = new Server({
         environment: server.controllerEnvironment,
         socketPath: server.socketPath,
         tmuxBin: server.tmuxExecutable,
-      }).daemonIdentity();
+      });
+      const publicIdentity = await publicServer.daemonIdentity();
+      const snapshot = await publicServer.snapshot();
 
       expect(daemon).toBeDefined();
       if (daemon === undefined) throw new Error("zero-row capture omitted its daemon identity");
       expect(daemon.pid).toBe(String(server.daemonIdentity.pid));
       expect(daemon.startTime).toMatch(/^\d+$/u);
       expect(publicIdentity).toEqual(daemon);
+      expect(snapshot.daemonIdentity).toEqual(daemon);
+      expect(snapshot.sessions.length).toBe(0);
       expect(graph.records).toEqual([]);
     });
   }, 30_000);
@@ -295,12 +299,13 @@ describe("server graph acquisition", () => {
     });
   }, 30_000);
 
-  test("carries snapshot cancellation through acquisition", async () => {
+  test("carries cancellation through snapshot and daemon acquisition", async () => {
     await withServer(async (fixture) => {
       const requests: CommandRequest[] = [];
       const raw = new NodeSpawnTransport({ terminationGraceMs: 100 });
       const controller = new AbortController();
       const server = new Server({
+        colors: 256,
         engine: {
           execute(request) {
             requests.push(request);
@@ -312,12 +317,19 @@ describe("server graph acquisition", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      await server.snapshot({ signal: controller.signal });
+      const snapshot = await server.snapshot({ signal: controller.signal });
 
+      expect(snapshot.daemonIdentity.pid).toBe(String(fixture.daemonIdentity.pid));
+      expect(snapshot.daemonIdentity.startTime).toMatch(/^\d+$/u);
+      expect(Object.isFrozen(snapshot.daemonIdentity)).toBe(true);
       expect(requests.map(({ commands }) => commands.length)).toEqual([1, 5]);
+      expect(requests.every(({ globalArgs }) => globalArgs?.includes("-2"))).toBe(true);
       expect(requests[0]?.signal).toBeDefined();
       expect(requests[0]?.signal).not.toBe(controller.signal);
       expect(requests[1]?.signal).toBe(controller.signal);
+      controller.abort();
+      await expect(server.daemonIdentity({ signal: controller.signal })).rejects.toThrow();
+      expect(requests).toHaveLength(2);
     });
   }, 30_000);
 

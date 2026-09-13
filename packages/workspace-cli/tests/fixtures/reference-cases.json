@@ -1,0 +1,1289 @@
+[
+  {
+    "argv": [],
+    "command": "tmuxp",
+    "values": {
+      "log_level": "warning",
+      "color": "auto"
+    }
+  },
+  {
+    "argv": ["--log-level", "debug"],
+    "command": "tmuxp",
+    "values": {
+      "log_level": "debug",
+      "color": "auto"
+    }
+  },
+  {
+    "argv": ["--color", "auto"],
+    "command": "tmuxp",
+    "values": {
+      "log_level": "warning",
+      "color": "auto"
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-L", "sample"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": "sample",
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-S", "sample"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": "sample",
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-f", "sample"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": "sample",
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-s", "sample"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": "sample",
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "--yes"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": true,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-y"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": true,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-d"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": true,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-a"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": true,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "--append"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": true,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-2"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": 256,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "-8"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": 88,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "--log-file", "sample"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": "sample",
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "--progress-format", "sample"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": "sample",
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "--progress-lines", "2"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": 2,
+      "no_progress": false,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["load", "sample.yaml", "--no-progress"],
+    "command": "tmuxp load",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "progress_format": null,
+      "answer_yes": false,
+      "log_file": null,
+      "socket_name": null,
+      "color": "auto",
+      "detached": false,
+      "panel_lines": null,
+      "no_progress": true,
+      "append": false,
+      "tmux_config_file": null,
+      "colors": null,
+      "new_session_name": null,
+      "workspace_files": ["sample.yaml"]
+    }
+  },
+  {
+    "argv": ["shell"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "-S", "sample"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": "sample",
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "-L", "sample"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": "sample",
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "-c", "sample"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": "sample",
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--best"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--pdb"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "pdb",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--code"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "code",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--ptipython"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "ptipython",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--ptpython"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "ptpython",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--ipython"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "ipython",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--bpython"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "bpython",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--use-pythonrc"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": true,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--no-startup"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--use-vi-mode"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": true,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--no-vi-mode"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["import"],
+    "command": "tmuxp import",
+    "values": {
+      "log_level": "warning",
+      "color": "auto"
+    }
+  },
+  {
+    "argv": ["import", "teamocil", "sample.yaml"],
+    "command": "tmuxp import teamocil",
+    "values": {
+      "workspace_file": "sample.yaml",
+      "log_level": "warning",
+      "color": "auto"
+    }
+  },
+  {
+    "argv": ["import", "tmuxinator", "sample.yaml"],
+    "command": "tmuxp import tmuxinator",
+    "values": {
+      "workspace_file": "sample.yaml",
+      "log_level": "warning",
+      "color": "auto"
+    }
+  },
+  {
+    "argv": ["convert", "sample.yaml"],
+    "command": "tmuxp convert",
+    "values": {
+      "workspace_file": "sample.yaml",
+      "log_level": "warning",
+      "color": "auto",
+      "answer_yes": false
+    }
+  },
+  {
+    "argv": ["convert", "sample.yaml", "--yes"],
+    "command": "tmuxp convert",
+    "values": {
+      "workspace_file": "sample.yaml",
+      "log_level": "warning",
+      "color": "auto",
+      "answer_yes": true
+    }
+  },
+  {
+    "argv": ["convert", "sample.yaml", "-y"],
+    "command": "tmuxp convert",
+    "values": {
+      "workspace_file": "sample.yaml",
+      "log_level": "warning",
+      "color": "auto",
+      "answer_yes": true
+    }
+  },
+  {
+    "argv": ["debug-info"],
+    "command": "tmuxp debug-info",
+    "values": {
+      "log_level": "warning",
+      "color": "auto",
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["debug-info", "--json"],
+    "command": "tmuxp debug-info",
+    "values": {
+      "log_level": "warning",
+      "color": "auto",
+      "output_json": true
+    }
+  },
+  {
+    "argv": ["ls"],
+    "command": "tmuxp ls",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "full": false,
+      "color": "auto",
+      "tree": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["ls", "--tree"],
+    "command": "tmuxp ls",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "full": false,
+      "color": "auto",
+      "tree": true,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["ls", "--json"],
+    "command": "tmuxp ls",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "full": false,
+      "color": "auto",
+      "tree": false,
+      "output_json": true
+    }
+  },
+  {
+    "argv": ["ls", "--ndjson"],
+    "command": "tmuxp ls",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": true,
+      "full": false,
+      "color": "auto",
+      "tree": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["ls", "--full"],
+    "command": "tmuxp ls",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "full": true,
+      "color": "auto",
+      "tree": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "-f", "sample"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": ["sample"],
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--field", "sample"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": ["sample"],
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "-i"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": true,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--ignore-case"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": true,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "-S"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": true,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--smart-case"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": true,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "-F"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": true,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--fixed-strings"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": true,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "-w"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": true,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--word-regexp"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": true,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "-v"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": true,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--invert-match"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": true,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--any"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": true,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["search", "--json"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": false,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": true
+    }
+  },
+  {
+    "argv": ["search", "--ndjson"],
+    "command": "tmuxp search",
+    "values": {
+      "log_level": "warning",
+      "output_ndjson": true,
+      "word_regexp": false,
+      "query_terms": [],
+      "color": "auto",
+      "ignore_case": false,
+      "invert_match": false,
+      "match_any": false,
+      "fixed_strings": false,
+      "field": null,
+      "smart_case": false,
+      "output_json": false
+    }
+  },
+  {
+    "argv": ["edit", "sample.yaml"],
+    "command": "tmuxp edit",
+    "values": {
+      "workspace_file": "sample.yaml",
+      "log_level": "warning",
+      "color": "auto"
+    }
+  },
+  {
+    "argv": ["freeze"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "-S", "sample"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": "sample",
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "-L", "sample"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": "sample",
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "-f", "yaml"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": null,
+      "workspace_format": "yaml"
+    }
+  },
+  {
+    "argv": ["freeze", "--workspace-format", "yaml"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": null,
+      "workspace_format": "yaml"
+    }
+  },
+  {
+    "argv": ["freeze", "-o", "sample"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": "sample",
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "--save-to", "sample"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": "sample",
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "--yes"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": true,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "-y"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": true,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": false,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "--quiet"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": true,
+      "force": false,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "-q"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": true,
+      "force": false,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["freeze", "--force"],
+    "command": "tmuxp freeze",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "answer_yes": false,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "quiet": false,
+      "force": true,
+      "save_to": null,
+      "workspace_format": null
+    }
+  },
+  {
+    "argv": ["shell", "--use-pythonrc", "--no-startup"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--no-startup", "--use-pythonrc"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": true,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--use-vi-mode", "--no-vi-mode"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": false,
+      "window_name": null
+    }
+  },
+  {
+    "argv": ["shell", "--no-vi-mode", "--use-vi-mode"],
+    "command": "tmuxp shell",
+    "values": {
+      "socket_path": null,
+      "log_level": "warning",
+      "use_pythonrc": false,
+      "command": null,
+      "session_name": null,
+      "socket_name": null,
+      "color": "auto",
+      "shell": "best",
+      "use_vi_mode": true,
+      "window_name": null
+    }
+  }
+]

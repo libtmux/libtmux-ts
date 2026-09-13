@@ -135,67 +135,41 @@ interface FingerprintSnapshot {
   readonly windows: { toArray: () => readonly FingerprintHandle[] };
 }
 
-const FINGERPRINT_ANCHORS = Object.freeze([
+const FINGERPRINT_FIELDS = Object.freeze([
   {
-    bindings: ["client"],
     fields: ["client_name", "session_id", "window_id", "pane_id"],
-    identity: "client_name",
     selection: "clients",
   },
   {
-    bindings: ["pane", "otherPane"],
     fields: ["session_id", "window_id", "window_index", "pane_id", "pane_index"],
-    identity: "pane_id",
     selection: "panes",
   },
   {
-    bindings: ["session"],
     fields: ["session_id", "session_name"],
-    identity: "session_id",
     selection: "sessions",
   },
   {
-    bindings: ["editor", "other"],
     fields: ["session_id", "window_id", "window_index", "window_name"],
-    identity: "window_id",
     selection: "windows",
   },
 ] as const);
 
-function bindingField(world: World, name: string, field: string): string | undefined {
-  const value = (world.bindings[name] as FingerprintHandle | undefined)?.format[field];
-  return value ?? undefined;
-}
-
-function anchoredRows(
+function snapshotRows(
   handles: readonly FingerprintHandle[],
-  identityField: string,
-  identities: ReadonlySet<string>,
   fields: readonly string[],
 ): readonly string[] {
   return handles
-    .filter((handle) => {
-      const identity = handle.format[identityField];
-      return identity !== null && identity !== undefined && identities.has(identity);
-    })
     .map((handle) => JSON.stringify(fields.map((field) => handle.format[field] ?? null)))
     .toSorted();
 }
 
-function worldFingerprint(world: World, snapshot: FingerprintSnapshot): string {
+function worldFingerprint(snapshot: FingerprintSnapshot): string {
   return JSON.stringify(
     Object.fromEntries(
-      FINGERPRINT_ANCHORS.map(({ bindings, fields, identity, selection }) => {
-        const identities = new Set(
-          bindings
-            .map((name) => bindingField(world, name, identity))
-            .filter((value): value is string => value !== undefined),
-        );
-        return [
-          selection,
-          anchoredRows(snapshot[selection].toArray(), identity, identities, fields),
-        ];
-      }),
+      FINGERPRINT_FIELDS.map(({ fields, selection }) => [
+        selection,
+        snapshotRows(snapshot[selection].toArray(), fields),
+      ]),
     ),
   );
 }
@@ -301,16 +275,13 @@ try {
       scratch,
     });
     const server = world.bindings["server"] as { snapshot: () => Promise<unknown> };
-    expectedWorldFingerprint = worldFingerprint(
-      world,
-      (await server.snapshot()) as FingerprintSnapshot,
-    );
+    expectedWorldFingerprint = worldFingerprint((await server.snapshot()) as FingerprintSnapshot);
     worldIndex += 1;
     rebuildCount += 1;
   };
   await rebuild();
 
-  /** Whether every bound handle still names the fixture placement it began on. */
+  /** Whether the fixture topology still matches the world each example starts with. */
   const worldIsIntact = async (candidate: World): Promise<boolean> => {
     const server = candidate.bindings["server"] as { snapshot: () => Promise<unknown> };
     let fresh: unknown;
@@ -319,7 +290,7 @@ try {
     } catch {
       return false;
     }
-    if (worldFingerprint(candidate, fresh as FingerprintSnapshot) !== expectedWorldFingerprint) {
+    if (worldFingerprint(fresh as FingerprintSnapshot) !== expectedWorldFingerprint) {
       return false;
     }
 
