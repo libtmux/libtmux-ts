@@ -972,10 +972,12 @@ await server.checkAlive(); // throws when no tmux server is listening
 raiseIfDead(): Promise<void>
 ```
 
+Assert the server is reachable, raising with tmux's reason if not.
+
 @deprecated Use [`checkAlive`](#servercheckalive).
 
 ```ts
-await server.checkAlive();
+await server.raiseIfDead(); // throws when no tmux server is listening
 ```
 
 #### `Server.cmd`
