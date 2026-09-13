@@ -41,6 +41,66 @@ export type WorkspaceSpec = {
   readiness: "auto" | "always" | "never";
 };
 
+const fields = {
+  workspace: [
+    "session_name",
+    "windows",
+    "start_directory",
+    "environment",
+    "shell_command_before",
+    "suppress_history",
+    "options",
+    "global_options",
+    "before_script",
+    "workspace_builder_options",
+    "plugins",
+    "workspace_builder",
+    "workspace_builder_paths",
+    "description",
+  ],
+  window: [
+    "window_name",
+    "window_index",
+    "panes",
+    "start_directory",
+    "environment",
+    "shell_command_before",
+    "suppress_history",
+    "options",
+    "options_after",
+    "layout",
+    "window_shell",
+    "focus",
+    "description",
+  ],
+  pane: [
+    "shell_command",
+    "shell_command_before",
+    "start_directory",
+    "environment",
+    "suppress_history",
+    "shell",
+    "focus",
+    "enter",
+    "sleep_before",
+    "sleep_after",
+    "description",
+  ],
+  command: ["cmd", "enter", "sleep_before", "sleep_after"],
+  readiness: ["pane_readiness"],
+};
+
+function validateFields(
+  data: Document,
+  scope: keyof typeof fields,
+  path: string,
+  allowExtensionFields: boolean,
+): void {
+  if (allowExtensionFields) return;
+  for (const key of Object.keys(data))
+    if (!fields[scope].includes(key)) throw new Error(`Unsupported field: ${path}.${key}`);
+}
+
 export function expand(value: string, context: FileContext): string {
   return expandPath(value, context).replace(
     /\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z_0-9]*)/g,
@@ -71,11 +131,12 @@ function behavior(data: Document, base: string, context: FileContext): void {
     }
   for (const name of ["layout", "window_shell", "shell"]) optionalString(data[name], name);
 }
-function readiness(data: Document): WorkspaceSpec["readiness"] {
+function readiness(data: Document, allowExtensionFields: boolean): WorkspaceSpec["readiness"] {
   const catalog =
     data.workspace_builder_options == null
       ? {}
       : mapping(data.workspace_builder_options, "workspace_builder_options");
+  validateFields(catalog, "readiness", "workspace_builder_options", allowExtensionFields);
   const value =
     catalog.pane_readiness == null
       ? "auto"
@@ -108,13 +169,19 @@ function environment(value: Json | undefined, context: FileContext): Record<stri
     }),
   );
 }
-function commands(value: Json | undefined, context: FileContext): CommandSpec[] {
+function commands(
+  value: Json | undefined,
+  context: FileContext,
+  path: string,
+  allowExtensionFields: boolean,
+): CommandSpec[] {
   if (value === undefined || value === null || value === "blank" || value === "pane") return [];
   const entries = Array.isArray(value) ? value : [value];
   if (entries.length === 1 && [null, "blank", "pane"].includes(entries[0] as string | null))
     return [];
-  return entries.map((value) => {
+  return entries.map((value, index) => {
     const item = typeof value === "string" ? { cmd: value } : mapping(value, "command");
+    validateFields(item, "command", `${path}[${index}]`, allowExtensionFields);
     if (typeof item.cmd !== "string") throw new Error("A command needs a string cmd");
     if (item.enter !== undefined && typeof item.enter !== "boolean")
       throw new Error("enter must be boolean");
@@ -143,20 +210,30 @@ export function normalize(
   path: string,
   context: FileContext,
   override?: string,
+  options: { allowExtensionFields?: boolean } = {},
 ): WorkspaceSpec {
   const data = structuredClone(document);
+  const allowExtensionFields = options.allowExtensionFields ?? false;
+  validateFields(data, "workspace", "workspace", allowExtensionFields);
   const name = workspaceName(data, context, override);
   const base = dirname(path);
   behavior(data, base, context);
-  const policy = readiness(data);
+  const policy = readiness(data, allowExtensionFields);
   const cwd = directory(data.start_directory, undefined, base, context);
   const sessionEnvironment = environment(data.environment, context);
-  const sessionBefore = commands(data.shell_command_before, context);
+  const sessionBefore = commands(
+    data.shell_command_before,
+    context,
+    "shell_command_before",
+    allowExtensionFields,
+  );
   const windows = sequence(data.windows, "windows");
   if (!windows.length) throw new Error("Workspace must have at least one window");
   const indexes = new Set<number>();
   const normalized = windows.map((value, ordinal): WindowSpec => {
-    const window = mapping(value, `windows[${ordinal}]`);
+    const windowPath = `windows[${ordinal}]`;
+    const window = mapping(value, windowPath);
+    validateFields(window, "window", windowPath, allowExtensionFields);
     behavior(window, context.cwd, context);
     const windowName = optionalString(window.window_name, "window_name");
     const name = windowName === undefined ? undefined : expand(windowName, context);
@@ -179,19 +256,34 @@ export function normalize(
     if (index !== undefined) indexes.add(index);
     const windowDirectory = directory(window.start_directory, cwd, base, context);
     const windowEnvironment = environment(window.environment, context);
-    const before = [...sessionBefore, ...commands(window.shell_command_before, context)];
+    const before = [
+      ...sessionBefore,
+      ...commands(
+        window.shell_command_before,
+        context,
+        `${windowPath}.shell_command_before`,
+        allowExtensionFields,
+      ),
+    ];
     const panes = sequence(window.panes ?? [null], "panes");
     if (!panes.length) throw new Error("Window must have at least one pane");
     return {
       data: window,
       name,
       index,
-      panes: panes.map((value) => {
+      panes: panes.map((value, paneIndex) => {
+        const panePath = `${windowPath}.panes[${paneIndex}]`;
         const pane =
           typeof value === "string" || Array.isArray(value) || value === null
             ? { shell_command: value }
             : mapping(value, "pane");
-        const own = commands(pane.shell_command, context);
+        validateFields(pane, "pane", panePath, allowExtensionFields);
+        const own = commands(
+          pane.shell_command,
+          context,
+          `${panePath}.shell_command`,
+          allowExtensionFields,
+        );
         behavior(pane, context.cwd, context);
         commands(
           [
@@ -205,10 +297,21 @@ export function normalize(
             },
           ],
           context,
+          panePath,
+          allowExtensionFields,
         );
         return {
           data: pane,
-          commands: [...before, ...commands(pane.shell_command_before, context), ...own],
+          commands: [
+            ...before,
+            ...commands(
+              pane.shell_command_before,
+              context,
+              `${panePath}.shell_command_before`,
+              allowExtensionFields,
+            ),
+            ...own,
+          ],
           directory: directory(pane.start_directory, windowDirectory, base, context),
           environment: {
             ...sessionEnvironment,
