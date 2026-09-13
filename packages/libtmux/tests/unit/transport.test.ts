@@ -15,7 +15,7 @@ import {
   MAX_PACKED_ARGV_BYTES,
 } from "../../src/_internal/transport/invocation.js";
 import type { CommandRequest } from "../../src/_internal/transport/types.js";
-import { TmuxTransportError } from "../../src/exc.js";
+import { TmuxTransportError } from "../../src/errors.js";
 
 const echoFixture = fileURLToPath(new URL("../fixtures/echo_argv.mjs", import.meta.url));
 const malformedFixture = fileURLToPath(new URL("../fixtures/malformed_utf8.mjs", import.meta.url));

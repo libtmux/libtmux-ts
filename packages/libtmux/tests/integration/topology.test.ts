@@ -14,7 +14,7 @@ import {
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
-import { MultipleMatchesError } from "../../src/exc.js";
+import { MultipleMatchesError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {

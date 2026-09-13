@@ -4,7 +4,7 @@ import { observerBoundTransport } from "../../src/_internal/control/observer_tra
 import type { ControlObserverBinding } from "../../src/_internal/control/connection.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import type { CommandRequest, RawCommandResult } from "../../src/_internal/transport/types.js";
-import { TmuxServerRestarted, TmuxTransportError } from "../../src/exc.js";
+import { TmuxServerRestartedError, TmuxTransportError } from "../../src/errors.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -307,7 +307,7 @@ describe("connected observer transport", () => {
     });
 
     expect(await rejected(target.transport.execute(invocation()))).toBeInstanceOf(
-      TmuxServerRestarted,
+      TmuxServerRestartedError,
     );
     expect(target.userCommands()).toBe(0);
   });

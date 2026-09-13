@@ -7,7 +7,7 @@ import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
-import { TmuxTransportError } from "../../src/exc.js";
+import { TmuxTransportError } from "../../src/errors.js";
 import type {
   CommandRequest,
   CommandTransport,

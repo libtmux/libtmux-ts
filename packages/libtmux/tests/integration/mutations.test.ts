@@ -13,7 +13,7 @@ import {
 
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
-import { LibTmuxException, TmuxCommandError } from "../../src/exc.js";
+import { LibTmuxError, TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -186,9 +186,9 @@ describe("lifecycle mutations", () => {
       // The window is on the server and in plain sight; only the placement the
       // handle names is gone. Saying it no longer exists sends the reader
       // looking for something they can already see.
-      expect(failure).toBeInstanceOf(LibTmuxException);
-      expect((failure as LibTmuxException).message).toContain("no longer at that placement");
-      expect((failure as LibTmuxException).message).toContain("other");
+      expect(failure).toBeInstanceOf(LibTmuxError);
+      expect((failure as LibTmuxError).message).toContain("no longer at that placement");
+      expect((failure as LibTmuxError).message).toContain("other");
     });
   }, 40_000);
 

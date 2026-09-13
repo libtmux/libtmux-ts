@@ -23,7 +23,7 @@ import type {
 import { isSafeInteger, safeInteger } from "../../src/common.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
 import * as exception from "../../src/exc.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import {
   OptionScope,
   DEFAULT_OPTION_SCOPE,
