@@ -80,6 +80,24 @@ Append also reserves indexes from later input files. Removing the temporary boot
 indexes and restores the prior local or inherited `renumber-windows` setting.
 A failed restoration appears as `renumber_restore_error` in the load result.
 
+Native `load` rejects unsupported fields before any input runs scripts or changes
+tmux. The diagnostic includes the field path. For example, `entter: false` in a
+command is an error; use `enter: false` to leave that command unsubmitted.
+
+| Scope                       | Accepted fields                                                                                                                                                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workspace                   | `session_name`, `windows`, `start_directory`, `environment`, `shell_command_before`, `suppress_history`, `options`, `global_options`, `before_script`, `workspace_builder_options`, `plugins`, `workspace_builder`, `workspace_builder_paths`, `description` |
+| Window                      | `window_name`, `window_index`, `panes`, `start_directory`, `environment`, `shell_command_before`, `suppress_history`, `options`, `options_after`, `layout`, `window_shell`, `focus`, `description`                                                           |
+| Pane                        | `shell_command`, `shell_command_before`, `start_directory`, `environment`, `suppress_history`, `shell`, `focus`, `enter`, `sleep_before`, `sleep_after`, `description`                                                                                       |
+| Command object              | `cmd`, `enter`, `sleep_before`, `sleep_after`                                                                                                                                                                                                                |
+| `workspace_builder_options` | `pane_readiness`                                                                                                                                                                                                                                             |
+
+`description` is neutral metadata at workspace, window, and pane scope. Option
+and environment maps retain their native names. Conversion preserves arbitrary
+fields without applying the native execution contract. Documents delegated to
+Python plugins or custom builders retain their extension fields; empty plugin
+lists and blank builder names still use native validation.
+
 ## Inspect a workspace through MCP
 
 The separate [MCP server](../mcp/README.md) inspects loaded workspaces on the
