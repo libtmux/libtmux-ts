@@ -18,7 +18,7 @@ import {
   planSplitWindow,
 } from "../../src/_internal/operations/plans.js";
 import { splitSize } from "../../src/types.js";
-import { PaneDirection } from "../../src/constants.js";
+import { PANE_DIRECTION_FLAG_MAP, PaneDirection } from "../../src/constants.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 
 /**
@@ -90,6 +90,23 @@ describe("lifecycle command arguments", () => {
       expect(() => planSplitWindow("%0", { direction: PaneDirection.Right, vertical })).toThrow(
         TypeError,
       );
+    }
+  });
+
+  test("builds split-window flags for a direction alone or vertical alone", () => {
+    const base = ["split-window", "-d", "-P", "-F", "#{pane_id}"];
+
+    expect(planSplitWindow("%0", {}).argv).toEqual([...base, "-t", "%0"]);
+    expect(planSplitWindow("%0", { vertical: true }).argv).toEqual([...base, "-t", "%0"]);
+    expect(planSplitWindow("%0", { vertical: false }).argv).toEqual([...base, "-h", "-t", "%0"]);
+
+    for (const direction of Object.values(PaneDirection)) {
+      expect(planSplitWindow("%0", { direction }).argv).toEqual([
+        ...base,
+        ...PANE_DIRECTION_FLAG_MAP[direction],
+        "-t",
+        "%0",
+      ]);
     }
   });
 
