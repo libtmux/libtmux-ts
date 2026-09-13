@@ -9,12 +9,12 @@ interface ExceptionOptions {
   readonly subcommand?: string;
 }
 
-interface ObjectDoesNotExistOptions extends ExceptionOptions {
+interface ObjectNotFoundOptions extends ExceptionOptions {
   readonly message?: string;
   readonly query?: Query;
 }
 
-interface MultipleObjectsReturnedOptions extends ObjectDoesNotExistOptions {
+interface MultipleObjectsErrorOptions extends ObjectNotFoundOptions {
   readonly count?: number;
 }
 
@@ -204,7 +204,7 @@ export interface TmuxTransportErrorOptions extends ExceptionOptions {
 export class ObjectNotFoundError extends LibTmuxError {
   readonly query: Query | undefined;
 
-  constructor(options: ObjectDoesNotExistOptions = {}) {
+  constructor(options: ObjectNotFoundOptions = {}) {
     const formattedQuery = options.query === undefined ? "" : formatQuery(options.query);
     const message =
       options.message ??
@@ -218,7 +218,7 @@ export class MultipleObjectsError extends LibTmuxError {
   readonly count: number | undefined;
   readonly query: Query | undefined;
 
-  constructor(options: MultipleObjectsReturnedOptions = {}) {
+  constructor(options: MultipleObjectsErrorOptions = {}) {
     const parts = ["Multiple objects returned"];
     if (options.count !== undefined) parts.push(`(${options.count})`);
     const formattedQuery = options.query === undefined ? "" : formatQuery(options.query);
