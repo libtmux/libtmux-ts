@@ -634,7 +634,7 @@ describe("regex criteria", () => {
 
     expect(corpus.protocol).toBe("libtmux-where-regex-v1");
     expect(corpus.runtimes).toEqual({
-      bun: ["1.3.14", "1.4.0"],
+      bun: ["1.3.14", "1.4.0", "1.4.2"],
       node: "22",
       python: "3",
     });
