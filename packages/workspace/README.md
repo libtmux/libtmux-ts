@@ -94,6 +94,8 @@ changing options. Names accept unique abbreviations supported by the running
 daemon; saved layouts require a valid checksum, a nonempty tree and enough pane
 cells. An empty layout string leaves the default arrangement in place, as an
 omitted layout does. tmux remains responsible for geometry and pruning.
+The library limits custom layouts to 8192 characters and 256 nested groups;
+these are application limits, separate from tmux's parser.
 
 ## The shape
 
