@@ -207,7 +207,8 @@ export class Pane {
    * Split this pane and resolve the created pane.
    *
    * ```ts
-   * const created = await pane.split({ vertical: true });
+   * import { PaneDirection } from "libtmux";
+   * const created = await pane.split({ direction: PaneDirection.Below });
    * created.id;
    * ```
    */

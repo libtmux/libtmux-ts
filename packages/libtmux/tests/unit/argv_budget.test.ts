@@ -49,7 +49,7 @@ async function acquisitionRequest(rawVersion: string): Promise<CommandRequest> {
         captured = request;
         return Promise.resolve({
           cmd: ["tmux"],
-          returncode: 0,
+          exitCode: 0,
           signal: null,
           stderr: new Uint8Array(),
           stdout: new TextEncoder().encode("ltxI101;202\n"),

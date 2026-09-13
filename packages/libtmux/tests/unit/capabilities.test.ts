@@ -28,7 +28,7 @@ function epoch(value: number): DaemonEpoch {
 function resultFor(request: CommandRequest, version: string): RawCommandResult {
   return {
     cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
     stdout: encoder.encode(`${version}\t101\t202\n`),
@@ -298,37 +298,37 @@ describe("tmux capabilities", () => {
     const replies = [
       {
         diagnostic: "tmux version probe returned no version",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
         stdout: "",
       },
       {
         diagnostic: "tmux version probe returned multiple versions",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
         stdout: "3.7b\n3.7a\n",
       },
       {
         diagnostic: "invalid tmux version",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
         stdout: "#{version}\t101\t202\n",
       },
       {
         diagnostic: "tmux capability probe returned an invalid daemon identity",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
         stdout: "3.7b\t101\n",
       },
       {
         diagnostic: "tmux capability probe returned an invalid daemon identity",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
         stdout: "3.7b\tone\t202\n",
       },
       {
         diagnostic: "cannot reach tmux: no server running",
-        returncode: 1,
+        exitCode: 1,
         stderr: "no server running\n",
         stdout: "",
       },
@@ -340,7 +340,7 @@ describe("tmux capabilities", () => {
         requests.push(request);
         return {
           cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-          returncode: reply.returncode,
+          exitCode: reply.exitCode,
           signal: null,
           stderr: encoder.encode(reply.stderr),
           stdout: encoder.encode(reply.stdout),

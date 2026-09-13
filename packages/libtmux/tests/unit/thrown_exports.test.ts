@@ -46,10 +46,11 @@ describe("thrown errors", () => {
 
     const exported = new Set(Object.keys(index));
     const declared = new Set(
-      (await readFile(join(sourceRoot, "exc.ts"), "utf8"))
+      (await readFile(join(sourceRoot, "errors.ts"), "utf8"))
         .split("\n")
         .flatMap((line) => /^export class (?<name>\w+)/u.exec(line)?.groups?.["name"] ?? []),
     );
+    expect(declared.size).toBeGreaterThan(0);
 
     // Only what this package defines: a `@throws TypeError` is the platform's.
     const missing = [...promised]

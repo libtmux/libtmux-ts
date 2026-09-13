@@ -1,4 +1,4 @@
-import { TmuxTransportError } from "../../exc.js";
+import { TmuxTransportError } from "../../errors.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "./types.js";
 
 /** How many invocations one server runs at once when nothing says otherwise. */

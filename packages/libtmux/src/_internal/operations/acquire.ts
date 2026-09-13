@@ -1,5 +1,5 @@
 import type { RawCompleteFormatRow } from "../codec/schemas.js";
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import type { AbortLike } from "../../types.js";
 import { executeGuardedListGroup, type GuardedListing } from "../codec/guarded_listing.js";
 import { FormatProtocolError } from "../codec/guard_codec.js";
@@ -99,7 +99,7 @@ async function acquireServerGraphAttempt(
     if (attemptsRemaining > 1) {
       return acquireServerGraphAttempt(runtime, attemptsRemaining - 1, signal);
     }
-    throw new LibTmuxException("daemon changed repeatedly during graph acquisition");
+    throw new LibTmuxError("daemon changed repeatedly during graph acquisition");
   }
 
   return normalizeGraph({

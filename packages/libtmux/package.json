@@ -48,6 +48,12 @@
       "import": "./dist/common.js",
       "default": "./dist/common.js"
     },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "bun": "./src/errors.ts",
+      "import": "./dist/errors.js",
+      "default": "./dist/errors.js"
+    },
     "./exc": {
       "types": "./dist/exc.d.ts",
       "bun": "./src/exc.ts",

@@ -93,7 +93,7 @@ function epoch(value: number): DaemonEpoch {
 function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult {
   return {
     cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
     stdout: encoder.encode(`${version}\t101\t202\n`),

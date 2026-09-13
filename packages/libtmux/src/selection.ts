@@ -433,7 +433,7 @@ export interface Selection<Model> extends Iterable<Model> {
    * snapshot.windows.where({ name: { startsWith: "log" } });
    * ```
    *
-   * @throws VersionTooLow when a criterion names a field newer than the tmux
+   * @throws VersionTooLowError when a criterion names a field newer than the tmux
    * that answered. Such a field is not absent from the data, it is absent from
    * that release, and matching it against nothing would answer "no member has
    * this" — which is a different statement and the one a caller would act on.

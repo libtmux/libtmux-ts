@@ -1,4 +1,4 @@
-import { TmuxCommandError, TmuxServerRestarted } from "../../exc.js";
+import { TmuxCommandError, TmuxServerRestartedError } from "../../errors.js";
 import type { CommandOptions, CommandResult } from "../../common.js";
 import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.js";
 import type { RuntimeContext } from "../runtime/context.js";
@@ -36,15 +36,15 @@ async function executeCommand(
     // The daemon this runtime believed in is gone. Moving the epoch on is what
     // makes every other handle from it refuse locally, instead of each one
     // learning the same thing from tmux one command at a time.
-    if (error instanceof TmuxServerRestarted) invalidateRuntimeEpoch(runtime);
+    if (error instanceof TmuxServerRestartedError) invalidateRuntimeEpoch(runtime);
     throw error;
   }
   const result = adaptRawResult(raw);
-  if (result.returncode !== 0) {
+  if (result.exitCode !== 0) {
     const target = args.indexOf("-t");
     throw new TmuxCommandError({
       args,
-      exitCode: result.returncode,
+      exitCode: result.exitCode,
       stderr: result.stderr,
       stdout: result.stdout,
       ...(target === -1 ? {} : { target: args[target + 1] }),
@@ -108,15 +108,15 @@ export async function runCommands(
       }),
     );
   } catch (error) {
-    if (error instanceof TmuxServerRestarted) invalidateRuntimeEpoch(runtime);
+    if (error instanceof TmuxServerRestartedError) invalidateRuntimeEpoch(runtime);
     throw error;
   }
   const result = adaptRawResult(raw);
-  if (result.returncode !== 0) {
+  if (result.exitCode !== 0) {
     const target = flat.indexOf("-t");
     throw new TmuxCommandError({
       args: flat,
-      exitCode: result.returncode,
+      exitCode: result.exitCode,
       stderr: result.stderr,
       stdout: result.stdout,
       ...(target === -1 ? {} : { target: flat[target + 1] }),

@@ -599,10 +599,10 @@ describe("Python 0.62.0 parity manifest", () => {
         ?.reason,
     ).toContain("noeq");
     expect(extension.get("no-match-error")?.typescript).toBe(
-      "NoMatchError extends ObjectDoesNotExist",
+      "NoMatchError extends ObjectNotFoundError",
     );
     expect(extension.get("multiple-matches-error")?.typescript).toBe(
-      "MultipleMatchesError extends MultipleObjectsReturned",
+      "MultipleMatchesError extends MultipleObjectsError",
     );
   });
 

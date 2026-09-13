@@ -59,7 +59,7 @@ function gate(failWith?: Error, blockMs = 0): Gate {
       if (failWith !== undefined) throw failWith;
       return {
         cmd: ["tmux"],
-        returncode: 0,
+        exitCode: 0,
         signal: null,
         stderr: new Uint8Array(),
         stdout: new Uint8Array(),

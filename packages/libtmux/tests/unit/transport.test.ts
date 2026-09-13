@@ -71,7 +71,7 @@ describe("NodeSpawnTransport", () => {
 
     expect(JSON.parse(decodeBackslashReplace(raw.stdout))).toEqual(values);
     expect(raw.cmd).toEqual([process.execPath, echoFixture, ...values]);
-    expect(raw.returncode).toBe(0);
+    expect(raw.exitCode).toBe(0);
   });
 
   test("returns raw bytes for nonzero exits instead of throwing", async () => {
@@ -82,7 +82,8 @@ describe("NodeSpawnTransport", () => {
       globalArgs: [],
     });
 
-    expect(raw.returncode).toBe(7);
+    expect(raw.exitCode).toBe(7);
+    expect(adaptRawResult(raw).exitCode).toBe(7);
     expect(raw.stdout).toBeInstanceOf(Uint8Array);
     expect(raw.stderr).toBeInstanceOf(Uint8Array);
     expect(JSON.parse(decodeBackslashReplace(raw.stdout))).toEqual(["kept"]);
@@ -115,6 +116,7 @@ describe("NodeSpawnTransport", () => {
       expect(error).toBeInstanceOf(TmuxTransportError);
       if (!(error instanceof TmuxTransportError)) throw error;
       expect(error).toMatchObject({ delivery: "indeterminate", kind: "protocol" });
+      expect(error).not.toHaveProperty("exitCode");
       expect(error.stdout.byteLength + error.stderr.byteLength).toBeLessThanOrEqual(1_024);
     }
   });
@@ -257,7 +259,7 @@ describe("request preparation and batching", () => {
       { delivery: "replied", index: 1, status: "failed" },
       { delivery: "replied", index: 2, status: "complete" },
     ]);
-    expect(outcomes.map((outcome) => outcome.result?.returncode)).toEqual([0, 9, 0]);
+    expect(outcomes.map((outcome) => outcome.result?.exitCode)).toEqual([0, 9, 0]);
     expect(outcomes.map((outcome) => outcome.request)).toEqual(requests);
   });
 

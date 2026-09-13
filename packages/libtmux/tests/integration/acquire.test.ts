@@ -352,7 +352,7 @@ describe("server graph acquisition", () => {
         ]),
       );
 
-      expect(result.returncode).toBe(0);
+      expect(result.exitCode).toBe(0);
       expect(new TextDecoder().decode(result.stdout)).toBe("literal;\nsecond\n");
     });
   }, 30_000);

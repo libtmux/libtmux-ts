@@ -10,10 +10,10 @@ export function uniqueUnknownCommand(reason: string): string {
 /** Whether tmux failed by rejecting this exact unknown command. */
 export function refusedUnknownCommand(
   command: string,
-  returncode: number,
+  exitCode: number,
   stderr: Uint8Array,
 ): boolean {
-  if (returncode === 0) return false;
+  if (exitCode === 0) return false;
   const expected = `unknown command: ${command}`;
   return decoder.decode(stderr).split(/\r?\n/u).includes(expected);
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { DeliveryStatus } from "../../common.js";
 import type { DaemonGuard, TmuxCommand } from "../../engine.js";
-import { TmuxServerRestarted, TmuxTransportError } from "../../exc.js";
+import { TmuxServerRestartedError, TmuxTransportError } from "../../errors.js";
 import type { AbortLike } from "../../types.js";
 import { executeGuardedList, type GuardCodecCapabilityBinding } from "../codec/guarded_listing.js";
 import type { GuardCodecCapabilities } from "../codec/guard_codec.js";
@@ -121,8 +121,8 @@ function sameDaemon(left: DaemonGuard, right: DaemonGuard): boolean {
   return left.pid === right.pid && left.startTime === right.startTime;
 }
 
-function restarted(message: string, subcommand?: string): TmuxServerRestarted {
-  return new TmuxServerRestarted(message, subcommand === undefined ? {} : { subcommand });
+function restarted(message: string, subcommand?: string): TmuxServerRestartedError {
+  return new TmuxServerRestartedError(message, subcommand === undefined ? {} : { subcommand });
 }
 
 async function authenticateObserver(
@@ -163,7 +163,7 @@ async function authenticateObserver(
 
 function authenticationFailure(error: unknown, budget: RequestBudget): unknown {
   const interrupted = budget.translate(error, "not_started");
-  if (interrupted !== error || error instanceof TmuxServerRestarted) return interrupted;
+  if (interrupted !== error || error instanceof TmuxServerRestartedError) return interrupted;
   if (error instanceof TmuxTransportError) {
     return new TmuxTransportError(`tmux observer authentication failed: ${error.message}`, {
       cause: error,
@@ -207,7 +207,7 @@ function cleanupFailure(options: {
   const delivery =
     options.result !== undefined
       ? "replied"
-      : options.primary instanceof TmuxServerRestarted
+      : options.primary instanceof TmuxServerRestartedError
         ? options.primary.delivery
         : (primaryTransport?.delivery ??
           (options.commandStarted ? "indeterminate" : "not_started"));
@@ -290,7 +290,7 @@ async function withMaterializedStdin(
       interrupted !== error ||
       commandStarted ||
       error instanceof TmuxTransportError ||
-      error instanceof TmuxServerRestarted
+      error instanceof TmuxServerRestartedError
         ? interrupted
         : new TmuxTransportError("could not stage guarded command input", {
             cause: error,
@@ -357,7 +357,7 @@ export function observerBoundTransport(options: ObserverTransportOptions): Comma
         );
       } catch (error) {
         const delivery =
-          error instanceof TmuxTransportError || error instanceof TmuxServerRestarted
+          error instanceof TmuxTransportError || error instanceof TmuxServerRestartedError
             ? error.delivery
             : ("indeterminate" as const);
         throw budget.translate(error, delivery);

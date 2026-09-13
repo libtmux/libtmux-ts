@@ -120,6 +120,7 @@ describe("server utilities", () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       expect(await server.isAlive()).toBe(true);
+      await expect(server.checkAlive()).resolves.toBeUndefined();
       await expect(server.raiseIfDead()).resolves.toBeUndefined();
 
       const absent = new Server({
@@ -130,6 +131,7 @@ describe("server utilities", () => {
 
       // A socket that was never created is a negative answer, not a failure.
       expect(await absent.isAlive()).toBe(false);
+      await expect(absent.checkAlive()).rejects.toThrow(/list-sessions failed/);
       await expect(absent.raiseIfDead()).rejects.toThrow(/list-sessions failed/);
     });
   }, 40_000);

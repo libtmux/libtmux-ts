@@ -1,7 +1,7 @@
 import { types as nodeTypes } from "node:util";
 
 import type { Client } from "../../client.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
 import type { Session } from "../../session.js";
