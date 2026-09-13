@@ -15,7 +15,7 @@ import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException } from "../../src/exc.js";
+import { LibTmuxError } from "../../src/errors.js";
 
 const encoder = new TextEncoder();
 const daemon = Object.freeze({ pid: "101", startTime: "202" });
@@ -138,8 +138,8 @@ describe("guarded format codec", () => {
       });
       throw new Error("expected the command list to fail");
     } catch (error) {
-      expect(error).toBeInstanceOf(LibTmuxException);
-      if (!(error instanceof LibTmuxException)) throw error;
+      expect(error).toBeInstanceOf(LibTmuxError);
+      if (!(error instanceof LibTmuxError)) throw error;
       expect(error.message).toBe("one command failed");
       expect(error.subcommand).toBeUndefined();
     }
@@ -495,7 +495,7 @@ describe("guarded format codec", () => {
       throw new Error("expected decode to fail");
     } catch (error) {
       expect(error).toBeInstanceOf(FormatProtocolError);
-      expect(error).toBeInstanceOf(LibTmuxException);
+      expect(error).toBeInstanceOf(LibTmuxError);
       expect((error as Error).name).toBe("FormatProtocolError");
       expect((error as Error).constructor.name).not.toBe("ZodError");
     }

@@ -26,7 +26,7 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException, WaitTimeout } from "../../src/exc.js";
+import { LibTmuxError, WaitTimeoutError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
 
@@ -586,8 +586,8 @@ describe("Server.watch", () => {
           (error: unknown) => error,
         );
 
-      expect(failure).toBeInstanceOf(WaitTimeout);
-      expect(failure).toBeInstanceOf(LibTmuxException);
+      expect(failure).toBeInstanceOf(WaitTimeoutError);
+      expect(failure).toBeInstanceOf(LibTmuxError);
     });
   }, 60_000);
 
@@ -1134,7 +1134,7 @@ describe("Server.watch", () => {
         await new Promise((resolve) => setTimeout(resolve, 250));
 
         const ours = unhandled.filter(
-          (reason) => reason instanceof LibTmuxException || reason instanceof WaitTimeout,
+          (reason) => reason instanceof LibTmuxError || reason instanceof WaitTimeoutError,
         );
         expect(ours).toEqual([]);
       } finally {
@@ -1154,7 +1154,7 @@ describe("Server.watch", () => {
         timeoutMs: 30_000,
       });
       await live.close();
-      await expect(armed).rejects.toThrow(LibTmuxException);
+      await expect(armed).rejects.toThrow(LibTmuxError);
     });
   }, 40_000);
 });

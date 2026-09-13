@@ -13,7 +13,7 @@ import {
 
 import { Server } from "../../src/server.js";
 import { flattenInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
-import { TmuxServerRestarted } from "../../src/exc.js";
+import { TmuxServerRestartedError } from "../../src/errors.js";
 import type {
   DaemonGuard,
   TmuxCommandResult,
@@ -81,7 +81,7 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
         guarded.request.stdin,
       );
       if (guarded.refusedBy(result.exitCode, result.stderr)) {
-        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+        throw new TmuxServerRestartedError("the daemon this handle was read from is gone");
       }
       return result;
     },

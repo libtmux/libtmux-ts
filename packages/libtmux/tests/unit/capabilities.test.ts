@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
+import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   deriveTmuxCapabilities,
@@ -367,7 +367,7 @@ describe("tmux capabilities", () => {
         "-p",
         "#{version}\t#{pid}\t#{start_time}",
       ]);
-      expect(probeError).toBeInstanceOf(LibTmuxException);
+      expect(probeError).toBeInstanceOf(LibTmuxError);
       expect((probeError as Error).message).toContain(reply.diagnostic);
     }
   });
