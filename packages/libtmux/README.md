@@ -1269,10 +1269,10 @@ because tmux may well have created that window before the pipe went quiet. Every
 path reports the same type, so a timeout during `snapshot()` is not a different
 shape from a timeout during `kill()`.
 
-A handle that outlived its daemon raises `TmuxServerRestartedError`. tmux numbers a
-restarted daemon's objects from the start, so a `%1` read before the restart
-names a pane that exists and belongs to somebody else — and a socket path is a
-place, not a process:
+A handle that outlived its daemon raises `TmuxServerRestartedError`. tmux
+numbers a restarted daemon's objects from the start, so a `%1` read before the
+restart names a pane that exists and belongs to somebody else — and a socket
+path is a place, not a process:
 
 ```ts
 import { TmuxServerRestartedError } from "libtmux";
@@ -1302,19 +1302,20 @@ await server.checkAlive(); // the assertion form
 ```
 
 Library failures extend `LibTmuxError`; invalid arguments may throw native
-`TypeError`. A query that matches nothing raises
-`NoMatchError`, one that matches several where you asked for one raises
-`MultipleMatchesError`, and criteria the schema rejects raise
-`QueryValidationError`. A `waitFor` that reaches its deadline with the condition
-still unmet raises `WaitTimeoutError`, which is worth catching by name: it says the
-state never arrived, where a `LibTmuxError` from the same call says only
-that the connection ended and nothing about the condition.
-A criterion naming a field newer than the tmux that answered raises
-`VersionTooLowError` rather than matching nothing — the error names the field, the
-release that has it, and the release running, because "no pane has this" and
-"your tmux has never heard of this" are different answers.
-`ObjectNotFoundError` and `MultipleObjectsError` are the selection-error bases.
-Import library errors from `libtmux` or `libtmux/errors`.
+`TypeError`. A query that matches nothing raises `NoMatchError`, one that
+matches several where you asked for one raises `MultipleMatchesError`, and
+criteria the schema rejects raise `QueryValidationError`. A `waitFor` that
+reaches its deadline with the condition still unmet raises
+`WaitTimeoutError`, which is worth catching by name: it says the state never
+arrived, where a `LibTmuxError` from the same call says only that the
+connection ended and nothing about the condition. A criterion naming a field
+newer than the tmux that answered raises `VersionTooLowError` rather than
+matching nothing — the error names the field, the release that has it, and
+the release running, because "no pane has this" and "your tmux has never
+heard of this" are different answers. `ObjectNotFoundError` and
+`MultipleObjectsError` are the selection-error bases, keeping the Python
+library's `ObjectDoesNotExist`/`MultipleObjectsReturned` ancestry. Import
+library errors from `libtmux` or `libtmux/errors`.
 
 `parseLegacyWhere` converts Python-style `name__contains=` filter strings into
 criteria, for code being ported rather than written fresh.
@@ -1336,10 +1337,13 @@ use `libtmux/errors` for new imports.
 | `WaitTimeout`             | `WaitTimeoutError`         |
 | `TmuxServerRestarted`     | `TmuxServerRestartedError` |
 
-Completed command results, including custom `TmuxEngine` results, use `exitCode`
-instead of `returncode`. Update result construction and property reads together.
-`TmuxCommandError.exitCode` is unchanged. Transport failures retain their `kind`,
-`delivery`, partial output and optional signal; they have no completed exit code.
+Completed command results, including custom `TmuxEngine` results, use
+`exitCode` instead of `returncode`. Update result construction and property
+reads together. `TmuxCommandError.exitCode` is unchanged. Transport failures
+retain their `kind`, `delivery`, partial output and optional signal; they
+have no completed exit code. A `TmuxEngine` that resolves without a numeric
+`exitCode` raises `TmuxTransportError` with `kind: "contract"` rather than
+being read as a failed command.
 
 Use `server.checkAlive()` in place of the deprecated `server.raiseIfDead()`.
 Both reject when the server cannot be reached.
@@ -1356,11 +1360,11 @@ The canonical call:
 await server.checkAlive();
 ```
 
-For `pane.split()`, `window.split()` and planned splits, replace `vertical: true`
-with `direction: PaneDirection.Below`, and `vertical: false` with
-`direction: PaneDirection.Right`. Omitting both still splits below. The legacy
-`vertical` option is deprecated; passing it with `direction` throws `TypeError`
-before executing a command.
+For `pane.split()`, `window.split()` and planned splits, replace
+`vertical: true` with `direction: PaneDirection.Below`, and `vertical: false`
+with `direction: PaneDirection.Right`. Omitting both still splits below. The
+legacy `vertical` option is deprecated; passing it with `direction` throws
+`TypeError` before executing a command.
 
 ## Running inside tmux
 
