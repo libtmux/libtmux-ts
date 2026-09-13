@@ -165,8 +165,8 @@ export function importDocument(
   source: Document,
   context: FileContext,
 ): Document {
-  if (JSON.stringify(source).includes("<%"))
-    throw new Error("ERB templates require tmuxinator; provide expanded YAML or JSON");
+  if (kind === "tmuxinator" && JSON.stringify(source).includes("<%"))
+    throw new Error("tmuxinator ERB templates are unsupported; expand them before import");
   const result = kind === "teamocil" ? teamocil(source, context) : tmuxinator(source, context);
   normalize(result, join(context.cwd, "imported.json"), context);
   return result;
