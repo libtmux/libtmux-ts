@@ -689,6 +689,7 @@ export class Server {
    * Names accept unique abbreviations. Only version-sensitive names query the
    * daemon; a cold endpoint uses the selected client. Checksums, bounded tree
    * structure and pane counts are checked locally; tmux owns geometry and pruning.
+   * This API limits custom layouts to 8192 characters and 256 nested groups.
    *
    * @throws TypeError when a layout, pane count or version reply is invalid.
    * @throws TmuxCommandError when the daemon or client version cannot be read.

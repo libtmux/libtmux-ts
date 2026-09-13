@@ -53,6 +53,8 @@ version-sensitive names query it; a cold endpoint uses the selected client.
 Saved layouts require a valid checksum, a nonempty tree and enough pane cells.
 tmux still owns geometry correction and pruning, and may reject a layout when
 it is applied.
+The CLI limits custom layouts to 8192 characters and 256 nested groups;
+these are application limits, separate from tmux's parser.
 
 Loading reuses an existing session. Without `-d`, it attaches the final workspace
 or switches the current tmux client. Attachment uses the controlling terminal,
