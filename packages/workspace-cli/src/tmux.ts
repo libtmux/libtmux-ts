@@ -465,6 +465,18 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     ? await bridge!.extensionRuntime(context)
     : undefined;
   const server = connection(request.values, context);
+  await server.validateLayouts(
+    inputs.flatMap((input) =>
+      input.kind === "native"
+        ? input.spec.windows.flatMap((window) =>
+            window.data.layout
+              ? [{ layout: scalarText(window.data.layout), panes: window.panes.length }]
+              : [],
+          )
+        : [],
+    ),
+    context.signal ? { signal: context.signal } : {},
+  );
   const attached = request.mode === "human" && !request.values.detached && !request.values.append;
   const client = attached ? await attachmentClient(server, context) : undefined;
   let append: Session | undefined;

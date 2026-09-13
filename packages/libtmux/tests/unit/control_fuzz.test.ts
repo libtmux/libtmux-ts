@@ -25,6 +25,9 @@ import {
 } from "../../src/_internal/control/events.js";
 import { LineFramer, MAX_CARRY_BYTES } from "../../src/_internal/control/framing.js";
 
+import { layoutIsValid } from "../../src/_internal/operations/layout.js";
+import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
+
 const NEWLINE = 0x0a;
 
 const ITERATIONS = Number.parseInt(process.env.LIBTMUX_FUZZ_ITERATIONS ?? "2000", 10);
@@ -209,4 +212,28 @@ describe("holding back a split character", () => {
       expect(text.startsWith(emitted)).toBe(true);
     }
   });
+});
+
+test(`layout grammar and checksum fuzz (seed ${SEED.toString(16)})`, () => {
+  const next = random(SEED);
+  const version = parseTmuxVersion("3.7c");
+  for (let iteration = 0; iteration < ITERATIONS; iteration++) {
+    const field = (): string => String(Math.floor(next() * 0x1_0000_0000));
+    const leaf = (): string =>
+      `${field()}x${field()},${field()},${field()}${next() < 0.5 ? `,${field()}` : ""}`;
+    const count = 1 + Math.floor(next() * 5);
+    const open = next() < 0.5 ? "{" : "[";
+    const body =
+      count === 1
+        ? leaf()
+        : `${leaf()}${open}${Array.from({ length: count }, leaf).join(",")}${open === "{" ? "}" : "]"}`;
+    let checksum = 0;
+    for (const character of body)
+      checksum = (((checksum >>> 1) | ((checksum & 1) << 15)) + character.charCodeAt(0)) & 0xffff;
+    const valid = `${checksum.toString(16).padStart(4, "0")},${body}`;
+    expect(layoutIsValid(valid, count, version), `iteration ${iteration}`).toBe(true);
+    expect(layoutIsValid(valid, count + 1, version), `pane count ${iteration}`).toBe(false);
+    const badChecksum = `${((checksum + 1) & 0xffff).toString(16).padStart(4, "0")},${body}`;
+    expect(layoutIsValid(badChecksum, count, version), `checksum ${iteration}`).toBe(false);
+  }
 });
