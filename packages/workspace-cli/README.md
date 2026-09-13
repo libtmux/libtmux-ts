@@ -80,6 +80,37 @@ Append also reserves indexes from later input files. Removing the temporary boot
 indexes and restores the prior local or inherited `renumber-windows` setting.
 A failed restoration appears as `renumber_restore_error` in the load result.
 
+## Inspect a workspace through MCP
+
+The separate [MCP server](../mcp/README.md) inspects loaded workspaces on the
+same tmux socket. Build it from the repository root:
+
+```console
+$ bun run --cwd packages/mcp build
+```
+
+After the detached load above, configure your MCP client to launch `node` with
+the built `packages/mcp/dist/server.js` as its argument. Use an absolute program
+path if the client starts outside this repository. Set `LIBTMUX_SOCKET` to
+`workspace-cli-demo` and `LIBTMUX_TOOLSETS` to `inspect` in that subprocess's
+environment. The socket is selected when the MCP server starts.
+
+For a workspace loaded with `-S`, set `LIBTMUX_SOCKET_PATH` to the same absolute
+socket path instead of `LIBTMUX_SOCKET`. If the CLI uses `TMUX_BIN`, select that
+executable with the MCP server's `LIBTMUX_TMUX_BIN` too.
+
+Discover tools with `tools/list`, then call `list_sessions` and `list_panes`.
+Call `list_windows` with `session` set to `dev`, the configuration's session
+name. Pass a returned pane ID as `paneId` to `capture_pane` or `wait_for_text`;
+bound output with `maxLines` and waits with `timeoutMs`. A pending text wait allows
+other inspection requests on the same connection. Read `tmux://capabilities`
+through `resources/read` to verify the selected socket and advertised tools.
+See the [capture guide](../mcp/README.md#read-what-panes-show) for incremental
+reads and cursors.
+
+Closing the MCP subprocess's stdin cancels pending waits and joins its control
+connections. The loaded workspace remains available in tmux.
+
 ## Output
 
 Every command accepts `--json` and `--ndjson` before or after the command name.
