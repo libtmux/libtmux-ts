@@ -72,4 +72,20 @@ describe("server utility requests", () => {
 
     await expect(new Server({ engine }).isAlive()).rejects.toThrow("broken engine");
   });
+
+  test("does not report a live server as dead when the engine still returns returncode", async () => {
+    const engine = singleCommandTransport((request) =>
+      Promise.resolve({
+        cmd: [request.executable, ...flattenInvocation(request)],
+        returncode: 0,
+        signal: null,
+        stderr: new Uint8Array(),
+        stdout: new Uint8Array(),
+      } as never),
+    );
+    const server = new Server({ engine });
+
+    await expect(server.isAlive()).rejects.toMatchObject({ kind: "contract" });
+    await expect(server.hasSession("work")).rejects.toMatchObject({ kind: "contract" });
+  });
 });

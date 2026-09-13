@@ -127,6 +127,7 @@ export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
     if (
       error instanceof TmuxTransportError &&
       error.kind !== "cancelled" &&
+      error.kind !== "contract" &&
       error.kind !== "timeout"
     ) {
       return false;

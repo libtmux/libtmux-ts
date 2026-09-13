@@ -23,7 +23,9 @@ remember.
 - `CommandResult` and custom `TmuxEngine` results use `exitCode` instead of
   `returncode`, matching `TmuxCommandError`. Update both result construction and
   property reads. Nonzero raw command exits remain result data; transport
-  failures retain their diagnostics without an exit code. (#26)
+  failures retain their diagnostics without an exit code. A `TmuxEngine` that
+  resolves without a numeric `exitCode` now raises `TmuxTransportError` with
+  `kind: "contract"` instead of being read as a failed command. (#26)
 
 - `Server.checkAlive()` asserts that the server is reachable; use it in place of
   the deprecated `Server.raiseIfDead()` alias. (#26)
