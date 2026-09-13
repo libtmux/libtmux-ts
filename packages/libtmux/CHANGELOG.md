@@ -12,6 +12,93 @@ remember.
 
 ## Unreleased
 
+### `@libtmux/workspace-cli`
+
+A new package: `tmux-workspace` discovers, loads, captures, converts and
+imports tmuxp workspaces from Node and Bun, with JSON and NDJSON output,
+terminal load progress and generated shell completion. (#24)
+
+`import` preserves source command groups, pane order, focus and directory
+context. Tmuxinator window arrays stay in one pane; Teamocil `commands` and
+legacy `cmd` retain their grouped execution. Unsupported source behavior and
+invalid native fields fail before preview or destination replacement. (#24)
+
+Tmuxinator imports refuse unexpanded ERB markup in a key or value before
+output or overwrite. Teamocil evaluates no templates, so such text in a
+Teamocil source is preserved literally. (#24)
+
+Native `load` now rejects unsupported workspace, window, pane, command, and
+readiness fields before scripts or tmux mutations. Correct misspelled execution
+keys and place controls at their supported scope. Descriptions, native option
+and environment names, lossless conversion, and delegated Python extension
+fields remain accepted. (#24)
+
+### `libtmux`
+
+#### Layouts
+
+`Server.validateLayouts` checks complete window plans before scripts or tmux
+mutations. `Window.selectLayout` rejects invalid names and serialized trees;
+unique abbreviations use the daemon's version, while geometry and pruning stay
+with tmux. Both workspace builders use this preflight before applying
+inputs. (#24)
+
+#### Server
+
+**Breaking.** `ServerOptions.colors` accepts `256` alone, and `Server.colors`
+reports `256` or `undefined`. Any other value throws `TypeError` before tmux is
+contacted.
+
+Before:
+
+    new Server({ colors: 88 })
+
+After:
+
+    new Server({ colors: 256 })
+
+Every supported tmux answers `-8` with `unknown option`, so `88` built an
+invocation none of them could run. (#24)
+
+**Breaking.** `ServerSnapshot` carries `daemonIdentity`, the daemon that
+answered the acquisition, so a value standing in for a snapshot supplies it too.
+
+Before:
+
+    { clients, panes, sessions, windows }
+
+After:
+
+    { clients, daemonIdentity, panes, sessions, windows }
+
+A snapshot of a server with no sessions named no daemon, so a reader could not
+tell whether two instants came from the same one. `Server.snapshot` throws
+`LibTmuxException` when acquisition omits the identity. (#24)
+
+`Server.newSession`, `Session.newWindow`, `Window.split` and `Pane.split` apply
+the `signal` and `timeoutMs` they accept, to the command and to the acquisition
+that resolves the created object. A cancelled caller previously created it
+anyway. (#24)
+
+### `@libtmux/mcp`
+
+The stdio server now closes pending waits and joins its control connections on
+stdin EOF, preserving existing tmux sessions. Backend cleanup errors reach the
+process exit status. (#24)
+
+`select_layout` reports the observed window layout without falsely warning
+that a valid abbreviation, mirrored name or adapted saved layout was not
+applied. Descriptions now explain that tmux may resize or prune saved
+cells. (#24)
+
+### Release tooling
+
+`@libtmux/workspace-cli` participates in coordinated version checks, package
+canaries, and publication with the library, MCP server, and workspace builder.
+The release policy declares it as not yet published, so the release that creates
+it admits a package-level 404 for that package on the coordinated `latest`
+channel. Every other package must exist in the registry. (#24)
+
 ## 0.1.0-alpha.9 (2026-09-12)
 
 ### `libtmux`
