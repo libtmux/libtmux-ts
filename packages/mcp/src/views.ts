@@ -95,7 +95,10 @@ export const windowViewSchema = z.object({
   id: windowIdSchema,
   layout: z
     .string()
-    .describe("tmux's layout string; feed it back only when metadataComplete is true."),
+    .describe(
+      "tmux's observed saved layout, including any resizing or pruning; " +
+        "feed it back only when metadataComplete is true.",
+    ),
   metadataComplete: z.boolean().describe("Whether every projected metadata string is complete."),
   name: z.string(),
   omittedMetadataBytes: z
