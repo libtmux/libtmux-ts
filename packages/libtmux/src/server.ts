@@ -40,6 +40,7 @@ import { Session } from "./session.js";
 import { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killServer, newSession } from "./_internal/operations/mutations.js";
+import { validateLayouts } from "./_internal/operations/layout.js";
 import {
   setOption,
   showOptions,
@@ -680,6 +681,31 @@ export class Server {
    */
   unsetHook(name: string): Promise<void> {
     return unsetHook(runtimeForServer(this), "server", null, name);
+  }
+
+  /**
+   * Check every planned window layout before setup scripts or mutations.
+   *
+   * Names accept unique abbreviations. Only version-sensitive names query the
+   * daemon; a cold endpoint uses the selected client. Checksums, bounded tree
+   * structure and pane counts are checked locally; tmux owns geometry and pruning.
+   *
+   * @throws TypeError when a layout, pane count or version reply is invalid.
+   * @throws TmuxCommandError when the daemon or client version cannot be read.
+   * @throws TmuxTransportError when validation is cancelled or a version probe fails.
+   *
+   * ```ts
+   * await server.validateLayouts([
+   *   { layout: "even-h", panes: 2 },
+   *   { layout: "tiled", panes: 1 },
+   * ]);
+   * ```
+   */
+  validateLayouts(
+    layouts: readonly { readonly layout: string; readonly panes: number }[],
+    options?: CommandOptions,
+  ): Promise<void> {
+    return validateLayouts(runtimeForServer(this), layouts, options);
   }
 
   /**

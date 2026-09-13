@@ -89,6 +89,12 @@ tmux structure before deciding what to do next. It does not report whether pane
 commands ran; mutations are not transactions, and transport failure may leave
 delivery indeterminate.
 
+`applyWorkspace` validates every window layout before claiming a session or
+changing options. Names accept unique abbreviations supported by the running
+daemon; saved layouts require a valid checksum, a nonempty tree and enough pane
+cells. An empty layout string leaves the default arrangement in place, as an
+omitted layout does. tmux remains responsible for geometry and pruning.
+
 ## The shape
 
 Config is [tmuxp](https://tmuxp.git-pull.com/)-shaped, so the field names are

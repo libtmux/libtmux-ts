@@ -12,6 +12,13 @@ remember.
 
 ## Unreleased
 
+### Layouts
+
+`Server.validateLayouts` checks complete window plans before scripts or tmux
+mutations. `Window.selectLayout` rejects invalid names and serialized trees;
+unique abbreviations use the daemon's version, while geometry and pruning stay
+with tmux. Both workspace builders use this preflight before applying inputs.
+
 ### Release tooling
 
 `@libtmux/workspace-cli` participates in coordinated version checks, package

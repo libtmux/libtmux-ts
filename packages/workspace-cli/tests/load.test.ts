@@ -304,6 +304,112 @@ test.each(["off", "on"])(
   },
 );
 
+test("layout corpus preserves an independent keeper", async () => {
+  const corpus = (await Bun.file(
+    new URL("../../libtmux/tests/fixtures/layout-preflight.json", import.meta.url),
+  ).json()) as {
+    id: string;
+    layout: string;
+    pane_count: number;
+    expected_valid: Record<string, boolean>;
+  }[];
+  await fixture(async (server, root, run) => {
+    const before = await server.snapshot();
+    const keeper = before.sessions.one({ name: "fixture" });
+    const version = (await server.versionAtLeast("3.5"))
+      ? "3.7c"
+      : (await server.versionAtLeast("3.3"))
+        ? "3.3a"
+        : "3.2a";
+    const config = join(root, "layouts.json");
+    for (const item of corpus) {
+      // eslint-disable-next-line no-await-in-loop -- Each case reuses the same owned endpoint and file.
+      await writeFile(
+        config,
+        JSON.stringify({
+          session_name: "layout-case",
+          windows: [
+            { layout: item.layout, panes: Array.from({ length: item.pane_count }, () => null) },
+          ],
+        }),
+      );
+      // eslint-disable-next-line no-await-in-loop -- Capture the result before replacing its input.
+      const result = await run(["load", config, "-d", "--json"]);
+      expect(result.code === 0, item.id + ": " + result.stdout + result.stderr).toBe(
+        item.expected_valid[version]!,
+      );
+      // eslint-disable-next-line no-await-in-loop -- Authenticate the keeper after each layout.
+      const after = await server.snapshot();
+      expect(after.daemonIdentity, item.id).toEqual(before.daemonIdentity);
+      const retained = after.sessions.one({ id: keeper.id });
+      expect(
+        retained.windows.toArray().map((window) => window.id),
+        item.id,
+      ).toEqual(keeper.windows.toArray().map((window) => window.id));
+      expect(
+        retained.panes.toArray().map((pane) => pane.id),
+        item.id,
+      ).toEqual(keeper.panes.toArray().map((pane) => pane.id));
+      for (const session of after.sessions.toArray()) {
+        // eslint-disable-next-line no-await-in-loop -- Only this case's owned session is removed.
+        if (session.id !== keeper.id) await session.kill();
+      }
+    }
+  });
+}, 40_000);
+
+test.each([false, true])(
+  "all layouts precede scripts and borrowed mutations (append=%s)",
+  async (append) => {
+    await fixture(async (server, root, run) => {
+      const before = await server.snapshot();
+      const keeper = before.sessions.one({ name: "fixture" });
+      const marker = join(root, "layout-script");
+      const first = join(root, "layout-first.json");
+      const second = join(root, "layout-second.json");
+      await writeFile(
+        first,
+        JSON.stringify({
+          session_name: "first",
+          before_script: `/usr/bin/touch '${marker}'`,
+          options: { "@changed": "yes" },
+          windows: [{ window_name: "first" }],
+        }),
+      );
+      await writeFile(
+        second,
+        JSON.stringify({
+          session_name: "second",
+          windows: [{ layout: "b25d,80x24,0,0,0", panes: [null, null] }],
+        }),
+      );
+      const result = await run(
+        ["load", first, second, append ? "--append" : "-d", "--json"],
+        append
+          ? {
+              TMUX: `${server.socketPath},${before.daemonIdentity.pid},0`,
+              TMUX_PANE: keeper.panes.at(0)!.id,
+            }
+          : {},
+      );
+      expect(result.code, result.stdout + result.stderr).not.toBe(0);
+      expect(await Bun.file(marker).exists(), "no earlier input may run a script").toBe(false);
+      const after = await server.snapshot();
+      expect(after.daemonIdentity).toEqual(before.daemonIdentity);
+      expect(after.sessions.toArray().map((session) => session.id)).toEqual(
+        before.sessions.toArray().map((session) => session.id),
+      );
+      expect(after.windows.toArray().map((window) => window.id)).toEqual(
+        before.windows.toArray().map((window) => window.id),
+      );
+      expect(after.panes.toArray().map((pane) => pane.id)).toEqual(
+        before.panes.toArray().map((pane) => pane.id),
+      );
+      expect((await keeper.showOptions()).has("@changed")).toBe(false);
+    });
+  },
+);
+
 test("append reserves indexes requested by later workspace files", async () => {
   await fixture(async (server, root, run) => {
     const before = (await server.snapshot()).sessions.one({ name: "fixture" });

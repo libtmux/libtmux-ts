@@ -471,6 +471,11 @@ export class Window {
   /**
    * Apply a named or custom layout.
    *
+   * Names accept unique abbreviations. Checksums and tree structure are checked
+   * before dispatch; tmux remains responsible for geometry and pruning.
+   *
+   * @throws TypeError when the layout name or serialized tree is invalid.
+   *
    * ```ts
    * await window.selectLayout("even-horizontal");
    * ```
