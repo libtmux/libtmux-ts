@@ -1256,7 +1256,7 @@ try {
   await session.newWindow({ name: "build" });
 } catch (error) {
   if (error instanceof TmuxTransportError) {
-    error.kind; // "cancelled" | "pipe" | "protocol" | "spawn" | "timeout"
+    error.kind; // "cancelled" | "contract" | "pipe" | "protocol" | "spawn" | "timeout"
     error.delivery; // "not_started" | "written" | "replied" | "indeterminate"
     error.stdout; // whatever arrived before the failure
   }

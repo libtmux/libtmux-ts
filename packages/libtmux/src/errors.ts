@@ -137,7 +137,13 @@ export class LibTmuxError extends Error {
 }
 
 /** What went wrong between this process and tmux, as opposed to inside tmux. */
-export type TmuxTransportErrorKind = "cancelled" | "pipe" | "protocol" | "spawn" | "timeout";
+export type TmuxTransportErrorKind =
+  | "cancelled"
+  | "contract"
+  | "pipe"
+  | "protocol"
+  | "spawn"
+  | "timeout";
 
 /**
  * A command did not complete, and this is how far it got.

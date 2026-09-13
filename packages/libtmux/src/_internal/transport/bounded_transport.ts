@@ -70,6 +70,50 @@ function waitsOnSomethingElse(request: CommandRequest): boolean {
   return request.commands.every((command) => reachesUnboundedCommand(command[0]));
 }
 
+function contractError(request: CommandRequest, message: string): TmuxTransportError {
+  return new TmuxTransportError(message, {
+    delivery: "indeterminate",
+    kind: "contract",
+    subcommand: request.commands[0][0],
+  });
+}
+
+/**
+ * Prove the engine resolved the shape every caller above assumes.
+ *
+ * A custom `TmuxEngine` is unchecked at this boundary: nothing stops a build
+ * still targeting the pre-rename `returncode` field from resolving here with
+ * `exitCode` missing, which every caller reads as `undefined !== 0` and
+ * reports a live server as dead. Failing loudly here beats every caller
+ * re-deriving the same check.
+ */
+function validateRawResult(raw: unknown, request: CommandRequest): RawCommandResult {
+  if (raw === null || typeof raw !== "object") {
+    throw contractError(
+      request,
+      `tmux engine resolved ${JSON.stringify(raw)} instead of a command result`,
+    );
+  }
+  const candidate = raw as Partial<Record<keyof RawCommandResult, unknown>>;
+  if (!Number.isInteger(candidate.exitCode)) {
+    const hint =
+      "returncode" in candidate
+        ? ` — TmuxEngine.execute resolves "exitCode", not "returncode"`
+        : "";
+    throw contractError(
+      request,
+      `tmux engine resolved a non-numeric exitCode (${JSON.stringify(candidate.exitCode)})${hint}`,
+    );
+  }
+  if (!(candidate.stdout instanceof Uint8Array) || !(candidate.stderr instanceof Uint8Array)) {
+    throw contractError(request, "tmux engine did not resolve stdout and stderr as Uint8Array");
+  }
+  if (!Array.isArray(candidate.cmd)) {
+    throw contractError(request, "tmux engine did not resolve cmd as an array");
+  }
+  return raw as RawCommandResult;
+}
+
 interface Waiter {
   /**
    * Offer this waiter the permit a finished invocation released.
@@ -116,7 +160,7 @@ export class BoundedTransport implements CommandTransport {
   }
 
   execute(request: CommandRequest): Promise<RawCommandResult> {
-    if (waitsOnSomethingElse(request)) return this.#inner.execute(request);
+    if (waitsOnSomethingElse(request)) return this.#run(request);
     // Dispatched without suspending when a slot is free, so an uncontended
     // command reaches tmux exactly as it did before there was a ceiling: an
     // await here would put the caller's own synchronous work between the
@@ -128,6 +172,10 @@ export class BoundedTransport implements CommandTransport {
     return this.#waitThenDispatch(request);
   }
 
+  async #run(request: CommandRequest): Promise<RawCommandResult> {
+    return validateRawResult(await this.#inner.execute(request), request);
+  }
+
   async #waitThenDispatch(request: CommandRequest): Promise<RawCommandResult> {
     const queuedAt = await this.#acquire(request);
     return this.#dispatch(request, queuedAt);
@@ -135,7 +183,7 @@ export class BoundedTransport implements CommandTransport {
 
   async #dispatch(request: CommandRequest, queuedAt: number): Promise<RawCommandResult> {
     try {
-      return await this.#inner.execute(afterWaiting(request, queuedAt));
+      return await this.#run(afterWaiting(request, queuedAt));
     } finally {
       this.#active -= 1;
       this.#handOn();
