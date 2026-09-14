@@ -284,7 +284,9 @@ export async function buildExtension(
       failed = error;
     }
     try {
-      const after = await server.snapshot({ signal: AbortSignal.timeout(1000) });
+      // The observation reports what the extension left behind, so a
+      // cancelled load still runs it; only the deadline bounds it.
+      const after = await server.snapshot({ signal: AbortSignal.timeout(10_000) });
       if (before && !sameDaemon(before.daemonIdentity, after.daemonIdentity))
         throw new Error("Daemon changed during extension execution");
       const oldWindows = new Set(before?.windows.toArray().map((window) => window.id));
