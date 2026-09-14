@@ -66,6 +66,18 @@ async function captureUntil(
 }
 
 describe("lifecycle mutations", () => {
+  test("an aborted signal stops a lifecycle mutation before tmux runs it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const controller = new AbortController();
+      controller.abort();
+      await expect(
+        server.newSession({ name: "cancelled", signal: controller.signal }),
+      ).rejects.toThrow();
+      expect((await server.snapshot()).sessions.exists({ name: "cancelled" })).toBe(false);
+    });
+  });
+
   test("creates exact indexes directly and in batches without replacing occupied windows", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
