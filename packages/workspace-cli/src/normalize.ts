@@ -173,6 +173,17 @@ function environment(
     }),
   );
 }
+function delays(data: Document): void {
+  for (const key of ["sleep_before", "sleep_after"]) {
+    const delay = data[key];
+    if (
+      delay !== undefined &&
+      delay !== null &&
+      (typeof delay !== "number" || delay < 0 || !Number.isFinite(delay))
+    )
+      throw new Error(`${key} must be a nonnegative number or null`);
+  }
+}
 function commands(
   value: Json | undefined,
   context: FileContext,
@@ -189,15 +200,7 @@ function commands(
     if (typeof item.cmd !== "string") throw new Error("A command needs a string cmd");
     if (item.enter !== undefined && typeof item.enter !== "boolean")
       throw new Error("enter must be boolean");
-    for (const key of ["sleep_before", "sleep_after"]) {
-      const delay = item[key];
-      if (
-        delay !== undefined &&
-        delay !== null &&
-        (typeof delay !== "number" || delay < 0 || !Number.isFinite(delay))
-      )
-        throw new Error(`${key} must be a nonnegative number or null`);
-    }
+    delays(item);
     return { ...item, cmd: expand(item.cmd, context) } as CommandSpec;
   });
 }
@@ -290,21 +293,7 @@ export function normalize(
           allowExtensionFields,
         );
         behavior(pane, base, context);
-        commands(
-          [
-            {
-              cmd: "",
-              ...Object.fromEntries(
-                ["enter", "sleep_before", "sleep_after"]
-                  .filter((key) => pane[key] !== undefined)
-                  .map((key) => [key, pane[key]!]),
-              ),
-            },
-          ],
-          context,
-          panePath,
-          allowExtensionFields,
-        );
+        delays(pane);
         return {
           data: pane,
           commands: [
