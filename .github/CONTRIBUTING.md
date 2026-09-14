@@ -381,32 +381,32 @@ its integrity and intended tag match. A different artifact, a missing
 established package, or any registry error other than a target-version 404
 stops the release.
 
-The CLI's first publication requires a maintainer to set
-`LIBTMUX_FIRST_PUBLICATION=@libtmux/workspace-cli@<release-version>`. The version
-must match every manifest. Only a structured package-level 404 for that package
-is admitted; registry errors and missing established packages still stop the
-release. The first publication must use the coordinated `latest` channel:
-either a prerelease before the first stable release, or a stable version.
-Bootstrapping into `alpha` or another later prerelease channel is refused
-before any publication. Once the target exists, a retry requires the same
-tarball integrity and intended tag. The tag workflow does not set this opt-in.
+A package the registry does not hold yet carries `firstPublication` in
+`RELEASE_PACKAGES`, and `@libtmux/workspace-cli` carries it now, so a tag
+release does not stop on that package's absence. Only a structured
+package-level 404 for a declared package is admitted; registry errors and
+missing established packages still stop the release. The first publication must
+use the coordinated `latest` channel: either a prerelease before the first
+stable release, or a stable version. Bootstrapping into `alpha` or another later
+prerelease channel is refused before any publication. Once the target exists, a
+retry requires the same tarball integrity and intended tag.
 
 Choose a new coordinated version and complete the package and install gates
 before the first publication. From that reviewed checkout, preview the
 coordinator with:
 
 ```console
-$ GITHUB_EVENT_NAME=workflow_dispatch \
-    LIBTMUX_FIRST_PUBLICATION="@libtmux/workspace-cli@$(bun -p 'require("./packages/workspace-cli/package.json").version')" \
-    bun scripts/publish-release.ts
+$ GITHUB_EVENT_NAME=workflow_dispatch bun scripts/publish-release.ts
 ```
 
-The maintainer performs the first coordinated publication with an
-authenticated npm session and the same opt-in, then configures the CLI's
+A trusted publisher cannot be configured for a package the registry does not
+hold, so the maintainer performs the first coordinated publication with an
+authenticated npm session, then configures the CLI's
 [trusted publisher](https://docs.npmjs.com/trusted-publishers/) for
 `libtmux/libtmux-ts` and `publish.yml`. Enable direct publishing for that
-publisher to match the existing workflow. Remove the opt-in after the first
-publication; subsequent tag releases require every package to exist.
+publisher to match the existing workflow. Drop `firstPublication` from the
+descriptor once the package exists; later tag releases require every package to
+exist.
 
 npm cannot publish the packages as one transaction. A failure can therefore
 leave a prefix published for the next run to verify and resume. Trusted
