@@ -606,7 +606,7 @@ describe("coordinated release", () => {
     }
   });
 
-  test.each(["@libtmux/mcp", "@libtmux/workspace-cli"])(
+  test.each(["libtmux", "@libtmux/mcp", "@libtmux/workspace"])(
     "rejects package-level 404 for %s before publishing",
     async (name) => {
       const fixture = await makeReleaseFixture("1.0.0");
@@ -637,7 +637,7 @@ describe("coordinated release", () => {
     ["1.0.0-alpha.2", "0.9.0-alpha.1", "1.0.0-alpha.3"],
     ["1.0.0", "0.9.0-alpha.1", "1.0.1"],
   ] as const)(
-    "admits the explicit CLI first publication %s and waits for visibility",
+    "publishes the declared first CLI publication %s on a tag push",
     async (version, latest, nextVersion) => {
       const fixture = await makeReleaseFixture(version);
       const registry = makeRegistry(latest);
@@ -651,7 +651,6 @@ describe("coordinated release", () => {
         artifactDirectory: fixture.artifacts,
         dryRun: false,
         eventName: "push",
-        firstPublication: `@libtmux/workspace-cli@${version}`,
         refName: `v${version}`,
         repositoryRoot: fixture.root,
       };
@@ -701,7 +700,6 @@ describe("coordinated release", () => {
             artifactDirectory: fixture.artifacts,
             dryRun: false,
             eventName: "push",
-            firstPublication: "@libtmux/workspace-cli@1.1.0-alpha.1",
             refName: "v1.1.0-alpha.1",
             repositoryRoot: fixture.root,
           },
@@ -714,34 +712,7 @@ describe("coordinated release", () => {
     }
   });
 
-  test.each(["", "@libtmux/mcp@1.0.0", "@libtmux/workspace-cli", "@libtmux/workspace-cli@0.9.0"])(
-    "rejects an invalid first-publication opt-in %s before packing",
-    async (firstPublication) => {
-      const fixture = await makeReleaseFixture("1.0.0");
-      const { io, packed, publishes } = makeReleaseIO(makeRegistry());
-      try {
-        await expect(
-          coordinateRelease(
-            {
-              artifactDirectory: fixture.artifacts,
-              dryRun: false,
-              eventName: "push",
-              firstPublication,
-              refName: "v1.0.0",
-              repositoryRoot: fixture.root,
-            },
-            io,
-          ),
-        ).rejects.toThrow("first publication must name @libtmux/workspace-cli@1.0.0");
-        expect(packed).toEqual([]);
-        expect(publishes).toEqual([]);
-      } finally {
-        await rm(fixture.root, { force: true, recursive: true });
-      }
-    },
-  );
-
-  test("first-publication opt-in preserves established-package and registry failures", async () => {
+  test("first publication preserves established-package and registry failures", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
     const registry = makeRegistry();
     registry.delete("@libtmux/mcp");
@@ -751,7 +722,6 @@ describe("coordinated release", () => {
       artifactDirectory: fixture.artifacts,
       dryRun: false,
       eventName: "push",
-      firstPublication: "@libtmux/workspace-cli@1.0.0",
       refName: "v1.0.0",
       repositoryRoot: fixture.root,
     };
@@ -794,7 +764,6 @@ describe("coordinated release", () => {
               artifactDirectory: fixture.artifacts,
               dryRun: false,
               eventName: "push",
-              firstPublication: "@libtmux/workspace-cli@1.1.0-alpha.1",
               refName: "v1.1.0-alpha.1",
               repositoryRoot: fixture.root,
             },
@@ -825,7 +794,6 @@ describe("coordinated release", () => {
             artifactDirectory: fixture.artifacts,
             dryRun: false,
             eventName: "push",
-            firstPublication: "@libtmux/workspace-cli@1.0.0",
             refName: "v1.0.0",
             repositoryRoot: fixture.root,
           },
@@ -850,7 +818,6 @@ describe("coordinated release", () => {
           artifactDirectory: fixture.artifacts,
           dryRun: true,
           eventName: "workflow_dispatch",
-          firstPublication: "@libtmux/workspace-cli@1.0.0",
           repositoryRoot: fixture.root,
         },
         io,
