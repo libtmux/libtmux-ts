@@ -115,6 +115,44 @@ test("bootstrap resolution preserves command arguments in directories with space
   expect(bootstrap("printf 'a b'")).toEqual(["printf", "a b"]);
 });
 
+test("relative environment and option values resolve against the workspace file", () => {
+  const base = "/project/workspaces";
+  const spec = normalize(
+    {
+      session_name: "dev",
+      environment: { SESSION_LOG: "./session.log" },
+      windows: [
+        {
+          environment: { WINDOW_LOG: "./window.log" },
+          options: { "@window-log": "./window.log" },
+          panes: [{ environment: { PANE_LOG: "./pane.log" } }, {}],
+        },
+      ],
+    },
+    `${base}/dev.yaml`,
+    context,
+  );
+  const window = spec.windows[0]!;
+  expect(spec.environment).toEqual({ SESSION_LOG: `${base}/session.log` });
+  expect(window.data.options).toEqual({ "@window-log": `${base}/window.log` });
+  expect(window.panes[0]!.environment).toEqual({
+    SESSION_LOG: `${base}/session.log`,
+    PANE_LOG: `${base}/pane.log`,
+  });
+  expect(window.panes[1]!.environment).toEqual({
+    SESSION_LOG: `${base}/session.log`,
+    WINDOW_LOG: `${base}/window.log`,
+  });
+  const delegated = normalize(
+    { session_name: "dev", windows: [{ panes: [{ options: { "@pane-log": "./pane.log" } }] }] },
+    `${base}/dev.yaml`,
+    context,
+    undefined,
+    { allowExtensionFields: true },
+  );
+  expect(delegated.windows[0]!.panes[0]!.data.options).toEqual({ "@pane-log": `${base}/pane.log` });
+});
+
 test("execution shapes reject malformed options and toggles before creating anything", () => {
   const invalid: Document[] = [
     { options: [] },

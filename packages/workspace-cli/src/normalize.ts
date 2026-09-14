@@ -157,7 +157,11 @@ function directory(
   const expanded = expand(path, context);
   return isAbsolute(expanded) ? expanded : resolve(parent ?? base, expanded);
 }
-function environment(value: Json | undefined, context: FileContext): Record<string, string> {
+function environment(
+  value: Json | undefined,
+  base: string,
+  context: FileContext,
+): Record<string, string> {
   if (value === undefined) return {};
   return Object.fromEntries(
     Object.entries(mapping(value, "environment")).map(([key, value]) => {
@@ -165,7 +169,7 @@ function environment(value: Json | undefined, context: FileContext): Record<stri
         throw new Error(`Invalid environment name: ${key}`);
       const expanded = expand(optionalString(value, `environment.${key}`) ?? "", context);
       if (expanded.includes("\0")) throw new Error(`Invalid environment value: ${key}`);
-      return [key, expanded.startsWith(".") ? resolve(context.cwd, expanded) : expanded];
+      return [key, expanded.startsWith(".") ? resolve(base, expanded) : expanded];
     }),
   );
 }
@@ -220,7 +224,7 @@ export function normalize(
   behavior(data, base, context);
   const policy = readiness(data, allowExtensionFields);
   const cwd = directory(data.start_directory, undefined, base, context);
-  const sessionEnvironment = environment(data.environment, context);
+  const sessionEnvironment = environment(data.environment, base, context);
   const sessionBefore = commands(
     data.shell_command_before,
     context,
@@ -234,7 +238,7 @@ export function normalize(
     const windowPath = `windows[${ordinal}]`;
     const window = mapping(value, windowPath);
     validateFields(window, "window", windowPath, allowExtensionFields);
-    behavior(window, context.cwd, context);
+    behavior(window, base, context);
     const windowName = optionalString(window.window_name, "window_name");
     const name = windowName === undefined ? undefined : expand(windowName, context);
     if (name !== undefined && !isTmuxName(name))
@@ -255,7 +259,7 @@ export function normalize(
       throw new Error("window_index must be a distinct integer from 0 through 2147483647");
     if (index !== undefined) indexes.add(index);
     const windowDirectory = directory(window.start_directory, cwd, base, context);
-    const windowEnvironment = environment(window.environment, context);
+    const windowEnvironment = environment(window.environment, base, context);
     const before = [
       ...sessionBefore,
       ...commands(
@@ -284,7 +288,7 @@ export function normalize(
           `${panePath}.shell_command`,
           allowExtensionFields,
         );
-        behavior(pane, context.cwd, context);
+        behavior(pane, base, context);
         commands(
           [
             {
@@ -316,7 +320,7 @@ export function normalize(
           environment: {
             ...sessionEnvironment,
             ...(pane.environment !== undefined
-              ? environment(pane.environment, context)
+              ? environment(pane.environment, base, context)
               : windowEnvironment),
           },
           shell: optionalString(pane.shell ?? window.window_shell, "shell"),
