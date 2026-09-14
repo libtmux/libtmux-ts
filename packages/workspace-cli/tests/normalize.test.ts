@@ -153,6 +153,17 @@ test("relative environment and option values resolve against the workspace file"
   expect(delegated.windows[0]!.panes[0]!.data.options).toEqual({ "@pane-log": `${base}/pane.log` });
 });
 
+test("an empty pane list keeps the window's implicit pane", () => {
+  const spec = normalize(
+    { session_name: "dev", windows: [{ panes: [] }, {}] },
+    "/project/dev.yaml",
+    context,
+  );
+  expect(spec.windows.map((window) => window.panes.length)).toEqual([1, 1]);
+  expect(spec.windows[0]!.panes[0]!.commands).toEqual([]);
+  expect(spec.data.windows).toEqual([{ panes: [] }, {}]);
+});
+
 test("execution shapes reject malformed options and toggles before creating anything", () => {
   const invalid: Document[] = [
     { options: [] },

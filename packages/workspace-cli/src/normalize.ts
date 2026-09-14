@@ -269,8 +269,9 @@ export function normalize(
         allowExtensionFields,
       ),
     ];
-    const panes = sequence(window.panes ?? [null], "panes");
-    if (!panes.length) throw new Error("Window must have at least one pane");
+    const declared = sequence(window.panes ?? [null], "panes");
+    // A window always has a pane, so an empty list asks for the implicit one.
+    const panes = declared.length === 0 ? [null] : declared;
     return {
       data: window,
       name,
