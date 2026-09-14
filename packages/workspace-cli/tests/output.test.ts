@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { run } from "../src/app.ts";
+import { colorEnabled } from "../src/output.ts";
 
 test.each(["human", "json", "ndjson", "help"])(
   "cancellation releases blocked listing output %s",
@@ -130,3 +131,16 @@ test("the CLI exits on interrupt with an unread stdout pipe", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test.each([
+  [{ FORCE_COLOR: "0" }, false],
+  [{ FORCE_COLOR: "1" }, true],
+  [{ FORCE_COLOR: "0", CLICOLOR_FORCE: "1" }, false],
+  [{ CLICOLOR_FORCE: "0" }, false],
+  [{ CLICOLOR: "0" }, false],
+] satisfies [NodeJS.ProcessEnv, boolean][])(
+  "color forcing reads %j as %p without a terminal",
+  (env, expected) => {
+    expect(colorEnabled("human", undefined, env, false)).toBe(expected);
+  },
+);
