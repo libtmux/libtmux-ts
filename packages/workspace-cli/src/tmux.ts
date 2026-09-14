@@ -174,10 +174,9 @@ async function send(pane: Pane, spec: PaneSpec, context: CLIContext): Promise<vo
 async function ready(pane: Pane, context: CLIContext): Promise<boolean> {
   const deadline = performance.now() + 2000;
   while (performance.now() < deadline) {
-    const current = (
-      await pane.server.snapshot(context.signal ? { signal: context.signal } : {})
-    ).panes.one({ id: pane.id });
-    if (Number(current.cursorX) !== 0 || Number(current.cursorY) !== 0) return true;
+    const [x = "0", y = "0"] =
+      (await pane.displayMessage("#{cursor_x};#{cursor_y}"))[0]?.split(";") ?? [];
+    if (Number(x) !== 0 || Number(y) !== 0) return true;
     await sleep(50, undefined, { signal: context.signal });
   }
   return false;
