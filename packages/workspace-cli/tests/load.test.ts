@@ -1093,6 +1093,49 @@ test("freeze machine output reloads window and pane topology", async () => {
   });
 });
 
+test("pane readiness reads one pane, not the whole server", async () => {
+  await fixture(async (server, root, run) => {
+    await server.setGlobalOption("session", "default-command", "printf ready; sleep 30");
+    const wrapper = join(root, "tmux-wrapper");
+    await writeFile(
+      wrapper,
+      `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+if (args.some(argument => argument.includes("ltxI"))) {
+  appendFileSync(process.env.WORKSPACE_TEST_LOG, "acquisition\\n");
+}
+const result = spawnSync(process.env.WORKSPACE_TEST_TMUX, args, { stdio: "inherit" });
+process.exit(result.status ?? 1);
+`,
+      { mode: 0o700 },
+    );
+    const acquisitions = async (readiness: string): Promise<number> => {
+      const file = join(root, `${readiness}.json`);
+      const log = join(root, `${readiness}.log`);
+      await writeFile(
+        file,
+        JSON.stringify({
+          session_name: `readiness-${readiness}`,
+          workspace_builder_options: { pane_readiness: readiness },
+          windows: [{ panes: ["true"] }],
+        }),
+      );
+      const result = await run(["load", file, "-d", "--json"], {
+        TMUX_BIN: wrapper,
+        WORKSPACE_TEST_LOG: log,
+        WORKSPACE_TEST_TMUX: server.tmuxBin,
+      });
+      expect(result.code, result.stdout + result.stderr).toBe(0);
+      return (await readFile(log, "utf8")).trim().split("\n").length;
+    };
+    const never = await acquisitions("never");
+    const always = await acquisitions("always");
+    expect(always).toBe(never);
+  });
+});
+
 test("blank panes with empty plugins load natively without a prompt", async () => {
   await fixture(async (server, root) => {
     await server.setGlobalOption("session", "default-command", "sleep 30");
