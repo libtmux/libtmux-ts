@@ -64,6 +64,7 @@ export function colorEnabled(
 ): boolean {
   if (mode !== "human" || env.NO_COLOR || choice === "never") return false;
   if (choice === "always") return true;
+  if (env.FORCE_COLOR === "0") return false;
   if (env.FORCE_COLOR) return true;
   if (env.CLICOLOR_FORCE && env.CLICOLOR_FORCE !== "0") return true;
   return env.CLICOLOR === "0" ? false : tty;
