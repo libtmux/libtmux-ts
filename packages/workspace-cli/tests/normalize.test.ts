@@ -171,6 +171,9 @@ test("execution shapes reject malformed options and toggles before creating anyt
     { workspace_builder_options: { pane_readiness: "sometimes" } },
     { windows: [{ focus: "false" }] },
     { windows: [{ panes: [{ suppress_history: "false" }] }] },
+    { windows: [{ panes: [{ sleep_before: -1 }] }] },
+    { windows: [{ panes: [{ sleep_after: "1" }] }] },
+    { windows: [{ panes: [{ shell_command: [{ cmd: "true", sleep_before: Infinity }] }] }] },
     { windows: [{ window_index: 2147483648 }] },
   ];
   for (const document of invalid)
