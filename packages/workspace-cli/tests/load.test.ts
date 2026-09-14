@@ -349,6 +349,59 @@ class Plugin(TmuxpPlugin):
   });
 });
 
+extensionTest("extension observation outlasts a slow acquisition", async () => {
+  await fixture(async (server, root, run) => {
+    const wrapper = join(root, "tmux-wrapper");
+    await writeFile(
+      wrapper,
+      `#!${process.execPath}
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+if (existsSync(process.env.WORKSPACE_TEST_MARKER) && args.some(argument => argument.includes("ltxI"))) {
+  await new Promise(resolve => setTimeout(resolve, 1200));
+}
+const result = spawnSync(process.env.WORKSPACE_TEST_TMUX, args, { stdio: "inherit" });
+process.exit(result.status ?? 1);
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      join(root, "extension.py"),
+      `
+import os
+from tmuxp.plugin import TmuxpPlugin
+class Plugin(TmuxpPlugin):
+    def __init__(self):
+        super().__init__(plugin_name="fixture")
+        open(os.environ["WORKSPACE_TEST_MARKER"], "w").close()
+`,
+    );
+    const config = join(root, "slow.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "slow-observation",
+        plugins: ["extension.Plugin"],
+        workspace_builder_paths: ["."],
+        windows: [{ window_name: "main", panes: [""] }],
+      }),
+    );
+    const child = await run(["load", config, "-d", "--json"], {
+      TMUX_BIN: wrapper,
+      TMUX_WORKSPACE_PYTHON: process.env.LIBTMUX_TEST_PYTHON!,
+      WORKSPACE_TEST_MARKER: join(root, "built"),
+      WORKSPACE_TEST_TMUX: server.tmuxBin,
+    });
+    expect(child.code, child.stdout + child.stderr).toBe(0);
+    const result = JSON.parse(child.stdout).results[0];
+    expect(result.observation_error).toBeUndefined();
+    expect(result.session_id).toBe(
+      (await server.snapshot()).sessions.one({ name: "slow-observation" }).id,
+    );
+  });
+});
+
 extensionTest(
   "cancelled Python append joins descendants and observes the retained target",
   async () => {
