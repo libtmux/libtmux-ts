@@ -695,6 +695,20 @@ test.each(["remove", "restore", "both", "disable"])(
   },
 );
 
+test("native load falls back from an unusable terminal size", async () => {
+  await fixture(async (server, root, run) => {
+    const config = join(root, "sized.json");
+    await writeFile(
+      config,
+      JSON.stringify({ session_name: "sized", windows: [{ panes: ["blank"] }] }),
+    );
+    const result = await run(["load", config, "-d", "--json"], { COLUMNS: "", LINES: "wide" });
+    expect(result.code, result.stderr).toBe(0);
+    const window = (await server.snapshot()).sessions.one({ name: "sized" }).windows.one();
+    expect([Number(window.width), Number(window.height)]).toEqual([80, 24]);
+  });
+});
+
 test("native load sets environment before commands and preserves existing sessions", async () => {
   await fixture(async (server, root, run) => {
     const marker = join(root, "marker");
