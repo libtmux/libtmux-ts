@@ -45,7 +45,6 @@ export interface CoordinateReleaseOptions {
   readonly artifactDirectory: string;
   readonly dryRun: boolean;
   readonly eventName: string;
-  readonly firstPublication?: string;
   readonly refName?: string;
   readonly repositoryRoot: string;
 }
@@ -129,10 +128,13 @@ export class RegistryPackageNotFound extends Error {
   }
 }
 
+const FIRST_PUBLICATION_NAME = RELEASE_PACKAGES.find(
+  ({ firstPublication }) => firstPublication === true,
+)?.name;
+
 async function queryPackages(
   manifests: readonly ReleaseManifest[],
   io: ReleaseIO,
-  firstPublicationName?: string,
 ): Promise<readonly (RegistryPackageState | undefined)[]> {
   return await Promise.all(
     manifests.map(async ({ name }) => {
@@ -140,7 +142,7 @@ async function queryPackages(
         return await io.queryPackage(name);
       } catch (error) {
         if (error instanceof RegistryPackageNotFound) {
-          if (name === firstPublicationName && error.packageName === name) return undefined;
+          if (name === FIRST_PUBLICATION_NAME && error.packageName === name) return undefined;
           throw new Error(`established package ${error.packageName} is missing from the registry`, {
             cause: error,
           });
@@ -196,9 +198,8 @@ async function verifyPostcondition(
   artifacts: readonly PackedArtifact[],
   distTag: string,
   io: ReleaseIO,
-  firstPublicationName?: string,
 ): Promise<PostconditionFindings> {
-  const packageStates = await queryPackages(manifests, io, firstPublicationName);
+  const packageStates = await queryPackages(manifests, io);
   const versionStates = await Promise.all(
     manifests.map(async ({ name, version }) => await io.queryVersion(name, version)),
   );
@@ -330,15 +331,6 @@ export async function coordinateRelease(
   if (options.eventName === "push" && options.refName !== `v${version}`) {
     throw new Error(`release tag ${options.refName ?? "is missing"}; expected v${version}`);
   }
-  const firstPublicationName =
-    options.firstPublication === undefined ? undefined : "@libtmux/workspace-cli";
-  if (
-    firstPublicationName !== undefined &&
-    options.firstPublication !== `${firstPublicationName}@${version}`
-  ) {
-    throw new Error(`first publication must name ${firstPublicationName}@${version}`);
-  }
-
   const artifacts = await Promise.all(
     manifests.map(
       async ({ directory }) =>
@@ -358,7 +350,7 @@ export async function coordinateRelease(
     }
   }
 
-  const packageStates = await queryPackages(manifests, io, firstPublicationName);
+  const packageStates = await queryPackages(manifests, io);
   const versionStates = await Promise.all(
     manifests.map(async ({ name }) => await io.queryVersion(name, version)),
   );
@@ -376,7 +368,7 @@ export async function coordinateRelease(
     const versionState = versionStates[index];
     const packageState =
       packageStates[index] ??
-      (artifact.name === firstPublicationName ? { distTags: {} } : undefined);
+      (artifact.name === FIRST_PUBLICATION_NAME ? { distTags: {} } : undefined);
     if (packageState === undefined) {
       failures.push(`${artifact.name}: package state was not read`);
     } else if (versionState === undefined) {
@@ -419,7 +411,7 @@ export async function coordinateRelease(
     let findings: PostconditionFindings = { absent: [], lagging: [] };
     for (let attempt = 1; attempt <= POSTCONDITION_ATTEMPTS; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop -- each read follows the prior delay.
-      findings = await verifyPostcondition(manifests, artifacts, distTag, io, firstPublicationName);
+      findings = await verifyPostcondition(manifests, artifacts, distTag, io);
       if (findings.absent.length === 0 && findings.lagging.length === 0) break;
       // eslint-disable-next-line no-await-in-loop -- bound registry convergence between reads.
       if (attempt < POSTCONDITION_ATTEMPTS) await io.wait(POSTCONDITION_INTERVAL_MS);
@@ -437,7 +429,6 @@ export async function coordinateRelease(
 async function main(): Promise<void> {
   const eventName = process.env.GITHUB_EVENT_NAME ?? "";
   const refName = process.env.GITHUB_REF_NAME;
-  const firstPublication = process.env.LIBTMUX_FIRST_PUBLICATION;
   const artifactDirectory = await mkdtemp(join(tmpdir(), "ltx-release-"));
   try {
     const report = await coordinateRelease(
@@ -447,7 +438,6 @@ async function main(): Promise<void> {
         eventName,
         repositoryRoot: fileURLToPath(new URL("..", import.meta.url)),
         ...(refName === undefined ? {} : { refName }),
-        ...(firstPublication === undefined ? {} : { firstPublication }),
       },
       createReleaseIO(createNpmCommandRunner()),
     );

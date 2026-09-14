@@ -13,6 +13,11 @@ export interface ReleaseManifest {
 
 export interface ReleasePackageDescriptor {
   readonly directory: string;
+  /**
+   * The package is not in the registry yet, so the release that creates it
+   * admits a package-level 404 for it. Remove once it has been published.
+   */
+  readonly firstPublication?: boolean;
   readonly internalVersionFields: readonly string[];
   readonly name: string;
 }
@@ -36,6 +41,7 @@ export const RELEASE_PACKAGES: readonly ReleasePackageDescriptor[] = [
   },
   {
     directory: "workspace-cli",
+    firstPublication: true,
     internalVersionFields: ["peerDependencies", "devDependencies"],
     name: "@libtmux/workspace-cli",
   },
