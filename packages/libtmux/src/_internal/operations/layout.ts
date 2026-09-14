@@ -1,5 +1,5 @@
 import type { CommandOptions } from "../../common.js";
-import { TmuxCommandError, TmuxTransportError } from "../../errors.js";
+import { LibTmuxError, TmuxCommandError, TmuxTransportError } from "../../errors.js";
 import type { TmuxVersion } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
@@ -32,6 +32,20 @@ export function layoutIsValid(layout: string, panes: number, version: TmuxVersio
   return parser.cell(0) && parser.offset === body.length && parser.leaves >= panes;
 }
 
+/** No daemon answers this endpoint, so only the client can name a version. */
+function isColdEndpoint(error: unknown): boolean {
+  const reason =
+    error instanceof TmuxCommandError
+      ? error.stderr.join("\n").trim()
+      : error instanceof LibTmuxError
+        ? error.message.replace(/^cannot reach tmux: /u, "")
+        : "";
+  return (
+    reason.startsWith("no server running on ") ||
+    (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)"))
+  );
+}
+
 export async function validateLayouts(
   runtime: RuntimeContext,
   layouts: readonly { readonly layout: string; readonly panes: number }[],
@@ -51,6 +65,13 @@ export async function validateLayouts(
     if (before !== after) needsVersion.push({ layout, panes });
   }
   if (needsVersion.length === 0) return;
+  // A daemon already bound for this epoch has named its version, so a builder
+  // checking one layout per pane pays no round trip for the ones after the first.
+  const bound = runtime.capabilities.bound();
+  if (bound !== undefined) {
+    assertLayouts(needsVersion, bound.tmuxVersion);
+    return;
+  }
   let version: TmuxVersion;
   try {
     version = parseTmuxVersion(
@@ -59,20 +80,18 @@ export async function validateLayouts(
         .trim(),
     );
   } catch (error) {
-    if (!(error instanceof TmuxCommandError)) throw error;
-    const reason = error.stderr.join("\n").trim();
-    if (
-      !(
-        reason.startsWith("no server running on ") ||
-        (reason.startsWith("error connecting to ") &&
-          reason.endsWith(" (No such file or directory)"))
-      )
-    )
-      throw error;
+    if (!isColdEndpoint(error)) throw error;
     const client = (await runCommand(runtime, ["-V"], options)).join("\n").trim();
     version = parseTmuxVersion(client.startsWith("tmux ") ? client.slice(5) : client);
   }
-  for (const { layout, panes } of needsVersion) {
+  assertLayouts(needsVersion, version);
+}
+
+function assertLayouts(
+  layouts: readonly { readonly layout: string; readonly panes: number }[],
+  version: TmuxVersion,
+): void {
+  for (const { layout, panes } of layouts) {
     if (!layoutIsValid(layout, panes, version))
       throw new TypeError(`invalid tmux layout for ${version.raw}: ${layout}`);
   }
