@@ -846,6 +846,87 @@ process.exit(result.status ?? 1);
   },
 );
 
+test.each([0, 1])("load cancellation interrupts acquisition %i", async (skip) => {
+  await fixture(async (server, root) => {
+    const config = join(root, "cancelled.json");
+    const marker = join(root, "reading");
+    const wrapper = join(root, "tmux-wrapper");
+    await writeFile(
+      config,
+      JSON.stringify({ session_name: "cancelled", windows: [{ panes: ["blank"] }] }),
+    );
+    await writeFile(
+      wrapper,
+      `#!${process.execPath}
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+const counter = process.env.WORKSPACE_TEST_MARKER + "-seen";
+if (args.includes("list-sessions")) {
+  const seen = existsSync(counter) ? Number(readFileSync(counter, "utf8")) : 0;
+  writeFileSync(counter, String(seen + 1));
+  if (seen === Number(process.env.WORKSPACE_TEST_SKIP)) {
+    writeFileSync(process.env.WORKSPACE_TEST_MARKER, String(process.pid));
+    await new Promise(resolve => setTimeout(resolve, 150));
+    writeFileSync(process.env.WORKSPACE_TEST_MARKER + "-continued", "yes");
+  }
+}
+const result = spawnSync(process.env.WORKSPACE_TEST_TMUX, args, { stdio: "inherit" });
+process.exit(result.status ?? 1);
+`,
+      { mode: 0o700 },
+    );
+    const controller = new AbortController();
+    const discard = () =>
+      new Writable({
+        write(_chunk, _encoding, done) {
+          done();
+        },
+      });
+    const pending = runCli(["load", config, "-d", "--json", "-S", server.socketPath!], {
+      cwd: root,
+      env: {
+        ...process.env,
+        HOME: root,
+        TMUX: "",
+        TMUX_PANE: "",
+        TMUX_BIN: wrapper,
+        WORKSPACE_TEST_MARKER: marker,
+        WORKSPACE_TEST_SKIP: String(skip),
+        WORKSPACE_TEST_TMUX: server.tmuxBin,
+      },
+      stdin: Readable.from([]),
+      stdout: discard(),
+      stderr: discard(),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]),
+    });
+    try {
+      /* eslint-disable no-await-in-loop -- Observe the owned client's read before interrupting it. */
+      for (
+        let attempt = 0;
+        !/^[1-9][0-9]*$/.test(
+          await Bun.file(marker)
+            .text()
+            .catch(() => ""),
+        );
+        attempt++
+      ) {
+        if (attempt >= 400) throw new Error(`load did not reach acquisition ${String(skip)}`);
+        await Bun.sleep(5);
+      }
+      /* eslint-enable no-await-in-loop */
+      const clientPid = Number(await readFile(marker, "utf8"));
+      controller.abort();
+      expect(await pending).toBe(130);
+      expect(await readProcessIdentity(clientPid)).toBeUndefined();
+      expect(await Bun.file(marker + "-continued").exists()).toBe(false);
+    } finally {
+      controller.abort();
+      await pending;
+    }
+  });
+});
+
 test("freeze selects the sole session or an explicit session ID", async () => {
   await fixture(async (server, _root, run) => {
     const session = (await server.snapshot()).sessions.one({ name: "fixture" });
