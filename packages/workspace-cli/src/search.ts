@@ -19,9 +19,10 @@ function fields(selected: unknown): string[] {
   return [
     ...new Set(
       (selected as string[]).map((item) => {
-        const name = aliases[item.toLowerCase()];
-        if (!name) throw new CliError("usage", `Unknown search field: ${item}`, 2);
-        return name;
+        const key = item.toLowerCase();
+        if (!Object.hasOwn(aliases, key))
+          throw new CliError("usage", `Unknown search field: ${item}`, 2);
+        return aliases[key]!;
       }),
     ),
   ];
@@ -75,7 +76,9 @@ export async function search(
     .filter(Boolean)
     .map((term) => {
       const colon = term.indexOf(":");
-      const prefixed = colon > 0 ? aliases[term.slice(0, colon).toLowerCase()] : undefined;
+      const prefix = colon > 0 ? term.slice(0, colon).toLowerCase() : undefined;
+      const prefixed =
+        prefix !== undefined && Object.hasOwn(aliases, prefix) ? aliases[prefix] : undefined;
       const pattern = prefixed ? term.slice(colon + 1) : term;
       return { fields: prefixed ? [prefixed] : selected, pattern };
     })

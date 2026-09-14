@@ -276,7 +276,7 @@ test("convert machine stdout preserves the document and performs no guessed writ
 test("search combines qualified fields and returns a stable empty array", async () => {
   await writeFile(
     join(root, ".tmuxp/dev.yaml"),
-    "session_name: service\nwindows:\n  - window_name: editor\n    panes: [vim, 'npm test']\n",
+    "session_name: service\nwindows:\n  - window_name: editor\n    panes: [vim, 'npm test', 'echo constructor:vim']\n",
   );
   const result = await run(["search", "session:service", "pane:vim", "--json"]);
   expect(result.code).toBe(0);
@@ -288,6 +288,8 @@ test("search combines qualified fields and returns a stable empty array", async 
   expect(JSON.parse((await run(["search", "absent", "--json"])).stdout)).toEqual([]);
   expect((await run(["search", "editor", "-f", "WINDOW", "--json"])).code).toBe(0);
   expect((await run(["search", "editor", "-f", "window,pane", "--json"])).code).toBe(2);
+  expect((await run(["search", "editor", "-f", "constructor", "--json"])).code).toBe(2);
+  expect(JSON.parse((await run(["search", "constructor:vim", "--json"])).stdout)).toHaveLength(1);
   expect(JSON.parse((await run(["search", "cmd:vim", "--json"])).stdout)).toEqual([]);
 });
 
