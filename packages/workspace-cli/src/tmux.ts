@@ -232,6 +232,7 @@ async function create(
   futureIndexes: ReadonlySet<number> = new Set(),
 ): Promise<Session> {
   const inputIndex = result.input_index;
+  const acquisition = context.signal ? { signal: context.signal } : {};
   context.signal?.throwIfAborted();
   result.stage = existing ? "append" : "creating-session";
   const session =
@@ -317,10 +318,12 @@ async function create(
     ) &&
     (spec.readiness === "always" ||
       (spec.readiness === "auto" &&
-        /(^|\/)zsh$/.test((await session.showResolvedOptions()).get("default-shell") ?? "")));
+        /(^|\/)zsh$/.test(
+          (await session.showResolvedOptions(acquisition)).get("default-shell") ?? "",
+        )));
   result.completed_stages.push("session-options");
   result.stage = "window-allocation";
-  const current = (await server.snapshot()).sessions.one({ id: session.id });
+  const current = (await server.snapshot(acquisition)).sessions.one({ id: session.id });
   const placeholder = existing
     ? undefined
     : current.windows.toArray().find((window) => window.id === session.windows.at(0)?.id);
@@ -338,7 +341,7 @@ async function create(
     reserved.add(window.index);
   }
   let next = spec.windows.some((window) => window.index === undefined)
-    ? Number((await session.showResolvedOptions()).get("base-index") ?? "0")
+    ? Number((await session.showResolvedOptions(acquisition)).get("base-index") ?? "0")
     : 0;
   const indexes = spec.windows.map((window) => {
     if (window.index !== undefined) return window.index;
@@ -424,7 +427,7 @@ async function create(
   }
   if (focusWindow) await focusWindow.select();
   result.completed_stages.push("windows-created");
-  return (await server.snapshot()).sessions.one({ id: session.id });
+  return (await server.snapshot(acquisition)).sessions.one({ id: session.id });
 }
 export async function load(request: Request, context: CLIContext): Promise<number> {
   if (request.values.colors === 88)
@@ -573,10 +576,15 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           borrowed,
         );
       } else {
-        result.reused = !append && (await server.hasSession(input.spec.name));
-        session = result.reused
-          ? (await server.snapshot()).sessions.one({ name: input.spec.name })
-          : await create(server, input.spec, context, output, result, append, futureIndexes);
+        const existing = append
+          ? undefined
+          : (
+              await server.snapshot(context.signal ? { signal: context.signal } : {})
+            ).sessions.oneOrUndefined({ name: input.spec.name });
+        result.reused = existing !== undefined;
+        session =
+          existing ??
+          (await create(server, input.spec, context, output, result, append, futureIndexes));
       }
       result.session_id = session.id;
       result.session_name = session.name ?? input.spec.name;
