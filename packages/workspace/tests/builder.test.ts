@@ -34,12 +34,12 @@ function serverFor(fixture: TestServer): Server {
  * Trimmed from the library's own engine fixture. What matters here is only
  * that nothing this package does spawns tmux itself.
  */
-function shellEngine(onInvocation: () => void): TmuxEngine {
+function shellEngine(onInvocation: (args: readonly string[]) => void): TmuxEngine {
   const run = async (
     request: TmuxInvocationRequest,
     args: readonly string[],
   ): Promise<TmuxCommandResult> => {
-    onInvocation();
+    onInvocation(args);
     const quoted = [request.executable, ...args]
       .map((argument) => `'${argument.replaceAll("'", `'\\''`)}'`)
       .join(" ");
@@ -992,12 +992,27 @@ test("layout preflight preserves a borrowed workspace before options", async () 
 
 test("empty workspace layout leaves tmux's default arrangement", async () => {
   await withServer(async (fixture) => {
-    const server = serverFor(fixture);
+    const recorded: string[][] = [];
+    const server = new Server({
+      engine: shellEngine((args) => {
+        recorded.push([...args]);
+      }),
+      environment: fixture.controllerEnvironment,
+      socketPath: fixture.socketPath,
+      tmuxBin: fixture.tmuxExecutable,
+    });
     const session = await applyWorkspace(server, {
       session_name: "empty-layout",
-      windows: [{ window_name: "default", layout: "", panes: ["true", "true"] }],
+      windows: [
+        { window_name: "default", layout: "", panes: ["true", "true"] },
+        { window_name: "arranged", layout: "tiled", panes: ["true", "true"] },
+      ],
     });
-    expect(session.windows.one().panes.length).toBe(2);
-    expect((await server.snapshot()).sessions.exists({ name: fixture.sessionName })).toBe(true);
+    const applied = recorded.filter((args) =>
+      args.some((argument) => argument.includes("select-layout")),
+    );
+    expect(applied).toHaveLength(1);
+    expect(applied[0]!.some((argument) => argument.includes("tiled"))).toBe(true);
+    expect(session.windows.one({ name: "default" }).panes.length).toBe(2);
   });
 });
