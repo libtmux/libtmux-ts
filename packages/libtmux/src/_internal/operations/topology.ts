@@ -96,6 +96,8 @@ export async function selectLayout(
   windowId: string | null,
   layout: string,
 ): Promise<void> {
+  // tmux owns the pane count: it prunes surplus cells and refuses a layout
+  // with too few, naming both counts. Only the structure is checked here.
   await validateLayouts(runtime, [{ layout, panes: 1 }]);
   await runCommand(runtime, ["select-layout", ...target(windowId), layout]);
 }
