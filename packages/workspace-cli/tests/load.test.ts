@@ -876,16 +876,18 @@ test("freeze authenticates its current pane context and permits an explicit targ
 });
 
 test.each([
-  ["json", [], true],
-  ["JSON", [], true],
-  ["yml", [], false],
-  ["json", ["-f", "yaml"], false],
-] as const)("quiet freeze saves %s with format options %j", async (extension, format, json) => {
+  ["captured.json", [], true],
+  ["captured.JSON", [], true],
+  ["captured.yml", [], false],
+  ["captured.json", ["-f", "yaml"], false],
+  ["~/captured.json", [], true],
+] as const)("quiet freeze saves %s with format options %j", async (target, format, json) => {
   await fixture(async (_server, root, run) => {
-    const destination = join(root, `captured.${extension}`);
+    const name = target.replace("~/", "");
+    const destination = target === name ? join(root, target) : target;
     const result = await run(["freeze", "fixture", "--quiet", "--save-to", destination, ...format]);
     expect(result).toEqual({ code: 0, stdout: "", stderr: "" });
-    const saved = await readFile(destination, "utf8");
+    const saved = await readFile(join(root, name), "utf8");
     if (json) expect(JSON.parse(saved).session_name).toBe("fixture");
     else expect(saved).toStartWith("session_name: fixture\n");
   });

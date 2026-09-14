@@ -707,7 +707,7 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
     options: Object.fromEntries(await session.showOptions(acquisition)),
   };
   const destination = request.values.save_to
-    ? resolve(context.cwd, scalarText(request.values.save_to))
+    ? resolve(context.cwd, expandPath(scalarText(request.values.save_to), context))
     : undefined;
   const format = scalarText(
     request.values.workspace_format ??
