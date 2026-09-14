@@ -146,6 +146,13 @@ async function options(
   for (const [name, data] of Object.entries(mapping(value, "options")))
     await target.setOption(name, option(data), signal ? { signal } : undefined);
 }
+function dimension(context: CLIContext, names: readonly string[], fallback: number): number {
+  for (const name of names) {
+    const size = Number(context.env[name]?.trim());
+    if (Number.isSafeInteger(size) && size > 0) return size;
+  }
+  return fallback;
+}
 async function send(pane: Pane, spec: PaneSpec, context: CLIContext): Promise<void> {
   let enter = spec.data.enter ?? true;
   let before = spec.data.sleep_before ?? null;
@@ -232,8 +239,8 @@ async function create(
     (await server.newSession({
       name: spec.name,
       ...(spec.directory ? { startDirectory: spec.directory } : {}),
-      width: Number(context.env.COLUMNS ?? context.env.TMUXP_DEFAULT_COLUMNS ?? 80),
-      height: Number(context.env.LINES ?? context.env.TMUXP_DEFAULT_ROWS ?? 24),
+      width: dimension(context, ["COLUMNS", "TMUXP_DEFAULT_COLUMNS"], 80),
+      height: dimension(context, ["LINES", "TMUXP_DEFAULT_ROWS"], 24),
       ...(context.signal ? { signal: context.signal } : {}),
     }));
   result.session_id = session.id;
