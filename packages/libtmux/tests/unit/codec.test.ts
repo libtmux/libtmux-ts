@@ -486,6 +486,29 @@ describe("guarded format codec", () => {
     expect(guardCalls).toBe(1);
   });
 
+  test("unescapes any backslash-escaped byte, not only the characters tmux is known to quote today", () => {
+    const codec = codecFor("list-sessions");
+    const request = codec.prepare();
+    const encoded = encoder.encode(
+      `${frame(request, { session_name: "LIBTMUX_ESCAPE_MARKER" })}\n`,
+    );
+
+    // Neither byte here is in `QUOTED_BY_TMUX`, and neither is a brace: the
+    // point is that decode has no enumerated allow-list to be behind on, so
+    // this must not be read as "braces are covered" and left there. A tmux
+    // release that starts escaping one more character needs no decoder
+    // change, because `splitEscapedBytes` never asks which byte follows the
+    // backslash before treating it as literal.
+    const withUnknownEscapes = replaceMarkerWithBytes(
+      encoded,
+      "LIBTMUX_ESCAPE_MARKER",
+      // "a" \Z "b" \9 "c" -> "aZb9c"
+      Uint8Array.of(0x61, 0x5c, 0x5a, 0x62, 0x5c, 0x39, 0x63),
+    );
+
+    expect(codec.decode(request, withUnknownEscapes)[0]?.session_name).toBe("aZb9c");
+  });
+
   test("wraps schema failures without exposing Zod errors", () => {
     const codec = codecFor("list-sessions");
     const request = codec.prepare();
