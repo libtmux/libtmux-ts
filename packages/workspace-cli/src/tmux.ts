@@ -1,5 +1,5 @@
 /* eslint-disable no-await-in-loop -- Each mutation and progress record depends on the preceding tmux state. */
-import { Server, type Pane, type Session, type Window } from "libtmux";
+import { LibTmuxException, Server, type Pane, type Session, type Window } from "libtmux";
 import { setTimeout as sleep } from "node:timers/promises";
 import { extname, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
@@ -48,6 +48,22 @@ type LoadInput = { path: string } & (
 
 function option(value: Json): string {
   return typeof value === "boolean" ? (value ? "on" : "off") : scalarText(value);
+}
+/**
+ * No daemon answers this socket yet, so `new-session` will create one.
+ *
+ * Every other native pipeline mutation goes straight to `new-session` without
+ * asking first; only the pre-flight lookup for an existing session touches the
+ * server before anything exists to create it. Mirrors the same check `libtmux`
+ * keeps privately for layout validation against a cold endpoint.
+ */
+function isColdEndpoint(error: unknown): boolean {
+  if (!(error instanceof LibTmuxException)) return false;
+  const reason = error.message.replace(/^cannot reach tmux: /u, "");
+  return (
+    reason.startsWith("no server running on ") ||
+    (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)"))
+  );
 }
 function currentEndpoint(context: CLIContext): { socketPath: string; pid: string } | undefined {
   if (!context.env.TMUX) return undefined;
@@ -575,11 +591,18 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           borrowed,
         );
       } else {
-        const existing = append
-          ? undefined
-          : (
+        let existing: Session | undefined;
+        if (!append) {
+          try {
+            existing = (
               await server.snapshot(context.signal ? { signal: context.signal } : {})
             ).sessions.oneOrUndefined({ name: input.spec.name });
+          } catch (error) {
+            // No server on this socket means no session on it either; fall
+            // through to creating both, the way every other native path does.
+            if (!isColdEndpoint(error)) throw error;
+          }
+        }
         result.reused = existing !== undefined;
         session =
           existing ??
