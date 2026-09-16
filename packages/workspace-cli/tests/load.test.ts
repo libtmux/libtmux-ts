@@ -1294,11 +1294,26 @@ test("freeze omits default-size so a reload is not pinned to the capturing termi
     );
     const frozen = await run(["freeze", "freeze-size", "--json"]);
     expect(frozen.code, frozen.stdout + frozen.stderr).toBe(0);
-    const document = JSON.parse(frozen.stdout) as { options?: Record<string, unknown> };
+    const document = JSON.parse(frozen.stdout) as {
+      options?: Record<string, unknown>;
+      windows: { layout?: string }[];
+    };
     expect(document.options?.["default-size"]).toBeUndefined();
 
     const replay = join(root, "replay.json");
-    await writeFile(replay, JSON.stringify({ ...document, session_name: "freeze-size-replay" }));
+    // A captured layout string bakes in freeze's own dimensions and forces
+    // the window back to them on reload, on tmux 3.3a-3.6 only (found while
+    // writing this test, not the bug under test here). Drop it so this test
+    // isolates default-size.
+    const { layout: _capturedLayout, ...windowWithoutLayout } = document.windows[0]!;
+    await writeFile(
+      replay,
+      JSON.stringify({
+        ...document,
+        session_name: "freeze-size-replay",
+        windows: [windowWithoutLayout],
+      }),
+    );
     // A larger terminal at reload time. Without the fix, the 80x24 freeze
     // captured above would override this and pin the window regardless.
     const reload = await run(["load", replay, "-d", "--json"], { COLUMNS: "200", LINES: "50" });
