@@ -544,7 +544,12 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
             : ["started", "completed", "script-output", "workspace-completed"].includes(event)
               ? "info"
               : "debug";
-      const echo = request.mode !== "human" || event !== "script-output";
+      // Human mode already gets a plain sentence for a mid-load failure from
+      // the top-level catch (or, on success, the "Loaded"/"Reused" line), so
+      // echoing "failed" here would dump the whole machine result envelope
+      // as a diagnostic line above it. Script output is likewise written
+      // directly, not through the diagnostic echo.
+      const echo = request.mode !== "human" || !["script-output", "failed"].includes(event);
       if (echo && context.diagnostics?.accepts(level)) await progress?.clear();
       await context.diagnostics?.record(level, event, data, echo);
       return progress?.event(event, data);

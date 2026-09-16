@@ -1435,6 +1435,26 @@ test("a failed bootstrap removes its newly created session and reports the faile
   });
 });
 
+test("a mid-load failure in human mode prints the sentence, not the machine record", async () => {
+  await fixture(async (_server, root, run) => {
+    const config = join(root, "input.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "failed-bootstrap-human",
+        before_script: `'${process.execPath}' -e 'process.exit(7)'`,
+        windows: [{}],
+      }),
+    );
+    const result = await run(["load", config, "-d"]);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).not.toContain('"status"');
+    expect(result.stderr).not.toContain('"completed_stages"');
+    expect(result.stderr).toContain("tmux-workspace: Bootstrap exited with status 7");
+  });
+});
+
 test("append resolves the explicit current pane and preserves existing windows", async () => {
   await fixture(async (server, root, run) => {
     const before = (await server.snapshot()).sessions.one({ name: "fixture" });
