@@ -60,6 +60,42 @@ export function sequence(value: Json | undefined, label: string): Json[] {
   return value;
 }
 
+/**
+ * Whether a plain scalar spelled `text` would come back as something other
+ * than that string under either YAML resolver a consumer might use: this
+ * port's own reader (YAML 1.2 core, the `yaml` package's default) or
+ * tmuxp's (PyYAML, YAML 1.1). Checked by parsing `text` in isolation under
+ * both and comparing to the original — covers `yes/no/on/off/y/n` and
+ * `true/false` in any case, `null/~`/empty, and every numeric spelling
+ * (`1.0 08 0x1F 0o7 1e3 .inf .nan 1_000 1:30`) without hand-listing them.
+ * Multi-line text is exempt: it never collides with a bare keyword and is
+ * better left to its own block style.
+ */
+function ambiguousScalar(text: string, yamlModule: typeof import("yaml")): boolean {
+  if (text.includes("\n")) return false;
+  if (text === "") return true;
+  const resolves = (options?: { version: "1.1" }): boolean => {
+    try {
+      return yamlModule.parse(text, options) !== text;
+    } catch {
+      return true;
+    }
+  };
+  return resolves() || resolves({ version: "1.1" });
+}
+
+/** Force-quote every scalar {@link ambiguousScalar} flags, leaving the rest. */
+function stringifyYaml(document: Document, yamlModule: typeof import("yaml")): string {
+  const doc = new yamlModule.Document(document);
+  yamlModule.visit(doc, {
+    Scalar(_key, node) {
+      if (typeof node.value === "string" && ambiguousScalar(node.value, yamlModule))
+        node.type = yamlModule.Scalar.QUOTE_DOUBLE;
+    },
+  });
+  return doc.toString();
+}
+
 async function info(path: string) {
   try {
     return await stat(path);
@@ -107,7 +143,7 @@ export async function saveDocument(
   const contents =
     format === "json"
       ? JSON.stringify(document, null, 2) + "\n"
-      : (await import("yaml")).stringify(document);
+      : stringifyYaml(document, await import("yaml"));
   signal?.throwIfAborted();
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   try {
