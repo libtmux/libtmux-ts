@@ -1,4 +1,4 @@
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import type { Selection } from "../../selection.js";
 import type { Server } from "../../server.js";
 import { materializeProjectionMembers } from "../graph/materialize.js";
@@ -61,7 +61,7 @@ function projectionForModel(graph: NormalizedGraph, model: ProjectedModel) {
   }
   const projection = views.get(MEMBER_SOURCES[model]);
   if (projection === undefined) {
-    throw new LibTmuxException(`${model} projection is unavailable for this graph`);
+    throw new LibTmuxError(`${model} projection is unavailable for this graph`);
   }
   return projection;
 }
@@ -73,7 +73,7 @@ export function settledSelectionOfModel<Model extends ProjectedModel>(
 ): Selection<ModelForKind<Model>> {
   const built = settled.get(graph)?.get(model);
   if (built === undefined) {
-    throw new LibTmuxException(
+    throw new LibTmuxError(
       `${model} handles were not materialized for this graph; acquire a snapshot first`,
     );
   }

@@ -43,6 +43,18 @@ interface RegexCorpus {
 
 const tsRootPath = fileURLToPath(new URL("../..", import.meta.url));
 
+/**
+ * The regex corpus is evidence only for the Bun versions it recorded results
+ * on; running it under an unrecorded Bun answers a question the corpus never
+ * covers.
+ */
+function assertRecordedBun(recorded: readonly string[], running: string): void {
+  expect(
+    recorded,
+    `the regex corpus records Bun ${recorded.join(" and ")}; this is Bun ${running}. Run the suite on a recorded Bun, or regenerate the corpus.`,
+  ).toContain(running);
+}
+
 function expectInvalidQuery(action: () => unknown, escaped?: unknown): QueryValidationError {
   let observed: unknown;
   try {
@@ -625,6 +637,11 @@ describe("generated relation criteria", () => {
 });
 
 describe("regex criteria", () => {
+  test("refuses to trust the corpus on a Bun version it never recorded", () => {
+    expect(() => assertRecordedBun(["1.3.14", "1.4.0"], "9.9.9")).toThrow(/records Bun/u);
+    expect(() => assertRecordedBun(["1.3.14", "1.4.0"], "1.4.0")).not.toThrow();
+  });
+
   test("runs the shared corpus through Bun's native engine", async () => {
     const corpus = (await Bun.file(
       new URL("../fixtures/where_regex.json", import.meta.url),
@@ -634,17 +651,14 @@ describe("regex criteria", () => {
 
     expect(corpus.protocol).toBe("libtmux-where-regex-v1");
     expect(corpus.runtimes).toEqual({
-      bun: ["1.3.14", "1.4.0"],
+      bun: ["1.3.14", "1.4.0", "1.4.2"],
       node: "22",
       python: "3",
     });
     // Read off the corpus rather than repeated: this asserts that the engine
     // about to run the cases is the one whose answers were recorded, and the
     // corpus is where that is written down.
-    expect(
-      process.versions.bun,
-      `the regex corpus records Bun ${corpus.runtimes.bun.join(" and ")}; this is Bun ${process.versions.bun}. Run the suite on a recorded Bun, or regenerate the corpus.`,
-    ).toContain(process.versions.bun);
+    assertRecordedBun(corpus.runtimes.bun, process.versions.bun);
     expect(corpus.cases).toHaveLength(19);
     expect(new Set(corpus.cases.map(({ session_id }) => session_id)).size).toBe(
       corpus.cases.length,

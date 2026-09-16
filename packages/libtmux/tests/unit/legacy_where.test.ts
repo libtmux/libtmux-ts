@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { MultipleMatchesError, QueryValidationError } from "../../src/exc.js";
+import { MultipleMatchesError, QueryValidationError } from "../../src/errors.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import { parseLegacyWhere } from "../../src/selection.js";
 import { createSessionHarness } from "../support/selection_fixtures.js";

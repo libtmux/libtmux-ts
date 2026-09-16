@@ -95,12 +95,12 @@ export type TmuxInvocationRequest = {
 /** A daemon-guarded request paired with its exact refusal detector. */
 export type GuardedTmuxRequest = {
   readonly request: TmuxInvocationRequest;
-  readonly refusedBy: (returncode: number, stderr: Uint8Array) => boolean;
+  readonly refusedBy: (exitCode: number, stderr: Uint8Array) => boolean;
 };
 
 export type TmuxCommandResult = {
   readonly cmd: readonly string[];
-  readonly returncode: number;
+  readonly exitCode: number;
   /**
    * The signal that ended the process, as a plain string.
    *

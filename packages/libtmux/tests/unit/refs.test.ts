@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
-import { QueryValidationError } from "../../src/exc.js";
+import { QueryValidationError } from "../../src/errors.js";
 import {
   createLogicalRef,
   createWinlinkRef,

@@ -12,6 +12,28 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+- `LibTmuxError` and consistent `*Error` names are available from
+  `libtmux/errors`; the old class names and `libtmux/exc` remain deprecated
+  aliases. Existing `instanceof` checks retain their meaning, while `error.name`
+  uses canonical names such as `WaitTimeoutError`; update checks against old
+  name strings. (#26)
+
+- `CommandResult` and custom `TmuxEngine` results use `exitCode` instead of
+  `returncode`, matching `TmuxCommandError`. Update both result construction and
+  property reads. Nonzero raw command exits remain result data; transport
+  failures retain their diagnostics without an exit code. A `TmuxEngine` that
+  resolves without a numeric `exitCode` now raises `TmuxTransportError` with
+  `kind: "contract"` instead of being read as a failed command. (#26)
+
+- `Server.checkAlive()` asserts that the server is reachable; use it in place of
+  the deprecated `Server.raiseIfDead()` alias. (#26)
+
+- `SplitOptions.direction` replaces the deprecated `vertical` option: use
+  `PaneDirection.Below` for `true` or `PaneDirection.Right` for `false`.
+  Supplying both options throws `TypeError` before dispatch. (#26)
+
 ## 0.1.0-alpha.9 (2026-09-12)
 
 ### `libtmux`

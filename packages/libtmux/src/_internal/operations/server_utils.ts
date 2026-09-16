@@ -1,6 +1,6 @@
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
 import { runCommand, runCommandBytes } from "./command.js";
-import { TmuxTransportError } from "../../exc.js";
+import { TmuxTransportError } from "../../errors.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 /**
@@ -20,7 +20,7 @@ export async function hasSession(runtime: RuntimeContext, name: string): Promise
       ),
     ),
   );
-  return result.returncode === 0;
+  return result.exitCode === 0;
 }
 
 /** Run a tmux config file against the server. */
@@ -122,11 +122,12 @@ export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
         ),
       ),
     );
-    return result.returncode === 0;
+    return result.exitCode === 0;
   } catch (error) {
     if (
       error instanceof TmuxTransportError &&
       error.kind !== "cancelled" &&
+      error.kind !== "contract" &&
       error.kind !== "timeout"
     ) {
       return false;
@@ -143,6 +144,6 @@ export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
  * check with nothing to check: `isAlive` answers yes or no, this one answers
  * with tmux's reason.
  */
-export async function raiseIfDead(runtime: RuntimeContext): Promise<void> {
+export async function checkAlive(runtime: RuntimeContext): Promise<void> {
   await runCommand(runtime, ["list-sessions"]);
 }

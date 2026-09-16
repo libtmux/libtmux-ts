@@ -155,12 +155,12 @@ export async function queryRawTmux(request: DifferentialRequest): Promise<Differ
     .sort();
   const response = Object.freeze({
     diagnostics: Object.freeze(
-      result.returncode === 0 ? [] : [new TextDecoder().decode(result.stderr).trim()],
+      result.exitCode === 0 ? [] : [new TextDecoder().decode(result.stderr).trim()],
     ),
     implementation: "raw-tmux" as const,
     protocol: DIFFERENTIAL_PROTOCOL,
     requestId: submitted.requestId,
-    returncode: result.returncode,
+    returncode: result.exitCode,
     semantics: Object.freeze({ sessions: Object.freeze(sessions) }),
     stderrBase64: Buffer.from(result.stderr).toString("base64"),
     stdoutBase64: Buffer.from(result.stdout).toString("base64"),

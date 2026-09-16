@@ -8,7 +8,7 @@ import type {
   WindowId,
   WindowIdInput,
 } from "../../common.js";
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 
 const sessionIdPattern = /^\$\d+$/u;
 const windowIdPattern = /^@\d+$/u;

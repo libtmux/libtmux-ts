@@ -88,7 +88,7 @@ export function adaptRawResult(raw: RawCommandResult): CommandResult {
 
   return Object.freeze({
     cmd: Object.freeze([...raw.cmd]),
-    returncode: raw.returncode,
+    exitCode: raw.exitCode,
     stderr: Object.freeze(stderr),
     stdout: Object.freeze(adaptedStdout),
   });
@@ -105,7 +105,7 @@ export async function executeBatch(
       // eslint-disable-next-line no-await-in-loop -- independent batches execute sequentially by contract.
       const rawResult = await transport.execute(request);
       const result = adaptRawResult(rawResult);
-      const status: OperationStatus = rawResult.returncode === 0 ? "complete" : "failed";
+      const status: OperationStatus = rawResult.exitCode === 0 ? "complete" : "failed";
       outcomes.push(
         Object.freeze({
           delivery: "replied" as const,

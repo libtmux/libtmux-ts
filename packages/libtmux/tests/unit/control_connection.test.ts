@@ -7,7 +7,7 @@ import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
-import { TmuxTransportError } from "../../src/exc.js";
+import { TmuxTransportError } from "../../src/errors.js";
 import type {
   CommandRequest,
   CommandTransport,
@@ -62,7 +62,7 @@ class RecordingTransport implements CommandTransport {
     if (this.#outcome instanceof Error) throw this.#outcome;
     return {
       cmd: [request.executable, ...flattenInvocation(request)],
-      returncode: this.#outcome,
+      exitCode: this.#outcome,
       signal: null,
       stderr: this.#outcome === 0 ? new Uint8Array() : new TextEncoder().encode("resume refused"),
       stdout: new Uint8Array(),
@@ -81,13 +81,13 @@ class GatedTransport implements CommandTransport {
     return reply.promise;
   }
 
-  reply(index: number, returncode = 0): void {
+  reply(index: number, exitCode = 0): void {
     const request = this.requests[index];
     const reply = this.#replies[index];
     if (request === undefined || reply === undefined) throw new Error("no gated request");
     reply.resolve({
       cmd: [request.executable, ...flattenInvocation(request)],
-      returncode,
+      exitCode,
       signal: null,
       stderr: new Uint8Array(),
       stdout: new Uint8Array(),

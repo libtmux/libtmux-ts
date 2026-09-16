@@ -1,4 +1,4 @@
-import { LibTmuxException, WaitTimeout } from "../../exc.js";
+import { LibTmuxError, WaitTimeoutError } from "../../errors.js";
 import type { TmuxEventStream, WaitForOptions } from "../../types.js";
 import { timerDuration } from "../timing.js";
 
@@ -51,8 +51,8 @@ function createWakeSignal(pollIntervalMs: number): WakeSignal {
   };
 }
 
-function timeout(): WaitTimeout {
-  return new WaitTimeout("the awaited tmux state did not arrive before the deadline");
+function timeout(): WaitTimeoutError {
+  return new WaitTimeoutError("the awaited tmux state did not arrive before the deadline");
 }
 
 /** Wait for sampled state, using notifications as hints and polling as the fallback. */
@@ -112,7 +112,7 @@ export async function waitForSnapshot<Snapshot>(
       if (expired()) throw timeout();
       if (streamEnded) {
         if (streamFailure !== undefined) throw streamFailure;
-        throw new LibTmuxException("the tmux event stream ended before the awaited state arrived");
+        throw new LibTmuxError("the tmux event stream ended before the awaited state arrived");
       }
       // eslint-disable-next-line no-await-in-loop -- snapshots must not overlap.
       matched = await inspect();

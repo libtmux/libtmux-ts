@@ -16,7 +16,7 @@ import type { AliasedFields, RowWithIdentities, SessionAliasMap } from "./field_
 import { readTmuxEnvironment } from "./_internal/operations/env.js";
 import { detachClient } from "./_internal/operations/shell.js";
 import { panesOfSession, windowsOfSession } from "./_internal/operations/relations.js";
-import { LibTmuxException } from "./exc.js";
+import { LibTmuxError } from "./errors.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killTarget, newWindow } from "./_internal/operations/mutations.js";
 import { planKill, planNewWindow } from "./_internal/operations/plans.js";
@@ -372,11 +372,11 @@ export class Session {
     const snapshot = await server.snapshot();
     const pane = snapshot.panes.filter((candidate) => candidate.id === paneId).first();
     if (pane === undefined) {
-      throw new LibTmuxException(`${paneId} is not present on ${socketPath}`);
+      throw new LibTmuxError(`${paneId} is not present on ${socketPath}`);
     }
     const session = pane.session;
     if (session === undefined) {
-      throw new LibTmuxException(`${paneId} has no session on ${socketPath}`);
+      throw new LibTmuxError(`${paneId} has no session on ${socketPath}`);
     }
     return session;
   }

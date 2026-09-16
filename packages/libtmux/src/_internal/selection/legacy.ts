@@ -1,6 +1,6 @@
 import { types as nodeTypes } from "node:util";
 
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 import type { WhereDocumentV1 } from "../../selection.js";
 
 type LegacyModel = "session" | "window";

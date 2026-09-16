@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand, type OutputFormatField } from "./format_types.js";
 import type { TmuxVersion } from "../runtime/tmux_version.js";
@@ -43,7 +43,7 @@ export interface GuardCodecCapabilities {
   readonly tmuxVersion: TmuxVersion;
 }
 
-export class FormatProtocolError extends LibTmuxException {}
+export class FormatProtocolError extends LibTmuxError {}
 
 /**
  * Describe a response that did not frame, without printing it.
@@ -74,10 +74,19 @@ function framingEvidence(bytes: Uint8Array, guards: FormatGuards, offset: number
  * improbable, and one byte where a guard is dozens: four listings have to fit in
  * the 16KB tmux packs an argv into, and 569 separators is what decides whether
  * they do.
+ *
+ * That character list is illustrative of what tmux quotes, not a contract the
+ * decoder relies on staying exhaustive. `QUOTED_BY_TMUX` below is read only
+ * inside `snapshotGuards()`, to confirm the chosen separator is one of the
+ * characters tmux is known to escape — never while decoding. `splitEscapedBytes`
+ * treats every backslash as making the byte after it literal, whichever byte
+ * that is, so it stays correct the day tmux starts escaping a character this
+ * list does not name. It is a superset by construction, not an enumeration a
+ * future tmux release requires keeping in sync.
  */
 const FIELD_SEPARATOR = ";";
 
-/** The set `format_quote_shell` escapes, which is what a separator has to come from. */
+/** The set `format_quote_shell` escapes, which is what a separator has to come from — see the note above on why decoding does not rely on this list being complete. */
 const QUOTED_BY_TMUX = "|&;<>()$`\\\"'*?[# =%";
 
 /**

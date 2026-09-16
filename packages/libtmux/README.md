@@ -685,7 +685,7 @@ kinds keeps each element's own type, so a planned split comes back as a `Pane`
 with `Pane` methods on it:
 
 ```ts
-const [created] = await server.batch([editor.plan.split({ vertical: true })]);
+const [created] = await server.batch([editor.plan.split()]);
 const lines = await created.capture();
 ```
 
@@ -765,7 +765,7 @@ server with none fails at `connect()` with tmux's own words rather than through
 whichever command runs first:
 
 ```ts
-await server.connect(); // LibTmuxException: ... could not attach: no sessions
+await server.connect(); // LibTmuxError: ... could not attach: no sessions
 ```
 
 tmux sends a control client no pane output until it attaches, so watching
@@ -1051,7 +1051,7 @@ This runnable example keeps execution local on the current server's socket; a
 remote runner has the same obligations:
 
 ```ts
-import { Server, TmuxServerRestarted } from "libtmux";
+import { Server, TmuxServerRestartedError } from "libtmux";
 import { flattenInvocation, guardRequest } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
 
@@ -1070,8 +1070,8 @@ function engineOver(
       // so an engine inherits restart safety instead of rebuilding it.
       const guarded = guardRequest(request);
       const result = await run(guarded.request);
-      if (guarded.refusedBy(result.returncode, result.stderr)) {
-        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+      if (guarded.refusedBy(result.exitCode, result.stderr)) {
+        throw new TmuxServerRestartedError("the daemon this handle was read from is gone");
       }
       return result;
     },
@@ -1103,14 +1103,14 @@ const throughEngine = new Server({
         await child.stdin.write(request.stdin);
         await child.stdin.end();
       }
-      const [returncode, stdout, stderr] = await Promise.all([
+      const [exitCode, stdout, stderr] = await Promise.all([
         child.exited,
         new Response(child.stdout).arrayBuffer(),
         new Response(child.stderr).arrayBuffer(),
       ]);
       return {
         cmd: argv,
-        returncode,
+        exitCode,
         signal: child.signalCode,
         stderr: new Uint8Array(stderr),
         stdout: new Uint8Array(stdout),
@@ -1256,7 +1256,7 @@ try {
   await session.newWindow({ name: "build" });
 } catch (error) {
   if (error instanceof TmuxTransportError) {
-    error.kind; // "cancelled" | "pipe" | "protocol" | "spawn" | "timeout"
+    error.kind; // "cancelled" | "contract" | "pipe" | "protocol" | "spawn" | "timeout"
     error.delivery; // "not_started" | "written" | "replied" | "indeterminate"
     error.stdout; // whatever arrived before the failure
   }
@@ -1269,18 +1269,18 @@ because tmux may well have created that window before the pipe went quiet. Every
 path reports the same type, so a timeout during `snapshot()` is not a different
 shape from a timeout during `kill()`.
 
-A handle that outlived its daemon raises `TmuxServerRestarted`. tmux numbers a
-restarted daemon's objects from the start, so a `%1` read before the restart
-names a pane that exists and belongs to somebody else — and a socket path is a
-place, not a process:
+A handle that outlived its daemon raises `TmuxServerRestartedError`. tmux
+numbers a restarted daemon's objects from the start, so a `%1` read before the
+restart names a pane that exists and belongs to somebody else — and a socket
+path is a place, not a process:
 
 ```ts
-import { TmuxServerRestarted } from "libtmux";
+import { TmuxServerRestartedError } from "libtmux";
 
 try {
   await pane.kill();
 } catch (error) {
-  if (error instanceof TmuxServerRestarted) {
+  if (error instanceof TmuxServerRestartedError) {
     error.delivery; // always "not_started" — a refused command never ran
   }
 }
@@ -1298,26 +1298,73 @@ means exactly one thing. Ask without raising when you need to:
 
 ```ts
 await server.isAlive(); // false for a missing daemon, socket, or binary
-await server.raiseIfDead(); // the assertion form
+await server.checkAlive(); // the assertion form
 ```
 
-Every error extends `LibTmuxException`. A query that matches nothing raises
-`NoMatchError`, one that matches several where you asked for one raises
-`MultipleMatchesError`, and criteria the schema rejects raise
-`QueryValidationError`. A `waitFor` that reaches its deadline with the condition
-still unmet raises `WaitTimeout`, which is worth catching by name: it says the
-state never arrived, where a `LibTmuxException` from the same call says only
-that the connection ended and nothing about the condition.
-A criterion naming a field newer than the tmux that answered raises
-`VersionTooLow` rather than matching nothing — the error names the field, the
-release that has it, and the release running, because "no pane has this" and
-"your tmux has never heard of this" are different answers.
-`ObjectDoesNotExist` and `MultipleObjectsReturned` preserve the Python library's
-selection-error ancestry. The `libtmux/exc` subpath exports those bases and the
-errors raised by the TypeScript implementation.
+Library failures extend `LibTmuxError`; invalid arguments may throw native
+`TypeError`. A query that matches nothing raises `NoMatchError`, one that
+matches several where you asked for one raises `MultipleMatchesError`, and
+criteria the schema rejects raise `QueryValidationError`. A `waitFor` that
+reaches its deadline with the condition still unmet raises
+`WaitTimeoutError`, which is worth catching by name: it says the state never
+arrived, where a `LibTmuxError` from the same call says only that the
+connection ended and nothing about the condition. A criterion naming a field
+newer than the tmux that answered raises `VersionTooLowError` rather than
+matching nothing — the error names the field, the release that has it, and
+the release running, because "no pane has this" and "your tmux has never
+heard of this" are different answers. `ObjectNotFoundError` and
+`MultipleObjectsError` are the selection-error bases, keeping the Python
+library's `ObjectDoesNotExist`/`MultipleObjectsReturned` ancestry. Import
+library errors from `libtmux` or `libtmux/errors`.
 
 `parseLegacyWhere` converts Python-style `name__contains=` filter strings into
 criteria, for code being ported rather than written fresh.
+
+### Migrating from alpha.9
+
+Use these error names. The old names remain deprecated aliases to the same
+constructors, so existing `instanceof` checks still work. `error.name` reports
+the canonical name. The `libtmux/exc` entrypoint remains a compatibility export;
+use `libtmux/errors` for new imports.
+
+| Previous name             | Canonical name             |
+| ------------------------- | -------------------------- |
+| `LibTmuxException`        | `LibTmuxError`             |
+| `ObjectDoesNotExist`      | `ObjectNotFoundError`      |
+| `MultipleObjectsReturned` | `MultipleObjectsError`     |
+| `TmuxObjectDoesNotExist`  | `TmuxObjectNotFoundError`  |
+| `VersionTooLow`           | `VersionTooLowError`       |
+| `WaitTimeout`             | `WaitTimeoutError`         |
+| `TmuxServerRestarted`     | `TmuxServerRestartedError` |
+
+Completed command results, including custom `TmuxEngine` results, use
+`exitCode` instead of `returncode`. Update result construction and property
+reads together. `TmuxCommandError.exitCode` is unchanged. Transport failures
+retain their `kind`, `delivery`, partial output and optional signal; they
+have no completed exit code. A `TmuxEngine` that resolves without a numeric
+`exitCode` raises `TmuxTransportError` with `kind: "contract"` rather than
+being read as a failed command.
+
+Use `server.checkAlive()` in place of the deprecated `server.raiseIfDead()`.
+Both reject when the server cannot be reached.
+
+The compatibility call:
+
+```ts
+await server.raiseIfDead();
+```
+
+The canonical call:
+
+```ts
+await server.checkAlive();
+```
+
+For `pane.split()`, `window.split()` and planned splits, replace
+`vertical: true` with `direction: PaneDirection.Below`, and `vertical: false`
+with `direction: PaneDirection.Right`. Omitting both still splits below. The
+legacy `vertical` option is deprecated; passing it with `direction` throws
+`TypeError` before executing a command.
 
 ## Running inside tmux
 
@@ -1369,7 +1416,7 @@ The root export carries the everyday handle, query, operation, error, and
 constant surface. Each model is also its own subpath: `libtmux/server`,
 `libtmux/session`, `libtmux/window`, `libtmux/pane`, `libtmux/client`, and
 `libtmux/selection`. Supporting subpaths are `libtmux/formats`,
-`libtmux/constants`, `libtmux/common`, and `libtmux/exc`.
+`libtmux/constants`, `libtmux/common`, and `libtmux/errors`.
 
 Three specialist subpaths keep their complete contracts out of the root:
 `libtmux/engine` for custom execution engines, `libtmux/types` for the full

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../common.js";
 import type { DaemonGuard } from "../../engine.js";
-import { LibTmuxException, TmuxTransportError } from "../../exc.js";
+import { LibTmuxError, TmuxTransportError } from "../../errors.js";
 import type { AbortLike } from "../../types.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
@@ -187,17 +187,17 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     } catch (error) {
       if (error instanceof TmuxTransportError && error.kind === "cancelled") throw error;
       const detail = error instanceof Error && error.message !== "" ? `: ${error.message}` : "";
-      throw new LibTmuxException(`cannot reach tmux${detail}`, {
+      throw new LibTmuxError(`cannot reach tmux${detail}`, {
         cause: error,
         subcommand: "display-message",
       });
     }
 
-    if (result.returncode !== 0) {
+    if (result.exitCode !== 0) {
       const stderr = decodeBackslashReplace(result.stderr).trimEnd();
-      throw new LibTmuxException(
+      throw new LibTmuxError(
         stderr === ""
-          ? `cannot reach tmux: it exited with status ${result.returncode}`
+          ? `cannot reach tmux: it exited with status ${result.exitCode}`
           : `cannot reach tmux: ${stderr}`,
         { subcommand: "display-message" },
       );
@@ -206,12 +206,12 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     const replies = decodeBackslashReplace(result.stdout).split("\n");
     while (replies.at(-1) === "") replies.pop();
     if (replies.length === 0) {
-      throw new LibTmuxException("tmux version probe returned no version", {
+      throw new LibTmuxError("tmux version probe returned no version", {
         subcommand: "display-message",
       });
     }
     if (replies.length !== 1) {
-      throw new LibTmuxException("tmux version probe returned multiple versions", {
+      throw new LibTmuxError("tmux version probe returned multiple versions", {
         subcommand: "display-message",
       });
     }
@@ -224,7 +224,7 @@ export class LazyCapabilityBinding implements CapabilityBinding {
       !/^[1-9]\d*$/u.test(pid) ||
       !/^[1-9]\d*$/u.test(startTime)
     ) {
-      throw new LibTmuxException("tmux capability probe returned an invalid daemon identity", {
+      throw new LibTmuxError("tmux capability probe returned an invalid daemon identity", {
         subcommand: "display-message",
       });
     }
@@ -238,13 +238,13 @@ export class LazyCapabilityBinding implements CapabilityBinding {
         rawVersion,
       });
     } catch (error) {
-      throw new LibTmuxException(error instanceof Error ? error.message : "invalid tmux version", {
+      throw new LibTmuxError(error instanceof Error ? error.message : "invalid tmux version", {
         cause: error,
         subcommand: "display-message",
       });
     }
     if (this.#getDaemonEpoch() !== daemonEpoch) {
-      throw new LibTmuxException("daemon epoch changed while binding capabilities", {
+      throw new LibTmuxError("daemon epoch changed while binding capabilities", {
         subcommand: "display-message",
       });
     }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { parsePaneId, parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
-import { QueryValidationError } from "../../src/exc.js";
+import { QueryValidationError } from "../../src/errors.js";
 
 describe("tmux IDs", () => {
   test("parses each owned tmux ID kind", () => {

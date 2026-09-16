@@ -13,7 +13,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { Server } from "../../src/server.js";
-import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
+import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -75,8 +75,8 @@ describe("control-mode event bounds", () => {
 
       // Which of the three racing outcomes wins is not this test's business.
       // What has to hold is that the caller is told in this package's terms:
-      // Node's own EPIPE is not something a `LibTmuxException` handler sees.
-      expect(failure).toBeInstanceOf(LibTmuxException);
+      // Node's own EPIPE is not something a `LibTmuxError` handler sees.
+      expect(failure).toBeInstanceOf(LibTmuxError);
       if (failure instanceof TmuxTransportError) expect(failure.delivery).not.toBe("replied");
     } finally {
       await server.cmd("kill-server").catch(() => undefined);

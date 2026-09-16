@@ -12,7 +12,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { safeInteger } from "../../src/common.js";
-import { TmuxCommandError } from "../../src/exc.js";
+import { TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import { Session } from "../../src/session.js";
 

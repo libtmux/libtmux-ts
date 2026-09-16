@@ -23,7 +23,7 @@ import type {
 import { isSafeInteger, safeInteger } from "../../src/common.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
 import * as exception from "../../src/exc.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import {
   OptionScope,
   DEFAULT_OPTION_SCOPE,
@@ -81,7 +81,7 @@ void options.stdin;
 void result.cmd;
 void result.stdout;
 void result.stderr;
-void result.returncode;
+void result.exitCode;
 logger.debug("tmux command", { tmux_subcommand: "list-sessions" });
 logger.info("tmux command");
 logger.warn("tmux command");
@@ -101,7 +101,7 @@ void windowRef.id;
 void paneRef.id;
 
 // @ts-expect-error Command results are readonly snapshots.
-result.returncode = 1;
+result.exitCode = 1;
 // @ts-expect-error Outcomes are readonly snapshots.
 outcome.status = "failed";
 // @ts-expect-error Warning payloads are readonly.
@@ -140,18 +140,25 @@ void invalidQuery.code;
 type _ExceptionNamespace = Expect<
   Equal<
     keyof typeof exception,
+    | "LibTmuxError"
     | "LibTmuxException"
     | "MultipleMatchesError"
+    | "MultipleObjectsError"
     | "MultipleObjectsReturned"
     | "NoMatchError"
     | "ObjectDoesNotExist"
+    | "ObjectNotFoundError"
     | "QueryValidationError"
     | "TmuxCommandError"
     | "TmuxObjectDoesNotExist"
+    | "TmuxObjectNotFoundError"
     | "TmuxServerRestarted"
+    | "TmuxServerRestartedError"
     | "TmuxTransportError"
     | "VersionTooLow"
+    | "VersionTooLowError"
     | "WaitTimeout"
+    | "WaitTimeoutError"
   >
 >;
 void OptionScope.Server;
@@ -188,7 +195,7 @@ type _CommandResult = Expect<
     CommandResult,
     {
       readonly cmd: readonly string[];
-      readonly returncode: number;
+      readonly exitCode: number;
       readonly stderr: readonly string[];
       readonly stdout: readonly string[];
     }

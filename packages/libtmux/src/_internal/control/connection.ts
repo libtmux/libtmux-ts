@@ -596,7 +596,7 @@ export class ControlConnection {
         timeoutMs: 30_000,
       }),
     );
-    if (result.returncode !== 0) {
+    if (result.exitCode !== 0) {
       throw new TmuxTransportError("tmux refused a format subscription", {
         delivery: "replied",
         kind: "protocol",
@@ -764,7 +764,7 @@ export class ControlConnection {
       globalArgs: this.#commandPrefix,
       timeoutMs: 30_000,
     });
-    if (result.returncode !== 0) {
+    if (result.exitCode !== 0) {
       throw new TmuxTransportError("tmux refused pause-after", {
         delivery: "replied",
         kind: "protocol",
@@ -802,7 +802,7 @@ export class ControlConnection {
       .then(() => fallback.execute(request))
       .then(
         (result) => {
-          if (!isCurrent() || result.returncode === 0) return;
+          if (!isCurrent() || result.exitCode === 0) return;
           this.#fail(
             new TmuxTransportError("tmux refused pane resume", {
               delivery: "replied",

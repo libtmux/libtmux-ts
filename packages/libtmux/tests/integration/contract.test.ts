@@ -14,7 +14,7 @@ import {
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 
 import { Server } from "../../src/server.js";
-import { TmuxServerRestarted } from "../../src/exc.js";
+import { TmuxServerRestartedError } from "../../src/errors.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -175,9 +175,9 @@ describe("handle identity", () => {
       // directly was already refused; reducing it to an id for someone else's
       // command has to be refused on the same terms, or the guard is only a
       // guard against the calls that did not need one.
-      expect(() => window.link({ session: stale })).toThrow(TmuxServerRestarted);
-      expect(() => window.move({ session: stale })).toThrow(TmuxServerRestarted);
-      expect(() => stale.selectWindow(window)).toThrow(TmuxServerRestarted);
+      expect(() => window.link({ session: stale })).toThrow(TmuxServerRestartedError);
+      expect(() => window.move({ session: stale })).toThrow(TmuxServerRestartedError);
+      expect(() => stale.selectWindow(window)).toThrow(TmuxServerRestartedError);
     } finally {
       await server.cmd("kill-server").catch(() => undefined);
       await rm(directory, { force: true, recursive: true });
@@ -218,12 +218,12 @@ describe("handle identity", () => {
       // it happened. This is the case that matters: an acquisition in between
       // would move the epoch on and the refusal would come from this process
       // without tmux being asked anything.
-      await expect(stale.kill()).rejects.toThrow(TmuxServerRestarted);
+      await expect(stale.kill()).rejects.toThrow(TmuxServerRestartedError);
 
       // A batch is a sequence, and a sequence is guarded as one: all of it or
       // none, so a restart cannot leave half a batch applied to a stranger.
       await expect(server.batch([stale.plan.kill(), stale.plan.split()])).rejects.toThrow(
-        TmuxServerRestarted,
+        TmuxServerRestartedError,
       );
 
       await server.cmd("set-option", ["-s", "-u", "command-alias[101]"], { target: null });
@@ -236,9 +236,9 @@ describe("handle identity", () => {
       // That refusal moved the epoch on, so every other handle from the old
       // daemon now fails here rather than each learning it from tmux in turn —
       // synchronously, because the command never became one.
-      expect(() => stale.refreshed()).toThrow(TmuxServerRestarted);
-      expect(() => stale.kill()).toThrow(TmuxServerRestarted);
-      expect(() => stale.sendKeys("echo no")).toThrow(TmuxServerRestarted);
+      expect(() => stale.refreshed()).toThrow(TmuxServerRestartedError);
+      expect(() => stale.kill()).toThrow(TmuxServerRestartedError);
+      expect(() => stale.sendKeys("echo no")).toThrow(TmuxServerRestartedError);
 
       // Reading what it captured is still fine: that instant did happen, and
       // answering from a frozen graph reaches no server at all.
@@ -318,7 +318,7 @@ describe("handle identity", () => {
       const current = successor.panes.one();
       expect(successor.sessions.one().name).toBe("successor");
       expect((await current.refreshed()).id).toBe(current.id);
-      expect(() => stale.refreshed()).toThrow(TmuxServerRestarted);
+      expect(() => stale.refreshed()).toThrow(TmuxServerRestartedError);
     } finally {
       await server.cmd("kill-server").catch(() => undefined);
       await rm(directory, { force: true, recursive: true });
@@ -360,10 +360,10 @@ describe("handle identity", () => {
       const successor = new Server(options);
       await successor.newSession({ name: "successor" });
 
-      await expect(live.snapshot()).rejects.toThrow(TmuxServerRestarted);
+      await expect(live.snapshot()).rejects.toThrow(TmuxServerRestartedError);
       await expect(
         live.cmd("rename-session", ["-t", "successor", "misbound"], { target: null }),
-      ).rejects.toThrow(TmuxServerRestarted);
+      ).rejects.toThrow(TmuxServerRestartedError);
       expect((await successor.snapshot()).sessions.one().name).toBe("successor");
     } finally {
       await live?.close().catch(() => undefined);

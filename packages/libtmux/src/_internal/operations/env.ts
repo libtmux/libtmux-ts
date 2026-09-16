@@ -1,4 +1,4 @@
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 
 export interface TmuxEnvironment {
   readonly socketPath: string;
@@ -18,17 +18,17 @@ export function readTmuxEnvironment(
 ): TmuxEnvironment {
   const tmux = environment.TMUX;
   if (tmux === undefined || tmux === "") {
-    throw new LibTmuxException("$TMUX is not set; this process is not inside tmux");
+    throw new LibTmuxError("$TMUX is not set; this process is not inside tmux");
   }
   const separator = tmux.lastIndexOf(",", tmux.lastIndexOf(",") - 1);
   if (separator <= 0) {
-    throw new LibTmuxException(`$TMUX is malformed: ${tmux}`);
+    throw new LibTmuxError(`$TMUX is malformed: ${tmux}`);
   }
   const socketPath = tmux.slice(0, separator);
 
   const paneId = environment.TMUX_PANE;
   if (paneId === undefined || !/^%\d+$/.test(paneId)) {
-    throw new LibTmuxException(`$TMUX_PANE is missing or malformed: ${paneId ?? "<unset>"}`);
+    throw new LibTmuxError(`$TMUX_PANE is missing or malformed: ${paneId ?? "<unset>"}`);
   }
   return { paneId, socketPath };
 }

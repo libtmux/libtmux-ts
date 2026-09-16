@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { QueryValidationError } from "../../src/exc.js";
+import { QueryValidationError } from "../../src/errors.js";
 import type { RawCompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import {
   createGraphRecordRef,

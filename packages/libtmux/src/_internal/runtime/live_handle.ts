@@ -1,7 +1,7 @@
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import type { Client } from "../../client.js";
 import type { LogicalRef } from "../../common.js";
-import { LibTmuxException, TmuxServerRestarted } from "../../exc.js";
+import { LibTmuxError, TmuxServerRestartedError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
@@ -47,13 +47,13 @@ function stateForValue(value: unknown): LiveHandleState | undefined {
 
 function requireState(value: unknown): LiveHandleState {
   const state = stateForValue(value);
-  if (state === undefined) throw new LibTmuxException("handle is not authentic");
+  if (state === undefined) throw new LibTmuxError("handle is not authentic");
   return state;
 }
 
 function requireAuthenticProvenance(graph: NormalizedGraph, record: GraphRecordRef): void {
   if (graphRecordForRef(graph, record) === undefined) {
-    throw new LibTmuxException("handle provenance is not authentic");
+    throw new LibTmuxError("handle provenance is not authentic");
   }
 }
 
@@ -146,10 +146,10 @@ export function initializeLiveHandle<Handle extends Child>(
   initialization: LiveHandleInitialization,
 ): Handle {
   if (liveHandleStates.has(handle)) {
-    throw new LibTmuxException("handle is already initialized");
+    throw new LibTmuxError("handle is already initialized");
   }
   if (initialization.entity.kind !== initialization.model) {
-    throw new LibTmuxException("handle model does not match its entity");
+    throw new LibTmuxError("handle model does not match its entity");
   }
   requireAuthenticProvenance(initialization.graph, initialization.record);
   const state = freezeState(initialization);
@@ -248,7 +248,7 @@ export function runtimeForHandle(handle: Child): RuntimeContext {
   const state = requireState(handle);
   const runtime = runtimeForServer(state.server);
   if (state.graph.capture.epoch !== runtime.daemonEpoch) {
-    throw new TmuxServerRestarted(
+    throw new TmuxServerRestartedError(
       `${describeHandle(state.model, state.snapshot)} came from a tmux server that has since restarted`,
     );
   }
@@ -269,7 +269,7 @@ export function graphRecordRefForHandle(handle: Child): GraphRecordRef {
 
 export function logicalRefForHandle(handle: LogicalHandle): LogicalRef {
   const entity = requireState(handle).entity;
-  if (entity.kind === "client") throw new LibTmuxException("Client has no logical reference");
+  if (entity.kind === "client") throw new LibTmuxError("Client has no logical reference");
   return entity;
 }
 
@@ -298,7 +298,7 @@ export function requireSameServer(left: Child, right: Child, operation: string):
     // capture recorded about the daemon that answered asks the handles instead
     // of the servers.
     if (sameCapturedDaemon(requireState(left).graph, requireState(right).graph)) return;
-    throw new TmuxServerRestarted(
+    throw new TmuxServerRestartedError(
       `${operation} was given an object read from a different run of this tmux server; tmux reissues ids from the start, so that id names whatever holds it now.`,
     );
   }

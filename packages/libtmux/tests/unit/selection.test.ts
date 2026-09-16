@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { types as nodeTypes } from "node:util";
 
 import { Client } from "../../src/client.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import {
   entityRefForHandle,

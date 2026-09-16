@@ -290,7 +290,7 @@ await Promise.resolve();
 assert.deepEqual([...prepared.stdin], [0x61, 0x62]);
 
 const nonzero = await transport.execute(request([echoFixture, "--exit-code=7"]));
-assert.equal(nonzero.returncode, 7);
+assert.equal(nonzero.exitCode, 7);
 assert.ok(nonzero.stdout instanceof Uint8Array);
 assert.ok(nonzero.stderr instanceof Uint8Array);
 
@@ -439,7 +439,7 @@ try {
   // which is an ordinary cancellation and correctly reported. It is not the
   // ordering under test, so it is not a failure of it either.
   if (outcome.kind === "value") {
-    assert.equal(outcome.value.returncode, 0);
+    assert.equal(outcome.value.exitCode, 0);
     assert.equal(outcome.value.signal, null);
     assert.ok(performance.now() - cancelledAfterExitAt < 900);
   } else {
@@ -476,7 +476,7 @@ try {
   // which is an ordinary timeout and correctly reported — just not the
   // ordering this scenario is about.
   if (outcome.kind === "value") {
-    assert.equal(outcome.value.returncode, 0);
+    assert.equal(outcome.value.exitCode, 0);
     assert.equal(outcome.value.signal, null);
   } else {
     assert.ok(outcome.error instanceof TmuxTransportError);

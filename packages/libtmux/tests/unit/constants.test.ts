@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  DEFAULT_OPTION_SCOPE,
   HOOK_SCOPE_FLAG_MAP,
   OptionScope,
   OPTION_SCOPE_FLAG_MAP,
@@ -50,6 +49,5 @@ describe("constants", () => {
     });
     expect(OPTION_SCOPE_FLAG_MAP).toEqual({ pane: "-p", server: "-s", session: "", window: "-w" });
     expect(HOOK_SCOPE_FLAG_MAP).toEqual({ pane: "-p", server: "-g", session: "", window: "-w" });
-    expect(DEFAULT_OPTION_SCOPE).toBe(DEFAULT_OPTION_SCOPE);
   });
 });

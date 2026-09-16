@@ -9,7 +9,7 @@ import type {
   TmuxWarningSink,
 } from "../../src/common.js";
 import { safeInteger } from "../../src/common.js";
-import { LibTmuxException, QueryValidationError } from "../../src/exc.js";
+import { LibTmuxError, QueryValidationError } from "../../src/errors.js";
 import {
   CLIENT_ALIASES,
   PANE_ALIASES,
@@ -93,7 +93,7 @@ function epoch(value: number): DaemonEpoch {
 function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult {
   return {
     cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
     stdout: encoder.encode(`${version}\t101\t202\n`),
@@ -637,12 +637,8 @@ describe("logical reference binding", () => {
       kind: "session",
     });
 
-    await expect(bindLogicalRef(fixture.runtime, wrongAlias)).rejects.toBeInstanceOf(
-      LibTmuxException,
-    );
-    await expect(bindLogicalRef(fixture.runtime, staleEpoch)).rejects.toBeInstanceOf(
-      LibTmuxException,
-    );
+    await expect(bindLogicalRef(fixture.runtime, wrongAlias)).rejects.toBeInstanceOf(LibTmuxError);
+    await expect(bindLogicalRef(fixture.runtime, staleEpoch)).rejects.toBeInstanceOf(LibTmuxError);
     expect(fixture.transport.requests).toHaveLength(0);
   });
 
@@ -656,7 +652,7 @@ describe("logical reference binding", () => {
       kind: "session",
     });
 
-    await expect(bindLogicalRef(right.runtime, leftRef)).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(bindLogicalRef(right.runtime, leftRef)).rejects.toBeInstanceOf(LibTmuxError);
     expect(left.runtime.connection.socketName).toBe(right.runtime.connection.socketName);
     expect(right.transport.requests).toHaveLength(0);
   });
@@ -679,7 +675,7 @@ describe("logical reference binding", () => {
       kind: "pane",
     });
 
-    await expect(bindLogicalRef(runtime, ref)).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(bindLogicalRef(runtime, ref)).rejects.toBeInstanceOf(LibTmuxError);
     expect(runtime.daemonEpoch).toBe(epoch(4));
     expect(transport.requests).toHaveLength(1);
   });
@@ -697,7 +693,7 @@ describe("logical reference binding", () => {
     const pending = bindLogicalRef(fixture.runtime, ref);
     expect(invalidateRuntimeEpoch(fixture.runtime)).toBe(epoch(6));
 
-    await expect(pending).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(pending).rejects.toBeInstanceOf(LibTmuxError);
     expect(fixture.transport.requests).toHaveLength(1);
   });
 });
@@ -1103,7 +1099,7 @@ describe("authenticated handle materialization", () => {
       } catch (error) {
         observed = error;
       }
-      expect(observed).toBeInstanceOf(LibTmuxException);
+      expect(observed).toBeInstanceOf(LibTmuxError);
     }
   });
 
@@ -1123,7 +1119,7 @@ describe("authenticated handle materialization", () => {
     );
     expect(invalidateRuntimeEpoch(fixture.runtime)).toBe(epoch(1));
 
-    await expect(pending).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(pending).rejects.toBeInstanceOf(LibTmuxError);
     expect(fixture.transport.requests).toHaveLength(1);
   });
 

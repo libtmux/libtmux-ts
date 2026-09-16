@@ -94,7 +94,8 @@ export interface CommandOptions {
 
 export interface CommandResult {
   readonly cmd: readonly string[];
-  readonly returncode: number;
+  /** The completed command's exit status, including nonzero tmux refusals. */
+  readonly exitCode: number;
   readonly stderr: readonly string[];
   readonly stdout: readonly string[];
 }

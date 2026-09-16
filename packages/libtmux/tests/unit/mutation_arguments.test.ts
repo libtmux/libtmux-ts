@@ -18,6 +18,7 @@ import {
   planSplitWindow,
 } from "../../src/_internal/operations/plans.js";
 import { splitSize } from "../../src/types.js";
+import { PANE_DIRECTION_FLAG_MAP, PaneDirection } from "../../src/constants.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 
 /**
@@ -33,7 +34,7 @@ interface Recorder extends CommandTransport {
   readonly requests: CommandRequest[];
 }
 
-function recorder(returncode = 1): Recorder {
+function recorder(exitCode = 1): Recorder {
   const requests: CommandRequest[] = [];
   return {
     requests,
@@ -45,7 +46,7 @@ function recorder(returncode = 1): Recorder {
       requests.push(request);
       return Promise.resolve({
         cmd: [request.executable, ...flattenInvocation(request)],
-        returncode,
+        exitCode,
         signal: null,
         // The transport boundary is bytes; decoding happens above it.
         stderr: new TextEncoder().encode("stopped\n"),
@@ -84,6 +85,31 @@ async function invocationsFor(
 }
 
 describe("lifecycle command arguments", () => {
+  test("rejects overlapping split direction options before execution", () => {
+    for (const vertical of [true, false]) {
+      expect(() => planSplitWindow("%0", { direction: PaneDirection.Right, vertical })).toThrow(
+        TypeError,
+      );
+    }
+  });
+
+  test("builds split-window flags for a direction alone or vertical alone", () => {
+    const base = ["split-window", "-d", "-P", "-F", "#{pane_id}"];
+
+    expect(planSplitWindow("%0", {}).argv).toEqual([...base, "-t", "%0"]);
+    expect(planSplitWindow("%0", { vertical: true }).argv).toEqual([...base, "-t", "%0"]);
+    expect(planSplitWindow("%0", { vertical: false }).argv).toEqual([...base, "-h", "-t", "%0"]);
+
+    for (const direction of Object.values(PaneDirection)) {
+      expect(planSplitWindow("%0", { direction }).argv).toEqual([
+        ...base,
+        ...PANE_DIRECTION_FLAG_MAP[direction],
+        "-t",
+        "%0",
+      ]);
+    }
+  });
+
   test("guards a pane kill against a shared window", () => {
     expect(planKillPaneIfUnshared("%4").argv).toEqual([
       "if-shell",
