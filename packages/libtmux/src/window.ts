@@ -478,6 +478,16 @@ export class Window {
    * ```ts
    * await window.selectLayout("even-horizontal");
    * ```
+   *
+   * Applying any layout while a pane is zoomed unzooms the window first —
+   * tmux's own behavior, not this method's.
+   *
+   * A `window_layout` saved earlier and passed back here is not guaranteed
+   * to put every pane back where it was. Before tmux 3.8, the classic
+   * layout string restores the arrangement's shape but can rotate which
+   * pane lands in which position; a JSON layout (3.8+, and only for a
+   * reader that actually receives JSON — see {@link Server.connect}) restores
+   * exactly. tmux refuses a JSON layout before 3.8.
    */
   selectLayout(layout: string): Promise<void> {
     return selectLayout(runtimeForHandle(this), this.id, layout);
