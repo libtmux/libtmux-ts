@@ -39,18 +39,24 @@ describe("tmux versions", () => {
     // release X.Y, which it has not shipped. It ranks above the release
     // before it and below the one it names — not above every tagged
     // release, which is what unconditionally ranking every development
-    // build above every tagged release would give it. A fix that only
-    // special-cases "next-X.Y equals tagged X.Y" still gets this wrong: it
-    // would leave next-3.9 outranking a later, unrelated release like 4.0.
+    // build above every tagged release would give it.
     expect(parseTmuxVersion("next-3.8")).toMatchObject({ major: 3, minor: 8, suffix: "" });
 
     expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.8"))).toBe(true);
     expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.9"))).toBe(false);
+  });
+
+  test("does not let a named-next build leak past the release it names", () => {
+    // A fix that only special-cases "next-X.Y equals tagged X.Y" still gets
+    // this wrong: it would leave next-3.9 outranking a later, unrelated
+    // release like 4.0, or next-3.8 outranking 99.9z.
     expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("4.0"))).toBe(false);
     expect(
       compareTmuxVersions(parseTmuxVersion("next-3.8"), parseTmuxVersion("99.9z")),
     ).toBeLessThan(0);
+  });
 
+  test("compares a named-next build's suffix before its development kind", () => {
     // The parser also admits a lettered target, such as "next-3.7a": it
     // still precedes the exact release it names but follows the plain
     // release before it. Comparing development-ness before the suffix
