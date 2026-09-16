@@ -1628,6 +1628,24 @@ test("a mid-load failure in human mode prints the sentence, not the machine reco
   });
 });
 
+test("a silent before_script failure drops the empty ': ' separator", async () => {
+  await fixture(async (_server, root, run) => {
+    const config = join(root, "silent-bootstrap.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "silent-bootstrap",
+        before_script: `'${process.execPath}' -e 'process.exit(3)'`,
+        windows: [{}],
+      }),
+    );
+    const result = await run(["load", config, "-d", "--json"]);
+    expect(result.code).toBe(1);
+    const message = JSON.parse(result.stdout).errors[0].message as string;
+    expect(message).toBe("Bootstrap exited with status 3");
+  });
+});
+
 test("append resolves the explicit current pane and preserves existing windows", async () => {
   await fixture(async (server, root, run) => {
     const before = (await server.snapshot()).sessions.one({ name: "fixture" });
