@@ -180,6 +180,14 @@ test("invalid machine arguments leave stdout empty with a structured usage diagn
   expect(JSON.parse(executable.stderr).code).toBe("usage");
 });
 
+test("an unknown subcommand is reported as such, not as excess arguments", async () => {
+  const result = await run(["frobnicate"]);
+  expect(result.code).toBe(2);
+  expect(result.stderr).toContain("unknown command");
+  expect(result.stderr).toContain("frobnicate");
+  expect(result.stderr).not.toContain("too many arguments");
+});
+
 test("legacy 88-color load fails before invoking tmux in every output mode", async () => {
   const wrapper = join(root, "tmux-probe");
   const marker = join(root, "called");
