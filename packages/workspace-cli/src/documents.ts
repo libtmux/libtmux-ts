@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { link, open, readFile, readdir, rename, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
+import { CliError } from "./output.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Document = { [key: string]: Json };
@@ -181,7 +182,9 @@ export async function resolveWorkspace(
     candidates = extensions.map((extension) => join(target, `.tmuxp${extension}`));
   } else candidates = [target];
   for (const candidate of candidates) if ((await info(candidate))?.isFile()) return candidate;
-  throw new Error(`Workspace not found: ${input}`);
+  // Named exactly so a machine caller can branch on it rather than the
+  // generic fallback code every other unclassified failure gets.
+  throw new CliError("workspace_not_found", `Workspace not found: ${input}`);
 }
 
 export async function discover(

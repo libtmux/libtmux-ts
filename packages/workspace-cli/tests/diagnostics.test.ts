@@ -49,7 +49,7 @@ test("a failed error log preserves the command diagnostic and exit status", asyn
       .split("\n")
       .map((line) => JSON.parse(line));
     expect(records[0]).toMatchObject({
-      code: "workspace_error",
+      code: "workspace_not_found",
       message: "Workspace not found: missing-workspace",
     });
     expect(records[1]).toMatchObject({ code: "log_error", message: "log append failed" });
