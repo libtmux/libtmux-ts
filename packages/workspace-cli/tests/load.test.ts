@@ -82,6 +82,57 @@ async function fixture(
   );
 }
 
+test("load starts the tmux server itself when the socket has no daemon", async () => {
+  const directory = await makeTestDirectory("ltx-workspace-cli-cold-");
+  const socketPath = join(directory, "sock");
+  assertOwnedSocketPath(socketPath);
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+  await runWithCleanup(
+    async () => {
+      const workspace = join(directory, "workspace.json");
+      await writeFile(workspace, JSON.stringify({ session_name: "cold-start", windows: [{}] }));
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          new URL("../src/main.ts", import.meta.url).pathname,
+          "load",
+          "-d",
+          "-S",
+          socketPath,
+          workspace,
+          "--json",
+        ],
+        {
+          cwd: directory,
+          env: { ...env, HOME: directory, TMUX: "", TMUX_PANE: "" },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect(code, stdout + stderr).toBe(0);
+      const result = JSON.parse(stdout) as { status: string; results: { session_name: string }[] };
+      expect(result.status).toBe("ok");
+      expect(result.results[0]?.session_name).toBe("cold-start");
+      const server = new Server({ socketPath, environment: env });
+      const sessions = (await server.snapshot()).sessions.toArray();
+      expect(sessions.map((session) => session.name)).toEqual(["cold-start"]);
+    },
+    async () => {
+      await new Server({ socketPath, environment: env }).kill().catch(() => undefined);
+      await rm(directory, { recursive: true, force: true });
+    },
+  );
+});
+
 test("imported command groups load after relocation with native pane order", async () => {
   await fixture(async (server, root, command) => {
     const keeper = (await server.snapshot()).sessions.one({ name: "fixture" });
