@@ -54,8 +54,8 @@ test("progress distinguishes created panes from configured panes and safely expa
   const progress = f.create();
   await progress.event("workspace-started", start);
   expect(f.chunks.join("")).toBe("{session}:{constructor}:project:0/3:0/2:0");
-  await progress.event("window-created", { window_name: "one", window_ordinal: 1, pane_total: 2 });
-  await progress.event("pane-created", { pane_ordinal: 1 });
+  await progress.event("window-created", { window_name: "one", window_index: 1, pane_total: 2 });
+  await progress.event("pane-created", { pane_index: 1 });
   await progress.clear();
   await progress.event("warning", {});
   expect(f.chunks.at(-1)).toContain("project:0/3:0/2:0");
@@ -132,7 +132,7 @@ test("fast event bursts redraw at most once and blocked progress remains cancell
   const progress = f.create();
   await progress.event("workspace-started", start);
   await Promise.all(
-    Array.from({ length: 100 }, () => progress.event("pane-created", { pane_ordinal: 1 })),
+    Array.from({ length: 100 }, () => progress.event("pane-created", { pane_index: 1 })),
   );
   expect(f.chunks).toHaveLength(1);
   const controller = new AbortController();
