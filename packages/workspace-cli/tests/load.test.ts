@@ -867,17 +867,31 @@ test.each(["remove", "restore", "both", "disable"])(
   },
 );
 
-test("native load falls back from an unusable terminal size", async () => {
+test("native load falls back to 80x24 when a size override is empty", async () => {
   await fixture(async (server, root, run) => {
     const config = join(root, "sized.json");
     await writeFile(
       config,
       JSON.stringify({ session_name: "sized", windows: [{ panes: ["blank"] }] }),
     );
-    const result = await run(["load", config, "-d", "--json"], { COLUMNS: "", LINES: "wide" });
+    const result = await run(["load", config, "-d", "--json"], { COLUMNS: "", LINES: "" });
     expect(result.code, result.stderr).toBe(0);
     const window = (await server.snapshot()).sessions.one({ name: "sized" }).windows.one();
     expect([Number(window.width), Number(window.height)]).toEqual([80, 24]);
+  });
+});
+
+test("an unusable terminal size is a usage error before anything is created", async () => {
+  await fixture(async (server, root, run) => {
+    const config = join(root, "sized.json");
+    await writeFile(
+      config,
+      JSON.stringify({ session_name: "sized", windows: [{ panes: ["blank"] }] }),
+    );
+    const result = await run(["load", config, "-d", "--json"], { COLUMNS: "80", LINES: "wide" });
+    expect(result.code).toBe(2);
+    expect(JSON.parse(result.stderr).code).toBe("usage");
+    expect(await server.hasSession("sized")).toBe(false);
   });
 });
 

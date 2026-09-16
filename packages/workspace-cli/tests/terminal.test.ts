@@ -18,6 +18,10 @@ const ptyDriver = `
 import errno, os, pty, select, signal, sys, time
 pid, fd = pty.fork()
 if pid == 0:
+    cols, rows = os.environ.get("WORKSPACE_TEST_COLS"), os.environ.get("WORKSPACE_TEST_ROWS")
+    if cols and rows:
+        import fcntl, struct, termios
+        fcntl.ioctl(1, termios.TIOCSWINSZ, struct.pack("HHHH", int(rows), int(cols), 0, 0))
     destination = os.environ.get("WORKSPACE_TEST_STDOUT")
     if destination:
         out = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -286,6 +290,33 @@ test("human load attaches only the final workspace through a separate terminal",
         expect(text).toContain("Loaded last");
         expect(text).not.toContain("\u001b");
         expect(await readFile(saved + ".err", "utf8")).toBe("");
+      },
+    );
+  });
+});
+
+test("attached load sizes the session, and every window in it, to the real terminal", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "sized.json");
+    await writeFile(
+      source,
+      JSON.stringify({
+        session_name: "sized-terminal",
+        windows: [{ window_name: "one" }, { window_name: "two" }],
+      }),
+    );
+    await terminal(
+      [runtime, entry, "load", source, "-S", server.socketPath!],
+      root,
+      { ...env, WORKSPACE_TEST_COLS: "137", WORKSPACE_TEST_ROWS: "41" },
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        const session = (await server.snapshot()).sessions.one({ name: "sized-terminal" });
+        // Both windows, focused or not, must match the real terminal's
+        // columns rather than tmux's 80-wide default-size (A1, A2).
+        expect(session.windows.toArray().map((window) => Number(window.width))).toEqual([137, 137]);
+        await (await server.snapshot()).clients.at(0)!.detach();
+        expect((await result).code).toBe(0);
       },
     );
   });

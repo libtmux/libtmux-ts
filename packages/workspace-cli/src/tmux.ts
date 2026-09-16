@@ -162,12 +162,37 @@ async function options(
   for (const [name, data] of Object.entries(mapping(value, "options")))
     await target.setOption(name, option(data), signal ? { signal } : undefined);
 }
-function dimension(context: CLIContext, names: readonly string[], fallback: number): number {
-  for (const name of names) {
-    const size = Number(context.env[name]?.trim());
-    if (Number.isSafeInteger(size) && size > 0) return size;
+function envInteger(context: CLIContext, name: string): number | undefined {
+  const raw = context.env[name];
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 65535)
+    throw new CliError("usage", `${name} must be an integer from 1 to 65535`, 2);
+  return value;
+}
+/**
+ * Mirrors tmuxp: `-x`/`-y` start from `TMUXP_DEFAULT_COLUMNS`/`_ROWS`
+ * (else `COLUMNS`/`ROWS`, else 80x24), then take the attaching terminal's own
+ * size unless `TMUXP_DETECT_TERMINAL_SIZE` is set to something other than
+ * `1`, in which case detection is off and no `-x`/`-y` is passed at all so
+ * tmux picks its own `default-size`. `COLUMNS`/`LINES`, when set, override
+ * even a detected terminal. Applies to attached and detached loads alike,
+ * outside tmux or in, because a tmux pane's own stdout reports its real size
+ * through the same `isTTY` check.
+ */
+function sessionDimensions(context: CLIContext): { width?: number; height?: number } {
+  let width = envInteger(context, "TMUXP_DEFAULT_COLUMNS") ?? envInteger(context, "COLUMNS") ?? 80;
+  let height = envInteger(context, "TMUXP_DEFAULT_ROWS") ?? envInteger(context, "ROWS") ?? 24;
+  const detect = context.env.TMUXP_DETECT_TERMINAL_SIZE;
+  if (detect !== undefined && detect !== "1") return {};
+  const stream = context.stdout as { isTTY?: boolean; columns?: number; rows?: number };
+  if (stream.isTTY && stream.columns && stream.rows) {
+    width = stream.columns;
+    height = stream.rows;
   }
-  return fallback;
+  width = envInteger(context, "COLUMNS") ?? width;
+  height = envInteger(context, "LINES") ?? height;
+  return { width, height };
 }
 async function send(pane: Pane, spec: PaneSpec, context: CLIContext): Promise<void> {
   let enter = spec.data.enter ?? true;
@@ -250,13 +275,14 @@ async function create(
   const acquisition = context.signal ? { signal: context.signal } : {};
   context.signal?.throwIfAborted();
   result.stage = existing ? "append" : "creating-session";
+  const { width, height } = sessionDimensions(context);
   const session =
     existing ??
     (await server.newSession({
       name: spec.name,
       ...(spec.directory ? { startDirectory: spec.directory } : {}),
-      width: dimension(context, ["COLUMNS", "TMUXP_DEFAULT_COLUMNS"], 80),
-      height: dimension(context, ["LINES", "TMUXP_DEFAULT_ROWS"], 24),
+      ...(width !== undefined ? { width } : {}),
+      ...(height !== undefined ? { height } : {}),
       ...(context.signal ? { signal: context.signal } : {}),
     }));
   result.session_id = session.id;
@@ -469,6 +495,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     );
   if (request.mode !== "human" && !request.values.detached && !request.values.append)
     throw new CliError("usage", "Machine load requires -d or an explicit append operation", 2);
+  // Validated up front, before anything touches tmux, even though `create`
+  // recomputes it per input: a malformed COLUMNS/LINES/TMUXP_DEFAULT_* must
+  // fail before any session exists, not partway through a multi-file load.
+  sessionDimensions(context);
   const progress =
     request.mode === "human" && (context.stderr as { isTTY?: boolean }).isTTY
       ? (await import("./progress.ts")).LoadProgress.create(request, context)
