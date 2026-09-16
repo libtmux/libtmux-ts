@@ -55,7 +55,7 @@ function focusFirst(items: Document[]): void {
   }
 }
 
-function teamocil(source: Document, context: FileContext): Document {
+function teamocil(source: Document, context: FileContext, fallbackName: string | undefined): Document {
   if (source.session !== undefined) fields(source, ["session"], "teamocil");
   const session = mapping(source.session ?? source, "teamocil session");
   fields(session, ["name", "root", "windows", "description"], "session");
@@ -90,7 +90,16 @@ function teamocil(source: Document, context: FileContext): Document {
     return result;
   });
   focusFirst(windows);
-  const result: Document = { session_name: session.name ?? null, start_directory: root, windows };
+  const result: Document = {
+    // teamocil's current format names no session at all; a document that
+    // starts at `windows:` has never had a `name` key to read. tmuxp's own
+    // importer falls back to the file it read, so this does too, and leaves
+    // an invalid stem (a literal "." or ":") to the usual name validation
+    // rather than guessing a sanitized replacement.
+    session_name: session.name ?? fallbackName ?? null,
+    start_directory: root,
+    windows,
+  };
   copy(session, result, ["description"]);
   return result;
 }
@@ -164,10 +173,12 @@ export function importDocument(
   kind: "teamocil" | "tmuxinator",
   source: Document,
   context: FileContext,
+  fallbackName?: string,
 ): Document {
   if (kind === "tmuxinator" && JSON.stringify(source).includes("<%"))
     throw new Error("tmuxinator ERB templates are unsupported; expand them before import");
-  const result = kind === "teamocil" ? teamocil(source, context) : tmuxinator(source, context);
+  const result =
+    kind === "teamocil" ? teamocil(source, context, fallbackName) : tmuxinator(source, context);
   normalize(result, join(context.cwd, "imported.json"), context);
   return result;
 }

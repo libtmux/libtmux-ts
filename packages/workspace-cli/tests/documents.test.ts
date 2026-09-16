@@ -142,6 +142,38 @@ test("teamocil import handles nested sessions, legacy splits and literal ERB-lik
   ]);
 });
 
+test("teamocil import derives session_name from the file when the document has none", () => {
+  const result = importDocument(
+    "teamocil",
+    {
+      windows: [
+        {
+          name: "sample-window",
+          root: "/tmp",
+          layout: "tiled",
+          panes: [{ cmd: "echo one" }, { cmd: ["echo two-a", "echo two-b"], focus: true }],
+        },
+      ],
+    },
+    context,
+    "teamv1",
+  );
+  expect(result.session_name).toBe("teamv1");
+  expect(result.start_directory).toBe(context.cwd);
+  expect(result.windows).toEqual([
+    {
+      window_name: "sample-window",
+      start_directory: "/tmp",
+      layout: "tiled",
+      focus: true,
+      panes: [
+        { shell_command: [{ cmd: "echo one" }] },
+        { shell_command: [{ cmd: "echo two-a; echo two-b" }], focus: true },
+      ],
+    },
+  ]);
+});
+
 test("native imports preserve Teamocil command groups and modern pane fields", () => {
   const source: Document = {
     session: {
