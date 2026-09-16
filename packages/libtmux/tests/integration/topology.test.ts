@@ -14,7 +14,7 @@ import {
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
-import { MultipleMatchesError } from "../../src/errors.js";
+import { MultipleMatchesError, TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -366,6 +366,35 @@ describe("window and pane topology", () => {
         .filter((candidate) => candidate.id === first.id)
         .one();
       expect(Number(resized.width)).toBeGreaterThan(0);
+    });
+  }, 40_000);
+
+  // TS-3: tmux reads a bare `-o` as its own undo flag rather than as a layout
+  // value, so `selectLayout("-o")` silently reverted to whatever layout was
+  // active before the last `selectLayout` call instead of failing. The fix
+  // is a `--` guard. Asserting the tmux message text is version-specific
+  // (3.2a says "can't set layout", 3.7c+ says "invalid layout"), so this
+  // checks the property that matters: the call rejects, and the layout that
+  // was active a moment ago is still active — not undone.
+  test("refuses a layout value that looks like tmux's own undo flag", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+
+      await window.selectLayout("even-horizontal");
+      await window.selectLayout("main-vertical");
+      const beforeAttempt = (await server.snapshot()).windows.one({ id: window.id }).format
+        .window_layout;
+
+      const failure = await window
+        .selectLayout("-o")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+
+      expect(failure).toBeInstanceOf(TmuxCommandError);
+      const after = (await server.snapshot()).windows.one({ id: window.id }).format.window_layout;
+      expect(after).toBe(beforeAttempt);
     });
   }, 40_000);
 

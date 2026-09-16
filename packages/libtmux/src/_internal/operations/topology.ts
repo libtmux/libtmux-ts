@@ -89,13 +89,20 @@ export async function swapWindows(
   ]);
 }
 
-/** Apply a named or custom layout to a window. */
+/**
+ * Apply a named or custom layout to a window.
+ *
+ * `--` guards the layout value: tmux reads a bare `-o` as its own undo flag
+ * (restoring whatever layout preceded the last `select-layout`) rather than as
+ * a layout string, so any caller-supplied value beginning with `-` needs the
+ * separator to be treated as data instead of a flag.
+ */
 export async function selectLayout(
   runtime: RuntimeContext,
   windowId: string | null,
   layout: string,
 ): Promise<void> {
-  await runCommand(runtime, ["select-layout", ...target(windowId), layout]);
+  await runCommand(runtime, ["select-layout", ...target(windowId), "--", layout]);
 }
 
 /**

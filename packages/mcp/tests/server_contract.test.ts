@@ -171,6 +171,22 @@ test("the stdio server executes the retained capability surface end to end", asy
       await call("rename_window", { name: "renamed-extra", windowId: extraWindow.window.id });
       await call("select_pane", { paneId: split.pane.id });
       await call("select_layout", { layout: "even-horizontal", windowId: created.windowId });
+      // The MCP tool passes a caller's layout straight to
+      // `Window.selectLayout`, so it inherits the `--` guard against tmux
+      // reading a bare `-o` as its own undo flag. Without the guard this call
+      // would silently succeed and revert the window's layout.
+      const beforeUndoAttempt = (await serverFor(fixture).snapshot()).windows.one({
+        id: created.windowId,
+      }).format.window_layout;
+      const undoAttempt = await client.callTool({
+        arguments: { layout: "-o", windowId: created.windowId },
+        name: "select_layout",
+      });
+      expect(undoAttempt.isError).toBe(true);
+      const afterUndoAttempt = (await serverFor(fixture).snapshot()).windows.one({
+        id: created.windowId,
+      }).format.window_layout;
+      expect(afterUndoAttempt).toBe(beforeUndoAttempt);
       await call("resize_pane", { amount: 1, direction: "right", paneId: created.paneId });
       await call("resize_window", { height: 32, width: 104, windowId: created.windowId });
       await call("swap_pane", { otherPaneId: split.pane.id, paneId: created.paneId });
