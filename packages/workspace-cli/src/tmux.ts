@@ -118,7 +118,7 @@ async function currentSession(server: Server, context: CLIContext): Promise<Borr
     id: context.env.TMUX_PANE,
   }).session;
   if (!session)
-    throw new CliError("input_required", "The current pane has no session on this server");
+    throw new CliError("session_not_found", "The current pane has no session on this server");
   return { session, daemon: selected.daemonIdentity };
 }
 async function attachmentClient(server: Server, context: CLIContext): Promise<string | undefined> {
