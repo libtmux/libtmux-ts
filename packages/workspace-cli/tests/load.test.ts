@@ -618,6 +618,28 @@ test.each(["off", "on"])(
   },
 );
 
+test("a window with five or more panes reclaims space between splits", async () => {
+  await fixture(async (server, root, run) => {
+    const config = join(root, "many-panes.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "many-panes",
+        windows: [{ window_name: "many", panes: Array.from({ length: 5 }, () => "echo x") }],
+      }),
+    );
+    const result = await run(["load", config, "-d", "--json"], { COLUMNS: "80", LINES: "24" });
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const created = JSON.parse(result.stdout).results[0] as {
+      created_windows: string[];
+      created_panes: string[];
+    };
+    expect(created.created_panes.length).toBe(5);
+    const window = (await server.snapshot()).windows.one({ id: created.created_windows[0]! });
+    expect(window.panes.length).toBe(5);
+  });
+});
+
 test("layout corpus preserves an independent keeper", async () => {
   const corpus = (await Bun.file(
     new URL("../../libtmux/tests/fixtures/layout-preflight.json", import.meta.url),
