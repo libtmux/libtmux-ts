@@ -56,6 +56,11 @@ it is applied.
 The CLI limits custom layouts to 8192 characters and 256 nested groups;
 these are application limits, separate from tmux's parser.
 
+Two defaults differ from tmuxp on purpose: a window that names no `layout`
+tiles its panes, where tmuxp stacks them by halving the last one, and the
+first pane in a window is focused when none sets `focus`, where tmuxp
+focuses the last. Explicit `layout` and `focus` agree with tmuxp either way.
+
 Loading reuses an existing session. Without `-d`, it attaches the final workspace
 or switches the current tmux client. Attachment uses the controlling terminal,
 including when standard streams are redirected; no terminal means failure
