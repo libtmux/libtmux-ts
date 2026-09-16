@@ -34,6 +34,30 @@ test.each([
   },
 );
 
+test("a genuine unsupported field's refusal suggests the x- prefix", () => {
+  expect(() =>
+    normalize({ session_name: "dev", windows: [{}], bogus: 1 }, "/project/dev.yaml", context),
+  ).toThrow(/Unsupported field: workspace\.bogus.*x-/);
+});
+
+test("x- prefixed keys are inert at every scope: workspace, window, and pane", () => {
+  const spec = normalize(
+    {
+      session_name: "dev",
+      "x-workspace-note": "ignored",
+      windows: [
+        {
+          "x-window-note": "ignored",
+          panes: [{ "x-pane-note": "ignored", shell_command: "echo hi" }],
+        },
+      ],
+    },
+    "/project/dev.yaml",
+    context,
+  );
+  expect(spec.windows[0]!.panes[0]!.commands.map((command) => command.cmd)).toEqual(["echo hi"]);
+});
+
 test("native execution retains descriptions and open option and environment names", () => {
   const command = { cmd: "printf example", enter: false, sleep_before: null, sleep_after: 0 };
   const document = {

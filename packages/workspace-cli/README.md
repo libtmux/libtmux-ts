@@ -82,7 +82,10 @@ A failed restoration appears as `renumber_restore_error` in the load result.
 
 Native `load` rejects unsupported fields before any input runs scripts or changes
 tmux. The diagnostic includes the field path. For example, `entter: false` in a
-command is an error; use `enter: false` to leave that command unsubmitted.
+command is an error; use `enter: false` to leave that command unsubmitted. A
+key starting with `x-`, at any scope, is the exception: it is accepted,
+ignored at load, and left alone by `convert`. The refusal for any other
+unknown key names that prefix as the way to keep it.
 
 | Scope                       | Accepted fields                                                                                                                                                                                                                                              |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
