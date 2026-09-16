@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { mkdtemp, readdir, readFile, readlink, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -55,6 +55,34 @@ test("a failed error log preserves the command diagnostic and exit status", asyn
     expect(records[1]).toMatchObject({ code: "log_error", message: "log append failed" });
   } finally {
     record.mockRestore();
+  }
+});
+
+test("convert's unmet confirmation logs confirmation_required, not input_required", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ltx-wcli-convert-"));
+  const capture = captured();
+  const events: unknown[] = [];
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Rebind the saved method to the real logger below.
+  const original = Diagnostics.prototype.record;
+  const record = spyOn(Diagnostics.prototype, "record").mockImplementation(async function (
+    this: Diagnostics,
+    ...args
+  ) {
+    if (args[1] === "command-failed") events.push(args[2]);
+    return original.apply(this, args);
+  });
+  try {
+    await writeFile(join(root, "source.yaml"), "session_name: dev\nwindows:\n  - {}\n");
+    expect(await run(["convert", "source.yaml"], { ...capture.context, cwd: root })).toBe(1);
+    expect(events).toEqual([
+      {
+        code: "confirmation_required",
+        message: "Confirm conversion with --yes or provide --save-to",
+      },
+    ]);
+  } finally {
+    record.mockRestore();
+    await rm(root, { recursive: true, force: true });
   }
 });
 

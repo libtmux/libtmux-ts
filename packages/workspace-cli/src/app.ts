@@ -240,7 +240,7 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
       if (!destination && mode === "human") {
         if (!request.values.answer_yes)
           throw new CliError(
-            "input_required",
+            "confirmation_required",
             "Confirm conversion with --yes or provide --save-to",
           );
         destination = join(

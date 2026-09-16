@@ -159,6 +159,14 @@ test("all extension inputs are validated before Python or tmux starts", async ()
   expect(runtime.stdout).toBe("");
 });
 
+test("convert without --yes or --save-to in human mode prints a plain sentence", async () => {
+  const source = join(root, "source.yaml");
+  await writeFile(source, "session_name: dev\nwindows:\n  - {}\n");
+  const result = await run(["convert", source]);
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain("Confirm conversion with --yes or provide --save-to");
+});
+
 test("invalid machine arguments leave stdout empty with a structured usage diagnostic", async () => {
   for (const args of [
     ["--json"],
