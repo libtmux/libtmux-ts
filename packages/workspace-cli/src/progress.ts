@@ -257,13 +257,13 @@ export class LoadProgress {
         break;
       case "window-created":
         this.window = scalarText(data.window_name ?? "");
-        this.windowIndex = Number(data.window_ordinal);
+        this.windowIndex = Number(data.window_index);
         this.paneTotal = Number(data.pane_total);
         this.paneIndex = this.panesDone = 0;
         await this.draw();
         break;
       case "pane-created":
-        this.paneIndex = Number(data.pane_ordinal);
+        this.paneIndex = Number(data.pane_index);
         await this.draw();
         break;
       case "pane-completed":

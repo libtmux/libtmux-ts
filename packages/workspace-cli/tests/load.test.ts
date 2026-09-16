@@ -619,6 +619,51 @@ test.each(["off", "on"])(
   },
 );
 
+test("ndjson events use the shared field vocabulary (inputs, session_id, *_index)", async () => {
+  await fixture(async (server, root, run) => {
+    const config = join(root, "ndjson-shape.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "ndjson-shape",
+        windows: [
+          { window_name: "one", panes: [null, null] },
+          { window_name: "two", panes: [null] },
+        ],
+      }),
+    );
+    const result = await run(["load", config, "-d", "--ndjson"]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const events = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)) as Record<string, unknown>[];
+    const session = (await server.snapshot()).sessions.one({ name: "ndjson-shape" });
+
+    const started = events.find((event) => event.event === "started")!;
+    expect(started.inputs).toBe(1);
+    expect(started.input_count).toBeUndefined();
+
+    const windowCreated = events.filter((event) => event.event === "window-created");
+    expect(windowCreated.map((event) => event.window_index)).toEqual([1, 2]);
+    expect(windowCreated.every((event) => event.session_id === session.id)).toBe(true);
+    expect(windowCreated.every((event) => event.window_ordinal === undefined)).toBe(true);
+
+    const windowCompleted = events.filter((event) => event.event === "window-completed");
+    expect(windowCompleted.map((event) => event.window_index)).toEqual([1, 2]);
+    expect(windowCompleted.every((event) => event.session_id === session.id)).toBe(true);
+
+    const paneCreated = events.filter((event) => event.event === "pane-created");
+    expect(paneCreated.map((event) => event.pane_index)).toEqual([1, 2, 1]);
+    expect(paneCreated.every((event) => event.session_id === session.id)).toBe(true);
+    expect(paneCreated.every((event) => event.pane_ordinal === undefined)).toBe(true);
+
+    const paneCompleted = events.filter((event) => event.event === "pane-completed");
+    expect(paneCompleted.map((event) => event.pane_index)).toEqual([1, 2, 1]);
+    expect(paneCompleted.every((event) => event.session_id === session.id)).toBe(true);
+  });
+});
+
 test("a window with five or more panes reclaims space between splits", async () => {
   await fixture(async (server, root, run) => {
     const config = join(root, "many-panes.json");
