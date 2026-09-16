@@ -65,6 +65,15 @@ function isColdEndpoint(error: unknown): boolean {
     (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)"))
   );
 }
+/**
+ * Whether a tmux failure happened reaching the server at all (missing
+ * executable, refused connection, no server) rather than in a command tmux
+ * itself ran and rejected. Every such failure's message carries this exact
+ * prefix -- libtmux's capability probe is the only place that writes it.
+ */
+function isTmuxUnavailable(error: unknown): boolean {
+  return error instanceof LibTmuxException && error.message.startsWith("cannot reach tmux");
+}
 function currentEndpoint(context: CLIContext): { socketPath: string; pid: string } | undefined {
   if (!context.env.TMUX) return undefined;
   const match = /^(.*),([0-9]+),[0-9]+$/s.exec(context.env.TMUX);
@@ -509,30 +518,41 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
   let bridge: typeof import("./extensions.ts") | undefined;
   const files = request.values.workspace_files as string[];
   for (const [index, input] of files.entries()) {
-    const path = await resolveWorkspace(input, context);
-    const document = await readDocument(path);
-    const override =
-      index === files.length - 1 && request.values.new_session_name
-        ? scalarText(request.values.new_session_name)
-        : undefined;
-    if (
-      ["plugins", "workspace_builder", "workspace_builder_paths"].some((key) =>
-        Object.hasOwn(document, key),
+    try {
+      const path = await resolveWorkspace(input, context);
+      const document = await readDocument(path);
+      const override =
+        index === files.length - 1 && request.values.new_session_name
+          ? scalarText(request.values.new_session_name)
+          : undefined;
+      if (
+        ["plugins", "workspace_builder", "workspace_builder_paths"].some((key) =>
+          Object.hasOwn(document, key),
+        )
       )
-    )
-      bridge ??= await import("./extensions.ts");
-    const extension = await bridge?.extensionPlan(
-      document,
-      path,
-      context,
-      Boolean(request.values.append),
-      override,
-    );
-    inputs.push(
-      extension
-        ? { path, kind: "extension", spec: extension }
-        : { path, kind: "native", spec: normalize(document, path, context, override) },
-    );
+        bridge ??= await import("./extensions.ts");
+      const extension = await bridge?.extensionPlan(
+        document,
+        path,
+        context,
+        Boolean(request.values.append),
+        override,
+      );
+      inputs.push(
+        extension
+          ? { path, kind: "extension", spec: extension }
+          : { path, kind: "native", spec: normalize(document, path, context, override) },
+      );
+    } catch (error) {
+      // Reached before tmux is touched: a parse failure or a validation
+      // error (its own, more specific CliError) is the document's shape,
+      // not tmux's.
+      if (error instanceof CliError) throw error;
+      throw new CliError(
+        "invalid_workspace",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
   const python = inputs.some((input) => input.kind === "extension")
     ? await bridge!.extensionRuntime(context)
@@ -714,17 +734,21 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         result.stage === "completed" ||
         (result.session_id && !result.session_removed),
     );
+    const code = interrupted
+      ? "interrupted"
+      : error instanceof CliError
+        ? error.code
+        : isTmuxUnavailable(error)
+          ? "tmux_unavailable"
+          : "tmux_failed";
+    const message = error instanceof Error ? error.message : String(error);
     await output.result({
       status: changed ? "partial" : "error",
       results,
       errors: [
         {
-          code: interrupted
-            ? "interrupted"
-            : error instanceof CliError
-              ? error.code
-              : "load_failed",
-          message: error instanceof Error ? error.message : String(error),
+          code,
+          message,
           input_index: results.at(-1)?.input_index ?? 0,
           failed_stage: results.at(-1)?.stage ?? "started",
         },
@@ -740,6 +764,13 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           );
       throw error;
     }
+    // A machine mode gets the same failure as a flat record on stderr, the
+    // shape every other reported error uses, alongside the diagnostic log.
+    await write(
+      context.stderr,
+      JSON.stringify({ schema_version: 1, code, message }) + "\n",
+      context.signal,
+    ).catch(() => {});
     return interrupted ? 130 : 1;
   } finally {
     await progress?.clear(AbortSignal.timeout(100)).catch(() => {});

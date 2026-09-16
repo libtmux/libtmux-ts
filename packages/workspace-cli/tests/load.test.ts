@@ -1657,6 +1657,30 @@ test("a silent before_script failure drops the empty ': ' separator", async () =
   });
 });
 
+test("a tmux command failure while building reports tmux_failed, with a flat stderr record", async () => {
+  await fixture(async (_server, root, run) => {
+    const config = join(root, "bad-option.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "bad-option",
+        windows: [{ options: { "no-such-option-xyz": 1 } }],
+      }),
+    );
+    const result = await run(["load", config, "-d", "--json"]);
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout).errors[0]).toMatchObject({ code: "tmux_failed" });
+    const stderrRecords = result.stderr
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(stderrRecords.find((line) => line.code === "tmux_failed")).toMatchObject({
+      schema_version: 1,
+      code: "tmux_failed",
+    });
+  });
+});
+
 test("append resolves the explicit current pane and preserves existing windows", async () => {
   await fixture(async (server, root, run) => {
     const before = (await server.snapshot()).sessions.one({ name: "fixture" });

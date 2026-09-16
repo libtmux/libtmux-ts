@@ -159,6 +159,38 @@ test("all extension inputs are validated before Python or tmux starts", async ()
   expect(runtime.stdout).toBe("");
 });
 
+test("a malformed document reports invalid_workspace, not the generic fallback", async () => {
+  const bad = join(root, "bad.yaml");
+  await writeFile(bad, "a: [\n");
+  const result = await run(["load", bad, "-d", "--json"]);
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
+});
+
+test("a top-level unsupported key reports unsupported_key, not the generic fallback", async () => {
+  const bad = join(root, "bogus.yaml");
+  await writeFile(bad, "session_name: cb\nbogus: 1\nwindows:\n  - {}\n");
+  const result = await run(["load", bad, "-d", "--json"]);
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr).code).toBe("unsupported_key");
+});
+
+test("tmux unreachable reports tmux_unavailable on stdout and a flat stderr record", async () => {
+  const config = join(root, "ok.yaml");
+  await writeFile(config, "session_name: ok\nwindows:\n  - {}\n");
+  const result = await run(["load", config, "-d", "--json"], { TMUX_BIN: "/missing-tmux" });
+  expect(result.code).toBe(1);
+  expect(JSON.parse(result.stdout).errors[0]).toMatchObject({ code: "tmux_unavailable" });
+  const stderrLines = result.stderr
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const record = stderrLines.find((line) => line.code === "tmux_unavailable");
+  expect(record).toMatchObject({ schema_version: 1, code: "tmux_unavailable" });
+});
+
 test("convert without --yes or --save-to in human mode prints a plain sentence", async () => {
   const source = join(root, "source.yaml");
   await writeFile(source, "session_name: dev\nwindows:\n  - {}\n");
