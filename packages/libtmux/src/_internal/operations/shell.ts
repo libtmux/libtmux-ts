@@ -11,11 +11,11 @@ export async function runShell(
   command: string,
   options: RunShellOptions = {},
 ): Promise<readonly string[]> {
-  return runCommand(runtime, [
-    "run-shell",
-    ...(options.target == null ? [] : ["-t", options.target]),
-    command,
-  ]);
+  return runCommand(
+    runtime,
+    ["run-shell", ...(options.target == null ? [] : ["-t", options.target]), command],
+    options,
+  );
 }
 
 /**

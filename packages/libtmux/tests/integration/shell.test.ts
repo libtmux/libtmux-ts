@@ -12,7 +12,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { safeInteger } from "../../src/common.js";
-import { TmuxCommandError } from "../../src/errors.js";
+import { TmuxCommandError, TmuxTransportError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import { Session } from "../../src/session.js";
 
@@ -64,6 +64,37 @@ describe("shell execution and pane movement", () => {
       else expect(output).toEqual([]);
     });
   }, 40_000);
+
+  // `runShell` forwards `options.signal` and `options.timeoutMs` to
+  // `runCommand`. `server.cmd("run-shell", ...)` with the identical
+  // `timeoutMs` is the control proving 300ms is reachable on this machine.
+  test("runShell honours its own timeoutMs and signal", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      const control = await server
+        .cmd("run-shell", ["sleep 5"], { timeoutMs: 300 })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(control).toBeInstanceOf(TmuxTransportError);
+      expect((control as TmuxTransportError).kind).toBe("timeout");
+
+      const timedOut = await server
+        .runShell("sleep 5", { timeoutMs: 300 })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(timedOut).toBeInstanceOf(TmuxTransportError);
+      expect((timedOut as TmuxTransportError).kind).toBe("timeout");
+
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 300);
+      const aborted = await server
+        .runShell("sleep 5", { signal: controller.signal })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(aborted).toBeInstanceOf(TmuxTransportError);
+    });
+  }, 15_000);
 
   test("expands a tmux format through display-message", async () => {
     await withServer(async (fixture) => {
