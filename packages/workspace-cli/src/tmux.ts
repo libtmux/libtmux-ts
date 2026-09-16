@@ -782,10 +782,15 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
       ...(window.active === true ? { focus: true } : {}),
     });
   }
+  const sessionOptions = Object.fromEntries(await session.showOptions(acquisition));
+  // default-size records the terminal freeze ran in, not anything the
+  // workspace declared; a document could not have set it, so it does not
+  // belong in one. Reloading it pins every future window to that size.
+  delete sessionOptions["default-size"];
   const document: Document = {
     session_name: session.name,
     windows,
-    options: Object.fromEntries(await session.showOptions(acquisition)),
+    options: sessionOptions,
   };
   const destination = request.values.save_to
     ? resolve(context.cwd, expandPath(scalarText(request.values.save_to), context))

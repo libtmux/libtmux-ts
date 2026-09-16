@@ -1279,6 +1279,37 @@ test("freeze does not name an ordinary shell that is not the literal default-she
   });
 });
 
+test("freeze omits default-size so a reload is not pinned to the capturing terminal", async () => {
+  // default-size describes the terminal freeze happened to run in, not
+  // anything the workspace declared. create() always passes an explicit
+  // width/height derived from COLUMNS/LINES (falling back to 80x24, matching
+  // tmuxp), so a fresh session's own size does not by itself reveal the leak
+  // -- the leaked option only bites when it overrides a *different* size a
+  // later reload would otherwise get, which is the scenario this reproduces.
+  await fixture(async (server, root, run) => {
+    const source = join(root, "input.json");
+    await writeFile(source, JSON.stringify({ session_name: "freeze-size", windows: [{}] }));
+    expect((await run(["load", source, "-d", "--json"], { COLUMNS: "80", LINES: "24" })).code).toBe(
+      0,
+    );
+    const frozen = await run(["freeze", "freeze-size", "--json"]);
+    expect(frozen.code, frozen.stdout + frozen.stderr).toBe(0);
+    const document = JSON.parse(frozen.stdout) as { options?: Record<string, unknown> };
+    expect(document.options?.["default-size"]).toBeUndefined();
+
+    const replay = join(root, "replay.json");
+    await writeFile(replay, JSON.stringify({ ...document, session_name: "freeze-size-replay" }));
+    // A larger terminal at reload time. Without the fix, the 80x24 freeze
+    // captured above would override this and pin the window regardless.
+    const reload = await run(["load", replay, "-d", "--json"], { COLUMNS: "200", LINES: "50" });
+    expect(reload.code, reload.stdout + reload.stderr).toBe(0);
+    const window = (await server.snapshot()).sessions
+      .one({ name: "freeze-size-replay" })
+      .windows.at(0)!;
+    expect(`${window.width}x${window.height}`).toBe("200x50");
+  });
+});
+
 test("pane readiness reads one pane, not the whole server", async () => {
   await fixture(async (server, root, run) => {
     await server.setGlobalOption("session", "default-command", "printf ready; sleep 30");
