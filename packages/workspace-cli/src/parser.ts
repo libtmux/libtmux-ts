@@ -123,7 +123,7 @@ export function createParser(io: ParserIO): {
     for (const item of spec.actions) {
       if (item.dest === "help") continue;
       if (item.dest === "version") {
-        current.version(manifest.version, "-V, --version");
+        current.version(`${current.name()} ${manifest.version}`, "-V, --version");
         continue;
       }
       if (!item.flags.length) {
