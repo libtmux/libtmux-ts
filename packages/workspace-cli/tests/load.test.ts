@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 import { Server } from "libtmux";
 import { run as runCli } from "../src/app.ts";
 import { processRun } from "../src/process.ts";
@@ -1163,6 +1164,45 @@ test("freeze machine output reloads window and pane topology", async () => {
         .windows.toArray()
         .map((window) => window.panes.length),
     ).toEqual([2, 1]);
+  });
+});
+
+test("freeze puts window options under options_after and omits the default pane shell", async () => {
+  await fixture(async (server, root, run) => {
+    const source = join(root, "input.json");
+    await writeFile(
+      source,
+      JSON.stringify({
+        session_name: "freeze-shape",
+        windows: [
+          {
+            window_name: "main",
+            options: { "automatic-rename": false },
+            panes: [null, "sleep 60"],
+          },
+        ],
+      }),
+    );
+    expect((await run(["load", source, "-d", "--json"])).code).toBe(0);
+    const session = (await server.snapshot()).sessions.one({ name: "freeze-shape" });
+    const busyPaneId = session.windows.at(0)!.panes.at(1)!.id;
+    const deadline = performance.now() + 2000;
+    let command: string | null = null;
+    /* eslint-disable no-await-in-loop -- bounded readiness poll for a real subprocess. */
+    while (performance.now() < deadline) {
+      command = (await server.snapshot()).panes.one({ id: busyPaneId }).currentCommand;
+      if (command === "sleep") break;
+      await sleep(25);
+    }
+    /* eslint-enable no-await-in-loop */
+    expect(command).toBe("sleep");
+    const frozen = await run(["freeze", "freeze-shape", "--json"]);
+    expect(frozen.code, frozen.stdout + frozen.stderr).toBe(0);
+    const window = JSON.parse(frozen.stdout).windows[0];
+    expect(window.options).toBeUndefined();
+    expect(window.options_after).toMatchObject({ "automatic-rename": "off" });
+    expect(window.panes[0].shell_command).toBeUndefined();
+    expect(window.panes[1].shell_command).toEqual(["sleep"]);
   });
 });
 
