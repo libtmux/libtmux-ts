@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop -- Each mutation and progress record depends on the preceding tmux state. */
 import { LibTmuxException, Server, type Pane, type Session, type Window } from "libtmux";
 import { setTimeout as sleep } from "node:timers/promises";
-import { extname, resolve } from "node:path";
+import { basename, extname, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
 import {
   scalarText,
@@ -731,19 +731,31 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
   const server = connection(request.values, context);
   const session = await freezeSession(server, request, context);
   const acquisition = context.signal ? { signal: context.signal } : {};
+  // A pane running the session's own default shell round-trips faithfully
+  // with no shell_command at all; naming it explicitly reloads a shell inside
+  // a shell. Anything else is worth capturing, as the one command tmux can
+  // still report for it.
+  const defaultShell = basename(
+    (await session.showResolvedOptions(acquisition)).get("default-shell") ?? "",
+  );
   const windows: Document[] = [];
   for (const window of session.windows.toArray()) {
     const panes = window.panes.toArray().map((pane) => ({
-      shell_command: [],
+      ...(pane.currentCommand !== null && pane.currentCommand !== defaultShell
+        ? { shell_command: [pane.currentCommand] }
+        : {}),
       start_directory: pane.currentPath ?? context.cwd,
       ...(pane.active === true ? { focus: true } : {}),
     }));
-    const options = Object.fromEntries(await window.showOptions(acquisition));
+    // freeze runs after every pane exists, so window options belong under
+    // options_after: automatic-rename: off only holds when applied there,
+    // and load already accepts both spellings.
+    const optionsAfter = Object.fromEntries(await window.showOptions(acquisition));
     windows.push({
       window_name: window.name,
       window_index: Number(window.index),
       layout: window.layout,
-      options,
+      options_after: optionsAfter,
       panes,
       ...(window.active === true ? { focus: true } : {}),
     });
