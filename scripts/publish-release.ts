@@ -128,20 +128,29 @@ export class RegistryPackageNotFound extends Error {
   }
 }
 
+const FIRST_PUBLICATION_NAME = RELEASE_PACKAGES.find(
+  ({ firstPublication }) => firstPublication === true,
+)?.name;
+
 async function queryPackages(
   manifests: readonly ReleaseManifest[],
   io: ReleaseIO,
-): Promise<readonly RegistryPackageState[]> {
-  try {
-    return await Promise.all(manifests.map(async ({ name }) => await io.queryPackage(name)));
-  } catch (error) {
-    if (error instanceof RegistryPackageNotFound) {
-      throw new Error(`established package ${error.packageName} is missing from the registry`, {
-        cause: error,
-      });
-    }
-    throw error;
-  }
+): Promise<readonly (RegistryPackageState | undefined)[]> {
+  return await Promise.all(
+    manifests.map(async ({ name }) => {
+      try {
+        return await io.queryPackage(name);
+      } catch (error) {
+        if (error instanceof RegistryPackageNotFound) {
+          if (name === FIRST_PUBLICATION_NAME && error.packageName === name) return undefined;
+          throw new Error(`established package ${error.packageName} is missing from the registry`, {
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+  );
 }
 
 async function readReleaseManifests(repositoryRoot: string): Promise<readonly ReleaseManifest[]> {
@@ -322,7 +331,6 @@ export async function coordinateRelease(
   if (options.eventName === "push" && options.refName !== `v${version}`) {
     throw new Error(`release tag ${options.refName ?? "is missing"}; expected v${version}`);
   }
-
   const artifacts = await Promise.all(
     manifests.map(
       async ({ directory }) =>
@@ -348,14 +356,19 @@ export async function coordinateRelease(
   );
   const distTag = selectDistTag(
     version,
-    packageStates.map(({ distTags }) => distTags.latest),
+    packageStates.flatMap((state) => (state === undefined ? [] : [state.distTags.latest])),
   );
+  if (distTag !== "latest" && packageStates.some((state) => state === undefined)) {
+    throw new Error("first CLI publication must use the coordinated latest channel");
+  }
   const skipped: string[] = [];
   const pending: PackedArtifact[] = [];
   const failures: string[] = [];
   for (const [index, artifact] of artifacts.entries()) {
     const versionState = versionStates[index];
-    const packageState = packageStates[index];
+    const packageState =
+      packageStates[index] ??
+      (artifact.name === FIRST_PUBLICATION_NAME ? { distTags: {} } : undefined);
     if (packageState === undefined) {
       failures.push(`${artifact.name}: package state was not read`);
     } else if (versionState === undefined) {

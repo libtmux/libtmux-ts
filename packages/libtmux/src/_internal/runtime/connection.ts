@@ -1,5 +1,5 @@
 export interface TmuxConnectionOptions {
-  readonly colors?: 88 | 256;
+  readonly colors?: 256;
   readonly configFile?: string;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly executable: string;
@@ -8,7 +8,7 @@ export interface TmuxConnectionOptions {
 }
 
 export class TmuxConnection {
-  readonly colors: 88 | 256 | undefined;
+  readonly colors: 256 | undefined;
   readonly configFile: string | undefined;
   readonly environment: Readonly<Record<string, string | undefined>>;
   readonly executable: string;
@@ -16,6 +16,9 @@ export class TmuxConnection {
   readonly socketPath: string | undefined;
 
   constructor(options: TmuxConnectionOptions) {
+    if (options.colors !== undefined && options.colors !== 256) {
+      throw new TypeError("colors must be 256 or omitted");
+    }
     if (options.socketName !== undefined && options.socketPath !== undefined) {
       throw new TypeError("socketName and socketPath are mutually exclusive");
     }

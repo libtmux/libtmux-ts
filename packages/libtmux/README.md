@@ -430,6 +430,7 @@ Sessions, windows, and panes:
 ```ts
 import { isSplitSize, isTmuxName, splitSize } from "libtmux";
 
+await server.validateLayouts([{ layout: "even-h", panes: 2 }]);
 const session = await server.newSession({ name: "work" });
 const requestedName: unknown = "editor";
 // A name holding `:` or `.` is refused: tmux rewrites it before 3.7, fails on

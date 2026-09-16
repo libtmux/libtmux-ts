@@ -1,3 +1,4 @@
+import type { CommandOptions } from "../../common.js";
 import type {
   NewSessionOptions,
   NewWindowOptions,
@@ -31,9 +32,10 @@ async function runPlan<T>(
   server: Server,
   runtime: RuntimeContext,
   plan: PlannedOperation<T>,
+  options: CommandOptions,
 ): Promise<T> {
-  const lines = await runCommand(runtime, plan.argv);
-  return plan.resolve(await buildServerSnapshot(server, runtime), lines);
+  const lines = await runCommand(runtime, plan.argv, options);
+  return plan.resolve(await buildServerSnapshot(server, runtime, options.signal), lines);
 }
 
 export function newSession(
@@ -41,7 +43,7 @@ export function newSession(
   runtime: RuntimeContext,
   options: NewSessionOptions = {},
 ): Promise<Session> {
-  return runPlan(server, runtime, planNewSession(options));
+  return runPlan(server, runtime, planNewSession(options), options);
 }
 
 export function newWindow(
@@ -50,7 +52,7 @@ export function newWindow(
   sessionId: string | null,
   options: NewWindowOptions = {},
 ): Promise<Window> {
-  return runPlan(server, runtime, planNewWindow(sessionId, options));
+  return runPlan(server, runtime, planNewWindow(sessionId, options), options);
 }
 
 export function splitWindow(
@@ -59,7 +61,7 @@ export function splitWindow(
   target: string | null,
   options: SplitOptions = {},
 ): Promise<Pane> {
-  return runPlan(server, runtime, planSplitWindow(target, options));
+  return runPlan(server, runtime, planSplitWindow(target, options), options);
 }
 
 export async function killTarget(

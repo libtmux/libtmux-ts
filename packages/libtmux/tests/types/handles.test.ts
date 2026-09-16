@@ -72,7 +72,7 @@ import type { Selection } from "../../src/selection.js";
 import type { Equal, Expect } from "./assert.js";
 
 type ExpectedServerOptions = {
-  readonly colors?: 88 | 256;
+  readonly colors?: 256;
   readonly configFile?: string;
   // The public seam: an engine supplied here runs every command, so its type is
   // part of the API rather than an internal one that happens to be reachable.
@@ -151,7 +151,7 @@ type _ServerFields = Expect<
   Equal<
     Pick<Server, "colors" | "configFile" | "socketName" | "socketPath" | "tmuxBin">,
     {
-      readonly colors: 88 | 256 | undefined;
+      readonly colors: 256 | undefined;
       readonly configFile: string | undefined;
       readonly socketName: string | undefined;
       readonly socketPath: string | undefined;
@@ -267,7 +267,7 @@ type StructuralSession = RowWithIdentities<"session_id"> & {
   readonly server: Server;
 };
 type StructuralServer = {
-  readonly colors: 88 | 256 | undefined;
+  readonly colors: 256 | undefined;
   readonly configFile: string | undefined;
   readonly equals: (other: unknown) => boolean;
   readonly socketName: string | undefined;

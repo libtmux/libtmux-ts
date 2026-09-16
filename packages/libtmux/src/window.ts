@@ -216,8 +216,8 @@ export class Window {
    * options.get("automatic-rename");
    * ```
    */
-  showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForHandle(this), "window", this.id);
+  showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForHandle(this), "window", this.id, options);
   }
 
   /**
@@ -231,8 +231,8 @@ export class Window {
    * (await window.showResolvedOptions()).get("main-pane-width");
    * ```
    */
-  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
-    return showResolvedOptions(runtimeForHandle(this), "window", this.id);
+  showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "window", this.id, options);
   }
 
   /**
@@ -470,6 +470,12 @@ export class Window {
 
   /**
    * Apply a named or custom layout.
+   *
+   * Names accept unique abbreviations. Checksums and tree structure are checked
+   * before dispatch; tmux remains responsible for geometry and pruning.
+   * This API limits custom layouts to 8192 characters and 256 nested groups.
+   *
+   * @throws TypeError when the layout name or serialized tree is invalid.
    *
    * ```ts
    * await window.selectLayout("even-horizontal");
