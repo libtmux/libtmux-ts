@@ -424,7 +424,11 @@ async function create(
           pane_id: pane.id,
           message: "Pane readiness timed out; sending commands",
         });
-      if (desired.data.layout) await window.selectLayout(scalarText(desired.data.layout));
+      // Splitting the previously created pane exhausts a small window's rows
+      // in a handful of steps, so a fifth split can find no room left. A
+      // tiled pass between splits reclaims it; the document's own layout, if
+      // any, is applied once below as the final word once every pane exists.
+      if (paneIndex > 0) await window.selectLayout("tiled");
       result.stage = "pane-commands";
       await send(pane, paneSpec, context);
       await output.event("pane-completed", {
@@ -434,6 +438,7 @@ async function create(
       });
       if (paneSpec.data.focus) focusPane = pane;
     }
+    if (desired.data.layout) await window.selectLayout(scalarText(desired.data.layout));
     if (focusPane) await focusPane.select();
     result.stage = "window-options-after";
     await options(window, desired.data.options_after, context.signal);
