@@ -55,7 +55,11 @@ function focusFirst(items: Document[]): void {
   }
 }
 
-function teamocil(source: Document, context: FileContext, fallbackName: string | undefined): Document {
+function teamocil(
+  source: Document,
+  context: FileContext,
+  fallbackName: string | undefined,
+): Document {
   if (source.session !== undefined) fields(source, ["session"], "teamocil");
   const session = mapping(source.session ?? source, "teamocil session");
   fields(session, ["name", "root", "windows", "description"], "session");
