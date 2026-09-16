@@ -97,8 +97,15 @@ function validateFields(
   allowExtensionFields: boolean,
 ): void {
   if (allowExtensionFields) return;
-  for (const key of Object.keys(data))
-    if (!fields[scope].includes(key)) throw new Error(`Unsupported field: ${path}.${key}`);
+  for (const key of Object.keys(data)) {
+    // A key starting with "x-" is a caller's own extension point: inert at
+    // load, and left alone by convert. Every other unknown key still refuses.
+    if (key.startsWith("x-")) continue;
+    if (!fields[scope].includes(key))
+      throw new Error(
+        `Unsupported field: ${path}.${key} (prefix a custom key with "x-" to have it ignored)`,
+      );
+  }
 }
 
 export function expand(value: string, context: FileContext): string {
