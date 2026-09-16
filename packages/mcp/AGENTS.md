@@ -36,15 +36,25 @@ tool refuses them even with `force`. The marker is framing, not confinement:
 code with the tmux socket's authority can inspect the pane.
 
 The framed script's _content_ is unchanged by delivery: `deliverFramedScript`
-(`command.ts`) writes it to a tmux buffer, `save-buffer`s it to `/tmp/<id>.sh`
-on the tmux server's own host — the pane's host, by construction — and types
-only a short `. '/tmp/<id>.sh'` line. Typing the whole ~1KB script, one shell
-input line, made an interactive shell's line editor (zsh with
-syntax-highlighting/autosuggestion plugins) redraw on every byte of it: the
-trap/octal/nonce machinery flashed across the pane and a trivial command could
-take seconds. A trailing `command rm -f` appended outside the sourced group
-(never inside `frame()`) removes the file once the run genuinely ends, even
-one that outlives the caller's deadline.
+(`command.ts`) writes it to a tmux buffer, `save-buffer`s it into a fresh
+`mkdtemp` directory on the tmux server's own host — the pane's host, by
+construction — and types only a short `. '<dir>/<id>.sh'` line. Typing the
+whole ~1KB script, one shell input line, made an interactive shell's line
+editor (zsh with syntax-highlighting/autosuggestion plugins) redraw on every
+byte of it: the trap/octal/nonce machinery flashed across the pane and a
+trivial command could take seconds.
+
+`save-buffer` creates its target file mode however the umask says — world
+readable under an ordinary 022, on any path — so the file cannot simply live
+in a shared directory like `/tmp`: the `mkdtemp` directory is what keeps the
+command text (secrets included) private, since its own mode is 0700 on POSIX
+unconditionally, not subject to the umask. Same gap and same fix as
+libtmux-go's `observePane` (`control_observation.go`). A trailing
+`command rm -rf` appended outside the sourced group (never inside `frame()`)
+removes the file and its directory once the run genuinely ends, even one that
+outlives the caller's deadline. A directory orphaned by a hard crash outlives
+this server, bounded only by the OS's own temp-directory hygiene — the same
+residual gap libtmux-go accepts.
 
 ## Cancellation
 

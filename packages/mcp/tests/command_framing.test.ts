@@ -1,16 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { rm, stat } from "node:fs/promises";
 
 import { describe, expect, spyOn, test } from "bun:test";
 
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
 
-import {
-  framedScriptPath,
-  isPaneInputConflict,
-  reserveFramedCommand,
-  runFramedCommand,
-} from "../src/command.js";
+import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
 import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "../src/command_frame.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";
 import { PaneTail } from "../src/pane_tail.js";
@@ -468,15 +464,26 @@ describe("command framing", () => {
     const dispatched = sent[0] ?? "";
     expect(dispatched).not.toContain("__ltx_");
     expect(dispatched).not.toContain("printf '%b");
-    expect(dispatched.length).toBeLessThan(100);
+    expect(dispatched.length).toBeLessThan(150);
     const { id, source } = dispatchedFrame(buffers.source());
-    expect(dispatched).toContain(`. '${framedScriptPath(id)}'`);
+    const dispatchedPath = /\. '([^']+)'/u.exec(dispatched)?.[1];
+    if (dispatchedPath === undefined) throw new Error("expected a sourcing line");
+    expect(dispatchedPath.endsWith(`/${id}.sh`)).toBe(true);
 
     // The script sourced from that path is the framed command, plus a
     // trailer — appended outside `frame()`, not inside it — that removes the
-    // file only once the sourced group has exited.
-    expect(source.endsWith(`; command rm -f -- '${framedScriptPath(id)}'`)).toBe(true);
+    // file's own private directory only once the sourced group has exited.
+    const directory = dispatchedPath.slice(0, dispatchedPath.length - `/${id}.sh`.length);
+    expect(source.endsWith(`; command rm -rf -- '${directory}'`)).toBe(true);
     expect(source).toContain("printf '%bX'");
+
+    // The directory is real (created by `mkdtemp`), so it exists and — this
+    // being the security property in question — no other user can even
+    // traverse into it, whatever mode `save-buffer` gives the file inside.
+    const info = await stat(directory);
+    expect(info.isDirectory()).toBe(true);
+    expect(info.mode & 0o077).toBe(0);
+    await rm(directory, { force: true, recursive: true });
   });
 
   test("waits for the complete exit-status line", async () => {
@@ -885,8 +892,12 @@ describe("command framing", () => {
       await expect(running).rejects.toMatchObject({ delivery });
       // The dispatch line never reached the pane, so the sourced script's
       // own trailing cleanup will never run either — this is the one path
-      // where something else has to remove the file it was written to.
-      expect(buffers.ranShell).toEqual([`rm -f -- '${framedScriptPath(id)}'`]);
+      // where something else has to remove the private directory it was
+      // written to. `deliverFramedScript` made that directory itself, so it
+      // removes it directly rather than through a tmux round trip.
+      const trailer = /; command rm -rf -- '([^']+)'$/u.exec(buffers.source())?.[1];
+      if (trailer === undefined) throw new Error("expected an rm -rf trailer");
+      await expect(stat(trailer)).rejects.toMatchObject({ code: "ENOENT" });
       return;
     }
     const result = await running;
@@ -1067,7 +1078,7 @@ describe("concurrent framing", () => {
   // partway through: the second command's echo, its markers, and its output.
   const contaminated = [
     "AAA-start",
-    ` . '${framedScriptPath("ltxbbb222")}'`,
+    " . '/tmp/ltx-a1b2c3/ltxbbb222.sh'",
     "ltxbbb222_S",
     "BBB-secret",
     "ltxbbb222_E 0",

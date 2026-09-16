@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { TmuxTransportError, type Pane } from "libtmux";
@@ -250,9 +253,9 @@ async function waitForSettlement(
   }
 }
 
-/** Where the framed script for one run lives while the pane sources it. */
-export function framedScriptPath(id: string): string {
-  return `/tmp/${id}.sh`;
+/** The script name inside its own private directory. */
+function framedScriptName(id: string): string {
+  return `${id}.sh`;
 }
 
 /**
@@ -270,9 +273,27 @@ export function framedScriptPath(id: string): string {
  * removes both: nothing but a generic path is ever typed, and the shell
  * reads the payload as its own file I/O, never through the line editor.
  *
- * The trailing `rm` runs only once the sourced group exits, appended outside
- * `frame()`'s own subshell rather than inside it, so a command that outlives
- * this call's deadline keeps its file until the run genuinely finishes.
+ * `save-buffer` creates its target however the umask says — world-readable
+ * under an ordinary 022, regardless of the path — so the command text
+ * (secrets and all) must never land somewhere another local user can read
+ * it. `mkdtemp` makes a directory only this user can even traverse (0700 on
+ * POSIX, unconditionally, unlike a file's mode which follows the umask), so
+ * the file's own readable mode stops mattering: nobody else can reach the
+ * name to open it. This is the same shape as libtmux-go's `observePane`
+ * (`control_observation.go`), which hits the identical save-buffer gap.
+ * `os.tmpdir()` honours `TMPDIR`, and the directory has to be on the tmux
+ * server's own host for `save-buffer` and `.` to agree on what the path
+ * names — true for a same-host server, which this framing already assumes
+ * (the trap-capture directory in `command_frame.ts` makes the same
+ * assumption).
+ *
+ * The trailing `rm -rf` removes the file and its directory together, and
+ * runs only once the sourced group exits — appended outside `frame()`'s own
+ * subshell, not inside it — so a command that outlives this call's deadline
+ * keeps its directory until the run genuinely finishes. A directory orphaned
+ * by a hard crash outlives this server, bounded the same way libtmux-go's
+ * is: by the OS's own temp-directory hygiene, not by anything this process
+ * can guarantee once it no longer exists to run a defer.
  */
 async function deliverFramedScript(
   context: ToolContext,
@@ -280,22 +301,29 @@ async function deliverFramedScript(
   source: string,
   id: string,
 ): Promise<void> {
-  const path = framedScriptPath(id);
-  await context.tmux.loadBuffer(id, `${source}; command rm -f -- '${path}'`);
+  const directory = await mkdtemp(join(tmpdir(), "ltx-"));
+  const path = join(directory, framedScriptName(id));
   try {
-    await context.tmux.saveBuffer(id, path);
-  } finally {
-    await context.tmux.deleteBuffer(id).catch(() => undefined);
+    await context.tmux.loadBuffer(id, `${source}; command rm -rf -- '${directory}'`);
+    try {
+      await context.tmux.saveBuffer(id, path);
+    } finally {
+      await context.tmux.deleteBuffer(id).catch(() => undefined);
+    }
+  } catch (error) {
+    // Nothing was ever typed, so nothing else will ever run the trailer.
+    await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+    throw error;
   }
   try {
     await dispatchPaneKeys(pane, `. '${path}'`, { literal: true });
   } catch (error) {
     // The file was written but the pane never received the line that would
-    // source it, so nothing else will ever remove it.
+    // source it, so nothing else will ever remove it. This process made the
+    // directory, so it removes it directly rather than routing through the
+    // tmux server that never got a chance to run the trailer.
     if (error instanceof TmuxTransportError && error.delivery === "not_started") {
-      await context.tmux
-        .runShell(`rm -f -- '${path}'`, { timeoutMs: 2_000 })
-        .catch(() => undefined);
+      await rm(directory, { force: true, recursive: true }).catch(() => undefined);
     }
     throw error;
   }

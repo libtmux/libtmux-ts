@@ -73,11 +73,13 @@ const MARKER = /\b(ltx[0-9a-f]+)_([SE])\b/u;
 /**
  * A framing dispatch, as the pane echoes it back when somebody types one.
  *
- * The dispatched line is now `. '/tmp/<id>.sh'` — a short path sourcing the
- * script rather than the script's own body — so this matches that shape
- * instead of the function definition an older design typed in full.
+ * The dispatched line is now `. '<private-dir>/<id>.sh'` — a short path
+ * sourcing the script rather than the script's own body — so this matches
+ * that shape instead of the function definition an older design typed in
+ * full. The directory is a fresh `mkdtemp` result each run and not itself
+ * predictable, so only the `<id>.sh` suffix is matched.
  */
-const FRAMING_ECHO = /(?:^|\s)\. '\/tmp\/ltx[0-9a-f]+\.sh'/u;
+const FRAMING_ECHO = /(?:^|\s)\. '[^']*\/ltx[0-9a-f]+\.sh'/u;
 
 /**
  * Remove another caller's framing, and its output, from this caller's body.
