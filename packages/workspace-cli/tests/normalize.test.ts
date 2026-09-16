@@ -164,12 +164,30 @@ test("an empty pane list keeps the window's implicit pane", () => {
   expect(spec.data.windows).toEqual([{ panes: [] }, {}]);
 });
 
+test("focus accepts the quoted strings tmuxp freeze emits and coerces them to booleans", () => {
+  const spec = normalize(
+    {
+      session_name: "dev",
+      windows: [
+        { focus: "true", panes: [{ focus: "false" }, { focus: "true" }] },
+        { focus: "false", panes: [{}] },
+      ],
+    },
+    "/project/dev.yaml",
+    context,
+  );
+  expect(spec.windows[0]!.data.focus).toBe(true);
+  expect(spec.windows[0]!.panes[0]!.data.focus).toBe(false);
+  expect(spec.windows[0]!.panes[1]!.data.focus).toBe(true);
+  expect(spec.windows[1]!.data.focus).toBe(false);
+});
+
 test("execution shapes reject malformed options and toggles before creating anything", () => {
   const invalid: Document[] = [
     { options: [] },
     { global_options: { status: {} } },
     { workspace_builder_options: { pane_readiness: "sometimes" } },
-    { windows: [{ focus: "false" }] },
+    { windows: [{ focus: "yes" }] },
     { windows: [{ panes: [{ suppress_history: "false" }] }] },
     { windows: [{ panes: [{ sleep_before: -1 }] }] },
     { windows: [{ panes: [{ sleep_after: "1" }] }] },

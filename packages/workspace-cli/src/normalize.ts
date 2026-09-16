@@ -114,6 +114,11 @@ function optionalString(value: Json | undefined, name: string): string | undefin
   return value;
 }
 function behavior(data: Document, base: string, context: FileContext): void {
+  // tmuxp's freezer writes `focus` as the quoted string 'true'/'false', not a
+  // YAML boolean, on every freeze it produces. Coerce that spelling in place
+  // so downstream truthiness checks (`desired.data.focus`) see a real
+  // boolean, and still refuse anything else.
+  if (data.focus === "true" || data.focus === "false") data.focus = data.focus === "true";
   for (const name of ["focus", "suppress_history", "enter"]) {
     if (data[name] !== undefined && typeof data[name] !== "boolean")
       throw new Error(`${name} must be boolean`);
