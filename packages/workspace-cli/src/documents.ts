@@ -162,7 +162,10 @@ export async function saveDocument(
         await link(temporary, path);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST")
-          throw new Error(`Destination exists: ${path}; use --force to replace it`);
+          throw new CliError(
+            "destination_exists",
+            `Destination exists: ${path}; use --force to replace it`,
+          );
         throw error;
       }
     }

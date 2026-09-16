@@ -1174,6 +1174,17 @@ test.each([
   });
 });
 
+test("freeze --save-to an existing file without --force reports destination_exists", async () => {
+  await fixture(async (_server, root, run) => {
+    const destination = join(root, "captured.yaml");
+    await writeFile(destination, "already here\n");
+    const result = await run(["freeze", "fixture", "--json", "--save-to", destination]);
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stderr).code).toBe("destination_exists");
+    expect(await readFile(destination, "utf8")).toBe("already here\n");
+  });
+});
+
 test.each(["json", "ndjson"])("quiet freeze retains its %s result", async (mode) => {
   await fixture(async (_server, root, run) => {
     const destination = join(root, "captured.json");
