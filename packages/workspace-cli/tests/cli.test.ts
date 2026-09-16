@@ -271,6 +271,11 @@ test("convert machine stdout preserves the document and performs no guessed writ
     plugins: ["demo.Plugin"],
   });
   expect(result.stderr).toBe("");
+  // Machine output is one compact line, matching five of the six other ports;
+  // an indented document makes a poor diff and cannot be piped into a file.
+  expect(result.stdout).toBe(
+    JSON.stringify({ session_name: "dev", windows: [], plugins: ["demo.Plugin"] }) + "\n",
+  );
 });
 
 test("search combines qualified fields and returns a stable empty array", async () => {
