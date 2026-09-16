@@ -2,6 +2,12 @@ import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  bunFromPackageManager,
+  checkBunVersionAgreement,
+  extractVersionLiterals,
+} from "./bun_version_pins.js";
+
 /**
  * Hold the shell blocks and version claims in the docs to what the repository
  * actually contains.
@@ -12,13 +18,17 @@ import { fileURLToPath } from "node:url";
  * it, and went on saying so through five published releases. Nothing was in a
  * position to notice.
  *
- * Five claims are checked, all of them answerable from the tree:
+ * Six claims are checked, all of them answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
  * - a package named in an install command is one this workspace publishes;
  * - a public install example pins prerelease packages to the manifest version;
- * - a tmux badge lists exactly the versions CI runs the suite against; and
- * - every published package README states the tested host-platform boundary.
+ * - a tmux badge lists exactly the versions CI runs the suite against;
+ * - every published package README states the tested host-platform boundary;
+ *   and
+ * - the Bun versions recorded in the CI matrix, the regex corpus, the
+ *   `packageManager` pin, every manifest's `engines.bun` floor, and the
+ *   CONTRIBUTING prose all agree.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -258,6 +268,74 @@ for (const file of files) {
   }
 }
 
+// The Bun version is recorded in the gates matrix, the regex corpus, the
+// packageManager pin, every manifest's engines.bun floor, and the
+// CONTRIBUTING prose that describes them — nowhere else compares all five.
+const bunMatrixClaim = /bun-version:\s*\[([^\]]+)\]/u.exec(workflow)?.[1];
+if (bunMatrixClaim === undefined) {
+  throw new Error("could not read the gates job's bun-version matrix from typescript.yml");
+}
+const bunMatrix = bunMatrixClaim.split(",").map((entry) => entry.trim().replaceAll('"', ""));
+
+const regexCorpusPath = "packages/libtmux/tests/fixtures/where_regex.json";
+const regexCorpus = (await Bun.file(join(repositoryRoot, regexCorpusPath)).json()) as {
+  readonly runtimes?: { readonly bun?: unknown };
+};
+const corpusBun = Array.isArray(regexCorpus.runtimes?.bun)
+  ? regexCorpus.runtimes.bun.map(String)
+  : [];
+
+const rootManifest = (await Bun.file(join(repositoryRoot, "package.json")).json()) as {
+  readonly packageManager?: unknown;
+};
+const packageManagerBun = bunFromPackageManager(
+  typeof rootManifest.packageManager === "string" ? rootManifest.packageManager : "",
+);
+if (packageManagerBun === undefined) {
+  failures.push(
+    `package.json: packageManager is ${JSON.stringify(rootManifest.packageManager)}, not a pinned bun@<version>`,
+  );
+}
+
+const contributingPath = ".github/CONTRIBUTING.md";
+const contributingText = await Bun.file(join(repositoryRoot, contributingPath)).text();
+const pinParagraph = contributingText
+  .split(/\n{2,}/u)
+  .find((paragraph) => paragraph.includes("`packageManager` pin"));
+if (pinParagraph === undefined) {
+  failures.push(
+    `${contributingPath}: has no paragraph naming the packageManager pin to check the Bun matrix against`,
+  );
+}
+
+const engineManifests = [
+  "package.json",
+  "packages/libtmux/package.json",
+  "packages/mcp/package.json",
+  "packages/workspace/package.json",
+] as const;
+const engines = await Promise.all(
+  engineManifests.map(async (path) => {
+    const manifest = (await Bun.file(join(repositoryRoot, path)).json()) as {
+      readonly engines?: { readonly bun?: unknown };
+    };
+    const bun = manifest.engines?.bun;
+    return { path, spec: typeof bun === "string" ? bun : "" };
+  }),
+);
+
+if (packageManagerBun !== undefined && pinParagraph !== undefined) {
+  failures.push(
+    ...checkBunVersionAgreement({
+      contributingPin: extractVersionLiterals(pinParagraph),
+      corpus: corpusBun,
+      engines,
+      matrix: bunMatrix,
+      packageManager: packageManagerBun,
+    }),
+  );
+}
+
 if (failures.length > 0) {
   process.stderr.write(
     `Documentation claims the repository does not support:\n${failures
@@ -268,5 +346,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, and Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING\n`,
 );
