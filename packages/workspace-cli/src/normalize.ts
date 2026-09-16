@@ -9,6 +9,7 @@ import {
   type FileContext,
   type Json,
 } from "./documents.ts";
+import { CliError } from "./output.ts";
 import { tokenize } from "./process.ts";
 
 export type CommandSpec = {
@@ -102,7 +103,8 @@ function validateFields(
     // load, and left alone by convert. Every other unknown key still refuses.
     if (key.startsWith("x-")) continue;
     if (!fields[scope].includes(key))
-      throw new Error(
+      throw new CliError(
+        "unsupported_key",
         `Unsupported field: ${path}.${key} (prefix a custom key with "x-" to have it ignored)`,
       );
   }
