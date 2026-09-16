@@ -1251,6 +1251,37 @@ test("freeze puts window options under options_after and omits the default pane 
   });
 });
 
+test("freeze does not name an ordinary shell that is not the literal default-shell", async () => {
+  // macOS ships /bin/sh as bash; tmux's resolved default-shell then reads "sh"
+  // while pane_current_command reports "bash". Reproduce the same mismatch on
+  // Linux by pointing default-shell at /bin/sh and default-command at an
+  // interactive bash, so a plain pane's current command is "bash" while
+  // basename(default-shell) is "sh".
+  await fixture(async (server, root, run) => {
+    await server.setGlobalOption("session", "default-shell", "/bin/sh");
+    await server.setGlobalOption("session", "default-command", "/bin/bash -i");
+    const source = join(root, "input.json");
+    await writeFile(source, JSON.stringify({ session_name: "freeze-shell-alias", windows: [{}] }));
+    expect((await run(["load", source, "-d", "--json"])).code).toBe(0);
+    const session = (await server.snapshot()).sessions.one({ name: "freeze-shell-alias" });
+    const paneId = session.windows.at(0)!.panes.at(0)!.id;
+    const deadline = performance.now() + 2000;
+    let command: string | null = null;
+    /* eslint-disable no-await-in-loop -- bounded readiness poll for a real subprocess. */
+    while (performance.now() < deadline) {
+      command = (await server.snapshot()).panes.one({ id: paneId }).currentCommand;
+      if (command === "bash") break;
+      await sleep(25);
+    }
+    /* eslint-enable no-await-in-loop */
+    expect(command).toBe("bash");
+    const frozen = await run(["freeze", "freeze-shell-alias", "--json"]);
+    expect(frozen.code, frozen.stdout + frozen.stderr).toBe(0);
+    const pane = JSON.parse(frozen.stdout).windows[0].panes[0];
+    expect(pane.shell_command).toBeUndefined();
+  });
+});
+
 test("pane readiness reads one pane, not the whole server", async () => {
   await fixture(async (server, root, run) => {
     await server.setGlobalOption("session", "default-command", "printf ready; sleep 30");
