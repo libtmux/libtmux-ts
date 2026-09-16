@@ -251,7 +251,7 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
             context.signal,
           );
         else await emitJson(context.stdout, result, false, context.signal);
-      } else if (mode === "json") await emitJson(context.stdout, document, true, context.signal);
+      } else if (mode === "json") await emitJson(context.stdout, document, false, context.signal);
       else
         await emitJson(
           context.stdout,
