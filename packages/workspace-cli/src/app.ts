@@ -209,7 +209,9 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
         importerRoot,
       );
       const raw = await readDocument(source);
-      const document = kind ? importDocument(kind, raw, context) : raw;
+      const document = kind
+        ? importDocument(kind, raw, context, basename(source, extname(source)))
+        : raw;
       let destination = request.values.save_to
         ? resolve(context.cwd, expandPath(scalarText(request.values.save_to), context))
         : undefined;
