@@ -250,8 +250,55 @@ async function waitForSettlement(
   }
 }
 
-async function sendLiteralLine(pane: Pane, line: string): Promise<void> {
-  await dispatchPaneKeys(pane, line, { literal: true });
+/** Where the framed script for one run lives while the pane sources it. */
+export function framedScriptPath(id: string): string {
+  return `/tmp/${id}.sh`;
+}
+
+/**
+ * Hand the framed script to the pane without typing its body through the
+ * shell's line editor.
+ *
+ * `send-keys -l` writes a string to the pty in one syscall, but a shell with
+ * a heavy line editor (zsh with syntax-highlighting or autosuggestion
+ * plugins) still processes every byte of an arriving line individually —
+ * that is what makes the framing's trap/octal/nonce machinery flash across
+ * the screen and turn a trivial command into a multi-second wait. Neither
+ * traces to how fast the bytes arrive, only to typing the
+ * payload at all. Writing it to a file on the tmux server's host — the
+ * pane's own host, by construction — and typing only a short `. <path>` line
+ * removes both: nothing but a generic path is ever typed, and the shell
+ * reads the payload as its own file I/O, never through the line editor.
+ *
+ * The trailing `rm` runs only once the sourced group exits, appended outside
+ * `frame()`'s own subshell rather than inside it, so a command that outlives
+ * this call's deadline keeps its file until the run genuinely finishes.
+ */
+async function deliverFramedScript(
+  context: ToolContext,
+  pane: Pane,
+  source: string,
+  id: string,
+): Promise<void> {
+  const path = framedScriptPath(id);
+  await context.tmux.loadBuffer(id, `${source}; command rm -f -- '${path}'`);
+  try {
+    await context.tmux.saveBuffer(id, path);
+  } finally {
+    await context.tmux.deleteBuffer(id).catch(() => undefined);
+  }
+  try {
+    await dispatchPaneKeys(pane, `. '${path}'`, { literal: true });
+  } catch (error) {
+    // The file was written but the pane never received the line that would
+    // source it, so nothing else will ever remove it.
+    if (error instanceof TmuxTransportError && error.delivery === "not_started") {
+      await context.tmux
+        .runShell(`rm -f -- '${path}'`, { timeoutMs: 2_000 })
+        .catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -294,7 +341,7 @@ export async function runFramedCommand(
     return beforeStartResult(budget, isCancelled(signal) ? "cancelled" : "timed_out");
   }
   try {
-    await sendLiteralLine(dispatchPane, source);
+    await deliverFramedScript(context, dispatchPane, source, id);
     commandStarted = true;
   } catch (error) {
     if (!(error instanceof TmuxTransportError) || error.delivery === "not_started") {

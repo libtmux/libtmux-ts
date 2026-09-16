@@ -70,8 +70,14 @@ export function frame(command: string, id: string, suppressHistory: boolean): st
 
 /** A framing marker: `<id>_S` or `<id>_E`, as the shell prints it. */
 const MARKER = /\b(ltx[0-9a-f]+)_([SE])\b/u;
-/** A framing command, as the pane echoes it back when somebody types one. */
-const FRAMING_ECHO = /(?:^|\s)__ltx_[0-9a-f]+\(\)/u;
+/**
+ * A framing dispatch, as the pane echoes it back when somebody types one.
+ *
+ * The dispatched line is now `. '/tmp/<id>.sh'` — a short path sourcing the
+ * script rather than the script's own body — so this matches that shape
+ * instead of the function definition an older design typed in full.
+ */
+const FRAMING_ECHO = /(?:^|\s)\. '\/tmp\/ltx[0-9a-f]+\.sh'/u;
 
 /**
  * Remove another caller's framing, and its output, from this caller's body.
