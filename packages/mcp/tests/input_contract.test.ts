@@ -364,3 +364,32 @@ test("a modal, dead, or caller cohort peer blocks input", async () => {
     );
   });
 }, 20_000);
+
+// `run_shell_command` writes its ~1KB framing script (trap capture/restore,
+// an octal-encoded payload, nonce variable names) to a file and types only a
+// short `. <path>` line, so the framing itself never reaches the visible
+// screen or costs a shell with a heavy line editor.
+test("run_shell_command leaves no framing machinery visible on the pane", async () => {
+  await withServer(async (fixture) => {
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string }>(
+        await client.callTool({ arguments: { name: "framing-visibility" }, name: "create_session" }),
+      );
+
+      const marker = "LTX_FRAMING_VISIBILITY_MARKER";
+      const run = structured<{ outcome: string; output: string }>(
+        await client.callTool({
+          arguments: { command: `printf '${marker}\\n'`, paneId: created.paneId },
+          name: "run_shell_command",
+        }),
+      );
+      expect(run).toMatchObject({ outcome: "completed", output: marker });
+
+      const screen = await capture(client, created.paneId);
+      expect(screen).toContain(marker);
+      expect(screen).not.toContain("__ltx_");
+      expect(screen).not.toContain("printf '%b");
+      expect(screen).not.toMatch(/\\0[0-7]{3}/u);
+    });
+  });
+}, 15_000);

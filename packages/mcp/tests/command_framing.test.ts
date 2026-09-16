@@ -5,7 +5,12 @@ import { describe, expect, spyOn, test } from "bun:test";
 
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
 
-import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
+import {
+  framedScriptPath,
+  isPaneInputConflict,
+  reserveFramedCommand,
+  runFramedCommand,
+} from "../src/command.js";
 import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "../src/command_frame.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";
 import { PaneTail } from "../src/pane_tail.js";
@@ -52,18 +57,52 @@ describe("command framing", () => {
     return path;
   }
 
-  function dispatchedFrame(args: readonly string[]): {
+  function dispatchedFrame(source: string): {
     readonly id: string;
     readonly source: string;
   } {
-    const source = args.find((entry) => entry.includes("__ltx_"));
-    if (source === undefined) throw new Error("tmux input has no frame");
     const octets = /command printf '%b' '((?:\\0[0-7]{3})+)'/u.exec(source)?.[1];
     if (octets === undefined) throw new Error("frame has no encoded id");
     const id = octets.replaceAll(/\\0([0-7]{3})/gu, (_, octal: string) =>
       String.fromCharCode(Number.parseInt(octal, 8)),
     );
     return { id, source };
+  }
+
+  /**
+   * A fake of the three-command server-side delivery `deliverFramedScript`
+   * uses (`loadBuffer`/`saveBuffer`/`deleteBuffer`), plus `runShell` for its
+   * one cleanup path. The framed script itself now travels through
+   * `loadBuffer`, not through the pane's `send-keys` args, so a fixture reads
+   * it back with `source()` instead of parsing what was typed.
+   */
+  function fakeBuffers(): {
+    readonly ranShell: string[];
+    readonly source: () => string;
+    readonly tmux: {
+      deleteBuffer: (name: string) => Promise<void>;
+      loadBuffer: (name: string, data: string | Uint8Array) => Promise<void>;
+      runShell: (command: string) => Promise<readonly string[]>;
+      saveBuffer: (name: string, path: string) => Promise<void>;
+    };
+  } {
+    let captured = "";
+    const ranShell: string[] = [];
+    return {
+      ranShell,
+      source: () => captured,
+      tmux: {
+        deleteBuffer: async () => undefined,
+        loadBuffer: async (_name, data) => {
+          captured = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
+        },
+        runShell: async (command) => {
+          ranShell.push(command);
+          return [];
+        },
+        saveBuffer: async () => undefined,
+      },
+    };
   }
 
   async function startCancelledCommand(
@@ -77,12 +116,13 @@ describe("command framing", () => {
   }> {
     const controller = new AbortController();
     const tail = new PaneTail(paneId);
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       format: { session_id: "$1" },
       id: paneId,
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -91,6 +131,7 @@ describe("command framing", () => {
       hub: { closed: false, tail: async () => tail },
       observeInput,
       policy: resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "250" }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
     const result = await runFramedCommand(
       context,
@@ -398,13 +439,54 @@ describe("command framing", () => {
     }
   });
 
-  test("waits for the complete exit-status line", async () => {
+  // `deliverFramedScript` writes the framed script to a tmux buffer and types
+  // only a short `. <path>` line, never the ~1KB frame() output itself: typing
+  // it as one literal send-keys line would let a heavy line editor (zsh with
+  // syntax-highlighting/autosuggestion plugins) redraw on every byte.
+  test("dispatches a short sourcing line, not the framed script itself", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    const sent: string[] = [];
     const pane = {
       format: { session_id: "$1" },
       id: "%1",
       cmd: async (_command: string, args: readonly string[]) => {
-        const { id } = dispatchedFrame(args);
+        sent.push(args.join(" "));
+        const { id } = dispatchedFrame(buffers.source());
+        tail.append(`${id}_S\nresult\n${id}_E 0 ${id}_D\n`);
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+      tmux: buffers.tmux,
+    } as unknown as ToolContext;
+
+    await runFramedCommand(context, pane, "true", 500);
+
+    expect(sent).toHaveLength(1);
+    const dispatched = sent[0] ?? "";
+    expect(dispatched).not.toContain("__ltx_");
+    expect(dispatched).not.toContain("printf '%b");
+    expect(dispatched.length).toBeLessThan(100);
+    const { id, source } = dispatchedFrame(buffers.source());
+    expect(dispatched).toContain(`. '${framedScriptPath(id)}'`);
+
+    // The script sourced from that path is the framed command, plus a
+    // trailer — appended outside `frame()`, not inside it — that removes the
+    // file only once the sourced group has exited.
+    expect(source.endsWith(`; command rm -f -- '${framedScriptPath(id)}'`)).toBe(true);
+    expect(source).toContain("printf '%bX'");
+  });
+
+  test("waits for the complete exit-status line", async () => {
+    const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async () => {
+        const { id } = dispatchedFrame(buffers.source());
         setTimeout(() => tail.append(`${id}_S\nresult\n${id}_E 1`), 5);
         setTimeout(() => tail.append(`27 ${id}_D\n`), 20);
       },
@@ -412,6 +494,7 @@ describe("command framing", () => {
     const context = {
       hub: { closed: false, tail: async () => tail },
       policy: resolvePolicy({}),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "exit 127", 500);
@@ -422,6 +505,7 @@ describe("command framing", () => {
 
   test("falls back when a live tail wait fails after dispatch", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let captureTimeoutMs: number | undefined;
     let id = "";
     let waitFailures = 0;
@@ -437,8 +521,8 @@ describe("command framing", () => {
       format: { session_id: "$1" },
       height: 8,
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
       },
       width: 80,
     } as unknown as Pane;
@@ -446,6 +530,7 @@ describe("command framing", () => {
     const context = {
       hub: { closed: false, tail: async () => tail },
       policy,
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "true", 500);
@@ -458,6 +543,7 @@ describe("command framing", () => {
   });
 
   test("recognizes a right-padded, soft-wrapped fallback marker", async () => {
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       capture: async (options: { readonly joinWrapped?: boolean }) => {
@@ -470,8 +556,8 @@ describe("command framing", () => {
       format: { session_id: "$1" },
       height: 8,
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
       },
       width: 20,
     } as unknown as Pane;
@@ -479,6 +565,7 @@ describe("command framing", () => {
       hub: { closed: false, tail: async () => undefined },
       policy: resolvePolicy({ LIBTMUX_MCP_LIVE: "0" }),
       snapshot: async () => ({ panes: { first: () => undefined } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "exit 127", 150);
@@ -574,12 +661,13 @@ describe("command framing", () => {
   test("keeps a cancelled command unsettled after its payload starts", async () => {
     const controller = new AbortController();
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       format: { session_id: "$1" },
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -588,6 +676,7 @@ describe("command framing", () => {
       hub: { closed: false, tail: async () => tail },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "touch STARTED", 1_000, controller.signal);
@@ -609,6 +698,7 @@ describe("command framing", () => {
   test("retries retained settlement after a live-tail failure", async () => {
     const controller = new AbortController();
     const tail = new PaneTail("%91");
+    const buffers = fakeBuffers();
     const observedSignals: (AbortSignal | undefined)[] = [];
     let captureTimeoutMs: number | undefined;
     let id = "";
@@ -625,8 +715,8 @@ describe("command framing", () => {
       format: { session_id: "$1" },
       height: 8,
       id: "%91",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -644,6 +734,7 @@ describe("command framing", () => {
         };
       },
       policy,
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
     const reservation = reserveFramedCommand(authority, pane.id, "cancelled run");
     if (isPaneInputConflict(reservation)) throw new Error("reservation conflicted");
@@ -678,11 +769,12 @@ describe("command framing", () => {
 
   test("reads a complete marker buffered before the live tail closes", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     const pane = {
       format: { session_id: "$1" },
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        const { id } = dispatchedFrame(args);
+      cmd: async () => {
+        const { id } = dispatchedFrame(buffers.source());
         tail.append(`${id}_S\nfinished\n${id}_E 0 ${id}_D\n`);
         tail.close("hub_closed");
       },
@@ -691,6 +783,7 @@ describe("command framing", () => {
       hub: { closed: true, tail: async () => tail },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "true", 20);
@@ -704,13 +797,14 @@ describe("command framing", () => {
     async (ambiguity) => {
       const controller = new AbortController();
       const tail = new PaneTail("%1");
+      const buffers = fakeBuffers();
       const hub = { closed: false, tail: async () => tail };
       let id = "";
       const pane = {
         format: { session_id: "$1" },
         id: "%1",
-        cmd: async (_command: string, args: readonly string[]) => {
-          id = dispatchedFrame(args).id;
+        cmd: async () => {
+          id = dispatchedFrame(buffers.source()).id;
           tail.append(`${id}_S\n`);
           if (ambiguity === "hub closure") hub.closed = true;
           controller.abort();
@@ -723,6 +817,7 @@ describe("command framing", () => {
           if (ambiguity === "snapshot error") throw new Error("snapshot unavailable");
           return { panes: { first: () => pane } };
         },
+        tmux: buffers.tmux,
       } as unknown as ToolContext;
 
       const result = await runFramedCommand(
@@ -753,11 +848,12 @@ describe("command framing", () => {
     ["indeterminate", true],
   ] as const)("binds a %s dispatch error to its delivery state", async (delivery, started) => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       capture: async () => [],
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         throw new TmuxTransportError("dispatch failed", { delivery, kind: "pipe" });
       },
       format: { session_id: "$1" },
@@ -772,6 +868,7 @@ describe("command framing", () => {
       },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
     const running = runFramedCommand(
       context,
@@ -786,6 +883,10 @@ describe("command framing", () => {
 
     if (!started) {
       await expect(running).rejects.toMatchObject({ delivery });
+      // The dispatch line never reached the pane, so the sourced script's
+      // own trailing cleanup will never run either — this is the one path
+      // where something else has to remove the file it was written to.
+      expect(buffers.ranShell).toEqual([`rm -f -- '${framedScriptPath(id)}'`]);
       return;
     }
     const result = await running;
@@ -805,10 +906,11 @@ describe("command framing", () => {
 
   test("does not release a timed-out command from an unauthenticated missing-pane snapshot", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
       },
       format: { session_id: "$1" },
       id: "%1",
@@ -820,6 +922,7 @@ describe("command framing", () => {
       },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => undefined } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(
@@ -920,9 +1023,10 @@ describe("command framing", () => {
   test("settles only when the captured daemon generation disappears", async () => {
     const controller = new AbortController();
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     const pane = {
-      cmd: async (_command: string, args: readonly string[]) => {
-        const { id } = dispatchedFrame(args);
+      cmd: async () => {
+        const { id } = dispatchedFrame(buffers.source());
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -939,6 +1043,7 @@ describe("command framing", () => {
       }),
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(
@@ -962,7 +1067,7 @@ describe("concurrent framing", () => {
   // partway through: the second command's echo, its markers, and its output.
   const contaminated = [
     "AAA-start",
-    ` __ltx_abc123() { printf '%s\\n' "\${1}_S"; ( set --; echo BBB-secret )`,
+    ` . '${framedScriptPath("ltxbbb222")}'`,
     "ltxbbb222_S",
     "BBB-secret",
     "ltxbbb222_E 0",
