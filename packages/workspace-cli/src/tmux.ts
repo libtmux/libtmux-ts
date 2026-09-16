@@ -452,7 +452,9 @@ async function create(
       window_id: window.id,
       window_index: windowIndex + 1,
     });
-    if (desired.data.focus || !focusWindow) focusWindow = window;
+    // Appending must not reach into a session the user already owns unless a
+    // window explicitly asks for focus; a fresh session still needs a default.
+    if (desired.data.focus || (!existing && !focusWindow)) focusWindow = window;
   }
   if (focusWindow) await focusWindow.select();
   result.completed_stages.push("windows-created");

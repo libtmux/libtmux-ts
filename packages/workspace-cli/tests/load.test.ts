@@ -1643,6 +1643,39 @@ test("append resolves the explicit current pane and preserves existing windows",
   });
 });
 
+test("append leaves the session's active window alone unless a window asks for focus", async () => {
+  await fixture(async (server, root, run) => {
+    const before = (await server.snapshot()).sessions.one({ name: "fixture" });
+    const original = before.windows.at(0)!;
+    const env = {
+      TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
+      TMUX_PANE: original.panes.at(0)!.id,
+    };
+    const plain = join(root, "plain.json");
+    await writeFile(
+      plain,
+      JSON.stringify({ session_name: "ignored-plain", windows: [{ window_name: "no-focus" }] }),
+    );
+    expect((await run(["load", plain, "--append", "--json"], env)).code).toBe(0);
+    expect((await server.snapshot()).sessions.one({ id: before.id }).activeWindow?.id).toBe(
+      original.id,
+    );
+
+    const focused = join(root, "focused.json");
+    await writeFile(
+      focused,
+      JSON.stringify({
+        session_name: "ignored-focused",
+        windows: [{ window_name: "wants-focus", focus: true }],
+      }),
+    );
+    expect((await run(["load", focused, "--append", "--json"], env)).code).toBe(0);
+    expect((await server.snapshot()).sessions.one({ id: before.id }).activeWindow?.name).toBe(
+      "wants-focus",
+    );
+  });
+});
+
 test.each(["json", "ndjson"])("bootstrap cancellation retains a final %s result", async (mode) => {
   await fixture(async (server, root) => {
     const config = join(root, "input.json");
