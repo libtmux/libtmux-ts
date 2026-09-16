@@ -313,7 +313,7 @@ test("attached load sizes the session, and every window in it, to the real termi
         await until(async () => (await server.snapshot()).clients.length === 1);
         const session = (await server.snapshot()).sessions.one({ name: "sized-terminal" });
         // Both windows, focused or not, must match the real terminal's
-        // columns rather than tmux's 80-wide default-size (A1, A2).
+        // columns rather than tmux's 80-wide default-size.
         expect(session.windows.toArray().map((window) => Number(window.width))).toEqual([137, 137]);
         await (await server.snapshot()).clients.at(0)!.detach();
         expect((await result).code).toBe(0);
