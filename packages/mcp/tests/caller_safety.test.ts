@@ -164,9 +164,12 @@ test("caller selection authenticates its socket, pid, pane, and session", async 
       // This process's own frozen context is what is wrong, not a client's:
       // no later snapshot changes it, so a retry is not the advice.
       expect(invalid.inputProblem?.retryable).toBe(false);
-      expect(isFailure(requirePaneInputTarget(observed, invalid, "%7", true, "type into"))).toBe(
-        true,
-      );
+      const refused = requirePaneInputTarget(observed, invalid, "%7", true, "type into");
+      expect(isFailure(refused)).toBe(true);
+      if (isFailure(refused)) {
+        const [content] = refused.content;
+        expect(content?.type === "text" ? content.text : undefined).toContain("Restart it");
+      }
     }),
   );
 });
@@ -225,9 +228,14 @@ test("non-control client pane and zoom state fail closed", async () => {
       // A live client's own reported state could still catch up on a later
       // snapshot, so a retry is honest advice here.
       expect(identity.inputProblem?.retryable).toBe(true);
-      expect(isFailure(requirePaneInputTarget(observed, identity, "%7", true, "type into"))).toBe(
-        true,
-      );
+      const refused = requirePaneInputTarget(observed, identity, "%7", true, "type into");
+      expect(isFailure(refused)).toBe(true);
+      if (isFailure(refused)) {
+        const [content] = refused.content;
+        expect(content?.type === "text" ? content.text : undefined).toContain(
+          "Take a fresh snapshot",
+        );
+      }
     }),
   );
 });
