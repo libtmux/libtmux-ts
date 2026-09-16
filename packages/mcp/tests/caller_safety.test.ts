@@ -160,7 +160,10 @@ test("caller selection authenticates its socket, pid, pane, and session", async 
       ] as const
     ).map(async ([caller, observed]) => {
       const invalid = await resolveCallerIdentity(server(), observed, caller, authority());
-      expect(invalid.inputProblem).toContain("caller");
+      expect(invalid.inputProblem?.message).toContain("caller");
+      // This process's own frozen context is what is wrong, not a client's:
+      // no later snapshot changes it, so a retry is not the advice.
+      expect(invalid.inputProblem?.retryable).toBe(false);
       expect(isFailure(requirePaneInputTarget(observed, invalid, "%7", true, "type into"))).toBe(
         true,
       );
@@ -218,7 +221,10 @@ test("non-control client pane and zoom state fail closed", async () => {
         readCallerEnvironment({}),
         authority(),
       );
-      expect(identity.inputProblem).toContain("client");
+      expect(identity.inputProblem?.message).toContain("client");
+      // A live client's own reported state could still catch up on a later
+      // snapshot, so a retry is honest advice here.
+      expect(identity.inputProblem?.retryable).toBe(true);
       expect(isFailure(requirePaneInputTarget(observed, identity, "%7", true, "type into"))).toBe(
         true,
       );
@@ -257,7 +263,8 @@ test("zoomed clients must name a pane placement in their claimed session and win
         readCallerEnvironment({}),
         authority(),
       );
-      expect(identity.inputProblem).toContain("client");
+      expect(identity.inputProblem?.message).toContain("client");
+      expect(identity.inputProblem?.retryable).toBe(true);
       expect(identity.attendedPaneIds).toEqual([]);
     }),
   );

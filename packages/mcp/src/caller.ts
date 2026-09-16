@@ -22,8 +22,21 @@ import { assertSafeRouteValue } from "./route.js";
  * `TMUX_PANE` rather than from that session index. Input authorization checks
  * both against a fresh topology; a moved pane makes the inherited context stale.
  */
+/**
+ * Why a pane input route was refused, and whether trying again could help.
+ *
+ * `retryable` is `false` exactly when the cause is this MCP server's own
+ * frozen caller context (its environment, or its recorded socket, pid, pane,
+ * or session) rather than another client's state: nothing read fresh on a
+ * later call changes what this process was told about itself at startup.
+ */
+export interface InputProblem {
+  readonly message: string;
+  readonly retryable: boolean;
+}
+
 export interface CallerEnvironment {
-  readonly problem: string | undefined;
+  readonly problem: InputProblem | undefined;
   readonly paneId: string | undefined;
   readonly serverPid: string | undefined;
   readonly sessionId: string | undefined;
@@ -78,7 +91,10 @@ export function readCallerEnvironment(
   ) {
     return {
       paneId: undefined,
-      problem: "The caller's TMUX and TMUX_PANE environment is incomplete or malformed.",
+      problem: {
+        message: "The caller's TMUX and TMUX_PANE environment is incomplete or malformed.",
+        retryable: false,
+      },
       serverPid: undefined,
       sessionId: undefined,
       socketPath: undefined,
@@ -191,7 +207,7 @@ export interface CallerIdentity {
    */
   readonly callerPaneIsOnThisServer: boolean;
   /** A malformed or incoherent caller/client context blocks every pane input route. */
-  readonly inputProblem?: string;
+  readonly inputProblem?: InputProblem;
   readonly serverPid: string | undefined;
   readonly serverSocketPath?: string;
   readonly serverStartTime?: string;
@@ -212,6 +228,10 @@ export async function resolveCallerIdentity(
   const observed = authority ?? (await readServerAuthority(tmux));
   const attachedClients = snapshot.clients.toArray();
   const panePlacements = snapshot.panes.toArray();
+  // A client's own reported state can catch up on a later snapshot; this
+  // process's frozen view of itself cannot, so the two get different advice.
+  const clientProblem = (message: string): InputProblem => ({ message, retryable: true });
+  const callerProblem = (message: string): InputProblem => ({ message, retryable: false });
   let inputProblem = caller.problem;
   const clients = attachedClients.map((client): AttachedClient => ({
     activePaneId: client.pane?.id,
@@ -225,18 +245,18 @@ export async function resolveCallerIdentity(
   // narrows that to its active pane; an absent flag keeps the conservative set.
   const attended = attachedClients.flatMap((client) => {
     if (typeof client.controlMode !== "boolean") {
-      inputProblem ??= "A tmux client has no usable control-mode state.";
+      inputProblem ??= clientProblem("A tmux client has no usable control-mode state.");
       return [];
     }
     if (client.controlMode) return [];
     const pane = client.pane;
     if (pane === undefined || !/^%(?:0|[1-9][0-9]*)$/u.test(pane.id)) {
-      inputProblem ??= "A terminal tmux client has no usable active-pane state.";
+      inputProblem ??= clientProblem("A terminal tmux client has no usable active-pane state.");
       return [];
     }
     const window = client.window;
     if (window === undefined || typeof window.zoomedFlag !== "boolean") {
-      inputProblem ??= "A terminal tmux client has no usable zoom state.";
+      inputProblem ??= clientProblem("A terminal tmux client has no usable zoom state.");
       return [];
     }
     const sessionId = client.session?.id;
@@ -244,7 +264,9 @@ export async function resolveCallerIdentity(
       !/^\$(?:0|[1-9][0-9]*)$/u.test(sessionId ?? "") ||
       !/^@(?:0|[1-9][0-9]*)$/u.test(window.id)
     ) {
-      inputProblem ??= "A terminal tmux client has no usable session or window state.";
+      inputProblem ??= clientProblem(
+        "A terminal tmux client has no usable session or window state.",
+      );
       return [];
     }
     const matchesPlacement = (candidate: (typeof panePlacements)[number]): boolean =>
@@ -253,14 +275,15 @@ export async function resolveCallerIdentity(
     if (
       !panePlacements.some((candidate) => candidate.id === pane.id && matchesPlacement(candidate))
     ) {
-      inputProblem ??=
-        "A terminal tmux client's active pane disagrees with its session or window placement.";
+      inputProblem ??= clientProblem(
+        "A terminal tmux client's active pane disagrees with its session or window placement.",
+      );
       return [];
     }
     if (window.zoomedFlag) return [pane.id];
     const visible = window.panes.toArray();
     if (visible.some((candidate) => !/^%(?:0|[1-9][0-9]*)$/u.test(candidate.id))) {
-      inputProblem ??= "A terminal tmux client has malformed visible-pane state.";
+      inputProblem ??= clientProblem("A terminal tmux client has malformed visible-pane state.");
       return [];
     }
     if (
@@ -271,12 +294,15 @@ export async function resolveCallerIdentity(
           ),
       )
     ) {
-      inputProblem ??=
-        "A terminal tmux client's visible panes disagree with its session or window placement.";
+      inputProblem ??= clientProblem(
+        "A terminal tmux client's visible panes disagree with its session or window placement.",
+      );
       return [];
     }
     if (!visible.some((candidate) => candidate.id === pane.id)) {
-      inputProblem ??= "A terminal tmux client's active pane is absent from its visible window.";
+      inputProblem ??= clientProblem(
+        "A terminal tmux client's active pane is absent from its visible window.",
+      );
       return [];
     }
     return visible.map((candidate) => candidate.id);
@@ -293,14 +319,17 @@ export async function resolveCallerIdentity(
       try {
         selectsServer = sameSocketIdentity(await socketIdentity(callerPath), observed);
         if (!selectsServer) {
-          inputProblem ??= "The caller's tmux socket alias does not select the observed daemon.";
+          inputProblem ??= callerProblem(
+            "The caller's tmux socket alias does not select the observed daemon.",
+          );
         }
       } catch {
-        inputProblem ??= "The caller's tmux socket alias is no longer usable.";
+        inputProblem ??= callerProblem("The caller's tmux socket alias is no longer usable.");
       }
     } else if (sameNamedEndpoint) {
-      inputProblem ??=
-        "The caller's tmux pane, session, or daemon generation is no longer current.";
+      inputProblem ??= callerProblem(
+        "The caller's tmux pane, session, or daemon generation is no longer current.",
+      );
     }
   }
   if (caller.status === "attached" && selectsServer) {
@@ -312,8 +341,9 @@ export async function resolveCallerIdentity(
       .toArray()
       .some((session) => session.id === caller.sessionId);
     if (caller.serverPid !== observed.pid || !paneMatchesSession || !sessionExists) {
-      inputProblem ??=
-        "The caller's tmux pane, session, or daemon generation is no longer current.";
+      inputProblem ??= callerProblem(
+        "The caller's tmux pane, session, or daemon generation is no longer current.",
+      );
     } else {
       sameServer = true;
     }

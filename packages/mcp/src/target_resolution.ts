@@ -214,9 +214,13 @@ export function requireWritablePane(
   const pane = panePlacements(snapshot, paneId)[0] as Pane | undefined;
   if (pane === undefined) return paneNotFound(snapshot, paneId);
   if (identity.inputProblem !== undefined) {
+    const { message, retryable } = identity.inputProblem;
     return fail({
-      hint: "Refresh the caller and client topology before writing to the pane.",
-      reason: `Refusing to ${verb} ${paneId}: ${identity.inputProblem}`,
+      hint: retryable
+        ? "Take a fresh snapshot and retry once the attached client's tmux state settles."
+        : "A fresh snapshot will not change this: it is this MCP server's own tmux context, " +
+          "not another client's state. Restart it pointed at the right daemon, pane, and session.",
+      reason: `Refusing to ${verb} ${paneId}: ${message}`,
     });
   }
   if (force !== true && isCallerPane(identity, paneId)) {
