@@ -16,13 +16,6 @@ import type { Server } from "libtmux/server";
 import { assertSafeRouteValue } from "./route.js";
 
 /**
- * What tmux exported into the process it started.
- *
- * `TMUX` is `socketPath,serverPid,sessionIndex`. The pane comes from
- * `TMUX_PANE` rather than from that session index. Input authorization checks
- * both against a fresh topology; a moved pane makes the inherited context stale.
- */
-/**
  * Why a pane input route was refused, and whether trying again could help.
  *
  * `retryable` is `false` exactly when the cause is this MCP server's own
@@ -35,6 +28,13 @@ export interface InputProblem {
   readonly retryable: boolean;
 }
 
+/**
+ * What tmux exported into the process it started.
+ *
+ * `TMUX` is `socketPath,serverPid,sessionIndex`. The pane comes from
+ * `TMUX_PANE` rather than from that session index. Input authorization checks
+ * both against a fresh topology; a moved pane makes the inherited context stale.
+ */
 export interface CallerEnvironment {
   readonly problem: InputProblem | undefined;
   readonly paneId: string | undefined;
