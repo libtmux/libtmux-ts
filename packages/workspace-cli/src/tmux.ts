@@ -391,9 +391,10 @@ async function create(
     await options(window, desired.data.options, context.signal);
     await output.event("window-created", {
       input_index: inputIndex,
+      session_id: session.id,
       window_id: window.id,
       window_name: window.name,
-      window_ordinal: windowIndex + 1,
+      window_index: windowIndex + 1,
       pane_total: desired.panes.length,
     });
     let previous = window.panes.at(0)!;
@@ -414,9 +415,10 @@ async function create(
       previous = pane;
       await output.event("pane-created", {
         input_index: inputIndex,
+        session_id: session.id,
         pane_id: pane.id,
         window_id: window.id,
-        pane_ordinal: paneIndex + 1,
+        pane_index: paneIndex + 1,
       });
       if (paneSpec.commands.length > 0 && !paneSpec.shell && wait && !(await ready(pane, context)))
         await output.event("warning", {
@@ -433,8 +435,10 @@ async function create(
       await send(pane, paneSpec, context);
       await output.event("pane-completed", {
         input_index: inputIndex,
+        session_id: session.id,
         pane_id: pane.id,
         window_id: window.id,
+        pane_index: paneIndex + 1,
       });
       if (paneSpec.data.focus) focusPane = pane;
     }
@@ -442,7 +446,12 @@ async function create(
     if (focusPane) await focusPane.select();
     result.stage = "window-options-after";
     await options(window, desired.data.options_after, context.signal);
-    await output.event("window-completed", { input_index: inputIndex, window_id: window.id });
+    await output.event("window-completed", {
+      input_index: inputIndex,
+      session_id: session.id,
+      window_id: window.id,
+      window_index: windowIndex + 1,
+    });
     if (desired.data.focus || !focusWindow) focusWindow = window;
   }
   if (focusWindow) await focusWindow.select();
@@ -556,7 +565,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     },
   );
   const results: LoadResult[] = [];
-  await output.event("started", { input_count: inputs.length });
+  await output.event("started", { inputs: inputs.length });
   try {
     for (const [index, input] of inputs.entries()) {
       await output.event("workspace-started", {
