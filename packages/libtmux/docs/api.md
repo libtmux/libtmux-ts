@@ -672,8 +672,11 @@ async versionAtLeast(minimum: string): Promise<boolean>
 Whether this server is at least `minimum`, written the way tmux writes it.
 
 This is how a caller gates on a feature that arrived in a known release
-without parsing `#{version}` themselves. Development builds such as
-`next-3.8` compare above every tagged release.
+without parsing `#{version}` themselves. A named development build such
+as `next-3.9` has not shipped the release it names: it is at least
+`3.8`, but not at least `3.9`. An untargeted development build (bare
+`master`, or `<tag>-master`) names no release it is heading toward, so
+nothing bounds it — it is at least anything.
 
 ```ts
 if (await server.versionAtLeast("3.3")) {

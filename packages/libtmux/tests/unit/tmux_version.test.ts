@@ -24,14 +24,43 @@ describe("tmux versions", () => {
     expect(Object.isFrozen(version)).toBe(true);
   });
 
-  test("orders development builds above every tagged release", () => {
+  test("lets an untargeted development build outrank every tagged release", () => {
     const latestTagged = parseTmuxVersion("99.9z");
 
+    // Bare "master", or "<tag>-master", names no release it is heading
+    // toward, so nothing bounds it.
     expect(compareTmuxVersions(parseTmuxVersion("master"), latestTagged)).toBeGreaterThan(0);
     expect(compareTmuxVersions(parseTmuxVersion("3.6a-master"), latestTagged)).toBeGreaterThan(0);
-    expect(compareTmuxVersions(parseTmuxVersion("next-3.8"), latestTagged)).toBeGreaterThan(0);
     expect(parseTmuxVersion("3.6a-master").raw).toBe("3.6a-master");
+  });
+
+  test("bounds a named-next build to the release it names", () => {
+    // `next-X.Y` is a real tmux version string: a build heading toward
+    // release X.Y, which it has not shipped. It ranks above the release
+    // before it and below the one it names — not above every tagged
+    // release, which is what unconditionally ranking every development
+    // build above every tagged release would give it. A fix that only
+    // special-cases "next-X.Y equals tagged X.Y" still gets this wrong: it
+    // would leave next-3.9 outranking a later, unrelated release like 4.0.
     expect(parseTmuxVersion("next-3.8")).toMatchObject({ major: 3, minor: 8, suffix: "" });
+
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.8"))).toBe(true);
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.9"))).toBe(false);
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("4.0"))).toBe(false);
+    expect(
+      compareTmuxVersions(parseTmuxVersion("next-3.8"), parseTmuxVersion("99.9z")),
+    ).toBeLessThan(0);
+
+    // The parser also admits a lettered target, such as "next-3.7a": it
+    // still precedes the exact release it names but follows the plain
+    // release before it. Comparing development-ness before the suffix
+    // (rather than after) would rank this below "3.7" too.
+    expect(
+      compareTmuxVersions(parseTmuxVersion("next-3.7a"), parseTmuxVersion("3.7")),
+    ).toBeGreaterThan(0);
+    expect(
+      compareTmuxVersions(parseTmuxVersion("next-3.7a"), parseTmuxVersion("3.7a")),
+    ).toBeLessThan(0);
   });
 
   test("carries ordinary version floors into later patch releases", () => {
