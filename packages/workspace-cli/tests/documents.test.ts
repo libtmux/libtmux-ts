@@ -75,6 +75,34 @@ test("conversion preserves unknown fields and prevents accidental replacement", 
   expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ session_name: "changed" });
 });
 
+test("YAML conversion quotes scalars a 1.1 or 1.2 resolver would misread", async () => {
+  const document = {
+    session_name: "dev",
+    windows: [
+      {
+        window_name: "yes",
+        options: { "automatic-rename": "off", "synchronize-panes": "on" },
+        panes: ["echo hi"],
+      },
+    ],
+    tricky: {
+      bool_words: ["yes", "YES", "no", "on", "Off", "y", "N", "true", "False"],
+      null_words: ["null", "~", ""],
+      numbers: ["1.0", "08", "0x1F", "0o7", "1e3", ".inf", ".nan", "1_000", "1:30"],
+      ordinary: "plain-string",
+    },
+  };
+  const target = join(root, "tricky.yaml");
+  await saveDocument(document, target, "yaml", false);
+  // The native reader parses YAML 1.2 core, so must recover this document too.
+  expect(await readDocument(target)).toEqual(document);
+  // tmuxp reads YAML 1.1 (PyYAML); simulate its resolver against the same file.
+  const legacy = (await import("yaml")).parse(await readFile(target, "utf8"), {
+    version: "1.1",
+  });
+  expect(legacy).toEqual(document);
+});
+
 test("conversion rejects multi-document YAML and non-JSON values", async () => {
   for (const body of ["session_name: a\n---\nsession_name: b", "value: .nan", "a: &a [*a]"]) {
     const path = join(root, "bad.yaml");
