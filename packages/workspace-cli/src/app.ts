@@ -69,6 +69,25 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
         await write(context.stdout, help, context.signal);
         return 0;
       }
+      // A root-level "too many arguments" only happens when the first word
+      // matched no subcommand: say so, rather than commander's literal count.
+      const first = parser.command.args[0];
+      const topLevel = new Set(
+        [...parser.commands.keys()].filter((name) => name && !name.includes(" ")),
+      );
+      if (
+        error instanceof CommanderError &&
+        error.code === "commander.excessArguments" &&
+        first !== undefined &&
+        !topLevel.has(first)
+      ) {
+        parserError = "";
+        throw new CommanderError(
+          2,
+          "commander.unknownCommand",
+          `error: unknown command '${first}'`,
+        );
+      }
       throw error;
     }
     const request = parser.request();
