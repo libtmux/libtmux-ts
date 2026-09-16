@@ -740,16 +740,9 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
   const server = connection(request.values, context);
   const session = await freezeSession(server, request, context);
   const acquisition = context.signal ? { signal: context.signal } : {};
-  // A pane running the session's own default shell round-trips faithfully
-  // with no shell_command at all; naming it explicitly reloads a shell inside
-  // a shell. Anything else is worth capturing, as the one command tmux can
-  // still report for it.
-  //
-  // macOS ships /bin/sh as bash: default-shell resolves to "sh" while a plain
-  // pane's current command reports "bash", so a literal basename comparison
-  // alone misreads every ordinary pane there as running something else.
-  // Ordinary interactive shell names count as the default shell too; anything
-  // outside that list still falls back to the basename comparison.
+  // A pane at its default shell needs no shell_command; naming it reloads a
+  // shell inside a shell. Match by name as well as basename(default-shell),
+  // because macOS runs bash for /bin/sh and the pane reports "bash".
   const ordinaryShells = new Set([
     "sh",
     "bash",

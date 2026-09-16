@@ -1233,7 +1233,7 @@ test("freeze puts window options under options_after and omits the default pane 
     const busyPaneId = session.windows.at(0)!.panes.at(1)!.id;
     const deadline = performance.now() + 2000;
     let command: string | null = null;
-    /* eslint-disable no-await-in-loop -- bounded readiness poll for a real subprocess. */
+    /* eslint-disable no-await-in-loop -- Watch the pane until it reports the command, within the deadline. */
     while (performance.now() < deadline) {
       command = (await server.snapshot()).panes.one({ id: busyPaneId }).currentCommand;
       if (command === "sleep") break;
@@ -1252,11 +1252,8 @@ test("freeze puts window options under options_after and omits the default pane 
 });
 
 test("freeze does not name an ordinary shell that is not the literal default-shell", async () => {
-  // macOS ships /bin/sh as bash; tmux's resolved default-shell then reads "sh"
-  // while pane_current_command reports "bash". Reproduce the same mismatch on
-  // Linux by pointing default-shell at /bin/sh and default-command at an
-  // interactive bash, so a plain pane's current command is "bash" while
-  // basename(default-shell) is "sh".
+  // Reproduces macOS on Linux, where /bin/sh is bash: default-shell reads
+  // "sh" and the pane reports "bash".
   await fixture(async (server, root, run) => {
     await server.setGlobalOption("session", "default-shell", "/bin/sh");
     await server.setGlobalOption("session", "default-command", "/bin/bash -i");
@@ -1267,7 +1264,7 @@ test("freeze does not name an ordinary shell that is not the literal default-she
     const paneId = session.windows.at(0)!.panes.at(0)!.id;
     const deadline = performance.now() + 2000;
     let command: string | null = null;
-    /* eslint-disable no-await-in-loop -- bounded readiness poll for a real subprocess. */
+    /* eslint-disable no-await-in-loop -- Watch the pane until it reports the command, within the deadline. */
     while (performance.now() < deadline) {
       command = (await server.snapshot()).panes.one({ id: paneId }).currentCommand;
       if (command === "bash") break;
