@@ -35,6 +35,17 @@ command subshell. fish, csh, and PowerShell do not share that grammar, so the
 tool refuses them even with `force`. The marker is framing, not confinement:
 code with the tmux socket's authority can inspect the pane.
 
+The framed script's _content_ is unchanged by delivery: `deliverFramedScript`
+(`command.ts`) writes it to a tmux buffer, `save-buffer`s it to `/tmp/<id>.sh`
+on the tmux server's own host — the pane's host, by construction — and types
+only a short `. '/tmp/<id>.sh'` line. Typing the whole ~1KB script, one shell
+input line, made an interactive shell's line editor (zsh with
+syntax-highlighting/autosuggestion plugins) redraw on every byte of it: the
+trap/octal/nonce machinery flashed across the pane and a trivial command could
+take seconds. A trailing `command rm -f` appended outside the sourced group
+(never inside `frame()`) removes the file once the run genuinely ends, even
+one that outlives the caller's deadline.
+
 ## Cancellation
 
 Every wait takes the request's `AbortSignal` and stops on it. Without that a
