@@ -14,7 +14,7 @@ import {
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
-import { MultipleMatchesError, TmuxCommandError } from "../../src/errors.js";
+import { MultipleMatchesError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -369,32 +369,43 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
-  // TS-3: tmux reads a bare `-o` as its own undo flag rather than as a layout
-  // value, so `selectLayout("-o")` silently reverted to whatever layout was
-  // active before the last `selectLayout` call instead of failing. The fix
-  // is a `--` guard. Asserting the tmux message text is version-specific
-  // (3.2a says "can't set layout", 3.7c+ says "invalid layout"), so this
-  // checks the property that matters: the call rejects, and the layout that
-  // was active a moment ago is still active — not undone.
-  test("refuses a layout value that looks like tmux's own undo flag", async () => {
+  // TS-3 and the 3.3a crash: `-o` is tmux's own undo flag, and forcing it
+  // through with `--` makes it an unparseable layout string - which tmux 3.3
+  // and 3.3a answer by exiting the whole server. So is `garbage`, an unknown
+  // preset name, or a JSON layout before 3.8. Each must be refused before tmux
+  // sees it: the call rejects, the layout is untouched, and the server that
+  // served the call is still there to answer the next one.
+  test("refuses layout values tmux would misread or crash on, before dispatch", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const window = (await server.snapshot()).windows.one();
       await window.split();
-
       await window.selectLayout("even-horizontal");
       await window.selectLayout("main-vertical");
       const beforeAttempt = (await server.snapshot()).windows.one({ id: window.id }).format
         .window_layout;
+      const jsonSupported = await server.versionAtLeast("3.8");
 
-      const failure = await window
-        .selectLayout("-o")
-        .then(() => undefined)
-        .catch((thrown: unknown) => thrown);
+      const refusals: [string, abstract new (...args: never[]) => Error][] = [
+        ["-o", TypeError],
+        ["garbage", TypeError],
+        ["no-such-preset", TypeError],
+        ["", TypeError],
+      ];
+      if (!jsonSupported) refusals.push(['{"V":2,"L":{"t":"p"}}', VersionTooLowError]);
 
-      expect(failure).toBeInstanceOf(TmuxCommandError);
-      const after = (await server.snapshot()).windows.one({ id: window.id }).format.window_layout;
-      expect(after).toBe(beforeAttempt);
+      for (const [value, expected] of refusals) {
+        // eslint-disable-next-line no-await-in-loop -- each refusal is checked against the layout the previous one left.
+        const failure = await window
+          .selectLayout(value)
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(failure, `selectLayout(${JSON.stringify(value)})`).toBeInstanceOf(expected);
+        // eslint-disable-next-line no-await-in-loop -- the snapshot must follow the attempt it checks.
+        const after = (await server.snapshot()).windows.one({ id: window.id }).format.window_layout;
+        expect(after, `layout after ${JSON.stringify(value)}`).toBe(beforeAttempt);
+      }
+      expect(await server.isAlive()).toBe(true);
     });
   }, 40_000);
 

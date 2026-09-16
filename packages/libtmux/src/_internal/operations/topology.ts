@@ -1,7 +1,9 @@
 import type { CommandOptions } from "../../common.js";
 import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
+import { VersionTooLowError } from "../../errors.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { runCommand, runCommands } from "./command.js";
 import { planRemoveWindowPlacement } from "./plans.js";
@@ -89,19 +91,70 @@ export async function swapWindows(
   ]);
 }
 
+const LAYOUT_PRESETS = new Set([
+  "even-horizontal",
+  "even-vertical",
+  "main-horizontal",
+  "main-vertical",
+  "tiled",
+]);
+const MIRRORED_LAYOUT_PRESETS = new Set(["main-horizontal-mirrored", "main-vertical-mirrored"]);
+// tmux CHANGES, 3.4 to 3.5: mirrored main-horizontal and main-vertical.
+const MIRRORED_LAYOUTS_SINCE = parseTmuxVersion("3.5");
+// tmux CHANGES, 3.7c to 3.8: layout strings use a JSON subset format.
+const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8");
+// A layout tmux dumped starts with its four-hex-digit checksum.
+const CLASSIC_LAYOUT = /^[0-9a-f]{4},/u;
+
+/**
+ * Refuse a layout value tmux cannot safely be handed.
+ *
+ * tmux 3.3 and 3.3a exit the whole server on a layout string whose checksum
+ * prefix they cannot read - an unknown preset name, `garbage`, a JSON layout,
+ * or `-o` once `--` forces it to be read as a layout - instead of refusing it.
+ * A preset the running tmux knows, or a string carrying the checksum prefix
+ * (even one tmux then rejects), is safe everywhere, so only those reach tmux
+ * unconditionally; mirrored presets and JSON wait for the release that learned
+ * them. Decided before dispatch, so it holds on every version.
+ */
+async function assertLayoutValue(runtime: RuntimeContext, layout: string): Promise<void> {
+  if (LAYOUT_PRESETS.has(layout) || CLASSIC_LAYOUT.test(layout)) return;
+  const since = MIRRORED_LAYOUT_PRESETS.has(layout)
+    ? MIRRORED_LAYOUTS_SINCE
+    : layout.startsWith("{")
+      ? JSON_LAYOUTS_SINCE
+      : undefined;
+  if (since === undefined) {
+    throw new TypeError(
+      `${JSON.stringify(layout)} is neither a tmux layout preset nor a layout string tmux reported`,
+    );
+  }
+  const { tmuxVersion } = await runtime.capabilities.bind();
+  if (!tmuxVersionAtLeast(tmuxVersion, since)) {
+    throw new VersionTooLowError({
+      criteriaName: MIRRORED_LAYOUT_PRESETS.has(layout)
+        ? `the ${layout} layout`
+        : "a JSON layout string",
+      serverVersion: tmuxVersion.raw,
+      since: since.raw,
+    });
+  }
+}
+
 /**
  * Apply a named or custom layout to a window.
  *
- * `--` guards the layout value: tmux reads a bare `-o` as its own undo flag
- * (restoring whatever layout preceded the last `select-layout`) rather than as
- * a layout string, so any caller-supplied value beginning with `-` needs the
- * separator to be treated as data instead of a flag.
+ * The value is checked before tmux sees it (see `assertLayoutValue`): tmux
+ * 3.3 and 3.3a crash the server on a layout they cannot parse, and a bare `-o`
+ * would otherwise run as tmux's own undo flag. `--` stays as defence in depth
+ * for a value that reaches tmux some other way.
  */
 export async function selectLayout(
   runtime: RuntimeContext,
   windowId: string | null,
   layout: string,
 ): Promise<void> {
+  await assertLayoutValue(runtime, layout);
   await runCommand(runtime, ["select-layout", ...target(windowId), "--", layout]);
 }
 
