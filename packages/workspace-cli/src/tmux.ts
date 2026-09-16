@@ -321,11 +321,13 @@ async function create(
         },
       });
       result.script_output = child;
-      if (child.code !== 0)
+      if (child.code !== 0) {
+        const detail = child.stderr.trim();
         throw new CliError(
           "script_failed",
-          `Bootstrap exited with status ${child.code}: ${child.stderr.trim()}`,
+          `Bootstrap exited with status ${child.code}${detail ? ": " + detail : ""}`,
         );
+      }
       result.completed_stages.push("before-script");
     } catch (error) {
       if (!existing) {
