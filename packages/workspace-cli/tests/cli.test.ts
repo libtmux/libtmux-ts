@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { run as runCli } from "../src/app.ts";
+import manifest from "../package.json" with { type: "json" };
 
 let root: string;
 beforeEach(async () => {
@@ -65,6 +66,13 @@ async function runExecutable(argv: string[], extra: Record<string, string> = {})
   ]);
   return { stdout, stderr, code };
 }
+
+test("--version prints the program name and its own version", async () => {
+  const result = await run(["--version"]);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toBe(`tmux-workspace ${manifest.version}\n`);
+  expect(result.stderr).toBe("");
+});
 
 test("every reference command has executable help", async () => {
   for (const command of [
