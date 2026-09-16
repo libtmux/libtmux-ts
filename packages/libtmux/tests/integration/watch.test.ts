@@ -1157,4 +1157,27 @@ describe("Server.watch", () => {
       await expect(armed).rejects.toThrow(LibTmuxError);
     });
   }, 40_000);
+
+  // On tmux 3.8+, a control client without `-f new-layouts` receives the
+  // classic `window_layout` string in `%layout-change` while a snapshot
+  // already reports JSON, so an event's layout must match a same-instant
+  // snapshot's `window_layout` on every attached tmux version.
+  test("a layout-change event's layout matches a same-instant snapshot's window_layout", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const events = server.watch();
+      const window = (await server.snapshot()).windows.one();
+
+      const arrived = until(events, (event) => event.kind === "layout-change");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await window.split();
+
+      const event = await arrived;
+      if (event.kind !== "layout-change") throw new Error("expected layout-change");
+
+      const snapshot = await server.snapshot();
+      expect(snapshot.windows.where({ layout: { equals: event.layout } }).count()).toBe(1);
+      expect(snapshot.windows.one({ layout: { equals: event.layout } }).id).toBe(window.id);
+    });
+  }, 60_000);
 });
