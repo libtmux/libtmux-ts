@@ -980,10 +980,7 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
       (destination && extname(destination).toLowerCase() === ".json" ? "json" : "yaml"),
   );
   if (!destination && request.mode === "human")
-    throw new CliError(
-      "input_required",
-      "Specify --save-to or choose --json/--ndjson capture output",
-    );
+    throw new CliError("usage", "Specify --save-to or choose --json/--ndjson capture output", 2);
   if (destination)
     await saveDocument(
       document,
