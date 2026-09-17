@@ -399,62 +399,73 @@ test("run_shell_command leaves no framing machinery visible on the pane", async 
 }, 15_000);
 
 /**
- * Security regression: `save-buffer` writes its target however the umask
- * says — world-readable under an ordinary 022 — so the command text a
- * caller runs, secrets included, must never sit somewhere another local
- * user's shell can reach it by name. `/tmp` itself is exactly that: a
- * shared, world-traversable directory, so a fixed `/tmp/<id>.sh` path was
- * reachable regardless of the file's own mode. `deliverFramedScript` now
- * writes the script into a fresh `mkdtemp` directory instead, whose mode is
- * 0700 unconditionally on POSIX — nobody but this user can even traverse
- * into it, which is what actually has to hold, not the file's own mode.
+ * `save-buffer` writes its target however the umask says — world-readable
+ * under an ordinary 022 — so the command text a caller runs, secrets
+ * included, must never sit somewhere another local user's shell can reach
+ * it by name. `deliverFramedScript` writes the script into a fresh
+ * `mkdtemp` directory, whose mode is 0700 unconditionally on POSIX —
+ * nobody but this user can even traverse into it, which is what has to
+ * hold, not the file's own mode.
  */
+// Uses its own TMPDIR, isolated from the real `os.tmpdir()`: another test
+// file's own legitimate `run_shell_command` dispatch, running concurrently
+// against the shared real temp directory, is indistinguishable here from a
+// second directory this call made — a collision no narrower window fixes.
 test("run_shell_command's framed script lives in a directory private to this user", async () => {
   await withServer(async (fixture) => {
-    await withClient(fixture, async (client) => {
-      const created = structured<{ paneId: string }>(
-        await client.callTool({ arguments: { name: "perm-check" }, name: "create_session" }),
+    const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
+    try {
+      await withClient(
+        fixture,
+        async (client) => {
+          const created = structured<{ paneId: string }>(
+            await client.callTool({ arguments: { name: "perm-check" }, name: "create_session" }),
+          );
+
+          // Every user's shared temp directory is reachable by construction —
+          // this is the property that makes a fixed /tmp/<id>.sh path unsafe
+          // regardless of that file's own mode.
+          expect((await stat(tmpdir())).mode & 0o077).not.toBe(0);
+
+          // A command that outlives the tool's own timeout, so the script and
+          // its directory are still on disk when this reads them back.
+          const run = client.callTool({
+            arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
+            name: "run_shell_command",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 400));
+
+          const scriptDirs = (await readdir(scratchTmp)).filter((name) => name.startsWith("ltx-"));
+          expect(scriptDirs).toHaveLength(1);
+          const directory = join(scratchTmp, scriptDirs[0] as string);
+
+          const directoryMode = (await stat(directory)).mode;
+          // The directory is what actually has to be private: nobody outside
+          // this user can even resolve a path through it, whatever mode the
+          // file inside carries.
+          expect(directoryMode & 0o077).toBe(0);
+
+          const files = await readdir(directory);
+          expect(files).toHaveLength(1);
+          const scriptPath = join(directory, files[0] as string);
+          expect(await stat(scriptPath)).toBeDefined();
+
+          await run;
+          await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+        },
+        { TMPDIR: scratchTmp },
       );
-
-      // Every user's shared temp directory is reachable by construction —
-      // this is the property that made a fixed /tmp/<id>.sh path unsafe
-      // regardless of that file's own mode, and it does not depend on
-      // anything this round changed.
-      expect((await stat(tmpdir())).mode & 0o077).not.toBe(0);
-
-      const before = new Set(await readdir(tmpdir()));
-      // A command that outlives the tool's own timeout, so the script and
-      // its directory are still on disk when this reads them back.
-      const run = client.callTool({
-        arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
-        name: "run_shell_command",
-      });
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
-      const created_ = (await readdir(tmpdir())).filter((name) => !before.has(name));
-      const scriptDirs = created_.filter((name) => name.startsWith("ltx-"));
-      expect(scriptDirs).toHaveLength(1);
-      const directory = join(tmpdir(), scriptDirs[0] as string);
-
-      const directoryMode = (await stat(directory)).mode;
-      // The directory is what actually has to be private: nobody outside
-      // this user can even resolve a path through it, whatever mode the
-      // file inside carries.
-      expect(directoryMode & 0o077).toBe(0);
-
-      const files = await readdir(directory);
-      expect(files).toHaveLength(1);
-      const scriptPath = join(directory, files[0] as string);
-      expect(await stat(scriptPath)).toBeDefined();
-
-      await run;
-      await rm(directory, { force: true, recursive: true }).catch(() => undefined);
-    });
+    } finally {
+      await rm(scratchTmp, { force: true, recursive: true }).catch(() => undefined);
+    }
   });
 }, 15_000);
 
 test("run_shell_command's framed script honours a non-default TMPDIR", async () => {
-  const customTmpDir = await mkdtemp(join(tmpdir(), "ltx-tmpdir-override-"));
+  // Not "ltx-" (no dash after "ltx"): a concurrent test elsewhere greps the
+  // real, shared `os.tmpdir()` for a fresh "ltx-" prefixed top-level entry,
+  // and this one must not be mistaken for it.
+  const customTmpDir = await mkdtemp(join(tmpdir(), "ltxscratch-"));
   try {
     await withServer(async (fixture) => {
       await withClient(
