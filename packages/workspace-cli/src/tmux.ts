@@ -105,24 +105,52 @@ function terminalArguments(server: Server): string[] {
         : []),
   ];
 }
+function targetMismatch(): CliError {
+  return new CliError("usage", "This operation must target the current pane's tmux server", 2);
+}
+/**
+ * Confirms `server` is the same daemon `$TMUX` names, before anything is
+ * built or a client is touched. Neither side reachable, or reachable but a
+ * different daemon, is the same refusal: whichever one is true, this is not
+ * the current pane's tmux server.
+ */
+async function verifyCurrentServer(
+  server: Server,
+  context: CLIContext,
+  endpoint: { socketPath: string; pid: string },
+): Promise<void> {
+  const acquisition = context.signal ? { signal: context.signal } : {};
+  const [currentResult, selectedResult] = await Promise.allSettled([
+    connection({}, context).daemonIdentity(acquisition),
+    server.daemonIdentity(acquisition),
+  ]);
+  if (currentResult.status === "rejected") {
+    if (isTmuxUnavailable(currentResult.reason)) throw targetMismatch();
+    throw currentResult.reason;
+  }
+  if (selectedResult.status === "rejected") {
+    if (isTmuxUnavailable(selectedResult.reason)) throw targetMismatch();
+    throw selectedResult.reason;
+  }
+  const current = currentResult.value;
+  const selected = selectedResult.value;
+  if (
+    current.pid !== endpoint.pid ||
+    current.pid !== selected.pid ||
+    current.startTime !== selected.startTime
+  )
+    throw targetMismatch();
+}
 async function currentSession(server: Server, context: CLIContext): Promise<BorrowedSession> {
   const endpoint = currentEndpoint(context);
   if (!endpoint || !context.env.TMUX_PANE)
     throw new CliError(
-      "input_required",
+      "usage",
       "This operation requires TMUX and TMUX_PANE from a current pane",
+      2,
     );
-  const acquisition = context.signal ? { signal: context.signal } : {};
-  const [current, selected] = await Promise.all([
-    connection({}, context).daemonIdentity(acquisition),
-    server.snapshot(acquisition),
-  ]);
-  if (
-    current.pid !== endpoint.pid ||
-    current.pid !== selected.daemonIdentity.pid ||
-    current.startTime !== selected.daemonIdentity.startTime
-  )
-    throw new CliError("tmux_context", "This operation must target the current pane's tmux server");
+  await verifyCurrentServer(server, context, endpoint);
+  const selected = await server.snapshot(context.signal ? { signal: context.signal } : {});
   const session = selected.panes.one({
     id: context.env.TMUX_PANE,
   }).session;
@@ -130,19 +158,27 @@ async function currentSession(server: Server, context: CLIContext): Promise<Borr
     throw new CliError("session_not_found", "The current pane has no session on this server");
   return { session, daemon: selected.daemonIdentity };
 }
-async function attachmentClient(server: Server, context: CLIContext): Promise<string | undefined> {
-  try {
-    const terminal = await openTerminal(context);
-    await terminal.close();
-  } catch (error) {
-    if (context.signal?.aborted) throw error;
-    throw new CliError(
-      "terminal_required",
-      "Attached load needs a controlling terminal; pass -d",
-      2,
-    );
+export type AttachTarget = { mode: "attach" } | { mode: "switch"; client?: string };
+async function attachmentClient(server: Server, context: CLIContext): Promise<AttachTarget> {
+  const endpoint = currentEndpoint(context);
+  // Inside tmux the load ends in switch-client, which needs no terminal at
+  // all; only an attach-session outside tmux does.
+  if (!endpoint) {
+    try {
+      const terminal = await openTerminal(context);
+      await terminal.close();
+    } catch (error) {
+      if (context.signal?.aborted) throw error;
+      throw new CliError("usage", "Attached load needs a controlling terminal; pass -d", 2);
+    }
+    return { mode: "attach" };
   }
-  if (!currentEndpoint(context)) return undefined;
+  // A run-shell key binding sets TMUX but no TMUX_PANE: switch without -c
+  // and let tmux pick its own most recently active client, as tmuxp does.
+  if (!context.env.TMUX_PANE) {
+    await verifyCurrentServer(server, context, endpoint);
+    return { mode: "switch" };
+  }
   const { session } = await currentSession(server, context);
   const query = await processRun(
     [...terminalArguments(server), "display-message", "-p", "#{client_name}"],
@@ -160,7 +196,7 @@ async function attachmentClient(server: Server, context: CLIContext): Promise<st
     !clients.toArray().some((client) => client.name === name && client.session?.id === session.id)
   )
     throw new CliError("tmux_context", "The current pane has no attached client; pass -d");
-  return name;
+  return { mode: "switch", client: name };
 }
 async function options(
   target: Session | Window,
@@ -511,6 +547,30 @@ async function create(
   result.completed_stages.push("windows-created");
   return (await server.snapshot(acquisition)).sessions.one({ id: session.id });
 }
+/**
+ * Reads one line from a real terminal and matches it against `choices`
+ * (first entry is the default, used for an empty or unrecognized answer).
+ * Only called once stdin is confirmed to be a terminal and `--yes` was not
+ * given.
+ */
+async function promptChoice(
+  context: CLIContext,
+  message: string,
+  choices: readonly string[],
+): Promise<string> {
+  await write(context.stdout, message, context.signal);
+  const { createInterface } = await import("node:readline");
+  const rl = createInterface({ input: context.stdin, terminal: false });
+  try {
+    for await (const line of rl) {
+      const answer = line.trim().toLowerCase().slice(0, 1);
+      return choices.includes(answer) ? answer : choices[0]!;
+    }
+    return choices[0]!;
+  } finally {
+    rl.close();
+  }
+}
 export async function load(request: Request, context: CLIContext): Promise<number> {
   if (request.values.colors === 88)
     throw new CliError(
@@ -520,6 +580,9 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     );
   if (request.mode !== "human" && !request.values.detached && !request.values.append)
     throw new CliError("usage", "Machine load requires -d or an explicit append operation", 2);
+  // -d always builds a new detached session; --append only takes effect
+  // without it, matching tmuxp. The inside-tmux prompt can also turn this on.
+  let appendRequested = Boolean(request.values.append) && !request.values.detached;
   // Validated up front, before anything touches tmux, even though `create`
   // recomputes it per input: a malformed COLUMNS/LINES/TMUXP_DEFAULT_* must
   // fail before any session exists, not partway through a multi-file load.
@@ -549,7 +612,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         document,
         path,
         context,
-        Boolean(request.values.append),
+        appendRequested,
         override,
       );
       inputs.push(
@@ -584,12 +647,46 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     ),
     context.signal ? { signal: context.signal } : {},
   );
-  const attached = request.mode === "human" && !request.values.detached && !request.values.append;
-  const client = attached ? await attachmentClient(server, context) : undefined;
+  let attached = request.mode === "human" && !request.values.detached && !appendRequested;
+  let client = attached ? await attachmentClient(server, context) : undefined;
+  const interactive =
+    attached && !request.values.answer_yes && Boolean((context.stdin as { isTTY?: boolean }).isTTY);
+  if (attached) {
+    const lastName = inputs.at(-1)!.spec.name;
+    const existingLast =
+      (
+        await server.snapshot(context.signal ? { signal: context.signal } : {})
+      ).sessions.oneOrUndefined({ name: lastName }) !== undefined;
+    if (existingLast) {
+      const answer = interactive
+        ? await promptChoice(context, `${lastName} is already running. Attach? [Y/n] `, ["y", "n"])
+        : "y";
+      if (answer === "n") {
+        attached = false;
+        client = undefined;
+      }
+    } else if (client?.mode === "switch") {
+      const answer = interactive
+        ? await promptChoice(
+            context,
+            "Already inside tmux: switch (y), load detached (n), or append (a)? [y/n/a] ",
+            ["y", "n", "a"],
+          )
+        : "y";
+      if (answer === "n") {
+        attached = false;
+        client = undefined;
+      } else if (answer === "a") {
+        attached = false;
+        client = undefined;
+        appendRequested = true;
+      }
+    }
+  }
   let append: Session | undefined;
   let borrowed: BorrowedSession | undefined;
   const futureIndexes = new Set<number>();
-  if (request.values.append) {
+  if (appendRequested) {
     borrowed = await currentSession(server, context);
     append = borrowed.session;
     const reserved = new Set(append.windows.toArray().map((window) => Number(window.index)));
@@ -715,18 +812,22 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     }
     const last = results.at(-1);
     if (attached && last?.session_id) {
-      last.stage = client ? "switching-client" : "attaching";
+      last.stage = client?.mode === "switch" ? "switching-client" : "attaching";
       const args = terminalArguments(server);
       if (request.values.colors === 256) args.push("-2");
       args.push(
-        ...(client ? ["switch-client", "-c", client] : ["attach-session"]),
+        ...(client?.mode === "switch"
+          ? client.client
+            ? ["switch-client", "-c", client.client]
+            : ["switch-client"]
+          : ["attach-session"]),
         "-t",
         last.session_id,
       );
       const child = await processRun(args, {
         cwd: context.cwd,
         env: context.env,
-        terminal: client ? "input" : true,
+        terminal: client?.mode === "switch" ? (client.client ? "input" : false) : true,
         ...(context.signal ? { signal: context.signal } : {}),
       });
       if (child.code !== 0)
