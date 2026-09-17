@@ -100,7 +100,7 @@ const LAYOUT_PRESETS = new Set([
 ]);
 const MIRRORED_LAYOUT_PRESETS = new Set(["main-horizontal-mirrored", "main-vertical-mirrored"]);
 // Every name `layout_set_lookup` (tmux's layout-set.c) matches, exactly and by
-// unambiguous prefix, in the order it tries them.
+// unambiguous prefix.
 const LAYOUT_SET_NAMES: readonly string[] = [...LAYOUT_PRESETS, ...MIRRORED_LAYOUT_PRESETS];
 // tmux CHANGES, 3.4 to 3.5: mirrored main-horizontal and main-vertical.
 const MIRRORED_LAYOUTS_SINCE = parseTmuxVersion("3.5");

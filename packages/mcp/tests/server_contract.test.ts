@@ -253,11 +253,9 @@ test("the stdio server executes the retained capability surface end to end", asy
   });
 }, 60_000);
 
-// TS2-1: `tile`/`even-h` are unique preset prefixes tmux's own `select-layout`
-// applies (`layout_set_lookup`). `select_layout`'s "ignored" heuristic only
-// knew the five full preset names, so a prefix form fell into its
-// round-tripped-layout-string branch and reported a successful apply as
-// ignored, even though `window.layout` changed.
+// `tile`/`even-h` are unique preset prefixes tmux's own `select-layout`
+// applies (`layout_set_lookup`), so `select_layout`'s "ignored" heuristic
+// must recognise a prefix form rather than only the full preset names.
 test("select_layout applies a unique preset prefix without reporting it ignored", async () => {
   await withServer(async (fixture) => {
     await withClient(fixture, async (client) => {
