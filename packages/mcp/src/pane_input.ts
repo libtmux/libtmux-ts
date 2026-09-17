@@ -193,6 +193,38 @@ export function busyPane(conflict: PaneInputConflict): ReturnType<typeof fail> {
   });
 }
 
+/**
+ * What this server has typed into a pane that it has not itself submitted.
+ *
+ * `wait_for_text` reads this to exclude a shell's own re-print of type-ahead
+ * from counting as output the pane produced: the re-print is genuinely
+ * new bytes on the stream, arriving after a wait subscribes, so nothing about
+ * its timing tells it apart from real output — only knowing what was typed
+ * does. Submitting (an `enter: true` write) clears it; further un-submitted
+ * writes append, matching a pane's own input line.
+ *
+ * Keyed by pane id alone, not by the caller authority `activeInputs`
+ * (`command.ts`) also keys on: a pane id tmux hands out again after this
+ * server's server restarts under it could carry a stale entry forward. That
+ * only ever widens what a wait excludes, never narrows it, so the failure
+ * mode is a slower match, not a false one.
+ */
+const pendingEcho = new Map<string, string>();
+
+/** The text this server typed into `paneId` and has not yet submitted, if any. */
+export function pendingUnsubmittedEcho(paneId: string): string | undefined {
+  return pendingEcho.get(paneId);
+}
+
+/** Record what a write put on a pane's input line, for {@link pendingUnsubmittedEcho}. */
+export function notePaneEcho(paneId: string, keys: string, submitted: boolean): void {
+  if (submitted) {
+    pendingEcho.delete(paneId);
+    return;
+  }
+  pendingEcho.set(paneId, (pendingEcho.get(paneId) ?? "") + keys);
+}
+
 /** Dispatch keys and optional Enter as one daemon-guarded tmux command list. */
 export async function dispatchPaneKeys(
   pane: Pane,
@@ -206,4 +238,5 @@ export async function dispatchPaneKeys(
       ? ["-l", enter ? `${keys}\n` : keys]
       : [keys, ...(enter ? ["Enter"] : [])],
   );
+  notePaneEcho(pane.id, keys, enter);
 }

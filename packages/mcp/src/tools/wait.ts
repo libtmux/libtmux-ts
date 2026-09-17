@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
+import { pendingUnsubmittedEcho } from "../pane_input.js";
 import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { READ_ONLY, type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
@@ -55,12 +56,37 @@ function isCancelled(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
 
+/** Remove this server's own still-unsubmitted keystrokes from candidate output. */
+function withoutPendingEcho(text: string, paneId: string): string {
+  const pending = pendingUnsubmittedEcho(paneId);
+  return pending === undefined || pending === "" ? text : text.split(pending).join("");
+}
+
+/** What the pane already showed before this wait subscribed. */
+async function screenAtEntry(context: ToolContext, pane: ReadablePane): Promise<string> {
+  // A wait with no live connection available reports `no_stream` before this
+  // matters, so there is nothing here worth a capture-pane round trip for.
+  if (!context.policy.liveEnabled) return "";
+  const capture = await captureGridBounded(pane, {
+    byteLimit: MAX_RESULT_BYTES,
+    lineLimit: effectiveResultLines(context.policy, undefined),
+  }).catch(() => undefined);
+  return capture === undefined ? "" : capture.lines.join("\n");
+}
+
 /**
  * Wait for a pane to print something matching, and report why the wait ended.
  *
  * Subscribes before it looks. A control client is told nothing that happened
  * before it attached, so reading first and subscribing second waits forever on
  * text that already arrived.
+ *
+ * Two things a fresh stream match is not allowed to be: text already on
+ * the screen when this wait started, and this server's own not-yet-submitted
+ * type-ahead. A pane's line editor re-prints a pending line once it starts
+ * reading, and that re-print is genuinely new bytes arriving after subscribe —
+ * indistinguishable from real output by timing alone, so both are excluded by
+ * what they are rather than when they arrived.
  */
 async function waitForOutput(
   context: ToolContext,
@@ -73,6 +99,7 @@ async function waitForOutput(
   },
 ): Promise<WaitReport> {
   const sessionId = pane.format.session_id;
+  const entryScreen = await screenAtEntry(context, pane);
   const tail = context.policy.liveEnabled
     ? await context.hub.tail(sessionId, pane.id, options.signal)
     : undefined;
@@ -102,10 +129,18 @@ async function waitForOutput(
   const from = options.cursor ?? tail.cursor;
   const deadline = Date.now() + options.timeoutMs;
   let askedAlive = Date.now();
+  // Whether a genuine push notification — not the first read after subscribe,
+  // where a screen-at-entry replay is indistinguishable from fresh bytes by
+  // timing alone — has arrived on this stream yet.
+  let freshOutputSeen = false;
   for (;;) {
     const seen = tail.read(from);
-    const hit = options.matches(seen.text);
-    if (hit !== undefined) {
+    const candidate = withoutPendingEcho(seen.text, pane.id);
+    const hit = options.matches(candidate);
+    // A hit that is only ever a replay of what the entry screen already showed
+    // is not counted until real output has been observed at least once.
+    const echoOnly = hit !== undefined && !freshOutputSeen && entryScreen.includes(hit);
+    if (hit !== undefined && !echoOnly) {
       return {
         cursor: seen.cursor,
         effectiveTimeoutMs: options.timeoutMs,
@@ -171,6 +206,7 @@ async function waitForOutput(
         streamFailure: tail.endReason ?? "connection_lost",
       };
     }
+    if (change === "changed") freshOutputSeen = true;
     if (change === "changed" || change === "cancelled" || Date.now() - askedAlive < LIVENESS_MS) {
       continue;
     }

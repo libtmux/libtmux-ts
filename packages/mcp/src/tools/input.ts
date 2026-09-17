@@ -21,6 +21,7 @@ import type { ToolContext } from "../context.js";
 import {
   busyPane,
   dispatchPaneKeys,
+  notePaneEcho,
   paneInputChanged,
   planPaneInput,
   type PaneInputPlan,
@@ -241,6 +242,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
               refusal = paneInputChanged(paneId, "paste_text");
             } else {
               await final.pane.pasteBuffer(bufferName);
+              notePaneEcho(final.pane.id, text, enter === true);
             }
           } catch (error) {
             operationFailure = { error };

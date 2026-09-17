@@ -280,6 +280,50 @@ test("select_layout applies a unique preset prefix without reporting it ignored"
   });
 }, 40_000);
 
+// `wait_for_text` must never match keys the caller typed but never ran. A
+// pane whose reader has not started yet queues type-ahead with echo off; once
+// the reader starts, it re-prints the queue as genuinely new bytes arriving
+// after a wait subscribes. `stty raw -echo; sleep; cat` reproduces that
+// deterministically instead of depending on the caller's own zsh.
+test("wait_for_text does not match its own unsubmitted type-ahead", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText([
+      "set-option",
+      "-g",
+      "default-command",
+      "stty raw -echo; sleep 0.4; exec cat",
+    ]);
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string }>(
+        await client.callTool({
+          arguments: { height: 24, name: "echo-trap", width: 80 },
+          name: "create_session",
+        }),
+      );
+      const marker = `QAMARK-${String(Date.now())}`;
+
+      const sent = await client.callTool({
+        arguments: { enter: false, keys: marker, literal: true, paneId: created.paneId },
+        name: "send_keys",
+      });
+      expect(sent.isError, JSON.stringify(sent)).not.toBe(true);
+
+      const waited = structured<{ alreadyOnScreen: boolean; outcome: string }>(
+        await client.callTool({
+          arguments: { paneId: created.paneId, patterns: [marker], timeoutMs: 1_200 },
+          name: "wait_for_text",
+        }),
+      );
+
+      // Never a plain match on text this server typed but never submitted —
+      // the pane's own delayed reader re-printing it does not change that.
+      expect(waited.outcome).not.toBe("matched");
+      expect(waited.outcome).toBe("timed_out");
+      expect(waited.alreadyOnScreen).toBe(true);
+    });
+  });
+}, 20_000);
+
 /**
  * Run the server as a program, the way a client launches it, and report what a
  * failed launch wrote. `bun` rather than the emitted build: the failure is in
