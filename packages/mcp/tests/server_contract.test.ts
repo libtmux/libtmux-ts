@@ -324,6 +324,41 @@ test("wait_for_text does not match its own unsubmitted type-ahead", async () => 
   });
 }, 20_000);
 
+// `attachedClients` is an accurate raw tmux count, but it includes this
+// server's own control-mode observers - a `wait_for_text` in flight opens
+// one. `humanAttachedClients` excludes them.
+test("list_sessions separates a raw attached count from a human-only one", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string; session: { id: string } }>(
+        await client.callTool({ arguments: { name: "attach-count" }, name: "create_session" }),
+      );
+
+      const before = structured<{
+        sessions: readonly { attachedClients: number; humanAttachedClients: number; id: string }[];
+      }>(await client.callTool({ arguments: {}, name: "list_sessions" }));
+      const beforeSession = before.sessions.find((session) => session.id === created.session.id);
+      expect(beforeSession).toMatchObject({ attachedClients: 0, humanAttachedClients: 0 });
+
+      const waiting = client.callTool({
+        arguments: { paneId: created.paneId, patterns: ["NEVER-MATCHES-D2"], timeoutMs: 3_000 },
+        name: "wait_for_text",
+      });
+      // Let the control connection actually attach before reading its effect.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const during = structured<{
+        sessions: readonly { attachedClients: number; humanAttachedClients: number; id: string }[];
+      }>(await client.callTool({ arguments: {}, name: "list_sessions" }));
+      const duringSession = during.sessions.find((session) => session.id === created.session.id);
+      expect(duringSession).toMatchObject({ attachedClients: 1, humanAttachedClients: 0 });
+
+      await waiting;
+    });
+  });
+}, 20_000);
+
 /**
  * Run the server as a program, the way a client launches it, and report what a
  * failed launch wrote. `bun` rather than the emitted build: the failure is in

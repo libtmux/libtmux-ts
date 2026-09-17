@@ -66,7 +66,19 @@ export const paneViewSchema = z.object({
 export type PaneView = z.infer<typeof paneViewSchema>;
 
 export const sessionViewSchema = z.object({
-  attachedClients: z.number().int().describe("How many clients are attached; 0 means detached."),
+  attachedClients: z
+    .number()
+    .int()
+    .describe(
+      "Raw client count from tmux; 0 means detached. Includes control-mode clients - " +
+        "this server's own wait_for_text or other live read holds one open while it " +
+        "runs, and another program on this socket may hold others. See " +
+        "humanAttachedClients for a person-only count.",
+    ),
+  humanAttachedClients: z
+    .number()
+    .int()
+    .describe("attachedClients minus every control-mode client, this server's own included."),
   id: sessionIdSchema,
   metadataComplete: z.boolean().describe("Whether the session name is complete."),
   name: z.string(),
@@ -282,10 +294,28 @@ export function paneView(
   );
 }
 
-export function sessionView(session: Session, windows: number): SessionView {
+/**
+ * Clients attached to a session, excluding control-mode ones.
+ *
+ * `attachedClients` counts every client tmux reports, so a live read this
+ * server itself holds open (or another program's, on the same socket) reads
+ * as an attached human without this.
+ */
+export function humanAttachedClientCount(clients: readonly Client[], sessionId: string): number {
+  return clients.filter(
+    (client) => client.format.session_id === sessionId && client.controlMode !== true,
+  ).length;
+}
+
+export function sessionView(
+  session: Session,
+  windows: number,
+  humanAttachedClients: number,
+): SessionView {
   const metadata = boundedStrings([no(session.name, "")]);
   return {
     attachedClients: no(session.attached, safeInteger(0)),
+    humanAttachedClients,
     id: session.id,
     metadataComplete: metadata.omittedBytes === 0,
     name: metadata.values[0] ?? "",

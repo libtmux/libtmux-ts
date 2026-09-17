@@ -23,6 +23,7 @@ import {
   windowPlacements,
 } from "../target_resolution.js";
 import {
+  humanAttachedClientCount,
   limitViews,
   paneLine,
   paneView,
@@ -74,10 +75,15 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
     },
     async () => {
       const snapshot = await context.snapshot();
+      const clients = snapshot.clients.toArray();
       const sessions = snapshot.sessions
         .toArray()
         .map((session) =>
-          sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
+          sessionView(
+            session,
+            snapshot.windows.count({ session: { is: { id: session.id } } }),
+            humanAttachedClientCount(clients, session.id),
+          ),
         );
       const bounded = limitViews(
         sessions,

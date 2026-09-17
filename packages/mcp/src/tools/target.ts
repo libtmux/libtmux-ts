@@ -42,6 +42,7 @@ import {
   windowPlacements,
 } from "../target_resolution.js";
 import {
+  humanAttachedClientCount,
   paneLine,
   paneView,
   paneViewSchema,
@@ -208,6 +209,7 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
       const view = sessionView(
         found,
         snapshot.windows.count({ session: { is: { id: found.id } } }),
+        humanAttachedClientCount(snapshot.clients.toArray(), found.id),
       );
       return ok(
         { session: view },

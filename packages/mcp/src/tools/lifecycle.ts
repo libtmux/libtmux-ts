@@ -36,6 +36,7 @@ import {
 } from "../target_resolution.js";
 import {
   directoryNote,
+  humanAttachedClientCount,
   paneLine,
   paneView,
   paneViewSchema,
@@ -128,6 +129,7 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
       const view = sessionView(
         session,
         snapshot.windows.count({ session: { is: { id: session.id } } }),
+        humanAttachedClientCount(snapshot.clients.toArray(), session.id),
       );
       return ok(
         { paneId: pane.id, session: view, windowId: pane.format.window_id },
@@ -242,6 +244,7 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
       const view = sessionView(
         after.sessions.one({ id: found.id }),
         after.windows.count({ session: { is: { id: found.id } } }),
+        humanAttachedClientCount(after.clients.toArray(), found.id),
       );
       return ok({ session: view }, `Renamed ${found.id} to ${name}.`);
     },
