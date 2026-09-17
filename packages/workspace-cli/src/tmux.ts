@@ -311,6 +311,7 @@ async function create(
   if (spec.bootstrap) {
     result.stage = "before-script";
     try {
+      await output.event("script-started", { input_index: inputIndex });
       let child: ProcessResult;
       try {
         child = await processRun(spec.bootstrap, {
@@ -337,6 +338,11 @@ async function create(
         // before_script failure exactly like a nonzero exit, not a tmux one.
         throw new CliError("script_failed", `before_script could not run: ${spec.bootstrap[0]}`);
       }
+      await output.event("script-completed", {
+        input_index: inputIndex,
+        child_status: child.code,
+        truncated: child.truncated.stdout || child.truncated.stderr,
+      });
       result.script_output = child;
       if (child.code !== 0) {
         const detail = child.stderr.trim();

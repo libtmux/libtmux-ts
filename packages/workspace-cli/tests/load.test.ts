@@ -1588,6 +1588,36 @@ test("bootstrap uses argv and config cwd, with output encoded before pane creati
   });
 });
 
+test("before_script brackets its output with script-started and script-completed", async () => {
+  await fixture(async (_server, root, run) => {
+    const config = join(root, "bracket.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "script-brackets",
+        before_script: `'${process.execPath}' -e 'process.stdout.write("hi\\n")'`,
+        windows: [{}],
+      }),
+    );
+    const result = await run(["load", config, "-d", "--ndjson"]);
+    expect(result.code, result.stderr).toBe(0);
+    const events = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)) as Record<string, unknown>[];
+    const names = events.map((event) => event.event);
+    const started = names.indexOf("script-started");
+    const output = names.indexOf("script-output");
+    const completed = names.indexOf("script-completed");
+    expect(started).toBeGreaterThanOrEqual(0);
+    expect(completed).toBeGreaterThanOrEqual(0);
+    expect(started).toBeLessThan(output);
+    expect(output).toBeLessThan(completed);
+    expect(events[started]).toMatchObject({ input_index: 0 });
+    expect(events[completed]).toMatchObject({ input_index: 0, child_status: 0, truncated: false });
+  });
+});
+
 test("a failed bootstrap removes its newly created session and reports the failed stage", async () => {
   await fixture(async (server, root, run) => {
     const config = join(root, "input.json");
