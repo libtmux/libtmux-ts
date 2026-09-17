@@ -1707,7 +1707,7 @@ test("a mid-load failure in human mode prints the sentence, not the machine reco
     expect(result.stdout).toBe("");
     expect(result.stderr).not.toContain('"status"');
     expect(result.stderr).not.toContain('"completed_stages"');
-    expect(result.stderr).toContain("tmux-workspace: Bootstrap exited with status 7");
+    expect(result.stderr).toContain("tmux-workspace: before_script exited with status 7");
   });
 });
 
@@ -1725,7 +1725,7 @@ test("a silent before_script failure drops the empty ': ' separator", async () =
     const result = await run(["load", config, "-d", "--json"]);
     expect(result.code).toBe(1);
     const message = JSON.parse(result.stdout).errors[0].message as string;
-    expect(message).toBe("Bootstrap exited with status 3");
+    expect(message).toBe("before_script exited with status 3");
   });
 });
 
@@ -1758,7 +1758,9 @@ test("a before_script that cannot start reports script_failed, not tmux_failed",
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    expect(stderrRecords.find((line) => line.code === "script_failed")).toMatchObject({
+    // Exactly one record per failure, and it carries `code`.
+    expect(stderrRecords.length).toBe(1);
+    expect(stderrRecords[0]).toMatchObject({
       schema_version: 1,
       code: "script_failed",
     });
@@ -1782,7 +1784,9 @@ test("a tmux command failure while building reports tmux_failed, with a flat std
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    expect(stderrRecords.find((line) => line.code === "tmux_failed")).toMatchObject({
+    // Exactly one record per failure, and it carries `code`.
+    expect(stderrRecords.length).toBe(1);
+    expect(stderrRecords[0]).toMatchObject({
       schema_version: 1,
       code: "tmux_failed",
     });
