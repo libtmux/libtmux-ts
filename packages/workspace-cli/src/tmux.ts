@@ -23,7 +23,7 @@ import type { BorrowedSession, ExtensionSpec } from "./extensions.ts";
 
 export type LoadResult = {
   input_index: number;
-  workspace: string;
+  input: string;
   session_name: string;
   session_id?: string;
   reused: boolean;
@@ -638,7 +638,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
       });
       const result: LoadResult = {
         input_index: index,
-        workspace: privatePath(input.path, context),
+        input: privatePath(input.path, context),
         session_name: input.spec.name,
         reused: false,
         appended: Boolean(append),

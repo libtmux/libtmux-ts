@@ -664,6 +664,35 @@ test("ndjson events use the shared field vocabulary (inputs, session_id, *_index
   });
 });
 
+test("load result records name the input path `input`, not `workspace`", async () => {
+  await fixture(async (_server, root, run) => {
+    const config = join(root, "input-field.json");
+    await writeFile(config, JSON.stringify({ session_name: "input-field", windows: [{}] }));
+    // The fixture's HOME is `root`, so the reported path is privatized.
+    const expected = "~/input-field.json";
+
+    const jsonResult = await run(["load", config, "-d", "--json"]);
+    expect(jsonResult.code, jsonResult.stderr).toBe(0);
+    const [record] = JSON.parse(jsonResult.stdout).results as Record<string, unknown>[];
+    expect(record).toMatchObject({ input: expected, input_index: 0 });
+    expect(record!.workspace).toBeUndefined();
+
+    const ndjsonResult = await run(["load", config, "-d", "--ndjson"]);
+    expect(ndjsonResult.code, ndjsonResult.stderr).toBe(0);
+    const events = ndjsonResult.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)) as Record<string, unknown>[];
+    const workspaceCompleted = events.find((event) => event.event === "workspace-completed")!;
+    expect(workspaceCompleted).toMatchObject({ input: expected });
+    expect(workspaceCompleted.workspace).toBeUndefined();
+    const [completedRecord] = events.find((event) => event.event === "completed")!
+      .results as Record<string, unknown>[];
+    expect(completedRecord).toMatchObject({ input: expected });
+    expect(completedRecord!.workspace).toBeUndefined();
+  });
+});
+
 test("a window with five or more panes reclaims space between splits", async () => {
   await fixture(async (server, root, run) => {
     const config = join(root, "many-panes.json");
