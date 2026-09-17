@@ -250,6 +250,36 @@ test("the stdio server executes the retained capability surface end to end", asy
   });
 }, 60_000);
 
+// TS2-1: `tile`/`even-h` are unique preset prefixes tmux's own `select-layout`
+// applies (`layout_set_lookup`). `select_layout`'s "ignored" heuristic only
+// knew the five full preset names, so a prefix form fell into its
+// round-tripped-layout-string branch and reported a successful apply as
+// ignored, even though `window.layout` changed.
+test("select_layout applies a unique preset prefix without reporting it ignored", async () => {
+  await withServer(async (fixture) => {
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string; windowId: string }>(
+        await client.callTool({ arguments: { name: "prefix-layout" }, name: "create_session" }),
+      );
+      await client.callTool({
+        arguments: { direction: "right", paneId: created.paneId },
+        name: "split_window",
+      });
+
+      const answer = await client.callTool({
+        arguments: { layout: "tile", windowId: created.windowId },
+        name: "select_layout",
+      });
+      expect(answer.isError, JSON.stringify(answer)).not.toBe(true);
+      const text = (answer as { content: readonly { text?: string; type: string }[] }).content[0];
+      expect(text?.type === "text" ? text.text : "").not.toContain("was not applied");
+
+      const result = structured<{ window: { layout: string | null } }>(answer);
+      expect(result.window.layout).not.toBeNull();
+    });
+  });
+}, 40_000);
+
 /**
  * Run the server as a program, the way a client launches it, and report what a
  * failed launch wrote. `bun` rather than the emitted build: the failure is in

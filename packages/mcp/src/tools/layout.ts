@@ -60,6 +60,24 @@ const LAYOUTS = [
   "tiled",
 ] as const;
 
+// tmux's own `select-layout` resolves a name by unambiguous prefix
+// (`layout_set_lookup`), so `tile` and `even-h` are named layouts too, not a
+// round-tripped layout string — `window.selectLayout` below already refused
+// anything ambiguous before this runs. Included here so the "ignored"
+// heuristic does not mistake one for a custom string that failed to apply.
+const NAMED_LAYOUT_SPELLINGS: readonly string[] = [
+  ...LAYOUTS,
+  "main-horizontal-mirrored",
+  "main-vertical-mirrored",
+];
+
+function isNamedLayoutSpelling(layout: string): boolean {
+  if (NAMED_LAYOUT_SPELLINGS.includes(layout)) return true;
+  return (
+    layout !== "" && NAMED_LAYOUT_SPELLINGS.filter((name) => name.startsWith(layout)).length === 1
+  );
+}
+
 const sourceSessionSchema = requestText("sourceSession")
   .optional()
   .describe("Source session id or name. Required when the id has several placements.");
@@ -234,8 +252,7 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
       // does nothing: tmux exits 0 and leaves the window alone. A named layout
       // is always applied, so only the string form can silently miss — and the
       // window this returns already knows which layout it ended up with.
-      const ignored =
-        !LAYOUTS.includes(layout as (typeof LAYOUTS)[number]) && view.layout !== layout;
+      const ignored = !isNamedLayoutSpelling(layout) && view.layout !== layout;
       return ok(
         { window: view },
         windowLine(view) +

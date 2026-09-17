@@ -409,6 +409,80 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  // TS2-1: tmux's own `layout_set_lookup` (layout-set.c) is a prefix match,
+  // so `tile` and `even-h` apply on every version tested and can never reach
+  // `layout_parse` (the 3.3a crash path an exact-match-only guard was
+  // confusing them with). An ambiguous prefix must still be refused, and a
+  // classic layout's checksum is read case-insensitively.
+  test("accepts a unique layout preset prefix and refuses an ambiguous one", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+
+      await window.selectLayout("tile");
+      expect(
+        (await server.snapshot()).windows.one({ id: window.id }).format.window_layout,
+      ).toBeDefined();
+
+      await window.selectLayout("even-h");
+      const current = (await server.snapshot()).windows.one({ id: window.id }).format.window_layout;
+      expect(current).toBeDefined();
+
+      const ambiguous = await window
+        .selectLayout("even-")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(ambiguous).toBeInstanceOf(TypeError);
+      const message = (ambiguous as TypeError).message;
+      expect(message).toContain("even-horizontal");
+      expect(message).toContain("even-vertical");
+
+      // A classic layout string's checksum is read case-insensitively by tmux
+      // (`sscanf(value, "%hx,")`); only test it against a server that still
+      // speaks the classic format (pre-3.8 uses it for `window_layout`).
+      if (current !== null && current !== undefined && /^[0-9a-f]{4},/u.test(current)) {
+        const uppercased = current.replace(/^[0-9a-f]{4}/u, (checksum) => checksum.toUpperCase());
+        await window.selectLayout(uppercased);
+      }
+      expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
+  // `layout_set_lookup`'s table holds the mirrored presets only from tmux 3.5
+  // (CHANGES, 3.4 to 3.5), so `main-v` is a unique prefix of `main-vertical`
+  // below that release and ambiguous from it on - checked against whichever
+  // side of the boundary the running tmux is on.
+  test("resolves main-v/main-h against the running tmux's own preset table", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+      const mirroredKnown = await server.versionAtLeast("3.5");
+
+      const prefixes: readonly [prefix: string, full: string, mirrored: string][] = [
+        ["main-v", "main-vertical", "main-vertical-mirrored"],
+        ["main-h", "main-horizontal", "main-horizontal-mirrored"],
+      ];
+      for (const [prefix, full, mirrored] of prefixes) {
+        // eslint-disable-next-line no-await-in-loop -- each prefix is checked against the layout the previous one left.
+        const outcome = await window
+          .selectLayout(prefix)
+          .then(() => "applied" as const)
+          .catch((thrown: unknown) => thrown);
+        if (mirroredKnown) {
+          expect(outcome, prefix).toBeInstanceOf(TypeError);
+          const message = (outcome as TypeError).message;
+          expect(message, prefix).toContain(full);
+          expect(message, prefix).toContain(mirrored);
+        } else {
+          expect(outcome, prefix).toBe("applied");
+        }
+      }
+      expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
   test("zooms the pane it was asked for, in the window it is in", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

@@ -99,12 +99,54 @@ const LAYOUT_PRESETS = new Set([
   "tiled",
 ]);
 const MIRRORED_LAYOUT_PRESETS = new Set(["main-horizontal-mirrored", "main-vertical-mirrored"]);
+// Every name `layout_set_lookup` (tmux's layout-set.c) matches, exactly and by
+// unambiguous prefix, in the order it tries them.
+const LAYOUT_SET_NAMES: readonly string[] = [...LAYOUT_PRESETS, ...MIRRORED_LAYOUT_PRESETS];
 // tmux CHANGES, 3.4 to 3.5: mirrored main-horizontal and main-vertical.
 const MIRRORED_LAYOUTS_SINCE = parseTmuxVersion("3.5");
 // tmux CHANGES, 3.7c to 3.8: layout strings use a JSON subset format.
 const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8");
-// A layout tmux dumped starts with its four-hex-digit checksum.
-const CLASSIC_LAYOUT = /^[0-9a-f]{4},/u;
+// A layout tmux dumped starts with its four-hex-digit checksum; sscanf reads
+// it case-insensitively.
+const CLASSIC_LAYOUT = /^[0-9a-fA-F]{4},/u;
+
+type LayoutPresetLookup =
+  | { readonly candidates: readonly string[]; readonly kind: "ambiguous" }
+  | { readonly kind: "none" }
+  | { readonly kind: "resolved"; readonly name: string };
+
+/**
+ * Resolve a preset name the way `layout_set_lookup` does: an exact name wins
+ * outright (recognised whatever the running tmux is, so a value naming a
+ * preset it predates gets `VersionTooLowError` rather than a generic
+ * refusal), else a prefix naming exactly one of `prefixCandidates` resolves
+ * to it, else an empty or ambiguous prefix does not resolve.
+ */
+function lookupLayoutPreset(
+  layout: string,
+  prefixCandidates: readonly string[],
+): LayoutPresetLookup {
+  if (LAYOUT_SET_NAMES.includes(layout)) return { kind: "resolved", name: layout };
+  if (layout === "") return { kind: "none" };
+  const candidates = prefixCandidates.filter((name) => name.startsWith(layout));
+  if (candidates.length === 1) return { kind: "resolved", name: candidates[0]! };
+  if (candidates.length > 1) return { candidates, kind: "ambiguous" };
+  return { kind: "none" };
+}
+
+/**
+ * The preset names the running tmux's own table holds.
+ *
+ * `layout_set_lookup` gains mirrored presets only from tmux 3.5 (CHANGES, 3.4
+ * to 3.5), so `main-v` is a unique prefix of `main-vertical` below that
+ * release and ambiguous from it on.
+ */
+async function versionedLayoutPresetNames(runtime: RuntimeContext): Promise<readonly string[]> {
+  const { tmuxVersion } = await runtime.capabilities.bind();
+  return tmuxVersionAtLeast(tmuxVersion, MIRRORED_LAYOUTS_SINCE)
+    ? LAYOUT_SET_NAMES
+    : [...LAYOUT_PRESETS];
+}
 
 /**
  * Refuse a layout value tmux cannot safely be handed.
@@ -112,18 +154,40 @@ const CLASSIC_LAYOUT = /^[0-9a-f]{4},/u;
  * tmux 3.3 and 3.3a exit the whole server on a layout string whose checksum
  * prefix they cannot read - an unknown preset name, `garbage`, a JSON layout,
  * or `-o` once `--` forces it to be read as a layout - instead of refusing it.
- * A preset the running tmux knows, or a string carrying the checksum prefix
- * (even one tmux then rejects), is safe everywhere, so only those reach tmux
- * unconditionally; mirrored presets and JSON wait for the release that learned
- * them. Decided before dispatch, so it holds on every version.
+ * A preset the running tmux knows, an unambiguous prefix of one (`tile` for
+ * `tiled`; `layout_set_lookup` never falls through to `layout_parse`, the
+ * 3.3a crash path, for those), or a string carrying the checksum prefix (even
+ * one tmux then rejects), is safe everywhere, so only those reach tmux
+ * unconditionally; mirrored presets and JSON wait for the release that
+ * learned them. Decided before dispatch, so it holds on every version.
+ *
+ * A prefix is resolved against every preset name first, with no version
+ * probe: unless that resolves to one of the mirrored names, or ambiguously
+ * between two, the answer cannot change with the running tmux's own
+ * (possibly smaller) table, so the common case never pays for one.
  */
 async function assertLayoutValue(runtime: RuntimeContext, layout: string): Promise<void> {
-  if (LAYOUT_PRESETS.has(layout) || CLASSIC_LAYOUT.test(layout)) return;
-  const since = MIRRORED_LAYOUT_PRESETS.has(layout)
-    ? MIRRORED_LAYOUTS_SINCE
-    : layout.startsWith("{")
-      ? JSON_LAYOUTS_SINCE
-      : undefined;
+  const broad = lookupLayoutPreset(layout, LAYOUT_SET_NAMES);
+  const preset =
+    broad.kind === "ambiguous" ||
+    (broad.kind === "resolved" && MIRRORED_LAYOUT_PRESETS.has(broad.name))
+      ? lookupLayoutPreset(layout, await versionedLayoutPresetNames(runtime))
+      : broad;
+  if (preset.kind === "ambiguous") {
+    throw new TypeError(
+      `${JSON.stringify(layout)} matches more than one tmux layout preset: ` +
+        preset.candidates.join(", "),
+    );
+  }
+  const resolved = preset.kind === "resolved" ? preset.name : undefined;
+  if (resolved !== undefined && LAYOUT_PRESETS.has(resolved)) return;
+  if (resolved === undefined && CLASSIC_LAYOUT.test(layout)) return;
+  const since =
+    resolved !== undefined && MIRRORED_LAYOUT_PRESETS.has(resolved)
+      ? MIRRORED_LAYOUTS_SINCE
+      : resolved === undefined && layout.startsWith("{")
+        ? JSON_LAYOUTS_SINCE
+        : undefined;
   if (since === undefined) {
     throw new TypeError(
       `${JSON.stringify(layout)} is neither a tmux layout preset nor a layout string tmux reported`,
@@ -132,9 +196,7 @@ async function assertLayoutValue(runtime: RuntimeContext, layout: string): Promi
   const { tmuxVersion } = await runtime.capabilities.bind();
   if (!tmuxVersionAtLeast(tmuxVersion, since)) {
     throw new VersionTooLowError({
-      criteriaName: MIRRORED_LAYOUT_PRESETS.has(layout)
-        ? `the ${layout} layout`
-        : "a JSON layout string",
+      criteriaName: resolved !== undefined ? `the ${resolved} layout` : "a JSON layout string",
       serverVersion: tmuxVersion.raw,
       since: since.raw,
     });
