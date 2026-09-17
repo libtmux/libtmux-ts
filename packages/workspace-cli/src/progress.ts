@@ -238,7 +238,7 @@ export class LoadProgress {
       case "workspace-started":
         this.active = true;
         this.session = scalarText(data.session_name ?? "");
-        this.workspace = scalarText(data.workspace ?? "");
+        this.workspace = scalarText(data.input ?? "");
         this.window = "";
         this.countsKnown = data.window_total !== undefined;
         this.windowTotal = Number(data.window_total ?? 0);
