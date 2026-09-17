@@ -1690,6 +1690,42 @@ test("a silent before_script failure drops the empty ': ' separator", async () =
   });
 });
 
+test("a before_script that cannot start reports script_failed, not tmux_failed", async () => {
+  await fixture(async (server, root, run) => {
+    const missing = join(root, "missing-script");
+    const config = join(root, "cannot-start.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "cannot-start-bootstrap",
+        before_script: missing,
+        windows: [{}],
+      }),
+    );
+    const result = await run(["load", config, "-d", "--json"]);
+    expect(result.code).toBe(1);
+    const body = JSON.parse(result.stdout) as {
+      results: { input?: string; session_removed?: boolean }[];
+      errors: { code: string; message: string }[];
+    };
+    expect(body.errors[0]!.code).toBe("script_failed");
+    expect(body.errors[0]!.message).not.toContain("spawn");
+    expect(body.errors[0]!.message).not.toContain("ENOENT");
+    expect(body.errors[0]!.message).toContain(missing);
+    expect(body.results[0]!.input).toBeDefined();
+    expect(body.results[0]!.session_removed).toBe(true);
+    expect(await server.hasSession("cannot-start-bootstrap")).toBe(false);
+    const stderrRecords = result.stderr
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(stderrRecords.find((line) => line.code === "script_failed")).toMatchObject({
+      schema_version: 1,
+      code: "script_failed",
+    });
+  });
+});
+
 test("a tmux command failure while building reports tmux_failed, with a flat stderr record", async () => {
   await fixture(async (_server, root, run) => {
     const config = join(root, "bad-option.json");

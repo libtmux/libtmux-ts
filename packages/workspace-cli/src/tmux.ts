@@ -311,24 +311,32 @@ async function create(
   if (spec.bootstrap) {
     result.stage = "before-script";
     try {
-      const child = await processRun(spec.bootstrap, {
-        cwd: spec.directory ?? context.cwd,
-        env: context.env,
-        ...(context.signal ? { signal: context.signal } : {}),
-        output: async (stream, text) => {
-          const handled = await output.event("script-output", {
-            input_index: inputIndex,
-            stream,
-            text,
-          });
-          if (output.mode === "human" && !handled)
-            await write(
-              stream === "stdout" ? context.stdout : context.stderr,
+      let child: ProcessResult;
+      try {
+        child = await processRun(spec.bootstrap, {
+          cwd: spec.directory ?? context.cwd,
+          env: context.env,
+          ...(context.signal ? { signal: context.signal } : {}),
+          output: async (stream, text) => {
+            const handled = await output.event("script-output", {
+              input_index: inputIndex,
+              stream,
               text,
-              context.signal,
-            );
-        },
-      });
+            });
+            if (output.mode === "human" && !handled)
+              await write(
+                stream === "stdout" ? context.stdout : context.stderr,
+                text,
+                context.signal,
+              );
+          },
+        });
+      } catch (error) {
+        if (error instanceof CliError) throw error;
+        // A before_script that never starts (missing, not executable) is a
+        // before_script failure exactly like a nonzero exit, not a tmux one.
+        throw new CliError("script_failed", `before_script could not run: ${spec.bootstrap[0]}`);
+      }
       result.script_output = child;
       if (child.code !== 0) {
         const detail = child.stderr.trim();
