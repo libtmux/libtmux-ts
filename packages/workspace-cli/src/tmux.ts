@@ -384,7 +384,7 @@ async function create(
         const detail = child.stderr.trim();
         throw new CliError(
           "script_failed",
-          `Bootstrap exited with status ${child.code}${detail ? ": " + detail : ""}`,
+          `before_script exited with status ${child.code}${detail ? ": " + detail : ""}`,
         );
       }
       result.completed_stages.push("before-script");
@@ -719,11 +719,13 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
               ? "info"
               : "debug";
       // Human mode already gets a plain sentence for a mid-load failure from
-      // the top-level catch (or, on success, the "Loaded"/"Reused" line), so
-      // echoing "failed" here would dump the whole machine result envelope
-      // as a diagnostic line above it. Script output is likewise written
-      // directly, not through the diagnostic echo.
-      const echo = request.mode !== "human" || !["script-output", "failed"].includes(event);
+      // the top-level catch, so echoing "failed" here would dump the whole
+      // machine result envelope as a diagnostic line above it. Script output
+      // is likewise written directly, not through the diagnostic echo.
+      // Machine mode gets its own single flat error record below the catch;
+      // echoing "failed" here first would put a code-less record ahead of it.
+      const echo =
+        event === "failed" ? false : request.mode !== "human" || event !== "script-output";
       if (echo && context.diagnostics?.accepts(level)) await progress?.clear();
       await context.diagnostics?.record(level, event, data, echo);
       return progress?.event(event, data);
