@@ -342,7 +342,7 @@ test("human load inside tmux switches the invoking client and returns to its she
         const pane = shell.panes.at(0)!;
         const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
         await pane.sendKeys(
-          `${[runtime, entry, "load", source, "-S", server.socketPath!].map(quote).join(" ")} >${quote(join(root, "load.txt"))} 2>&1; printf '%s' "$?" >${quote(done)}`,
+          `${[runtime, entry, "load", source, "-S", server.socketPath!, "--yes"].map(quote).join(" ")} >${quote(join(root, "load.txt"))} 2>&1; printf '%s' "$?" >${quote(done)}`,
           { enter: true },
         );
         try {
@@ -353,6 +353,215 @@ test("human load inside tmux switches the invoking client and returns to its she
         expect(await readFile(done, "utf8")).toBe("0");
         const client = (await server.snapshot()).clients.at(0)!;
         expect(client.session?.name).toBe("destination");
+        await client.detach();
+        expect((await result).code).toBe(0);
+      },
+    );
+  });
+});
+
+test("inside tmux, without --yes, answering (n) to the new-session prompt builds detached", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "input.json");
+    const done = join(root, "done.txt");
+    await writeFile(source, JSON.stringify({ session_name: "prompted-detached", windows: [{}] }));
+    const shell = await (
+      await server.snapshot()
+    ).sessions
+      .one({ name: "fixture" })
+      .newWindow({ shellCommand: "/bin/sh" });
+    await shell.select();
+    await terminal(
+      [server.tmuxBin, "-S", server.socketPath!, "attach-session", "-t", "fixture"],
+      root,
+      env,
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        const pane = shell.panes.at(0)!;
+        const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+        // The prompt must show on the pane's own screen, so its output is
+        // not redirected to a file the way a non-interactive load's is.
+        await pane.sendKeys(
+          `${[runtime, entry, "load", source, "-S", server.socketPath!].map(quote).join(" ")}; printf '%s' "$?" >${quote(done)}`,
+          { enter: true },
+        );
+        await until(async () =>
+          (await pane.capture()).some((line) => line.includes("Already inside tmux")),
+        );
+        await pane.sendKeys("n", { enter: true });
+        try {
+          await until(async () => Bun.file(done).exists());
+        } catch (error) {
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+        }
+        expect(await readFile(done, "utf8")).toBe("0");
+        // Declining stayed on "fixture"; the workspace still built, detached.
+        const client = (await server.snapshot()).clients.at(0)!;
+        expect(client.session?.name).toBe("fixture");
+        expect(await server.hasSession("prompted-detached")).toBe(true);
+        await client.detach();
+        expect((await result).code).toBe(0);
+      },
+    );
+  });
+});
+
+test("inside tmux, without --yes, answering (a) to the new-session prompt appends", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "input.json");
+    const done = join(root, "done.txt");
+    await writeFile(
+      source,
+      JSON.stringify({ session_name: "prompted-append", windows: [{ window_name: "added" }] }),
+    );
+    const shell = await (
+      await server.snapshot()
+    ).sessions
+      .one({ name: "fixture" })
+      .newWindow({ shellCommand: "/bin/sh" });
+    await shell.select();
+    await terminal(
+      [server.tmuxBin, "-S", server.socketPath!, "attach-session", "-t", "fixture"],
+      root,
+      env,
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        const pane = shell.panes.at(0)!;
+        const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+        await pane.sendKeys(
+          `${[runtime, entry, "load", source, "-S", server.socketPath!].map(quote).join(" ")}; printf '%s' "$?" >${quote(done)}`,
+          { enter: true },
+        );
+        await until(async () =>
+          (await pane.capture()).some((line) => line.includes("Already inside tmux")),
+        );
+        await pane.sendKeys("a", { enter: true });
+        try {
+          await until(async () => Bun.file(done).exists());
+        } catch (error) {
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+        }
+        expect(await readFile(done, "utf8")).toBe("0");
+        expect(await server.hasSession("prompted-append")).toBe(false);
+        const windows = (await server.snapshot()).sessions
+          .one({ name: "fixture" })
+          .windows.toArray()
+          .map((window) => window.name);
+        expect(windows).toContain("added");
+        await (await server.snapshot()).clients.at(0)!.detach();
+        expect((await result).code).toBe(0);
+      },
+    );
+  });
+});
+
+test("inside tmux, without --yes, answering (n) to the already-running prompt leaves the client", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "input.json");
+    const done = join(root, "done.txt");
+    await writeFile(source, JSON.stringify({ session_name: "already-running", windows: [{}] }));
+    await server.newSession({ name: "already-running" });
+    const shell = await (
+      await server.snapshot()
+    ).sessions
+      .one({ name: "fixture" })
+      .newWindow({ shellCommand: "/bin/sh" });
+    await shell.select();
+    await terminal(
+      [server.tmuxBin, "-S", server.socketPath!, "attach-session", "-t", "fixture"],
+      root,
+      env,
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        const pane = shell.panes.at(0)!;
+        const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+        await pane.sendKeys(
+          `${[runtime, entry, "load", source, "-S", server.socketPath!].map(quote).join(" ")}; printf '%s' "$?" >${quote(done)}`,
+          { enter: true },
+        );
+        await until(async () =>
+          (await pane.capture()).some((line) => line.includes("already running. Attach?")),
+        );
+        await pane.sendKeys("n", { enter: true });
+        try {
+          await until(async () => Bun.file(done).exists());
+        } catch (error) {
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+        }
+        expect(await readFile(done, "utf8")).toBe("0");
+        const client = (await server.snapshot()).clients.at(0)!;
+        expect(client.session?.name).toBe("fixture");
+        await client.detach();
+        expect((await result).code).toBe(0);
+      },
+    );
+  });
+});
+
+test("inside tmux, without --yes, answering (y) to the already-running prompt switches", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "input.json");
+    const done = join(root, "done.txt");
+    await writeFile(source, JSON.stringify({ session_name: "already-running-y", windows: [{}] }));
+    await server.newSession({ name: "already-running-y" });
+    const shell = await (
+      await server.snapshot()
+    ).sessions
+      .one({ name: "fixture" })
+      .newWindow({ shellCommand: "/bin/sh" });
+    await shell.select();
+    await terminal(
+      [server.tmuxBin, "-S", server.socketPath!, "attach-session", "-t", "fixture"],
+      root,
+      env,
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        const pane = shell.panes.at(0)!;
+        const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+        await pane.sendKeys(
+          `${[runtime, entry, "load", source, "-S", server.socketPath!].map(quote).join(" ")}; printf '%s' "$?" >${quote(done)}`,
+          { enter: true },
+        );
+        await until(async () =>
+          (await pane.capture()).some((line) => line.includes("already running. Attach?")),
+        );
+        await pane.sendKeys("y", { enter: true });
+        try {
+          await until(async () => Bun.file(done).exists());
+        } catch (error) {
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+        }
+        expect(await readFile(done, "utf8")).toBe("0");
+        const client = (await server.snapshot()).clients.at(0)!;
+        expect(client.session?.name).toBe("already-running-y");
+        await client.detach();
+        expect((await result).code).toBe(0);
+      },
+    );
+  });
+});
+
+test("a run-shell key binding, with no controlling terminal, still switches the client", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "input.json");
+    const out = join(root, "out.txt");
+    const rc = join(root, "rc.txt");
+    await writeFile(source, JSON.stringify({ session_name: "keybound", windows: [{}] }));
+    await terminal(
+      [server.tmuxBin, "-S", server.socketPath!, "attach-session", "-t", "fixture"],
+      root,
+      env,
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        const pane = (await server.snapshot()).sessions.one({ name: "fixture" }).panes.at(0)!;
+        const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+        // A run-shell binding sets TMUX but never TMUX_PANE, and gives the
+        // command no controlling terminal.
+        const command = `env -u TMUX_PANE ${[runtime, entry, "load", source, "-S", server.socketPath!, "--yes"].map(quote).join(" ")} >${quote(out)} 2>&1; printf '%s' "$?" >${quote(rc)}`;
+        await server.runShell(command, { target: pane.id });
+        expect(await readFile(rc, "utf8")).toBe("0");
+        const client = (await server.snapshot()).clients.at(0)!;
+        expect(client.session?.name).toBe("keybound");
         await client.detach();
         expect((await result).code).toBe(0);
       },
@@ -401,7 +610,7 @@ test("attached load rejects a different tmux server before creating a session", 
         context,
         async (result) => {
           const output = await result;
-          expect(output.code).toBe(1);
+          expect(output.code).toBe(2);
           expect(output.stdout).toContain("current pane's tmux server");
           expect(await selected.hasSession("refused")).toBe(false);
           expect((await current.snapshot()).windows.length).toBe(1);

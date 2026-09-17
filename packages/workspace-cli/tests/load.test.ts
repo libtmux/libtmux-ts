@@ -1180,9 +1180,9 @@ test("freeze authenticates its current pane context and permits an explicit targ
     expect(JSON.parse(current.stdout).session_name).toBe("second");
     const stale = { ...env, TMUX: `${server.socketPath},1,0` };
     const rejected = await run(["freeze", "--json"], stale);
-    expect(rejected.code).toBe(1);
+    expect(rejected.code).toBe(2);
     expect(rejected.stdout).toBe("");
-    expect(JSON.parse(rejected.stderr).code).toBe("tmux_context");
+    expect(JSON.parse(rejected.stderr).code).toBe("usage");
     const explicit = await run(["freeze", "fixture", "--json"], stale);
     expect(explicit.code, explicit.stderr).toBe(0);
     expect(JSON.parse(explicit.stdout).session_name).toBe("fixture");
@@ -1809,6 +1809,33 @@ test("append resolves the explicit current pane and preserves existing windows",
   });
 });
 
+test("-d beats --append inside tmux: a new detached session is built, not an append", async () => {
+  await fixture(async (server, root, run) => {
+    const before = (await server.snapshot()).sessions.one({ name: "fixture" });
+    const original = before.windows.at(0)!;
+    const config = join(root, "input.json");
+    await writeFile(config, JSON.stringify({ session_name: "detached-wins", windows: [{}] }));
+    const result = await run(["load", config, "-d", "--append", "--json"], {
+      TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
+      TMUX_PANE: original.panes.at(0)!.id,
+    });
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).results[0]).toMatchObject({ appended: false });
+    expect((await server.snapshot()).sessions.one({ id: before.id }).windows.length).toBe(1);
+    expect(await server.hasSession("detached-wins")).toBe(true);
+  });
+});
+
+test("-d beats --append outside tmux: the load succeeds rather than being refused", async () => {
+  await fixture(async (_server, root, run) => {
+    const config = join(root, "input.json");
+    await writeFile(config, JSON.stringify({ session_name: "detached-wins-out", windows: [{}] }));
+    const result = await run(["load", config, "-d", "--append", "--json"]);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).results[0]).toMatchObject({ appended: false });
+  });
+});
+
 test("append leaves the session's active window alone unless a window asks for focus", async () => {
   await fixture(async (server, root, run) => {
     const before = (await server.snapshot()).sessions.one({ name: "fixture" });
@@ -1896,11 +1923,113 @@ test("append rejects another server even when its pane ID matches", async () => 
         TMUX: `${current.socketPath},${(await current.daemonIdentity()).pid},0`,
         TMUX_PANE: currentPane.id,
       });
-      expect(result.code).toBe(1);
-      expect(JSON.parse(result.stderr).code).toBe("tmux_context");
+      expect(result.code).toBe(2);
+      expect(JSON.parse(result.stderr).code).toBe("usage");
       expect((await selected.snapshot()).windows.length).toBe(1);
       expect((await current.snapshot()).windows.length).toBe(1);
     });
+  });
+});
+
+test("append does not adopt a replacement daemon after authenticating the current pane", async () => {
+  await fixture(async (current, root, run) => {
+    await fixture(async (replacement) => {
+      const before = await current.snapshot();
+      expect(before.panes.one().id).toBe((await replacement.snapshot()).panes.one().id);
+      const config = join(root, "input.json");
+      const marker = join(root, "endpoint-switched");
+      const wrapper = join(root, "tmux-switch-endpoint");
+      await writeFile(config, JSON.stringify({ session_name: "append-cli", windows: [{}] }));
+      // Switch between real servers after both identity reads, preserving their output.
+      await writeFile(
+        wrapper,
+        `#!${process.execPath}
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+const marker = process.env.WORKSPACE_TEST_MARKER;
+const switched = existsSync(marker);
+let lastAuthentication = false;
+if (!switched && args.includes("list-sessions") && args.includes("list-panes")) {
+  try { mkdirSync(marker + "-first"); }
+  catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    lastAuthentication = true;
+  }
+}
+if (switched) {
+  const socket = args.findIndex(arg => arg.startsWith("-S"));
+  if (socket < 0) throw new Error("missing test socket");
+  if (args[socket] === "-S") args[socket + 1] = process.env.WORKSPACE_TEST_NEXT_SOCKET;
+  else args[socket] = "-S" + process.env.WORKSPACE_TEST_NEXT_SOCKET;
+}
+const result = spawnSync(process.env.WORKSPACE_TEST_TMUX, args, { stdio: "inherit" });
+if (lastAuthentication && result.status === 0) writeFileSync(marker, "switched");
+process.exit(result.status ?? 1);
+`,
+        { mode: 0o700 },
+      );
+      const result = await run(["load", config, "--append", "--json"], {
+        TMUX: `${current.socketPath},${before.daemonIdentity.pid},0`,
+        TMUX_PANE: before.panes.one().id,
+        TMUX_BIN: wrapper,
+        WORKSPACE_TEST_MARKER: marker,
+        WORKSPACE_TEST_NEXT_SOCKET: replacement.socketPath!,
+        WORKSPACE_TEST_TMUX: current.tmuxBin,
+      });
+      expect(await readFile(marker, "utf8")).toBe("switched");
+      expect(result.code, result.stdout + result.stderr).not.toBe(0);
+      expect((await current.snapshot()).windows.length).toBe(1);
+      expect((await replacement.snapshot()).windows.length).toBe(1);
+    });
+  });
+});
+
+test("append rejects a different tmux server that has not started yet, with the same message", async () => {
+  await fixture(async (current, root) => {
+    const currentPane = (await current.snapshot()).panes.at(0)!;
+    const config = join(root, "input.json");
+    await writeFile(config, JSON.stringify({ session_name: "append-cli", windows: [{}] }));
+    const cold = join(root, "cold-socket");
+    assertOwnedSocketPath(cold);
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        new URL("../src/main.ts", import.meta.url).pathname,
+        "load",
+        config,
+        "--append",
+        "--json",
+        "-S",
+        cold,
+      ],
+      {
+        cwd: root,
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(
+              (entry): entry is [string, string] => entry[1] !== undefined,
+            ),
+          ),
+          TMUX_BIN: current.tmuxBin,
+          HOME: root,
+          TMUX: `${current.socketPath},${(await current.daemonIdentity()).pid},0`,
+          TMUX_PANE: currentPane.id,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect(code, stdout + stderr).toBe(2);
+    const message = JSON.parse(stderr) as { code: string; message: string };
+    expect(message.code).toBe("usage");
+    expect(message.message).toBe("This operation must target the current pane's tmux server");
+    expect((await current.snapshot()).windows.length).toBe(1);
   });
 });
 
