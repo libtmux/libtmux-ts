@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, spyOn, test } from "bun:test";
 
@@ -484,6 +486,80 @@ describe("command framing", () => {
     expect(info.isDirectory()).toBe(true);
     expect(info.mode & 0o077).toBe(0);
     await rm(directory, { force: true, recursive: true });
+  });
+
+  // TS2-4: an operator's TMPDIR is not this process's to trust. A `'` inside
+  // it broke the naive `'${path}'` interpolation in both the typed sourcing
+  // line and the trailer's `rm -rf`, leaving a pane sitting at an open shell
+  // quote — the dispatched line is what tmux would actually type into the
+  // pane, so this runs it through a real shell exactly as delivered.
+  test("quotes a TMPDIR apostrophe so the dispatched line never opens an unterminated quote", async () => {
+    const shell = Bun.which("sh");
+    if (shell === null) throw new Error("no POSIX sh on PATH for this test");
+
+    // Not "ltx-" (no dash after "ltx"): another test's own `mkdtemp("ltx-")`
+    // check on the real, shared `os.tmpdir()` reads a fresh "ltx-" prefixed
+    // top-level entry as its own, and this must not be mistaken for one.
+    const quotedRoot = join(tmpdir(), `ltxquote-${randomId()}`, "it's a dir");
+    await mkdir(quotedRoot, { recursive: true });
+    const originalTmpdir = process.env.TMPDIR;
+    process.env.TMPDIR = quotedRoot;
+
+    const tail = new PaneTail("%1");
+    let bufferContent = "";
+    const dispatched: (readonly string[])[] = [];
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async (_command: string, args: readonly string[]) => {
+        dispatched.push(args);
+        const { id } = dispatchedFrame(bufferContent);
+        tail.append(`${id}_S\nresult\n${id}_E 0 ${id}_D\n`);
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+      tmux: {
+        deleteBuffer: async () => undefined,
+        loadBuffer: async (_name: string, data: string | Uint8Array) => {
+          bufferContent = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
+        },
+        saveBuffer: async (_name: string, path: string) => {
+          await writeFile(path, bufferContent);
+        },
+      },
+    } as unknown as ToolContext;
+
+    try {
+      const result = await runFramedCommand(context, pane, "true", 500);
+      expect(result.outcome).toBe("completed");
+
+      // The literal keystrokes tmux would type into the pane: `-l`, then the
+      // sourcing line the caller's shell actually reads.
+      const [flag, keysLine] = dispatched[0] ?? [];
+      expect(flag).toBe("-l");
+      if (keysLine === undefined) throw new Error("expected a dispatched sourcing line");
+
+      // Run exactly what tmux would type, through a real shell: an unescaped
+      // `'` in the path leaves this unterminated (a syntax error, not a
+      // hang, since `-c` requires a complete command) and the script — the
+      // trailer included — never runs.
+      const sourced = spawnSync(shell, ["-c", `${keysLine}printf 'RC=%s\\n' "$?"`], {
+        encoding: "utf8",
+      });
+      expect(sourced.stderr).toBe("");
+      expect(sourced.status).toBe(0);
+      expect(sourced.stdout).toContain("RC=0");
+
+      // The sourced trailer's own `rm -rf` removed its directory: nothing
+      // this run's `mkdtemp` created is left inside the quoted TMPDIR.
+      expect(await readdir(quotedRoot)).toEqual([]);
+    } finally {
+      if (originalTmpdir === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = originalTmpdir;
+      await rm(quotedRoot, { force: true, recursive: true });
+    }
   });
 
   test("waits for the complete exit-status line", async () => {

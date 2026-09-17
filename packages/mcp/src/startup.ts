@@ -35,7 +35,8 @@ export interface ServerStartup {
   readonly serverState: ServerState;
 }
 
-function shellQuote(value: string): string {
+/** Single-quote a value for POSIX shell, escaping any embedded `'`. */
+export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 

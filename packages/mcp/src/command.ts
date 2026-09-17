@@ -10,6 +10,7 @@ import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "./com
 import { captureGridBounded } from "./grid_capture.js";
 import { dispatchPaneKeys } from "./pane_input.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";
+import { shellQuote } from "./startup.js";
 
 interface FramedResultBase {
   /** Whether the sole wrapper dispatch may have reached the pane. */
@@ -285,7 +286,10 @@ function framedScriptName(id: string): string {
  * server's own host for `save-buffer` and `.` to agree on what the path
  * names — true for a same-host server, which this framing already assumes
  * (the trap-capture directory in `command_frame.ts` makes the same
- * assumption).
+ * assumption). Both the sourcing line and the trailing `rm -rf` quote that
+ * path with `shellQuote` (`startup.ts`): an operator's `TMPDIR` is not this
+ * process's to trust, and an unescaped `'` inside it once left a pane sitting
+ * at an open shell quote until someone closed it by hand.
  *
  * The trailing `rm -rf` removes the file and its directory together, and
  * runs only once the sourced group exits — appended outside `frame()`'s own
@@ -293,7 +297,9 @@ function framedScriptName(id: string): string {
  * keeps its directory until the run genuinely finishes. A directory orphaned
  * by a hard crash outlives this server, bounded the same way libtmux-go's
  * is: by the OS's own temp-directory hygiene, not by anything this process
- * can guarantee once it no longer exists to run a defer.
+ * can guarantee once it no longer exists to run a defer. The pane dying mid-run
+ * leaves the same residue for the same reason: the trailer never runs because
+ * nothing ever sources it.
  */
 async function deliverFramedScript(
   context: ToolContext,
@@ -304,7 +310,7 @@ async function deliverFramedScript(
   const directory = await mkdtemp(join(tmpdir(), "ltx-"));
   const path = join(directory, framedScriptName(id));
   try {
-    await context.tmux.loadBuffer(id, `${source}; command rm -rf -- '${directory}'`);
+    await context.tmux.loadBuffer(id, `${source}; command rm -rf -- ${shellQuote(directory)}`);
     try {
       await context.tmux.saveBuffer(id, path);
     } finally {
@@ -316,7 +322,7 @@ async function deliverFramedScript(
     throw error;
   }
   try {
-    await dispatchPaneKeys(pane, `. '${path}'`, { literal: true });
+    await dispatchPaneKeys(pane, `. ${shellQuote(path)}`, { literal: true });
   } catch (error) {
     // The file was written but the pane never received the line that would
     // source it, so nothing else will ever remove it. This process made the
