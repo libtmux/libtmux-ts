@@ -88,6 +88,14 @@ export interface CommandOptions {
    *
    * Overrides the server's default. Without either, a command waits as long as
    * tmux takes, which for a wedged daemon is forever.
+   *
+   * Bounds only this call's own wait. On `["wait-for", "-L", name]` in
+   * particular, tmux queues a lock request and hands it to the first queued
+   * locker regardless of whether that locker is still around to claim it
+   * (`cmd-wait-for.c`) — so a caller whose bounded wait timed out or was
+   * cancelled can still be the one tmux is holding the lock for, wedging that
+   * channel for every future locker until the process that requested it
+   * unlocks it, which a caller that gave up on the wait will never do.
    */
   readonly timeoutMs?: number;
 }

@@ -49,12 +49,17 @@ readable under an ordinary 022, on any path — so the file cannot simply live
 in a shared directory like `/tmp`: the `mkdtemp` directory is what keeps the
 command text (secrets included) private, since its own mode is 0700 on POSIX
 unconditionally, not subject to the umask. Same gap and same fix as
-libtmux-go's `observePane` (`control_observation.go`). A trailing
-`command rm -rf` appended outside the sourced group (never inside `frame()`)
-removes the file and its directory once the run genuinely ends, even one that
-outlives the caller's deadline. A directory orphaned by a hard crash outlives
-this server, bounded only by the OS's own temp-directory hygiene — the same
-residual gap libtmux-go accepts.
+libtmux-go's `observePane` (`control_observation.go`). Both the sourcing line
+and the trailer's `rm -rf` quote that path with `shellQuote` (`startup.ts`):
+an operator's `TMPDIR` is not this process's to trust.
+
+A trailing `command rm -rf` appended outside the sourced group (never inside
+`frame()`) removes the file and its directory once the run genuinely ends,
+even one that outlives the caller's deadline. That trailer never runs, and
+the directory outlives the run, whenever nothing sources it: a hard crash of
+this server, or the pane itself dying mid-run while this server stays up.
+Either way the directory is bounded only by the OS's own temp-directory
+hygiene — the same residual gap libtmux-go accepts.
 
 ## Cancellation
 

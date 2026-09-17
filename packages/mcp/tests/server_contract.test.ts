@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describeStartupFailure } from "../src/server.js";
@@ -356,6 +359,45 @@ test("list_sessions separates a raw attached count from a human-only one", async
 
       await waiting;
     });
+  });
+}, 20_000);
+
+// The trailer that removes the private mkdtemp directory (`command.ts`
+// `deliverFramedScript`) only runs once the sourced script exits. A pane
+// killed mid-run never gets there, so the directory outlives it - documented
+// in `packages/mcp/AGENTS.md` and confirmed here against a real pane.
+test("a private directory is left behind when the pane is killed mid-run", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
+    try {
+      await withClient(
+        fixture,
+        async (client) => {
+          const created = structured<{ paneId: string }>(
+            await client.callTool({
+              arguments: { height: 24, name: "kill-mid-run", width: 80 },
+              name: "create_session",
+            }),
+          );
+          const running = client.callTool({
+            arguments: { command: "sleep 4", paneId: created.paneId, timeoutMs: 6_000 },
+            name: "run_shell_command",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await fixture.executeText(["kill-pane", "-t", created.paneId]);
+
+          const result = structured<{ outcome: string }>(await running);
+          expect(result.outcome).toBe("pane_died");
+        },
+        { TMPDIR: scratchTmp },
+      );
+
+      const leftover = await readdir(scratchTmp);
+      expect(leftover.some((name) => name.startsWith("ltx-"))).toBe(true);
+    } finally {
+      await rm(scratchTmp, { force: true, recursive: true });
+    }
   });
 }, 20_000);
 

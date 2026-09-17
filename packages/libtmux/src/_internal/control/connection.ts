@@ -784,7 +784,12 @@ export class ControlConnection {
     }
   }
 
-  /** Publish a pause or resume, and ask a paused pane back. */
+  /**
+   * Publish a pause or resume, and ask a paused pane back.
+   *
+   * Every `%pause` this connection observes gets resumed here, regardless of
+   * who or what paused it - see {@link TmuxPaneFlowEvent}'s doc comment.
+   */
   #routeFlowControl(event: TmuxPaneFlowEvent): void {
     this.#partial.delete(event.paneId);
     if (event.kind === "pause") this.#paused.add(event.paneId);

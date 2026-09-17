@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -93,6 +94,33 @@ describe("shell execution and pane movement", () => {
         .then(() => undefined)
         .catch((thrown: unknown) => thrown);
       expect(aborted).toBeInstanceOf(TmuxTransportError);
+    });
+  }, 15_000);
+
+  // The tmux server owns and runs `run-shell` itself, so a client-side
+  // timeout ends this call's own wait, not the command tmux dispatched.
+  test("a timed-out runShell leaves the server-side command running", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const directory = await makeTestDirectory("ltx-shell-marker-");
+      const marker = join(directory, "done");
+
+      const timedOut = await server
+        .runShell(`sleep 1; touch ${marker}`, { timeoutMs: 100 })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(timedOut).toBeInstanceOf(TmuxTransportError);
+
+      // The call already threw; the server's own child keeps running and
+      // finishes on its own schedule, well after this call gave up on it.
+      expect(existsSync(marker)).toBe(false);
+      for (let waited = 0; !existsSync(marker) && waited < 5_000; waited += 50) {
+        // eslint-disable-next-line no-await-in-loop -- polling for the marker is sequential by nature.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(existsSync(marker)).toBe(true);
+
+      await rm(directory, { force: true, recursive: true });
     });
   }, 15_000);
 

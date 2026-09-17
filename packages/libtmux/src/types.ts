@@ -671,7 +671,23 @@ export interface TmuxPasteBufferEvent {
   readonly kind: "paste-buffer-changed" | "paste-buffer-deleted";
 }
 
-/** tmux paused or resumed output for a pane that fell behind. */
+/**
+ * tmux paused or resumed output for a pane that fell behind.
+ *
+ * This connection answers every `pause` it observes with its own
+ * `refresh-client -A <pane>:continue` (see {@link WatchOptions.pauseAfterSeconds}),
+ * whether tmux paused the pane on its own or a caller paused it directly with
+ * `server.cmd("refresh-client", ["-A", "<pane>:pause"])` on this same
+ * connection's client. A pause held that way is resumed within one round
+ * trip; it does not stay paused for the caller to inspect.
+ *
+ * `pause`/`continue` and `off`/`on` (`refresh-client -A <pane>:off` / `:on`)
+ * are independent pairs tmux tracks separately. Resuming with the wrong verb
+ * - `off` then `continue`, or `pause` then `on` - returns success but leaves
+ * the pane's output undelivered; `off` stops tmux from reading that pane's
+ * pty at all, which also freezes it for every other client, not only this
+ * connection's.
+ */
 export interface TmuxPaneFlowEvent {
   readonly kind: "continue" | "pause";
   readonly paneId: PaneId;

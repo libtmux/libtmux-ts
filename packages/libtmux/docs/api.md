@@ -917,6 +917,10 @@ runShell(command: string, options?: RunShellOptions): Promise<readonly string[]>
 
 Run a shell command through tmux and return whatever it printed.
 
+`signal` and `timeoutMs` bound this call's own wait; the tmux server owns
+and runs `run-shell` itself, decoupled from this client, so neither one
+stops the command - only this call's own promise settling early.
+
 ```ts
 const lines = await server.runShell("echo hello");
 lines[0]; // "hello"
