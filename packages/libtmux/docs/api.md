@@ -1846,7 +1846,12 @@ to put every pane back where it was. Before tmux 3.8, the classic
 layout string restores the arrangement's shape but can rotate which
 pane lands in which position; a JSON layout (3.8+, and only for a
 reader that actually receives JSON — see [`Server.connect`](#serverconnect)) restores
-exactly. tmux refuses a JSON layout before 3.8.
+exactly.
+
+Only a preset name, a layout string tmux reported, or JSON on tmux 3.8+
+is accepted: anything else is refused here rather than sent, because
+tmux 3.3 and 3.3a exit on a layout they cannot parse and take every
+session on the socket with them.
 
 ```ts
 await window.selectLayout("even-horizontal");
