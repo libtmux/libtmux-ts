@@ -27,7 +27,10 @@ Save this document as `workspace.yaml`:
 session_name: dev
 windows:
   - window_name: editor
-    panes: [null, null]
+    layout: main-vertical
+    panes:
+      - vim
+      - top
 ```
 
 Load on a separate tmux socket:
