@@ -1218,6 +1218,15 @@ test("freeze --save-to an existing file without --force reports destination_exis
   });
 });
 
+test("freeze with no --save-to and no machine flag is a usage error, not a stdout dump", async () => {
+  await fixture(async (_server, _root, run) => {
+    const result = await run(["freeze", "fixture"]);
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("--save-to");
+  });
+});
+
 test.each(["json", "ndjson"])("quiet freeze retains its %s result", async (mode) => {
   await fixture(async (_server, root, run) => {
     const destination = join(root, "captured.json");
