@@ -624,7 +624,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     for (const [index, input] of inputs.entries()) {
       await output.event("workspace-started", {
         input_index: index,
-        workspace: privatePath(input.path, context),
+        input: privatePath(input.path, context),
         session_name: input.spec.name,
         ...(input.kind === "native"
           ? {

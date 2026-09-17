@@ -640,6 +640,10 @@ test("ndjson events use the shared field vocabulary (inputs, session_id, *_index
       .map((line) => JSON.parse(line)) as Record<string, unknown>[];
     const session = (await server.snapshot()).sessions.one({ name: "ndjson-shape" });
 
+    const workspaceStarted = events.find((event) => event.event === "workspace-started")!;
+    expect(workspaceStarted).toMatchObject({ input: "~/ndjson-shape.json", input_index: 0 });
+    expect(workspaceStarted.workspace).toBeUndefined();
+
     const started = events.find((event) => event.event === "started")!;
     expect(started.inputs).toBe(1);
     expect(started.input_count).toBeUndefined();

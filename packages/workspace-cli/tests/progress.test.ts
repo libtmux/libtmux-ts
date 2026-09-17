@@ -28,7 +28,7 @@ function fixture(values: Record<string, unknown> = {}, env: NodeJS.ProcessEnv = 
 }
 const start = {
   session_name: "project",
-  workspace: "project.yaml",
+  input: "project.yaml",
   window_total: 2,
   session_pane_total: 3,
 };
@@ -38,12 +38,18 @@ test("extension progress omits counters and resumes native formatting for the ne
   const progress = f.create();
   await progress.event("workspace-started", {
     session_name: "extension",
-    workspace: "custom.yaml",
+    input: "custom.yaml",
   });
   expect(f.chunks.at(-1)).toBe("Loading workspace: extension");
   await progress.event("workspace-completed", {});
   await progress.event("workspace-started", start);
   expect(f.chunks.at(-1)).toBe("project:2:3");
+});
+
+test("the workspace_path token reads workspace-started's input field", async () => {
+  const f = fixture({ progress_format: "{workspace_path}" });
+  await f.create().event("workspace-started", start);
+  expect(f.chunks.at(-1)).toBe("project.yaml");
 });
 
 test("progress distinguishes created panes from configured panes and safely expands custom tokens", async () => {
