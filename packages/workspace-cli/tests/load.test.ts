@@ -239,7 +239,9 @@ test.each(["before", "after", "teamocil"])(
       const session = (await server.snapshot()).sessions.one({ name: "import-sync" });
       const panes = session.panes.toArray();
       expect(panes).toHaveLength(2);
-      const expected = [phase === "after" ? "first" : "firstsecond", "second"];
+      // Both panes exist before either receives a command, so synchronize-panes
+      // set beforehand mirrors both commands to both.
+      const expected = phase === "after" ? ["first", "second"] : ["firstsecond", "firstsecond"];
       const paths = panes.map((pane) => join(root, `${pane.id}.marker`));
       let observed: string[] = [];
       const deadline = Date.now() + 3000;
