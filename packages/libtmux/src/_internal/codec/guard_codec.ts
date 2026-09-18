@@ -43,7 +43,9 @@ export interface GuardCodecCapabilities {
   readonly tmuxVersion: TmuxVersion;
 }
 
-export class FormatProtocolError extends LibTmuxError {}
+export class FormatProtocolError extends LibTmuxError {
+  static override readonly code: string = "FormatProtocolError";
+}
 
 /**
  * Describe a response that did not frame, without printing it.

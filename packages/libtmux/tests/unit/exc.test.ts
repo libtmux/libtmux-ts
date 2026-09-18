@@ -132,12 +132,12 @@ describe("query exceptions", () => {
     const cause = new Error("regex implementation detail");
     const error = new QueryValidationError({
       cause,
-      code: "invalid-id",
+      reason: "invalid-id",
       message: "Invalid pane ID",
     });
 
     expect(error.name).toBe("QueryValidationError");
-    expect(error.code).toBe("invalid-id");
+    expect(error.reason).toBe("invalid-id");
     expect(error.cause).toBe(cause);
     expect(error.message).toBe("Invalid pane ID");
     expect(error.message).not.toContain("regex");

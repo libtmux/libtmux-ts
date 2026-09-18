@@ -62,8 +62,8 @@ const formatFieldTokenSet: ReadonlySet<string> = new Set(FORMAT_FIELD_TOKENS);
 function invalidNormalization(message: string, cause?: unknown): never {
   throw new QueryValidationError(
     cause === undefined
-      ? { code: "invalid-query", message }
-      : { cause, code: "invalid-query", message },
+      ? { reason: "invalid-query", message }
+      : { cause, reason: "invalid-query", message },
   );
 }
 

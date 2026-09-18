@@ -30,7 +30,7 @@ function expectInvalidQuery(action: () => unknown): QueryValidationError {
     observed = error;
   }
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
   return observed as QueryValidationError;
 }
 

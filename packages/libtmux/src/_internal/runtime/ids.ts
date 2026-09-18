@@ -35,7 +35,7 @@ function parseId<Id extends string>(schema: Validator<string>, value: string, la
   if (!result.success) {
     throw new QueryValidationError({
       cause: new ValidationFailure(result.issues),
-      code: "invalid-id",
+      reason: "invalid-id",
       message: `Invalid ${label} ID`,
     });
   }

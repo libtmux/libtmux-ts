@@ -130,7 +130,7 @@ const multipleMatches = new MultipleMatchesError({
 });
 const invalidQuery = new QueryValidationError({
   cause: exceptionCause,
-  code: "invalid-query",
+  reason: "invalid-query",
   message: "Invalid query",
 });
 

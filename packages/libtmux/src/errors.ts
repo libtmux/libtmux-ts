@@ -121,11 +121,31 @@ export interface TmuxCommandFailureOptions extends ExceptionOptions {
 }
 
 export class LibTmuxError extends Error {
+  /**
+   * This class's identifier, declared once per class and written to both
+   * {@link code} and `name` on every instance.
+   *
+   * It is a literal rather than `new.target.name` because a constructor's
+   * `name` is its identifier, and a bundler that minifies identifiers renames
+   * it: under `--minify`, `new WaitTimeoutError().name` read `"m"`. Anything a
+   * consumer branches on has to survive their build, so every subclass
+   * declares this and a gate holds each one to its own.
+   */
+  static readonly code: string = "LibTmuxError";
+
+  /**
+   * Which error this is, as a string that outlives minification, bundling and
+   * a serialization round trip — the check to write when `instanceof` cannot
+   * reach, across a worker boundary or two copies of the package.
+   */
+  readonly code: string;
   readonly subcommand: string | undefined;
 
   constructor(message = "", options: ExceptionOptions = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = new.target.name;
+    const declared = (new.target as typeof LibTmuxError).code;
+    this.name = declared;
+    this.code = declared;
     this.subcommand = options.subcommand;
   }
 
@@ -154,6 +174,8 @@ export type TmuxTransportErrorKind =
  * the only status a caller may retry blindly.
  */
 export class TmuxTransportError extends LibTmuxError {
+  static override readonly code: string = "TmuxTransportError";
+
   readonly #stderr: Uint8Array;
   readonly #stdout: Uint8Array;
   /** How far the command got before this failure. */
@@ -174,7 +196,6 @@ export class TmuxTransportError extends LibTmuxError {
       ...(options.cause === undefined ? {} : { cause: options.cause }),
       ...(options.subcommand === undefined ? {} : { subcommand: options.subcommand }),
     });
-    this.name = "TmuxTransportError";
     this.delivery = options.delivery;
     this.kind = options.kind;
     this.signal = options.signal;
@@ -202,6 +223,8 @@ export interface TmuxTransportErrorOptions extends ExceptionOptions {
 }
 
 export class ObjectNotFoundError extends LibTmuxError {
+  static override readonly code: string = "ObjectNotFoundError";
+
   readonly query: Query | undefined;
 
   constructor(options: ObjectNotFoundOptions = {}) {
@@ -215,6 +238,8 @@ export class ObjectNotFoundError extends LibTmuxError {
 }
 
 export class MultipleObjectsError extends LibTmuxError {
+  static override readonly code: string = "MultipleObjectsError";
+
   readonly count: number | undefined;
   readonly query: Query | undefined;
 
@@ -231,6 +256,8 @@ export class MultipleObjectsError extends LibTmuxError {
 }
 
 export class TmuxObjectNotFoundError extends ObjectNotFoundError {
+  static override readonly code: string = "TmuxObjectNotFoundError";
+
   constructor(
     options: {
       readonly list_cmd?: string;
@@ -262,6 +289,8 @@ export class TmuxObjectNotFoundError extends ObjectNotFoundError {
  * empty result that reads as "no object has this".
  */
 export class VersionTooLowError extends LibTmuxError {
+  static override readonly code: string = "VersionTooLowError";
+
   /** The criteria key the caller wrote, when this came from a query. */
   readonly criteriaName?: string;
   /** The tmux that answered, when this came from a query. */
@@ -286,15 +315,23 @@ export class VersionTooLowError extends LibTmuxError {
   }
 }
 
-export class WaitTimeoutError extends LibTmuxError {}
+export class WaitTimeoutError extends LibTmuxError {
+  static override readonly code: string = "WaitTimeoutError";
+}
 
-export class NoMatchError extends ObjectNotFoundError {}
-export class MultipleMatchesError extends MultipleObjectsError {}
+export class NoMatchError extends ObjectNotFoundError {
+  static override readonly code: string = "NoMatchError";
+}
+export class MultipleMatchesError extends MultipleObjectsError {
+  static override readonly code: string = "MultipleMatchesError";
+}
 
-export type QueryValidationErrorCode = "invalid-id" | "invalid-query";
+export type QueryValidationReason = "invalid-id" | "invalid-query";
 
 export class QueryValidationError extends LibTmuxError {
-  readonly code: QueryValidationErrorCode;
+  static override readonly code: string = "QueryValidationError";
+
+  readonly reason: QueryValidationReason;
   /**
    * Where in the criteria the problem is, as keys and array indices.
    *
@@ -309,17 +346,17 @@ export class QueryValidationError extends LibTmuxError {
 
   constructor({
     cause,
-    code,
+    reason,
     message,
     path = [],
   }: {
     readonly cause?: unknown;
-    readonly code: QueryValidationErrorCode;
+    readonly reason: QueryValidationReason;
     readonly message: string;
     readonly path?: readonly (string | number)[];
   }) {
     super(message, { cause });
-    this.code = code;
+    this.reason = reason;
     this.path = Object.freeze([...path]);
   }
 }
@@ -348,12 +385,13 @@ export class QueryValidationError extends LibTmuxError {
  * ```
  */
 export class TmuxServerRestartedError extends LibTmuxError {
+  static override readonly code: string = "TmuxServerRestartedError";
+
   /** How far the refused command got, which is nowhere. */
   readonly delivery: DeliveryStatus = "not_started";
 
   constructor(message: string, options: ExceptionOptions = {}) {
     super(message, options);
-    this.name = "TmuxServerRestartedError";
   }
 }
 
@@ -366,6 +404,8 @@ export class TmuxServerRestartedError extends LibTmuxError {
  * requested state" from a genuine error.
  */
 export class TmuxCommandError extends LibTmuxError {
+  static override readonly code: string = "TmuxCommandError";
+
   readonly args: readonly string[];
   readonly exitCode: number;
   readonly stderr: readonly string[];

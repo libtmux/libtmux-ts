@@ -90,7 +90,7 @@ const validatedProjectionCorpora = new WeakSet<object>();
 function invalidSelection(cause?: unknown): never {
   throw new QueryValidationError({
     ...(cause === undefined ? {} : { cause }),
-    code: "invalid-query",
+    reason: "invalid-query",
     message: "Invalid selection construction",
   });
 }

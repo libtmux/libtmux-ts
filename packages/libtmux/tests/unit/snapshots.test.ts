@@ -36,7 +36,7 @@ function expectInvalidQuery(action: () => unknown, rawError?: unknown): void {
   }
   if (rawError !== undefined) expect(observed).not.toBe(rawError);
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
 }
 
 function assertFrozenData(value: unknown, seen = new Set<object>()): void {

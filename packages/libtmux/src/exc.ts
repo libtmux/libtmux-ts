@@ -30,7 +30,7 @@ export { NoMatchError } from "./errors.js";
 /** @deprecated Import from `libtmux/errors` instead. */
 export { MultipleMatchesError } from "./errors.js";
 /** @deprecated Import from `libtmux/errors` instead. */
-export type { QueryValidationErrorCode } from "./errors.js";
+export type { QueryValidationReason } from "./errors.js";
 /** @deprecated Import from `libtmux/errors` instead. */
 export { QueryValidationError } from "./errors.js";
 /** @deprecated Import from `libtmux/errors` instead. */

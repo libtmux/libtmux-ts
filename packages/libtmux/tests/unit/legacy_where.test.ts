@@ -14,7 +14,7 @@ function expectInvalidQuery(action: () => unknown, escaped?: unknown): QueryVali
   }
   if (escaped !== undefined) expect(observed).not.toBe(escaped);
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
   return observed as QueryValidationError;
 }
 

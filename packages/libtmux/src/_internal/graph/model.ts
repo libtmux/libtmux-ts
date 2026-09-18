@@ -118,7 +118,7 @@ interface NormalizedGraphData {
 }
 
 function invalidGraphIdentity(message: string): never {
-  throw new QueryValidationError({ code: "invalid-query", message });
+  throw new QueryValidationError({ reason: "invalid-query", message });
 }
 
 export function createGraphSourceId(value: string): GraphSourceId {

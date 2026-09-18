@@ -63,8 +63,8 @@ interface WinlinkRefInput {
 function invalidReference(message: string, cause?: unknown): never {
   throw new QueryValidationError(
     cause === undefined
-      ? { code: "invalid-query", message }
-      : { cause, code: "invalid-query", message },
+      ? { reason: "invalid-query", message }
+      : { cause, reason: "invalid-query", message },
   );
 }
 

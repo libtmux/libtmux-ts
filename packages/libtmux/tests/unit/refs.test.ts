@@ -28,7 +28,7 @@ function expectInvalidQuery(action: () => unknown): void {
     observed = error;
   }
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
 }
 
 function cloneWithPrototype<Value extends object>(prototype: object | null, value: Value): Value {
@@ -417,7 +417,7 @@ describe("reference input hardening", () => {
 
     for (const error of observed) {
       expect(error).toBeInstanceOf(QueryValidationError);
-      expect(error).toMatchObject({ code: "invalid-query" });
+      expect(error).toMatchObject({ reason: "invalid-query" });
     }
   });
 
@@ -461,7 +461,7 @@ describe("reference input hardening", () => {
       {},
       {
         getPrototypeOf() {
-          throw new QueryValidationError({ code: "invalid-id", message: "proxy trap" });
+          throw new QueryValidationError({ reason: "invalid-id", message: "proxy trap" });
         },
       },
     );

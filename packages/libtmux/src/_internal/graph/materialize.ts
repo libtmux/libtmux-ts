@@ -27,7 +27,7 @@ type Child = Client | Pane | Session | Window;
 type ProjectedChild = Client | Pane | Session | Window;
 
 function invalidMaterialization(message: string): never {
-  throw new QueryValidationError({ code: "invalid-query", message });
+  throw new QueryValidationError({ reason: "invalid-query", message });
 }
 
 function requireAuthenticGraph(graph: NormalizedGraph): NormalizedGraph {

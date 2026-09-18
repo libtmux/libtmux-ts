@@ -24,7 +24,7 @@ describe("selection regex work limit", () => {
     ] as const) {
       const error = refused(pattern, flags);
 
-      expect(error.code).toBe("invalid-query");
+      expect(error.reason).toBe("invalid-query");
       expect(error.message).not.toContain(pattern);
     }
   });

@@ -8,7 +8,7 @@ type LegacyModel = "session" | "window";
 function invalidLegacyWhere(cause?: unknown): QueryValidationError {
   return new QueryValidationError({
     ...(cause === undefined ? {} : { cause }),
-    code: "invalid-query",
+    reason: "invalid-query",
     message: "Invalid legacy where query",
   });
 }

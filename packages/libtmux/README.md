@@ -1302,7 +1302,21 @@ await server.checkAlive(); // the assertion form
 ```
 
 Library failures extend `LibTmuxError`; invalid arguments may throw native
-`TypeError`. A query that matches nothing raises `NoMatchError`, one that
+`TypeError`. Every one carries `code`, a string naming its class that survives
+a bundler renaming identifiers — the check to write where `instanceof` cannot
+reach:
+
+```ts
+try {
+  await server.snapshot();
+} catch (error) {
+  if (error instanceof Error && "code" in error && error.code === "TmuxTransportError") {
+    // the command never got an answer
+  }
+}
+```
+
+A query that matches nothing raises `NoMatchError`, one that
 matches several where you asked for one raises `MultipleMatchesError`, and
 criteria the schema rejects raise `QueryValidationError`. A `waitFor` that
 reaches its deadline with the condition still unmet raises
@@ -1331,6 +1345,9 @@ Use these error names. The old names remain deprecated aliases to the same
 constructors, so existing `instanceof` checks still work. `error.name` reports
 the canonical name. The `libtmux/exc` entrypoint remains a compatibility export;
 use `libtmux/errors` for new imports.
+
+`QueryValidationError.code` is now `reason`, because every error now carries a
+`code` naming its own class.
 
 | Previous name             | Canonical name             |
 | ------------------------- | -------------------------- |
