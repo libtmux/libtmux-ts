@@ -489,10 +489,13 @@ export class Window {
    * reader that actually receives JSON — see {@link Server.connect}) restores
    * exactly.
    *
-   * Only a preset name, a layout string tmux reported, or JSON on tmux 3.8+
-   * is accepted: anything else is refused here rather than sent, because
-   * tmux 3.3 and 3.3a exit on a layout they cannot parse and take every
-   * session on the socket with them.
+   * Only a preset name, a layout string that parses here, or JSON on tmux
+   * 3.8+ is accepted: anything else is refused rather than sent, because two
+   * ranges of tmux exit on a layout they cannot read and take every session
+   * on the socket with them. tmux 3.3 and 3.3a die on a value with no
+   * readable checksum, and 3.7 through 3.7d on one whose checksum is correct
+   * and whose cells are not — so the checksum alone is not evidence, and the
+   * layout is parsed in full before dispatch.
    */
   selectLayout(layout: string): Promise<void> {
     return selectLayout(runtimeForHandle(this), this.id, layout);

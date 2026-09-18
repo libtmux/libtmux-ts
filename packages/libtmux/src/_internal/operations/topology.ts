@@ -6,6 +6,7 @@ import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { runCommand, runCommands } from "./command.js";
+import { parseClassicLayout, type ClassicLayoutParse, type LayoutRejection } from "./layout.js";
 import { planRemoveWindowPlacement } from "./plans.js";
 import { assertName } from "./names.js";
 
@@ -106,9 +107,13 @@ const LAYOUT_SET_NAMES: readonly string[] = [...LAYOUT_PRESETS, ...MIRRORED_LAYO
 const MIRRORED_LAYOUTS_SINCE = parseTmuxVersion("3.5");
 // tmux CHANGES, 3.7c to 3.8: layout strings use a JSON subset format.
 const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8");
-// A layout tmux dumped starts with its four-hex-digit checksum; sscanf reads
-// it case-insensitively.
-const CLASSIC_LAYOUT = /^[0-9a-fA-F]{4},/u;
+
+/** Why a value that opened like a dumped layout is not one. */
+const LAYOUT_REJECTIONS: Readonly<Record<LayoutRejection, string>> = Object.freeze({
+  checksum: "carries a checksum that does not match the layout after it",
+  depth: "nests deeper than tmux parses",
+  structure: "carries a checksum but is not a layout tmux would apply",
+});
 
 type LayoutPresetLookup =
   | { readonly candidates: readonly string[]; readonly kind: "ambiguous" }
@@ -151,14 +156,18 @@ async function versionedLayoutPresetNames(runtime: RuntimeContext): Promise<read
 /**
  * Refuse a layout value tmux cannot safely be handed.
  *
- * tmux 3.3 and 3.3a exit the whole server on a layout string whose checksum
- * prefix they cannot read - an unknown preset name, `garbage`, a JSON layout,
- * or `-o` once `--` forces it to be read as a layout - instead of refusing it.
- * A preset the running tmux knows, an unambiguous prefix of one (`tile` for
- * `tiled`; `layout_set_lookup` never falls through to `layout_parse`, the
- * 3.3a crash path, for those), or a string carrying the checksum prefix (even
- * one tmux then rejects), is safe everywhere, so only those reach tmux
- * unconditionally; mirrored presets and JSON wait for the release that
+ * Two releases answer a layout they cannot read by exiting rather than
+ * refusing, and they fail on opposite inputs. tmux 3.3 and 3.3a die on a
+ * value carrying no readable checksum - an unknown preset name, `garbage`, a
+ * JSON layout, or `-o` once `--` forces it to be read as a layout. tmux 3.7
+ * through 3.7d die on a value that carries a correct checksum and then holds
+ * an unreadable cell, which is why the checksum is not evidence of anything
+ * (see `parseClassicLayout`).
+ *
+ * What is safe on every supported release is a preset the running tmux knows,
+ * an unambiguous prefix of one (`tile` for `tiled`; `layout_set_lookup` never
+ * falls through to the parser for those), and a layout string this package
+ * has parsed itself. Mirrored presets and JSON wait for the release that
  * learned them. Decided before dispatch, so it holds on every version.
  *
  * A prefix is resolved against every preset name first, with no version
@@ -181,7 +190,12 @@ async function assertLayoutValue(runtime: RuntimeContext, layout: string): Promi
   }
   const resolved = preset.kind === "resolved" ? preset.name : undefined;
   if (resolved !== undefined && LAYOUT_PRESETS.has(resolved)) return;
-  if (resolved === undefined && CLASSIC_LAYOUT.test(layout)) return;
+  const classic: ClassicLayoutParse =
+    resolved === undefined ? parseClassicLayout(layout) : { kind: "not-classic" };
+  if (classic.kind === "valid") return;
+  if (classic.kind === "invalid") {
+    throw new TypeError(`${JSON.stringify(layout)} ${LAYOUT_REJECTIONS[classic.reason]}`);
+  }
   const since =
     resolved !== undefined && MIRRORED_LAYOUT_PRESETS.has(resolved)
       ? MIRRORED_LAYOUTS_SINCE

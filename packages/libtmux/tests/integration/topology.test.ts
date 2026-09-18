@@ -369,12 +369,13 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
-  // TS-3 and the 3.3a crash: `-o` is tmux's own undo flag, and forcing it
-  // through with `--` makes it an unparseable layout string - which tmux 3.3
-  // and 3.3a answer by exiting the whole server. So is `garbage`, an unknown
-  // preset name, or a JSON layout before 3.8. Each must be refused before tmux
-  // sees it: the call rejects, the layout is untouched, and the server that
-  // served the call is still there to answer the next one.
+  // Two releases answer an unreadable layout by exiting, on opposite inputs.
+  // tmux 3.3 and 3.3a die on a value with no readable checksum — `-o` forced
+  // through `--`, `garbage`, an unknown preset, a JSON layout before 3.8.
+  // tmux 3.7 through 3.7d die on one whose checksum is correct and whose
+  // cells are not. Each must be refused before tmux sees it: the call
+  // rejects, the layout is untouched, and the server that served the call is
+  // still there to answer the next one.
   test("refuses layout values tmux would misread or crash on, before dispatch", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -391,6 +392,20 @@ describe("window and pane topology", () => {
         ["garbage", TypeError],
         ["no-such-preset", TypeError],
         ["", TypeError],
+        // Bodies that carry a correct checksum and then fail inside a child
+        // list. tmux 3.7 through 3.7d exit the whole server on each of these:
+        // `layout_construct` answers an unreadable cell with NULL, returns
+        // success anyway when a terminator follows, and `layout_free_cell`
+        // later walks onto it. Every release outside that range refuses them,
+        // so this corpus only ever proves the guard on some of the matrix —
+        // which is the point of running the matrix.
+        ["64aa,80x24,0,0{", TypeError],
+        ["648a,80x24,0,0[", TypeError],
+        ["32d2,80x24,0,0{}", TypeError],
+        ["99bd,80x24,0,0{,}", TypeError],
+        ["923d,80x24,0,0{40x24,0,0,0,}", TypeError],
+        ["04e0,80x24,0,0[80x12,0,0,1,80x11,0,13{", TypeError],
+        ["0000,80x24,0,0,0", TypeError],
       ];
       if (!jsonSupported) refusals.push(['{"V":2,"L":{"t":"p"}}', VersionTooLowError]);
 
@@ -409,11 +424,39 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
-  // TS2-1: tmux's own `layout_set_lookup` (layout-set.c) is a prefix match,
-  // so `tile` and `even-h` apply on every version tested and can never reach
-  // `layout_parse` (the 3.3a crash path an exact-match-only guard was
-  // confusing them with). An ambiguous prefix must still be refused, and a
-  // classic layout's checksum is read case-insensitively.
+  // The other half of the guard: parsing the layout ourselves may not refuse
+  // one tmux itself dumped. Each preset produces a different shape — nested
+  // containers, a pane id on every leaf — so applying one and feeding its own
+  // `window_layout` back proves the parser against this tmux's own output
+  // rather than against a fixture written from another release's.
+  test("accepts every layout this tmux reports for its own windows", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+      await window.split();
+
+      for (const preset of ["even-horizontal", "even-vertical", "main-vertical", "tiled"]) {
+        // eslint-disable-next-line no-await-in-loop -- each round trip reads the layout the preset before it left.
+        await window.selectLayout(preset);
+        // eslint-disable-next-line no-await-in-loop -- the dump must follow the preset it describes.
+        const dumped = (await window.refreshed()).format.window_layout;
+        expect(dumped, `window_layout after ${preset}`).toBeTruthy();
+        // eslint-disable-next-line no-await-in-loop -- reapplying is what proves the dump parses.
+        await window.selectLayout(dumped!);
+        // eslint-disable-next-line no-await-in-loop -- the comparison must follow the reapplication.
+        expect((await window.refreshed()).format.window_layout, `round trip of ${preset}`).toBe(
+          dumped,
+        );
+      }
+      expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
+  // tmux's own `layout_set_lookup` (layout-set.c) is a prefix match, so
+  // `tile` and `even-h` apply on every version tested and never reach
+  // `layout_parse`, the 3.3a crash path. An ambiguous prefix is still
+  // refused, and a classic layout's checksum is read case-insensitively.
   test("accepts a unique layout preset prefix and refuses an ambiguous one", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
