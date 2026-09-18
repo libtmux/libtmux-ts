@@ -43,6 +43,7 @@ export type {
   ResizeOptions,
   ResizeWindowOptions,
   RunShellOptions,
+  SaveBufferOptions,
   SendKeysOptions,
   ServerSnapshot,
   SnapshotOptions,

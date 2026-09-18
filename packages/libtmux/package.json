@@ -148,6 +148,7 @@
     "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
     "test:unit": "bun run build && bun scripts/run-unit-tests.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "typecheck:readme": "bun scripts/doc-examples/check-readme-examples.ts",
     "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",
     "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",

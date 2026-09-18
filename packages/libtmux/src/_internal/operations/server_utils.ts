@@ -1,6 +1,7 @@
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
 import { runCommand, runCommandBytes } from "./command.js";
 import { TmuxTransportError } from "../../errors.js";
+import type { SaveBufferOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 /**
@@ -88,15 +89,13 @@ export async function saveBuffer(
   runtime: RuntimeContext,
   name: string,
   path: string,
-  options: { readonly append?: boolean } = {},
+  options: SaveBufferOptions = {},
 ): Promise<void> {
-  await runCommand(runtime, [
-    "save-buffer",
-    ...(options.append === true ? ["-a"] : []),
-    "-b",
-    name,
-    path,
-  ]);
+  await runCommand(
+    runtime,
+    ["save-buffer", ...(options.append === true ? ["-a"] : []), "-b", name, path],
+    options,
+  );
 }
 
 /** Discard a named paste buffer. */

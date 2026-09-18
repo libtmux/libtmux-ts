@@ -20,6 +20,7 @@ import type {
   RunShellOptions,
   ServerSnapshot,
   SnapshotOptions,
+  SaveBufferOptions,
   SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
@@ -583,7 +584,7 @@ export class Server {
    * await server.saveBuffer("captured", "/tmp/build.log");
    * ```
    */
-  saveBuffer(name: string, path: string, options?: { readonly append?: boolean }): Promise<void> {
+  saveBuffer(name: string, path: string, options?: SaveBufferOptions): Promise<void> {
     return saveBuffer(runtimeForServer(this), name, path, options);
   }
 

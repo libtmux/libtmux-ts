@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import * as errors from "../../src/errors.js";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
-type ErrorClass = new (...args: never[]) => Error;
+type ErrorClass = (new (...args: never[]) => Error) & { readonly code: string };
 
 /**
  * Every error class the module exports, by the name it is exported under.
@@ -12,11 +12,14 @@ type ErrorClass = new (...args: never[]) => Error;
  * `code` of its own fails this suite instead of quietly inheriting its
  * parent's.
  */
-const ERROR_CLASSES: readonly (readonly [string, ErrorClass])[] = Object.entries(errors)
+const ERROR_CLASSES: readonly (readonly [string, ErrorClass])[] = Object.entries(
+  errors as Readonly<Record<string, unknown>>,
+)
   .filter(
     (entry): entry is [string, ErrorClass] =>
       typeof entry[1] === "function" &&
-      (entry[1] === errors.LibTmuxError || entry[1].prototype instanceof errors.LibTmuxError),
+      (entry[1] === errors.LibTmuxError ||
+        (entry[1] as { readonly prototype: unknown }).prototype instanceof errors.LibTmuxError),
   )
   // A deprecated alias is the same constructor exported under its old name.
   // Discriminating on the constructor's own identifier keeps this list
@@ -52,7 +55,7 @@ describe("error identity", () => {
   });
 
   test("gives each class a distinct code", () => {
-    const codes = ERROR_CLASSES.map(([, Class]) => (Class as { readonly code: string }).code);
+    const codes = ERROR_CLASSES.map(([, Class]) => Class.code);
     expect(new Set(codes).size).toBe(codes.length);
   });
 

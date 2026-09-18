@@ -66,6 +66,7 @@ const expectedScripts = {
   "test:type-performance": "bun scripts/check-type-performance.ts --check",
   "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
   typecheck: "tsc -p tsconfig.json --noEmit",
+  "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
   "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",
   "typecheck:readme": "bun scripts/doc-examples/check-readme-examples.ts",
   "typecheck:symbols": "bun scripts/doc-examples/check-symbol-examples.ts",

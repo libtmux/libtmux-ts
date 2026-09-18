@@ -111,6 +111,7 @@ jobs:
         run: |
           bun run lint:unused
           bun run typecheck
+          bun run typecheck:tests
           bun run typecheck:readme
           bun run typecheck:symbols
           bun run docs:api:check

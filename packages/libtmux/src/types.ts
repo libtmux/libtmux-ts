@@ -346,6 +346,11 @@ export interface CaptureOptions extends CommandOptions {
   readonly start?: number;
 }
 
+export interface SaveBufferOptions extends CommandOptions {
+  /** Append to the file rather than replacing it, tmux's `-a`. */
+  readonly append?: boolean;
+}
+
 export interface SetHookOptions extends CommandOptions {
   /**
    * Add to the commands this hook already holds, tmux's `-a`.

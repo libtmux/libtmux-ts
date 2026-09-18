@@ -161,11 +161,19 @@ $ bun run ci:config
 ```
 
 Then, from `packages/libtmux`, the library's own gates — `lint:unused`,
-`typecheck`, `typecheck:readme`, `typecheck:symbols`, `docs:api:check`,
-`docs:criteria:check`, `generate:check`, `parity`, and `build`. Everything after
-the build needs the emitted declarations it produced: `typecheck:ambient-free`,
-`typecheck:tooling`, `test:package`, and `test:install`. Then `test:types`,
-`test:node`, and `test:coverage`.
+`typecheck`, `typecheck:tests`, `typecheck:readme`, `typecheck:symbols`,
+`docs:api:check`, `docs:criteria:check`, `generate:check`, `parity`, and
+`build`. Everything after the build needs the emitted declarations it produced:
+`typecheck:ambient-free`, `typecheck:tooling`, `test:package`, and
+`test:install`. Then `test:types`, `test:node`, and `test:coverage`.
+
+`typecheck` compiles `src` alone, because the build needs `declaration` and
+`isolatedDeclarations` and the suite cannot satisfy either. `typecheck:tests`
+is the same settings relaxed over `src` and `tests` together, and it is not
+optional: without it a renamed field left sixty-two assertions passing a
+property that no longer existed, and a test called a method with an argument
+it does not take. `packages/mcp` and `packages/workspace` compile their tests
+in their one `typecheck`.
 
 `packages/mcp` and `packages/workspace` each run `typecheck`, `test` and
 `test:package`. `examples` runs `typecheck` and `test`: every example is a
