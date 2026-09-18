@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +9,14 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
 
 import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
-import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "../src/command_frame.js";
+import {
+  frame,
+  parseFramedOutput,
+  randomId,
+  sawSourcingFailure,
+  sourcingDispatch,
+  withoutForeignFraming,
+} from "../src/command_frame.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";
 import { PaneTail } from "../src/pane_tail.js";
 import { resolvePolicy } from "../src/policy.js";
@@ -488,11 +495,87 @@ describe("command framing", () => {
     await rm(directory, { force: true, recursive: true });
   });
 
-  // TS2-4: an operator's TMPDIR is not this process's to trust. A `'` inside
-  // it broke the naive `'${path}'` interpolation in both the typed sourcing
-  // line and the trailer's `rm -rf`, leaving a pane sitting at an open shell
-  // quote — the dispatched line is what tmux would actually type into the
-  // pane, so this runs it through a real shell exactly as delivered.
+  // `save-buffer` writes on the tmux server's host, so a pane whose shell is
+  // inside `ssh`, a container, or another user's `su` cannot open the script.
+  // Nothing such a shell prints resembles a framing marker, so before this the
+  // run spent its whole budget waiting for output that could not arrive.
+  test.each(shells)("%s says so when it cannot read the script file", (shell) => {
+    const id = `ltx${randomId()}`;
+    const readable = join(tmpdir(), `ltx-readable-${id}.sh`);
+
+    const missing = run(shell, sourcingDispatch(join(tmpdir(), `ltx-absent-${id}.sh`), id));
+    expect(missing.status, shell).toBe(0);
+    expect(sawSourcingFailure(missing.stdout, id), shell).toBe(true);
+
+    writeFileSync(readable, `command printf '%s\\n' sourced-ok\n`);
+    try {
+      const found = run(shell, sourcingDispatch(readable, id));
+      expect(found.status, shell).toBe(0);
+      expect(found.stdout, shell).toContain("sourced-ok");
+      // The false positive that would make every successful run look failed.
+      expect(sawSourcingFailure(found.stdout, id), shell).toBe(false);
+    } finally {
+      rmSync(readable, { force: true });
+    }
+  });
+
+  // The readability test is what makes the line work on every shell rather
+  // than most: `.` is a POSIX special builtin, and dash answers a missing
+  // operand by abandoning the whole command line, so a `. path || fallback`
+  // spelling runs the fallback under bash and zsh and silently does nothing
+  // under dash.
+  test("tests for the file rather than relying on the source command's status", () => {
+    const dispatch = sourcingDispatch("/tmp/ltx-example/ltx0123456789.sh", "ltx0123456789");
+    expect(dispatch).toStartWith("if [ -r '/tmp/ltx-example/ltx0123456789.sh' ];");
+    // A literal token in the dispatch would be echoed by the pane and read as
+    // a failure on every successful run.
+    expect(sawSourcingFailure(dispatch, "ltx0123456789")).toBe(false);
+  });
+
+  test("types the script itself when the pane cannot read the file", async () => {
+    const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    const sent: string[] = [];
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async (_command: string, args: readonly string[]) => {
+        const dispatched = args.join(" ");
+        sent.push(dispatched);
+        const { id } = dispatchedFrame(buffers.source());
+        // The first dispatch is the sourcing line, which this pane's shell
+        // cannot read; the second carries the script, which it can.
+        if (sent.length === 1) tail.append(`${id}_N\n`);
+        else tail.append(`${id}_S\nresult\n${id}_E 0 ${id}_D\n`);
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+      tmux: buffers.tmux,
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "true", 2_000);
+
+    expect(result.outcome).toBe("completed");
+    expect(result.exitStatus).toBe(0);
+    expect(result.output).toBe("result");
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toContain(".sh'");
+    // The retry carries the frame the file would have held.
+    expect(sent[1]).toContain("printf '%bX'");
+
+    // Nothing sourced the script, so its trailer never ran and this process
+    // removes the directory it made.
+    const directory = /\. '([^']+)\/ltx[0-9a-f]+\.sh'/u.exec(sent[0] ?? "")?.[1];
+    if (directory === undefined) throw new Error("expected a sourcing line");
+    expect(existsSync(directory)).toBe(false);
+  });
+
+  // An operator's TMPDIR is not this process's to trust: a `'` inside it can
+  // break naive `'${path}'` interpolation in the sourcing line and the
+  // trailer's `rm -rf`. This runs the dispatched line through a real shell
+  // exactly as tmux would type it, so a broken quote shows up here.
   test("quotes a TMPDIR apostrophe so the dispatched line never opens an unterminated quote", async () => {
     const shell = Bun.which("sh");
     if (shell === null) throw new Error("no POSIX sh on PATH for this test");

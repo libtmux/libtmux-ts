@@ -37,12 +37,23 @@ code with the tmux socket's authority can inspect the pane.
 
 The framed script's _content_ is unchanged by delivery: `deliverFramedScript`
 (`command.ts`) writes it to a tmux buffer, `save-buffer`s it into a fresh
-`mkdtemp` directory on the tmux server's own host — the pane's host, by
-construction — and types only a short `. '<dir>/<id>.sh'` line. Typing the
-whole ~1KB script, one shell input line, made an interactive shell's line
-editor (zsh with syntax-highlighting/autosuggestion plugins) redraw on every
-byte of it: the trap/octal/nonce machinery flashed across the pane and a
-trivial command could take seconds.
+`mkdtemp` directory on the tmux server's own host, and types only a short
+sourcing line. Typing the whole ~1KB script, one shell input line, made an
+interactive shell's line editor (zsh with syntax-highlighting/autosuggestion
+plugins) redraw on every byte of it: the trap/octal/nonce machinery flashed
+across the pane and a trivial command could take seconds.
+
+The tmux server's host is not the pane's host. A pane running `ssh`, a
+container, or another user's `su` has a shell that cannot open that file, and
+nothing such a shell prints resembles a framing marker — so the run would
+spend its whole budget waiting. `sourcingDispatch` (`command_frame.ts`) tests
+for the file and prints a `<id>_N` token when it cannot be read, and
+`runFramedCommand` answers that token by typing the script itself. The test is
+`[ -r … ]` rather than the status of `.`: `.` is a POSIX special builtin, and
+dash abandons the whole command line when it fails, so `. path || fallback`
+falls back under bash and zsh and silently does nothing under dash. The token
+is assembled by `printf` rather than written out, because the pane echoes what
+is typed and a literal one would read as a failure on every successful run.
 
 `save-buffer` creates its target file mode however the umask says — world
 readable under an ordinary 022, on any path — so the file cannot simply live

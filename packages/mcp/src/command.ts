@@ -6,7 +6,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import { TmuxTransportError, type Pane } from "libtmux";
 
 import { sameInputAuthority, type InputAuthority, type ToolContext } from "./context.js";
-import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "./command_frame.js";
+import {
+  frame,
+  parseFramedOutput,
+  randomId,
+  sawSourcingFailure,
+  sourcingDispatch,
+  withoutForeignFraming,
+} from "./command_frame.js";
 import { captureGridBounded } from "./grid_capture.js";
 import { dispatchPaneKeys } from "./pane_input.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";
@@ -284,9 +291,13 @@ function framedScriptName(id: string): string {
  * (`control_observation.go`), which hits the identical save-buffer gap.
  * `os.tmpdir()` honours `TMPDIR`, and the directory has to be on the tmux
  * server's own host for `save-buffer` and `.` to agree on what the path
- * names — true for a same-host server, which this framing already assumes
- * (the trap-capture directory in `command_frame.ts` makes the same
- * assumption). Both the sourcing line and the trailing `rm -rf` quote that
+ * names. That is a new requirement rather than one the framing already had:
+ * the trap-capture directory in `command_frame.ts` is created by the pane's
+ * own shell and so lives wherever that shell does, while this file is written
+ * by the tmux server. A pane running `ssh`, a container, or another user's
+ * `su` cannot open it — which is why the dispatch tests for the file and
+ * `runFramedCommand` types the script itself when the answer is no. Both the
+ * sourcing line and the trailing `rm -rf` quote that
  * path with `shellQuote` (`startup.ts`): an operator's `TMPDIR` is not this
  * process's to trust, and an unescaped `'` inside it once left a pane sitting
  * at an open shell quote until someone closed it by hand.
@@ -306,7 +317,7 @@ async function deliverFramedScript(
   pane: Pane,
   source: string,
   id: string,
-): Promise<void> {
+): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "ltx-"));
   const path = join(directory, framedScriptName(id));
   try {
@@ -322,7 +333,7 @@ async function deliverFramedScript(
     throw error;
   }
   try {
-    await dispatchPaneKeys(pane, `. ${shellQuote(path)}`, { literal: true });
+    await dispatchPaneKeys(pane, sourcingDispatch(path, id), { literal: true });
   } catch (error) {
     // The file was written but the pane never received the line that would
     // source it, so nothing else will ever remove it. This process made the
@@ -333,6 +344,7 @@ async function deliverFramedScript(
     }
     throw error;
   }
+  return directory;
 }
 
 /**
@@ -369,13 +381,15 @@ export async function runFramedCommand(
   const deadline = Date.now() + budget;
   let missedBytes = 0;
   let commandStarted = false;
+  let scriptDirectory: string | undefined;
+  let retypedInline = false;
   let usedFallback = tail === undefined;
   const dispatchPane = beforeDispatch === undefined ? pane : await beforeDispatch();
   if (isCancelled(signal) || Date.now() >= deadline) {
     return beforeStartResult(budget, isCancelled(signal) ? "cancelled" : "timed_out");
   }
   try {
-    await deliverFramedScript(context, dispatchPane, source, id);
+    scriptDirectory = await deliverFramedScript(context, dispatchPane, source, id);
     commandStarted = true;
   } catch (error) {
     if (!(error instanceof TmuxTransportError) || error.delivery === "not_started") {
@@ -414,6 +428,25 @@ export async function runFramedCommand(
         outputComplete: found.outputComplete && !usedFallback,
         settled: Promise.resolve(),
       };
+    }
+    // The pane's shell could not read the script. It is on the tmux server's
+    // host, and this pane's shell is somewhere else — inside `ssh`, a
+    // container, or another user — so waiting out the budget would report a
+    // timeout for a run that never started. Type the script itself instead,
+    // which is what the pane can always read, and let the same loop carry on.
+    if (!retypedInline && sawSourcingFailure(stream, id)) {
+      retypedInline = true;
+      usedFallback = true;
+      if (scriptDirectory !== undefined) {
+        // The trailer that would have removed this runs only from inside the
+        // sourced script, and nothing sourced it.
+        // eslint-disable-next-line no-await-in-loop -- the removal follows the failure it answers.
+        await rm(scriptDirectory, { force: true, recursive: true }).catch(() => undefined);
+        scriptDirectory = undefined;
+      }
+      // eslint-disable-next-line no-await-in-loop -- the retry follows the failure it answers.
+      await dispatchPaneKeys(dispatchPane, source, { literal: true });
+      continue;
     }
     if (Date.now() >= deadline || isCancelled(signal)) break;
     if (tail === undefined) {
