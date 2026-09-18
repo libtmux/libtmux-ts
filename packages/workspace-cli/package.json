@@ -13,16 +13,19 @@
   },
   "files": [
     "dist",
-    "docs"
+    "docs",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "type": "module",
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "bun run docs:check && rm -rf dist && bun build src/main.ts --target node --outdir dist --splitting --external libtmux",
+    "build": "bun run docs:check && bun run notices && rm -rf dist && bun build src/main.ts --target node --outdir dist --splitting --external libtmux",
     "docs:generate": "bun scripts/generate-reference.ts",
     "docs:check": "bun scripts/generate-reference.ts --check",
+    "notices": "bun scripts/third_party_notices.ts",
+    "notices:check": "bun scripts/third_party_notices.ts --check",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test tests",
     "test:package": "bun run build && bun scripts/check-install.ts --package-only",

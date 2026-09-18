@@ -53,6 +53,7 @@ await runWithCleanup(
     assert(
       !cli.entries.some((path) => path.startsWith("node_modules/") || path.startsWith("tests/")),
     );
+    assert(cli.entries.includes("THIRD-PARTY-NOTICES.md"), "missing packaged third-party notices");
     await writeFile(join(project, "package.json"), '{"private":true,"type":"module"}\n');
     await execute(
       [
