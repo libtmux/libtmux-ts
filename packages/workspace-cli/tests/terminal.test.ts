@@ -322,6 +322,30 @@ test("attached load sizes the session, and every window in it, to the real termi
   });
 });
 
+test("attached load creates the server when the socket has none yet", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "cold.json");
+    const socket = join(root, "cold.sock");
+    await writeFile(source, JSON.stringify({ session_name: "cold", windows: [{}] }));
+    const cold = new Server({ socketPath: socket, tmuxBin: server.tmuxBin, environment: env });
+    await terminal([runtime, entry, "load", source, "-S", socket], root, env, async (result) => {
+      // The server does not exist yet, so reaching it throws until the load
+      // creates it: that is the condition under test.
+      await until(async () => {
+        try {
+          return (await cold.snapshot()).clients.length === 1;
+        } catch {
+          return false;
+        }
+      });
+      expect((await cold.snapshot()).sessions.one({ name: "cold" }).name).toBe("cold");
+      await (await cold.snapshot()).clients.at(0)!.detach();
+      expect((await result).code).toBe(0);
+    });
+    await cold.kill();
+  });
+});
+
 test("human load inside tmux switches the invoking client and returns to its shell", async () => {
   await fixture(async (server, root, env) => {
     const source = join(root, "input.json");

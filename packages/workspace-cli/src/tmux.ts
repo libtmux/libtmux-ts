@@ -653,10 +653,17 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     attached && !request.values.answer_yes && Boolean((context.stdin as { isTTY?: boolean }).isTTY);
   if (attached) {
     const lastName = inputs.at(-1)!.spec.name;
-    const existingLast =
-      (
-        await server.snapshot(context.signal ? { signal: context.signal } : {})
-      ).sessions.oneOrUndefined({ name: lastName }) !== undefined;
+    let existingLast = false;
+    try {
+      existingLast =
+        (
+          await server.snapshot(context.signal ? { signal: context.signal } : {})
+        ).sessions.oneOrUndefined({ name: lastName }) !== undefined;
+    } catch (error) {
+      // No server on this socket means no session to attach to: the load
+      // creates both, as an attached load onto a cold endpoint always has.
+      if (!isColdEndpoint(error)) throw error;
+    }
     if (existingLast) {
       const answer = interactive
         ? await promptChoice(context, `${lastName} is already running. Attach? [Y/n] `, ["y", "n"])
