@@ -486,20 +486,34 @@ async function create(
     });
     let previous = window.panes.at(0)!;
     let focusPane: Pane | undefined;
+    // A pane resized after its command has run redraws the prompt at the width
+    // it had before, so the shell's partial-line marker survives on screen.
+    // Every pane is created and the layout is final before any of them is
+    // typed into.
+    const panes: Pane[] = [previous];
     for (const [paneIndex, paneSpec] of desired.panes.entries()) {
+      if (paneIndex === 0) continue;
       context.signal?.throwIfAborted();
       result.stage = "creating-pane";
-      const pane =
-        paneIndex === 0
-          ? previous
-          : await previous.split({
-              ...(paneSpec.directory ? { startDirectory: paneSpec.directory } : {}),
-              ...(paneSpec.shell ? { shellCommand: paneSpec.shell } : {}),
-              environment: paneSpec.environment,
-              ...(context.signal ? { signal: context.signal } : {}),
-            });
-      if (paneIndex > 0) result.created_panes.push(pane.id);
+      const pane = await previous.split({
+        ...(paneSpec.directory ? { startDirectory: paneSpec.directory } : {}),
+        ...(paneSpec.shell ? { shellCommand: paneSpec.shell } : {}),
+        environment: paneSpec.environment,
+        ...(context.signal ? { signal: context.signal } : {}),
+      });
+      result.created_panes.push(pane.id);
       previous = pane;
+      panes.push(pane);
+      // Splitting the previously created pane exhausts a small window's rows
+      // in a handful of steps, so a fifth split can find no room left. A
+      // tiled pass between splits reclaims it; the document's own layout, if
+      // any, is applied once below as the final word once every pane exists.
+      await window.selectLayout("tiled");
+    }
+    if (desired.data.layout) await window.selectLayout(scalarText(desired.data.layout));
+    for (const [paneIndex, paneSpec] of desired.panes.entries()) {
+      context.signal?.throwIfAborted();
+      const pane = panes[paneIndex]!;
       await output.event("pane-created", {
         input_index: inputIndex,
         session_id: session.id,
@@ -513,11 +527,6 @@ async function create(
           pane_id: pane.id,
           message: "Pane readiness timed out; sending commands",
         });
-      // Splitting the previously created pane exhausts a small window's rows
-      // in a handful of steps, so a fifth split can find no room left. A
-      // tiled pass between splits reclaims it; the document's own layout, if
-      // any, is applied once below as the final word once every pane exists.
-      if (paneIndex > 0) await window.selectLayout("tiled");
       result.stage = "pane-commands";
       await send(pane, paneSpec, context);
       await output.event("pane-completed", {
@@ -529,7 +538,6 @@ async function create(
       });
       if (paneSpec.data.focus) focusPane = pane;
     }
-    if (desired.data.layout) await window.selectLayout(scalarText(desired.data.layout));
     if (focusPane) await focusPane.select();
     result.stage = "window-options-after";
     await options(window, desired.data.options_after, context.signal);
