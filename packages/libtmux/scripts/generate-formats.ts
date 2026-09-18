@@ -140,7 +140,7 @@ function occurrenceCount(source: string, needle: string): number {
 /** The criteria type a field's domain calls for. */
 const criteriaTypeForDomain: Readonly<Record<string, string>> = {
   boolean: "ScalarCriteria<boolean, RawFlag>",
-  number: "ScalarCriteria<SafeInteger, RawNumber>",
+  number: "ScalarCriteria<number, RawNumber>",
   "pane-id": "ScalarCriteria<PaneIdInput, never>",
   "session-id": "ScalarCriteria<SessionIdInput, never>",
   string: "ScalarCriteria",

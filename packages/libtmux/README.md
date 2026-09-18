@@ -316,16 +316,24 @@ import { isSafeInteger, safeInteger } from "libtmux";
 
 snapshot.panes.where({ active: true });
 snapshot.panes.where({ active: "1" }); // what a flag encodes to
-snapshot.panes.where({ pid: "2334787" }); // and a number
-snapshot.panes.where({ pid: safeInteger(process.pid) }); // a computed number
+snapshot.windows.where({ index: 3 }); // a number, written as one
+snapshot.panes.where({ pid: "2334787" }); // or its wire text
+snapshot.panes.where({ pid: process.pid }); // or one you computed
 const candidate = Number(process.env["BUILD_PID"]);
 if (isSafeInteger(candidate)) snapshot.panes.where({ pid: candidate });
 ```
 
-`SafeInteger` keeps `NaN`, infinities, fractions, and unsafe integers out of
-typed criteria. Decoded numeric fields already carry the proof; authenticate a
-number from elsewhere with `safeInteger`, which throws when it is not exact.
-Use `isSafeInteger` to narrow an unknown value without throwing.
+A numeric criterion takes any `number`, and a value that is not an exact
+integer — `NaN`, an infinity, a fraction, an unsafe integer — raises
+`QueryValidationError` naming the field it was written under. That check is at
+the boundary rather than in the type because the type cannot see a number that
+arrived at runtime, and making the literal case pay for the runtime one cost
+every correct query a `safeInteger` call.
+
+`SafeInteger` is what decoded fields carry, so a value read off a handle is
+already proven exact. `safeInteger` authenticates one from elsewhere and throws
+when it is not, and `isSafeInteger` narrows without throwing — useful where you
+want the refusal at the point the value arrives rather than at the query.
 
 Invalid wire spellings remain type errors:
 
@@ -339,11 +347,11 @@ snapshot.panes.where({ pid: "banana" });
 ```
 
 A `string` you have at runtime — from a config file, an argument, a raw
-`.format` value — is not in that domain, because nothing knows yet whether it
-is. Say what it means:
+`.format` value — says nothing yet about which it is. Say what it means:
 
 ```ts
 const fromConfig = process.argv[2] ?? "";
+// A number: refused here, by `safeInteger`, rather than at the query.
 snapshot.windows.where({ index: safeInteger(Number(fromConfig)) });
 // Or ask about the characters rather than the value, which is what the
 // substring operators are for and why they stay plain strings.
