@@ -917,7 +917,14 @@ async function freezeSession(
   const explicit = name !== null && name !== undefined;
   if (!explicit && context.env.TMUX) return (await currentSession(server, context)).session;
   const acquisition = context.signal ? { signal: context.signal } : {};
-  const sessions = (await server.snapshot(acquisition)).sessions.toArray();
+  let sessions: Session[] = [];
+  try {
+    sessions = (await server.snapshot(acquisition)).sessions.toArray();
+  } catch (error) {
+    // A socket with no server holds no session either, so this is the same
+    // answer as a name that is not running, not a transport failure.
+    if (!isColdEndpoint(error)) throw error;
+  }
   if (explicit) {
     const target = scalarText(name);
     const session = sessions.find((item) => item.name === target || item.id === target);
