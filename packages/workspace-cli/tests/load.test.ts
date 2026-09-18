@@ -48,7 +48,9 @@ async function fixture(
                 process.execPath,
                 new URL("../src/main.ts", import.meta.url).pathname,
                 ...args,
-                ...(args[0] === "import" ? [] : ["-S", fixture.socketPath]),
+                // A caller that names its own socket means it, so the
+                // fixture's must not be appended behind it.
+                ...(args[0] === "import" || args.includes("-S") ? [] : ["-S", fixture.socketPath]),
               ],
               {
                 cwd: directory,
@@ -1217,6 +1219,23 @@ test("freeze --save-to an existing file without --force reports destination_exis
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stderr).code).toBe("destination_exists");
     expect(await readFile(destination, "utf8")).toBe("already here\n");
+  });
+});
+
+test("freeze names the missing session when the socket has no server", async () => {
+  await fixture(async (_server, root, run) => {
+    const result = await run([
+      "freeze",
+      "cold",
+      "--json",
+      "--save-to",
+      join(root, "cold.yaml"),
+      "-S",
+      join(root, "cold.sock"),
+    ]);
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stderr).code).toBe("session_not_found");
+    expect(result.stderr).not.toContain("error connecting to");
   });
 });
 
