@@ -126,6 +126,27 @@ describe("lifecycle mutations", () => {
     });
   }, 60_000);
 
+  /**
+   * Why a create reads the whole server rather than the session it was made
+   * in: a session group shares one window list, so a window made in one member
+   * is linked into every member. Resolved against its own session alone, this
+   * handle would report one link where tmux holds two.
+   */
+  test("resolves a created window's links across its session group", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const first = await server.newSession({ name: "grouped-a" });
+      await server.newSession({ groupWith: "grouped-a", name: "grouped-b" });
+
+      const window = await first.newWindow({ name: "shared" });
+
+      expect(window.linkedSessions.toArray().map((session) => session.name)).toEqual(
+        expect.arrayContaining(["grouped-a", "grouped-b"]),
+      );
+      expect(window.linkedSessions.length).toBe(2);
+    });
+  }, 60_000);
+
   test("creates a session, window, and pane, resolving each as a handle", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

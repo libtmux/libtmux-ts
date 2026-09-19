@@ -272,6 +272,12 @@ export class Session {
   /**
    * Create a window in this session and resolve it as a handle.
    *
+   * The handle costs a snapshot of the whole server, not of this session: a
+   * window made here is linked into every session grouped with it, and the
+   * handle reports those links. When the id is enough,
+   * `server.pipeline([session.plan.newWindow().argv])` returns it for one
+   * command, whatever the server's size.
+   *
    * ```ts
    * const created = await session.newWindow({ name: "editor" });
    * created.name; // "editor"
