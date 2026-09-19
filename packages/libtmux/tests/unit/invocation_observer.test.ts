@@ -172,6 +172,43 @@ describe("invocation observer", () => {
     await holding;
   });
 
+  /**
+   * The spawning engine carries `abort(reason)` onto the rejection, and a
+   * command refused while queued must too: `maxInFlight` queuing is the
+   * documented behaviour under load, so a contract that held only when
+   * nothing contended would be the wrong way round.
+   */
+  test("carries the abort reason when refusing a queued command", async () => {
+    const release: (() => void)[] = [];
+    const server = new Server({
+      engine: singleCommandTransport(
+        (request) =>
+          new Promise((resolve) => {
+            release.push(() => resolve(result(request)));
+          }),
+      ),
+      maxInFlight: 1,
+    });
+    const mine = new Error("caller stopped waiting");
+    const controller = new AbortController();
+
+    const holding = server.runShell("holds the slot");
+    await Promise.resolve();
+    const queued = server.runShell("never gets one", { signal: controller.signal });
+    await Promise.resolve();
+    controller.abort(mine);
+
+    const failure = await queued.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ delivery: "not_started", kind: "cancelled" });
+    expect((failure as { cause?: unknown }).cause).toBe(mine);
+
+    release[0]?.();
+    await holding;
+  });
+
   test("calls a command that threw without saying how far it got indeterminate", async () => {
     const reports: TmuxInvocationReport[] = [];
     const server = new Server({

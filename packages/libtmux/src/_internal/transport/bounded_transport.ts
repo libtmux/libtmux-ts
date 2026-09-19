@@ -329,6 +329,14 @@ export class BoundedTransport implements CommandTransport {
       function refuse(kind: "cancelled" | "timeout", message: string): void {
         reject(
           new TmuxTransportError(message, {
+            // A command abandoned while queued was abandoned for the caller's
+            // own reason as much as one abandoned mid-flight; the spawning
+            // engine carries it and so does this. Queueing is the documented
+            // behaviour under `maxInFlight`, not an edge — losing the reason
+            // here would make the contract hold only when nothing contends.
+            ...(kind === "cancelled" && request.signal?.reason !== undefined
+              ? { cause: request.signal.reason }
+              : {}),
             delivery: "not_started",
             kind,
             subcommand: request.commands[0][0],
