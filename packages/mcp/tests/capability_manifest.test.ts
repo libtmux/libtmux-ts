@@ -333,7 +333,10 @@ test("one manifest governs every toolset subset, selection, metadata, and report
       },
     }),
   );
-});
+  // One test builds every toolset subset and drives the whole manifest, so its
+  // cost is the product of both: about 5s here, which lands on the runner's
+  // 5s default and fails or passes by machine speed rather than by behaviour.
+}, 30_000);
 
 test("target inventory pins a dedicated socket and commandless spawn schemas", async () => {
   const selected = serverFromEnvironment({});
