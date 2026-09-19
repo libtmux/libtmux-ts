@@ -1,19 +1,41 @@
 import type { Writable } from "node:stream";
 import type { OutputMode } from "./parser.ts";
 
+/**
+ * The codes a machine-readable failure can carry. The set is closed and shared
+ * with the other ports, so a caller branches on it rather than on prose; the
+ * type is what keeps a new failure from inventing a tenth.
+ */
+export type MachineCode =
+  | "workspace_not_found"
+  | "invalid_workspace"
+  | "unsupported_key"
+  | "session_not_found"
+  | "tmux_unavailable"
+  | "tmux_failed"
+  | "script_failed"
+  | "destination_exists"
+  | "usage";
+
 export class CliError extends Error {
-  readonly code: string;
+  readonly code: MachineCode;
   readonly exitCode: number;
-  constructor(code: string, message: string, exitCode = 1) {
+  constructor(code: MachineCode, message: string, exitCode = 1) {
     super(message);
     this.code = code;
     this.exitCode = exitCode;
   }
 }
+/**
+ * The stream a command was told to write to is gone. Not one of the machine
+ * codes: nothing the user asked for went wrong, the destination did.
+ */
+export class OutputClosedError extends Error {}
+
 export async function write(stream: Writable, text: string, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
   if (stream.destroyed || stream.writableEnded)
-    throw stream.errored ?? new CliError("output_closed", "Output stream closed");
+    throw stream.errored ?? new OutputClosedError("Output stream closed");
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     const finish = (error?: unknown) => {
@@ -35,7 +57,7 @@ export async function write(stream: Writable, text: string, signal?: AbortSignal
       finish(error);
     };
     const closed = () => {
-      finish(new CliError("output_closed", "Output stream closed before the write completed"));
+      finish(new OutputClosedError("Output stream closed before the write completed"));
     };
     const aborted = () => {
       if (settled) return;

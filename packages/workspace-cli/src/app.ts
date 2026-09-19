@@ -12,9 +12,10 @@ import {
   readDocument,
   resolveWorkspace,
   saveDocument,
+  type Document,
   type FileContext,
 } from "./documents.ts";
-import { CliError, colorEnabled, emitJson, styled, write } from "./output.ts";
+import { CliError, colorEnabled, emitJson, styled, write, type MachineCode } from "./output.ts";
 import { importDocument } from "./imports.ts";
 import { search } from "./search.ts";
 import { debugInfo, edit, shell } from "./commands.ts";
@@ -227,10 +228,21 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
         context,
         importerRoot,
       );
-      const raw = await readDocument(source);
-      const document = kind
-        ? importDocument(kind, raw, context, basename(source, extname(source)))
-        : raw;
+      let document: Document;
+      try {
+        const raw = await readDocument(source);
+        document = kind
+          ? importDocument(kind, raw, context, basename(source, extname(source)))
+          : raw;
+      } catch (error) {
+        // A file that will not parse is the document's shape, the same answer
+        // load gives for the same file.
+        if (error instanceof CliError) throw error;
+        throw new CliError(
+          "invalid_workspace",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
       let destination = request.values.save_to
         ? resolve(context.cwd, expandPath(scalarText(request.values.save_to), context))
         : undefined;
@@ -239,10 +251,7 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
       );
       if (!destination && mode === "human") {
         if (!request.values.answer_yes)
-          throw new CliError(
-            "confirmation_required",
-            "Confirm conversion with --yes or provide --save-to",
-          );
+          throw new CliError("usage", "Confirm conversion with --yes or provide --save-to", 2);
         destination = join(
           dirname(source),
           basename(source, extname(source)) + (format === "json" ? ".json" : ".yaml"),
@@ -285,11 +294,17 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
         );
       return 0;
     }
-    throw new CliError("not_implemented", `${request.command} service is not implemented yet`);
+    // Every command the grammar defines is dispatched above; the reference
+    // test walks the same catalog, so reaching here is a build defect.
+    throw new Error(`${request.command} has no handler`);
   } catch (error) {
     if (context.signal?.aborted) return 130;
     const usage = error instanceof CommanderError;
-    const code = usage ? "usage" : error instanceof CliError ? error.code : "workspace_error";
+    const code: MachineCode = usage
+      ? "usage"
+      : error instanceof CliError
+        ? error.code
+        : "tmux_failed";
     const message = usage
       ? parserError.trim() || error.message
       : error instanceof Error

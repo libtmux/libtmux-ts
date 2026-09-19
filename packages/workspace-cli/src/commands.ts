@@ -106,8 +106,9 @@ export async function shell(request: Request, context: CLIContext): Promise<numb
   const interactive = request.values.command === null || request.values.command === undefined;
   if (interactive && !tty(context))
     throw new CliError(
-      "terminal_required",
+      "usage",
       "An interactive Python shell needs a terminal; use -c for captured output",
+      2,
     );
   const python = context.env.TMUX_WORKSPACE_PYTHON || "python3";
   const signal = context.signal
@@ -122,7 +123,7 @@ export async function shell(request: Request, context: CLIContext): Promise<numb
   } catch (error) {
     if (context.signal?.aborted) throw error;
     throw new CliError(
-      "python_runtime",
+      "script_failed",
       "The Python bridge requires tmuxp 1.74.0; set TMUX_WORKSPACE_PYTHON to its interpreter",
     );
   }

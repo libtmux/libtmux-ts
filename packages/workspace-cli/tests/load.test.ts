@@ -576,7 +576,7 @@ class Custom:
       expect(child.code, child.stdout + child.stderr).toBe(1);
       const summary = JSON.parse(child.stdout);
       expect(summary.status).toBe("partial");
-      expect(summary.errors[0].code).toBe("extension_failed");
+      expect(summary.errors[0].code).toBe("script_failed");
       const after = (await server.snapshot()).sessions.one({ id: before.id });
       expect(summary.results[0]).toMatchObject({
         session_id: before.id,
@@ -1164,7 +1164,7 @@ test("freeze selects the sole session or an explicit session ID", async () => {
     const ambiguous = await run(["freeze", "--json"]);
     expect(ambiguous.code).toBe(2);
     expect(ambiguous.stdout).toBe("");
-    expect(JSON.parse(ambiguous.stderr).code).toBe("input_required");
+    expect(JSON.parse(ambiguous.stderr).code).toBe("usage");
   });
 });
 
