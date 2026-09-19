@@ -27,9 +27,25 @@ const TMUX_APPLIES = [
   "80x24,0,0{40x24,0,0,0,39x24,41,0,1}",
   "80x24,0,0[80x12,0,0,0,80x11,0,13,1]",
   "80x24,0,0{40x24,0,0,0,39x24,41,0[39x12,41,0,1,39x11,41,13,2]}",
-  // A size wider than a u_int: tmux takes it and the pane check refuses it,
-  // so parsing must not be where it fails.
+  // The largest a window can be: tmux's own WINDOW_MAXIMUM and PANE_MAXIMUM.
+  "10000x10000,0,0,0",
+];
+
+/**
+ * Bodies that exit the server on every supported release and on master.
+ *
+ * `layout_parse` is the one place tmux does not hold a size to its own
+ * `WINDOW_MAXIMUM`, and the arithmetic below it overflows. These only reach
+ * that arithmetic when the cell count matches the window's pane count — with
+ * a second pane open, tmux refuses on the count first and survives, which is
+ * how a corpus can call one of these safe and be wrong.
+ */
+const CRASHES_EVERY_TMUX = [
+  "4294967295x24,0,0,0",
+  "80x4294967295,0,0,0",
+  "2147483648x24,0,0,0",
   "18446744073709551616x24,0,0,0",
+  "10001x24,0,0,0",
 ];
 
 /** Bodies every supported tmux refuses, none of which reach a crash. */
@@ -73,6 +89,15 @@ describe("classic layout parsing", () => {
       expect(parseClassicLayout(dumped(body)), body).toEqual({
         kind: "invalid",
         reason: "structure",
+      });
+    }
+  });
+
+  test("refuses every body that exits any tmux, whatever the pane count", () => {
+    for (const body of CRASHES_EVERY_TMUX) {
+      expect(parseClassicLayout(dumped(body)), body).toEqual({
+        kind: "invalid",
+        reason: "dimension",
       });
     }
   });

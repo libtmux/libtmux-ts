@@ -125,7 +125,12 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write to this server's exact caller pane. Never overrides attention."),
+          .describe(
+            "Allow writing to the pane this server itself was called from, which is " +
+              "otherwise refused. It does not override the refusal to write to a pane " +
+              "a person is watching — a pane an attached client has on screen is " +
+              "still refused with force.",
+          ),
         keys: inlineRequestText("keys").describe(
           "Keys to send. tmux key names like C-c work unless literal is true.",
         ),
@@ -192,7 +197,12 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write to this server's exact caller pane. Never overrides attention."),
+          .describe(
+            "Allow writing to the pane this server itself was called from, which is " +
+              "otherwise refused. It does not override the refusal to write to a pane " +
+              "a person is watching — a pane an attached client has on screen is " +
+              "still refused with force.",
+          ),
         paneId: paneIdSchema,
         text: inlineRequestText("text"),
       },
@@ -301,8 +311,18 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write to this server's exact caller pane. Never overrides attention."),
-        maxLines: z.number().int().positive().optional(),
+          .describe(
+            "Allow writing to the pane this server itself was called from, which is " +
+              "otherwise refused. It does not override the refusal to write to a pane " +
+              "a person is watching — a pane an attached client has on screen is " +
+              "still refused with force.",
+          ),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
         paneId: paneIdSchema,
         timeoutMs: z
           .number()

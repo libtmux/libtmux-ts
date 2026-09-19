@@ -112,6 +112,7 @@ const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8");
 const LAYOUT_REJECTIONS: Readonly<Record<LayoutRejection, string>> = Object.freeze({
   checksum: "carries a checksum that does not match the layout after it",
   depth: "nests deeper than tmux parses",
+  dimension: "describes a cell larger than any window tmux will make",
   structure: "carries a checksum but is not a layout tmux would apply",
 });
 

@@ -107,7 +107,7 @@ export function registerSettings(mcp: ToolRegistrar, context: ToolContext): void
     {
       description: "Read one named tmux option at server, session, window, or pane scope.",
       inputSchema: {
-        name: inlineRequestText("name"),
+        name: inlineRequestText("name").describe('The tmux option to read, such as "status-left".'),
         scope: z.enum(SCOPES).optional().describe("Default server."),
         target: requestText("target")
           .optional()

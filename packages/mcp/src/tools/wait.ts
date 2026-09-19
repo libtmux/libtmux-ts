@@ -383,7 +383,12 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
     cursor: paneCursorSchema
       .optional()
       .describe("Start from a cursor an earlier capture_since or wait returned."),
-    maxLines: z.number().int().positive().optional(),
+    maxLines: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
     paneId: paneIdSchema,
     patterns: requestTextArray("pattern", "patterns")
       .optional()

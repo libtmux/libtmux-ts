@@ -151,7 +151,12 @@ export function registerCapture(mcp: ToolRegistrar, context: ToolContext): void 
               ? "The cursor from your previous capture_since. Omit on the first call."
               : "Ignored while live streaming is disabled.",
           ),
-        maxLines: z.number().int().positive().optional(),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
         paneId: paneIdSchema,
         waitMs: z
           .number()

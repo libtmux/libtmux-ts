@@ -84,7 +84,12 @@ export function registerSearch(mcp: ToolRegistrar, context: ToolContext): void {
         "pane, so you can target one without capturing them all. Literal matching " +
         "stops at one 256 KiB aggregate UTF-8 byte budget.",
       inputSchema: {
-        maxMatchesPerPane: z.number().int().positive().optional(),
+        maxMatchesPerPane: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Stop after this many matches in each pane. Defaults to the server limit."),
         pattern: requestText("pattern").min(1).describe("Non-empty literal text to find."),
         regex: z
           .boolean()

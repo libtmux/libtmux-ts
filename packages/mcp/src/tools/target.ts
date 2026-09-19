@@ -300,7 +300,12 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
         "Return bounded terminal content and pane metadata in one MCP response. The metadata " +
         "and capture come from separate tmux requests and are not an atomic snapshot.",
       inputSchema: {
-        maxLines: z.number().int().positive().optional(),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
         paneId: paneIdSchema,
       },
       outputSchema: {

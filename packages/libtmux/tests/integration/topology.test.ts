@@ -406,6 +406,13 @@ describe("window and pane topology", () => {
         ["923d,80x24,0,0{40x24,0,0,0,}", TypeError],
         ["04e0,80x24,0,0[80x12,0,0,1,80x11,0,13{", TypeError],
         ["0000,80x24,0,0,0", TypeError],
+        // A size past tmux's own WINDOW_MAXIMUM. `layout_parse` is the one
+        // place tmux does not bound one, and the arithmetic below it
+        // overflows on every supported release and on master — but only when
+        // the cell count matches the pane count, so this window's two panes
+        // would hide it. The single-pane window below is where it bites.
+        ["c228,4294967295x24,0,0,0", TypeError],
+        ["4b3f,80x4294967295,0,0,0", TypeError],
       ];
       if (!jsonSupported) refusals.push(['{"V":2,"L":{"t":"p"}}', VersionTooLowError]);
 
@@ -421,6 +428,31 @@ describe("window and pane topology", () => {
         expect(after, `layout after ${JSON.stringify(value)}`).toBe(beforeAttempt);
       }
       expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
+  // The crash the corpus above cannot reach: a cell whose size overflows the
+  // arithmetic under `layout_parse` only gets there when the cell count
+  // matches, so it needs a window with exactly one pane. Every supported
+  // release and master exit on this; nothing upstream fixes it.
+  test("refuses an oversized layout on a window whose pane count would accept it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      expect(window.panes.length).toBe(1);
+      const before = (await window.refreshed()).format.window_layout;
+
+      for (const value of ["c228,4294967295x24,0,0,0", "4b3f,80x4294967295,0,0,0"]) {
+        // eslint-disable-next-line no-await-in-loop -- each refusal is checked against the layout the previous one left.
+        const failure = await window
+          .selectLayout(value)
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(failure, `selectLayout(${JSON.stringify(value)})`).toBeInstanceOf(TypeError);
+        // eslint-disable-next-line no-await-in-loop -- the server has to answer after each attempt.
+        expect(await server.isAlive(), `alive after ${value}`).toBe(true);
+      }
+      expect((await window.refreshed()).format.window_layout).toBe(before);
     });
   }, 40_000);
 

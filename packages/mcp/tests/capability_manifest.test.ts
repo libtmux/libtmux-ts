@@ -235,6 +235,22 @@ test("one manifest governs every toolset subset, selection, metadata, and report
         });
       }
 
+      // An agent picks a tool from its schema alone, so a parameter with no
+      // description is one it has to guess at. `maxLines` was explained on
+      // `capture_pane` and silent on the four tools that take the same
+      // argument, and `force` referred to "attention", a word defined nowhere
+      // in any schema.
+      for (const tool of tools) {
+        const properties = (tool.inputSchema as { properties?: Record<string, unknown> })
+          .properties;
+        for (const [parameter, schema] of Object.entries(properties ?? {})) {
+          expect(
+            (schema as { description?: string }).description,
+            `${tool.name}.${parameter}`,
+          ).toBeTruthy();
+        }
+      }
+
       const listedBatch = tools.find(({ name }) => name === "call_read_tools_batch");
       expect(listedBatch?.description).toContain("inner tools receive no separate approval");
       expect(listedBatch?.description).toContain("explicit stop and truncation accounting");
