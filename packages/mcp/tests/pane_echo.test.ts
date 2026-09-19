@@ -5,6 +5,7 @@
  * this is the inner loop for the logic those scenarios exercise end to end.
  */
 import { expect, test } from "bun:test";
+import type { Pane } from "libtmux";
 
 import {
   liveEcho,
@@ -15,6 +16,7 @@ import {
   withoutEchoes,
   type PaneServerIdentity,
 } from "../src/pane_echo.js";
+import { dispatchPaneKeys } from "../src/pane_input.js";
 
 const identity: PaneServerIdentity = {
   pid: "4242",
@@ -130,4 +132,47 @@ test("pruneDeadPanes bounds memory once a pane is gone", () => {
   expect(liveEcho(pane, identity).pending).toBe("secret");
   pruneDeadPanes(new Set());
   expect(liveEcho(pane, identity)).toEqual({ pending: "", recent: [] });
+});
+
+/**
+ * `dispatchPaneKeys` (`pane_input.ts`) bypasses the library's own guarded
+ * `Pane.sendKeys`, building its own send-keys argv, so it carries the `--`
+ * guard on its own. These pin that argv, and that the echo it records here
+ * is still noted before the command dispatches — not after — since that
+ * ordering is what keeps a `wait_for_text` already watching from seeing the
+ * echo before the record that discounts it exists.
+ */
+test("dispatchPaneKeys guards non-literal keys and records the echo before dispatch", async () => {
+  const pane = freshPane();
+  let recordedBeforeDispatch = false;
+  const fake = {
+    cmd: (command: string, args: readonly string[]) => {
+      // Read at the instant `cmd` is called, before anything it returns
+      // resolves: the record has to already be there by then.
+      recordedBeforeDispatch = liveEcho(pane, identity).recent.includes("-R");
+      expect(command).toBe("send-keys");
+      expect(args).toEqual(["--", "-R", "Enter"]);
+      return Promise.resolve([]);
+    },
+    id: pane,
+  } as unknown as Pane;
+
+  await dispatchPaneKeys(fake, "-R", { identity });
+
+  expect(recordedBeforeDispatch).toBe(true);
+  expect(liveEcho(pane, identity).recent).toEqual(["-R"]);
+});
+
+test("dispatchPaneKeys guards literal keys, keeping -l as tmux's own flag", async () => {
+  const pane = freshPane();
+  const fake = {
+    cmd: (command: string, args: readonly string[]) => {
+      expect(command).toBe("send-keys");
+      expect(args).toEqual(["-l", "--", "-R"]);
+      return Promise.resolve([]);
+    },
+    id: pane,
+  } as unknown as Pane;
+
+  await dispatchPaneKeys(fake, "-R", { enter: false, identity, literal: true });
 });

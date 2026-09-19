@@ -231,10 +231,13 @@ export async function dispatchPaneKeys(
       noteKeyDispatch(pane.id, options.identity, keys, enter);
     }
   }
+  // `--` keeps a value starting with `-` (`-R` resets the terminal) from being
+  // read as one of send-keys's own flags: this bypasses the library's
+  // `Pane.sendKeys`, so it carries the same guard on its own.
   await pane.cmd(
     "send-keys",
     options.literal === true
-      ? ["-l", enter ? `${keys}\n` : keys]
-      : [keys, ...(enter ? ["Enter"] : [])],
+      ? ["-l", "--", enter ? `${keys}\n` : keys]
+      : ["--", keys, ...(enter ? ["Enter"] : [])],
   );
 }

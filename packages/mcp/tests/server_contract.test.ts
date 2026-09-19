@@ -208,6 +208,17 @@ test("the stdio server executes the retained capability surface end to end", asy
       await call("signal_channel", { channel: "mcp-contract-ready" });
       await channelWait;
 
+      // Both tools pass the channel straight to tmux's own `wait-for`, so a
+      // name starting with `-` proves the same `--` guard `select_layout`
+      // gets above. `-e` is not one of `wait-for`'s own flags (`-L`, `-S`,
+      // `-U`): without the guard tmux's parser would refuse it outright as
+      // an unknown option before any wait was even registered, and either
+      // call below would reject instead of resolving.
+      const dashChannelWait = call("wait_for_channel", { channel: "-e", timeoutMs: 2_000 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await call("signal_channel", { channel: "-e" });
+      await dashChannelWait;
+
       await call("set_synchronize_panes", { enabled: true, windowId: created.windowId });
       const synchronizedAnswer = await call("send_keys", {
         enter: false,

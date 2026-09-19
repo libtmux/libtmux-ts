@@ -372,7 +372,9 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
       title: "Wait for channel",
     },
     async ({ channel, timeoutMs }, extra) => {
-      await context.tmux.cmd("wait-for", [channel], {
+      // `--` keeps a channel starting with `-` from being read as one of
+      // wait-for's own flags (`-L`, `-S`, `-U`) instead of the channel name.
+      await context.tmux.cmd("wait-for", ["--", channel], {
         signal: extra.signal,
         target: null,
         timeoutMs: effectiveWaitMs(context.policy, timeoutMs),
@@ -392,7 +394,9 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
       title: "Signal channel",
     },
     async ({ channel }) => {
-      await context.tmux.cmd("wait-for", ["-S", channel], { target: null });
+      // `-S` is its own flag and takes no value; `--` before the channel
+      // keeps it from being read as another one of wait-for's own flags.
+      await context.tmux.cmd("wait-for", ["-S", "--", channel], { target: null });
       return ok({ channel, signalled: true }, `Signalled channel ${channel}.`);
     },
   );

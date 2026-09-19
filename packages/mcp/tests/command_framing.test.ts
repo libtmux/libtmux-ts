@@ -618,10 +618,12 @@ describe("command framing", () => {
       const result = await runFramedCommand(context, pane, "true", 500);
       expect(result.outcome).toBe("completed");
 
-      // The literal keystrokes tmux would type into the pane: `-l`, then the
+      // The literal keystrokes tmux would type into the pane: `-l`, the `--`
+      // guard against reading the sourcing line as another flag, then the
       // sourcing line the caller's shell actually reads.
-      const [flag, keysLine] = dispatched[0] ?? [];
+      const [flag, separator, keysLine] = dispatched[0] ?? [];
       expect(flag).toBe("-l");
+      expect(separator).toBe("--");
       if (keysLine === undefined) throw new Error("expected a dispatched sourcing line");
 
       // Run exactly what tmux would type, through a real shell: an unescaped
