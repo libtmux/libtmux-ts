@@ -211,6 +211,8 @@ test("tmux unreachable reports tmux_unavailable on stdout and a flat stderr reco
     .map((line) => JSON.parse(line));
   const record = stderrLines.find((line) => line.code === "tmux_unavailable");
   expect(record).toMatchObject({ schema_version: 1, code: "tmux_unavailable" });
+  // The user reads about the endpoint they named, not the transport's own words.
+  expect(result.stdout + result.stderr).not.toContain("cannot reach tmux");
 });
 
 test("convert without --yes or --save-to in human mode prints a plain sentence", async () => {
