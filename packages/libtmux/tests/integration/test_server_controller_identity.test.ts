@@ -149,6 +149,10 @@ async function assertControllerEvidence(captured: ReplacedControllerCleanup): Pr
     if (identity === undefined) return;
     const executable = await stat(`/proc/${String(captured.daemon.pid)}/exe`, { bigint: true });
     const commandLine = await readFile(`/proc/${String(captured.daemon.pid)}/cmdline`);
+    // An exited process nothing has reaped yet keeps its /proc entry, and
+    // its cmdline reads as empty rather than failing: the one disappearance
+    // the catch below cannot see. A tmux daemon always has a command line.
+    if (commandLine.length === 0) return;
     evidence = {
       commandLine: commandLine.toString("hex"),
       executable: { device: executable.dev, inode: executable.ino },
