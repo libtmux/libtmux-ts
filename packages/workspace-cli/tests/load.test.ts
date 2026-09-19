@@ -273,7 +273,6 @@ test.each([
     "entter",
     { windows: [{ panes: [{ shell_command: [{ cmd: "touch executed", entter: false }] }] }] },
   ],
-  ["pane_readines", { workspace_builder_options: { pane_readines: "never" } }],
 ])(
   "native load rejects %s in later inputs before scripts or topology change",
   async (key, fields) => {
@@ -2204,5 +2203,54 @@ test("freeze refuses a name load would reject, and writes nothing", async () => 
     expect(window.code, window.stdout + window.stderr).toBe(1);
     expect(JSON.parse(window.stderr).code).toBe("invalid_workspace");
     expect(await Bun.file(second).exists()).toBe(false);
+  });
+});
+
+test("a pane's prompt is waited for under bash as under zsh", async () => {
+  await fixture(async (server, root, run) => {
+    await server.setGlobalOption("session", "default-shell", "/bin/bash");
+    await server.setGlobalOption("session", "default-command", "sleep 30");
+    const file = join(root, "bash.json");
+    await writeFile(
+      file,
+      JSON.stringify({ session_name: "bash-wait", windows: [{ panes: ["echo A"] }] }),
+    );
+    const result = await run(["load", file, "-d", "--ndjson"]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const events = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(
+      events.filter((event) => event.event === "warning").map((event) => event.message),
+    ).toContain("Pane readiness timed out; sending commands");
+  });
+});
+
+test("an unknown builder option and a missing start_directory warn without refusing", async () => {
+  await fixture(async (server, root, run) => {
+    const file = join(root, "warn.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        session_name: "warned",
+        start_directory: "/nonexistent/definitely/not/here",
+        workspace_builder_options: { pane_readiness: "never", made_up_key: 1 },
+        windows: [{ panes: ["true"] }],
+      }),
+    );
+    const result = await run(["load", file, "-d", "--ndjson"]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const warnings = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((event) => event.event === "warning")
+      .map((event) => event.message);
+    expect(warnings).toContain("Ignoring unknown workspace_builder_options key: made_up_key");
+    expect(warnings).toContain(
+      "start_directory is not a directory, tmux will fall back to $HOME: /nonexistent/definitely/not/here",
+    );
+    expect(await server.hasSession("warned")).toBe(true);
   });
 });

@@ -18,10 +18,6 @@ test.each([
     { windows: [{ panes: [{ shell_command: [{ cmd: "touch executed", entter: false }] }] }] },
     "windows[0].panes[0].shell_command[0].entter",
   ],
-  [
-    { workspace_builder_options: { pane_readines: "never" } },
-    "workspace_builder_options.pane_readines",
-  ],
   [{ enter: false }, "workspace.enter"],
   [{ windows: [{ global_options: {} }] }, "windows[0].global_options"],
   [{ windows: [{ panes: [{ options: {} }] }] }, "windows[0].panes[0].options"],
@@ -86,6 +82,30 @@ test("native execution retains descriptions and open option and environment name
   expect(spec.data).toEqual(document);
   expect(spec.windows[0]!.panes[0]!.commands).toEqual([command]);
   expect(spec.environment).toEqual(document.environment);
+});
+
+test("an unknown workspace_builder_options key warns rather than refusing", () => {
+  const spec = normalize(
+    {
+      session_name: "dev",
+      workspace_builder_options: { pane_readiness: "never", made_up_key: 1 },
+      windows: [{}],
+    },
+    "/project/dev.yaml",
+    context,
+  );
+  expect(spec.readiness).toBe("never");
+  expect(spec.warnings).toEqual(["Ignoring unknown workspace_builder_options key: made_up_key"]);
+});
+
+test("an explicitly null start_directory reads as absent", () => {
+  const spec = normalize(
+    { session_name: "dev", start_directory: null, windows: [{}] },
+    "/project/dev.yaml",
+    context,
+  );
+  expect(spec.directory).toBeUndefined();
+  expect(spec.windows[0]!.panes[0]!.directory).toBeUndefined();
 });
 
 test("delegated extensions retain opaque fields and existing common-value validation", async () => {

@@ -7,6 +7,7 @@ import {
   type Session,
   type Window,
 } from "libtmux";
+import { stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { basename, extname, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
@@ -348,6 +349,24 @@ async function removePlaceholder(
 }
 
 /**
+ * Every directory the document asks a pane to start in. A path tmux cannot
+ * change into is not a refusal -- tmux falls back to $HOME -- but a typo in a
+ * workspace file is otherwise invisible, so each one is reported once.
+ */
+async function unusableDirectories(spec: WorkspaceSpec): Promise<string[]> {
+  const declared = new Set<string>();
+  if (spec.directory !== undefined) declared.add(spec.directory);
+  for (const window of spec.windows)
+    for (const pane of window.panes) if (pane.directory !== undefined) declared.add(pane.directory);
+  const unusable: string[] = [];
+  for (const path of declared) {
+    const details = await stat(path).catch(() => undefined);
+    if (!details?.isDirectory()) unusable.push(path);
+  }
+  return unusable;
+}
+
+/**
  * Windows the document asks for that the session does not hold. A declared
  * window matches by name where it has one, and a window with no `window_name`
  * matches any window nothing else claimed; reuse compares, it never rebuilds.
@@ -509,15 +528,13 @@ async function create(
       value,
       context.signal ? { signal: context.signal } : undefined,
     );
+  // Every shell echoes what arrives before its line editor owns the terminal,
+  // so a pane is waited for whatever its default-shell is.
   const wait =
+    spec.readiness !== "never" &&
     spec.windows.some((window) =>
       window.panes.some((pane) => !pane.shell && pane.commands.length > 0),
-    ) &&
-    (spec.readiness === "always" ||
-      (spec.readiness === "auto" &&
-        /(^|\/)zsh$/.test(
-          (await session.showResolvedOptions(acquisition)).get("default-shell") ?? "",
-        )));
+    );
   result.completed_stages.push("session-options");
   result.stage = "window-allocation";
   const current = (await server.snapshot(acquisition)).sessions.one({ id: session.id });
@@ -867,6 +884,15 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
             }
           : {}),
       });
+      if (input.kind === "native") {
+        for (const message of input.spec.warnings)
+          await output.event("warning", { input_index: index, message });
+        for (const path of await unusableDirectories(input.spec))
+          await output.event("warning", {
+            input_index: index,
+            message: `start_directory is not a directory, tmux will fall back to $HOME: ${path}`,
+          });
+      }
       const result: LoadResult = {
         input_index: index,
         input: privatePath(input.path, context),
