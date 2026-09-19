@@ -889,17 +889,14 @@ test.each(["remove", "restore", "both", "disable"])(
         failure === "disable" ? "disable-failed" : remove ? "removal-failed" : "restore-failed",
       );
       expect(summary.results[0].stage).toBe("bootstrap-removal");
-      const session = (await server.snapshot()).sessions.one({ name: "cleanup" });
-      expect(new Set(summary.results[0].created_windows)).toEqual(
-        new Set(session.windows.toArray().map((window) => window.id)),
-      );
-      expect(new Set(summary.results[0].created_panes)).toEqual(
-        new Set(session.panes.toArray().map((pane) => pane.id)),
-      );
-      if (restore) {
-        expect(summary.results[0].renumber_restore_error).toContain("restore-failed");
-        expect((await session.showResolvedOptions()).get("renumber-windows")).toBe("off");
-      } else expect((await session.showOptions()).has("renumber-windows")).toBe(false);
+      expect(summary.status).toBe("error");
+      expect(summary.results[0]).toMatchObject({
+        session_removed: true,
+        created_windows: [],
+        created_panes: [],
+      });
+      expect(await server.hasSession("cleanup")).toBe(false);
+      if (restore) expect(summary.results[0].renumber_restore_error).toContain("restore-failed");
     });
   },
 );
@@ -2089,7 +2086,7 @@ test("a failed append bootstrap preserves the borrowed session", async () => {
   });
 });
 
-test("a tmux failure reports created objects and its unfinished stage", async () => {
+test("a tmux failure names its unfinished stage and leaves no session behind", async () => {
   await fixture(async (server, root, run) => {
     const config = join(root, "input.json");
     await writeFile(
@@ -2099,16 +2096,21 @@ test("a tmux failure reports created objects and its unfinished stage", async ()
         windows: [{ options: { "workspace-cli-invalid-option": true } }],
       }),
     );
-    const result = await run(["load", config, "-d", "--json"]);
-    expect(result.code).toBe(1);
-    const summary = JSON.parse(result.stdout);
-    expect(summary.status).toBe("partial");
-    expect(summary.errors[0].failed_stage).toBe("window-options");
-    const session = (await server.snapshot()).sessions.one({ name: "partial-cli" });
-    expect(summary.results[0].session_id).toBe(session.id);
-    expect(summary.results[0].created_windows).toEqual(
-      session.windows.toArray().map((window) => window.id),
-    );
+    // Re-running a document that failed is the natural response to a failure,
+    // so the second answer has to be the first.
+    for (const attempt of [1, 2]) {
+      const result = await run(["load", config, "-d", "--json"]);
+      expect(result.code, `attempt ${String(attempt)}: ${result.stdout}`).toBe(1);
+      const summary = JSON.parse(result.stdout);
+      expect(summary.status).toBe("error");
+      expect(summary.errors[0].failed_stage).toBe("window-options");
+      expect(summary.results[0]).toMatchObject({
+        session_removed: true,
+        created_windows: [],
+        created_panes: [],
+      });
+      expect(await server.hasSession("partial-cli")).toBe(false);
+    }
   });
 });
 
@@ -2138,5 +2140,62 @@ test("the version-checked Python shell uses the selected private session", async
         .join(""),
     ).toContain("selected:fixture");
     expect(events.at(-1)).toMatchObject({ event: "completed", child_status: 0 });
+  });
+});
+
+test("a reused session without the document's windows is reported, not rebuilt", async () => {
+  await fixture(async (server, root, run) => {
+    const one = join(root, "one.json");
+    const two = join(root, "two.json");
+    await writeFile(
+      one,
+      JSON.stringify({ session_name: "conv", windows: [{ window_name: "one", panes: [null] }] }),
+    );
+    await writeFile(
+      two,
+      JSON.stringify({
+        session_name: "conv",
+        windows: [
+          { window_name: "one", panes: [null] },
+          { window_name: "two", panes: [null] },
+        ],
+      }),
+    );
+    expect((await run(["load", one, "-d", "--json"])).code).toBe(0);
+    const result = await run(["load", two, "-d", "--json"]);
+    expect(result.code, result.stdout).toBe(1);
+    const envelope = JSON.parse(result.stdout);
+    expect(envelope.status).toBe("partial");
+    expect(envelope.results[0]).toMatchObject({ reused: true, missing_windows: ["two"] });
+    expect(envelope.errors[0].message).toContain("two");
+    const after = (await server.snapshot()).sessions.one({ name: "conv" });
+    expect(after.windows.toArray().map((window) => window.name)).toEqual(["one"]);
+  });
+});
+
+test("an append that fails partway names the windows it kept", async () => {
+  await fixture(async (server, root, run) => {
+    const before = (await server.snapshot()).sessions.one({ name: "fixture" });
+    const config = join(root, "appendfail.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        session_name: "appendfail",
+        windows: [
+          { window_name: "kept", panes: [null] },
+          { window_name: "bad", options: { "not-a-real-option": 1 }, panes: [null] },
+        ],
+      }),
+    );
+    const result = await run(["load", config, "--append", "--json"], {
+      TMUX: `${server.socketPath},${(await server.daemonIdentity()).pid},0`,
+      TMUX_PANE: before.windows.at(0)!.panes.at(0)!.id,
+    });
+    expect(result.code, result.stdout).toBe(1);
+    const envelope = JSON.parse(result.stdout);
+    expect(envelope.status).toBe("partial");
+    expect(envelope.errors[0].message).toContain("Windows kept: kept, bad");
+    const after = (await server.snapshot()).sessions.one({ id: before.id });
+    expect(after.windows.toArray().map((window) => window.name)).toContain("kept");
   });
 });
