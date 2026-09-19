@@ -2177,6 +2177,44 @@ test("a reused session without the document's windows is reported, not rebuilt",
   });
 });
 
+test("a session mismatch in one input of a multi-input load stays partial", async () => {
+  await fixture(async (server, root, run) => {
+    const existing = join(root, "mix-existing.json");
+    await writeFile(
+      existing,
+      JSON.stringify({ session_name: "mix-two", windows: [{ window_name: "one", panes: [null] }] }),
+    );
+    expect((await run(["load", existing, "-d", "--json"])).code).toBe(0);
+
+    const first = join(root, "mix-first.json");
+    const second = join(root, "mix-second.json");
+    await writeFile(
+      first,
+      JSON.stringify({ session_name: "mix-one", windows: [{ window_name: "a", panes: [null] }] }),
+    );
+    await writeFile(
+      second,
+      JSON.stringify({
+        session_name: "mix-two",
+        windows: [
+          { window_name: "one", panes: [null] },
+          { window_name: "two", panes: [null] },
+        ],
+      }),
+    );
+    const result = await run(["load", first, second, "-d", "--json"]);
+    expect(result.code, result.stdout).toBe(1);
+    const envelope = JSON.parse(result.stdout);
+    // The first document was built and kept; only the second found a session
+    // it could not satisfy. One retained effect is enough for `partial`.
+    expect(envelope.status).toBe("partial");
+    expect(envelope.results[0]).toMatchObject({ session_name: "mix-one", stage: "completed" });
+    expect(envelope.results[1]).toMatchObject({ reused: true, missing_windows: ["two"] });
+    expect(envelope.errors[0].code).toBe("session_mismatch");
+    expect(await server.hasSession("mix-one")).toBe(true);
+  });
+});
+
 test("an append that fails partway names the windows it kept", async () => {
   await fixture(async (server, root, run) => {
     const before = (await server.snapshot()).sessions.one({ name: "fixture" });

@@ -1033,11 +1033,15 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
   } catch (error) {
     if (output.isFinished) throw error;
     const interrupted = context.signal?.aborted;
+    // A reused session missing part of the document (`missing_windows`) was
+    // never touched by this load, so it contributes no retained effect even
+    // though its id is on the result for reference; every other completed or
+    // in-progress input still counts.
     const changed = results.some(
       (result) =>
         result.effects_unknown ||
         result.stage === "completed" ||
-        (result.session_id && !result.session_removed),
+        (result.session_id && !result.session_removed && !result.missing_windows),
     );
     const unreachable = !(error instanceof CliError) && isTmuxUnavailable(error);
     // Cancellation is the one answer outside the shared code set: the command
@@ -1049,10 +1053,6 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         : unreachable
           ? "tmux_unavailable"
           : "tmux_failed";
-    // A reused session that does not satisfy the document was never touched by
-    // this load: nothing built, nothing changed, so it is `error` even though
-    // its id is on the result for reference.
-    const mismatched = code === "session_mismatch";
     const kept = results.flatMap((result) =>
       result.session_id && !result.session_removed ? (result.created_window_names ?? []) : [],
     );
@@ -1064,7 +1064,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           ? error.message
           : String(error)) + (kept.length > 0 ? `. Windows kept: ${kept.join(", ")}` : "");
     await output.result({
-      status: mismatched ? "error" : changed ? "partial" : "error",
+      status: changed ? "partial" : "error",
       results,
       errors: [
         {
