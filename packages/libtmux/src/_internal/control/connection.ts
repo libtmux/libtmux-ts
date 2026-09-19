@@ -113,6 +113,8 @@ export interface ControlObserverBinding {
  */
 export class ControlConnection {
   readonly #children: ControlChildLifecycle;
+  /** The child whose attach sequence has already run. */
+  #configured: ControlChild | undefined;
   readonly #argv: readonly string[];
   readonly #commandPrefix: readonly string[];
   readonly #executable: string;
@@ -464,8 +466,16 @@ export class ControlConnection {
 
   #closeBlock(fromClient: boolean, failed: boolean): void {
     if (!fromClient && !failed) {
+      // The attach emits one such block, and it is not the only thing that
+      // can: tmux frames a hook's own commands and anything it runs for
+      // itself the same way, with `fromClient` false. Without this the whole
+      // sequence — `refresh-client -f`, then every format subscription — went
+      // out again on each one, against a client already carrying them.
       const child = this.#children.active();
-      if (child !== undefined) void this.#finishAttach(child);
+      if (child !== undefined && child !== this.#configured) {
+        this.#configured = child;
+        void this.#finishAttach(child);
+      }
     }
     if (!fromClient && failed && this.#diagnostic.length > 0) {
       this.#reason = this.#diagnostic.join("; ");

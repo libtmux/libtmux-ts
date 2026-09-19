@@ -223,6 +223,43 @@ describe("ControlConnection child ownership", () => {
     await control.close();
   });
 
+  // tmux frames a hook's own commands, and anything it runs for itself, the
+  // same way it frames the attach: a block whose end carries `fromClient`
+  // false. Each one used to re-run the whole attach sequence against a client
+  // that already carried it — `refresh-client -f`, then every subscription.
+  test("configures a client once, however many server blocks arrive", async () => {
+    const child = new FakeChild(101);
+    const fallback = new RecordingTransport();
+    const control = new ControlConnection(
+      connection(),
+      {
+        subscriptions: [{ format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }],
+      },
+      false,
+      fallback,
+      () => child,
+    );
+    const events = control.subscribe();
+    attach(child);
+    await events.ready();
+
+    const configuring = (): string[] =>
+      fallback.requests
+        .map((request) => request.commands[0]?.join(" ") ?? "")
+        .filter((command) => command.includes("refresh-client"));
+    const afterAttach = configuring();
+    expect(afterAttach.length).toBeGreaterThan(0);
+
+    // Two more server-side blocks, the shape a hook run produces.
+    child.stdout.write("%begin 50 51 0\n%end 50 51 0\n");
+    child.stdout.write("%begin 52 53 0\n%end 52 53 0\n");
+    await nextTurn();
+
+    expect(configuring()).toEqual(afterAttach);
+
+    await control.close();
+  });
+
   test("retires a stale child before configuring its replacement", async () => {
     const old = new FakeChild(101);
     const replacement = new FakeChild(102);
