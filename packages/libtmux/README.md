@@ -1058,13 +1058,21 @@ reports[0]?.durationMs;
 ```
 
 `TmuxInvocationReport` is exported for a typed collector. Every command
-reports, including the identity read and four listings behind `snapshot()`, the version probe, and commands a custom engine executed. The
-report carries the commands tmux received, `durationMs` for the invocation
-itself, `queuedMs` for any wait under `maxInFlight`, `exitCode` when tmux
-answered, and `error` with `delivery` when it did not.
+reports, including the identity read and four listings behind `snapshot()`,
+the version probe, and commands a custom engine executed. The report carries
+the commands tmux received, `durationMs` for the invocation itself, `queuedMs`
+for any wait under `maxInFlight`, `exitCode` when tmux answered, and `error`
+with `delivery` when it did not.
 
 An observer cannot change what a command does. Anything it throws is
-swallowed: a command must not fail on account of the code watching it.
+swallowed: a command must not fail on account of the code watching it. An
+`async` observer is allowed and is never awaited — the invocation is already
+decided, so waiting would only delay it — and a rejection is swallowed on the
+same grounds rather than left to the host's unhandled rejection policy.
+
+[`examples/observe/`](../../examples/observe/README.md) runs this against a
+real server, and counts its own reports to check the two costs above rather
+than restate them.
 
 ## Deadlines and cancellation
 
