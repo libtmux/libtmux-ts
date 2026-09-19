@@ -17,6 +17,7 @@ import {
   prepareRunRoot,
   readFixtureRecord,
   reapOwnedRunRoot,
+  resolveControllerIdentity,
   TestServer,
   type TestServerRequestSnapshot,
   makeTestDirectory,
@@ -33,8 +34,7 @@ async function writeBootstrapBarrierWrapper(
   environmentLog: string,
   releasePipe: string,
 ): Promise<string> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const wrapper = join(parent, "tmux-bootstrap-barrier");
   await writeFile(
     wrapper,
@@ -58,8 +58,7 @@ async function writeSnapshotLaunchWrapper(
   environmentLog: string,
   releasePipe: string,
 ): Promise<string> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const wrapper = join(parent, "tmux-snapshot-launch");
   await writeFile(
     wrapper,
@@ -84,8 +83,7 @@ async function runTmux(args: readonly string[]): Promise<{
   readonly stderr: string;
   readonly stdout: string;
 }> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const child = Bun.spawn([tmux, ...args], { stderr: "pipe", stdout: "pipe" });
   const [code, stderr, stdout] = await Promise.all([
     child.exited,

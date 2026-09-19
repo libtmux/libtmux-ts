@@ -9,6 +9,12 @@ const internalTestDirectory = "packages/libtmux/src/_internal/test/";
 const testkitEntrypoint = "packages/libtmux/src/_internal/test/testkit.ts";
 const boundaryChecker = "scripts/check-testkit-boundary.ts";
 const recoveryAuthority = ["restore", "ReservationCapability"].join("");
+// A fixture records its controller by canonical path and authenticates the
+// daemon's argv against it, so a test that execs tmux by whatever spelling PATH
+// happened to give — a symlinked prefix, a Homebrew or Nix link — launches a
+// daemon the fixture refuses as foreign. Resolve it the way the library does.
+const unresolvedTmux = /\bBun\.which\(\s*["'`]tmux["'`]\s*\)/u;
+const testSource = /(?:^|[/])tests[/]/u;
 const recoveryAuthorityFiles = new Set([
   "packages/libtmux/src/_internal/test/fixture_launch.ts",
   "packages/libtmux/src/_internal/test/reaper.ts",
@@ -30,6 +36,12 @@ for (const file of listed.split("\n").filter((line) => line !== "")) {
     }
     if (!file.startsWith(internalTestDirectory) && implementationModule.test(line)) {
       failures.push(`${file}:${String(index + 1)}: import through _internal/test/testkit`);
+      continue;
+    }
+    if (testSource.test(file) && unresolvedTmux.test(line)) {
+      failures.push(
+        `${file}:${String(index + 1)}: resolve tmux with testkit's resolveControllerIdentity`,
+      );
       continue;
     }
     if (line.includes(recoveryAuthority) && !recoveryAuthorityFiles.has(file)) {

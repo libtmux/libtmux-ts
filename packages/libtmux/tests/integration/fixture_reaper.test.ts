@@ -57,6 +57,7 @@ import {
   rollbackFixtureLaunchNotStarted,
   readDaemonIdentity,
   readProcessIdentity,
+  resolveControllerIdentity,
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
@@ -80,9 +81,8 @@ function shellQuote(value: string): string {
 
 async function writeLaunchingHoldWrapper(parent: string, marker: string): Promise<string> {
   const python = Bun.which("python3");
-  const tmux = Bun.which("tmux");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   if (python === null) throw new Error("python3 is required");
-  if (tmux === null) throw new Error("tmux is required");
   const wrapper = join(parent, "tmux-launching-hold");
   const program = `import ctypes
 import os

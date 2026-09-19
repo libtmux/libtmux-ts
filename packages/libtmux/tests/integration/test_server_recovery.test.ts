@@ -14,6 +14,7 @@ import {
   readFixtureRecord,
   reapOwnedRunRoot,
   type FixtureRecord,
+  resolveControllerIdentity,
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
@@ -28,8 +29,7 @@ async function writeLaunchWrapper(
   marker: string,
   recoverySocket?: string,
 ): Promise<string> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const wrapper = join(parent, `tmux-${mode}`);
   const afterLaunch =
     mode === "hold-after-launch"
@@ -70,8 +70,7 @@ esac
 }
 
 async function writeNonzeroLaunchFrameWrapper(parent: string, marker: string): Promise<string> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const wrapper = join(parent, "tmux-nonzero-launch-frame");
   await writeFile(
     wrapper,

@@ -21,6 +21,7 @@ import {
   prepareRunRoot,
   readFixtureRecord,
   reapOwnedRunRoot,
+  resolveControllerIdentity,
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
@@ -37,8 +38,7 @@ async function writeExitStatusWrapper(parent: string, status: number): Promise<s
 }
 
 async function writeLoggingTmuxWrapper(parent: string, callLog: string): Promise<string> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const wrapper = join(parent, "tmux-call-log");
   await writeFile(
     wrapper,
