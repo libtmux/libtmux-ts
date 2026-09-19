@@ -565,6 +565,61 @@ test("inside tmux, without --yes, answering (y) to the already-running prompt sw
   });
 });
 
+test("inside tmux, without --yes, answering (n) to a mismatched already-running prompt stays ok", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "input.json");
+    const done = join(root, "done.txt");
+    await writeFile(
+      source,
+      JSON.stringify({
+        session_name: "mismatched-running",
+        windows: [{}, { window_name: "second" }],
+      }),
+    );
+    await server.newSession({ name: "mismatched-running" });
+    const shell = await (
+      await server.snapshot()
+    ).sessions
+      .one({ name: "fixture" })
+      .newWindow({ shellCommand: "/bin/sh" });
+    await shell.select();
+    await terminal(
+      [server.tmuxBin, "-S", server.socketPath!, "attach-session", "-t", "fixture"],
+      root,
+      env,
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        const pane = shell.panes.at(0)!;
+        const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+        await pane.sendKeys(
+          `${[runtime, entry, "load", source, "-S", server.socketPath!].map(quote).join(" ")}; printf '%s' "$?" >${quote(done)}`,
+          { enter: true },
+        );
+        await until(async () =>
+          (await pane.capture()).some((line) => line.includes("already running. Attach?")),
+        );
+        await pane.sendKeys("n", { enter: true });
+        try {
+          await until(async () => Bun.file(done).exists());
+        } catch (error) {
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+        }
+        // A declined attach never went to reuse this session (D12a), so the
+        // compare D1a would otherwise run against it never happens either:
+        // exit 0, not a session_mismatch for a session the load left alone.
+        expect(await readFile(done, "utf8")).toBe("0");
+        const client = (await server.snapshot()).clients.at(0)!;
+        expect(client.session?.name).toBe("fixture");
+        expect(
+          (await server.snapshot()).sessions.one({ name: "mismatched-running" }).windows.length,
+        ).toBe(1);
+        await client.detach();
+        expect((await result).code).toBe(0);
+      },
+    );
+  });
+});
+
 test("a run-shell key binding, with no controlling terminal, still switches the client", async () => {
   await fixture(async (server, root, env) => {
     const source = join(root, "input.json");
