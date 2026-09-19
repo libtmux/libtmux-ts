@@ -2,7 +2,7 @@
 
 # libtmux for TypeScript
 
-**Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, zero runtime dependencies.**
+**Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, and a library that ships zero runtime dependencies.**
 
 [Quickstart](#quickstart) •
 [Querying](#what-querying-looks-like) •
