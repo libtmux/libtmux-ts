@@ -18,6 +18,8 @@ export interface StartupFacts {
   readonly caller: CallerEnvironment;
   readonly policy: Policy;
   readonly server: Server;
+  /** How this process came by that server: created here, or already running. */
+  readonly serverState: ServerState;
   readonly version: string;
 }
 
@@ -35,7 +37,8 @@ export interface ServerStartup {
   readonly serverState: ServerState;
 }
 
-function shellQuote(value: string): string {
+/** Single-quote a value for POSIX shell, escaping any embedded `'`. */
+export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
@@ -132,16 +135,31 @@ function socketOf(server: Server): string {
 }
 
 /**
+ * How this process came by the server it is about to drive.
+ *
+ * Whether the socket was already there decides the toolsets — a server this
+ * process did not create keeps `teardown` off — and it is the only warning
+ * that an agent is sharing a daemon somebody else is using. Both questions
+ * are asked at the same moment, so they are answered on the same line.
+ */
+const REACHED: Readonly<Record<ServerState, string>> = Object.freeze({
+  absent: "serving",
+  created: "serving new",
+  existing: "serving existing",
+  unprobed: "serving",
+});
+
+/**
  * One line naming the authority this process is running with.
  *
  * Everything here answers a question somebody asks *after* something went
- * wrong: which tmux did it choose, how much was it allowed to do, and is it
- * the pane I am typing in.
+ * wrong: which tmux did it choose, had somebody else already started it, how
+ * much was it allowed to do, and is it the pane I am typing in.
  */
 export function describeStartup(facts: StartupFacts): string {
-  const { caller, policy, server, version } = facts;
+  const { caller, policy, server, serverState, version } = facts;
   const toolsets = [...policy.toolsets].sort().join(",") || "none";
   const narrowed = `, toolsets ${toolsets}, ${String(policy.tools.size)} named inclusions, ${String(policy.excludeTools.size)} exclusions`;
   const pane = caller.paneId === undefined ? "" : `, from pane ${caller.paneId}`;
-  return `libtmux-mcp ${version} serving ${socketOf(server)}${narrowed}${pane}`;
+  return `libtmux-mcp ${version} ${REACHED[serverState]} ${socketOf(server)}${narrowed}${pane}`;
 }

@@ -16,11 +16,34 @@ every change is held to, and the map of what is where, are in
 Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.2a
 or newer.
 
-Development uses the exact Bun 1.4.0 `packageManager` pin; CI also runs the
-supported 1.3.14 floor. The three-runtime regex corpus is evidence that Bun,
-Node and Python agree on a pattern, and it records which engines produced each
-answer, so running it on an unrecorded Bun is asking a question the answers do
-not cover. It says so when that happens.
+`test:node` runs the emitted `dist` on Node 22, which is the artifact a Node
+consumer gets — the `bun` export condition serves `src` only to Bun. It runs
+the unit and integration suites there through vitest, with `bun:test` answered
+by `tests/support/bun_test_on_node.ts`, and then the scenarios that only a
+fresh process can reach. `vitest.node.config.ts` names what does not run on
+Node and why: gates over the repository — packing, publishing, tsc — rather
+than over the library. A test that needs a process of its own uses `runModule`
+from `tests/support/runtime_build.ts`, which spawns the runtime running the
+test against the build that runtime tests; spawning `bun` from both would test
+Bun twice and Node never.
+
+Running the suite a second time is not redundant. vitest's `toEqual` tells a
+`Buffer` from a `Uint8Array` where bun:test's does not, and that difference
+found the default engine answering with Node's pooled `Buffer` where its type
+promises plain bytes.
+
+A consumer needs TypeScript 5.7 or newer: 5.6 and below ship no `ES2024` lib,
+which the emitted declarations are built against. `test:install` compiles its
+fixture with that exact compiler, pinned as the `typescript-floor` alias, as
+well as with the newest — the declarations being built by the newest says
+nothing about whether an older one can read them.
+
+Development uses the exact Bun 1.4.2 `packageManager` pin; CI also runs the
+supported 1.3.14 floor and the 1.4.0 mid-range version. The three-runtime
+regex corpus is evidence that Bun, Node and Python agree on a pattern, and it
+records which engines produced each answer, so running it on an unrecorded
+Bun is asking a question the answers do not cover. It says so when that
+happens.
 
 ```console
 $ bun install
@@ -160,11 +183,19 @@ $ bun run ci:config
 ```
 
 Then, from `packages/libtmux`, the library's own gates — `lint:unused`,
-`typecheck`, `typecheck:readme`, `typecheck:symbols`, `docs:api:check`,
-`docs:criteria:check`, `generate:check`, `parity`, and `build`. Everything after
-the build needs the emitted declarations it produced: `typecheck:ambient-free`,
-`typecheck:tooling`, `test:package`, and `test:install`. Then `test:types`,
-`test:node`, and `test:coverage`.
+`typecheck`, `typecheck:tests`, `typecheck:readme`, `typecheck:symbols`,
+`docs:api:check`, `docs:criteria:check`, `generate:check`, `parity`, and
+`build`. Everything after the build needs the emitted declarations it produced:
+`typecheck:ambient-free`, `typecheck:tooling`, `test:package`, and
+`test:install`. Then `test:types`, `test:node`, and `test:coverage`.
+
+`typecheck` compiles `src` alone, because the build needs `declaration` and
+`isolatedDeclarations` and the suite cannot satisfy either. `typecheck:tests`
+is the same settings relaxed over `src` and `tests` together, and it is not
+optional: without it a renamed field left sixty-two assertions passing a
+property that no longer existed, and a test called a method with an argument
+it does not take. `packages/mcp` and `packages/workspace` compile their tests
+in their one `typecheck`.
 
 `packages/mcp` and `packages/workspace` each run `typecheck`, `test` and
 `test:package`. `examples` runs `typecheck` and `test`: every example is a

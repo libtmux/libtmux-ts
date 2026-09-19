@@ -18,6 +18,7 @@ import {
   runFramedCommand,
 } from "../command.js";
 import type { ToolContext } from "../context.js";
+import { noteLiteralWrite } from "../pane_echo.js";
 import {
   busyPane,
   dispatchPaneKeys,
@@ -27,7 +28,7 @@ import {
 } from "../pane_input.js";
 import type { Policy } from "../policy.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { OPEN_WORLD, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
 import { isFailure } from "../target_resolution.js";
@@ -115,7 +116,6 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "send_keys",
     {
-      annotations: OPEN_WORLD,
       description:
         "Send keystrokes to a pane. Use for TUIs, control keys (C-c), and partial " +
         "lines. For a shell command whose result you want, use run_shell_command — it " +
@@ -125,7 +125,12 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write to this server's exact caller pane. Never overrides attention."),
+          .describe(
+            "Allow writing to the pane this server itself was called from, which is " +
+              "otherwise refused. It does not override the refusal to write to a pane " +
+              "a person is watching — a pane an attached client has on screen is " +
+              "still refused with force.",
+          ),
         keys: inlineRequestText("keys").describe(
           "Keys to send. tmux key names like C-c work unless literal is true.",
         ),
@@ -162,6 +167,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         }
         await dispatchPaneKeys(final.pane, keys, {
           ...(enter === undefined ? {} : { enter }),
+          identity: final.observation.authority,
           ...(literal === undefined ? {} : { literal }),
         });
         const attended = final.resolvedPaneIds.some((id) =>
@@ -183,7 +189,6 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "paste_text",
     {
-      annotations: OPEN_WORLD,
       description:
         "Put text into a pane without tmux interpreting any of it as key names. " +
         "Use for content — a password, a code block, anything with characters a " +
@@ -193,9 +198,17 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write to this server's exact caller pane. Never overrides attention."),
+          .describe(
+            "Allow writing to the pane this server itself was called from, which is " +
+              "otherwise refused. It does not override the refusal to write to a pane " +
+              "a person is watching — a pane an attached client has on screen is " +
+              "still refused with force.",
+          ),
         paneId: paneIdSchema,
-        text: inlineRequestText("text"),
+        text: inlineRequestText("text").describe(
+          "Text to paste. Sent through a tmux buffer, so a shell's line editor does " +
+            "not redraw on every character.",
+        ),
       },
       outputSchema: { bytes: z.number().int(), paneId: paneIdSchema },
       title: "Paste text",
@@ -240,6 +253,10 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             if (isFailure(final) || final.signature !== initial.signature) {
               refusal = paneInputChanged(paneId, "paste_text");
             } else {
+              // Recorded before the paste, not after: tmux can relay the
+              // resulting echo to an already-subscribed wait before this
+              // call's own paste confirmation returns.
+              noteLiteralWrite(final.pane.id, final.observation.authority, text, enter === true);
               await final.pane.pasteBuffer(bufferName);
             }
           } catch (error) {
@@ -287,7 +304,6 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "run_shell_command",
     {
-      annotations: OPEN_WORLD,
       description:
         "Run a shell command in a pane, wait for it to finish, and report its exit " +
         "status and output. Prefer this over send_keys plus capture_pane: it frames " +
@@ -302,8 +318,18 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         force: z
           .boolean()
           .optional()
-          .describe("Write to this server's exact caller pane. Never overrides attention."),
-        maxLines: z.number().int().positive().optional(),
+          .describe(
+            "Allow writing to the pane this server itself was called from, which is " +
+              "otherwise refused. It does not override the refusal to write to a pane " +
+              "a person is watching — a pane an attached client has on screen is " +
+              "still refused with force.",
+          ),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
         paneId: paneIdSchema,
         timeoutMs: z
           .number()

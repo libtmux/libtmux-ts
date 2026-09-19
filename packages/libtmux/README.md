@@ -5,14 +5,15 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7c-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8--rc-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
-Requires tmux 3.2a or newer, and Node 22+ or Bun 1.3.14+.
+Requires tmux 3.2a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
+5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
@@ -69,50 +70,57 @@ Those five are the page, in the order it is written. What follows them —
 deadlines, engines, observation, options, environments, errors — is depth for
 when a program needs it, and nothing above depends on any of it.
 
+What this page claims a call costs is measured rather than asserted:
+[`examples/observe/`](../../examples/observe/README.md) counts the invocations
+a snapshot and a hundred queries actually make, and runs as a test against a
+real server.
+
 <details>
 <summary><b>Everything on this page</b></summary>
 
-**Reading the server** ·
-[Snapshots](#snapshots) ·
-[Querying](#querying) ·
-[Relations](#relations) ·
-[Field names](#field-names) ·
-[Field values](#field-values)
+<!-- toc -->
 
-**Changing it** ·
-[Operations](#operations) ·
-[Running several commands at once](#running-several-commands-at-once) ·
-[Commands this package does not model](#commands-this-package-does-not-model) ·
-[Options and hooks](#options-and-hooks) ·
-[Environments](#environments)
+- [Quickstart](#quickstart)
+- [Start here](#start-here)
+- [Snapshots](#snapshots)
+- [Querying](#querying)
+- [Relations](#relations)
+- [Field names](#field-names)
+- [Field values](#field-values)
+- [Operations](#operations)
+- [Commands this package does not model](#commands-this-package-does-not-model)
+- [Running several commands at once](#running-several-commands-at-once)
+- [Watching](#watching)
+  - [Subscribing to a format](#subscribing-to-a-format)
+  - [Waiting for something to happen](#waiting-for-something-to-happen)
+  - [Commands beside a connection](#commands-beside-a-connection)
+- [Recipes](#recipes)
+  - [Wait for a pane to print something](#wait-for-a-pane-to-print-something)
+  - [Act, then wait, with an observer](#act-then-wait-with-an-observer)
+  - [Build a workspace](#build-a-workspace)
+  - [Drive a pane and read what it said](#drive-a-pane-and-read-what-it-said)
+  - [Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
+- [Seeing what it runs](#seeing-what-it-runs)
+- [Deadlines and cancellation](#deadlines-and-cancellation)
+- [Choosing how work is arranged](#choosing-how-work-is-arranged)
+  - [How many commands run at once](#how-many-commands-run-at-once)
+  - [Supplying an engine](#supplying-an-engine)
+- [Options and hooks](#options-and-hooks)
+- [Environments](#environments)
+- [Errors](#errors)
+  - [Migrating from alpha.9](#migrating-from-alpha9)
+- [Running inside tmux](#running-inside-tmux)
+- [Dependencies](#dependencies)
+- [Consumers](#consumers)
+- [Examples](#examples)
+- [Entrypoints](#entrypoints)
+- [tmux versions](#tmux-versions)
+- [Parity with the Python library](#parity-with-the-python-library)
+- [License](#license)
 
-**Reacting to it** ·
-[Watching](#watching) ·
-[Waiting for something to happen](#waiting-for-something-to-happen) ·
-[Commands beside a connection](#commands-beside-a-connection)
+<!-- /toc -->
 
-**Getting the cost right** ·
-[Choosing how work is arranged](#choosing-how-work-is-arranged) ·
-[Supplying an engine](#supplying-an-engine) ·
-[Deadlines and cancellation](#deadlines-and-cancellation)
-
-**Recipes** ·
-[Wait for a pane to print something](#wait-for-a-pane-to-print-something) ·
-[Act, then wait, with an observer](#act-then-wait-with-an-observer) ·
-[Build a workspace](#build-a-workspace) ·
-[Drive a pane and read what it said](#drive-a-pane-and-read-what-it-said) ·
-[Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
-
-**The rest** ·
-[Errors](#errors) ·
-[Running inside tmux](#running-inside-tmux) ·
-[Dependencies](#dependencies) ·
-[Entrypoints](#entrypoints) ·
-[tmux versions](#tmux-versions) ·
-[Consumers](#consumers) ·
-[Examples](#examples) ·
-[Parity with the Python library](#parity-with-the-python-library) ·
-[API reference](docs/api.md)
+Also: [API reference](docs/api.md) · [Benchmarks](docs/benchmarks.md)
 
 </details>
 
@@ -144,8 +152,9 @@ before.sessions.length; // unchanged
 ```
 
 `server.sessions()`, `windows()`, `panes()`, and `clients()` each take a
-snapshot of their own — four tmux commands apiece — so reaching for several in
-a row costs several round trips and describes several different instants. In a
+snapshot of their own — one invocation apiece, carrying an identity read and
+four listings — so reaching for several in a row costs several round trips and
+describes several different instants. In a
 loop that is an N+1. Take one `snapshot()` and read the collections off it:
 they are cheaper together and they agree with each other.
 
@@ -175,6 +184,17 @@ snapshot.panes.where({ currentCommand: "vim" });
 snapshot.panes.filter((pane) => pane.currentCommand?.startsWith("v") === true);
 snapshot.panes.map((pane) => pane.id); // an array, not a Selection
 ```
+
+Most programs need equality and a relation: `one({ id })` to re-find something
+they already hold, `{ session: { is: { id } } }` to scope to it. Both consumers
+in this repository use those and nothing else, and `.filter()` covers the rest
+of what a program that built the server itself wants.
+
+The operators below are for the other case — a caller exploring a server it did
+not build, or one holding a query it did not write: a saved filter, a `--where`
+flag, an argument from an agent. That is also what `encodeWhereDocument` and
+`decodeWhereDocument` are for, and why criteria are data rather than a
+predicate. If you know the ids, you do not need any of this.
 
 Criteria support equality, string operators, `AND`/`OR`/`NOT`, regular
 expressions as data, and relation quantifiers:
@@ -316,16 +336,24 @@ import { isSafeInteger, safeInteger } from "libtmux";
 
 snapshot.panes.where({ active: true });
 snapshot.panes.where({ active: "1" }); // what a flag encodes to
-snapshot.panes.where({ pid: "2334787" }); // and a number
-snapshot.panes.where({ pid: safeInteger(process.pid) }); // a computed number
+snapshot.windows.where({ index: 3 }); // a number, written as one
+snapshot.panes.where({ pid: "2334787" }); // or its wire text
+snapshot.panes.where({ pid: process.pid }); // or one you computed
 const candidate = Number(process.env["BUILD_PID"]);
 if (isSafeInteger(candidate)) snapshot.panes.where({ pid: candidate });
 ```
 
-`SafeInteger` keeps `NaN`, infinities, fractions, and unsafe integers out of
-typed criteria. Decoded numeric fields already carry the proof; authenticate a
-number from elsewhere with `safeInteger`, which throws when it is not exact.
-Use `isSafeInteger` to narrow an unknown value without throwing.
+A numeric criterion takes any `number`, and a value that is not an exact
+integer — `NaN`, an infinity, a fraction, an unsafe integer — raises
+`QueryValidationError` naming the field it was written under. That check is at
+the boundary rather than in the type because the type cannot see a number that
+arrived at runtime, and making the literal case pay for the runtime one cost
+every correct query a `safeInteger` call.
+
+`SafeInteger` is what decoded fields carry, so a value read off a handle is
+already proven exact. `safeInteger` authenticates one from elsewhere and throws
+when it is not, and `isSafeInteger` narrows without throwing — useful where you
+want the refusal at the point the value arrives rather than at the query.
 
 Invalid wire spellings remain type errors:
 
@@ -339,11 +367,11 @@ snapshot.panes.where({ pid: "banana" });
 ```
 
 A `string` you have at runtime — from a config file, an argument, a raw
-`.format` value — is not in that domain, because nothing knows yet whether it
-is. Say what it means:
+`.format` value — says nothing yet about which it is. Say what it means:
 
 ```ts
 const fromConfig = process.argv[2] ?? "";
+// A number: refused here, by `safeInteger`, rather than at the query.
 snapshot.windows.where({ index: safeInteger(Number(fromConfig)) });
 // Or ask about the characters rather than the value, which is what the
 // substring operators are for and why they stay plain strings.
@@ -424,6 +452,17 @@ rows by one would match all of them or none.
 
 Every handle exposes the tmux commands that apply to it. Each returns a promise;
 those that create something return a handle to it.
+
+Everything else resolves to nothing, and leaves the handle reading the instant
+it was acquired at. That is deliberate — a handle that advanced in place would
+leave a snapshot disagreeing with itself — so a mutation you need the result of
+is two calls:
+
+```ts
+await window.rename("build");
+window.name; // still "editor": the instant this handle was read at
+(await window.refreshed()).name; // "build"
+```
 
 Sessions, windows, and panes:
 
@@ -574,14 +613,25 @@ await pane.enterCopyMode();
 await pane.exitCopyMode();
 ```
 
-The choosers and popups do need a client, and each stays up until someone
-dismisses it:
+The choosers and popups all need a client, and they divide on what awaiting
+one means. A popup and a menu stay open until someone dismisses them, and tmux
+answers only then, so the promise reports that it is over:
 
-<!-- static: each opens a chooser that stays on screen until a person dismisses it -->
+<!-- static: each stays on screen until a person dismisses it -->
 
 ```ts
 await pane.displayPopup("less README.md");
 await pane.displayMenu("Pane", [{ command: "kill-pane", key: "k", name: "Kill" }]);
+```
+
+The rest resolve as soon as the chooser is on screen. Awaiting one tells you it
+opened, never what was chosen — measured on tmux 3.7c, where `choose-tree`
+returns in milliseconds against the seconds a menu spends waiting to be
+dismissed. Bind a tmux command to the selection if you need to act on it:
+
+<!-- static: each opens a chooser that stays on screen until a person dismisses it -->
+
+```ts
 await pane.chooseTree();
 await pane.chooseBuffer();
 await pane.findWindow("editor");
@@ -665,9 +715,21 @@ takes none. Failure raises `TmuxCommandError` carrying tmux's own stderr.
 
 ## Running several commands at once
 
-Creating things one at a time costs two processes per mutation: one runs its
-command and one captures the snapshot needed to find what it made. A batch
-shares one final snapshot across all of its mutations.
+Creating things one at a time costs two tmux invocations per mutation: one runs
+its command and one captures the snapshot needed to find what it made. That
+second one is what makes the result a handle rather than an id — tmux prints the
+new id, but a handle is only meaningful inside a consistent graph, and acquiring
+one is the whole server. A batch shares a single final snapshot across all of
+its mutations, so twelve windows cost 14 invocations rather than 25 —
+twenty-four against thirteen for the creations themselves, plus in each case the
+one query that reads the result back. [The benchmarks](docs/benchmarks.md)
+measure both. The invocation counts hold anywhere; the snapshot's wall-clock
+grows with the server, at about 1.6 ms per pane on the machine that page
+reports.
+
+Reach for `cmd` where you want the id and not the handle — `server.cmd(
+"new-window", ["-d", "-P", "-F", "#{window_id}"])` is the one invocation, and
+its printed line is a target string every other method accepts.
 
 `plan` describes a mutation instead of running it. It takes what the direct call
 takes and resolves to what the direct call resolves to; `batch` runs the planned
@@ -685,7 +747,7 @@ kinds keeps each element's own type, so a planned split comes back as a `Pane`
 with `Pane` methods on it:
 
 ```ts
-const [created] = await server.batch([editor.plan.split({ vertical: true })]);
+const [created] = await server.batch([editor.plan.split()]);
 const lines = await created.capture();
 ```
 
@@ -765,7 +827,7 @@ server with none fails at `connect()` with tmux's own words rather than through
 whichever command runs first:
 
 ```ts
-await server.connect(); // LibTmuxException: ... could not attach: no sessions
+await server.connect(); // LibTmuxError: ... could not attach: no sessions
 ```
 
 tmux sends a control client no pane output until it attaches, so watching
@@ -984,25 +1046,73 @@ const opened = await live.subscribe().find((event) => event.kind === "window-add
 });
 ```
 
+## Seeing what it runs
+
+`onInvocation` is called once per tmux invocation, after it answers or fails —
+the seam for logs, traces and metrics, so watching the library does not mean
+supplying a whole engine:
+
+```ts
+import type { TmuxInvocationReport } from "libtmux";
+
+const reports: TmuxInvocationReport[] = [];
+const traced = new Server({
+  socketPath: server.socketPath,
+  onInvocation: (report) => reports.push(report),
+});
+await traced.snapshot();
+
+reports[0]?.commands[0]?.[0]; // "display-message", the identity read
+reports[0]?.durationMs;
+```
+
+`TmuxInvocationReport` is exported for a typed collector. Every command
+reports, including the identity read and four listings behind `snapshot()`,
+the version probe, and commands a custom engine executed. The report carries
+the commands tmux received, `durationMs` for the invocation itself, `queuedMs`
+for any wait under `maxInFlight`, `exitCode` when tmux answered, and `error`
+with `delivery` when it did not.
+
+An observer cannot change what a command does. Anything it throws is
+swallowed: a command must not fail on account of the code watching it. An
+`async` observer is allowed and is never awaited — the invocation is already
+decided, so waiting would only delay it — and a rejection is swallowed on the
+same grounds rather than left to the host's unhandled rejection policy.
+
+[`examples/observe/`](../../examples/observe/README.md) runs this against a
+real server, and counts its own reports to check the two costs above rather
+than restate them.
+
 ## Deadlines and cancellation
 
-A command with no deadline waits as long as tmux takes, which for a daemon that
-stops answering is forever. Set one for the whole server, and override or cancel
-a single call:
+Every command gets 30 seconds unless the server or the call says otherwise.
+Change it for the whole server, lift it with `null`, and override or cancel a
+single call:
 
 ```ts
 const server = new Server({ timeoutMs: 10_000 });
+const patient = new Server({ timeoutMs: null }); // waits as long as tmux takes
 
 const controller = new AbortController();
 const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
-controller.abort();
-await lines.catch(() => undefined); // rejects with the abort reason
+controller.abort(new Error("the caller moved on"));
+// Rejects with a TmuxTransportError carrying kind: "cancelled", and your own
+// reason as its `cause`.
+await lines.catch(() => undefined);
 ```
+
+A cancelled or timed-out command always rejects with a `TmuxTransportError`
+rather than with the reason itself, because the error also says how far the
+command got — `delivery` distinguishes one tmux never started from one it may
+have run. What you passed to `abort()` is preserved as `cause`.
 
 Every operation that takes options accepts both, so the rule you learn on one
 method holds on the next. The default applies to every command the server runs,
 including the version probe it makes first and the identity read plus four
-listings behind `snapshot()`. `signal` is
+listings behind `snapshot()` — except a popup, a menu, a prompt, a confirmation,
+`display-panes` and `wait-for`. Those wait on a person or on another command,
+and a default would cut them off; a deadline passed on the call still binds
+them. `signal` is
 typed structurally, so a real `AbortSignal` satisfies it without the published
 types requiring a DOM or Node library.
 
@@ -1033,10 +1143,12 @@ bounded.tmuxBin;
 ```
 
 The ceiling costs no throughput, because there was none to lose: tmux runs
-commands on one thread. Measured against a live server on one machine, capture
-throughput stops rising at four concurrent clients and is flat from there to
-sixty-four, so a wider fan-out buys queueing and process pressure rather than
-work.
+commands on one thread. [The benchmarks](docs/benchmarks.md) show `Promise.all`
+over twelve creations costing the same twenty-five processes as doing them in
+order, and arriving out of order in two or three of every three runs. Fanning
+out buys no work — `pipeline` does the same twelve in thirteen. Both totals
+count the query that reads the result back, which is why neither is a multiple
+of twelve.
 
 Waiting for a slot spends the request's own deadline rather than extending it.
 A request that never gets one raises `TmuxTransportError` with
@@ -1051,7 +1163,7 @@ This runnable example keeps execution local on the current server's socket; a
 remote runner has the same obligations:
 
 ```ts
-import { Server, TmuxServerRestarted } from "libtmux";
+import { Server, TmuxServerRestartedError } from "libtmux";
 import { flattenInvocation, guardRequest } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
 
@@ -1070,8 +1182,8 @@ function engineOver(
       // so an engine inherits restart safety instead of rebuilding it.
       const guarded = guardRequest(request);
       const result = await run(guarded.request);
-      if (guarded.refusedBy(result.returncode, result.stderr)) {
-        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+      if (guarded.refusedBy(result.exitCode, result.stderr)) {
+        throw new TmuxServerRestartedError("the daemon this handle was read from is gone");
       }
       return result;
     },
@@ -1103,14 +1215,14 @@ const throughEngine = new Server({
         await child.stdin.write(request.stdin);
         await child.stdin.end();
       }
-      const [returncode, stdout, stderr] = await Promise.all([
+      const [exitCode, stdout, stderr] = await Promise.all([
         child.exited,
         new Response(child.stdout).arrayBuffer(),
         new Response(child.stderr).arrayBuffer(),
       ]);
       return {
         cmd: argv,
-        returncode,
+        exitCode,
         signal: child.signalCode,
         stderr: new Uint8Array(stderr),
         stdout: new Uint8Array(stdout),
@@ -1256,7 +1368,7 @@ try {
   await session.newWindow({ name: "build" });
 } catch (error) {
   if (error instanceof TmuxTransportError) {
-    error.kind; // "cancelled" | "pipe" | "protocol" | "spawn" | "timeout"
+    error.kind; // "cancelled" | "contract" | "pipe" | "protocol" | "spawn" | "timeout"
     error.delivery; // "not_started" | "written" | "replied" | "indeterminate"
     error.stdout; // whatever arrived before the failure
   }
@@ -1269,18 +1381,18 @@ because tmux may well have created that window before the pipe went quiet. Every
 path reports the same type, so a timeout during `snapshot()` is not a different
 shape from a timeout during `kill()`.
 
-A handle that outlived its daemon raises `TmuxServerRestarted`. tmux numbers a
-restarted daemon's objects from the start, so a `%1` read before the restart
-names a pane that exists and belongs to somebody else — and a socket path is a
-place, not a process:
+A handle that outlived its daemon raises `TmuxServerRestartedError`. tmux
+numbers a restarted daemon's objects from the start, so a `%1` read before the
+restart names a pane that exists and belongs to somebody else — and a socket
+path is a place, not a process:
 
 ```ts
-import { TmuxServerRestarted } from "libtmux";
+import { TmuxServerRestartedError } from "libtmux";
 
 try {
   await pane.kill();
 } catch (error) {
-  if (error instanceof TmuxServerRestarted) {
+  if (error instanceof TmuxServerRestartedError) {
     error.delivery; // always "not_started" — a refused command never ran
   }
 }
@@ -1298,26 +1410,97 @@ means exactly one thing. Ask without raising when you need to:
 
 ```ts
 await server.isAlive(); // false for a missing daemon, socket, or binary
-await server.raiseIfDead(); // the assertion form
+await server.checkAlive(); // the assertion form
 ```
 
-Every error extends `LibTmuxException`. A query that matches nothing raises
-`NoMatchError`, one that matches several where you asked for one raises
-`MultipleMatchesError`, and criteria the schema rejects raise
-`QueryValidationError`. A `waitFor` that reaches its deadline with the condition
-still unmet raises `WaitTimeout`, which is worth catching by name: it says the
-state never arrived, where a `LibTmuxException` from the same call says only
-that the connection ended and nothing about the condition.
-A criterion naming a field newer than the tmux that answered raises
-`VersionTooLow` rather than matching nothing — the error names the field, the
-release that has it, and the release running, because "no pane has this" and
-"your tmux has never heard of this" are different answers.
-`ObjectDoesNotExist` and `MultipleObjectsReturned` preserve the Python library's
-selection-error ancestry. The `libtmux/exc` subpath exports those bases and the
-errors raised by the TypeScript implementation.
+Library failures extend `LibTmuxError`; invalid arguments may throw native
+`TypeError`. Every one carries `code`, a string naming its class that survives
+a bundler renaming identifiers — the check to write where `instanceof` cannot
+reach:
 
-`parseLegacyWhere` converts Python-style `name__contains=` filter strings into
-criteria, for code being ported rather than written fresh.
+```ts
+try {
+  await server.snapshot();
+} catch (error) {
+  if (error instanceof Error && "code" in error && error.code === "TmuxTransportError") {
+    // the command never got an answer
+  }
+}
+```
+
+A query that matches nothing raises `NoMatchError`, one that
+matches several where you asked for one raises `MultipleMatchesError`, and
+criteria the schema rejects raise `QueryValidationError`. A `waitFor` that
+reaches its deadline with the condition still unmet raises
+`WaitTimeoutError`, which is worth catching by name: it says the state never
+arrived, where a `LibTmuxError` from the same call says only that the
+connection ended and nothing about the condition. A criterion naming a field
+newer than the tmux that answered raises `VersionTooLowError` rather than
+matching nothing — the error names the field, the release that has it, and
+the release running, because "no pane has this" and "your tmux has never
+heard of this" are different answers.
+
+Two bases sit above those. Catch `ObjectNotFoundError` for "not there, however
+you asked": a query that matched nothing (`NoMatchError`) and tmux refusing a
+target that does not exist (`TmuxObjectNotFoundError`) both extend it.
+`MultipleObjectsError` is its counterpart and has one subclass today,
+`MultipleMatchesError`; it stays so the pair reads the same, and so code ported
+from Python, which catches `ObjectDoesNotExist` and `MultipleObjectsReturned`,
+has a name to catch. Import library errors from `libtmux` or `libtmux/errors`.
+
+`libtmux/selection` carries `parseLegacyWhere`, which converts Python-style
+`name__contains=` filter strings into criteria. It is for code being ported
+rather than written fresh, so it sits on the subpath rather than in the root
+export, as the engine and type inventories do.
+
+### Migrating from alpha.9
+
+Use these error names. The old names remain deprecated aliases to the same
+constructors, so existing `instanceof` checks still work. `error.name` reports
+the canonical name. The `libtmux/exc` entrypoint remains a compatibility export;
+use `libtmux/errors` for new imports.
+
+`QueryValidationError.code` is now `reason`, because every error now carries a
+`code` naming its own class.
+
+| Previous name             | Canonical name             |
+| ------------------------- | -------------------------- |
+| `LibTmuxException`        | `LibTmuxError`             |
+| `ObjectDoesNotExist`      | `ObjectNotFoundError`      |
+| `MultipleObjectsReturned` | `MultipleObjectsError`     |
+| `TmuxObjectDoesNotExist`  | `TmuxObjectNotFoundError`  |
+| `VersionTooLow`           | `VersionTooLowError`       |
+| `WaitTimeout`             | `WaitTimeoutError`         |
+| `TmuxServerRestarted`     | `TmuxServerRestartedError` |
+
+Completed command results, including custom `TmuxEngine` results, use
+`exitCode` instead of `returncode`. Update result construction and property
+reads together. `TmuxCommandError.exitCode` is unchanged. Transport failures
+retain their `kind`, `delivery`, partial output and optional signal; they
+have no completed exit code. A `TmuxEngine` that resolves without a numeric
+`exitCode` raises `TmuxTransportError` with `kind: "contract"` rather than
+being read as a failed command.
+
+Use `server.checkAlive()` in place of the deprecated `server.raiseIfDead()`.
+Both reject when the server cannot be reached.
+
+The compatibility call:
+
+```ts
+await server.raiseIfDead();
+```
+
+The canonical call:
+
+```ts
+await server.checkAlive();
+```
+
+For `pane.split()`, `window.split()` and planned splits, replace
+`vertical: true` with `direction: PaneDirection.Below`, and `vertical: false`
+with `direction: PaneDirection.Right`. Omitting both still splits below. The
+legacy `vertical` option is deprecated; passing it with `direction` throws
+`TypeError` before executing a command.
 
 ## Running inside tmux
 
@@ -1369,9 +1552,33 @@ The root export carries the everyday handle, query, operation, error, and
 constant surface. Each model is also its own subpath: `libtmux/server`,
 `libtmux/session`, `libtmux/window`, `libtmux/pane`, `libtmux/client`, and
 `libtmux/selection`. Supporting subpaths are `libtmux/formats`,
-`libtmux/constants`, `libtmux/common`, and `libtmux/exc`.
+`libtmux/constants`, `libtmux/common`, and `libtmux/errors`.
 
-Three specialist subpaths keep their complete contracts out of the root:
+`libtmux/testing` records a real server's answers and replays them, so a
+consumer's own unit tests need no tmux:
+
+<!-- static: the recording is written by a run against a real server -->
+
+```ts
+import { recordInvocations, replayInvocations } from "libtmux/testing";
+
+// Once, against real tmux: wrap the engine and keep what it answered.
+const recorder = recordInvocations();
+const recording = new Server({ engine: recorder.engine, socketPath: server.socketPath });
+await recording.snapshot();
+
+// Ever after, with no server, no binary and no daemon.
+const replayed = new Server({ engine: replayInvocations(recorder.recording()) });
+(await replayed.snapshot()).sessions.count();
+```
+
+A recording is JSON and replays a run rather than answering a query: the same
+calls in the same order get the same answers, and one the recording never saw
+raises rather than reporting an empty server. Record guards are rewritten to
+the ones each replayed call asks for, so a fixture is not tied to the run that
+made it.
+
+Four specialist subpaths keep their complete contracts out of the root:
 `libtmux/engine` for custom execution engines, `libtmux/types` for the full
 operation and event type inventory, and `libtmux/field-types` for generated
 format-field, decoded-value, and handle-alias types.

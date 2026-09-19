@@ -1,4 +1,4 @@
-import { Server, TmuxServerRestarted } from "libtmux";
+import { Server, TmuxServerRestartedError } from "libtmux";
 import { flattenInvocation, guardRequest } from "libtmux/engine";
 import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
 
@@ -39,14 +39,14 @@ export async function throughACustomEngine(reference: Server): Promise<number> {
         await child.stdin.write(request.stdin);
         await child.stdin.end();
       }
-      const [returncode, stdout, stderr] = await Promise.all([
+      const [exitCode, stdout, stderr] = await Promise.all([
         child.exited,
         new Response(child.stdout).arrayBuffer(),
         new Response(child.stderr).arrayBuffer(),
       ]);
       return {
         cmd: argv,
-        returncode,
+        exitCode,
         signal: child.signalCode,
         stderr: new Uint8Array(stderr),
         stdout: new Uint8Array(stdout),
@@ -61,8 +61,8 @@ export async function throughACustomEngine(reference: Server): Promise<number> {
     async execute(request) {
       const guarded = guardRequest(request);
       const result = await run(guarded.request);
-      if (guarded.refusedBy(result.returncode, result.stderr)) {
-        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+      if (guarded.refusedBy(result.exitCode, result.stderr)) {
+        throw new TmuxServerRestartedError("the daemon this handle was read from is gone");
       }
       return result;
     },

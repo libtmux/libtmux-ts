@@ -75,6 +75,7 @@ import type { Server } from "./server.js";
 export interface PanePlans {
   readonly kill: () => PlannedOperation<void>;
   readonly killIfWindowUnshared: () => PlannedOperation<void>;
+  /** @throws TypeError when `options` combines `direction` with `vertical`. */
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
@@ -207,9 +208,12 @@ export class Pane {
    * Split this pane and resolve the created pane.
    *
    * ```ts
-   * const created = await pane.split({ vertical: true });
+   * import { PaneDirection } from "libtmux";
+   * const created = await pane.split({ direction: PaneDirection.Below });
    * created.id;
    * ```
+   *
+   * @throws TypeError when `options` combines `direction` with `vertical`.
    */
   split(options?: SplitOptions): Promise<Pane> {
     return splitWindow(this.server, runtimeForHandle(this), this.id, options);
@@ -456,7 +460,8 @@ export class Pane {
    * Move this pane into another window as a split.
    *
    * ```ts
-   * await pane.joinTo(window.id, { vertical: true });
+   * import { PaneDirection } from "libtmux";
+   * await pane.joinTo(window.id, { direction: PaneDirection.Below });
    * ```
    */
   joinTo(target: Pane | Window | string, options?: JoinOptions): Promise<void> {
@@ -510,6 +515,10 @@ export class Pane {
   /**
    * Open the interactive session and window chooser in this pane.
    *
+   * The promise resolves once the chooser is on screen, not once someone
+   * has chosen: tmux answers this command as soon as it opens the mode.
+   * Bind a tmux command to the selection to act on what was picked.
+   *
    * tmux needs a client attached to the session to draw this. With none, it
    * does nothing and reports success, so a headless run is told it worked.
    *
@@ -524,6 +533,10 @@ export class Pane {
   /**
    * Open the interactive buffer chooser in this pane.
    *
+   * The promise resolves once the chooser is on screen, not once someone
+   * has chosen: tmux answers this command as soon as it opens the mode.
+   * Bind a tmux command to the selection to act on what was picked.
+   *
    * tmux needs a client attached to the session to draw this. With none, it
    * does nothing and reports success, so a headless run is told it worked.
    *
@@ -537,6 +550,10 @@ export class Pane {
 
   /**
    * Search windows interactively from this pane.
+   *
+   * The promise resolves once the mode is on screen, not once someone has
+   * chosen: tmux answers this command as soon as it opens the mode. Bind a
+   * tmux command to the selection to act on what was picked.
    *
    * tmux needs a client attached to the session to draw this. With none, it
    * does nothing and reports success, so a headless run is told it worked.
@@ -565,6 +582,10 @@ export class Pane {
 
   /**
    * Open tmux's interactive option editor in this pane.
+   *
+   * The promise resolves once the mode is on screen, not once someone has
+   * chosen: tmux answers this command as soon as it opens the mode. Bind a
+   * tmux command to the selection to act on what was picked.
    *
    * tmux needs a client attached to the session to draw this. With none, it
    * does nothing and reports success, so a headless run is told it worked.

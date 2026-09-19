@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { compileWhere } from "../../src/_internal/selection/compile.js";
-import { QueryValidationError } from "../../src/exc.js";
+import { QueryValidationError } from "../../src/errors.js";
 
 function refused(pattern: string, flags: "" | "ms" = ""): QueryValidationError {
   try {
@@ -24,7 +24,7 @@ describe("selection regex work limit", () => {
     ] as const) {
       const error = refused(pattern, flags);
 
-      expect(error.code).toBe("invalid-query");
+      expect(error.reason).toBe("invalid-query");
       expect(error.message).not.toContain(pattern);
     }
   });

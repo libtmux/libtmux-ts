@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -262,7 +262,7 @@ describe("declared format value types", () => {
     // value type for a field in neither is a claim about nothing.
     const read = async (name: string): Promise<readonly string[]> =>
       (
-        (await Bun.file(new URL(`../fixtures/${name}`, import.meta.url).pathname).json()) as {
+        JSON.parse(await readFile(new URL(`../fixtures/${name}`, import.meta.url), "utf8")) as {
           fields: { token: string }[];
         }
       ).fields.map(({ token }) => token);

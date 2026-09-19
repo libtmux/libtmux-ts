@@ -1,9 +1,12 @@
 import type { CommandOptions } from "../../common.js";
 import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
+import { VersionTooLowError } from "../../errors.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { runCommand, runCommands } from "./command.js";
+import { parseClassicLayout, type ClassicLayoutParse, type LayoutRejection } from "./layout.js";
 import { planRemoveWindowPlacement } from "./plans.js";
 import { assertName } from "./names.js";
 
@@ -19,7 +22,14 @@ export async function renameWindow(
   windowId: string | null,
   name: string,
 ): Promise<void> {
-  await runCommand(runtime, ["rename-window", ...target(windowId), assertName("window", name)]);
+  // `--` keeps a name starting with `-` from being read as a flag:
+  // `assertName` refuses `.`, `:`, and control characters, not a dash.
+  await runCommand(runtime, [
+    "rename-window",
+    ...target(windowId),
+    "--",
+    assertName("window", name),
+  ]);
 }
 
 /**
@@ -89,13 +99,147 @@ export async function swapWindows(
   ]);
 }
 
-/** Apply a named or custom layout to a window. */
+const LAYOUT_PRESETS = new Set([
+  "even-horizontal",
+  "even-vertical",
+  "main-horizontal",
+  "main-vertical",
+  "tiled",
+]);
+const MIRRORED_LAYOUT_PRESETS = new Set(["main-horizontal-mirrored", "main-vertical-mirrored"]);
+// Every name `layout_set_lookup` (tmux's layout-set.c) matches, exactly and by
+// unambiguous prefix.
+const LAYOUT_SET_NAMES: readonly string[] = [...LAYOUT_PRESETS, ...MIRRORED_LAYOUT_PRESETS];
+// tmux CHANGES, 3.4 to 3.5: mirrored main-horizontal and main-vertical.
+const MIRRORED_LAYOUTS_SINCE = parseTmuxVersion("3.5");
+// tmux CHANGES, 3.7c to 3.8: layout strings use a JSON subset format.
+const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8");
+
+/** Why a value that opened like a dumped layout is not one. */
+const LAYOUT_REJECTIONS: Readonly<Record<LayoutRejection, string>> = Object.freeze({
+  checksum: "carries a checksum that does not match the layout after it",
+  depth: "nests deeper than tmux parses",
+  dimension: "describes a cell larger than any window tmux will make",
+  structure: "carries a checksum but is not a layout tmux would apply",
+});
+
+type LayoutPresetLookup =
+  | { readonly candidates: readonly string[]; readonly kind: "ambiguous" }
+  | { readonly kind: "none" }
+  | { readonly kind: "resolved"; readonly name: string };
+
+/**
+ * Resolve a preset name the way `layout_set_lookup` does: an exact name wins
+ * outright (recognised whatever the running tmux is, so a value naming a
+ * preset it predates gets `VersionTooLowError` rather than a generic
+ * refusal), else a prefix naming exactly one of `prefixCandidates` resolves
+ * to it, else an empty or ambiguous prefix does not resolve.
+ */
+function lookupLayoutPreset(
+  layout: string,
+  prefixCandidates: readonly string[],
+): LayoutPresetLookup {
+  if (LAYOUT_SET_NAMES.includes(layout)) return { kind: "resolved", name: layout };
+  if (layout === "") return { kind: "none" };
+  const candidates = prefixCandidates.filter((name) => name.startsWith(layout));
+  if (candidates.length === 1) return { kind: "resolved", name: candidates[0]! };
+  if (candidates.length > 1) return { candidates, kind: "ambiguous" };
+  return { kind: "none" };
+}
+
+/**
+ * The preset names the running tmux's own table holds.
+ *
+ * `layout_set_lookup` gains mirrored presets only from tmux 3.5 (CHANGES, 3.4
+ * to 3.5), so `main-v` is a unique prefix of `main-vertical` below that
+ * release and ambiguous from it on.
+ */
+async function versionedLayoutPresetNames(runtime: RuntimeContext): Promise<readonly string[]> {
+  const { tmuxVersion } = await runtime.capabilities.bind();
+  return tmuxVersionAtLeast(tmuxVersion, MIRRORED_LAYOUTS_SINCE)
+    ? LAYOUT_SET_NAMES
+    : [...LAYOUT_PRESETS];
+}
+
+/**
+ * Refuse a layout value tmux cannot safely be handed.
+ *
+ * Two releases answer a layout they cannot read by exiting rather than
+ * refusing, and they fail on opposite inputs. tmux 3.3 and 3.3a die on a
+ * value carrying no readable checksum - an unknown preset name, `garbage`, a
+ * JSON layout, or `-o` once `--` forces it to be read as a layout. tmux 3.7
+ * through 3.7d die on a value that carries a correct checksum and then holds
+ * an unreadable cell, which is why the checksum is not evidence of anything
+ * (see `parseClassicLayout`).
+ *
+ * What is safe on every supported release is a preset the running tmux knows,
+ * an unambiguous prefix of one (`tile` for `tiled`; `layout_set_lookup` never
+ * falls through to the parser for those), and a layout string this package
+ * has parsed itself. Mirrored presets and JSON wait for the release that
+ * learned them. Decided before dispatch, so it holds on every version.
+ *
+ * A prefix is resolved against every preset name first, with no version
+ * probe: unless that resolves to one of the mirrored names, or ambiguously
+ * between two, the answer cannot change with the running tmux's own
+ * (possibly smaller) table, so the common case never pays for one.
+ */
+async function assertLayoutValue(runtime: RuntimeContext, layout: string): Promise<void> {
+  const broad = lookupLayoutPreset(layout, LAYOUT_SET_NAMES);
+  const preset =
+    broad.kind === "ambiguous" ||
+    (broad.kind === "resolved" && MIRRORED_LAYOUT_PRESETS.has(broad.name))
+      ? lookupLayoutPreset(layout, await versionedLayoutPresetNames(runtime))
+      : broad;
+  if (preset.kind === "ambiguous") {
+    throw new TypeError(
+      `${JSON.stringify(layout)} matches more than one tmux layout preset: ` +
+        preset.candidates.join(", "),
+    );
+  }
+  const resolved = preset.kind === "resolved" ? preset.name : undefined;
+  if (resolved !== undefined && LAYOUT_PRESETS.has(resolved)) return;
+  const classic: ClassicLayoutParse =
+    resolved === undefined ? parseClassicLayout(layout) : { kind: "not-classic" };
+  if (classic.kind === "valid") return;
+  if (classic.kind === "invalid") {
+    throw new TypeError(`${JSON.stringify(layout)} ${LAYOUT_REJECTIONS[classic.reason]}`);
+  }
+  const since =
+    resolved !== undefined && MIRRORED_LAYOUT_PRESETS.has(resolved)
+      ? MIRRORED_LAYOUTS_SINCE
+      : resolved === undefined && layout.startsWith("{")
+        ? JSON_LAYOUTS_SINCE
+        : undefined;
+  if (since === undefined) {
+    throw new TypeError(
+      `${JSON.stringify(layout)} is neither a tmux layout preset nor a layout string tmux reported`,
+    );
+  }
+  const { tmuxVersion } = await runtime.capabilities.bind();
+  if (!tmuxVersionAtLeast(tmuxVersion, since)) {
+    throw new VersionTooLowError({
+      criteriaName: resolved !== undefined ? `the ${resolved} layout` : "a JSON layout string",
+      serverVersion: tmuxVersion.raw,
+      since: since.raw,
+    });
+  }
+}
+
+/**
+ * Apply a named or custom layout to a window.
+ *
+ * The value is checked before tmux sees it (see `assertLayoutValue`): tmux
+ * 3.3 and 3.3a crash the server on a layout they cannot parse, and a bare `-o`
+ * would otherwise run as tmux's own undo flag. `--` stays as defence in depth
+ * for a value that reaches tmux some other way.
+ */
 export async function selectLayout(
   runtime: RuntimeContext,
   windowId: string | null,
   layout: string,
 ): Promise<void> {
-  await runCommand(runtime, ["select-layout", ...target(windowId), layout]);
+  await assertLayoutValue(runtime, layout);
+  await runCommand(runtime, ["select-layout", ...target(windowId), "--", layout]);
 }
 
 /**

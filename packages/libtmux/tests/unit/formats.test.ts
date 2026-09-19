@@ -26,6 +26,7 @@ import {
 } from "../../src/_internal/codec/format_registry.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { builtModuleUrl, runModule } from "../support/runtime_build.js";
 
 interface PythonFormatFixture {
   baseline: {
@@ -200,10 +201,9 @@ describe("public format constants", () => {
   });
 
   test("reads the separator override at import time without coupling guarded framing", async () => {
-    const formatsUrl = new URL("../../src/formats.ts", import.meta.url).href;
-    const capabilitiesUrl = new URL("../../src/_internal/runtime/capabilities.ts", import.meta.url)
-      .href;
-    const codecUrl = new URL("../../src/_internal/codec/guard_codec.ts", import.meta.url).href;
+    const formatsUrl = builtModuleUrl("formats");
+    const capabilitiesUrl = builtModuleUrl("_internal/runtime/capabilities");
+    const codecUrl = builtModuleUrl("_internal/codec/guard_codec");
     const source = `
       const [{ FORMAT_SEPARATOR }, { deriveTmuxCapabilities }, { GuardCodec }] = await Promise.all([
         import(${JSON.stringify(formatsUrl)}),
@@ -222,8 +222,9 @@ describe("public format constants", () => {
         separator: FORMAT_SEPARATOR,
       }));
     `;
-    const { exitCode, stderr, stdout } = await runBoundedCommand(["bun", "-e", source], {
-      env: { ...process.env, LIBTMUX_TMUX_FORMAT_SEPARATOR: "CUSTOM_SEPARATOR" },
+    const { exitCode, stderr, stdout } = runModule(source, {
+      ...process.env,
+      LIBTMUX_TMUX_FORMAT_SEPARATOR: "CUSTOM_SEPARATOR",
     });
 
     expect(exitCode).toBe(0);

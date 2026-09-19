@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7c-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8--rc-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Part of [libtmux for Bun and TypeScript](../../README.md). Built on
@@ -80,6 +80,13 @@ This is the whole configuration:
   }
 }
 ```
+
+Naming a socket is choosing one, and an explicitly chosen server gets
+`inspect,manage,execute` — so this configuration ships without the `teardown`
+tools: no `kill_pane`, `kill_window`, `kill_session` or
+`clear_pane_scrollback`. That is the intended default for a socket the server
+did not create itself. [Toolsets and trust](#toolsets-and-trust) says how to
+opt in.
 
 <details>
 <summary>Claude Code</summary>
@@ -216,18 +223,26 @@ The startup line on stderr names the selected socket, effective toolsets, named
 inclusions, and exclusions. Stdout remains exclusively MCP JSON-RPC, so that
 diagnostic cannot corrupt the protocol stream.
 
+The verb says whether this process started that tmux (`serving new`) or
+attached to one already running (`serving existing`) — which is both why the
+toolsets differ between the two and the only notice that an agent is sharing a
+daemon with whoever else is on that socket.
+
 On a fresh default socket, that diagnostic is:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.0-alpha.9 serving libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
+libtmux-mcp 0.1.0-alpha.9 serving new libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
 ```
 
 ## Tools
 
 Grouped by what you are trying to do. Every tool returns typed
-`structuredContent` alongside its text, and carries MCP annotations so a host
-can decide what to auto-approve.
+`structuredContent` alongside its text, and carries the same deliberately
+conservative MCP annotations — so a host that auto-approves on annotations
+alone approves none of them. What distinguishes one tool from another is the
+capability row in `tmux://capabilities`, described under
+[Toolsets and trust](#toolsets-and-trust).
 
 These existing names are unchanged: `list_sessions`, `list_windows`,
 `list_panes`, `capture_pane`, `search_panes`, `send_keys`, `paste_text`,
@@ -450,9 +465,11 @@ $ run_shell_command  paneId=%1  command='cargo build'
 That waits through tmux's notifications and comes back with `exitStatus`,
 `outcome`, and the output — one call.
 
-**Do not wait for text you sent.** The pane echoes it, so the wait matches your
-own typing. `run_shell_command` is immune by construction; `wait_for_text` is for
-output somebody else wrote.
+**Do not wait for text you sent.** The pane echoes it; `wait_for_text` discounts
+your own typing while it is unsubmitted or was submitted within the last ten
+seconds, but a command that runs longer than that, or the same value typed and
+waited for again later, can still surface its own echo. `run_shell_command` is
+immune by construction; `wait_for_text` is for output somebody else wrote.
 
 **Do not re-read the screen.** Use `snapshot_pane` when one response needs
 bounded content and pane metadata. For later deltas, call `capture_since`
@@ -553,6 +570,13 @@ import { createTmuxMcpServer, serverFromEnvironment } from "@libtmux/mcp";
 
 const mcp = createTmuxMcpServer(serverFromEnvironment());
 ```
+
+Embedded, the default is the conservative one — `inspect`, `manage`, `execute`
+— because a host passing its own `Server` is naming a daemon this process did
+not create. That is a smaller surface than the CLI on a socket it started
+itself, which also gets `teardown`. To choose deliberately, pass
+`environment: { LIBTMUX_TOOLSETS: ... }` or a whole `policy`; there is no
+`toolsets` option.
 
 To drive it in-process — a test, or a host that is both ends — link a transport
 pair rather than spawning anything. This is a literal excerpt of

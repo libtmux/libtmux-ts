@@ -1,12 +1,22 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, spyOn, test } from "bun:test";
 
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
 
 import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
-import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "../src/command_frame.js";
+import {
+  frame,
+  parseFramedOutput,
+  randomId,
+  sawSourcingFailure,
+  sourcingDispatch,
+  withoutForeignFraming,
+} from "../src/command_frame.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";
 import { PaneTail } from "../src/pane_tail.js";
 import { resolvePolicy } from "../src/policy.js";
@@ -52,18 +62,52 @@ describe("command framing", () => {
     return path;
   }
 
-  function dispatchedFrame(args: readonly string[]): {
+  function dispatchedFrame(source: string): {
     readonly id: string;
     readonly source: string;
   } {
-    const source = args.find((entry) => entry.includes("__ltx_"));
-    if (source === undefined) throw new Error("tmux input has no frame");
     const octets = /command printf '%b' '((?:\\0[0-7]{3})+)'/u.exec(source)?.[1];
     if (octets === undefined) throw new Error("frame has no encoded id");
     const id = octets.replaceAll(/\\0([0-7]{3})/gu, (_, octal: string) =>
       String.fromCharCode(Number.parseInt(octal, 8)),
     );
     return { id, source };
+  }
+
+  /**
+   * A fake of the three-command server-side delivery `deliverFramedScript`
+   * uses (`loadBuffer`/`saveBuffer`/`deleteBuffer`), plus `runShell` for its
+   * one cleanup path. The framed script itself now travels through
+   * `loadBuffer`, not through the pane's `send-keys` args, so a fixture reads
+   * it back with `source()` instead of parsing what was typed.
+   */
+  function fakeBuffers(): {
+    readonly ranShell: string[];
+    readonly source: () => string;
+    readonly tmux: {
+      deleteBuffer: (name: string) => Promise<void>;
+      loadBuffer: (name: string, data: string | Uint8Array) => Promise<void>;
+      runShell: (command: string) => Promise<readonly string[]>;
+      saveBuffer: (name: string, path: string) => Promise<void>;
+    };
+  } {
+    let captured = "";
+    const ranShell: string[] = [];
+    return {
+      ranShell,
+      source: () => captured,
+      tmux: {
+        deleteBuffer: async () => undefined,
+        loadBuffer: async (_name, data) => {
+          captured = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
+        },
+        runShell: async (command) => {
+          ranShell.push(command);
+          return [];
+        },
+        saveBuffer: async () => undefined,
+      },
+    };
   }
 
   async function startCancelledCommand(
@@ -77,12 +121,13 @@ describe("command framing", () => {
   }> {
     const controller = new AbortController();
     const tail = new PaneTail(paneId);
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       format: { session_id: "$1" },
       id: paneId,
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -91,6 +136,7 @@ describe("command framing", () => {
       hub: { closed: false, tail: async () => tail },
       observeInput,
       policy: resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "250" }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
     const result = await runFramedCommand(
       context,
@@ -398,13 +444,217 @@ describe("command framing", () => {
     }
   });
 
-  test("waits for the complete exit-status line", async () => {
+  // `deliverFramedScript` writes the framed script to a tmux buffer and types
+  // only a short `. <path>` line, never the ~1KB frame() output itself: typing
+  // it as one literal send-keys line would let a heavy line editor (zsh with
+  // syntax-highlighting/autosuggestion plugins) redraw on every byte.
+  test("dispatches a short sourcing line, not the framed script itself", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    const sent: string[] = [];
     const pane = {
       format: { session_id: "$1" },
       id: "%1",
       cmd: async (_command: string, args: readonly string[]) => {
-        const { id } = dispatchedFrame(args);
+        sent.push(args.join(" "));
+        const { id } = dispatchedFrame(buffers.source());
+        tail.append(`${id}_S\nresult\n${id}_E 0 ${id}_D\n`);
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+      tmux: buffers.tmux,
+    } as unknown as ToolContext;
+
+    await runFramedCommand(context, pane, "true", 500);
+
+    expect(sent).toHaveLength(1);
+    const dispatched = sent[0] ?? "";
+    expect(dispatched).not.toContain("__ltx_");
+    expect(dispatched).not.toContain("printf '%b");
+    expect(dispatched.length).toBeLessThan(150);
+    const { id, source } = dispatchedFrame(buffers.source());
+    const dispatchedPath = /\. '([^']+)'/u.exec(dispatched)?.[1];
+    if (dispatchedPath === undefined) throw new Error("expected a sourcing line");
+    expect(dispatchedPath.endsWith(`/${id}.sh`)).toBe(true);
+
+    // The script sourced from that path is the framed command, plus a
+    // trailer — appended outside `frame()`, not inside it — that removes the
+    // file's own private directory only once the sourced group has exited.
+    const directory = dispatchedPath.slice(0, dispatchedPath.length - `/${id}.sh`.length);
+    expect(source.endsWith(`; command rm -rf -- '${directory}'`)).toBe(true);
+    expect(source).toContain("printf '%bX'");
+
+    // The directory is real (created by `mkdtemp`), so it exists and — this
+    // being the security property in question — no other user can even
+    // traverse into it, whatever mode `save-buffer` gives the file inside.
+    const info = await stat(directory);
+    expect(info.isDirectory()).toBe(true);
+    expect(info.mode & 0o077).toBe(0);
+    await rm(directory, { force: true, recursive: true });
+  });
+
+  // `save-buffer` writes on the tmux server's host, so a pane whose shell is
+  // inside `ssh`, a container, or another user's `su` cannot open the script.
+  // Nothing such a shell prints resembles a framing marker, so before this the
+  // run spent its whole budget waiting for output that could not arrive.
+  test.each(shells)("%s says so when it cannot read the script file", (shell) => {
+    const id = `ltx${randomId()}`;
+    const readable = join(tmpdir(), `ltx-readable-${id}.sh`);
+
+    const missing = run(shell, sourcingDispatch(join(tmpdir(), `ltx-absent-${id}.sh`), id));
+    expect(missing.status, shell).toBe(0);
+    expect(sawSourcingFailure(missing.stdout, id), shell).toBe(true);
+
+    writeFileSync(readable, `command printf '%s\\n' sourced-ok\n`);
+    try {
+      const found = run(shell, sourcingDispatch(readable, id));
+      expect(found.status, shell).toBe(0);
+      expect(found.stdout, shell).toContain("sourced-ok");
+      // The false positive that would make every successful run look failed.
+      expect(sawSourcingFailure(found.stdout, id), shell).toBe(false);
+    } finally {
+      rmSync(readable, { force: true });
+    }
+  });
+
+  // The readability test is what makes the line work on every shell rather
+  // than most: `.` is a POSIX special builtin, and dash answers a missing
+  // operand by abandoning the whole command line, so a `. path || fallback`
+  // spelling runs the fallback under bash and zsh and silently does nothing
+  // under dash.
+  test("tests for the file rather than relying on the source command's status", () => {
+    const dispatch = sourcingDispatch("/tmp/ltx-example/ltx0123456789.sh", "ltx0123456789");
+    expect(dispatch).toStartWith("if [ -r '/tmp/ltx-example/ltx0123456789.sh' ];");
+    // A literal token in the dispatch would be echoed by the pane and read as
+    // a failure on every successful run.
+    expect(sawSourcingFailure(dispatch, "ltx0123456789")).toBe(false);
+  });
+
+  test("types the script itself when the pane cannot read the file", async () => {
+    const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    const sent: string[] = [];
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async (_command: string, args: readonly string[]) => {
+        const dispatched = args.join(" ");
+        sent.push(dispatched);
+        const { id } = dispatchedFrame(buffers.source());
+        // The first dispatch is the sourcing line, which this pane's shell
+        // cannot read; the second carries the script, which it can.
+        if (sent.length === 1) tail.append(`${id}_N\n`);
+        else tail.append(`${id}_S\nresult\n${id}_E 0 ${id}_D\n`);
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+      tmux: buffers.tmux,
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "true", 2_000);
+
+    expect(result.outcome).toBe("completed");
+    expect(result.exitStatus).toBe(0);
+    expect(result.output).toBe("result");
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toContain(".sh'");
+    // The retry carries the frame the file would have held.
+    expect(sent[1]).toContain("printf '%bX'");
+
+    // Nothing sourced the script, so its trailer never ran and this process
+    // removes the directory it made.
+    const directory = /\. '([^']+)\/ltx[0-9a-f]+\.sh'/u.exec(sent[0] ?? "")?.[1];
+    if (directory === undefined) throw new Error("expected a sourcing line");
+    expect(existsSync(directory)).toBe(false);
+  });
+
+  // An operator's TMPDIR is not this process's to trust: a `'` inside it can
+  // break naive `'${path}'` interpolation in the sourcing line and the
+  // trailer's `rm -rf`. This runs the dispatched line through a real shell
+  // exactly as tmux would type it, so a broken quote shows up here.
+  test("quotes a TMPDIR apostrophe so the dispatched line never opens an unterminated quote", async () => {
+    const shell = Bun.which("sh");
+    if (shell === null) throw new Error("no POSIX sh on PATH for this test");
+
+    // Not "ltx-" (no dash after "ltx"): another test's own `mkdtemp("ltx-")`
+    // check on the real, shared `os.tmpdir()` reads a fresh "ltx-" prefixed
+    // top-level entry as its own, and this must not be mistaken for one.
+    const quotedRoot = join(tmpdir(), `ltxquote-${randomId()}`, "it's a dir");
+    await mkdir(quotedRoot, { recursive: true });
+    const originalTmpdir = process.env.TMPDIR;
+    process.env.TMPDIR = quotedRoot;
+
+    const tail = new PaneTail("%1");
+    let bufferContent = "";
+    const dispatched: (readonly string[])[] = [];
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async (_command: string, args: readonly string[]) => {
+        dispatched.push(args);
+        const { id } = dispatchedFrame(bufferContent);
+        tail.append(`${id}_S\nresult\n${id}_E 0 ${id}_D\n`);
+      },
+    } as unknown as Pane;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({}),
+      tmux: {
+        deleteBuffer: async () => undefined,
+        loadBuffer: async (_name: string, data: string | Uint8Array) => {
+          bufferContent = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
+        },
+        saveBuffer: async (_name: string, path: string) => {
+          await writeFile(path, bufferContent);
+        },
+      },
+    } as unknown as ToolContext;
+
+    try {
+      const result = await runFramedCommand(context, pane, "true", 500);
+      expect(result.outcome).toBe("completed");
+
+      // The literal keystrokes tmux would type into the pane: `-l`, the `--`
+      // guard against reading the sourcing line as another flag, then the
+      // sourcing line the caller's shell actually reads.
+      const [flag, separator, keysLine] = dispatched[0] ?? [];
+      expect(flag).toBe("-l");
+      expect(separator).toBe("--");
+      if (keysLine === undefined) throw new Error("expected a dispatched sourcing line");
+
+      // Run exactly what tmux would type, through a real shell: an unescaped
+      // `'` in the path leaves this unterminated (a syntax error, not a
+      // hang, since `-c` requires a complete command) and the script — the
+      // trailer included — never runs.
+      const sourced = spawnSync(shell, ["-c", `${keysLine}printf 'RC=%s\\n' "$?"`], {
+        encoding: "utf8",
+      });
+      expect(sourced.stderr).toBe("");
+      expect(sourced.status).toBe(0);
+      expect(sourced.stdout).toContain("RC=0");
+
+      // The sourced trailer's own `rm -rf` removed its directory: nothing
+      // this run's `mkdtemp` created is left inside the quoted TMPDIR.
+      expect(await readdir(quotedRoot)).toEqual([]);
+    } finally {
+      if (originalTmpdir === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = originalTmpdir;
+      await rm(quotedRoot, { force: true, recursive: true });
+    }
+  });
+
+  test("waits for the complete exit-status line", async () => {
+    const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async () => {
+        const { id } = dispatchedFrame(buffers.source());
         setTimeout(() => tail.append(`${id}_S\nresult\n${id}_E 1`), 5);
         setTimeout(() => tail.append(`27 ${id}_D\n`), 20);
       },
@@ -412,6 +662,7 @@ describe("command framing", () => {
     const context = {
       hub: { closed: false, tail: async () => tail },
       policy: resolvePolicy({}),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "exit 127", 500);
@@ -422,6 +673,7 @@ describe("command framing", () => {
 
   test("falls back when a live tail wait fails after dispatch", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let captureTimeoutMs: number | undefined;
     let id = "";
     let waitFailures = 0;
@@ -437,8 +689,8 @@ describe("command framing", () => {
       format: { session_id: "$1" },
       height: 8,
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
       },
       width: 80,
     } as unknown as Pane;
@@ -446,6 +698,7 @@ describe("command framing", () => {
     const context = {
       hub: { closed: false, tail: async () => tail },
       policy,
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "true", 500);
@@ -458,6 +711,7 @@ describe("command framing", () => {
   });
 
   test("recognizes a right-padded, soft-wrapped fallback marker", async () => {
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       capture: async (options: { readonly joinWrapped?: boolean }) => {
@@ -470,8 +724,8 @@ describe("command framing", () => {
       format: { session_id: "$1" },
       height: 8,
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
       },
       width: 20,
     } as unknown as Pane;
@@ -479,6 +733,7 @@ describe("command framing", () => {
       hub: { closed: false, tail: async () => undefined },
       policy: resolvePolicy({ LIBTMUX_MCP_LIVE: "0" }),
       snapshot: async () => ({ panes: { first: () => undefined } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "exit 127", 150);
@@ -574,12 +829,13 @@ describe("command framing", () => {
   test("keeps a cancelled command unsettled after its payload starts", async () => {
     const controller = new AbortController();
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       format: { session_id: "$1" },
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -588,6 +844,7 @@ describe("command framing", () => {
       hub: { closed: false, tail: async () => tail },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "touch STARTED", 1_000, controller.signal);
@@ -609,6 +866,7 @@ describe("command framing", () => {
   test("retries retained settlement after a live-tail failure", async () => {
     const controller = new AbortController();
     const tail = new PaneTail("%91");
+    const buffers = fakeBuffers();
     const observedSignals: (AbortSignal | undefined)[] = [];
     let captureTimeoutMs: number | undefined;
     let id = "";
@@ -625,8 +883,8 @@ describe("command framing", () => {
       format: { session_id: "$1" },
       height: 8,
       id: "%91",
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -644,6 +902,7 @@ describe("command framing", () => {
         };
       },
       policy,
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
     const reservation = reserveFramedCommand(authority, pane.id, "cancelled run");
     if (isPaneInputConflict(reservation)) throw new Error("reservation conflicted");
@@ -676,13 +935,31 @@ describe("command framing", () => {
     }
   });
 
+  /**
+   * A rejection is not a promise anyone else awaits, so a reservation that
+   * only released on fulfillment would hold the pane forever the one time
+   * settlement itself fails rather than the command it was watching.
+   */
+  test("settleWith releases the reservation even when settlement rejects", async () => {
+    const reservation = reserveFramedCommand(authority, "%91", "settlement failure");
+    if (isPaneInputConflict(reservation)) throw new Error("reservation conflicted");
+
+    reservation.settleWith(Promise.reject(new Error("settlement lost the pane")));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const next = reserveFramedCommand(authority, "%91", "next run");
+    expect(isPaneInputConflict(next)).toBe(false);
+    if (!isPaneInputConflict(next)) next.release();
+  });
+
   test("reads a complete marker buffered before the live tail closes", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     const pane = {
       format: { session_id: "$1" },
       id: "%1",
-      cmd: async (_command: string, args: readonly string[]) => {
-        const { id } = dispatchedFrame(args);
+      cmd: async () => {
+        const { id } = dispatchedFrame(buffers.source());
         tail.append(`${id}_S\nfinished\n${id}_E 0 ${id}_D\n`);
         tail.close("hub_closed");
       },
@@ -691,6 +968,7 @@ describe("command framing", () => {
       hub: { closed: true, tail: async () => tail },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(context, pane, "true", 20);
@@ -704,13 +982,14 @@ describe("command framing", () => {
     async (ambiguity) => {
       const controller = new AbortController();
       const tail = new PaneTail("%1");
+      const buffers = fakeBuffers();
       const hub = { closed: false, tail: async () => tail };
       let id = "";
       const pane = {
         format: { session_id: "$1" },
         id: "%1",
-        cmd: async (_command: string, args: readonly string[]) => {
-          id = dispatchedFrame(args).id;
+        cmd: async () => {
+          id = dispatchedFrame(buffers.source()).id;
           tail.append(`${id}_S\n`);
           if (ambiguity === "hub closure") hub.closed = true;
           controller.abort();
@@ -723,6 +1002,7 @@ describe("command framing", () => {
           if (ambiguity === "snapshot error") throw new Error("snapshot unavailable");
           return { panes: { first: () => pane } };
         },
+        tmux: buffers.tmux,
       } as unknown as ToolContext;
 
       const result = await runFramedCommand(
@@ -753,11 +1033,12 @@ describe("command framing", () => {
     ["indeterminate", true],
   ] as const)("binds a %s dispatch error to its delivery state", async (delivery, started) => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
       capture: async () => [],
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
         throw new TmuxTransportError("dispatch failed", { delivery, kind: "pipe" });
       },
       format: { session_id: "$1" },
@@ -772,6 +1053,7 @@ describe("command framing", () => {
       },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
     const running = runFramedCommand(
       context,
@@ -786,6 +1068,14 @@ describe("command framing", () => {
 
     if (!started) {
       await expect(running).rejects.toMatchObject({ delivery });
+      // The dispatch line never reached the pane, so the sourced script's
+      // own trailing cleanup will never run either — this is the one path
+      // where something else has to remove the private directory it was
+      // written to. `deliverFramedScript` made that directory itself, so it
+      // removes it directly rather than through a tmux round trip.
+      const trailer = /; command rm -rf -- '([^']+)'$/u.exec(buffers.source())?.[1];
+      if (trailer === undefined) throw new Error("expected an rm -rf trailer");
+      await expect(stat(trailer)).rejects.toMatchObject({ code: "ENOENT" });
       return;
     }
     const result = await running;
@@ -805,10 +1095,11 @@ describe("command framing", () => {
 
   test("does not release a timed-out command from an unauthenticated missing-pane snapshot", async () => {
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     let id = "";
     const pane = {
-      cmd: async (_command: string, args: readonly string[]) => {
-        id = dispatchedFrame(args).id;
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
       },
       format: { session_id: "$1" },
       id: "%1",
@@ -820,6 +1111,7 @@ describe("command framing", () => {
       },
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => undefined } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(
@@ -920,9 +1212,10 @@ describe("command framing", () => {
   test("settles only when the captured daemon generation disappears", async () => {
     const controller = new AbortController();
     const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
     const pane = {
-      cmd: async (_command: string, args: readonly string[]) => {
-        const { id } = dispatchedFrame(args);
+      cmd: async () => {
+        const { id } = dispatchedFrame(buffers.source());
         tail.append(`${id}_S\n`);
         controller.abort();
       },
@@ -939,6 +1232,7 @@ describe("command framing", () => {
       }),
       policy: resolvePolicy({}),
       snapshot: async () => ({ panes: { first: () => pane } }),
+      tmux: buffers.tmux,
     } as unknown as ToolContext;
 
     const result = await runFramedCommand(
@@ -962,7 +1256,7 @@ describe("concurrent framing", () => {
   // partway through: the second command's echo, its markers, and its output.
   const contaminated = [
     "AAA-start",
-    ` __ltx_abc123() { printf '%s\\n' "\${1}_S"; ( set --; echo BBB-secret )`,
+    " . '/tmp/ltx-a1b2c3/ltxbbb222.sh'",
     "ltxbbb222_S",
     "BBB-secret",
     "ltxbbb222_E 0",

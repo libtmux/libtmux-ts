@@ -72,6 +72,7 @@ function destinationFor(
 export interface WindowPlans {
   readonly kill: () => PlannedOperation<void>;
   readonly removePlacement: () => PlannedOperation<void>;
+  /** @throws TypeError when `options` combines `direction` with `vertical`. */
   readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
 }
 
@@ -261,9 +262,12 @@ export class Window {
    * Split this window and resolve the created pane.
    *
    * ```ts
-   * const created = await window.split({ vertical: true });
+   * import { PaneDirection } from "libtmux";
+   * const created = await window.split({ direction: PaneDirection.Below });
    * created.id;
    * ```
+   *
+   * @throws TypeError when `options` combines `direction` with `vertical`.
    */
   split(options?: SplitOptions): Promise<Pane> {
     return splitWindow(this.server, runtimeForHandle(this), this.id, options);
@@ -474,6 +478,29 @@ export class Window {
    * ```ts
    * await window.selectLayout("even-horizontal");
    * ```
+   *
+   * Applying any layout while a pane is zoomed unzooms the window first —
+   * tmux's own behavior, not this method's.
+   *
+   * A `window_layout` saved earlier and passed back here is not guaranteed
+   * to put every pane back where it was. Before tmux 3.8, the classic
+   * layout string restores the arrangement's shape but can rotate which
+   * pane lands in which position; a JSON layout (3.8+, and only for a
+   * reader that actually receives JSON — see {@link Server.connect}) restores
+   * exactly.
+   *
+   * Only a preset name, a layout string that parses here, or JSON on tmux
+   * 3.8+ is accepted: anything else is refused rather than sent, because two
+   * ranges of tmux exit on a layout they cannot read and take every session
+   * on the socket with them. tmux 3.3 and 3.3a die on a value with no
+   * readable checksum, and 3.7 through 3.7d on one whose checksum is correct
+   * and whose cells are not — so the checksum alone is not evidence, and the
+   * layout is parsed in full before dispatch.
+   *
+   * @throws TypeError when `layout` is ambiguous, or is neither a preset nor
+   * a layout string this package can parse.
+   * @throws VersionTooLowError when `layout` names a mirrored preset or JSON
+   * layout the running tmux is too old to apply.
    */
   selectLayout(layout: string): Promise<void> {
     return selectLayout(runtimeForHandle(this), this.id, layout);

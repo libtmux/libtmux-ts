@@ -519,7 +519,7 @@ async function discoverLaunchingDaemon(
     timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
-  if (result.returncode !== 0) throw new Error("fixture generation discovery failed");
+  if (result.exitCode !== 0) throw new Error("fixture generation discovery failed");
   if (output === `${mismatch}\n`)
     throw new ForeignSocketEvidenceError("fixture generation mismatch");
   const fields = output.endsWith("\n") ? output.slice(0, -1).split("\t") : [];
@@ -593,7 +593,7 @@ async function connectedGenerationKill(
       timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
     })
     .catch(() => undefined);
-  if (result === undefined || result.returncode !== 0) return "unavailable";
+  if (result === undefined || result.exitCode !== 0) return "unavailable";
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
   if (output === `${mismatch}\n`) return "foreign";
   if (output !== "") throw new Error("guarded fixture cleanup returned an invalid frame");

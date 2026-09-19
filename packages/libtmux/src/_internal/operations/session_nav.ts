@@ -10,6 +10,9 @@ export async function renameSession(
   await runCommand(runtime, [
     "rename-session",
     ...(sessionId == null ? [] : ["-t", sessionId]),
+    // `--` keeps a name starting with `-` from being read as a flag:
+    // `assertName` refuses `.`, `:`, and control characters, not a dash.
+    "--",
     assertName("session", name),
   ]);
 }

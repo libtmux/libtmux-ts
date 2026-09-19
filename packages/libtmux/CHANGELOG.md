@@ -10,7 +10,141 @@ remember.
 
 <!-- KEEP THIS PLACEHOLDER: new work lands under "Unreleased" until a release is cut. -->
 
+<!-- toc -->
+
+- [Unreleased](#unreleased)
+- [0.1.0-alpha.9 (2026-09-12)](#010-alpha9-2026-09-12)
+- [0.1.0-alpha.8 (2026-09-06)](#010-alpha8-2026-09-06)
+- [0.1.0-alpha.7 (2026-08-30)](#010-alpha7-2026-08-30)
+- [0.1.0-alpha.6](#010-alpha6)
+- [0.1.0-alpha.5](#010-alpha5)
+- [0.1.0-alpha.4](#010-alpha4)
+- [0.1.0-alpha.3](#010-alpha3)
+- [0.1.0-alpha.2](#010-alpha2)
+- [0.1.0-alpha.1](#010-alpha1)
+- [0.0.1-alpha.7](#001-alpha7)
+- [0.0.1-alpha.6](#001-alpha6)
+- [0.0.1-alpha.5](#001-alpha5)
+
+<!-- /toc -->
+
 ## Unreleased
+
+### `libtmux`
+
+#### Errors
+
+`libtmux/errors` exports errors under consistent `*Error` names; old names and
+`libtmux/exc` remain deprecated aliases. **Breaking.** `error.name` and
+`error.code` use the canonical names, so update string comparisons. (#26)
+
+**Breaking.** `QueryValidationError.reason` replaces its former `code` field;
+`code` now identifies the error class. Read `reason` for the validation
+failure. (#26)
+
+#### Queries and selections
+
+**Breaking.** Import `parseLegacyWhere` from `libtmux/selection`; it is no
+longer exported from the package root. (#26)
+
+Numeric criteria accept ordinary integers, such as `where({ index: 3 })`,
+without a `safeInteger` wrapper. (#26)
+
+`Selection.one` and `oneOrUndefined` include chained `where` criteria in
+`NoMatchError`, so a failed lookup identifies what it searched for. (#26)
+
+#### Commands, deadlines and cancellation
+
+**Breaking.** Commands time out after 30 seconds by default. Set `timeoutMs`
+on the call or server to change the budget, or use `null` for no deadline;
+commands waiting for a person or an external signal have no default. (#26)
+
+**Breaking.** `CommandResult` and custom `TmuxEngine` results use `exitCode`
+instead of `returncode`. Update result construction and property reads. (#26)
+
+**Breaking.** The default engine returns plain `Uint8Array` output in place
+of Node `Buffer` values. Use `TextDecoder` to decode it. (#26)
+
+Cancelled commands retain the caller's abort reason as the rejection's
+`cause`, including cancellation while queued. (#26)
+
+`newSession`, `newWindow`, `split` and `runShell` honor their `signal`,
+`timeoutMs` and `stdin` options. Cancellation also reaches the handle lookup
+after creation and in `Server.batch`. (#26)
+
+Names, commands, literal input, buffer data and channel names beginning with
+`-` remain caller text in library and MCP operations, without changing tmux
+options. (#26)
+
+#### Panes and windows
+
+`SplitOptions.direction` and `JoinOptions.direction` select any side of a
+pane. They replace the deprecated `vertical` option; supply only one. (#26)
+
+`Window.selectLayout` validates presets and serialized layouts before
+dispatch, including unique preset prefixes. Invalid or unsupported layouts
+are refused without reaching tmux. (#26)
+
+#### Observing a server
+
+`ServerOptions.onInvocation` reports completed invocations, their outcomes
+and time spent waiting for a command slot. (#26)
+
+**Breaking.** The unused `TmuxLogger`, `TmuxLogContext`, `TmuxWarning` and
+`TmuxWarningSink` exports are removed. Use `onInvocation` to observe
+commands. (#26)
+
+Control connections report JSON layouts on tmux 3.8 and newer, matching
+snapshot layout values. (#26)
+
+#### tmux versions
+
+`Server` capability checks work in non-UTF-8 locales, including restricted
+service and MCP environments. (#26)
+
+`parseTmuxVersion` accepts release candidates and ranks them as the release
+they name. (#26)
+
+`Server.versionAtLeast` bounds a named development build below its named
+release instead of treating it as newer than every release. (#26)
+
+#### Testing
+
+`libtmux/testing` exports `recordInvocations` and `replayInvocations` to
+record engine results and replay them without a tmux server. (#26)
+
+### `@libtmux/mcp`
+
+#### Reaching the daemon
+
+MCP pane input works in non-UTF-8 locales. (#26)
+
+The startup message distinguishes a new daemon from an existing one, so an
+operator can see which instance this process owns. (#26)
+
+#### Pane input and shell commands
+
+Blocked pane writes distinguish retryable conditions from startup context
+that requires restarting the MCP server. (#26)
+
+`run_shell_command` keeps its helper script out of the pane's visible input
+when the shell can read its private file. Remote shells fall back to typed
+delivery. (#26)
+
+`wait_for_text` distinguishes existing text and this server's echoed input
+from command output. Echo matching leaves longer words of output intact.
+(#26)
+
+#### Registration and results
+
+Tool input schemas describe every parameter, including nested batch
+arguments. (#26)
+
+Tool registration rejects custom MCP annotations instead of silently
+overwriting them. (#26)
+
+Session results include `humanAttachedClients`, excluding this MCP server's
+own control-mode observers from the human attachment count. (#26)
 
 ## 0.1.0-alpha.9 (2026-09-12)
 

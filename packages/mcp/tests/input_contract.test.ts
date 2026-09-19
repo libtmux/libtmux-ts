@@ -1,6 +1,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { expect, test } from "bun:test";
-import { link, symlink, unlink } from "node:fs/promises";
+import { link, mkdtemp, readdir, rm, stat, symlink, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
@@ -364,3 +365,132 @@ test("a modal, dead, or caller cohort peer blocks input", async () => {
     );
   });
 }, 20_000);
+
+// `run_shell_command` writes its ~1KB framing script (trap capture/restore,
+// an octal-encoded payload, nonce variable names) to a file and types only a
+// short `. <path>` line, so the framing itself never reaches the visible
+// screen or costs a shell with a heavy line editor.
+test("run_shell_command leaves no framing machinery visible on the pane", async () => {
+  await withServer(async (fixture) => {
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string }>(
+        await client.callTool({
+          arguments: { name: "framing-visibility" },
+          name: "create_session",
+        }),
+      );
+
+      const marker = "LTX_FRAMING_VISIBILITY_MARKER";
+      const run = structured<{ outcome: string; output: string }>(
+        await client.callTool({
+          arguments: { command: `printf '${marker}\\n'`, paneId: created.paneId },
+          name: "run_shell_command",
+        }),
+      );
+      expect(run).toMatchObject({ outcome: "completed", output: marker });
+
+      const screen = await capture(client, created.paneId);
+      expect(screen).toContain(marker);
+      expect(screen).not.toContain("__ltx_");
+      expect(screen).not.toContain("printf '%b");
+      expect(screen).not.toMatch(/\\0[0-7]{3}/u);
+    });
+  });
+}, 15_000);
+
+/**
+ * `save-buffer` writes its target however the umask says — world-readable
+ * under an ordinary 022 — so the command text a caller runs, secrets
+ * included, must never sit somewhere another local user's shell can reach
+ * it by name. `deliverFramedScript` writes the script into a fresh
+ * `mkdtemp` directory, whose mode is 0700 unconditionally on POSIX —
+ * nobody but this user can even traverse into it, which is what has to
+ * hold, not the file's own mode.
+ */
+// Uses its own TMPDIR, isolated from the real `os.tmpdir()`: another test
+// file's own legitimate `run_shell_command` dispatch, running concurrently
+// against the shared real temp directory, is indistinguishable here from a
+// second directory this call made — a collision no narrower window fixes.
+test("run_shell_command's framed script lives in a directory private to this user", async () => {
+  await withServer(async (fixture) => {
+    const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
+    try {
+      await withClient(
+        fixture,
+        async (client) => {
+          const created = structured<{ paneId: string }>(
+            await client.callTool({ arguments: { name: "perm-check" }, name: "create_session" }),
+          );
+
+          // Every user's shared temp directory is reachable by construction —
+          // this is the property that makes a fixed /tmp/<id>.sh path unsafe
+          // regardless of that file's own mode.
+          expect((await stat(tmpdir())).mode & 0o077).not.toBe(0);
+
+          // A command that outlives the tool's own timeout, so the script and
+          // its directory are still on disk when this reads them back.
+          const run = client.callTool({
+            arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
+            name: "run_shell_command",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 400));
+
+          const scriptDirs = (await readdir(scratchTmp)).filter((name) => name.startsWith("ltx-"));
+          expect(scriptDirs).toHaveLength(1);
+          const directory = join(scratchTmp, scriptDirs[0] as string);
+
+          const directoryMode = (await stat(directory)).mode;
+          // The directory is what actually has to be private: nobody outside
+          // this user can even resolve a path through it, whatever mode the
+          // file inside carries.
+          expect(directoryMode & 0o077).toBe(0);
+
+          const files = await readdir(directory);
+          expect(files).toHaveLength(1);
+          const scriptPath = join(directory, files[0] as string);
+          expect(await stat(scriptPath)).toBeDefined();
+
+          await run;
+          await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+        },
+        { TMPDIR: scratchTmp },
+      );
+    } finally {
+      await rm(scratchTmp, { force: true, recursive: true }).catch(() => undefined);
+    }
+  });
+}, 15_000);
+
+test("run_shell_command's framed script honours a non-default TMPDIR", async () => {
+  // Not "ltx-" (no dash after "ltx"): a concurrent test elsewhere greps the
+  // real, shared `os.tmpdir()` for a fresh "ltx-" prefixed top-level entry,
+  // and this one must not be mistaken for it.
+  const customTmpDir = await mkdtemp(join(tmpdir(), "ltxscratch-"));
+  try {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const created = structured<{ paneId: string }>(
+            await client.callTool({ arguments: { name: "tmpdir-check" }, name: "create_session" }),
+          );
+
+          const before = new Set(await readdir(customTmpDir));
+          const run = client.callTool({
+            arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
+            name: "run_shell_command",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 400));
+
+          const created_ = (await readdir(customTmpDir)).filter((name) => !before.has(name));
+          expect(created_.filter((name) => name.startsWith("ltx-"))).toHaveLength(1);
+
+          await run;
+        },
+        { TMPDIR: customTmpDir },
+      );
+    });
+  } finally {
+    await rm(customTmpDir, { force: true, recursive: true }).catch(() => undefined);
+  }
+}, 15_000);

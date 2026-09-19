@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ToolContext } from "../context.js";
 import { boundedCaptureRange, captureRowLimit } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { READ_ONLY, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { fail, mapConcurrent, ok } from "../results.js";
 import { paneIdSchema, requestText } from "../schemas.js";
 import { isFailure, paneEntities, panePlacements, requireSession } from "../target_resolution.js";
@@ -78,14 +78,18 @@ export function registerSearch(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "search_panes",
     {
-      annotations: READ_ONLY,
       description:
         "Find which panes are showing something. Searches pane contents, not their " +
         "names — use list_panes for metadata. Returns the matching lines with their " +
         "pane, so you can target one without capturing them all. Literal matching " +
         "stops at one 256 KiB aggregate UTF-8 byte budget.",
       inputSchema: {
-        maxMatchesPerPane: z.number().int().positive().optional(),
+        maxMatchesPerPane: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Stop after this many matches in each pane. Defaults to the server limit."),
         pattern: requestText("pattern").min(1).describe("Non-empty literal text to find."),
         regex: z
           .boolean()

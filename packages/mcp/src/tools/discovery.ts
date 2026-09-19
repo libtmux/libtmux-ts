@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
-import { READ_ONLY, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { ok } from "../results.js";
 import { paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
 import {
@@ -23,6 +23,7 @@ import {
   windowPlacements,
 } from "../target_resolution.js";
 import {
+  humanAttachedClientCount,
   limitViews,
   paneLine,
   paneView,
@@ -59,7 +60,6 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "list_sessions",
     {
-      annotations: READ_ONLY,
       description:
         "Every session on this server with its id, name, window count, and whether " +
         "anyone is attached. Metadata only — for what a pane shows, use capture_pane " +
@@ -74,10 +74,15 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
     },
     async () => {
       const snapshot = await context.snapshot();
+      const clients = snapshot.clients.toArray();
       const sessions = snapshot.sessions
         .toArray()
         .map((session) =>
-          sessionView(session, snapshot.windows.count({ session: { is: { id: session.id } } })),
+          sessionView(
+            session,
+            snapshot.windows.count({ session: { is: { id: session.id } } }),
+            humanAttachedClientCount(clients, session.id),
+          ),
         );
       const bounded = limitViews(
         sessions,
@@ -100,7 +105,6 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "list_windows",
     {
-      annotations: READ_ONLY,
       description: "Windows on this server, optionally restricted to one session by id or name.",
       inputSchema: {
         session: requestText("session")
@@ -146,7 +150,6 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "list_panes",
     {
-      annotations: READ_ONLY,
       description:
         "Panes on this server, with the command each is running and its directory. " +
         "Marks the pane this server runs in (isCallerPane) and panes a person is " +
@@ -193,7 +196,6 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "get_pane_info",
     {
-      annotations: READ_ONLY,
       description:
         "One pane's metadata: what it runs, where, how big, and whether it is yours " +
         "or watched. Does not read its contents — capture_pane does that.",
@@ -214,7 +216,6 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "get_server_info",
     {
-      annotations: READ_ONLY,
       description:
         "The tmux server this process drives: its socket, version, daemon pid, and " +
         "totals. Check the version before using a feature that needs a recent tmux.",

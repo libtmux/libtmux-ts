@@ -1,7 +1,7 @@
 import { types as nodeTypes } from "node:util";
 
 import type { Client } from "../../client.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
 import type { Session } from "../../session.js";
@@ -90,7 +90,7 @@ const validatedProjectionCorpora = new WeakSet<object>();
 function invalidSelection(cause?: unknown): never {
   throw new QueryValidationError({
     ...(cause === undefined ? {} : { cause }),
-    code: "invalid-query",
+    reason: "invalid-query",
     message: "Invalid selection construction",
   });
 }
@@ -281,6 +281,15 @@ function projectedEntries<Kind extends ProjectedKind>(
 
 class SelectionImpl<Model> implements Selection<Model> {
   readonly #entries: readonly SelectionEntry<Model>[];
+  /**
+   * The criteria that produced this selection, for an error raised without any.
+   *
+   * `where({ name: "editor" }).one()` has a query; it is just not the argument
+   * to `one`. Reported as `emptyQuery`, the error named nothing the caller had
+   * written — and that chain is what the quickstart teaches. A selection from
+   * `filter` keeps none, because a predicate is not reifiable as a query.
+   */
+  readonly #narrowedBy: Readonly<Record<string, unknown>>;
   readonly #state: ProjectedSelectionState;
   readonly #values: readonly Model[];
 
@@ -288,9 +297,11 @@ class SelectionImpl<Model> implements Selection<Model> {
     token: object,
     entries: readonly SelectionEntry<Model>[],
     state: ProjectedSelectionState,
+    narrowedBy: Readonly<Record<string, unknown>> = emptyQuery,
   ) {
     if (token !== selectionConstructionToken) invalidSelection();
     this.#entries = entries;
+    this.#narrowedBy = narrowedBy;
     this.#state = state;
     this.#values = Object.freeze(entries.map(({ value }) => value));
     Object.freeze(this);
@@ -333,8 +344,8 @@ class SelectionImpl<Model> implements Selection<Model> {
 
   where(criteria: WhereOf<Model>): Selection<Model> {
     if (criteria === undefined) return invalidSelection();
-    const matched = this.#matchingEntries(criteria);
-    return new SelectionImpl(selectionConstructionToken, matched, this.#state);
+    const { entries, query } = this.#scan(criteria, Number.POSITIVE_INFINITY);
+    return new SelectionImpl(selectionConstructionToken, entries, this.#state, query);
   }
 
   first(criteria?: WhereOf<Model>): Model | undefined {
@@ -428,7 +439,9 @@ class SelectionImpl<Model> implements Selection<Model> {
         limit >= this.#entries.length
           ? this.#entries
           : Object.freeze(this.#entries.slice(0, limit));
-      return { entries: unfiltered, query: emptyQuery };
+      // No criteria here, so the ones that narrowed this selection are the
+      // only ones an error can name.
+      return { entries: unfiltered, query: this.#narrowedBy };
     }
     const state = this.#state;
     const entries: SelectionEntry<Model>[] = [];

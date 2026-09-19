@@ -13,7 +13,7 @@ import { requireActive } from "../abort.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { READ_ONLY, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText, tailBytes, tailLines } from "../results.js";
 import { paneCursorSchema, paneIdSchema } from "../schemas.js";
 import { isFailure, requirePane } from "../target_resolution.js";
@@ -27,7 +27,6 @@ export function registerCapture(mcp: ToolRegistrar, context: ToolContext): void 
   mcp.registerTool(
     "capture_pane",
     {
-      annotations: READ_ONLY,
       description:
         "The text a pane is showing, or its scrollback. Negative `start` reaches " +
         "back into history (-100 is a hundred lines above the top of the screen)." +
@@ -133,7 +132,6 @@ export function registerCapture(mcp: ToolRegistrar, context: ToolContext): void 
   mcp.registerTool(
     "capture_since",
     {
-      annotations: READ_ONLY,
       description: live
         ? "What a pane has printed since you last looked. Call it once with no " +
           "cursor to start watching and get the current screen; keep the cursor it " +
@@ -153,7 +151,12 @@ export function registerCapture(mcp: ToolRegistrar, context: ToolContext): void 
               ? "The cursor from your previous capture_since. Omit on the first call."
               : "Ignored while live streaming is disabled.",
           ),
-        maxLines: z.number().int().positive().optional(),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
         paneId: paneIdSchema,
         waitMs: z
           .number()

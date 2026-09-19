@@ -7,7 +7,7 @@ import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { TmuxTransportError } from "libtmux/exc";
+import { TmuxTransportError } from "libtmux/errors";
 import { Server } from "libtmux/server";
 
 import { readCallerEnvironment } from "./caller.js";
@@ -261,6 +261,7 @@ export async function main(): Promise<void> {
       caller: readCallerEnvironment(),
       policy,
       server: tmux,
+      serverState: startup.serverState,
       version: PACKAGE_VERSION,
     })}\n`,
   );

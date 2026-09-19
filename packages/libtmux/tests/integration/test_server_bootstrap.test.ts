@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { chmod, lstat, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -17,10 +18,12 @@ import {
   prepareRunRoot,
   readFixtureRecord,
   reapOwnedRunRoot,
+  resolveControllerIdentity,
   TestServer,
   type TestServerRequestSnapshot,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
+import { closeChild } from "../support/owned_child.js";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -33,8 +36,7 @@ async function writeBootstrapBarrierWrapper(
   environmentLog: string,
   releasePipe: string,
 ): Promise<string> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const wrapper = join(parent, "tmux-bootstrap-barrier");
   await writeFile(
     wrapper,
@@ -58,8 +60,7 @@ async function writeSnapshotLaunchWrapper(
   environmentLog: string,
   releasePipe: string,
 ): Promise<string> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const wrapper = join(parent, "tmux-snapshot-launch");
   await writeFile(
     wrapper,
@@ -84,15 +85,9 @@ async function runTmux(args: readonly string[]): Promise<{
   readonly stderr: string;
   readonly stdout: string;
 }> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
-  const child = Bun.spawn([tmux, ...args], { stderr: "pipe", stdout: "pipe" });
-  const [code, stderr, stdout] = await Promise.all([
-    child.exited,
-    new Response(child.stderr).text(),
-    new Response(child.stdout).text(),
-  ]);
-  return { code, stderr, stdout };
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
+  const { code, stderr, stdout } = await closeChild(spawn(tmux, [...args]));
+  return { code: code ?? -1, stderr, stdout };
 }
 
 describe("TestServer bootstrap", () => {
@@ -161,7 +156,7 @@ describe("TestServer bootstrap", () => {
         }
       | undefined;
     await prepareRunRoot(runRoot);
-    expect(await Bun.spawn(["mkfifo", releasePipe]).exited).toBe(0);
+    expect((await closeChild(spawn("mkfifo", [releasePipe]))).code).toBe(0);
     const wrapper = await writeSnapshotLaunchWrapper(
       parent,
       entered,
@@ -311,7 +306,7 @@ describe("TestServer bootstrap", () => {
         "-g",
         record.generation.name,
       ]);
-      expect(globalGeneration.returncode).toBe(0);
+      expect(globalGeneration.exitCode).toBe(0);
       expect(new TextDecoder().decode(globalGeneration.stdout)).toBe(
         `${record.generation.name}=${record.generation.value}\n`,
       );
@@ -320,7 +315,7 @@ describe("TestServer bootstrap", () => {
         "-p",
         "ordinary-generation-environment-probe",
       ]);
-      expect(ordinary.returncode).toBe(0);
+      expect(ordinary.exitCode).toBe(0);
       expect(new TextDecoder().decode(ordinary.stdout)).toBe(
         "ordinary-generation-environment-probe\n",
       );
@@ -368,7 +363,7 @@ describe("TestServer bootstrap", () => {
     const environmentLog = join(parent, "bootstrap.env");
     const releasePipe = join(parent, "release.fifo");
     await prepareRunRoot(runRoot);
-    expect(await Bun.spawn(["mkfifo", releasePipe]).exited).toBe(0);
+    expect((await closeChild(spawn("mkfifo", [releasePipe]))).code).toBe(0);
     const wrapper = await writeBootstrapBarrierWrapper(
       parent,
       entered,

@@ -1,0 +1,14 @@
+{
+  "name": "@example/observe",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Watch every tmux invocation, and bound how many run at once. Never published.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test --no-orphans ."
+  },
+  "dependencies": {
+    "libtmux": "workspace:*"
+  }
+}

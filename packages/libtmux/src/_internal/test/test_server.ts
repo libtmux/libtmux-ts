@@ -101,10 +101,19 @@ function shellQuote(value: string): string {
 function commandFailure(command: string, result: RawCommandResult): Error {
   const stderr = new TextDecoder().decode(result.stderr).trim();
   return new Error(
-    `${command} failed with status ${String(result.returncode)}${stderr ? `: ${stderr}` : ""}`,
+    `${command} failed with status ${String(result.exitCode)}${stderr ? `: ${stderr}` : ""}`,
   );
 }
 
+/**
+ * Read the frame the launch wrote, which is tab-separated and must not be.
+ *
+ * tmux replaces a literal tab in `display-message` output with `_` when the
+ * client's locale is not UTF-8, so this throws under `env -i`. Moving it
+ * would cost `records.ts`'s argv check, `reaper.ts`'s generation discovery
+ * and the `printf`/`cut` wrappers in `test_server_recovery.test.ts`
+ * together; `tmux -u` is the alternative.
+ */
 function parseLaunchFrame(
   bytes: Uint8Array,
   expectedSocketPath: string,
@@ -299,7 +308,7 @@ async function launchFixtureGeneration(options: {
   if (new TextDecoder().decode(started.stdout) === `${mismatchFrame}\n`) {
     throw new Error("tmux bootstrap generation mismatch");
   }
-  if (started.returncode !== 0) {
+  if (started.exitCode !== 0) {
     const primary = commandFailure("tmux bootstrap", started);
     try {
       const partial = parseLaunchFrame(started.stdout, record.socketPath);
@@ -344,7 +353,7 @@ async function launchFixtureGeneration(options: {
     });
     if (
       pane !== undefined &&
-      pane.returncode === 0 &&
+      pane.exitCode === 0 &&
       new TextDecoder().decode(pane.stdout).trim() === "cat"
     ) {
       paneCommandObserved = true;
@@ -355,7 +364,7 @@ async function launchFixtureGeneration(options: {
   }
   if (!paneCommandObserved) throw new Error("tmux pane did not enter its stable readiness hold");
   const readiness = await executeController(["wait-for", readyChannel], "readiness");
-  if (readiness.returncode !== 0) throw commandFailure("tmux readiness handshake", readiness);
+  if (readiness.exitCode !== 0) throw commandFailure("tmux readiness handshake", readiness);
   if (record.phase !== "running") throw new Error("fixture promotion did not publish authority");
 
   return { daemonIdentity, observedSocketPath, record, sessionId };
@@ -566,7 +575,7 @@ export class TestServer {
     args: readonly string[],
   ): Promise<{ readonly stderr: readonly string[]; readonly stdout: readonly string[] }> {
     const result = adaptRawResult(await this.executeRaw(args));
-    if (result.returncode !== 0) {
+    if (result.exitCode !== 0) {
       throw new Error(`tmux ${args[0] ?? "command"} failed: ${result.stderr.join("\n")}`);
     }
     return { stderr: result.stderr, stdout: result.stdout };

@@ -1,6 +1,6 @@
 import { types as nodeTypes } from "node:util";
 
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 
 export interface ParseState {
   readonly active: WeakSet<object>;
@@ -85,7 +85,7 @@ export function invalidQuery(state: ParseState, reason: string, cause?: unknown)
   const where = state.path.length === 0 ? "" : ` at ${renderPath(state.path)}`;
   throw new QueryValidationError({
     ...(cause === undefined ? {} : { cause }),
-    code: "invalid-query",
+    reason: "invalid-query",
     message: `Invalid selection query${where}: ${reason}`,
     path: [...state.path],
   });

@@ -264,8 +264,8 @@ export interface SplitOptions extends CommandOptions {
    * Which side of this pane the new one takes.
    *
    * tmux splits below by default and offers no other way to say "above" or
-   * "left" than pairing the axis with `-b`, so a boolean cannot express half of
-   * the choices. When both this and `vertical` are given, this one decides.
+   * "left" than pairing the axis with `-b`, so a boolean cannot express half
+   * of the choices. Combining this with `vertical` throws `TypeError`.
    */
   readonly direction?: PaneDirection;
   readonly startDirectory?: string;
@@ -277,6 +277,11 @@ export interface SplitOptions extends CommandOptions {
    * closes, unless `remain-on-exit` says otherwise.
    */
   readonly shellCommand?: string;
+  /**
+   * @deprecated Use `direction: PaneDirection.Below` for `true` or
+   * `direction: PaneDirection.Right` for `false`. Removed at `0.1.0`. Do not
+   * combine with `direction`.
+   */
   readonly vertical?: boolean;
 }
 
@@ -300,7 +305,21 @@ export interface CmdOptions extends CommandOptions {
 
 /** Options for joining a pane into another window. */
 export interface JoinOptions extends CommandOptions {
-  /** Join as a horizontal split rather than the default vertical one. */
+  /**
+   * Which side of the target the joined pane takes.
+   *
+   * The same four choices `SplitOptions.direction` gives, for the same
+   * reason: tmux reaches "above" and "left" only by pairing the axis with
+   * `-b`, so a boolean names half of them. Combining this with `vertical`
+   * throws `TypeError`.
+   */
+  readonly direction?: PaneDirection;
+  /**
+   * @deprecated Use `direction: PaneDirection.Below` for `true` or
+   * `direction: PaneDirection.Right` for `false`, matching
+   * {@link SplitOptions.direction}. Removed at `0.1.0`. Do not combine with
+   * `direction`.
+   */
   readonly vertical?: boolean;
 }
 
@@ -340,6 +359,11 @@ export interface CaptureOptions extends CommandOptions {
   readonly joinWrapped?: boolean;
   /** First line to capture; negative reaches into scrollback history. */
   readonly start?: number;
+}
+
+export interface SaveBufferOptions extends CommandOptions {
+  /** Append to the file rather than replacing it, tmux's `-a`. */
+  readonly append?: boolean;
 }
 
 export interface SetHookOptions extends CommandOptions {
@@ -605,7 +629,15 @@ export interface TmuxSubscriptionEvent {
   readonly windowIndex?: number;
 }
 
-/** A window's layout changed. */
+/**
+ * A window's layout changed.
+ *
+ * `layout` and `visibleLayout` carry whatever tmux hands this connection: on
+ * 3.8+ that is JSON, the same wire form a snapshot's `window_layout` reports
+ * (the connection requests it on attach); before 3.8 tmux has only the
+ * classic layout string, on both sides. Either is an opaque token to compare
+ * for equality, not a grammar to parse.
+ */
 export interface TmuxLayoutChangeEvent {
   readonly flags: string;
   readonly kind: "layout-change";
@@ -659,7 +691,23 @@ export interface TmuxPasteBufferEvent {
   readonly kind: "paste-buffer-changed" | "paste-buffer-deleted";
 }
 
-/** tmux paused or resumed output for a pane that fell behind. */
+/**
+ * tmux paused or resumed output for a pane that fell behind.
+ *
+ * This connection answers every `pause` it observes with its own
+ * `refresh-client -A <pane>:continue` (see {@link WatchOptions.pauseAfterSeconds}),
+ * whether tmux paused the pane on its own or a caller paused it directly with
+ * `server.cmd("refresh-client", ["-A", "<pane>:pause"])` on this same
+ * connection's client. A pause held that way is resumed within one round
+ * trip; it does not stay paused for the caller to inspect.
+ *
+ * `pause`/`continue` and `off`/`on` (`refresh-client -A <pane>:off` / `:on`)
+ * are independent pairs tmux tracks separately. Resuming with the wrong verb
+ * - `off` then `continue`, or `pause` then `on` - returns success but leaves
+ * the pane's output undelivered; `off` stops tmux from reading that pane's
+ * pty at all, which also freezes it for every other client, not only this
+ * connection's.
+ */
 export interface TmuxPaneFlowEvent {
   readonly kind: "continue" | "pause";
   readonly paneId: PaneId;
@@ -745,6 +793,14 @@ export type TmuxEvent =
 export interface AbortLike {
   addEventListener(type: "abort", listener: () => void, options?: { once?: boolean }): void;
   readonly aborted: boolean;
+  /**
+   * Why the caller abandoned the command, when they said.
+   *
+   * Carried onto the cancellation error as its `cause`, so `abort(myError)`
+   * comes back rather than being replaced by a generic refusal. Optional
+   * because the signal is typed structurally; a real `AbortSignal` has it.
+   */
+  readonly reason?: unknown;
   removeEventListener(type: "abort", listener: () => void): void;
 }
 
@@ -832,7 +888,7 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
    * because every caller otherwise writes the same loop, deadline, and cleanup,
    * and forgetting the deadline turns a missed event into a hang.
    *
-   * @throws LibTmuxException when the stream ends under the wait — the server
+   * @throws LibTmuxError when the stream ends under the wait — the server
    * went away, or the connection dropped. Closing it on purpose is not that: a
    * caller cancelling, or a scope ending, answers undefined, because deciding
    * to stop waiting is not a failure anyone should have to catch. Undefined
@@ -864,10 +920,10 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
 }
 
 /**
- * A server bound to one control-mode connection.
+ * A server with a persistent observation connection and daemon-lifetime tracking.
  *
- * Same API as {@link Server}, with its commands travelling over the open
- * connection rather than a process per call. Disposing it ends the connection.
+ * Commands use the ordinary command engine. Disposing it closes the observation
+ * connection and leaves the tmux server and its resources running.
  */
 export interface ConnectedServer extends Server, AsyncDisposable {
   /** End the connection. Safe to call more than once. */
@@ -916,8 +972,8 @@ export interface ConnectedServer extends Server, AsyncDisposable {
    * await live.waitFor((server) => server.windows.exists({ name: "build" }));
    * ```
    *
-   * @throws WaitTimeout when the deadline passes with the condition unmet.
-   * @throws LibTmuxException when the connection ends first, which says nothing
+   * @throws WaitTimeoutError when the deadline passes with the condition unmet.
+   * @throws LibTmuxError when the connection ends first, which says nothing
    * about the condition and so is not the same answer.
    */
   waitFor(

@@ -1,5 +1,6 @@
 /**
- * What a snapshot and repeated local queries cost as the server gets bigger.
+ * What a snapshot, repeated local queries, and a create cost as the server gets
+ * bigger.
  *
  * A snapshot is four list commands whatever the topology, and every row is
  * completed to every field its scope defines. This is the measurement an
@@ -59,6 +60,14 @@ interface Row {
   readonly localMs: number;
   readonly panes: number;
   readonly shape: string;
+  /** `newWindow()`: the command, then the snapshot that turns its id into a handle. */
+  readonly handleBytes: number;
+  readonly handleCalls: number;
+  readonly handleMs: number;
+  /** The same argv through `pipeline`, which returns the printed id and nothing else. */
+  readonly idBytes: number;
+  readonly idCalls: number;
+  readonly idMs: number;
 }
 
 const SHAPES: readonly Shape[] = [
@@ -166,11 +175,54 @@ async function measure(shape: Shape, socketPath: string, tmuxBin: string): Promi
       throw new Error(`local queries made ${String(localInvocations)} tmux invocations`);
     }
 
+    // One window each way per repeat, killed untimed so the server stays the
+    // size its row names.
+    const session = snapshot.sessions.one({ name: "s0" });
+    const handleTimings: number[] = [];
+    const idTimings: number[] = [];
+    let handleCalls = 0;
+    let handleBytes = 0;
+    let idCalls = 0;
+    let idBytes = 0;
+    for (let repeat = 0; repeat < REPEATS; repeat += 1) {
+      let before = transport.invocations;
+      let bytesBefore = transport.bytes;
+      let started = performance.now();
+      // eslint-disable-next-line no-await-in-loop -- the measurement is sequential by construction.
+      const window = await session.newWindow();
+      handleTimings.push(performance.now() - started);
+      handleCalls = transport.invocations - before;
+      handleBytes = transport.bytes - bytesBefore;
+      // eslint-disable-next-line no-await-in-loop -- as above.
+      await server.cmd("kill-window", ["-t", window.id], { target: null });
+
+      before = transport.invocations;
+      bytesBefore = transport.bytes;
+      started = performance.now();
+      // eslint-disable-next-line no-await-in-loop -- as above.
+      const [printed] = await server.pipeline([session.plan.newWindow().argv]);
+      idTimings.push(performance.now() - started);
+      idCalls = transport.invocations - before;
+      idBytes = transport.bytes - bytesBefore;
+      const id = printed?.[0];
+      if (id === undefined) throw new Error("new-window printed no id");
+      // eslint-disable-next-line no-await-in-loop -- as above.
+      await server.cmd("kill-window", ["-t", id], { target: null });
+    }
+
     timings.sort((left, right) => left - right);
     localTimings.sort((left, right) => left - right);
+    handleTimings.sort((left, right) => left - right);
+    idTimings.sort((left, right) => left - right);
     return {
       acquisitionMs: timings[Math.floor(timings.length / 2)] ?? 0,
       bytes,
+      handleBytes,
+      handleCalls,
+      handleMs: handleTimings[Math.floor(handleTimings.length / 2)] ?? 0,
+      idBytes,
+      idCalls,
+      idMs: idTimings[Math.floor(idTimings.length / 2)] ?? 0,
       invocations,
       localInvocations,
       localMs: localTimings[Math.floor(localTimings.length / 2)] ?? 0,
@@ -180,6 +232,17 @@ async function measure(shape: Shape, socketPath: string, tmuxBin: string): Promi
   } finally {
     await server.cmd("kill-server", [], { target: null }).catch(() => undefined);
   }
+}
+
+function writeTable(header: readonly string[], body: readonly (readonly string[])[]): void {
+  const widths = header.map((cell, index) =>
+    Math.max(cell.length, ...body.map((line) => line[index]?.length ?? 0)),
+  );
+  const render = (cells: readonly string[]): string =>
+    `| ${cells.map((cell, index) => cell.padEnd(widths[index] ?? 0)).join(" | ")} |`;
+  process.stdout.write(`${render(header)}\n`);
+  process.stdout.write(`|${widths.map((width) => "-".repeat(width + 2)).join("|")}|\n`);
+  for (const line of body) process.stdout.write(`${render(line)}\n`);
 }
 
 async function main(): Promise<void> {
@@ -220,15 +283,30 @@ async function main(): Promise<void> {
     `${row.localMs.toFixed(0)} ms`,
     String(row.localInvocations),
   ]);
-  const widths = header.map((cell, index) =>
-    Math.max(cell.length, ...body.map((line) => line[index]?.length ?? 0)),
+  writeTable(header, body);
+  process.stdout.write("\n");
+  writeTable(
+    [
+      "sessions x windows x panes",
+      "panes",
+      "handle wall",
+      "handle calls",
+      "handle bytes",
+      "id wall",
+      "id calls",
+      "id bytes",
+    ],
+    rows.map((row) => [
+      row.shape,
+      String(row.panes),
+      `${row.handleMs.toFixed(0)} ms`,
+      String(row.handleCalls),
+      `${(row.handleBytes / 1024).toFixed(0)} KiB`,
+      `${row.idMs.toFixed(0)} ms`,
+      String(row.idCalls),
+      `${String(row.idBytes)} B`,
+    ]),
   );
-  const render = (cells: readonly string[]): string =>
-    `| ${cells.map((cell, index) => cell.padEnd(widths[index] ?? 0)).join(" | ")} |`;
-
-  process.stdout.write(`${render(header)}\n`);
-  process.stdout.write(`|${widths.map((width) => "-".repeat(width + 2)).join("|")}|\n`);
-  for (const line of body) process.stdout.write(`${render(line)}\n`);
   process.stdout.write(
     `\nmedian of ${String(REPEATS)}, ${tmuxVersion}, ${String(cpus().length)} cores, ${process.platform}\n`,
   );

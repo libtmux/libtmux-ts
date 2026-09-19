@@ -2,7 +2,7 @@
 
 # libtmux for TypeScript
 
-**Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, zero runtime dependencies.**
+**Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, and a library that ships zero runtime dependencies.**
 
 [Quickstart](#quickstart) •
 [Querying](#what-querying-looks-like) •
@@ -14,7 +14,7 @@
 [![npm](https://img.shields.io/npm/v/libtmux?label=libtmux&color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.7c-1bb91f)](.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8--rc-1bb91f)](.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](packages/libtmux/tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -277,18 +277,21 @@ Observation, planning and concurrency compose around the same command engine —
 | planned    | `.plan` + `server.batch([…])` | Ordered mutations that must return typed handles    |
 | concurrent | `Promise.all`                 | Independent work that may safely overlap            |
 
-For its create-twelve-windows-and-query workload, the benchmark uses 25
-invocations one at a time, 13 through `pipeline`, and 14 through `batch`; the
-last includes the snapshot that resolves typed handles. It reports
-machine-specific timings beside those deterministic counts:
+Creating twelve windows costs 25 tmux invocations one at a time, 13 through
+`pipeline`, and 14 through `batch` — each figure including the one query that
+reads the result back, and `batch`'s extra being the snapshot that turns printed
+ids into typed handles. A snapshot is one invocation whatever the server's size,
+and querying it is none. Those counts, the wall-clock beside them, and why
+`Promise.all` buys nothing over doing the same work in order are in [the
+benchmarks](packages/libtmux/docs/benchmarks.md).
 
 ```console
 $ bun packages/libtmux/scripts/bench-modes.ts
 ```
 
-## What this package promises
+## What this project promises
 
-- **Zero runtime dependencies.** A property [under test](packages/libtmux/tests/unit/package_contract.test.ts), not an aspiration.
+- **The library ships zero runtime dependencies.** A property [under test](packages/libtmux/tests/unit/package_contract.test.ts), not an aspiration. `@libtmux/mcp` and `@libtmux/workspace` declare their own.
 - **Real tmux, every commit.** CI runs the suite against every tmux release the badge above names — no mocks stand in for a server.
 - **Documentation is a gate.** Every public symbol carries a compiled example, [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it, and every link, install command and recipe on this page is checked on each run.
 - **Softly tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and shapes follow 0.62.0 where TypeScript agrees with them; each departure is a decision a gate holds to the code.

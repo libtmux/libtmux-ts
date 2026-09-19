@@ -13,7 +13,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { compareTmuxVersions, parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
-import { VersionTooLow } from "../../src/exc.js";
+import { VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 /**
@@ -122,12 +122,12 @@ describe("querying a field the server predates", () => {
             return error;
           }
         })();
-        expect(thrown).toBeInstanceOf(VersionTooLow);
+        expect(thrown).toBeInstanceOf(VersionTooLowError);
         // Both versions, because "unsupported" without them leaves a caller
         // guessing which half to change.
-        expect((thrown as VersionTooLow).message).toContain(field.since);
-        expect((thrown as VersionTooLow).message).toContain(raw ?? "");
-        expect((thrown as VersionTooLow).criteriaName).toBe(field.criteriaName);
+        expect((thrown as VersionTooLowError).message).toContain(field.since);
+        expect((thrown as VersionTooLowError).message).toContain(raw ?? "");
+        expect((thrown as VersionTooLowError).criteriaName).toBe(field.criteriaName);
       }
     });
   }, 40_000);

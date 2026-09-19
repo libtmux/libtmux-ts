@@ -15,7 +15,7 @@ import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException } from "../../src/exc.js";
+import { LibTmuxError } from "../../src/errors.js";
 
 const encoder = new TextEncoder();
 const daemon = Object.freeze({ pid: "101", startTime: "202" });
@@ -128,7 +128,7 @@ describe("guarded format codec", () => {
           async execute() {
             return {
               cmd: ["tmux", "list-sessions", ";", "list-windows"],
-              returncode: 1,
+              exitCode: 1,
               signal: null,
               stderr: encoder.encode("one command failed\n"),
               stdout: new Uint8Array(),
@@ -138,8 +138,8 @@ describe("guarded format codec", () => {
       });
       throw new Error("expected the command list to fail");
     } catch (error) {
-      expect(error).toBeInstanceOf(LibTmuxException);
-      if (!(error instanceof LibTmuxException)) throw error;
+      expect(error).toBeInstanceOf(LibTmuxError);
+      if (!(error instanceof LibTmuxError)) throw error;
       expect(error.message).toBe("one command failed");
       expect(error.subcommand).toBeUndefined();
     }
@@ -155,7 +155,7 @@ describe("guarded format codec", () => {
     const execute = (
       listings: readonly { readonly listCommand: "list-sessions" | "list-windows" }[],
       options: {
-        readonly returncode?: number;
+        readonly exitCode?: number;
         readonly signal?: string | null;
         readonly withSessionRow?: boolean;
       } = {},
@@ -177,7 +177,7 @@ describe("guarded format codec", () => {
                 : "";
             return {
               cmd: ["tmux"],
-              returncode: options.returncode ?? 1,
+              exitCode: options.exitCode ?? 1,
               signal: options.signal ?? null,
               stderr: encoder.encode("no current target\n"),
               stdout: encoder.encode(`ltxI101;202\n${sessionRow}`),
@@ -197,9 +197,9 @@ describe("guarded format codec", () => {
     await expect(execute([{ listCommand: "list-windows" }])).rejects.toThrow("no current target");
     await Promise.all(
       [
-        { returncode: 0, signal: null },
-        { returncode: 2, signal: null },
-        { returncode: 1, signal: "SIGTERM" },
+        { exitCode: 0, signal: null },
+        { exitCode: 2, signal: null },
+        { exitCode: 1, signal: "SIGTERM" },
       ].map((result) =>
         expect(
           execute([{ listCommand: "list-sessions" }, { listCommand: "list-windows" }], result),
@@ -224,7 +224,7 @@ describe("guarded format codec", () => {
           async execute() {
             return {
               cmd: ["tmux"],
-              returncode: 0,
+              exitCode: 0,
               signal: null,
               stderr: new Uint8Array(),
               stdout: encoder.encode("not-an-identity\n"),
@@ -486,6 +486,29 @@ describe("guarded format codec", () => {
     expect(guardCalls).toBe(1);
   });
 
+  test("unescapes any backslash-escaped byte, not only the characters tmux is known to quote today", () => {
+    const codec = codecFor("list-sessions");
+    const request = codec.prepare();
+    const encoded = encoder.encode(
+      `${frame(request, { session_name: "LIBTMUX_ESCAPE_MARKER" })}\n`,
+    );
+
+    // Neither byte here is in `QUOTED_BY_TMUX`, and neither is a brace: the
+    // point is that decode has no enumerated allow-list to be behind on, so
+    // this must not be read as "braces are covered" and left there. A tmux
+    // release that starts escaping one more character needs no decoder
+    // change, because `splitEscapedBytes` never asks which byte follows the
+    // backslash before treating it as literal.
+    const withUnknownEscapes = replaceMarkerWithBytes(
+      encoded,
+      "LIBTMUX_ESCAPE_MARKER",
+      // "a" \Z "b" \9 "c" -> "aZb9c"
+      Uint8Array.of(0x61, 0x5c, 0x5a, 0x62, 0x5c, 0x39, 0x63),
+    );
+
+    expect(codec.decode(request, withUnknownEscapes)[0]?.session_name).toBe("aZb9c");
+  });
+
   test("wraps schema failures without exposing Zod errors", () => {
     const codec = codecFor("list-sessions");
     const request = codec.prepare();
@@ -495,7 +518,7 @@ describe("guarded format codec", () => {
       throw new Error("expected decode to fail");
     } catch (error) {
       expect(error).toBeInstanceOf(FormatProtocolError);
-      expect(error).toBeInstanceOf(LibTmuxException);
+      expect(error).toBeInstanceOf(LibTmuxError);
       expect((error as Error).name).toBe("FormatProtocolError");
       expect((error as Error).constructor.name).not.toBe("ZodError");
     }

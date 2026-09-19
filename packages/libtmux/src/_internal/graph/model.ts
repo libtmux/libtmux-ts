@@ -6,7 +6,7 @@ import type {
   SessionRef,
   WindowRef,
 } from "../../common.js";
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 import type { ListCommand } from "../codec/format_types.js";
 import type { DaemonIdentity } from "../runtime/context.js";
 import type { CompleteFormatRow, RawCompleteFormatRow } from "../codec/schemas.js";
@@ -118,7 +118,7 @@ interface NormalizedGraphData {
 }
 
 function invalidGraphIdentity(message: string): never {
-  throw new QueryValidationError({ code: "invalid-query", message });
+  throw new QueryValidationError({ reason: "invalid-query", message });
 }
 
 export function createGraphSourceId(value: string): GraphSourceId {

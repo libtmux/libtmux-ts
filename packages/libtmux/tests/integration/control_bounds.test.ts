@@ -13,7 +13,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { Server } from "../../src/server.js";
-import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
+import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -75,8 +75,8 @@ describe("control-mode event bounds", () => {
 
       // Which of the three racing outcomes wins is not this test's business.
       // What has to hold is that the caller is told in this package's terms:
-      // Node's own EPIPE is not something a `LibTmuxException` handler sees.
-      expect(failure).toBeInstanceOf(LibTmuxException);
+      // Node's own EPIPE is not something a `LibTmuxError` handler sees.
+      expect(failure).toBeInstanceOf(LibTmuxError);
       if (failure instanceof TmuxTransportError) expect(failure.delivery).not.toBe("replied");
     } finally {
       await server.cmd("kill-server").catch(() => undefined);
@@ -185,4 +185,91 @@ describe("control-mode event bounds", () => {
       expect([...resumed]).toEqual([paneId!]);
     });
   }, 90_000);
+
+  // `#routeFlowControl` resumes every `%pause` it observes, not only ones
+  // `pauseAfterSeconds` negotiated. No pacing is configured here, so the
+  // resume can only be this connection answering a pause it did not ask for.
+  test("resumes a pane a caller paused directly, without any pacing configured", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await using events = server.watch();
+      await events.ready();
+
+      const paneId = (await server.snapshot()).panes.toArray()[0]?.id;
+      expect(paneId).toBeDefined();
+      const client = (await server.cmd("list-clients", ["-F", "#{client_name}\t#{client_flags}"]))
+        .find((value) => value.includes("control-mode"))
+        ?.split("\t")[0];
+      expect(client).toBeDefined();
+
+      await server.cmd("refresh-client", ["-t", client!, "-A", `${paneId!}:pause`]);
+      const resumed = await events.find(
+        (event) => event.kind === "continue" && event.paneId === paneId,
+        { timeoutMs: 5_000 },
+      );
+      expect(resumed).toMatchObject({ kind: "continue", paneId });
+    });
+  }, 40_000);
+
+  // `off`/`on` and `pause`/`continue` are independent pairs. Resuming an
+  // `off` pane with `continue` (the wrong verb) returns success and changes
+  // nothing - `off` stops tmux reading that pane's pty at all.
+  test("crossed off/continue pairing returns success but never delivers output", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "crossed-pairing" });
+      await using events = server.watch({ target: session.id });
+      await events.ready();
+
+      const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
+      const client = (await server.cmd("list-clients", ["-F", "#{client_name}\t#{client_flags}"]))
+        .find((value) => value.includes("control-mode"))
+        ?.split("\t")[0];
+      expect(client).toBeDefined();
+
+      await server.cmd("refresh-client", ["-t", client!, "-A", `${pane.id}:off`]);
+      const resumeAttempt = await server
+        .cmd("refresh-client", ["-t", client!, "-A", `${pane.id}:continue`])
+        .then(() => "ok" as const)
+        .catch(() => "refused" as const);
+      expect(resumeAttempt).toBe("ok");
+
+      const stuck = events.find(
+        (event) =>
+          event.kind === "output" &&
+          event.paneId === pane.id &&
+          event.data.includes("crossed-marker"),
+        { timeoutMs: 2_000 },
+      );
+      await pane.sendKeys("echo crossed-marker-here");
+      expect(await stuck).toBeUndefined();
+    });
+  }, 40_000);
+
+  // `timeoutMs` bounds only the caller's own wait on `["wait-for", "-L",
+  // name]`. tmux hands a released lock to the first queued locker regardless
+  // of whether that locker's client is still around (`cmd-wait-for.c`), so a
+  // bounded caller giving up does not free the channel for the next one.
+  test("a timed-out wait-for -L lock wedges the channel for the next locker", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const channel = "ltx-lock-wedge";
+
+      await server.cmd("wait-for", ["-L", channel]);
+
+      const second = await server
+        .cmd("wait-for", ["-L", channel], { timeoutMs: 500 })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(second).toBeInstanceOf(TmuxTransportError);
+
+      await server.cmd("wait-for", ["-U", channel]);
+
+      const third = await server
+        .cmd("wait-for", ["-L", channel], { timeoutMs: 500 })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(third).toBeInstanceOf(TmuxTransportError);
+    });
+  }, 40_000);
 });

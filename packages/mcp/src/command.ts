@@ -1,12 +1,23 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { TmuxTransportError, type Pane } from "libtmux";
 
 import { sameInputAuthority, type InputAuthority, type ToolContext } from "./context.js";
-import { frame, parseFramedOutput, randomId, withoutForeignFraming } from "./command_frame.js";
+import {
+  frame,
+  parseFramedOutput,
+  randomId,
+  sawSourcingFailure,
+  sourcingDispatch,
+  withoutForeignFraming,
+} from "./command_frame.js";
 import { captureGridBounded } from "./grid_capture.js";
 import { dispatchPaneKeys } from "./pane_input.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";
+import { shellQuote } from "./startup.js";
 
 interface FramedResultBase {
   /** Whether the sole wrapper dispatch may have reached the pane. */
@@ -113,7 +124,9 @@ export function reservePaneInput(
   return {
     release,
     settleWith: (settled) => {
-      void settled.then(release, () => undefined);
+      // Both branches release: a rejection is settlement failing, not the
+      // command succeeding, and either way nothing else ever frees this pane.
+      void settled.then(release, release);
     },
   };
 }
@@ -250,8 +263,94 @@ async function waitForSettlement(
   }
 }
 
-async function sendLiteralLine(pane: Pane, line: string): Promise<void> {
-  await dispatchPaneKeys(pane, line, { literal: true });
+/** The script name inside its own private directory. */
+function framedScriptName(id: string): string {
+  return `${id}.sh`;
+}
+
+/**
+ * Hand the framed script to the pane without typing its body through the
+ * shell's line editor.
+ *
+ * `send-keys -l` writes a string to the pty in one syscall, but a shell with
+ * a heavy line editor (zsh with syntax-highlighting or autosuggestion
+ * plugins) still processes every byte of an arriving line individually —
+ * that is what makes the framing's trap/octal/nonce machinery flash across
+ * the screen and turn a trivial command into a multi-second wait. Neither
+ * traces to how fast the bytes arrive, only to typing the
+ * payload at all. Writing it to a file on the tmux server's host — the
+ * pane's own host, by construction — and typing only a short `. <path>` line
+ * removes both: nothing but a generic path is ever typed, and the shell
+ * reads the payload as its own file I/O, never through the line editor.
+ *
+ * `save-buffer` creates its target however the umask says — world-readable
+ * under an ordinary 022, regardless of the path — so the command text
+ * (secrets and all) must never land somewhere another local user can read
+ * it. `mkdtemp` makes a directory only this user can even traverse (0700 on
+ * POSIX, unconditionally, unlike a file's mode which follows the umask), so
+ * the file's own readable mode stops mattering: nobody else can reach the
+ * name to open it. This is the same shape as libtmux-go's `observePane`
+ * (`control_observation.go`), which hits the identical save-buffer gap.
+ * `os.tmpdir()` honours `TMPDIR`, and the directory has to be on the tmux
+ * server's own host for `save-buffer` and `.` to agree on what the path
+ * names. That is a new requirement rather than one the framing already had:
+ * the trap-capture directory in `command_frame.ts` is created by the pane's
+ * own shell and so lives wherever that shell does, while this file is written
+ * by the tmux server. A pane running `ssh`, a container, or another user's
+ * `su` cannot open it — which is why the dispatch tests for the file and
+ * `runFramedCommand` types the script itself when the answer is no. Both the
+ * sourcing line and the trailing `rm -rf` quote that
+ * path with `shellQuote` (`startup.ts`): an operator's `TMPDIR` is not this
+ * process's to trust, and an unescaped `'` inside it once left a pane sitting
+ * at an open shell quote until someone closed it by hand.
+ *
+ * The trailing `rm -rf` removes the file and its directory together, and
+ * runs only once the sourced group exits — appended outside `frame()`'s own
+ * subshell, not inside it — so a command that outlives this call's deadline
+ * keeps its directory until the run genuinely finishes. A directory orphaned
+ * by a hard crash outlives this server, bounded the same way libtmux-go's
+ * is: by the OS's own temp-directory hygiene, not by anything this process
+ * can guarantee once it no longer exists to run a defer. The pane dying mid-run
+ * leaves the same residue for the same reason: the trailer never runs because
+ * nothing ever sources it.
+ */
+async function deliverFramedScript(
+  context: ToolContext,
+  pane: Pane,
+  source: string,
+  id: string,
+  authority: InputAuthority | undefined,
+): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "ltx-"));
+  const path = join(directory, framedScriptName(id));
+  try {
+    await context.tmux.loadBuffer(id, `${source}; command rm -rf -- ${shellQuote(directory)}`);
+    try {
+      await context.tmux.saveBuffer(id, path);
+    } finally {
+      await context.tmux.deleteBuffer(id).catch(() => undefined);
+    }
+  } catch (error) {
+    // Nothing was ever typed, so nothing else will ever run the trailer.
+    await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+    throw error;
+  }
+  try {
+    await dispatchPaneKeys(pane, sourcingDispatch(path, id), {
+      ...(authority === undefined ? {} : { identity: authority }),
+      literal: true,
+    });
+  } catch (error) {
+    // The file was written but the pane never received the line that would
+    // source it, so nothing else will ever remove it. This process made the
+    // directory, so it removes it directly rather than routing through the
+    // tmux server that never got a chance to run the trailer.
+    if (error instanceof TmuxTransportError && error.delivery === "not_started") {
+      await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+    }
+    throw error;
+  }
+  return directory;
 }
 
 /**
@@ -288,13 +387,15 @@ export async function runFramedCommand(
   const deadline = Date.now() + budget;
   let missedBytes = 0;
   let commandStarted = false;
+  let scriptDirectory: string | undefined;
+  let retypedInline = false;
   let usedFallback = tail === undefined;
   const dispatchPane = beforeDispatch === undefined ? pane : await beforeDispatch();
   if (isCancelled(signal) || Date.now() >= deadline) {
     return beforeStartResult(budget, isCancelled(signal) ? "cancelled" : "timed_out");
   }
   try {
-    await sendLiteralLine(dispatchPane, source);
+    scriptDirectory = await deliverFramedScript(context, dispatchPane, source, id, authority);
     commandStarted = true;
   } catch (error) {
     if (!(error instanceof TmuxTransportError) || error.delivery === "not_started") {
@@ -333,6 +434,28 @@ export async function runFramedCommand(
         outputComplete: found.outputComplete && !usedFallback,
         settled: Promise.resolve(),
       };
+    }
+    // The pane's shell could not read the script. It is on the tmux server's
+    // host, and this pane's shell is somewhere else — inside `ssh`, a
+    // container, or another user — so waiting out the budget would report a
+    // timeout for a run that never started. Type the script itself instead,
+    // which is what the pane can always read, and let the same loop carry on.
+    if (!retypedInline && sawSourcingFailure(stream, id)) {
+      retypedInline = true;
+      usedFallback = true;
+      if (scriptDirectory !== undefined) {
+        // The trailer that would have removed this runs only from inside the
+        // sourced script, and nothing sourced it.
+        // eslint-disable-next-line no-await-in-loop -- the removal follows the failure it answers.
+        await rm(scriptDirectory, { force: true, recursive: true }).catch(() => undefined);
+        scriptDirectory = undefined;
+      }
+      // eslint-disable-next-line no-await-in-loop -- the retry follows the failure it answers.
+      await dispatchPaneKeys(dispatchPane, source, {
+        ...(authority === undefined ? {} : { identity: authority }),
+        literal: true,
+      });
+      continue;
     }
     if (Date.now() >= deadline || isCancelled(signal)) break;
     if (tail === undefined) {

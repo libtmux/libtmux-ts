@@ -14,7 +14,7 @@ import { ResizeAdjustmentDirection } from "libtmux/constants";
 import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
-import { MUTATING, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
   inlineRequestText,
@@ -60,6 +60,24 @@ const LAYOUTS = [
   "tiled",
 ] as const;
 
+// tmux's own `select-layout` resolves a name by unambiguous prefix
+// (`layout_set_lookup`), so `tile` and `even-h` are named layouts too, not a
+// round-tripped layout string — `window.selectLayout` below already refused
+// anything ambiguous before this runs. Included here so the "ignored"
+// heuristic does not mistake one for a custom string that failed to apply.
+const NAMED_LAYOUT_SPELLINGS: readonly string[] = [
+  ...LAYOUTS,
+  "main-horizontal-mirrored",
+  "main-vertical-mirrored",
+];
+
+function isNamedLayoutSpelling(layout: string): boolean {
+  if (NAMED_LAYOUT_SPELLINGS.includes(layout)) return true;
+  return (
+    layout !== "" && NAMED_LAYOUT_SPELLINGS.filter((name) => name.startsWith(layout)).length === 1
+  );
+}
+
 const sourceSessionSchema = requestText("sourceSession")
   .optional()
   .describe("Source session id or name. Required when the id has several placements.");
@@ -94,7 +112,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "resize_pane",
     {
-      annotations: MUTATING,
       description:
         "Resize a pane, either to a size or by an amount in a direction. Give " +
         "width/height for an absolute size, or direction with amount for a nudge.",
@@ -105,10 +122,13 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
           .positive()
           .optional()
           .describe("Cells to move by. Needs direction."),
-        direction: z.enum(["up", "down", "left", "right"]).optional(),
-        height: z.number().int().positive().optional(),
+        direction: z
+          .enum(["up", "down", "left", "right"])
+          .optional()
+          .describe("Adjust by an amount in this direction instead of setting a size."),
+        height: z.number().int().positive().optional().describe("Set the pane height, in rows."),
         paneId: paneIdSchema,
-        width: z.number().int().positive().optional(),
+        width: z.number().int().positive().optional().describe("Set the width, in columns."),
         zoom: z
           .boolean()
           .optional()
@@ -158,7 +178,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "select_pane",
     {
-      annotations: MUTATING,
       description:
         "Make a pane the active one in its window. Moves the cursor of anyone " +
         "attached to that window.",
@@ -181,7 +200,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "select_window",
     {
-      annotations: MUTATING,
       description: "Make a window the current one in its session.",
       inputSchema: {
         sourceIndex: sourceIndexSchema,
@@ -210,7 +228,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "select_layout",
     {
-      annotations: MUTATING,
       description:
         "Rearrange a window's panes. Takes one of tmux's named layouts, or a layout " +
         "string from an earlier window whose `metadataComplete` is true to reproduce it exactly.",
@@ -234,8 +251,7 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
       // does nothing: tmux exits 0 and leaves the window alone. A named layout
       // is always applied, so only the string form can silently miss — and the
       // window this returns already knows which layout it ended up with.
-      const ignored =
-        !LAYOUTS.includes(layout as (typeof LAYOUTS)[number]) && view.layout !== layout;
+      const ignored = !isNamedLayoutSpelling(layout) && view.layout !== layout;
       return ok(
         { window: view },
         windowLine(view) +
@@ -250,7 +266,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "swap_pane",
     {
-      annotations: MUTATING,
       description: "Exchange two panes' positions. Their ids and contents travel with them.",
       inputSchema: { otherPaneId: paneIdSchema, paneId: paneIdSchema },
       outputSchema: {
@@ -289,10 +304,14 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "move_window",
     {
-      annotations: MUTATING,
       description: "Move a window to another index, or into another session.",
       inputSchema: {
-        index: z.number().int().nonnegative().optional(),
+        index: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe("Destination index. Defaults to the next free one."),
         session: requestText("session").optional().describe("Destination session id or name."),
         sourceIndex: sourceIndexSchema,
         sourceSession: sourceSessionSchema,
@@ -328,7 +347,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "resize_window",
     {
-      annotations: MUTATING,
       description:
         "Set a window's size in cells. A detached window is whatever size tmux " +
         "guessed, and a program that formats to its terminal width truncates to " +
@@ -338,8 +356,8 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
         "overwrite this when it next changes; window-size manual makes a size of " +
         "your own stick.",
       inputSchema: {
-        height: z.number().int().positive().optional(),
-        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional().describe("Set the height, in rows."),
+        width: z.number().int().positive().optional().describe("Set the width, in columns."),
         windowId: windowIdSchema,
       },
       outputSchema: { window: windowViewSchema },
@@ -368,11 +386,13 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "set_pane_title",
     {
-      annotations: MUTATING,
       description:
         "Give a pane a title. Useful for labelling what an agent put where, since " +
         "the title shows in list_panes and survives the command changing.",
-      inputSchema: { paneId: paneIdSchema, title: literalTmuxText("title") },
+      inputSchema: {
+        paneId: paneIdSchema,
+        title: literalTmuxText("title").describe("The pane's new title."),
+      },
       outputSchema: { pane: paneViewSchema },
       title: "Set pane title",
     },

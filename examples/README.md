@@ -66,6 +66,7 @@ driving your session.
 | [`workspace/`](workspace/README.md)   | You want a session built from a layout you declared                   |
 | [`mcp-agent/`](mcp-agent/README.md)   | The thing driving tmux is a model, over the Model Context Protocol    |
 | [`engine/`](engine/README.md)         | tmux is not where the library assumes — ssh, a container, a daemon    |
+| [`observe/`](observe/README.md)       | You need to see what it sent, or bound how much runs at once          |
 
 Each is a package of its own: a `README.md` saying what it shows and when to
 reach for it, the code beside it, and a test that runs the code against a real

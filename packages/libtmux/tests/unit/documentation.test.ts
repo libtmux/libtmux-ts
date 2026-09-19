@@ -90,7 +90,6 @@ describe("generated API reference", () => {
     expect(rootEntries).toEqual([
       "`encodeWhereDocument`",
       "`decodeWhereDocument`",
-      "`parseLegacyWhere`",
       "`isSafeInteger`",
       "`safeInteger`",
       "`isTmuxName`",

@@ -77,6 +77,22 @@ describe("pane input and capture", () => {
     });
   }, 40_000);
 
+  test("guards keys starting with a dash from being read as tmux's own flags", async () => {
+    await withServer(async (fixture) => {
+      const pane = (await serverFor(fixture).snapshot()).panes.one();
+
+      // `-R` is send-keys's own terminal-reset flag; without the guard
+      // nothing would be typed and the pane's saved state would be reset
+      // instead of these two characters reaching the shell.
+      await pane.sendKeys("-R", { enter: false });
+      const lines = await captureUntil(pane, (captured) =>
+        captured.some((line) => line.includes("-R")),
+      );
+
+      expect(lines.some((line) => line.includes("-R"))).toBe(true);
+    });
+  }, 40_000);
+
   test("leaves copy mode on the keys, and delivers Enter to the pane after it", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -178,4 +194,18 @@ describe("pane input and capture", () => {
       expect(afterClear.length).toBeGreaterThan(0);
     });
   }, 40_000);
+
+  test("guards a pipe-pane command starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const pane = (await serverFor(fixture).snapshot()).panes.one();
+
+      // `-h` is none of pipe-pane's own flags (`-I`, `-O`, `-o`, `-t`).
+      // pipe-pane returns as soon as the job is spawned rather than waiting
+      // on it, so this only needs to show a pipe was accepted at all: without
+      // the guard the whole argument is refused before that happens, and the
+      // call below rejects instead of resolving.
+      await expect(pane.pipeTo("-h")).resolves.toBeUndefined();
+      await pane.pipeTo();
+    });
+  }, 15_000);
 });

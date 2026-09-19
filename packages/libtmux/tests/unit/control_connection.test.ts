@@ -7,7 +7,7 @@ import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
-import { TmuxTransportError } from "../../src/exc.js";
+import { TmuxTransportError } from "../../src/errors.js";
 import type {
   CommandRequest,
   CommandTransport,
@@ -62,7 +62,7 @@ class RecordingTransport implements CommandTransport {
     if (this.#outcome instanceof Error) throw this.#outcome;
     return {
       cmd: [request.executable, ...flattenInvocation(request)],
-      returncode: this.#outcome,
+      exitCode: this.#outcome,
       signal: null,
       stderr: this.#outcome === 0 ? new Uint8Array() : new TextEncoder().encode("resume refused"),
       stdout: new Uint8Array(),
@@ -81,13 +81,13 @@ class GatedTransport implements CommandTransport {
     return reply.promise;
   }
 
-  reply(index: number, returncode = 0): void {
+  reply(index: number, exitCode = 0): void {
     const request = this.requests[index];
     const reply = this.#replies[index];
     if (request === undefined || reply === undefined) throw new Error("no gated request");
     reply.resolve({
       cmd: [request.executable, ...flattenInvocation(request)],
-      returncode,
+      exitCode,
       signal: null,
       stderr: new Uint8Array(),
       stdout: new Uint8Array(),
@@ -220,6 +220,43 @@ describe("ControlConnection child ownership", () => {
     await expect(duringOutage).rejects.toThrow("terminal replacement failed");
     await expect(control.ready()).rejects.toThrow("terminal replacement failed");
     await expect(ended).rejects.toThrow("terminal replacement failed");
+    await control.close();
+  });
+
+  // tmux frames a hook's own commands, and anything it runs for itself, the
+  // same way it frames the attach: a block whose end carries `fromClient`
+  // false. Each one used to re-run the whole attach sequence against a client
+  // that already carried it — `refresh-client -f`, then every subscription.
+  test("configures a client once, however many server blocks arrive", async () => {
+    const child = new FakeChild(101);
+    const fallback = new RecordingTransport();
+    const control = new ControlConnection(
+      connection(),
+      {
+        subscriptions: [{ format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }],
+      },
+      false,
+      fallback,
+      () => child,
+    );
+    const events = control.subscribe();
+    attach(child);
+    await events.ready();
+
+    const configuring = (): string[] =>
+      fallback.requests
+        .map((request) => request.commands[0]?.join(" ") ?? "")
+        .filter((command) => command.includes("refresh-client"));
+    const afterAttach = configuring();
+    expect(afterAttach.length).toBeGreaterThan(0);
+
+    // Two more server-side blocks, the shape a hook run produces.
+    child.stdout.write("%begin 50 51 0\n%end 50 51 0\n");
+    child.stdout.write("%begin 52 53 0\n%end 52 53 0\n");
+    await nextTurn();
+
+    expect(configuring()).toEqual(afterAttach);
+
     await control.close();
   });
 

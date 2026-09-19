@@ -9,10 +9,6 @@ import type {
   DeliveryStatus,
   OperationStatus,
   SafeInteger,
-  TmuxLogger,
-  TmuxLogContext,
-  TmuxWarning,
-  TmuxWarningSink,
   PaneId,
   PaneRef,
   SessionId,
@@ -20,10 +16,13 @@ import type {
   WindowId,
   WindowRef,
 } from "../../src/common.js";
+import type { TmuxInvocationObserver, TmuxInvocationReport } from "../../src/common.js";
 import { isSafeInteger, safeInteger } from "../../src/common.js";
+import type { LibTmuxErrorCode } from "../../src/errors.js";
+import type { WaitTimeoutError } from "../../src/errors.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
 import * as exception from "../../src/exc.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import {
   OptionScope,
   DEFAULT_OPTION_SCOPE,
@@ -67,26 +66,18 @@ import type { Equal, Expect } from "./assert.js";
 
 declare const options: CommandOptions;
 declare const result: CommandResult;
-declare const logger: TmuxLogger;
 declare const outcome: CommandOutcome;
 declare const ref: LogicalRef;
 declare const sessionRef: SessionRef;
 declare const windowRef: WindowRef;
 declare const paneRef: PaneRef;
-declare const warning: TmuxWarning;
-declare const warningSink: TmuxWarningSink;
 
 void options.signal;
 void options.stdin;
 void result.cmd;
 void result.stdout;
 void result.stderr;
-void result.returncode;
-logger.debug("tmux command", { tmux_subcommand: "list-sessions" });
-logger.info("tmux command");
-logger.warn("tmux command");
-logger.error("tmux command");
-warningSink.warn(warning);
+void result.exitCode;
 void outcome.delivery;
 void outcome.result;
 void outcome.status;
@@ -94,18 +85,14 @@ void ref.connection;
 void ref.epoch;
 void ref.id;
 void ref.kind;
-void warning.code;
-void warning.message;
 void sessionRef.id;
 void windowRef.id;
 void paneRef.id;
 
 // @ts-expect-error Command results are readonly snapshots.
-result.returncode = 1;
+result.exitCode = 1;
 // @ts-expect-error Outcomes are readonly snapshots.
 outcome.status = "failed";
-// @ts-expect-error Warning payloads are readonly.
-warning.code = "changed";
 // @ts-expect-error Logical references are readonly.
 sessionRef.kind = "window";
 // @ts-expect-error Flag maps are readonly.
@@ -130,7 +117,7 @@ const multipleMatches = new MultipleMatchesError({
 });
 const invalidQuery = new QueryValidationError({
   cause: exceptionCause,
-  code: "invalid-query",
+  reason: "invalid-query",
   message: "Invalid query",
 });
 
@@ -140,18 +127,25 @@ void invalidQuery.code;
 type _ExceptionNamespace = Expect<
   Equal<
     keyof typeof exception,
+    | "LibTmuxError"
     | "LibTmuxException"
     | "MultipleMatchesError"
+    | "MultipleObjectsError"
     | "MultipleObjectsReturned"
     | "NoMatchError"
     | "ObjectDoesNotExist"
+    | "ObjectNotFoundError"
     | "QueryValidationError"
     | "TmuxCommandError"
     | "TmuxObjectDoesNotExist"
+    | "TmuxObjectNotFoundError"
     | "TmuxServerRestarted"
+    | "TmuxServerRestartedError"
     | "TmuxTransportError"
     | "VersionTooLow"
+    | "VersionTooLowError"
     | "WaitTimeout"
+    | "WaitTimeoutError"
   >
 >;
 void OptionScope.Server;
@@ -179,7 +173,7 @@ type _CommandOptions = Expect<
     {
       readonly signal?: AbortLike;
       readonly stdin?: string | Uint8Array;
-      readonly timeoutMs?: number;
+      readonly timeoutMs?: number | null;
     }
   >
 >;
@@ -188,7 +182,7 @@ type _CommandResult = Expect<
     CommandResult,
     {
       readonly cmd: readonly string[];
-      readonly returncode: number;
+      readonly exitCode: number;
       readonly stderr: readonly string[];
       readonly stdout: readonly string[];
     }
@@ -204,23 +198,12 @@ type _CommandOutcome = Expect<
     }
   >
 >;
-type _Warning = Expect<Equal<TmuxWarning, { readonly code: string; readonly message: string }>>;
-type _WarningSink = Expect<Equal<TmuxWarningSink["warn"], (warning: TmuxWarning) => void>>;
-type _LogContext = Expect<
-  Equal<TmuxLogContext, Readonly<Record<string, boolean | number | string | undefined>>>
+type _InvocationObserver = Expect<
+  Equal<TmuxInvocationObserver, (report: TmuxInvocationReport) => void>
 >;
-type _LoggerDebug = Expect<
-  Equal<TmuxLogger["debug"], (message: string, context?: TmuxLogContext) => void>
->;
-type _LoggerInfo = Expect<
-  Equal<TmuxLogger["info"], (message: string, context?: TmuxLogContext) => void>
->;
-type _LoggerWarn = Expect<
-  Equal<TmuxLogger["warn"], (message: string, context?: TmuxLogContext) => void>
->;
-type _LoggerError = Expect<
-  Equal<TmuxLogger["error"], (message: string, context?: TmuxLogContext) => void>
->;
+type _InvocationReportDelivery = Expect<Equal<TmuxInvocationReport["delivery"], DeliveryStatus>>;
+type _InvocationReportDuration = Expect<Equal<TmuxInvocationReport["durationMs"], number>>;
+type _InvocationReportExit = Expect<Equal<TmuxInvocationReport["exitCode"], number | undefined>>;
 type _SessionRef = Expect<
   Equal<
     SessionRef,
@@ -319,3 +302,17 @@ export type {
   _OptionFlags,
   _HookFlags,
 };
+
+// `code` is a union of every value it can hold, so a comparison against a name
+// this package does not have is a type error rather than a branch that never
+// runs. The literal-per-class alternative is not available: the hierarchy is
+// three deep in places, and a literal on the parent makes the child's
+// declaration an illegal override.
+declare const waitTimeout: WaitTimeoutError;
+const matchesCode: boolean = waitTimeout.code === "WaitTimeoutError";
+// @ts-expect-error no error in this package is named this.
+const typoInCode: boolean = waitTimeout.code === "WaitTimeoutErrro";
+const anyCode: LibTmuxErrorCode = "TmuxCommandError";
+void matchesCode;
+void typoInCode;
+void anyCode;

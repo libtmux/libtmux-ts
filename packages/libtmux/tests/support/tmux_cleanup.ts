@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { link, lstat, readFile, unlink } from "node:fs/promises";
 
-import { readDaemonIdentity } from "../../src/_internal/test/testkit.js";
+import { readDaemonIdentity, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
 import { closeChild } from "./owned_child.js";
 
@@ -79,8 +79,7 @@ async function terminateCapturedTmux(captured: CapturedTmuxCleanup): Promise<voi
 }
 
 async function reapRedLaunch(socketPath: string): Promise<void> {
-  const tmux = Bun.which("tmux");
-  if (tmux === null) throw new Error("tmux is required");
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
   const child = spawn(tmux, ["-S", socketPath, "kill-server"], {
     stdio: ["ignore", "ignore", "ignore"],
   });

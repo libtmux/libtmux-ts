@@ -11,7 +11,7 @@ import {
   type ZodRawShapeCompat,
 } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
-import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { Policy, Toolset } from "./policy.js";
 import {
@@ -53,14 +53,6 @@ export const CONSERVATIVE_ANNOTATIONS: ExplicitAnnotations = Object.freeze({
 });
 
 export const CAPABILITY_META_KEY = "com.git-pull.libtmux-mcp/capability";
-
-// These names keep the declarations beside handlers concise. Every final row
-// owns the conservative four-field value above.
-export const READ_ONLY = CONSERVATIVE_ANNOTATIONS;
-export const MUTATING = CONSERVATIVE_ANNOTATIONS;
-export const DESTRUCTIVE = CONSERVATIVE_ANNOTATIONS;
-export const MUTATING_OPEN_WORLD = CONSERVATIVE_ANNOTATIONS;
-export const OPEN_WORLD = CONSERVATIVE_ANNOTATIONS;
 
 interface CapabilitySeed {
   readonly amplifiesFutureInput: boolean;
@@ -488,7 +480,6 @@ export class ToolRegistry {
       readonly description?: string;
       readonly inputSchema?: InputArgs;
       readonly outputSchema?: OutputArgs;
-      readonly annotations?: ToolAnnotations;
       readonly _meta?: Record<string, unknown>;
     },
     handler: ToolCallback<InputArgs>,
@@ -501,6 +492,13 @@ export class ToolRegistry {
     }
     if (config.inputSchema === undefined || config.outputSchema === undefined) {
       throw new TypeError(`${name} must declare native input and output schemas`);
+    }
+    // Every row carries the same conservative annotations, written below. A
+    // call site that passes its own reads as though it chose them, and five
+    // differently-named constants that were all one value used to sit here
+    // saying so — changing one changed nothing. Refuse rather than ignore.
+    if ("annotations" in config) {
+      throw new TypeError(`${name} must not declare annotations; every tool carries the same`);
     }
     const seed = CAPABILITY_SEEDS[publicName];
     const inputSchema = schemaJson(config.inputSchema);

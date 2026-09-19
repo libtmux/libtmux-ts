@@ -43,6 +43,35 @@ function frameId(source: string): string {
   );
 }
 
+/**
+ * A fake of the server-side delivery `deliverFramedScript` uses. The framed
+ * script now travels through `loadBuffer`, not through the pane's
+ * `send-keys` args, so a fixture that needs the run's id reads it back with
+ * `source()` instead of parsing what was typed.
+ */
+function fakeBuffers(): {
+  readonly source: () => string;
+  readonly tmux: {
+    deleteBuffer: (name: string) => Promise<void>;
+    loadBuffer: (name: string, data: string | Uint8Array) => Promise<void>;
+    runShell: (command: string) => Promise<readonly string[]>;
+    saveBuffer: (name: string, path: string) => Promise<void>;
+  };
+} {
+  let captured = "";
+  return {
+    source: () => captured,
+    tmux: {
+      deleteBuffer: async () => undefined,
+      loadBuffer: async (_name, data) => {
+        captured = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
+      },
+      runShell: async () => [],
+      saveBuffer: async () => undefined,
+    },
+  };
+}
+
 function collectInputHandlers(context: ToolContext): ReadonlyMap<string, InputHandler> {
   const handlers = new Map<string, InputHandler>();
   const registrar = {
@@ -60,6 +89,7 @@ function snapshot(
   tail: PaneTail,
   fields: Readonly<Record<string, unknown>> = {},
   peer = false,
+  buffers?: ReturnType<typeof fakeBuffers>,
 ): ServerSnapshot {
   let panes: Pane[] = [];
   const window = {
@@ -75,9 +105,8 @@ function snapshot(
     inMode: 0,
     inputOff: false,
     cmd: async (_command: string, args: readonly string[]) => {
-      const line = args.find((entry) => entry.includes("__ltx_")) ?? "";
-      sent.push(line);
-      const id = frameId(line);
+      sent.push(args.join(" "));
+      const id = frameId(buffers?.source() ?? "");
       tail.append(`${id}_S\n${id}_E 0 ${id}_D\n`);
       setTimeout(() => tail.append("\n"), 0);
     },
@@ -175,7 +204,11 @@ test.each(transitions)(
 test("run_shell_command dispatches after exactly two matching preflights", async () => {
   const sent: string[] = [];
   const tail = new PaneTail("%1");
-  const snapshots = [snapshot(sent, tail), snapshot(sent, tail)];
+  const buffers = fakeBuffers();
+  const snapshots = [
+    snapshot(sent, tail, {}, false, buffers),
+    snapshot(sent, tail, {}, false, buffers),
+  ];
   let snapshotIndex = 0;
   let identityCount = 0;
   const context = {
@@ -191,7 +224,7 @@ test("run_shell_command dispatches after exactly two matching preflights", async
     },
     policy: resolvePolicy({}),
     snapshot: async () => snapshots[snapshotIndex++] as ServerSnapshot,
-    tmux: {},
+    tmux: buffers.tmux,
   } as unknown as ToolContext;
   const handler = collectInputHandlers(context).get("run_shell_command");
   if (handler === undefined) throw new Error("run_shell_command was not registered");
@@ -241,7 +274,11 @@ test("force does not bypass the trusted foreground-shell boundary", async () => 
 test("run_shell_command excludes another writer after reserving", async () => {
   const sent: string[] = [];
   const tail = new PaneTail("%1");
-  const snapshots = [snapshot(sent, tail), snapshot(sent, tail)];
+  const buffers = fakeBuffers();
+  const snapshots = [
+    snapshot(sent, tail, {}, false, buffers),
+    snapshot(sent, tail, {}, false, buffers),
+  ];
   let snapshotIndex = 0;
   let otherReservation: ReturnType<typeof reserveFramedCommand> | undefined;
   let context!: ToolContext;
@@ -260,7 +297,7 @@ test("run_shell_command excludes another writer after reserving", async () => {
     },
     policy: resolvePolicy({}),
     snapshot: async () => snapshots[snapshotIndex++] as ServerSnapshot,
-    tmux: {},
+    tmux: buffers.tmux,
   } as unknown as ToolContext;
   const handler = collectInputHandlers(context).get("run_shell_command");
   if (handler === undefined) throw new Error("run_shell_command was not registered");

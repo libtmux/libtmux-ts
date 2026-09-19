@@ -1,5 +1,3 @@
-import { fileURLToPath } from "node:url";
-
 import { describe, expect, test } from "bun:test";
 
 import { NoMatchError, QueryValidationError } from "../../src/exc.js";
@@ -17,6 +15,7 @@ import {
   type WhereDocumentV1,
   type WindowWhere,
 } from "../../src/selection.js";
+import { builtModuleUrl, runModule } from "../support/runtime_build.js";
 import { createRichProjectedHarness, createSessionHarness } from "../support/selection_fixtures.js";
 
 interface RegexCorpusCase {
@@ -41,7 +40,17 @@ interface RegexCorpus {
   };
 }
 
-const tsRootPath = fileURLToPath(new URL("../..", import.meta.url));
+/**
+ * The regex corpus is evidence only for the Bun versions it recorded results
+ * on; running it under an unrecorded Bun answers a question the corpus never
+ * covers.
+ */
+function assertRecordedBun(recorded: readonly string[], running: string): void {
+  expect(
+    recorded,
+    `the regex corpus records Bun ${recorded.join(" and ")}; this is Bun ${running}. Run the suite on a recorded Bun, or regenerate the corpus.`,
+  ).toContain(running);
+}
 
 function expectInvalidQuery(action: () => unknown, escaped?: unknown): QueryValidationError {
   let observed: unknown;
@@ -52,7 +61,7 @@ function expectInvalidQuery(action: () => unknown, escaped?: unknown): QueryVali
   }
   if (escaped !== undefined) expect(observed).not.toBe(escaped);
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
   return observed as QueryValidationError;
 }
 
@@ -625,6 +634,11 @@ describe("generated relation criteria", () => {
 });
 
 describe("regex criteria", () => {
+  test("refuses to trust the corpus on a Bun version it never recorded", () => {
+    expect(() => assertRecordedBun(["1.3.14", "1.4.0"], "9.9.9")).toThrow(/records Bun/u);
+    expect(() => assertRecordedBun(["1.3.14", "1.4.0"], "1.4.0")).not.toThrow();
+  });
+
   test("runs the shared corpus through Bun's native engine", async () => {
     const corpus = (await Bun.file(
       new URL("../fixtures/where_regex.json", import.meta.url),
@@ -634,17 +648,14 @@ describe("regex criteria", () => {
 
     expect(corpus.protocol).toBe("libtmux-where-regex-v1");
     expect(corpus.runtimes).toEqual({
-      bun: ["1.3.14", "1.4.0"],
+      bun: ["1.3.14", "1.4.0", "1.4.2"],
       node: "22",
       python: "3",
     });
     // Read off the corpus rather than repeated: this asserts that the engine
     // about to run the cases is the one whose answers were recorded, and the
     // corpus is where that is written down.
-    expect(
-      process.versions.bun,
-      `the regex corpus records Bun ${corpus.runtimes.bun.join(" and ")}; this is Bun ${process.versions.bun}. Run the suite on a recorded Bun, or regenerate the corpus.`,
-    ).toContain(process.versions.bun);
+    assertRecordedBun(corpus.runtimes.bun, process.versions.bun);
     expect(corpus.cases).toHaveLength(19);
     expect(new Set(corpus.cases.map(({ session_id }) => session_id)).size).toBe(
       corpus.cases.length,
@@ -1209,7 +1220,7 @@ describe("plain-data validation", () => {
 describe("WhereDocumentV1 serialization", () => {
   test("does not invoke inherited object or array toJSON hooks", () => {
     const script = String.raw`
-      import { encodeWhereDocument } from "./src/_internal/selection/serialization.js";
+      import { encodeWhereDocument } from ${JSON.stringify(builtModuleUrl("_internal/selection/serialization"))};
 
       const document = { model: "session", version: 1, where: { OR: [{ name: "alpha" }] } };
       let objectCalls = 0;
@@ -1245,13 +1256,9 @@ describe("WhereDocumentV1 serialization", () => {
 
       process.stdout.write(JSON.stringify({ arrayCalls, arrayEncoded, objectCalls, objectEncoded }));
     `;
-    const result = Bun.spawnSync(["bun", "--eval", script], {
-      cwd: tsRootPath,
-      stderr: "pipe",
-      stdout: "pipe",
-    });
-    expect(result.exitCode, result.stderr.toString()).toBe(0);
-    expect(JSON.parse(result.stdout.toString()) as unknown).toEqual({
+    const result = runModule(script);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout) as unknown).toEqual({
       arrayCalls: 0,
       arrayEncoded: '{"model":"session","version":1,"where":{"OR":[{"name":"alpha"}]}}',
       objectCalls: 0,
@@ -1261,8 +1268,8 @@ describe("WhereDocumentV1 serialization", () => {
 
   test("keeps intrinsic Date operations after callers patch globals", () => {
     const script = String.raw`
-      import { decodeFormatValue } from "./src/_internal/codec/format_values.js";
-      import { compileWhere } from "./src/_internal/selection/compile.js";
+      import { decodeFormatValue } from ${JSON.stringify(builtModuleUrl("_internal/codec/format_values"))};
+      import { compileWhere } from ${JSON.stringify(builtModuleUrl("_internal/selection/compile"))};
 
       const IntrinsicDate = Date;
       const originalGetTime = Date.prototype.getTime;
@@ -1292,13 +1299,9 @@ describe("WhereDocumentV1 serialization", () => {
         globalThis.Date = IntrinsicDate;
       }
     `;
-    const result = Bun.spawnSync(["bun", "--eval", script], {
-      cwd: tsRootPath,
-      stderr: "pipe",
-      stdout: "pipe",
-    });
-    expect(result.exitCode, result.stderr.toString()).toBe(0);
-    expect(JSON.parse(result.stdout.toString()) as unknown).toEqual({
+    const result = runModule(script);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout) as unknown).toEqual({
       calls: 0,
       decodedByIntrinsicDate: true,
       query: { session_created: "1" },

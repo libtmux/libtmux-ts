@@ -208,7 +208,7 @@ async function main(): Promise<void> {
     row.result,
     (row.orderedRuns ?? 0) === REPEATS
       ? "as requested"
-      : `reordered (${String(REPEATS - (row.orderedRuns ?? 0))}/${String(REPEATS)})`,
+      : `out of order in ${String(REPEATS - (row.orderedRuns ?? 0))} of ${String(REPEATS)} runs`,
   ]);
   const widths = header.map((cell, index) =>
     Math.max(cell.length, ...body.map((line) => line[index]?.length ?? 0)),

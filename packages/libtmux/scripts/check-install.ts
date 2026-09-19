@@ -29,6 +29,13 @@ function fail(message: string): never {
   throw new Error(message);
 }
 
+/** The oldest TypeScript a consumer may hold, pinned as a devDependency. */
+function floorCompiler(): string {
+  const candidate = join(tsRoot, "node_modules", "typescript-floor", "bin", "tsc");
+  if (!existsSync(candidate)) fail("typescript-floor is not installed beside the package");
+  return candidate;
+}
+
 function resolveBinary(name: string): string {
   let directory = tsRoot;
   for (;;) {
@@ -105,6 +112,11 @@ try {
     join(project, "declarations.ts"),
     [
       `import { decodeWhereDocument, encodeWhereDocument, OptionScope } from "${manifest.name}";`,
+      `import { LibTmuxError, WaitTimeoutError } from "${manifest.name}/errors";`,
+      `import { LibTmuxException, WaitTimeout } from "${manifest.name}/exc";`,
+      "const canonical: LibTmuxError = new LibTmuxException();",
+      "const legacy: WaitTimeout = new WaitTimeoutError();",
+      "void [canonical, legacy];",
       `import type { CommandOptions, JoinOptions, SetOptionOptions, WhereDocumentV1 } from "${manifest.name}";`,
       "declare const command: CommandOptions;",
       "declare const join: JoinOptions;",
@@ -147,6 +159,18 @@ try {
     COMMAND_TIMEOUT_MILLISECONDS,
   );
 
+  // And on the oldest TypeScript a consumer may be holding. The emitted
+  // declarations are built with the newest, which says nothing about whether
+  // an older one can read them: 5.6 and below ship no `ES2024` lib, so the
+  // configuration this README tells a consumer to use does not resolve there
+  // at all. The floor is pinned as a devDependency so the claim is compiled
+  // rather than asserted.
+  await run(
+    [process.execPath, floorCompiler(), "--project", "tsconfig.json"],
+    project,
+    COMMAND_TIMEOUT_MILLISECONDS,
+  );
+
   // Resolving proves each runtime selects its intended packed tree; calling
   // proves the modules evaluate rather than merely resolve.
   const probe = join(project, "probe.mjs");
@@ -155,6 +179,8 @@ try {
     [
       `import { decodeWhereDocument as decodeRoot, encodeWhereDocument as encodeRoot } from "${manifest.name}";`,
       `import { Server, TmuxTransportError, PaneDirection, OptionScope, safeInteger } from "${manifest.name}";`,
+      `import { LibTmuxError, WaitTimeoutError } from "${manifest.name}/errors";`,
+      `import { LibTmuxException, WaitTimeout } from "${manifest.name}/exc";`,
       `import { Server as ServerFromSubpath } from "${manifest.name}/server";`,
       `import { decodeWhereDocument, encodeWhereDocument, parseLegacyWhere } from "${manifest.name}/selection";`,
       `const bun = typeof Bun !== "undefined";`,
@@ -167,6 +193,8 @@ try {
       `}`,
       "const server = new Server({ socketName: 'ltx-canary' });",
       "if (Server !== ServerFromSubpath) throw new Error('Server exports have different identities');",
+      "if (LibTmuxError !== LibTmuxException || WaitTimeoutError !== WaitTimeout) throw new Error('Error aliases have different identities');",
+      "if (!(new WaitTimeoutError() instanceof LibTmuxException)) throw new Error('Error ancestry changed across imports');",
       "if (typeof server.snapshot !== 'function') throw new Error('Server.snapshot is missing');",
       "if (typeof server.watch !== 'function') throw new Error('Server.watch is missing');",
       "if (typeof TmuxTransportError !== 'function') throw new Error('TmuxTransportError is missing');",

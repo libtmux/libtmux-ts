@@ -1,6 +1,7 @@
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
 import { runCommand, runCommandBytes } from "./command.js";
-import { TmuxTransportError } from "../../exc.js";
+import { TmuxTransportError } from "../../errors.js";
+import type { SaveBufferOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 /**
@@ -20,12 +21,14 @@ export async function hasSession(runtime: RuntimeContext, name: string): Promise
       ),
     ),
   );
-  return result.returncode === 0;
+  return result.exitCode === 0;
 }
 
 /** Run a tmux config file against the server. */
 export async function sourceFile(runtime: RuntimeContext, path: string): Promise<void> {
-  await runCommand(runtime, ["source-file", path]);
+  // `--` keeps a path starting with `-` from being read as one of
+  // source-file's own flags.
+  await runCommand(runtime, ["source-file", "--", path]);
 }
 
 /** Every command name the running tmux understands. */
@@ -39,7 +42,10 @@ export async function setBuffer(
   name: string,
   data: string,
 ): Promise<void> {
-  await runCommand(runtime, ["set-buffer", "-b", name, data]);
+  // `--` keeps data starting with `-` from being read as one of set-buffer's
+  // own flags; the buffer name reaches tmux through `-b`, which is safe
+  // regardless of what it starts with.
+  await runCommand(runtime, ["set-buffer", "-b", name, "--", data]);
 }
 
 /**
@@ -88,15 +94,15 @@ export async function saveBuffer(
   runtime: RuntimeContext,
   name: string,
   path: string,
-  options: { readonly append?: boolean } = {},
+  options: SaveBufferOptions = {},
 ): Promise<void> {
-  await runCommand(runtime, [
-    "save-buffer",
-    ...(options.append === true ? ["-a"] : []),
-    "-b",
-    name,
-    path,
-  ]);
+  await runCommand(
+    runtime,
+    // `--` keeps a path starting with `-` from being read as one of
+    // save-buffer's own flags.
+    ["save-buffer", ...(options.append === true ? ["-a"] : []), "-b", name, "--", path],
+    options,
+  );
 }
 
 /** Discard a named paste buffer. */
@@ -122,11 +128,12 @@ export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
         ),
       ),
     );
-    return result.returncode === 0;
+    return result.exitCode === 0;
   } catch (error) {
     if (
       error instanceof TmuxTransportError &&
       error.kind !== "cancelled" &&
+      error.kind !== "contract" &&
       error.kind !== "timeout"
     ) {
       return false;
@@ -143,6 +150,6 @@ export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
  * check with nothing to check: `isAlive` answers yes or no, this one answers
  * with tmux's reason.
  */
-export async function raiseIfDead(runtime: RuntimeContext): Promise<void> {
+export async function checkAlive(runtime: RuntimeContext): Promise<void> {
   await runCommand(runtime, ["list-sessions"]);
 }

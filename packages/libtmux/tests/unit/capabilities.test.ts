@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
+import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   deriveTmuxCapabilities,
@@ -28,10 +28,10 @@ function epoch(value: number): DaemonEpoch {
 function resultFor(request: CommandRequest, version: string): RawCommandResult {
   return {
     cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\t101\t202\n`),
+    stdout: encoder.encode(`${version};101;202\n`),
   };
 }
 
@@ -149,7 +149,7 @@ describe("tmux capabilities", () => {
       "-S/tmp/capability.sock",
       "display-message",
       "-p",
-      "#{version}\t#{pid}\t#{start_time}",
+      "#{version};#{pid};#{start_time}",
     ]);
 
     currentEpoch = epoch(10);
@@ -298,37 +298,37 @@ describe("tmux capabilities", () => {
     const replies = [
       {
         diagnostic: "tmux version probe returned no version",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
         stdout: "",
       },
       {
         diagnostic: "tmux version probe returned multiple versions",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
         stdout: "3.7b\n3.7a\n",
       },
       {
         diagnostic: "invalid tmux version",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
-        stdout: "#{version}\t101\t202\n",
+        stdout: "#{version};101;202\n",
       },
       {
         diagnostic: "tmux capability probe returned an invalid daemon identity",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
-        stdout: "3.7b\t101\n",
+        stdout: "3.7b;101\n",
       },
       {
         diagnostic: "tmux capability probe returned an invalid daemon identity",
-        returncode: 0,
+        exitCode: 0,
         stderr: "",
-        stdout: "3.7b\tone\t202\n",
+        stdout: "3.7b;one;202\n",
       },
       {
         diagnostic: "cannot reach tmux: no server running",
-        returncode: 1,
+        exitCode: 1,
         stderr: "no server running\n",
         stdout: "",
       },
@@ -340,7 +340,7 @@ describe("tmux capabilities", () => {
         requests.push(request);
         return {
           cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-          returncode: reply.returncode,
+          exitCode: reply.exitCode,
           signal: null,
           stderr: encoder.encode(reply.stderr),
           stdout: encoder.encode(reply.stdout),
@@ -365,9 +365,9 @@ describe("tmux capabilities", () => {
         "-N",
         "display-message",
         "-p",
-        "#{version}\t#{pid}\t#{start_time}",
+        "#{version};#{pid};#{start_time}",
       ]);
-      expect(probeError).toBeInstanceOf(LibTmuxException);
+      expect(probeError).toBeInstanceOf(LibTmuxError);
       expect((probeError as Error).message).toContain(reply.diagnostic);
     }
   });

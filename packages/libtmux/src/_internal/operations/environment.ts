@@ -1,6 +1,6 @@
 import type { EnvironmentScope, EnvironmentValue, SetEnvironmentOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { TmuxCommandError } from "../../exc.js";
+import { TmuxCommandError } from "../../errors.js";
 import { runCommand } from "./command.js";
 
 function scopeArguments(
@@ -65,7 +65,14 @@ export async function getEnvironment(
 ): Promise<EnvironmentValue | undefined> {
   let lines: readonly string[];
   try {
-    lines = await runCommand(runtime, ["show-environment", ...scopeArguments(scope, target), name]);
+    // `--` keeps a name starting with `-` from being read as one of
+    // show-environment's own flags (`-h` lists hidden variables instead).
+    lines = await runCommand(runtime, [
+      "show-environment",
+      ...scopeArguments(scope, target),
+      "--",
+      name,
+    ]);
   } catch (error) {
     if (error instanceof TmuxCommandError && error.stderrIncludes("unknown variable")) {
       return undefined;
@@ -95,6 +102,9 @@ export async function setEnvironment(
       ...scopeArguments(scope, target),
       ...(options.expandFormat === true ? ["-F"] : []),
       ...(options.hidden === true ? ["-h"] : []),
+      // `--` keeps a name or value starting with `-` from being read as one
+      // of set-environment's own flags.
+      "--",
       name,
       value,
     ],
@@ -109,7 +119,14 @@ export async function unsetEnvironment(
   target: string | null | undefined,
   name: string,
 ): Promise<void> {
-  await runCommand(runtime, ["set-environment", "-u", ...scopeArguments(scope, target), name]);
+  // `--` keeps a name starting with `-` from being read as a flag.
+  await runCommand(runtime, [
+    "set-environment",
+    "-u",
+    ...scopeArguments(scope, target),
+    "--",
+    name,
+  ]);
 }
 
 /**
@@ -125,5 +142,12 @@ export async function removeEnvironment(
   target: string | null | undefined,
   name: string,
 ): Promise<void> {
-  await runCommand(runtime, ["set-environment", "-r", ...scopeArguments(scope, target), name]);
+  // `--` keeps a name starting with `-` from being read as a flag.
+  await runCommand(runtime, [
+    "set-environment",
+    "-r",
+    ...scopeArguments(scope, target),
+    "--",
+    name,
+  ]);
 }

@@ -3,14 +3,14 @@
  *
  * Node reports a broken pipe as its own `Error`, with a `code` and nothing
  * else. Handed on unchanged it is invisible to `catch (error) { if (error
- * instanceof LibTmuxException) }`, and it carries no `delivery` — which is the
+ * instanceof LibTmuxError) }`, and it carries no `delivery` — which is the
  * one fact a caller needs about a command that was written and never answered.
  */
 
 import { describe, expect, test } from "bun:test";
 
 import { transportFailure } from "../../src/_internal/control/connection.js";
-import { LibTmuxException, TmuxTransportError } from "../../src/exc.js";
+import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
 
 function nodeError(code: string): Error {
   return Object.assign(new Error(`${code}: broken pipe, send`), { code });
@@ -21,7 +21,7 @@ describe("a broken connection in this package's terms", () => {
     const failure = transportFailure(nodeError("EPIPE"));
 
     expect(failure).toBeInstanceOf(TmuxTransportError);
-    expect(failure).toBeInstanceOf(LibTmuxException);
+    expect(failure).toBeInstanceOf(LibTmuxError);
     expect(failure.kind).toBe("pipe");
     // Written and never answered: tmux may have run it, so retrying a
     // kill-session is how one becomes two.

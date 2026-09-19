@@ -321,7 +321,7 @@ type _BooleanDomain = Expect<
   MutuallyAssignable<PaneWhere["active"], ExpectedScalarCriteria<boolean, "0" | "1">>
 >;
 type _NumberDomain = Expect<
-  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<SafeInteger, ExpectedRawNumber>>
+  MutuallyAssignable<PaneWhere["pid"], ExpectedScalarCriteria<number, ExpectedRawNumber>>
 >;
 type _TimeDomain = Expect<
   MutuallyAssignable<SessionWhere["created"], ExpectedScalarCriteria<Date, ExpectedRawNumber>>
@@ -349,9 +349,11 @@ type _NumberRefusesNegativeZero = Expect<
 type _NumberTakesZero = Expect<Equal<"0" extends PaneWhere["pid"] ? true : false, true>>;
 type _NumberTakesPositive = Expect<Equal<"42" extends PaneWhere["pid"] ? true : false, true>>;
 type _NumberTakesNegative = Expect<Equal<"-42" extends PaneWhere["pid"] ? true : false, true>>;
-type _NumberRefusesBareNumber = Expect<
-  Equal<number extends PaneWhere["pid"] ? true : false, false>
->;
+// A number written as one is the commonest query in the API, so it compiles;
+// a value that is not an exact integer raises `QueryValidationError` naming
+// the field. The type cannot see a number that arrived at runtime, so that
+// check has to be at the boundary whatever the type says.
+type _NumberTakesBareNumber = Expect<Equal<number extends PaneWhere["pid"] ? true : false, true>>;
 type _NumberTakesSafeInteger = Expect<
   Equal<SafeInteger extends PaneWhere["pid"] ? true : false, true>
 >;
@@ -535,6 +537,23 @@ sessions.where(sessionDocument);
 parseLegacyWhere("pane", { name__contains: "x" });
 // @ts-expect-error Client is not a legacy adapter model.
 parseLegacyWhere("client", { name__contains: "x" });
+
+// A numeric criterion takes a number written as one. Requiring `safeInteger`
+// for a literal made the commonest query in the API a compile error, and the
+// runtime check that rejects a fraction has to be there regardless — the type
+// cannot see a number that arrived at runtime.
+windows.where({ index: 3 });
+panes.where({ pid: 2334787 });
+declare const brandedIndex: SafeInteger;
+windows.where({ index: brandedIndex });
+declare const runtimeNumber: number;
+windows.where({ index: runtimeNumber });
+// Wire text stays exact, so a spelling no number encodes to is still refused.
+windows.where({ index: "3" });
+// @ts-expect-error no number encodes to "banana".
+panes.where({ pid: "banana" });
+// @ts-expect-error a flag encodes to "0" or "1"; nothing else is a flag.
+panes.where({ active: "yes" });
 
 void sessionCriteria;
 void windowCriteria;
