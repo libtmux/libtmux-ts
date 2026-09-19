@@ -93,6 +93,10 @@ import type { CommandTransport } from "./_internal/transport/types.js";
  */
 export type DaemonIdentity = DaemonGuard;
 
+// The same bound the MCP server and `waitFor` already use, so one number
+// answers "how long before this library gives up on tmux".
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export interface ServerOptions {
   readonly colors?: 88 | 256;
   readonly configFile?: string;
@@ -120,15 +124,17 @@ export interface ServerOptions {
   readonly socketName?: string;
   readonly socketPath?: string;
   /**
-   * Default deadline, in milliseconds, for every command this server runs.
+   * Default deadline, in milliseconds, for every command this server runs:
+   * 30 seconds unless set. `null` removes it, so commands wait as long as tmux
+   * takes.
    *
-   * Must be a positive timer-safe integer.
-   *
-   * A single call can override it. Without either, a command waits as long as
-   * tmux takes; a long-lived process that cannot bound its work cannot recover
-   * from a daemon that stops answering.
+   * Must be a positive timer-safe integer or `null`. A single call can
+   * override it either way. Commands that wait on a person — `display-popup`,
+   * `display-menu`, `command-prompt`, `confirm-before`, `display-panes` and
+   * `wait-for` — get no default, since bounding them would cut the person off;
+   * a deadline passed on the call itself still applies to them.
    */
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | null;
   readonly tmuxBin?: string;
   /**
    * Called once per tmux invocation, after it answers or fails.
@@ -228,7 +234,9 @@ export class Server {
       connectionAlias: randomUUID() as ConnectionAlias,
       daemonEpoch: 0 as DaemonEpoch,
       ...(options?.engine === undefined ? {} : { engine: options.engine }),
-      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options?.timeoutMs === null
+        ? {}
+        : { timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS }),
       transport: new BoundedTransport(
         options?.engine ?? new NodeSpawnTransport(),
         options?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT,

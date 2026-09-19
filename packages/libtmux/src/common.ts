@@ -86,8 +86,8 @@ export interface CommandOptions {
    *
    * Must be a positive timer-safe integer.
    *
-   * Overrides the server's default. Without either, a command waits as long as
-   * tmux takes, which for a wedged daemon is forever.
+   * Overrides the server's default, which is 30 seconds unless the server was
+   * built with another. `null` removes the deadline for this call alone.
    *
    * Bounds only this call's own wait. On `["wait-for", "-L", name]` in
    * particular, tmux queues a lock request and hands it to the first queued
@@ -97,7 +97,7 @@ export interface CommandOptions {
    * channel for every future locker until the process that requested it
    * unlocks it, which a caller that gave up on the wait will never do.
    */
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | null;
 }
 
 export interface CommandResult {

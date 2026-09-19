@@ -69,9 +69,15 @@ function skipBalanced(text: string, from: number, open: string, close: string): 
   return cursor;
 }
 
-/** The whole bag went on, or its two deadline members were read out of it. */
+/**
+ * The whole bag went on, or its two deadline members were read out of it, or
+ * `timeoutMs` alone was taken out to be resolved — a `null` there means "no
+ * deadline" and must not reach a timer — and the rest spread on after it.
+ * Taking `signal` out that way is not accepted, since nothing then shows it
+ * went anywhere.
+ */
 const FORWARDS =
-  /[(,]\s*options\s*[,)]|\.\.\.options\b|options\??\.(?:signal|timeoutMs)|\boptions,\s*$/mu;
+  /[(,]\s*options\s*[,)]|\.\.\.options\b|options\??\.(?:signal|timeoutMs)|\boptions,\s*$|\{\s*timeoutMs\s*,\s*\.\.\.(\w+)\s*\}\s*=\s*options\b[\s\S]*?\.\.\.\1\b/mu;
 
 const TAKES_OPTIONS = /\boptions\??\s*:\s*[A-Za-z]*Options\b/u;
 
@@ -168,6 +174,39 @@ describe("command option forwarding", () => {
     await server.saveBuffer("scratch", "/tmp/ltx-nowhere", { timeoutMs: 16 });
 
     expect(requests.map((request) => request.timeoutMs)).toEqual([11, 12, 13, 14, 15, 16]);
+  });
+
+  /**
+   * A command is bounded unless told otherwise. `null` lifts the bound on the
+   * server or on one call; a command that waits on a person gets none by
+   * default, since a deadline would cut them off, though one passed on the
+   * call still binds it. `wait` is tmux's own short name for `wait-for`.
+   */
+  test("bounds a command by default, and lifts it for null and for a person", async () => {
+    const requests: TmuxInvocationRequest[] = [];
+    const engine = singleCommandTransport((request) => {
+      requests.push(request);
+      return Promise.resolve(success(request));
+    });
+    const server = new Server({ engine });
+
+    await server.cmd("list-sessions");
+    await server.cmd("list-sessions", [], { timeoutMs: null });
+    await server.cmd("wait-for", ["ltx-channel"]);
+    await server.cmd("wait", ["ltx-channel"]);
+    await server.cmd("display-popup", [], { timeoutMs: 9 });
+    await new Server({ engine, timeoutMs: null }).cmd("list-sessions");
+    await new Server({ engine, timeoutMs: 7 }).cmd("list-sessions");
+
+    expect(requests.map((request) => request.timeoutMs)).toEqual([
+      30_000,
+      undefined,
+      undefined,
+      undefined,
+      9,
+      undefined,
+      7,
+    ]);
   });
 
   test("lets a per-call signal cancel one command without the server's", async () => {

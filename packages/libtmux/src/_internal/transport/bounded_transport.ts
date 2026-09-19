@@ -21,6 +21,10 @@ export const DEFAULT_MAX_IN_FLIGHT = 16;
  * descriptors where a bounded command would have queued. Deadlocking the
  * release is the worse failure, and it is the certain one.
  *
+ * The same list exempts them from the server's default deadline, for the
+ * same reason read the other way: a wait the library cut short would be one
+ * the person had not finished.
+ *
  * Naming the command rather than the flag is what
  * lets the release through too, since `wait-for -S` and `display-popup -C`
  * are the same command as the thing they end.
@@ -63,7 +67,7 @@ const UNBOUNDED_ALIASES: ReadonlySet<string> = new Set([
  * when tmux sees only the second. Ambiguity is judged within this set, so the
  * worst a prefix can do is exempt a command that blocks anyway.
  */
-function reachesUnboundedCommand(name: string): boolean {
+export function reachesUnboundedCommand(name: string): boolean {
   if (UNBOUNDED_ALIASES.has(name) || UNBOUNDED_COMMANDS.has(name)) return true;
   let found: string | undefined;
   for (const candidate of UNBOUNDED_COMMANDS) {

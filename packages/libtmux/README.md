@@ -1085,12 +1085,13 @@ than restate them.
 
 ## Deadlines and cancellation
 
-A command with no deadline waits as long as tmux takes, which for a daemon that
-stops answering is forever. Set one for the whole server, and override or cancel
-a single call:
+Every command gets 30 seconds unless the server or the call says otherwise.
+Change it for the whole server, lift it with `null`, and override or cancel a
+single call:
 
 ```ts
 const server = new Server({ timeoutMs: 10_000 });
+const patient = new Server({ timeoutMs: null }); // waits as long as tmux takes
 
 const controller = new AbortController();
 const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
@@ -1108,7 +1109,10 @@ have run. What you passed to `abort()` is preserved as `cause`.
 Every operation that takes options accepts both, so the rule you learn on one
 method holds on the next. The default applies to every command the server runs,
 including the version probe it makes first and the identity read plus four
-listings behind `snapshot()`. `signal` is
+listings behind `snapshot()` — except a popup, a menu, a prompt, a confirmation,
+`display-panes` and `wait-for`. Those wait on a person or on another command,
+and a default would cut them off; a deadline passed on the call still binds
+them. `signal` is
 typed structurally, so a real `AbortSignal` satisfies it without the published
 types requiring a DOM or Node library.
 

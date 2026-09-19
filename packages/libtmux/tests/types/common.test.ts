@@ -173,7 +173,7 @@ type _CommandOptions = Expect<
     {
       readonly signal?: AbortLike;
       readonly stdin?: string | Uint8Array;
-      readonly timeoutMs?: number;
+      readonly timeoutMs?: number | null;
     }
   >
 >;

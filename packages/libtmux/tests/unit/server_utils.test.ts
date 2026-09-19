@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Server } from "../../src/server.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
+import { TmuxTransportError } from "../../src/errors.js";
 import { singleCommandTransport } from "../support/transport_double.js";
 
 function success(request: TmuxInvocationRequest): TmuxCommandResult {
@@ -65,6 +66,24 @@ describe("server utility requests", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]?.signal).toBe(controller.signal);
     expect(requests[0]?.timeoutMs).toBe(37);
+  });
+
+  test("rejects on a timeout rather than answering that nothing is there", async () => {
+    const engine = singleCommandTransport(() =>
+      Promise.reject(
+        new TmuxTransportError("tmux did not answer", {
+          delivery: "indeterminate",
+          kind: "timeout",
+          signal: "SIGTERM",
+          stderr: new Uint8Array(),
+          stdout: new Uint8Array(),
+        }),
+      ),
+    );
+    const server = new Server({ engine });
+
+    await expect(server.isAlive()).rejects.toMatchObject({ kind: "timeout" });
+    await expect(server.hasSession("work")).rejects.toMatchObject({ kind: "timeout" });
   });
 
   test("does not hide an engine programming error as a dead server", async () => {

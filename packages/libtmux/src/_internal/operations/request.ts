@@ -21,10 +21,17 @@ export function connectionArguments(connection: TmuxConnection): string[] {
   return args;
 }
 
+/** What a request is built from: the caller's options with the deadline already resolved. */
+type RequestOptions = Omit<CommandOptions, "timeoutMs"> & {
+  readonly daemonGuard?: DaemonGuard;
+  readonly rawOutput?: true;
+  readonly timeoutMs?: number;
+};
+
 export function prepareCommandRequest(
   connection: TmuxConnection,
   args: readonly string[],
-  options: CommandOptions & { readonly daemonGuard?: DaemonGuard; readonly rawOutput?: true } = {},
+  options: RequestOptions = {},
 ): CommandRequest {
   return prepareInvocationRequest(connection, [args], options);
 }
@@ -38,7 +45,7 @@ function prepareCommand(args: readonly string[]): TmuxCommand {
 export function prepareInvocationRequest(
   connection: TmuxConnection,
   commands: readonly (readonly string[])[],
-  options: CommandOptions & { readonly daemonGuard?: DaemonGuard; readonly rawOutput?: true } = {},
+  options: RequestOptions = {},
 ): CommandRequest {
   const [first, ...rest] = commands;
   if (first === undefined) throw new TypeError("tmux invocation must contain a command");

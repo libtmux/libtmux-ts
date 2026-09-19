@@ -83,7 +83,7 @@ type ExpectedServerOptions = {
   readonly onInvocation?: TmuxInvocationObserver;
   readonly socketName?: string;
   readonly socketPath?: string;
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | null;
   readonly tmuxBin?: string;
 };
 
