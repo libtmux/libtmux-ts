@@ -64,6 +64,12 @@ tiles its panes, where tmuxp stacks them by halving the last one. Explicit
 `layout` and `focus` agree with tmuxp, and so does the pane left active when
 nothing sets `focus`: the last pane created in the focused window.
 
+[`@libtmux/workspace`](../workspace) is a separate implementation, not this
+command's engine: it converges a session that already exists, and its strict
+schema rejects `environment`, `before_script`, `window_index`,
+`suppress_history`, `x-` keys and the other fields below. A document written
+here is not necessarily one that package accepts.
+
 Loading reuses an existing session, and compares it against the document rather
 than rebuilding it: a window the document names that the session does not hold
 is reported, exit 1, and nothing is changed. Without `-d`, load attaches the
