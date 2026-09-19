@@ -582,14 +582,25 @@ await pane.enterCopyMode();
 await pane.exitCopyMode();
 ```
 
-The choosers and popups do need a client, and each stays up until someone
-dismisses it:
+The choosers and popups all need a client, and they divide on what awaiting
+one means. A popup and a menu stay open until someone dismisses them, and tmux
+answers only then, so the promise reports that it is over:
 
-<!-- static: each opens a chooser that stays on screen until a person dismisses it -->
+<!-- static: each stays on screen until a person dismisses it -->
 
 ```ts
 await pane.displayPopup("less README.md");
 await pane.displayMenu("Pane", [{ command: "kill-pane", key: "k", name: "Kill" }]);
+```
+
+The rest resolve as soon as the chooser is on screen. Awaiting one tells you it
+opened, never what was chosen — measured on tmux 3.7c, where `choose-tree`
+returns in single-digit milliseconds against the three seconds a menu takes to
+be dismissed. Bind a tmux command to the selection if you need to act on it:
+
+<!-- static: each opens a chooser that stays on screen until a person dismisses it -->
+
+```ts
 await pane.chooseTree();
 await pane.chooseBuffer();
 await pane.findWindow("editor");

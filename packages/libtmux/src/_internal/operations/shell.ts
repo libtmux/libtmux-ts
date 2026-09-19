@@ -146,7 +146,6 @@ export async function breakPane(
   await runCommand(runtime, ["rename-window", "-t", created, assertName("window", windowName)]);
 }
 
-/** Move a pane into another window, joining it as a split. */
 /**
  * The axis flags a join takes, refusing the two spellings together.
  *
@@ -161,6 +160,7 @@ function joinAxis(options: JoinOptions): readonly string[] {
   return options.vertical === false ? ["-h"] : [];
 }
 
+/** Move a pane into another window, joining it as a split. */
 export async function joinPane(
   runtime: RuntimeContext,
   paneId: string | null,
