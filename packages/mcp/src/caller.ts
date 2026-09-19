@@ -119,7 +119,18 @@ export interface ServerAuthority {
   readonly startTime: string;
 }
 
-const AUTHORITY_FORMAT = "#{socket_path}\t#{pid}\t#{start_time}";
+/**
+ * The daemon's identity, with the one variable-length field last.
+ *
+ * `;` rather than a tab because tmux sanitizes a literal tab out of
+ * `display-message` output when the client's locale is not a UTF-8 one,
+ * substituting `_` and running the fields together — which broke this read
+ * entirely under a systemd unit, a container, or an MCP client that curates
+ * the environment it passes on. A socket path may itself contain `;`, so it
+ * goes last and takes every remaining field; the two before it are digits and
+ * cannot.
+ */
+const AUTHORITY_FORMAT = "#{pid};#{start_time};#{socket_path}";
 
 async function socketIdentity(path: string): Promise<{
   readonly endpointDevice: string;
@@ -156,13 +167,15 @@ export async function readServerAuthority(
     ...(signal === undefined ? {} : { signal }),
     target: null,
   });
-  const fields = lines.length === 1 ? lines[0]?.split("\t") : undefined;
-  const socketPath = fields?.[0];
-  const pid = fields?.[1];
-  const startTime = fields?.[2];
+  const fields = lines.length === 1 ? lines[0]?.split(";") : undefined;
+  const pid = fields?.[0];
+  const startTime = fields?.[1];
+  // Rejoined, not indexed: a socket path containing `;` arrives split.
+  const socketPath = fields === undefined ? undefined : fields.slice(2).join(";");
   if (
-    fields?.length !== 3 ||
+    (fields?.length ?? 0) < 3 ||
     socketPath === undefined ||
+    socketPath === "" ||
     !isAbsolute(socketPath) ||
     !/^[1-9][0-9]*$/u.test(pid ?? "") ||
     !/^[1-9][0-9]*$/u.test(startTime ?? "")

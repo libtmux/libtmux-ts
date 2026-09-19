@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Pane, ServerSnapshot } from "libtmux";
-import type { Server } from "libtmux/server";
+import { Server } from "libtmux/server";
 
 import {
   readCallerEnvironment,
@@ -17,6 +17,7 @@ import {
 import { createContext } from "../src/context.js";
 import { resolvePolicy } from "../src/policy.js";
 import { isFailure, requirePaneInputTarget } from "../src/target_resolution.js";
+import { withServer } from "./support/server_harness.js";
 
 function snapshot(
   options: {
@@ -54,7 +55,7 @@ function snapshot(
 
 function server(pid = "42", socketPath = "/tmp/libtmux-caller-selected"): Server {
   return {
-    cmd: async () => [`${socketPath}\t${pid}\t700`],
+    cmd: async () => [`${pid};700;${socketPath}`],
     daemonIdentity: async () => ({ pid, startTime: "700" }),
     socketPath,
   } as unknown as Server;
@@ -94,6 +95,34 @@ async function withSocket<T>(body: (socketPath: string) => Promise<T>): Promise<
   }
 }
 
+/**
+ * `readServerAuthority` sits under every pane-input tool, so whatever breaks it
+ * breaks `send_keys` and `run_shell_command`. tmux sanitizes a literal tab out
+ * of `display-message` output when the client's locale is not a UTF-8 one,
+ * substituting `_` and running the fields together — and an MCP server is
+ * routinely launched by a client that curates the environment it passes on.
+ */
+test("reads the daemon authority with no locale in the environment", async () => {
+  await withServer(async (fixture) => {
+    const stripped = Object.fromEntries(
+      Object.entries(fixture.controllerEnvironment).filter(
+        ([name]) => !name.startsWith("LC_") && name !== "LANG",
+      ),
+    );
+    const tmux = new Server({
+      environment: stripped,
+      socketPath: fixture.socketPath,
+      tmuxBin: fixture.tmuxExecutable,
+    });
+
+    const authority = await readServerAuthority(tmux);
+
+    expect(authority.socketPath).toBe(fixture.socketPath);
+    expect(authority.pid).toMatch(/^[1-9][0-9]*$/u);
+    expect(authority.startTime).toMatch(/^[1-9][0-9]*$/u);
+  });
+}, 60_000);
+
 test("caller environment distinguishes detached, invalid, and attached context", () => {
   expect(readCallerEnvironment({}).status).toBe("detached");
 
@@ -130,7 +159,7 @@ test("caller environment distinguishes detached, invalid, and attached context",
 test("server authority rejects control bytes in its reported socket", async () => {
   await expect(
     readServerAuthority({
-      cmd: async () => ["/tmp/libtmux\ncaller\t42\t700"],
+      cmd: async () => ["42;700;/tmp/libtmux\ncaller"],
       socketPath: "/tmp/libtmux-caller-selected",
     } as unknown as Server),
   ).rejects.toThrow("control");
@@ -326,7 +355,7 @@ test("terminal client topology accepts the matching linked-pane placement", asyn
 test("input observation rejects a daemon transition around its snapshot", async () => {
   await withSocket(async (base) => {
     const events: string[] = [];
-    const authorities = [`${base}\t42\t700`, `${base}\t42\t701`];
+    const authorities = [`42;700;${base}`, `42;701;${base}`];
     const tmux = {
       cmd: async () => {
         events.push("authority");
