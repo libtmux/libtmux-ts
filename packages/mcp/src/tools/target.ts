@@ -543,6 +543,7 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
             // eslint-disable-next-line no-await-in-loop -- batch input is deliberately ordered.
             await dispatchPaneKeys(final.pane, operation.keys, {
               ...(operation.enter === undefined ? {} : { enter: operation.enter }),
+              identity: final.observation.authority,
               ...(operation.literal === undefined ? {} : { literal: operation.literal }),
             });
             targets.push({ index, resolvedPaneIds: final.resolvedPaneIds });

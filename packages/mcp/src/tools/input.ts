@@ -18,10 +18,10 @@ import {
   runFramedCommand,
 } from "../command.js";
 import type { ToolContext } from "../context.js";
+import { noteLiteralWrite } from "../pane_echo.js";
 import {
   busyPane,
   dispatchPaneKeys,
-  notePaneEcho,
   paneInputChanged,
   planPaneInput,
   type PaneInputPlan,
@@ -167,6 +167,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         }
         await dispatchPaneKeys(final.pane, keys, {
           ...(enter === undefined ? {} : { enter }),
+          identity: final.observation.authority,
           ...(literal === undefined ? {} : { literal }),
         });
         const attended = final.resolvedPaneIds.some((id) =>
@@ -252,8 +253,11 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             if (isFailure(final) || final.signature !== initial.signature) {
               refusal = paneInputChanged(paneId, "paste_text");
             } else {
+              // Recorded before the paste, not after: tmux can relay the
+              // resulting echo to an already-subscribed wait before this
+              // call's own paste confirmation returns.
+              noteLiteralWrite(final.pane.id, final.observation.authority, text, enter === true);
               await final.pane.pasteBuffer(bufferName);
-              notePaneEcho(final.pane.id, text, enter === true);
             }
           } catch (error) {
             operationFailure = { error };

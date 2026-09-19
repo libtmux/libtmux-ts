@@ -211,9 +211,13 @@ than silently overwritten; every tool carries the same conservative
 annotations, and `tmux://capabilities` is what tells them apart. (#26)
 
 `wait_for_text` no longer reports a plain `matched` for text this server
-itself typed into a pane but never submitted, or text already on screen
-before the wait subscribed. A genuinely slow command's own output still
-matches normally. (#26)
+itself typed into a pane — unsubmitted, or submitted within the last ten
+seconds — or text already on screen before the wait subscribed; it discounts
+only whole standalone occurrences, so a short typed answer no longer corrupts
+a longer word of real output that contains it. A key `send_keys` cannot apply
+to a line (an arrow, Home, Tab, a function key) stops that pane's line from
+being discounted at all, rather than leaving it stuck on stale text. A
+genuinely slow command's own output still matches normally. (#26)
 
 `list_sessions`, `get_session_info`, `create_session` and
 `rename_session` now report `humanAttachedClients` alongside

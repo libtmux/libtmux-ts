@@ -3,6 +3,12 @@ import type { Pane } from "libtmux";
 
 import type { PaneInputConflict } from "./command.js";
 import type { PaneInputObservation } from "./context.js";
+import {
+  noteKeyDispatch,
+  noteLiteralWrite,
+  pruneDeadPanes,
+  type PaneServerIdentity,
+} from "./pane_echo.js";
 import { fail } from "./results.js";
 import {
   isFailure,
@@ -131,6 +137,10 @@ export function planPaneInput(
   verb: string,
 ): CallToolResult | PaneInputPlan {
   const { identity, snapshot } = observation;
+  // Bounds the echo store: a pane that no longer exists cannot be waited on
+  // again, so nothing needs to keep discounting its typed text. Piggybacks on
+  // a snapshot every pane-input call already has, rather than a timer.
+  pruneDeadPanes(new Set(snapshot.panes.toArray().map((candidate) => candidate.id)));
   const pane = requirePaneInputTarget(snapshot, identity, paneId, force, verb);
   if (isFailure(pane)) return pane;
   const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
@@ -194,49 +204,37 @@ export function busyPane(conflict: PaneInputConflict): ReturnType<typeof fail> {
 }
 
 /**
- * What this server has typed into a pane that it has not itself submitted.
+ * Dispatch keys and optional Enter as one daemon-guarded tmux command list.
  *
- * `wait_for_text` reads this to exclude a shell's own re-print of type-ahead
- * from counting as output the pane produced: the re-print is genuinely
- * new bytes on the stream, arriving after a wait subscribes, so nothing about
- * its timing tells it apart from real output — only knowing what was typed
- * does. Submitting (an `enter: true` write) clears it; further un-submitted
- * writes append, matching a pane's own input line.
- *
- * Keyed by pane id alone, not by the caller authority `activeInputs`
- * (`command.ts`) also keys on: a pane id tmux hands out again after this
- * server's server restarts under it could carry a stale entry forward. That
- * only ever widens what a wait excludes, never narrows it, so the failure
- * mode is a slower match, not a false one.
+ * Recorded (`pane_echo.ts`, via `identity`) before the command is sent, not
+ * after: tmux can emit the resulting `%output` notification to a stream
+ * `wait_for_text` is already watching before this call's own acknowledgement
+ * comes back, and a wait must never see that echo before the pending record
+ * that discounts it exists. `identity` is omitted only by callers that have
+ * no `InputAuthority` on hand (some framed-command tests); the dispatch still
+ * happens, just without an echo record to discount it by.
  */
-const pendingEcho = new Map<string, string>();
-
-/** The text this server typed into `paneId` and has not yet submitted, if any. */
-export function pendingUnsubmittedEcho(paneId: string): string | undefined {
-  return pendingEcho.get(paneId);
-}
-
-/** Record what a write put on a pane's input line, for {@link pendingUnsubmittedEcho}. */
-export function notePaneEcho(paneId: string, keys: string, submitted: boolean): void {
-  if (submitted) {
-    pendingEcho.delete(paneId);
-    return;
-  }
-  pendingEcho.set(paneId, (pendingEcho.get(paneId) ?? "") + keys);
-}
-
-/** Dispatch keys and optional Enter as one daemon-guarded tmux command list. */
 export async function dispatchPaneKeys(
   pane: Pane,
   keys: string,
-  options: { readonly enter?: boolean; readonly literal?: boolean } = {},
+  options: {
+    readonly enter?: boolean;
+    readonly identity?: PaneServerIdentity;
+    readonly literal?: boolean;
+  } = {},
 ): Promise<void> {
   const enter = options.enter !== false;
+  if (options.identity !== undefined) {
+    if (options.literal === true) {
+      noteLiteralWrite(pane.id, options.identity, keys, enter);
+    } else {
+      noteKeyDispatch(pane.id, options.identity, keys, enter);
+    }
+  }
   await pane.cmd(
     "send-keys",
     options.literal === true
       ? ["-l", enter ? `${keys}\n` : keys]
       : [keys, ...(enter ? ["Enter"] : [])],
   );
-  notePaneEcho(pane.id, keys, enter);
 }
