@@ -1116,6 +1116,23 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     await progress?.clear(AbortSignal.timeout(100)).catch(() => {});
   }
 }
+// load already refuses a session_name or window_name holding "." or ":",
+// since tmux reads them as target separators; capturing one into a document
+// would only produce a file load rejects. Refuse the same names here, on the
+// string alone, before asking tmux whether anything is running under it --
+// what a session ends up named once created (rewritten before 3.7, refused
+// by 3.7 itself, kept verbatim from 3.7a on) is not part of the question.
+function addressable(name: string): boolean {
+  return isTmuxName(name);
+}
+const requireAddressableName = (kind: "session" | "window", name: string | null): void => {
+  if (name !== null && !addressable(name))
+    throw new CliError(
+      "invalid_workspace",
+      `The ${kind} named ${name} cannot be captured: tmux reads "." and ":" as target separators, so a workspace could not name it again`,
+    );
+};
+
 async function freezeSession(
   server: Server,
   request: Request,
@@ -1124,6 +1141,7 @@ async function freezeSession(
   const name = request.values.session_name;
   const explicit = name !== null && name !== undefined;
   if (!explicit && context.env.TMUX) return (await currentSession(server, context)).session;
+  if (explicit) requireAddressableName("session", scalarText(name));
   const acquisition = context.signal ? { signal: context.signal } : {};
   let sessions: Session[] = [];
   try {
@@ -1163,18 +1181,12 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
 async function capture(server: Server, request: Request, context: CLIContext): Promise<number> {
   const session = await freezeSession(server, request, context);
   const acquisition = context.signal ? { signal: context.signal } : {};
-  // A capture never writes a document load would refuse. tmux reads "." and
-  // ":" as the separators of target syntax, so a name holding one cannot be
-  // addressed by name; the refusal happens before any file is written.
-  const addressable = (name: string): boolean => isTmuxName(name);
-  const requireAddressable = (kind: "session" | "window", name: string | null): void => {
-    if (name !== null && !addressable(name))
-      throw new CliError(
-        "invalid_workspace",
-        `The ${kind} named ${name} cannot be captured: tmux reads "." and ":" as target separators, so a workspace could not name it again`,
-      );
-  };
-  requireAddressable("session", session.name);
+  // A capture never writes a document load would refuse; the refusal happens
+  // before any file is written. An explicitly requested name is already
+  // checked in freezeSession, before the lookup; this also catches a session
+  // resolved any other way -- current, the sole live session, or an explicit
+  // ID -- whose recorded name still holds "." or ":".
+  requireAddressableName("session", session.name);
   // A pane at its default shell needs no shell_command; naming it reloads a
   // shell inside a shell. Match by name as well as basename(default-shell),
   // because macOS runs bash for /bin/sh and the pane reports "bash".
@@ -1197,7 +1209,7 @@ async function capture(server: Server, request: Request, context: CLIContext): P
     command === defaultShell || ordinaryShells.has(command);
   const windows: Document[] = [];
   for (const window of session.windows.toArray()) {
-    requireAddressable("window", window.name);
+    requireAddressableName("window", window.name);
     const panes = window.panes.toArray().map((pane) => ({
       ...(pane.currentCommand !== null && !isDefaultShell(pane.currentCommand)
         ? { shell_command: [pane.currentCommand] }
