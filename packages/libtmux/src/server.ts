@@ -374,7 +374,7 @@ export class Server {
   watch(options?: WatchOptions): TmuxEventStream {
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "watch");
-    return watchServer(runtime.connection, options);
+    return watchServer(runtime.connection, options, runtime.transport);
   }
 
   /**

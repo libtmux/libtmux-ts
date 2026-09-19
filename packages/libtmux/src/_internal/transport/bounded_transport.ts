@@ -181,7 +181,15 @@ export class BoundedTransport implements CommandTransport {
     try {
       observe({
         commands: request.commands,
-        delivery: outcome.error instanceof TmuxTransportError ? outcome.error.delivery : "replied",
+        // A `TmuxTransportError` knows how far it got. Anything else threw
+        // without saying, and a command that did not finish must not read as
+        // one that did — `replied` is for an answer, either way.
+        delivery:
+          outcome.error === undefined
+            ? "replied"
+            : outcome.error instanceof TmuxTransportError
+              ? outcome.error.delivery
+              : "indeterminate",
         durationMs: performance.now() - startedAt,
         ...(outcome.error === undefined ? {} : { error: outcome.error }),
         ...(outcome.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
@@ -200,7 +208,7 @@ export class BoundedTransport implements CommandTransport {
     // request and the engine, and spend a deadline on it.
     if (this.#active < this.#limit) {
       this.#active += 1;
-      return this.#dispatch(request, 0);
+      return this.#dispatchWaited(request, 0);
     }
     return this.#waitThenDispatch(request);
   }
@@ -218,14 +226,34 @@ export class BoundedTransport implements CommandTransport {
   }
 
   async #waitThenDispatch(request: CommandRequest): Promise<RawCommandResult> {
-    const queuedAt = await this.#acquire(request);
-    return this.#dispatch(request, queuedAt);
+    // A request refused while queued, or refused by `afterWaiting` for a
+    // deadline that passed during the wait, never reaches `#run` — and so
+    // never reached the observer, though `TmuxInvocationReport` models exactly
+    // that case with `delivery: "not_started"` and the wait in `queuedMs`.
+    const startedAt = performance.now();
+    let queuedAt = 0;
+    try {
+      queuedAt = await this.#acquire(request);
+    } catch (error) {
+      this.#report(request, startedAt, performance.now() - startedAt, { error });
+      throw error;
+    }
+    const queuedMs = queuedAt === 0 ? 0 : performance.now() - queuedAt;
+    let waited: CommandRequest;
+    try {
+      waited = afterWaiting(request, queuedAt);
+    } catch (error) {
+      this.#active -= 1;
+      this.#handOn();
+      this.#report(request, startedAt, queuedMs, { error });
+      throw error;
+    }
+    return this.#dispatchWaited(waited, queuedMs);
   }
 
-  async #dispatch(request: CommandRequest, queuedAt: number): Promise<RawCommandResult> {
+  async #dispatchWaited(request: CommandRequest, queuedMs: number): Promise<RawCommandResult> {
     try {
-      const queuedMs = queuedAt === 0 ? 0 : performance.now() - queuedAt;
-      return await this.#run(afterWaiting(request, queuedAt), queuedMs);
+      return await this.#run(request, queuedMs);
     } finally {
       this.#active -= 1;
       this.#handOn();

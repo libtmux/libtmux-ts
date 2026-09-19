@@ -97,6 +97,52 @@ describe("invocation observer", () => {
     expect(await server.runShell("true")).toEqual([]);
   });
 
+  /**
+   * `TmuxInvocationReport` models `delivery: "not_started"` and a `queuedMs`,
+   * which is precisely a request refused while queued — and no code path
+   * produced one, because the refusal happens before the invocation reaches
+   * the engine and the report was written there.
+   */
+  test("reports a request refused while it waited for a slot", async () => {
+    const reports: TmuxInvocationReport[] = [];
+    const release: (() => void)[] = [];
+    const server = new Server({
+      engine: singleCommandTransport(
+        (request) =>
+          new Promise((resolve) => {
+            release.push(() => resolve(result(request)));
+          }),
+      ),
+      maxInFlight: 1,
+      onInvocation: (report) => reports.push(report),
+    });
+
+    const holding = server.runShell("holds the slot");
+    await Promise.resolve();
+    const refused = server.runShell("never gets one", { timeoutMs: 10 });
+    await expect(refused).rejects.toMatchObject({ delivery: "not_started" });
+
+    const queued = reports.find((report) => report.delivery === "not_started");
+    expect(queued, "the refused request reports").toBeDefined();
+    expect(queued?.exitCode).toBeUndefined();
+    expect(queued?.queuedMs).toBeGreaterThan(0);
+
+    release[0]?.();
+    await holding;
+  });
+
+  test("calls a command that threw without saying how far it got indeterminate", async () => {
+    const reports: TmuxInvocationReport[] = [];
+    const server = new Server({
+      engine: singleCommandTransport(() => Promise.reject(new Error("engine is broken"))),
+      onInvocation: (report) => reports.push(report),
+    });
+
+    await expect(server.runShell("true")).rejects.toThrow();
+    // `replied` means an answer, either way. This never answered.
+    expect(reports[0]?.delivery).toBe("indeterminate");
+  });
+
   test("charges the wait for a slot to queuedMs rather than to the command", async () => {
     const reports: TmuxInvocationReport[] = [];
     const release: (() => void)[] = [];

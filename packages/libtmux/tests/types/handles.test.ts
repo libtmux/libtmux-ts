@@ -393,10 +393,11 @@ void session.where;
 void pane;
 // @ts-expect-error on_init is not a constructor option.
 void new Server({ on_init: () => undefined });
-// @ts-expect-error internal logger injection is not a public Server option.
-void new Server({ logger: {} as TmuxLogger });
-// @ts-expect-error internal warning injection is not a public Server option.
-void new Server({ warnings: {} as TmuxWarningSink });
+// The options these two replaced are gone, and asserting on a deleted type
+// name would satisfy `@ts-expect-error` with "cannot find name" rather than
+// with the rejection it claims to prove. This is the live one.
+// @ts-expect-error an observer is a function, not a sink object.
+void new Server({ onInvocation: { warn: () => undefined } });
 
 export type {
   _AllNominalModels,

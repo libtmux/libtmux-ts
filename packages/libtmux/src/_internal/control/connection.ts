@@ -12,7 +12,6 @@ import type {
 import { assertSubscriptionFormat, assertSubscriptionName } from "../operations/names.js";
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
-import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import type { CommandTransport } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
@@ -925,7 +924,19 @@ export class ControlConnection {
   }
 }
 
-/** Open a control-mode event stream against a server. */
-export function watchServer(connection: TmuxConnection, options?: WatchOptions): TmuxEventStream {
-  return new ControlConnection(connection, options, true, new NodeSpawnTransport()).subscribe();
+/**
+ * Open a control-mode event stream against a server.
+ *
+ * The transport is the server's own, not a fresh one: the commands a watch
+ * issues for itself — `refresh-client -f`, the pause-after flag, each format
+ * subscription, a pane resume — are commands this server ran, so they belong
+ * under the same `maxInFlight` ceiling and the same `onInvocation` observer as
+ * every other. Building one here made them invisible to both.
+ */
+export function watchServer(
+  connection: TmuxConnection,
+  options: WatchOptions | undefined,
+  commands: CommandTransport,
+): TmuxEventStream {
+  return new ControlConnection(connection, options, true, commands).subscribe();
 }

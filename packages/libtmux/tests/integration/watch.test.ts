@@ -1180,4 +1180,28 @@ describe("Server.watch", () => {
       expect(snapshot.windows.one({ layout: { equals: event.layout } }).id).toBe(window.id);
     });
   }, 60_000);
+
+  /**
+   * A watch runs commands of its own — `refresh-client -f`, each format
+   * subscription, a pane resume — and they are commands this server ran. They
+   * went through a transport built on the spot rather than the server's, so
+   * they were invisible to `onInvocation` and uncounted against `maxInFlight`,
+   * while `connect()` on the next method down passed the server's transport.
+   */
+  test("runs a watch's own commands through the server's transport", async () => {
+    await withServer(async (fixture) => {
+      const seen: string[] = [];
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        onInvocation: (report) => seen.push(report.commands[0]?.[0] ?? ""),
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      await using events = server.watch({ pauseAfterSeconds: 5 });
+      await events.ready();
+
+      expect(seen, "the watch's own refresh-client reports").toContain("refresh-client");
+    });
+  }, 40_000);
 });

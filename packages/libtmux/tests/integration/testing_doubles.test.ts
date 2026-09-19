@@ -85,6 +85,41 @@ describe("published test doubles", () => {
     expect(snapshot.panes.length).toBe(livePanes);
   }, 60_000);
 
+  // `load-buffer -` is the same command whatever it is fed, so a recording
+  // keyed on the commands alone would answer a test that wrote different bytes
+  // with the ones it first saw — and a regression that corrupted a buffer
+  // would replay as a pass.
+  test("tells two invocations apart by what was written to their stdin", async () => {
+    let recording: TmuxRecording | undefined;
+
+    await withServer(async (fixture) => {
+      const recorder = recordInvocations();
+      const server = new Server({
+        engine: recorder.engine,
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      await server.loadBuffer("probe", "AAA");
+      expect(await server.showBuffer("probe")).toEqual(["AAA"]);
+      await server.loadBuffer("probe", "ZZZ");
+      expect(await server.showBuffer("probe")).toEqual(["ZZZ"]);
+      recording = recorder.recording();
+    });
+
+    if (recording === undefined) throw new Error("expected a recording");
+    const replayed = new Server({ engine: replayInvocations(recording) });
+    await replayed.loadBuffer("probe", "AAA");
+    expect(await replayed.showBuffer("probe")).toEqual(["AAA"]);
+    await replayed.loadBuffer("probe", "ZZZ");
+    expect(await replayed.showBuffer("probe")).toEqual(["ZZZ"]);
+
+    // Bytes the recording never saw are refused rather than answered with
+    // whatever the first write happened to hold.
+    const other = new Server({ engine: replayInvocations(recording) });
+    await expect(other.loadBuffer("probe", "QQQ")).rejects.toThrow(/no recorded answer/u);
+  }, 60_000);
+
   test("refuses an invocation the recording never saw, rather than inventing one", async () => {
     const replayed = new Server({
       engine: replayInvocations({ invocations: [], version: 1 }),

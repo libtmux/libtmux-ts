@@ -13,6 +13,11 @@
  *
  * `record` is the only thing here that needs tmux. `replay` needs nothing,
  * which is the point.
+ *
+ * What a recording cannot cover: `Server.watch` and `Server.connect` refuse on
+ * any server built with an engine, because both hold a local `tmux -C attach`
+ * process open. A recording covers the command path — snapshots, mutations,
+ * `cmd` — and never the event stream.
  */
 
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
@@ -31,6 +36,15 @@ export interface RecordedInvocation {
    */
   readonly commands: readonly (readonly string[])[];
   readonly exitCode: number;
+  /**
+   * Bytes written to the command's standard input, when it had any.
+   *
+   * Part of the key, not just the record: `load-buffer -` is the same command
+   * whatever it is fed, so a recording keyed on the commands alone would
+   * answer a test that wrote different bytes with the ones it first saw, and
+   * a regression that corrupted a buffer would replay as a pass.
+   */
+  readonly stdin?: readonly number[];
   /** Bytes, as numbers: a recording is JSON and tmux output is not text. */
   readonly stderr: readonly number[];
   readonly stdout: readonly number[];
@@ -58,9 +72,13 @@ const guardsIn = (commands: readonly (readonly string[])[]): string[] => [
   ...new Set(commands.flat().join("\u0000").match(GUARD) ?? []),
 ];
 
-const keyOf = (commands: readonly (readonly string[])[]): string => {
+const keyOf = (
+  commands: readonly (readonly string[])[],
+  stdin: readonly number[] | undefined,
+): string => {
   const seen = guardsIn(commands);
-  return JSON.stringify(commands).replaceAll(GUARD, (token) => `\u0000g${seen.indexOf(token)}`);
+  const text = JSON.stringify([commands, stdin ?? null]);
+  return text.replaceAll(GUARD, (token) => `\u0000g${seen.indexOf(token)}`);
 };
 
 const bytes = (values: readonly number[]): Uint8Array => Uint8Array.from(values);
@@ -103,6 +121,7 @@ export function recordInvocations(inner: TmuxEngine = new NodeSpawnTransport()):
         invocations.push({
           commands: request.commands.map((command) => [...command]),
           exitCode: result.exitCode,
+          ...(request.stdin === undefined ? {} : { stdin: [...request.stdin] }),
           stderr: [...result.stderr],
           stdout: [...result.stdout],
         });
@@ -128,20 +147,27 @@ export function replayInvocations(recording: TmuxRecording): TmuxEngine {
   }
   const remaining = new Map<string, RecordedInvocation[]>();
   for (const invocation of recording.invocations) {
-    const key = keyOf(invocation.commands);
+    const key = keyOf(invocation.commands, invocation.stdin);
     const queue = remaining.get(key);
     if (queue === undefined) remaining.set(key, [invocation]);
     else queue.push(invocation);
   }
 
   return {
-    endpoint: "recording://replay",
+    // Deliberately no `endpoint`. `Server.equals` compares two servers by the
+    // address their engines reach, and a fixed string here would make every
+    // replay of every recording report the same daemon — two servers playing
+    // back different fixtures would compare equal. An engine that declares
+    // none is never reported equal to another, which is the answer that cannot
+    // be wrong when the reach is a file rather than a socket.
     execute(request) {
-      const next = remaining.get(keyOf(request.commands))?.shift();
+      const stdin = request.stdin === undefined ? undefined : [...request.stdin];
+      const next = remaining.get(keyOf(request.commands, stdin))?.shift();
       if (next === undefined) {
         const shown = request.commands.map((command) => command.join(" ")).join("; ");
+        const withInput = stdin === undefined ? "" : " with these bytes on stdin";
         throw new TypeError(
-          `no recorded answer for ${shown}; record this invocation or widen the fixture`,
+          `no recorded answer for ${shown}${withInput}; record this invocation or widen the fixture`,
         );
       }
       const from = guardsIn(next.commands);
