@@ -38,7 +38,8 @@ only free of round trips.
 
 Wall-clock rises with panes, roughly 1.6 ms per pane across this range, because
 tmux formats a row per object and this side decodes it. A 192-pane server costs
-about 32 times a 1-pane server for 192 times the objects.
+about 32 times a 1-pane server for 88 times the rows — 264 against 3, counting
+every session, window and pane the four listings emit, not the panes alone.
 
 ## Creating things
 
@@ -48,7 +49,10 @@ $ bun packages/libtmux/scripts/bench-modes.ts
 
 Twelve windows created, then queried. tmux 3.7c on an idle machine, three
 invocations of the script; each wall-clock below is one invocation's median of
-three, and each order cell counts that invocation's three repeats.
+three, and the order column gives, across those invocations, how many of an
+invocation's own three repeats came back out of order. The two columns do not
+span the same work: the clock stops when the creations do, while the process
+column also counts the query that reads the result back.
 
 | batching      | concurrency | wall-clock       | processes | order                    |
 | ------------- | ----------- | ---------------- | --------- | ------------------------ |
@@ -74,13 +78,15 @@ of the three medians. A single earlier run showing it slower was published here
 as though it were a finding; medians of three disagree with it.
 
 So the case for `pipeline` or `batch` is not that fanning out is slow. It is
-that fanning out costs the same twelve processes, gives up ordering, and buys
-nothing — while `pipeline` does the same work in 13 processes and a fifth of
-the time. Read the order column as whole runs, not windows: a run either
-arrived in the order it was asked for or it did not. That is the
-measurement behind `maxInFlight` defaulting to 16 rather than something larger,
-and behind the README telling you to use `pipeline` or `batch` when order
-matters.
+that fanning out costs the same twenty-five processes, gives up ordering, and
+buys nothing — while `pipeline` does the same work in thirteen, and creates in a
+sixth of the time (median 109 ms against 649 ms, both for the creations alone).
+Read the order column as whole runs, not windows: a run either arrived in the
+order it was asked for or it did not. That is why the README tells you to use
+`pipeline` or `batch` when order matters. It is not where the default
+`maxInFlight` of 16 comes from: this run never has more than twelve creations
+outstanding, so it stays under that ceiling and cannot say anything about where
+the ceiling belongs — only that bounding a fan-out costs nothing.
 
 ## Observing a server
 
@@ -89,20 +95,25 @@ $ bun packages/libtmux/scripts/bench-control.ts
 ```
 
 Run: tmux 3.7c, Linux, 10 cores. The script medians the daemon-replacement row
-internally and reports the others from one pass.
+internally and reports the others from one pass. Only the asserted column is
+reproduced here; the script also prints a worst attempt count and a worst
+replacement time, which move run to run like any other timing.
 
-| workload              | size                     | wall-clock    | bounded outcome                                    |
-| --------------------- | ------------------------ | ------------- | -------------------------------------------------- |
-| sustained pane output | 1024 KiB                 | 294 ms        | 1048576 B payload, 0 dropped                       |
-| slow subscriber       | 100000 events / 64 slots | 49 ms         | 64 retained, 99936 dropped                         |
-| same-daemon reconnect | 5 detachments            | 308 ms        | 5 recovered, max attempt 1                         |
-| daemon replacement    | 3 daemons                | 323 ms median | 3 stale handles refused, max attempt 3, max 561 ms |
+| workload              | size                     | wall-clock    | asserted outcome             |
+| --------------------- | ------------------------ | ------------- | ---------------------------- |
+| sustained pane output | 1024 KiB                 | 188 ms        | 1048576 B payload, 0 dropped |
+| slow subscriber       | 100000 events / 64 slots | 13 ms         | 64 retained, 99936 dropped   |
+| same-daemon reconnect | 5 detachments            | 185 ms        | 5 recovered                  |
+| daemon replacement    | 3 daemons                | 150 ms median | 3 stale handles refused      |
 
 This one is a correctness workload that reports timings, not a benchmark that
-checks a number: it throws if the terminal state is wrong, so the right-hand
-column is the result and the wall-clock is context. **0 dropped** on sustained
-output says a fast producer loses nothing, and **64 retained, 99936 dropped**
-says a consumer that stops reading costs a bounded 64 slots rather than
-unbounded memory — the two halves of the backpressure claim. The last two rows
-are the recovery path: a connection that survives its client detaching, and
+checks a number: it throws if any value in the right-hand column is wrong, so
+that column is the result and the wall-clock is context. The attempt counts the
+script also prints are not in it, because nothing throws on them — they are
+observations of how many tries recovery happened to need, and three runs here
+gave two every time where an earlier published run recorded three. **0 dropped**
+on sustained output says a fast producer loses nothing, and **64 retained, 99936
+dropped** says a consumer that stops reading costs a bounded 64 slots rather
+than unbounded memory — the two halves of the backpressure claim. The last two
+rows are the recovery path: a connection that survives its client detaching, and
 handles that refuse rather than address a daemon that has been replaced.

@@ -715,13 +715,17 @@ takes none. Failure raises `TmuxCommandError` carrying tmux's own stderr.
 
 ## Running several commands at once
 
-Creating things one at a time costs two tmux invocations per mutation: one
-runs its command and one captures the snapshot needed to find what it made.
-That second one is what makes the result a handle rather than an id — tmux
-prints the new id, but a handle is only meaningful inside a consistent graph,
-and acquiring one is the whole server. A batch shares a single final snapshot
-across all of its mutations, so twelve windows cost 14 invocations rather than 25. [The benchmarks](docs/benchmarks.md) measure both, and the snapshot half
-grows with the server: about 1.6 ms per pane.
+Creating things one at a time costs two tmux invocations per mutation: one runs
+its command and one captures the snapshot needed to find what it made. That
+second one is what makes the result a handle rather than an id — tmux prints the
+new id, but a handle is only meaningful inside a consistent graph, and acquiring
+one is the whole server. A batch shares a single final snapshot across all of
+its mutations, so twelve windows cost 14 invocations rather than 25 —
+twenty-four against thirteen for the creations themselves, plus in each case the
+one query that reads the result back. [The benchmarks](docs/benchmarks.md)
+measure both. The invocation counts hold anywhere; the snapshot's wall-clock
+grows with the server, at about 1.6 ms per pane on the machine that page
+reports.
 
 Reach for `cmd` where you want the id and not the handle — `server.cmd(
 "new-window", ["-d", "-P", "-F", "#{window_id}"])` is the one invocation, and
