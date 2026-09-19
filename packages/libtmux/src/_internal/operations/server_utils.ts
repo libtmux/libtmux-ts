@@ -1,5 +1,5 @@
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
-import { runCommand, runCommandBytes } from "./command.js";
+import { isColdEndpoint, runCommand, runCommandBytes } from "./command.js";
 import { TmuxTransportError } from "../../errors.js";
 import type { SaveBufferOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
@@ -13,21 +13,21 @@ import type { RuntimeContext } from "../runtime/context.js";
  * that; `name:` survives those characters but resolves a unique prefix the
  * same way a bare name does, so `work:` would answer yes for `workspace`.
  * Listing every session and comparing the name in JavaScript is exact for
- * any name tmux can store. `list-sessions` fails the same way `has-session`
- * did against a socket with no server running, and that failure is answered
- * false, not raised: "no such session" is an answer, not a failure.
+ * any name tmux can store. `list-sessions` fails against a socket with no
+ * server running the same way `has-session` did, and that failure is
+ * answered false, not raised: "no such session" is an answer, not a failure.
+ * Any other failure — a socket this caller has no permission to reach, a
+ * daemon that answered and refused the command — is raised, not folded into
+ * "no such session".
  */
 export async function hasSession(runtime: RuntimeContext, name: string): Promise<boolean> {
-  const result = adaptRawResult(
-    await runtime.transport.execute(
-      prepareCommandRequest(
-        runtime.connection,
-        ["list-sessions", "-F", "#{session_name}"],
-        runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs },
-      ),
-    ),
-  );
-  return result.exitCode === 0 && result.stdout.includes(name);
+  try {
+    const names = await runCommand(runtime, ["list-sessions", "-F", "#{session_name}"]);
+    return names.includes(name);
+  } catch (error) {
+    if (isColdEndpoint(error)) return false;
+    throw error;
+  }
 }
 
 /** Run a tmux config file against the server. */
