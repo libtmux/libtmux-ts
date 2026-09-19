@@ -436,6 +436,17 @@ rows by one would match all of them or none.
 Every handle exposes the tmux commands that apply to it. Each returns a promise;
 those that create something return a handle to it.
 
+Everything else resolves to nothing, and leaves the handle reading the instant
+it was acquired at. That is deliberate — a handle that advanced in place would
+leave a snapshot disagreeing with itself — so a mutation you need the result of
+is two calls:
+
+```ts
+await window.rename("build");
+window.name; // still "editor": the instant this handle was read at
+(await window.refreshed()).name; // "build"
+```
+
 Sessions, windows, and panes:
 
 ```ts

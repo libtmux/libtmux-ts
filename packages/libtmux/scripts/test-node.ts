@@ -93,6 +93,8 @@ import { deriveTmuxCapabilities } from ${moduleUrl("dist/_internal/runtime/capab
 import { FORMAT_FIELD_TOKENS } from ${moduleUrl("dist/_generated/format_fields.js")};
 import { FORMAT_VALUE_TYPES } from ${moduleUrl("dist/_generated/field_types.js")};
 import { TmuxConnection } from ${moduleUrl("dist/_internal/runtime/connection.js")};
+import { completeUtf8Length, unescapeOutput } from ${moduleUrl("dist/_internal/control/events.js")};
+import { BoundedTransport } from ${moduleUrl("dist/_internal/transport/bounded_transport.js")};
 import { ControlMode, prepareRunRoot, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup, TestServer } from ${testkitModule};
 import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_spawn_transport.js")};
 // From the package root, not the internal module: a caller deciding whether a
@@ -774,6 +776,52 @@ const supervisorResult = await supervisedClosed;
 assert.ok(supervisorResult.signal === "SIGTERM" || supervisorResult.code === 143);
 await assert.rejects(access(supervisorRoot), (error) => error?.code === "ENOENT");
 
+// Pane output arrives as bytes and is decoded with this runtime's own
+// TextDecoder, so a character split across two notifications is held back by
+// code whose behaviour is the runtime's. Bun agreeing proves nothing here.
+const snowman = Buffer.from("\u2603", "utf8");
+assert.equal(completeUtf8Length(snowman), 3);
+assert.equal(completeUtf8Length(snowman.subarray(0, 2)), 0);
+assert.equal(completeUtf8Length(Buffer.from([0x41, 0xff])), 2);
+assert.deepEqual(
+  Array.from(unescapeOutput(Buffer.from("a\\\\015b", "utf8"))),
+  [0x61, 0x0d, 0x62],
+);
+
+// The ceiling and the observer both read this runtime's clock and timers.
+const ceilingSeen = [];
+const releases = [];
+const ceiling = new BoundedTransport(
+  {
+    execute: (request) =>
+      new Promise((resolve) => {
+        releases.push(() =>
+          resolve({ cmd: [], exitCode: 0, signal: null, stderr: new Uint8Array(), stdout: new Uint8Array() }),
+        );
+      }),
+  },
+  1,
+  (report) => ceilingSeen.push(report),
+);
+const ceilingRequest = () => ({
+  commands: [["list-sessions"]],
+  executable: "tmux",
+  globalArgs: [],
+});
+const firstThrough = ceiling.execute(ceilingRequest());
+const secondThrough = ceiling.execute(ceilingRequest());
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(releases.length, 1, "the ceiling holds one invocation at a time");
+releases[0]();
+await firstThrough;
+await new Promise((resolve) => setImmediate(resolve));
+releases[1]();
+await secondThrough;
+assert.equal(ceilingSeen.length, 2);
+assert.equal(ceilingSeen[0].queuedMs, 0);
+assert.ok(ceilingSeen[1].queuedMs > 0, "the queued one reports its wait");
+assert.equal(ceilingSeen[0].delivery, "replied");
+
 console.log(JSON.stringify({
   protocol: "libtmux-node-scenarios-v1",
   scenarios: [
@@ -800,6 +848,8 @@ console.log(JSON.stringify({
     "control-partial-timer",
     "control-dispose-timer",
     "supervisor-sigterm",
+    "utf8-holdback",
+    "invocation-ceiling",
   ],
   status: "passed",
 }));
@@ -893,7 +943,7 @@ try {
   if (
     report.protocol !== "libtmux-node-scenarios-v1" ||
     report.status !== "passed" ||
-    report.scenarios.length !== 23
+    report.scenarios.length !== 25
   ) {
     throw new Error(`invalid Node scenario report: ${stdoutText.trim()}`);
   }

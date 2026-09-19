@@ -16,6 +16,15 @@ every change is held to, and the map of what is where, are in
 Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.2a
 or newer.
 
+`test:node` runs the emitted `dist` on Node 22, which is the artifact a Node
+consumer gets — the `bun` export condition serves `src` only to Bun. It runs
+scenarios rather than the whole suite on purpose: 22 of the 90 shipped modules
+touch an API whose behaviour is the runtime's (child processes, timers,
+`AbortSignal`, `TextDecoder`, `Buffer`, `performance.now`), and the rest are
+parsers, codecs and query compilation that cannot differ by runtime. A scenario
+belongs here when it exercises one of those 22; anything else is covered once,
+under Bun, and running it twice buys nothing.
+
 A consumer needs TypeScript 5.7 or newer: 5.6 and below ship no `ES2024` lib,
 which the emitted declarations are built against. `test:install` compiles its
 fixture with that exact compiler, pinned as the `typescript-floor` alias, as

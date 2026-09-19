@@ -1,7 +1,7 @@
 # Benchmarks
 
-Measured, not estimated. Every number here came from
-`bun scripts/bench-snapshot.ts` and `bun scripts/bench-modes.ts` against a real
+Measured, not estimated. Every number here came from the two benchmark scripts
+below, run from the repository root against a real
 tmux, and both scripts print the machine and version they ran on so a rerun can
 be compared with this one rather than guessed against it.
 
@@ -12,7 +12,7 @@ on.
 ## Reading a server
 
 ```console
-$ bun scripts/bench-snapshot.ts
+$ bun packages/libtmux/scripts/bench-snapshot.ts
 ```
 
 Run: tmux 3.7c, Linux, 10 cores, median of 3, after a warm-up snapshot. These
@@ -43,7 +43,7 @@ about 32 times a 1-pane server for 192 times the objects.
 ## Creating things
 
 ```console
-$ bun scripts/bench-modes.ts
+$ bun packages/libtmux/scripts/bench-modes.ts
 ```
 
 Twelve windows created, then queried.
