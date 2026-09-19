@@ -1,5 +1,6 @@
 import type { JoinOptions } from "../../types.js";
 import type { IfShellOptions, RespawnOptions, RunShellOptions } from "../../types.js";
+import { PANE_DIRECTION_FLAG_MAP } from "../../constants.js";
 import { TmuxCommandError } from "../../errors.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
@@ -146,6 +147,20 @@ export async function breakPane(
 }
 
 /** Move a pane into another window, joining it as a split. */
+/**
+ * The axis flags a join takes, refusing the two spellings together.
+ *
+ * `direction` names a side, which is what tmux's `-b` pairing exists for;
+ * `vertical` names only the axis and cannot reach "above" or "left".
+ */
+function joinAxis(options: JoinOptions): readonly string[] {
+  if (options.direction !== undefined && options.vertical !== undefined) {
+    throw new TypeError("Choose direction without the deprecated vertical option");
+  }
+  if (options.direction !== undefined) return PANE_DIRECTION_FLAG_MAP[options.direction];
+  return options.vertical === false ? ["-h"] : [];
+}
+
 export async function joinPane(
   runtime: RuntimeContext,
   paneId: string | null,
@@ -157,7 +172,7 @@ export async function joinPane(
     [
       "join-pane",
       "-d",
-      ...(options.vertical === false ? ["-h"] : []),
+      ...joinAxis(options),
       ...(paneId == null ? [] : ["-s", paneId]),
       "-t",
       target,

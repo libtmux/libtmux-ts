@@ -981,7 +981,7 @@ raiseIfDead(): Promise<void>
 
 Assert the server is reachable, raising with tmux's reason if not.
 
-@deprecated Use [`checkAlive`](#servercheckalive).
+@deprecated Use [`checkAlive`](#servercheckalive). Removed at `0.1.0`.
 
 ```ts
 await server.raiseIfDead(); // throws when no tmux server is listening
@@ -2335,7 +2335,8 @@ joinTo(target: Pane | Window | string, options?: JoinOptions): Promise<void>
 Move this pane into another window as a split.
 
 ```ts
-await pane.joinTo(window.id, { vertical: true });
+import { PaneDirection } from "libtmux";
+await pane.joinTo(window.id, { direction: PaneDirection.Below });
 ```
 
 #### `Pane.enterCopyMode`

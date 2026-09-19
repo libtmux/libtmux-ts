@@ -460,7 +460,8 @@ export class Pane {
    * Move this pane into another window as a split.
    *
    * ```ts
-   * await pane.joinTo(window.id, { vertical: true });
+   * import { PaneDirection } from "libtmux";
+   * await pane.joinTo(window.id, { direction: PaneDirection.Below });
    * ```
    */
   joinTo(target: Pane | Window | string, options?: JoinOptions): Promise<void> {

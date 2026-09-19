@@ -380,6 +380,32 @@ describe("package contract", () => {
     expect(config.rules).toEqual({ "typescript/await-thenable": "off" });
   });
 
+  /**
+   * A deprecation with no removal point is a promise nobody can plan around.
+   * `0.1.0` is where every one in this package goes: the alphas precede it,
+   * and semantic versioning starts applying there.
+   */
+  test("names a removal point on every deprecation", async () => {
+    const root = new URL("../../src/", import.meta.url).pathname;
+    const missing: string[] = [];
+    let tags = 0;
+
+    for await (const relative of new Bun.Glob("**/*.ts").scan({ cwd: root })) {
+      const text = await readFile(`${root}${relative}`, "utf8");
+      for (const block of text.matchAll(/\/\*\*[\s\S]*?\*\//gu)) {
+        if (!block[0].includes("@deprecated")) continue;
+        tags += 1;
+        if (!/Removed at `0\.1\.0`/u.test(block[0])) {
+          missing.push(`${relative}: ${block[0].replaceAll(/\s+/gu, " ").slice(0, 70)}`);
+        }
+      }
+    }
+
+    // A scan that matched nothing would report a clean tree.
+    expect(tags).toBeGreaterThanOrEqual(35);
+    expect(missing).toEqual([]);
+  });
+
   test("exposes exactly the scripts the gates run, and no others", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 

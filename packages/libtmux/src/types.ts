@@ -279,7 +279,8 @@ export interface SplitOptions extends CommandOptions {
   readonly shellCommand?: string;
   /**
    * @deprecated Use `direction: PaneDirection.Below` for `true` or
-   * `direction: PaneDirection.Right` for `false`. Do not combine with `direction`.
+   * `direction: PaneDirection.Right` for `false`. Removed at `0.1.0`. Do not
+   * combine with `direction`.
    */
   readonly vertical?: boolean;
 }
@@ -304,7 +305,21 @@ export interface CmdOptions extends CommandOptions {
 
 /** Options for joining a pane into another window. */
 export interface JoinOptions extends CommandOptions {
-  /** Join as a horizontal split rather than the default vertical one. */
+  /**
+   * Which side of the target the joined pane takes.
+   *
+   * The same four choices `SplitOptions.direction` gives, for the same
+   * reason: tmux reaches "above" and "left" only by pairing the axis with
+   * `-b`, so a boolean names half of them. Combining this with `vertical`
+   * throws `TypeError`.
+   */
+  readonly direction?: PaneDirection;
+  /**
+   * @deprecated Use `direction: PaneDirection.Below` for `true` or
+   * `direction: PaneDirection.Right` for `false`, matching
+   * {@link SplitOptions.direction}. Removed at `0.1.0`. Do not combine with
+   * `direction`.
+   */
   readonly vertical?: boolean;
 }
 

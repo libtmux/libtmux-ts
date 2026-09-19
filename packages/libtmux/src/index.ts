@@ -116,15 +116,15 @@ export {
   WindowDirection,
 } from "./constants.js";
 
-/** @deprecated Use {@link LibTmuxError}. */
+/** @deprecated Use {@link LibTmuxError}. Removed at `0.1.0`. */
 export { LibTmuxException } from "./errors.js";
-/** @deprecated Use {@link ObjectNotFoundError}. */
+/** @deprecated Use {@link ObjectNotFoundError}. Removed at `0.1.0`. */
 export { ObjectDoesNotExist } from "./errors.js";
-/** @deprecated Use {@link MultipleObjectsError}. */
+/** @deprecated Use {@link MultipleObjectsError}. Removed at `0.1.0`. */
 export { MultipleObjectsReturned } from "./errors.js";
-/** @deprecated Use {@link VersionTooLowError}. */
+/** @deprecated Use {@link VersionTooLowError}. Removed at `0.1.0`. */
 export { VersionTooLow } from "./errors.js";
-/** @deprecated Use {@link WaitTimeoutError}. */
+/** @deprecated Use {@link WaitTimeoutError}. Removed at `0.1.0`. */
 export { WaitTimeout } from "./errors.js";
-/** @deprecated Use {@link TmuxServerRestartedError}. */
+/** @deprecated Use {@link TmuxServerRestartedError}. Removed at `0.1.0`. */
 export { TmuxServerRestarted } from "./errors.js";

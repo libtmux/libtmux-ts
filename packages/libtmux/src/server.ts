@@ -985,7 +985,7 @@ export class Server {
   /**
    * Assert the server is reachable, raising with tmux's reason if not.
    *
-   * @deprecated Use {@link checkAlive}.
+   * @deprecated Use {@link checkAlive}. Removed at `0.1.0`.
    *
    * ```ts
    * await server.raiseIfDead(); // throws when no tmux server is listening

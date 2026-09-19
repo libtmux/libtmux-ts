@@ -437,17 +437,17 @@ export class TmuxCommandError extends LibTmuxError {
   }
 }
 
-/** @deprecated Use {@link LibTmuxError}. */
+/** @deprecated Use {@link LibTmuxError}. Removed at `0.1.0`. */
 export { LibTmuxError as LibTmuxException };
-/** @deprecated Use {@link ObjectNotFoundError}. */
+/** @deprecated Use {@link ObjectNotFoundError}. Removed at `0.1.0`. */
 export { ObjectNotFoundError as ObjectDoesNotExist };
-/** @deprecated Use {@link MultipleObjectsError}. */
+/** @deprecated Use {@link MultipleObjectsError}. Removed at `0.1.0`. */
 export { MultipleObjectsError as MultipleObjectsReturned };
-/** @deprecated Use {@link TmuxObjectNotFoundError}. */
+/** @deprecated Use {@link TmuxObjectNotFoundError}. Removed at `0.1.0`. */
 export { TmuxObjectNotFoundError as TmuxObjectDoesNotExist };
-/** @deprecated Use {@link VersionTooLowError}. */
+/** @deprecated Use {@link VersionTooLowError}. Removed at `0.1.0`. */
 export { VersionTooLowError as VersionTooLow };
-/** @deprecated Use {@link WaitTimeoutError}. */
+/** @deprecated Use {@link WaitTimeoutError}. Removed at `0.1.0`. */
 export { WaitTimeoutError as WaitTimeout };
-/** @deprecated Use {@link TmuxServerRestartedError}. */
+/** @deprecated Use {@link TmuxServerRestartedError}. Removed at `0.1.0`. */
 export { TmuxServerRestartedError as TmuxServerRestarted };
