@@ -94,6 +94,19 @@ describe("shell execution and pane movement", () => {
         .then(() => undefined)
         .catch((thrown: unknown) => thrown);
       expect(aborted).toBeInstanceOf(TmuxTransportError);
+
+      // `abort(reason)` is how a caller says why. A refusal that replaced it
+      // with a generic message put their own error out of reach, and the
+      // README's cancellation example catches the rejection expecting it.
+      const mine = new Error("caller gave up");
+      const explained = new AbortController();
+      setTimeout(() => explained.abort(mine), 300);
+      const reasoned = await server
+        .runShell("sleep 5", { signal: explained.signal })
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect((reasoned as TmuxTransportError).kind).toBe("cancelled");
+      expect((reasoned as { cause?: unknown }).cause).toBe(mine);
     });
   }, 15_000);
 

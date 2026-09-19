@@ -95,6 +95,7 @@ export class NodeSpawnTransport {
     const submitted = guarded.request;
     if (isAborted(submitted.signal)) {
       throw new TmuxTransportError("command cancelled before spawn", {
+        ...(request.signal?.reason === undefined ? {} : { cause: request.signal.reason }),
         delivery: "not_started",
         kind: "cancelled",
       });
@@ -293,6 +294,11 @@ export class NodeSpawnTransport {
             ? `command output exceeded ${String(this.#maxOutputBytes)} bytes`
             : "command cancelled",
         {
+          // The caller's own reason, when they gave one: `abort(myError)`
+          // should come back rather than be replaced by a generic refusal.
+          ...(interruption === "cancelled" && request.signal?.reason !== undefined
+            ? { cause: request.signal.reason }
+            : {}),
           delivery,
           kind: interruption === "output" ? "protocol" : interruption,
           ...(observedExit === undefined ? {} : { signal: observedExit.signal }),

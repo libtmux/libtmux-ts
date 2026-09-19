@@ -1090,9 +1090,16 @@ const server = new Server({ timeoutMs: 10_000 });
 
 const controller = new AbortController();
 const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
-controller.abort();
-await lines.catch(() => undefined); // rejects with the abort reason
+controller.abort(new Error("the caller moved on"));
+// Rejects with a TmuxTransportError carrying kind: "cancelled", and your own
+// reason as its `cause`.
+await lines.catch(() => undefined);
 ```
+
+A cancelled or timed-out command always rejects with a `TmuxTransportError`
+rather than with the reason itself, because the error also says how far the
+command got — `delivery` distinguishes one tmux never started from one it may
+have run. What you passed to `abort()` is preserved as `cause`.
 
 Every operation that takes options accepts both, so the rule you learn on one
 method holds on the next. The default applies to every command the server runs,

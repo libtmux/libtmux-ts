@@ -793,6 +793,14 @@ export type TmuxEvent =
 export interface AbortLike {
   addEventListener(type: "abort", listener: () => void, options?: { once?: boolean }): void;
   readonly aborted: boolean;
+  /**
+   * Why the caller abandoned the command, when they said.
+   *
+   * Carried onto the cancellation error as its `cause`, so `abort(myError)`
+   * comes back rather than being replaced by a generic refusal. Optional
+   * because the signal is typed structurally; a real `AbortSignal` has it.
+   */
+  readonly reason?: unknown;
   removeEventListener(type: "abort", listener: () => void): void;
 }
 
