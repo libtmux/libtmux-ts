@@ -319,6 +319,7 @@ async function deliverFramedScript(
   pane: Pane,
   source: string,
   id: string,
+  authority: InputAuthority | undefined,
 ): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "ltx-"));
   const path = join(directory, framedScriptName(id));
@@ -335,7 +336,10 @@ async function deliverFramedScript(
     throw error;
   }
   try {
-    await dispatchPaneKeys(pane, sourcingDispatch(path, id), { literal: true });
+    await dispatchPaneKeys(pane, sourcingDispatch(path, id), {
+      ...(authority === undefined ? {} : { identity: authority }),
+      literal: true,
+    });
   } catch (error) {
     // The file was written but the pane never received the line that would
     // source it, so nothing else will ever remove it. This process made the
@@ -391,7 +395,7 @@ export async function runFramedCommand(
     return beforeStartResult(budget, isCancelled(signal) ? "cancelled" : "timed_out");
   }
   try {
-    scriptDirectory = await deliverFramedScript(context, dispatchPane, source, id);
+    scriptDirectory = await deliverFramedScript(context, dispatchPane, source, id, authority);
     commandStarted = true;
   } catch (error) {
     if (!(error instanceof TmuxTransportError) || error.delivery === "not_started") {
@@ -447,7 +451,10 @@ export async function runFramedCommand(
         scriptDirectory = undefined;
       }
       // eslint-disable-next-line no-await-in-loop -- the retry follows the failure it answers.
-      await dispatchPaneKeys(dispatchPane, source, { literal: true });
+      await dispatchPaneKeys(dispatchPane, source, {
+        ...(authority === undefined ? {} : { identity: authority }),
+        literal: true,
+      });
       continue;
     }
     if (Date.now() >= deadline || isCancelled(signal)) break;

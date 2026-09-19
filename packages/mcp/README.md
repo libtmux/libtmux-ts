@@ -465,9 +465,11 @@ $ run_shell_command  paneId=%1  command='cargo build'
 That waits through tmux's notifications and comes back with `exitStatus`,
 `outcome`, and the output — one call.
 
-**Do not wait for text you sent.** The pane echoes it, so the wait matches your
-own typing. `run_shell_command` is immune by construction; `wait_for_text` is for
-output somebody else wrote.
+**Do not wait for text you sent.** The pane echoes it; `wait_for_text` discounts
+your own typing while it is unsubmitted or was submitted within the last ten
+seconds, but a command that runs longer than that, or the same value typed and
+waited for again later, can still surface its own echo. `run_shell_command` is
+immune by construction; `wait_for_text` is for output somebody else wrote.
 
 **Do not re-read the screen.** Use `snapshot_pane` when one response needs
 bounded content and pane metadata. For later deltas, call `capture_since`

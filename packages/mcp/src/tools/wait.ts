@@ -10,9 +10,10 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { compileBoundedRegex } from "libtmux";
 import { z } from "zod";
 
+import { readServerAuthority } from "../caller.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
-import { pendingUnsubmittedEcho } from "../pane_input.js";
+import { liveEcho, withoutEchoes, type PaneServerIdentity } from "../pane_echo.js";
 import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
@@ -56,10 +57,29 @@ function isCancelled(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
 
-/** Remove this server's own still-unsubmitted keystrokes from candidate output. */
-function withoutPendingEcho(text: string, paneId: string): string {
-  const pending = pendingUnsubmittedEcho(paneId);
-  return pending === undefined || pending === "" ? text : text.split(pending).join("");
+/**
+ * Remove this server's own typed-but-not-real-output text from candidate output.
+ *
+ * `pending` (the line still being edited) is read fresh every call: a key this
+ * server cannot model invalidates it immediately (`pane_echo.ts`), and a wait
+ * already in progress must see that right away rather than keep discounting
+ * text that may no longer describe the line. `recentSoFar` instead only ever
+ * grows across one wait's whole loop: a submitted line's echo ages out of the
+ * shared store on a fixed TTL, but the bytes it discounts are already sitting
+ * in this wait's own buffered tail, unmoved by wall-clock time — a wait still
+ * reading them must keep discounting a line it once saw, even past the TTL
+ * that bounds how long a *new* wait would still discount it.
+ */
+function withoutPendingEcho(
+  text: string,
+  paneId: string,
+  identity: PaneServerIdentity,
+  recentSoFar: Set<string>,
+): string {
+  const echo = liveEcho(paneId, identity);
+  for (const line of echo.recent) recentSoFar.add(line);
+  if (echo.pending === "" && recentSoFar.size === 0) return text;
+  return withoutEchoes(text, echo.pending === "" ? recentSoFar : [echo.pending, ...recentSoFar]);
 }
 
 /** What the pane already showed before this wait subscribed. */
@@ -129,6 +149,11 @@ async function waitForOutput(
     };
   }
 
+  // Fetched once, not per loop iteration: the pane-input paths that record an
+  // echo already have their own authenticated authority on hand, and a wait
+  // only needs enough of one round trip to find the same server-keyed record.
+  const identity = await readServerAuthority(context.tmux, options.signal);
+  const recentSoFar = new Set<string>();
   const from = options.cursor ?? tail.cursor;
   const deadline = Date.now() + options.timeoutMs;
   let askedAlive = Date.now();
@@ -138,7 +163,7 @@ async function waitForOutput(
   let freshOutputSeen = false;
   for (;;) {
     const seen = tail.read(from);
-    const candidate = withoutPendingEcho(seen.text, pane.id);
+    const candidate = withoutPendingEcho(seen.text, pane.id, identity, recentSoFar);
     const hit = options.matches(candidate);
     // A hit that is only ever a replay of what the entry screen already showed
     // is not counted until real output has been observed at least once. Moot
@@ -413,10 +438,13 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
     "Wait until a pane prints something, streaming tmux's notifications rather " +
     "than polling. Use for output you did NOT author — another process, a person, " +
     "a background job. For a command you wrote, use run_shell_command: it knows when the " +
-    "command ended and reports exit status, which no text match can. A pane echoes " +
-    "what is typed into it, so waiting for text that also appears in a command you " +
-    "just sent matches the echo. Whatever happens you get back what the pane " +
-    "printed and why the wait ended — a timeout is never an empty answer.";
+    "command ended and reports exit status, which no text match can. This discounts " +
+    "text this server itself typed into the pane, for as long as it is unsubmitted " +
+    "or was submitted within the last ten seconds, so a command you just sent cannot " +
+    "match its own echo — but a pane not yet reading input can still echo type-ahead " +
+    "back once it starts, so wait for a prompt before typing into a cold shell. " +
+    "Whatever happens you get back what the pane printed and why the wait ended — " +
+    "a timeout is never an empty answer.";
 
   function buildMatcher(
     patterns: readonly string[] | undefined,
