@@ -88,6 +88,34 @@ order it was asked for or it did not. That is why the README tells you to use
 outstanding, so it stays under that ceiling and cannot say anything about where
 the ceiling belongs — only that bounding a fan-out costs nothing.
 
+### On a bigger server
+
+```console
+$ bun packages/libtmux/scripts/bench-snapshot.ts
+```
+
+The same script as the snapshot table creates one window in the first session
+of each server it builds: once as `session.newWindow()`, which resolves a
+handle, and once as that plan's argv through `pipeline`, which returns the
+printed id and nothing else. Only the columns that do not depend on the machine
+are given here — this run shared its machine with other suites, which makes
+wall-clock worthless and leaves a count unchanged.
+
+| sessions × windows × panes | panes | handle calls | handle bytes | id calls | id bytes |
+| -------------------------- | ----- | ------------ | ------------ | -------- | -------- |
+| 1×1×1                      | 1     | 2            | 4 KiB        | 1        | 3 B      |
+| 2×3×2                      | 12    | 2            | 18 KiB       | 1        | 4 B      |
+| 4×6×2                      | 48    | 2            | 66 KiB       | 1        | 4 B      |
+| 8×8×3                      | 192   | 2            | 233 KiB      | 1        | 4 B      |
+
+The handle costs one invocation more than the id at every size, and that
+invocation is a snapshot: its bytes track the snapshot table above, and so does
+its time — the acquire wall there, 10 ms on a one-pane server and 319 ms on a
+192-pane one. The id costs the create alone and reads four bytes. The snapshot
+cannot be narrowed to the session the window was made in: a window made in a
+grouped session is linked into every member, and the handle reports those
+links. A test holds that.
+
 ## Observing a server
 
 ```console
