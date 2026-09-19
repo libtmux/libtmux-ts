@@ -1095,8 +1095,13 @@ export class Server {
     );
     // One snapshot for the whole group, taken after every command has run, so
     // each plan reads the same instant and the group costs one snapshot rather
-    // than one per mutation.
-    const snapshot = await this.snapshot();
+    // than one per mutation. It carries the caller's signal: a batch abandoned
+    // between its commands and this read is abandoned, and taking it
+    // unsignalled left the handles resolving against a server the caller had
+    // already stopped waiting for.
+    const snapshot = await this.snapshot(
+      options?.signal === undefined ? {} : { signal: options.signal },
+    );
     return operations.map((operation, index) =>
       operation.resolve(snapshot, printed[index] ?? []),
     ) as { -readonly [K in keyof T]: T[K] extends PlannedOperation<infer R> ? R : never };

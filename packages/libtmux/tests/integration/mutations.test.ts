@@ -98,6 +98,34 @@ describe("lifecycle mutations", () => {
     });
   }, 60_000);
 
+  /**
+   * `batch` forwards its options to the commands and then took its resolving
+   * snapshot unsignalled, so a caller who abandoned the group between the two
+   * got handles read from a server they had stopped waiting for. The window
+   * is narrow, so the abort is fired from the observer the moment the last
+   * command answers rather than by racing a timer.
+   */
+  test("honours a signal between a batch's commands and its snapshot", async () => {
+    await withServer(async (fixture) => {
+      const controller = new AbortController();
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        onInvocation: (report) => {
+          if (report.commands.some((command) => command[0] === "new-window")) controller.abort();
+        },
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      const session = (await server.snapshot()).sessions.one();
+
+      await expect(
+        server.batch([session.plan.newWindow({ name: "batched" })], {
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ code: "TmuxTransportError", kind: "cancelled" });
+    });
+  }, 60_000);
+
   test("creates a session, window, and pane, resolving each as a handle", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
