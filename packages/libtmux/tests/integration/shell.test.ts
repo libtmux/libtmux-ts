@@ -148,6 +148,19 @@ describe("shell execution and pane movement", () => {
     });
   }, 40_000);
 
+  test("guards a display-message value starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const pane = (await server.snapshot()).panes.one();
+
+      // `-a` is display-message's own flag to list every variable; without
+      // the guard this returns many lines instead of the one literal value.
+      const expanded = await pane.displayMessage("-a");
+
+      expect(expanded).toEqual(["-a"]);
+    });
+  }, 40_000);
+
   test("takes the else branch when an if-shell condition fails", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -159,6 +172,43 @@ describe("shell execution and pane movement", () => {
       expect((await server.showOptions()).get("history-file")).toBe("/tmp/ltx-else");
     });
   }, 40_000);
+
+  test("guards an if-shell condition starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      // `-e` is none of if-shell's own flags (`-b`, `-F`, `-t`); without the
+      // guard it would be refused as one before the condition ever ran.
+      await server.ifShell("-e", "set-option -s history-file /tmp/ltx-then-dash", {
+        otherwise: "set-option -s history-file /tmp/ltx-else-dash",
+      });
+
+      expect((await server.showOptions()).get("history-file")).toBe("/tmp/ltx-else-dash");
+    });
+  }, 40_000);
+
+  test("guards a run-shell command starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      // `-e` is none of run-shell's own flags (`-b`, `-t`, `-C`, `-d`).
+      // `-e` is not a program either, so the job itself still fails either
+      // way — what the guard changes is whether a job runs at all. Without
+      // it, tmux's own parser refuses the whole argument before any job
+      // exists, reporting an "unknown option" (libc getopt, 3.2a) or
+      // "unknown flag" (`args_parse`, 3.3+) error of its own; with it, tmux
+      // launches the job and reports only the job's own exit, on its own
+      // stdout — some releases suppress that report with no client attached,
+      // so this checks for the absence of a parser refusal rather than for
+      // the report's presence.
+      const failure = await server
+        .runShell("-e")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(failure).toBeInstanceOf(TmuxCommandError);
+      expect((failure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
+    });
+  }, 15_000);
 
   test("breaks a pane out into its own window", async () => {
     await withServer(async (fixture) => {

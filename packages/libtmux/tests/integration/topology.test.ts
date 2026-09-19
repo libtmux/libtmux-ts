@@ -78,6 +78,19 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  test("guards a window name starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+
+      // rename-window takes no flag besides `-t`; without the guard this
+      // name would be refused as an unrecognized one instead of applied.
+      await window.rename("-dashed-window");
+
+      expect((await server.snapshot()).windows.count({ name: "-dashed-window" })).toBe(1);
+    });
+  }, 40_000);
+
   test("links a window into a second session and unlinks one placement", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -754,6 +767,26 @@ describe("window and pane topology", () => {
     });
   }, 60_000);
 
+  test("guards a respawn-pane command starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "respawn-dash" });
+      const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
+      // `-h` cannot be exec'd, which would otherwise close the pane, its
+      // window, its session, and (being the only one) the server itself
+      // before this reads anything back.
+      await pane.setOption("remain-on-exit", "on");
+
+      // `-h` is none of respawn-pane's own flags (`-k`, `-c`, `-e`, `-t`);
+      // without the guard this would be refused as an unrecognized one
+      // instead of becoming the pane's own recorded start command.
+      await pane.respawn("-h", { kill: true });
+
+      expect((await pane.displayMessage("#{pane_start_command}"))[0]).toBe("-h");
+      await session.kill();
+    });
+  }, 60_000);
+
   test("reports pane geometry and relations that agree with each other", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -996,6 +1029,22 @@ describe("window and pane topology", () => {
       await window.respawn("sh", { kill: true });
 
       expect(await pidOf()).not.toBe(before);
+    });
+  }, 40_000);
+
+  test("guards a respawn-window command starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      // See the respawn-pane guard test: without this, `-h` failing to exec
+      // would close the window, its session, and the server itself.
+      await window.setOption("remain-on-exit", "on");
+
+      // Guards the command the same way respawn-pane does.
+      await window.respawn("-h", { kill: true });
+
+      const started = await window.cmd("display-message", ["-p", "#{pane_start_command}"]);
+      expect(started[0]).toBe("-h");
     });
   }, 40_000);
 

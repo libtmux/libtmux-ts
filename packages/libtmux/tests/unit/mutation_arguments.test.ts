@@ -8,8 +8,11 @@ import type {
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
+import { getEnvironment } from "../../src/_internal/operations/environment.js";
+import { displayMenu } from "../../src/_internal/operations/interactive.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
 import { sendKeys } from "../../src/_internal/operations/pane_io.js";
+import { breakPane } from "../../src/_internal/operations/shell.js";
 import { unzoomTarget, zoomPane } from "../../src/_internal/operations/topology.js";
 import {
   planKillPaneIfUnshared,
@@ -51,6 +54,31 @@ function recorder(exitCode = 1): Recorder {
         // The transport boundary is bytes; decoding happens above it.
         stderr: new TextEncoder().encode("stopped\n"),
         stdout: new Uint8Array(),
+      });
+    },
+  };
+}
+
+/**
+ * A recorder whose capability probe answers with a fixed tmux version, for
+ * operations that read `runtime.capabilities.bind()` before rendering their
+ * own argv — `breakPane`'s tmux-3.7 rename follow-up is the only one.
+ */
+function versionedRecorder(version: string): Recorder {
+  const requests: CommandRequest[] = [];
+  return {
+    requests,
+    execute(request: CommandRequest): Promise<RawCommandResult> {
+      requests.push(request);
+      const isProbe = request.commands[0]?.[0] === "display-message";
+      return Promise.resolve({
+        cmd: [request.executable, ...flattenInvocation(request)],
+        exitCode: 0,
+        signal: null,
+        stderr: new Uint8Array(),
+        // The probe reports a version; break-pane's own `-P -F` print is
+        // answered with a window id for the rename follow-up to target.
+        stdout: new TextEncoder().encode(isProbe ? `${version};101;202\n` : "@9\n"),
       });
     },
   };
@@ -265,7 +293,7 @@ describe("pane input command arguments", () => {
     // mode that is no longer there.
     expect(transport.requests).toHaveLength(1);
     expect(transport.requests[0]?.commands).toEqual([
-      ["send-keys", "-t", "%0", "echo hello"],
+      ["send-keys", "-t", "%0", "--", "echo hello"],
       ["send-keys", "-t", "%0", "Enter"],
     ]);
   });
@@ -275,7 +303,7 @@ describe("pane input command arguments", () => {
       sendKeys(runtimeFor(transport), "%0", "q", { enter: false }),
     );
 
-    expect(invocations).toEqual([["send-keys", "-t", "%0", "q"]]);
+    expect(invocations).toEqual([["send-keys", "-t", "%0", "--", "q"]]);
   });
 
   test("keeps Enter a separate key when the text is literal", async () => {
@@ -286,9 +314,19 @@ describe("pane input command arguments", () => {
     // `-l` applies to every argument, so an Enter beside literal text would be
     // sent as the six characters rather than as the key.
     expect(invocations).toEqual([
-      ["send-keys", "-t", "%0", "-l", "Enter"],
+      ["send-keys", "-t", "%0", "-l", "--", "Enter"],
       ["send-keys", "-t", "%0", "Enter"],
     ]);
+  });
+
+  test("guards keys starting with a dash from being read as tmux's own flags", async () => {
+    // Without the guard, `-R` resets the pane's terminal state instead of
+    // being typed, and `-l` alone would be read as send-keys's literal flag.
+    const invocations = await invocationsFor((transport) =>
+      sendKeys(runtimeFor(transport), "%0", "-R", { enter: false }),
+    );
+
+    expect(invocations).toEqual([["send-keys", "-t", "%0", "--", "-R"]]);
   });
 });
 
@@ -324,5 +362,53 @@ describe("zoom command arguments", () => {
     expect(invocations).toEqual([
       ["if-shell", "-F", "-t", "@3", "#{window_zoomed_flag}", "'resize-pane' '-Z' '-t' '@3'"],
     ]);
+  });
+});
+
+describe("break-pane rename follow-up", () => {
+  // tmux 3.7 drops break-pane's own `-n`, so this renders its own
+  // `rename-window` rather than calling the already-guarded `renameWindow`
+  // operation — and so needs the same `--` guard on its own.
+  test("guards the window name the same way renameWindow does", async () => {
+    const transport = versionedRecorder("3.7");
+
+    await breakPane(runtimeFor(transport), "%1", "-P", "$1");
+
+    // [0] is the capability probe, [1] is break-pane itself, and [2] is the
+    // rename follow-up this quirk adds.
+    expect(transport.requests).toHaveLength(3);
+    expect(transport.requests[2]?.commands).toEqual([["rename-window", "-t", "@9", "--", "-P"]]);
+  });
+});
+
+describe("interactive command arguments", () => {
+  // display-popup and find-window get a real-tmux proof (interactive.test.ts);
+  // display-menu's promise does not resolve until a person dismisses it, so
+  // it is pinned here instead, at the argv level.
+  test("guards display-menu items from being read as tmux's own flags", async () => {
+    const invocations = await invocationsFor((transport) =>
+      displayMenu(runtimeFor(transport), "%0", "Actions", [
+        { command: "-C", key: "-k", name: "-n" },
+      ]),
+    );
+
+    expect(invocations).toEqual([
+      ["display-menu", "-T", "Actions", "-t", "%0", "--", "-n", "-k", "-C"],
+    ]);
+  });
+});
+
+describe("environment command arguments", () => {
+  // A real-tmux round trip through `getEnvironment` cannot tell a variable
+  // named e.g. `-x` apart from tmux's own removal-marker line for `x`
+  // (`parseEnvironmentLine` reads any leading `-` as that marker first) — a
+  // separate, pre-existing gap on the read side, not one this guard closes.
+  // The argv shape is what is provable here.
+  test("guards a variable name from being read as show-environment's own flags", async () => {
+    const args = await argumentsFor((transport) =>
+      getEnvironment(runtimeFor(transport), "session", "$0", "-h"),
+    );
+
+    expect(args).toEqual(["show-environment", "-t", "$0", "--", "-h"]);
   });
 });

@@ -26,7 +26,9 @@ export async function hasSession(runtime: RuntimeContext, name: string): Promise
 
 /** Run a tmux config file against the server. */
 export async function sourceFile(runtime: RuntimeContext, path: string): Promise<void> {
-  await runCommand(runtime, ["source-file", path]);
+  // `--` keeps a path starting with `-` from being read as one of
+  // source-file's own flags.
+  await runCommand(runtime, ["source-file", "--", path]);
 }
 
 /** Every command name the running tmux understands. */
@@ -40,7 +42,10 @@ export async function setBuffer(
   name: string,
   data: string,
 ): Promise<void> {
-  await runCommand(runtime, ["set-buffer", "-b", name, data]);
+  // `--` keeps data starting with `-` from being read as one of set-buffer's
+  // own flags; the buffer name reaches tmux through `-b`, which is safe
+  // regardless of what it starts with.
+  await runCommand(runtime, ["set-buffer", "-b", name, "--", data]);
 }
 
 /**
@@ -93,7 +98,9 @@ export async function saveBuffer(
 ): Promise<void> {
   await runCommand(
     runtime,
-    ["save-buffer", ...(options.append === true ? ["-a"] : []), "-b", name, path],
+    // `--` keeps a path starting with `-` from being read as one of
+    // save-buffer's own flags.
+    ["save-buffer", ...(options.append === true ? ["-a"] : []), "-b", name, "--", path],
     options,
   );
 }

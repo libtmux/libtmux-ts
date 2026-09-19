@@ -267,7 +267,7 @@ describe("invocation observer", () => {
       engine: singleCommandTransport(async (request) => {
         live += 1;
         peak = Math.max(peak, live);
-        const refuses = request.commands[0][1] === "boom";
+        const refuses = request.commands[0].at(-1) === "boom";
         await new Promise((resolve) => setTimeout(resolve, 2));
         live -= 1;
         if (refuses) throw new Error("engine refused");
