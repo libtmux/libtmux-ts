@@ -373,7 +373,12 @@ const tested = matrix.split(",").map((entry) => entry.trim().replaceAll('"', "")
 // The badge names the range's ends rather than every release in it: eight
 // entries is a badge nobody reads, and the ends are the claim — everything
 // between them is in the matrix above, which is what this compares against.
-const range = `${tested[0] ?? ""}\u2013${tested.at(-1) ?? ""}`;
+// A badge tells a reader which releases are covered, and `master` is not one
+// they can install — it is a moving branch the matrix tracks so the version
+// ranking has a real `next-X.Y` binary behind it. The ends of the badge are
+// the tagged ends.
+const releases = tested.filter((version) => version !== "master");
+const range = `${releases[0] ?? ""}\u2013${releases.at(-1) ?? ""}`;
 
 let badges = 0;
 for (const file of files) {
