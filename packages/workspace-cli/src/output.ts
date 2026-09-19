@@ -4,13 +4,14 @@ import type { OutputMode } from "./parser.ts";
 /**
  * The codes a machine-readable failure can carry. The set is closed and shared
  * with the other ports, so a caller branches on it rather than on prose; the
- * type is what keeps a new failure from inventing a tenth.
+ * type is what keeps a new failure from inventing one outside it.
  */
 export type MachineCode =
   | "workspace_not_found"
   | "invalid_workspace"
   | "unsupported_key"
   | "session_not_found"
+  | "session_mismatch"
   | "tmux_unavailable"
   | "tmux_failed"
   | "script_failed"

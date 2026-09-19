@@ -960,7 +960,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
             result.session_name = existing.name ?? input.spec.name;
             result.missing_windows = missing;
             throw new CliError(
-              "invalid_workspace",
+              "session_mismatch",
               `Session ${input.spec.name} is already running and does not hold ${missing.join(", ")}; it was left as it is`,
             );
           }
@@ -1048,6 +1048,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         : unreachable
           ? "tmux_unavailable"
           : "tmux_failed";
+    // A reused session that does not satisfy the document was never touched by
+    // this load: nothing built, nothing changed, so it is `error` even though
+    // its id is on the result for reference.
+    const mismatched = code === "session_mismatch";
     const kept = results.flatMap((result) =>
       result.session_id && !result.session_removed ? (result.created_window_names ?? []) : [],
     );
@@ -1059,7 +1063,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           ? error.message
           : String(error)) + (kept.length > 0 ? `. Windows kept: ${kept.join(", ")}` : "");
     await output.result({
-      status: changed ? "partial" : "error",
+      status: mismatched ? "error" : changed ? "partial" : "error",
       results,
       errors: [
         {

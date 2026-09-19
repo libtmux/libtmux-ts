@@ -2114,7 +2114,8 @@ test("a reused session without the document's windows is reported, not rebuilt",
     const result = await run(["load", two, "-d", "--json"]);
     expect(result.code, result.stdout).toBe(1);
     const envelope = JSON.parse(result.stdout);
-    expect(envelope.status).toBe("partial");
+    expect(envelope.status).toBe("error");
+    expect(envelope.errors[0].code).toBe("session_mismatch");
     expect(envelope.results[0]).toMatchObject({ reused: true, missing_windows: ["two"] });
     expect(envelope.errors[0].message).toContain("two");
     const after = (await server.snapshot()).sessions.one({ name: "conv" });
