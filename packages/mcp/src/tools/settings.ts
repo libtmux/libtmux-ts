@@ -202,7 +202,11 @@ export function registerSettings(mcp: ToolRegistrar, context: ToolContext): void
       description:
         "The environment tmux gives processes it starts, at server or session " +
         "scope. This is what a new pane will inherit, not what a running one has.",
-      inputSchema: { session: requestText("session").optional() },
+      inputSchema: {
+        session: requestText("session")
+          .optional()
+          .describe("Session id ($1) or name. Omit for the server environment."),
+      },
       outputSchema: {
         complete: z.boolean(),
         environment: z.record(z.string(), z.string().nullable()),

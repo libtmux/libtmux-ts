@@ -240,16 +240,17 @@ test("one manifest governs every toolset subset, selection, metadata, and report
       // `capture_pane` and silent on the four tools that take the same
       // argument, and `force` referred to "attention", a word defined nowhere
       // in any schema.
+      const undescribed: string[] = [];
       for (const tool of tools) {
         const properties = (tool.inputSchema as { properties?: Record<string, unknown> })
           .properties;
         for (const [parameter, schema] of Object.entries(properties ?? {})) {
-          expect(
-            (schema as { description?: string }).description,
-            `${tool.name}.${parameter}`,
-          ).toBeTruthy();
+          if (!(schema as { description?: string }).description) {
+            undescribed.push(`${tool.name}.${parameter}`);
+          }
         }
       }
+      expect(undescribed.length, `undescribed: ${undescribed.join(", ")}`).toBe(0);
 
       const listedBatch = tools.find(({ name }) => name === "call_read_tools_batch");
       expect(listedBatch?.description).toContain("inner tools receive no separate approval");

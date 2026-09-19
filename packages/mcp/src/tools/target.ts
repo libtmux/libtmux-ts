@@ -191,7 +191,9 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     "get_session_info",
     {
       description: "Return metadata for one session without listing every session.",
-      inputSchema: { session: requestText("session") },
+      inputSchema: {
+        session: requestText("session").describe("Session id ($1) or name."),
+      },
       outputSchema: { session: sessionViewSchema },
       title: "Get session info",
     },
@@ -232,7 +234,10 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     "find_pane_by_position",
     {
       description: "Find the pane occupying a named corner of a window.",
-      inputSchema: { corner: z.enum(CORNERS), windowId: windowIdSchema },
+      inputSchema: {
+        corner: z.enum(CORNERS).describe("Which corner of the window's layout to resolve."),
+        windowId: windowIdSchema,
+      },
       outputSchema: { pane: paneViewSchema },
       title: "Find pane by position",
     },
@@ -264,7 +269,11 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
           .array(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/u))
           .min(1)
           .max(32)
-          .meta({ [TMUX_FORMAT_SCHEMA_KEY]: TMUX_FORMAT_VALIDATED_VARIABLE }),
+          .meta({ [TMUX_FORMAT_SCHEMA_KEY]: TMUX_FORMAT_VALIDATED_VARIABLE })
+          .describe(
+            'Variable names to resolve, such as "pane_current_command" — bare names, ' +
+              "not `#{…}` format syntax.",
+          ),
         paneId: paneIdSchema.optional(),
       },
       outputSchema: { values: z.record(z.string(), z.string()) },
@@ -438,7 +447,10 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
         "Send an ordered batch of pane-input operations, resolving and checking each row's " +
         "configured cohort immediately before input. Stop or continue on error.",
       inputSchema: {
-        onError: z.enum(["stop", "continue"]).optional(),
+        onError: z
+          .enum(["stop", "continue"])
+          .optional()
+          .describe("Whether a failed operation ends the batch. Defaults to stop."),
         operations: z
           .array(
             z.object({
@@ -450,7 +462,8 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
             }),
           )
           .min(1)
-          .max(MAX_REQUEST_ITEMS),
+          .max(MAX_REQUEST_ITEMS)
+          .describe("The key sends to run, in order, one pane each."),
       },
       outputSchema: {
         completed: z.number().int(),
@@ -572,8 +585,15 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
         "nested name; inner tools receive no separate approval. The structured result is capped " +
         "below 1,000,000 bytes, preserves every operation row, and reports explicit stop and truncation accounting.",
       inputSchema: {
-        onError: z.enum(["stop", "continue"]).optional(),
-        operations: z.array(readBatchOperationSchema).min(1).max(16),
+        onError: z
+          .enum(["stop", "continue"])
+          .optional()
+          .describe("Whether a failed operation ends the batch. Defaults to stop."),
+        operations: z
+          .array(readBatchOperationSchema)
+          .min(1)
+          .max(16)
+          .describe("The read-only tool calls to run, in order, in one approval."),
       },
       outputSchema: {
         failed: z.number().int().nonnegative(),
