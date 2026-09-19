@@ -70,6 +70,11 @@ Those five are the page, in the order it is written. What follows them —
 deadlines, engines, observation, options, environments, errors — is depth for
 when a program needs it, and nothing above depends on any of it.
 
+What this page claims a call costs is measured rather than asserted:
+[`examples/observe/`](../../examples/observe/README.md) counts the invocations
+a snapshot and a hundred queries actually make, and runs as a test against a
+real server.
+
 <details>
 <summary><b>Everything on this page</b></summary>
 

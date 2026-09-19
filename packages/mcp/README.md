@@ -81,6 +81,13 @@ This is the whole configuration:
 }
 ```
 
+Naming a socket is choosing one, and an explicitly chosen server gets
+`inspect,manage,execute` — so this configuration ships without the `teardown`
+tools: no `kill_pane`, `kill_window`, `kill_session` or
+`clear_pane_scrollback`. That is the intended default for a socket the server
+did not create itself. [Toolsets and trust](#toolsets-and-trust) says how to
+opt in.
+
 <details>
 <summary>Claude Code</summary>
 
