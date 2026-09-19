@@ -229,7 +229,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tmux-version: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c"]
+        # 3.8-rc is here for the layout format: 3.8 emits the v2 JSON
+        # window_layout and every earlier release the classic string, so the
+        # version gate deciding between them has a real binary behind it.
+        # Replace with "3.8" once it ships.
+        tmux-version: ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c", "3.8-rc"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 

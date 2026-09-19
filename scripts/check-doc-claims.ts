@@ -378,9 +378,14 @@ let badges = 0;
 for (const file of files) {
   // eslint-disable-next-line no-await-in-loop -- one document at a time, as above.
   const markdown = await Bun.file(join(repositoryRoot, file)).text();
-  for (const match of markdown.matchAll(/img\.shields\.io\/badge\/tmux-([^-]+)-/gu)) {
+  for (const match of markdown.matchAll(/img\.shields\.io\/badge\/tmux-((?:--|[^-])+)-(?!-)/gu)) {
     badges += 1;
-    const claimed = decodeURIComponent(match[1] ?? "").trim();
+    // shields.io escapes a literal hyphen in a field as `--`, so a version
+    // like `3.8-rc` cannot be read without undoing that first — the badge
+    // said 3.8 and the matrix said 3.8-rc, and only the escape differed.
+    const claimed = decodeURIComponent(match[1] ?? "")
+      .replaceAll("--", "-")
+      .trim();
     if (claimed !== range) {
       failures.push(`${file}: the tmux badge claims ${claimed} but CI runs ${range}`);
     }
