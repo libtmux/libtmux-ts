@@ -277,10 +277,12 @@ Observation, planning and concurrency compose around the same command engine —
 | planned    | `.plan` + `server.batch([…])` | Ordered mutations that must return typed handles    |
 | concurrent | `Promise.all`                 | Independent work that may safely overlap            |
 
-For its create-twelve-windows-and-query workload, the benchmark uses 25
-invocations one at a time, 13 through `pipeline`, and 14 through `batch`; the
-last includes the snapshot that resolves typed handles. It reports
-machine-specific timings beside those deterministic counts:
+Creating twelve windows costs 25 tmux invocations one at a time, 13 through
+`pipeline`, and 14 through `batch` — the last includes the snapshot that turns
+printed ids into typed handles. A snapshot is one invocation whatever the
+server's size, and querying it is none. Those counts, the wall-clock beside
+them, and why `Promise.all` is the slowest of the four are in
+[the benchmarks](packages/libtmux/docs/benchmarks.md).
 
 ```console
 $ bun packages/libtmux/scripts/bench-modes.ts

@@ -114,7 +114,8 @@ when a program needs it, and nothing above depends on any of it.
 [Consumers](#consumers) ·
 [Examples](#examples) ·
 [Parity with the Python library](#parity-with-the-python-library) ·
-[API reference](docs/api.md)
+[API reference](docs/api.md) ·
+[Benchmarks](docs/benchmarks.md)
 
 </details>
 
@@ -1083,7 +1084,9 @@ bounded.tmuxBin;
 ```
 
 The ceiling costs no throughput, because there was none to lose: tmux runs
-commands on one thread. Measured against a live server on one machine, capture
+commands on one thread — [the benchmarks](docs/benchmarks.md) show
+`Promise.all` over twelve creations running slower than doing them in order,
+and reordering a third of them. Measured against a live server on one machine, capture
 throughput stops rising at four concurrent clients and is flat from there to
 sixty-four, so a wider fan-out buys queueing and process pressure rather than
 work.
