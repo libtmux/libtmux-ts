@@ -2275,16 +2275,21 @@ test("every broken current-pane context is one refusal, and builds nothing", asy
 
 test("freeze refuses a name load would reject, and writes nothing", async () => {
   await fixture(async (server, root, run) => {
-    // tmux itself accepts a dotted name; only addressing it by name is
-    // ambiguous, so the session has to be made without the library's guard.
     const tmux = async (...args: string[]) => {
       const child = await processRun([server.tmuxBin, "-S", server.socketPath!, ...args], {
         cwd: root,
         env: process.env,
       });
       expect(child.code, child.stderr).toBe(0);
+      return child.stdout.trim();
     };
-    await tmux("new-session", "-d", "-s", "my.proj");
+
+    // load refuses "my.proj" as a session_name before it ever runs tmux, since
+    // "." is a target separator; freeze must refuse the same string the same
+    // way, so this asserts the refusal directly rather than depending on a
+    // session existing under that literal name -- what tmux would do with the
+    // name varies by release (rewritten before 3.7, refused by 3.7 itself,
+    // kept verbatim from 3.7a on) and none of it is the question here.
     const destination = join(root, "dotted.yaml");
     const result = await run(["freeze", "my.proj", "--save-to", destination, "--json"]);
     expect(result.code, result.stdout + result.stderr).toBe(1);
@@ -2292,12 +2297,35 @@ test("freeze refuses a name load would reject, and writes nothing", async () => 
     expect(result.stderr).toContain("my.proj");
     expect(await Bun.file(destination).exists()).toBe(false);
 
-    await tmux("new-window", "-d", "-t", "fixture:", "-n", "a.b");
-    const second = join(root, "dotted-window.yaml");
-    const window = await run(["freeze", "fixture", "--save-to", second, "--json"]);
-    expect(window.code, window.stdout + window.stderr).toBe(1);
-    expect(JSON.parse(window.stderr).code).toBe("invalid_workspace");
-    expect(await Bun.file(second).exists()).toBe(false);
+    // A window name, unlike a session name, is never rewritten by tmux --
+    // only "#" is forbidden in it -- except on release 3.7, which forbids
+    // "." and ":" in both and refuses to create the window at all. That
+    // release has no dotted window to freeze, so it has nothing to assert
+    // here; every other release keeps the name and lets freeze's own
+    // addressability check refuse it.
+    if ((await server.version()).raw !== "3.7") {
+      await tmux("new-window", "-d", "-t", "fixture:", "-n", "a.b");
+      const second = join(root, "dotted-window.yaml");
+      const window = await run(["freeze", "fixture", "--save-to", second, "--json"]);
+      expect(window.code, window.stdout + window.stderr).toBe(1);
+      expect(JSON.parse(window.stderr).code).toBe("invalid_workspace");
+      expect(await Bun.file(second).exists()).toBe(false);
+    }
+
+    // From 3.7a on, tmux does store a session named "my.proj" verbatim, and
+    // an ordinary "-t my.proj" still misreads the dot as a target separator.
+    // Address one by the ID tmux handed back at creation instead, so freeze
+    // resolves the session by ID and this exercises the addressability check
+    // against a name already on record, not the request string.
+    if (await server.versionAtLeast("3.7a")) {
+      const id = await tmux("new-session", "-d", "-s", "my.proj", "-P", "-F", "#{session_id}");
+      const third = join(root, "dotted-by-id.yaml");
+      const byId = await run(["freeze", id, "--save-to", third, "--json"]);
+      expect(byId.code, byId.stdout + byId.stderr).toBe(1);
+      expect(JSON.parse(byId.stderr).code).toBe("invalid_workspace");
+      expect(byId.stderr).toContain("my.proj");
+      expect(await Bun.file(third).exists()).toBe(false);
+    }
   });
 });
 
