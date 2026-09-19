@@ -66,6 +66,7 @@ const expectedScripts = {
   "test:type-performance": "bun scripts/check-type-performance.ts --check",
   "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
   typecheck: "tsc -p tsconfig.json --noEmit",
+  "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
   "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",
   "typecheck:readme": "bun scripts/doc-examples/check-readme-examples.ts",
   "typecheck:symbols": "bun scripts/doc-examples/check-symbol-examples.ts",
@@ -91,6 +92,13 @@ const expectedDevDependencies = {
   oxlint: "1.81.0",
   "oxlint-tsgolint": "7.0.2001",
   typescript: "7.0.2",
+  // The oldest TypeScript a consumer may hold. Aliased rather than a second
+  // `typescript` entry because `test:install` compiles its fixture with both:
+  // the declarations being built by the newest says nothing about whether an
+  // older one can read them, and 5.6 ships no `ES2024` lib at all.
+  "typescript-floor": "npm:typescript@5.7.3",
+  // Runs the Bun suites on Node against `dist`, `bun:test` answered by a shim.
+  vitest: "5.0.1",
   zod: "4.5.4",
 };
 
@@ -172,11 +180,14 @@ describe("package contract", () => {
     // The root entrypoint is the surface a consumer actually imports.
     expect(Object.keys(await import("../../src/index.js")).toSorted()).toEqual([
       "Client",
+      "LibTmuxError",
       "LibTmuxException",
       "MultipleMatchesError",
+      "MultipleObjectsError",
       "MultipleObjectsReturned",
       "NoMatchError",
       "ObjectDoesNotExist",
+      "ObjectNotFoundError",
       "OptionScope",
       "Pane",
       "PaneDirection",
@@ -186,9 +197,12 @@ describe("package contract", () => {
       "Session",
       "TmuxCommandError",
       "TmuxServerRestarted",
+      "TmuxServerRestartedError",
       "TmuxTransportError",
       "VersionTooLow",
+      "VersionTooLowError",
       "WaitTimeout",
+      "WaitTimeoutError",
       "Window",
       "WindowDirection",
       "compileBoundedRegex",
@@ -197,7 +211,6 @@ describe("package contract", () => {
       "isSafeInteger",
       "isSplitSize",
       "isTmuxName",
-      "parseLegacyWhere",
       "safeInteger",
       "splitSize",
     ]);
@@ -247,6 +260,7 @@ describe("package contract", () => {
       ".",
       "./package.json",
       "./common",
+      "./errors",
       "./exc",
       "./constants",
       "./formats",
@@ -259,6 +273,7 @@ describe("package contract", () => {
       "./client",
       "./selection",
       "./engine",
+      "./testing",
     ]);
     expect(packageManifest.exports["."]).toEqual({
       types: "./dist/index.d.ts",
@@ -272,6 +287,12 @@ describe("package contract", () => {
       bun: "./src/common.ts",
       import: "./dist/common.js",
       default: "./dist/common.js",
+    });
+    expect(packageManifest.exports["./errors"]).toEqual({
+      types: "./dist/errors.d.ts",
+      bun: "./src/errors.ts",
+      import: "./dist/errors.js",
+      default: "./dist/errors.js",
     });
     expect(packageManifest.exports["./exc"]).toEqual({
       types: "./dist/exc.d.ts",
@@ -364,6 +385,32 @@ describe("package contract", () => {
     //
     // A second entry here needs its own reason.
     expect(config.rules).toEqual({ "typescript/await-thenable": "off" });
+  });
+
+  /**
+   * A deprecation with no removal point is a promise nobody can plan around.
+   * `0.1.0` is where every one in this package goes: the alphas precede it,
+   * and semantic versioning starts applying there.
+   */
+  test("names a removal point on every deprecation", async () => {
+    const root = new URL("../../src/", import.meta.url).pathname;
+    const missing: string[] = [];
+    let tags = 0;
+
+    for await (const relative of new Bun.Glob("**/*.ts").scan({ cwd: root })) {
+      const text = await readFile(`${root}${relative}`, "utf8");
+      for (const block of text.matchAll(/\/\*\*[\s\S]*?\*\//gu)) {
+        if (!block[0].includes("@deprecated")) continue;
+        tags += 1;
+        if (!/Removed at `0\.1\.0`/u.test(block[0])) {
+          missing.push(`${relative}: ${block[0].replaceAll(/\s+/gu, " ").slice(0, 70)}`);
+        }
+      }
+    }
+
+    // A scan that matched nothing would report a clean tree.
+    expect(tags).toBeGreaterThanOrEqual(35);
+    expect(missing).toEqual([]);
   });
 
   test("exposes exactly the scripts the gates run, and no others", async () => {

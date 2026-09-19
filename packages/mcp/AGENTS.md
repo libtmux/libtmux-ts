@@ -35,6 +35,43 @@ command subshell. fish, csh, and PowerShell do not share that grammar, so the
 tool refuses them even with `force`. The marker is framing, not confinement:
 code with the tmux socket's authority can inspect the pane.
 
+The framed script's _content_ is unchanged by delivery: `deliverFramedScript`
+(`command.ts`) writes it to a tmux buffer, `save-buffer`s it into a fresh
+`mkdtemp` directory on the tmux server's own host, and types only a short
+sourcing line. Typing the whole ~1KB script, one shell input line, made an
+interactive shell's line editor (zsh with syntax-highlighting/autosuggestion
+plugins) redraw on every byte of it: the trap/octal/nonce machinery flashed
+across the pane and a trivial command could take seconds.
+
+The tmux server's host is not the pane's host. A pane running `ssh`, a
+container, or another user's `su` has a shell that cannot open that file, and
+nothing such a shell prints resembles a framing marker — so the run would
+spend its whole budget waiting. `sourcingDispatch` (`command_frame.ts`) tests
+for the file and prints a `<id>_N` token when it cannot be read, and
+`runFramedCommand` answers that token by typing the script itself. The test is
+`[ -r … ]` rather than the status of `.`: `.` is a POSIX special builtin, and
+dash abandons the whole command line when it fails, so `. path || fallback`
+falls back under bash and zsh and silently does nothing under dash. The token
+is assembled by `printf` rather than written out, because the pane echoes what
+is typed and a literal one would read as a failure on every successful run.
+
+`save-buffer` creates its target file mode however the umask says — world
+readable under an ordinary 022, on any path — so the file cannot simply live
+in a shared directory like `/tmp`: the `mkdtemp` directory is what keeps the
+command text (secrets included) private, since its own mode is 0700 on POSIX
+unconditionally, not subject to the umask. Same gap and same fix as
+libtmux-go's `observePane` (`control_observation.go`). Both the sourcing line
+and the trailer's `rm -rf` quote that path with `shellQuote` (`startup.ts`):
+an operator's `TMPDIR` is not this process's to trust.
+
+A trailing `command rm -rf` appended outside the sourced group (never inside
+`frame()`) removes the file and its directory once the run genuinely ends,
+even one that outlives the caller's deadline. That trailer never runs, and
+the directory outlives the run, whenever nothing sources it: a hard crash of
+this server, or the pane itself dying mid-run while this server stays up.
+Either way the directory is bounded only by the OS's own temp-directory
+hygiene — the same residual gap libtmux-go accepts.
+
 ## Cancellation
 
 Every wait takes the request's `AbortSignal` and stops on it. Without that a

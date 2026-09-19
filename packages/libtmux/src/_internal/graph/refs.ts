@@ -10,7 +10,7 @@ import type {
   WindowId,
   WindowIdInput,
 } from "../../common.js";
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 import { snapshotPlainDataRecord } from "./data_snapshot.js";
 import type { GraphEntityRef } from "./model.js";
 
@@ -63,8 +63,8 @@ interface WinlinkRefInput {
 function invalidReference(message: string, cause?: unknown): never {
   throw new QueryValidationError(
     cause === undefined
-      ? { code: "invalid-query", message }
-      : { cause, code: "invalid-query", message },
+      ? { reason: "invalid-query", message }
+      : { cause, reason: "invalid-query", message },
   );
 }
 

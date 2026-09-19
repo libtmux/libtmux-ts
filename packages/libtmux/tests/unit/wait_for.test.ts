@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { createEventStream } from "../../src/_internal/control/stream.js";
 import { waitForSnapshot } from "../../src/_internal/control/wait_for.js";
-import { WaitTimeout } from "../../src/exc.js";
+import { WaitTimeoutError } from "../../src/errors.js";
 import type { WaitForOptions } from "../../src/types.js";
 
 test("a hard deadline supervises one pending snapshot", async () => {
@@ -31,7 +31,7 @@ test("a hard deadline supervises one pending snapshot", async () => {
     (error: unknown) => error,
   );
 
-  expect(failure).toBeInstanceOf(WaitTimeout);
+  expect(failure).toBeInstanceOf(WaitTimeoutError);
   expect(performance.now() - started).toBeLessThan(1_000);
   expect(snapshots).toBe(1);
   expect(closed).toBe(true);

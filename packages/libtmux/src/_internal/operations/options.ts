@@ -173,6 +173,9 @@ export async function setOption(
       ...(options.global === true ? ["-g"] : []),
       ...(options.append === true ? ["-a"] : []),
       ...(target == null ? [] : ["-t", target]),
+      // `--` keeps a name or value starting with `-` from being read as one
+      // of set-option's own flags.
+      "--",
       literalFormat(name),
       value,
     ],
@@ -196,6 +199,8 @@ export async function unsetOption(
       ...(options.global === true ? ["-g"] : []),
       "-u",
       ...(target == null ? [] : ["-t", target]),
+      // `--` keeps a name starting with `-` from being read as a flag.
+      "--",
       literalFormat(name),
     ],
     options,

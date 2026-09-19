@@ -17,13 +17,7 @@ import {
   MAX_RESULT_BYTES,
 } from "../policy.js";
 import { busyPane, dispatchPaneKeys, paneInputChanged, planPaneInput } from "../pane_input.js";
-import {
-  MUTATING,
-  OPEN_WORLD,
-  READ_BATCH_TOOLS,
-  READ_ONLY,
-  type ToolRegistry,
-} from "../register.js";
+import { READ_BATCH_TOOLS, type ToolRegistry } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import {
   inlineRequestText,
@@ -42,6 +36,7 @@ import {
   windowPlacements,
 } from "../target_resolution.js";
 import {
+  humanAttachedClientCount,
   paneLine,
   paneView,
   paneViewSchema,
@@ -195,9 +190,10 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "get_session_info",
     {
-      annotations: READ_ONLY,
       description: "Return metadata for one session without listing every session.",
-      inputSchema: { session: requestText("session") },
+      inputSchema: {
+        session: requestText("session").describe("Session id ($1) or name."),
+      },
       outputSchema: { session: sessionViewSchema },
       title: "Get session info",
     },
@@ -208,6 +204,7 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
       const view = sessionView(
         found,
         snapshot.windows.count({ session: { is: { id: found.id } } }),
+        humanAttachedClientCount(snapshot.clients.toArray(), found.id),
       );
       return ok(
         { session: view },
@@ -219,7 +216,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "get_window_info",
     {
-      annotations: READ_ONLY,
       description: "Return metadata and placements for one window.",
       inputSchema: { windowId: windowIdSchema },
       outputSchema: { window: windowViewSchema },
@@ -237,9 +233,11 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "find_pane_by_position",
     {
-      annotations: READ_ONLY,
       description: "Find the pane occupying a named corner of a window.",
-      inputSchema: { corner: z.enum(CORNERS), windowId: windowIdSchema },
+      inputSchema: {
+        corner: z.enum(CORNERS).describe("Which corner of the window's layout to resolve."),
+        windowId: windowIdSchema,
+      },
       outputSchema: { pane: paneViewSchema },
       title: "Find pane by position",
     },
@@ -265,14 +263,17 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "get_tmux_variables",
     {
-      annotations: READ_ONLY,
       description: "Resolve validated tmux variable names without accepting raw format syntax.",
       inputSchema: {
         names: z
           .array(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/u))
           .min(1)
           .max(32)
-          .meta({ [TMUX_FORMAT_SCHEMA_KEY]: TMUX_FORMAT_VALIDATED_VARIABLE }),
+          .meta({ [TMUX_FORMAT_SCHEMA_KEY]: TMUX_FORMAT_VALIDATED_VARIABLE })
+          .describe(
+            'Variable names to resolve, such as "pane_current_command" — bare names, ' +
+              "not `#{…}` format syntax.",
+          ),
         paneId: paneIdSchema.optional(),
       },
       outputSchema: { values: z.record(z.string(), z.string()) },
@@ -304,12 +305,16 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "snapshot_pane",
     {
-      annotations: READ_ONLY,
       description:
         "Return bounded terminal content and pane metadata in one MCP response. The metadata " +
         "and capture come from separate tmux requests and are not an atomic snapshot.",
       inputSchema: {
-        maxLines: z.number().int().positive().optional(),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
         paneId: paneIdSchema,
       },
       outputSchema: {
@@ -353,17 +358,23 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "wait_for_channel",
     {
-      annotations: MUTATING,
       description: "Wait until a tmux wait-for channel is signalled.",
       inputSchema: {
-        channel: inlineRequestText("channel"),
-        timeoutMs: z.number().int().positive().optional(),
+        channel: inlineRequestText("channel").describe("The tmux wait-for channel name."),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Give up after this long. Defaults to the server's wait ceiling."),
       },
       outputSchema: { channel: z.string(), signalled: z.boolean() },
       title: "Wait for channel",
     },
     async ({ channel, timeoutMs }, extra) => {
-      await context.tmux.cmd("wait-for", [channel], {
+      // `--` keeps a channel starting with `-` from being read as one of
+      // wait-for's own flags (`-L`, `-S`, `-U`) instead of the channel name.
+      await context.tmux.cmd("wait-for", ["--", channel], {
         signal: extra.signal,
         target: null,
         timeoutMs: effectiveWaitMs(context.policy, timeoutMs),
@@ -375,14 +386,17 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "signal_channel",
     {
-      annotations: MUTATING,
       description: "Signal a tmux wait-for channel.",
-      inputSchema: { channel: inlineRequestText("channel") },
+      inputSchema: {
+        channel: inlineRequestText("channel").describe("The tmux wait-for channel to signal."),
+      },
       outputSchema: { channel: z.string(), signalled: z.boolean() },
       title: "Signal channel",
     },
     async ({ channel }) => {
-      await context.tmux.cmd("wait-for", ["-S", channel], { target: null });
+      // `-S` is its own flag and takes no value; `--` before the channel
+      // keeps it from being read as another one of wait-for's own flags.
+      await context.tmux.cmd("wait-for", ["-S", "--", channel], { target: null });
       return ok({ channel, signalled: true }, `Signalled channel ${channel}.`);
     },
   );
@@ -390,9 +404,10 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "set_mouse_enabled",
     {
-      annotations: MUTATING,
       description: "Set the global tmux mouse option through a closed boolean schema.",
-      inputSchema: { enabled: z.boolean() },
+      inputSchema: {
+        enabled: z.boolean().describe("Whether tmux should report mouse events."),
+      },
       outputSchema: { enabled: z.boolean() },
       title: "Set mouse enabled",
     },
@@ -405,9 +420,15 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "set_history_limit",
     {
-      annotations: MUTATING,
       description: "Set the default retained scrollback line limit through a bounded integer.",
-      inputSchema: { lines: z.number().int().min(0).max(2_000_000) },
+      inputSchema: {
+        lines: z
+          .number()
+          .int()
+          .min(0)
+          .max(2_000_000)
+          .describe("Scrollback lines each new pane keeps. Applies to panes made after this."),
+      },
       outputSchema: { lines: z.number().int() },
       title: "Set history limit",
     },
@@ -420,11 +441,15 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "set_synchronize_panes",
     {
-      annotations: OPEN_WORLD,
       description:
         "Set the window default for synchronized pane input. Pane overrides still determine " +
         "each effective configured cohort.",
-      inputSchema: { enabled: z.boolean(), windowId: windowIdSchema },
+      inputSchema: {
+        enabled: z
+          .boolean()
+          .describe("Whether typing into one pane of this window types into all of them."),
+        windowId: windowIdSchema,
+      },
       outputSchema: { enabled: z.boolean(), windowId: windowIdSchema },
       title: "Set synchronize panes",
     },
@@ -443,24 +468,33 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "send_keys_batch",
     {
-      annotations: OPEN_WORLD,
       description:
         "Send an ordered batch of pane-input operations, resolving and checking each row's " +
         "configured cohort immediately before input. Stop or continue on error.",
       inputSchema: {
-        onError: z.enum(["stop", "continue"]).optional(),
+        onError: z
+          .enum(["stop", "continue"])
+          .optional()
+          .describe("Whether a failed operation ends the batch. Defaults to stop."),
         operations: z
           .array(
             z.object({
-              enter: z.boolean().optional(),
-              force: z.boolean().optional(),
-              keys: inlineRequestText("keys"),
-              literal: z.boolean().optional(),
+              enter: z.boolean().optional().describe("Press Enter afterwards. Default true."),
+              force: z
+                .boolean()
+                .optional()
+                .describe("Allow this server's own caller pane, as on `send_keys`."),
+              keys: inlineRequestText("keys").describe("Keys for this pane, as on `send_keys`."),
+              literal: z
+                .boolean()
+                .optional()
+                .describe("Send the text literally rather than resolving key names."),
               paneId: paneIdSchema,
             }),
           )
           .min(1)
-          .max(MAX_REQUEST_ITEMS),
+          .max(MAX_REQUEST_ITEMS)
+          .describe("The key sends to run, in order, one pane each."),
       },
       outputSchema: {
         completed: z.number().int(),
@@ -513,6 +547,7 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
             // eslint-disable-next-line no-await-in-loop -- batch input is deliberately ordered.
             await dispatchPaneKeys(final.pane, operation.keys, {
               ...(operation.enter === undefined ? {} : { enter: operation.enter }),
+              identity: final.observation.authority,
               ...(operation.literal === undefined ? {} : { literal: operation.literal }),
             });
             targets.push({ index, resolvedPaneIds: final.resolvedPaneIds });
@@ -540,7 +575,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "clear_pane_scrollback",
     {
-      annotations: MUTATING,
       description: "Discard the retained scrollback history for one pane.",
       inputSchema: { paneId: paneIdSchema },
       outputSchema: { cleared: paneIdSchema },
@@ -561,8 +595,14 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   const readBatchOperationSchemas = eligibleReadBatchTools.map((tool) =>
     z
       .object({
-        arguments: z.object(registry.nativeInputShape(tool)).strict().optional(),
-        tool: z.literal(tool),
+        arguments: z
+          .object(registry.nativeInputShape(tool))
+          .strict()
+          .optional()
+          .describe(
+            `Arguments for \`${tool}\`, exactly the shape it takes when called on its own.`,
+          ),
+        tool: z.literal(tool).describe(`Run \`${tool}\` as this step of the batch.`),
       })
       .strict(),
   );
@@ -578,14 +618,20 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "call_read_tools_batch",
     {
-      annotations: READ_ONLY,
       description:
         "Invoke a serial batch of at most 16 inspect tools. One client approval covers every " +
         "nested name; inner tools receive no separate approval. The structured result is capped " +
         "below 1,000,000 bytes, preserves every operation row, and reports explicit stop and truncation accounting.",
       inputSchema: {
-        onError: z.enum(["stop", "continue"]).optional(),
-        operations: z.array(readBatchOperationSchema).min(1).max(16),
+        onError: z
+          .enum(["stop", "continue"])
+          .optional()
+          .describe("Whether a failed operation ends the batch. Defaults to stop."),
+        operations: z
+          .array(readBatchOperationSchema)
+          .min(1)
+          .max(16)
+          .describe("The read-only tool calls to run, in order, in one approval."),
       },
       outputSchema: {
         failed: z.number().int().nonnegative(),

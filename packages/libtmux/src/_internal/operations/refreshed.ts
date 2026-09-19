@@ -1,5 +1,5 @@
 import type { Client } from "../../client.js";
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Session } from "../../session.js";
 import type { ServerSnapshot } from "../../types.js";
@@ -106,13 +106,13 @@ export async function refreshedHandle<Handle extends Child>(
     // window they can see in front of them.
     const elsewhere = candidates.find((candidate) => isSameSubject(candidate, handle));
     if (elsewhere !== undefined) {
-      throw new LibTmuxException(
+      throw new LibTmuxError(
         `${handle.toString()} is no longer at that placement; it is now ${elsewhere.toString()}. ` +
           `A handle names a placement rather than a window, because one window can sit in two ` +
           `sessions at once — read it back from a fresh snapshot.`,
       );
     }
-    throw new LibTmuxException(`${handle.toString()} no longer exists on the server`);
+    throw new LibTmuxError(`${handle.toString()} no longer exists on the server`);
   }
   return found as Handle;
 }

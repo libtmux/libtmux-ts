@@ -12,7 +12,6 @@ import type {
 import { assertSubscriptionFormat, assertSubscriptionName } from "../operations/names.js";
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
-import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import type { CommandTransport } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
@@ -113,6 +112,8 @@ export interface ControlObserverBinding {
  */
 export class ControlConnection {
   readonly #children: ControlChildLifecycle;
+  /** The child whose attach sequence has already run. */
+  #configured: ControlChild | undefined;
   readonly #argv: readonly string[];
   readonly #commandPrefix: readonly string[];
   readonly #executable: string;
@@ -242,6 +243,18 @@ export class ControlConnection {
       "-N",
       "-C",
       "attach-session",
+      // Without this, tmux 3.8+ hands a control client the pre-3.8 classic
+      // `window_layout` string in both `%layout-change` and every format this
+      // connection reads, while a plain (non-control) client on the same
+      // socket already gets JSON — so a snapshot and an event describing the
+      // identical arrangement would carry two different strings. Setting the
+      // flag on attach, rather than after, closes the window in which an
+      // early notification could still arrive classic. `server_client_set_flags`
+      // skips a token it does not recognise rather than failing the command,
+      // so this is a silent no-op on every tmux below 3.8 (verified on 3.2a:
+      // the attach still succeeds and `#{client_flags}` omits `new-layouts`).
+      "-f",
+      "new-layouts",
       ...(options.target === undefined ? [] : ["-t", options.target]),
     ];
     this.#argv = Object.freeze(argv);
@@ -452,8 +465,16 @@ export class ControlConnection {
 
   #closeBlock(fromClient: boolean, failed: boolean): void {
     if (!fromClient && !failed) {
+      // The attach emits one such block, and it is not the only thing that
+      // can: tmux frames a hook's own commands and anything it runs for
+      // itself the same way, with `fromClient` false. Without this the whole
+      // sequence — `refresh-client -f`, then every format subscription — went
+      // out again on each one, against a client already carrying them.
       const child = this.#children.active();
-      if (child !== undefined) void this.#finishAttach(child);
+      if (child !== undefined && child !== this.#configured) {
+        this.#configured = child;
+        void this.#finishAttach(child);
+      }
     }
     if (!fromClient && failed && this.#diagnostic.length > 0) {
       this.#reason = this.#diagnostic.join("; ");
@@ -596,7 +617,7 @@ export class ControlConnection {
         timeoutMs: 30_000,
       }),
     );
-    if (result.returncode !== 0) {
+    if (result.exitCode !== 0) {
       throw new TmuxTransportError("tmux refused a format subscription", {
         delivery: "replied",
         kind: "protocol",
@@ -749,22 +770,30 @@ export class ControlConnection {
     if (fallback === undefined || child.pid === undefined) {
       throw new Error("watch observer has no spawning transport");
     }
-    const result = await fallback.execute({
-      commands: [
-        [
-          "refresh-client",
-          "-t",
-          `client-${String(child.pid)}`,
-          "-f",
-          `pause-after=${String(seconds)}`,
+    // Signalled and raced against close, as every observer command must be.
+    // These share the server's transport, so they can sit queued behind
+    // unrelated work for their whole deadline — and an unsignalled one then
+    // runs after the caller disposed the watch, against a client already
+    // retired, reporting a failure for a connection nobody is holding.
+    const result = await this.#untilClosed(
+      fallback.execute({
+        commands: [
+          [
+            "refresh-client",
+            "-t",
+            `client-${String(child.pid)}`,
+            "-f",
+            `pause-after=${String(seconds)}`,
+          ],
         ],
-      ],
-      executable: this.#executable,
-      environment: this.#environment,
-      globalArgs: this.#commandPrefix,
-      timeoutMs: 30_000,
-    });
-    if (result.returncode !== 0) {
+        executable: this.#executable,
+        environment: this.#environment,
+        globalArgs: this.#commandPrefix,
+        signal: this.#lifetimeAbort.signal,
+        timeoutMs: 30_000,
+      }),
+    );
+    if (result.exitCode !== 0) {
       throw new TmuxTransportError("tmux refused pause-after", {
         delivery: "replied",
         kind: "protocol",
@@ -772,7 +801,12 @@ export class ControlConnection {
     }
   }
 
-  /** Publish a pause or resume, and ask a paused pane back. */
+  /**
+   * Publish a pause or resume, and ask a paused pane back.
+   *
+   * Every `%pause` this connection observes gets resumed here, regardless of
+   * who or what paused it - see {@link TmuxPaneFlowEvent}'s doc comment.
+   */
   #routeFlowControl(event: TmuxPaneFlowEvent): void {
     this.#partial.delete(event.paneId);
     if (event.kind === "pause") this.#paused.add(event.paneId);
@@ -794,6 +828,7 @@ export class ControlConnection {
       executable: this.#executable,
       environment: this.#environment,
       globalArgs: this.#commandPrefix,
+      signal: this.#lifetimeAbort.signal,
       timeoutMs: 30_000,
     };
     const isCurrent = (): boolean =>
@@ -802,7 +837,7 @@ export class ControlConnection {
       .then(() => fallback.execute(request))
       .then(
         (result) => {
-          if (!isCurrent() || result.returncode === 0) return;
+          if (!isCurrent() || result.exitCode === 0) return;
           this.#fail(
             new TmuxTransportError("tmux refused pane resume", {
               delivery: "replied",
@@ -898,7 +933,19 @@ export class ControlConnection {
   }
 }
 
-/** Open a control-mode event stream against a server. */
-export function watchServer(connection: TmuxConnection, options?: WatchOptions): TmuxEventStream {
-  return new ControlConnection(connection, options, true, new NodeSpawnTransport()).subscribe();
+/**
+ * Open a control-mode event stream against a server.
+ *
+ * The transport is the server's own, not a fresh one: the commands a watch
+ * issues for itself — `refresh-client -f`, the pause-after flag, each format
+ * subscription, a pane resume — are commands this server ran, so they belong
+ * under the same `maxInFlight` ceiling and the same `onInvocation` observer as
+ * every other. Building one here made them invisible to both.
+ */
+export function watchServer(
+  connection: TmuxConnection,
+  options: WatchOptions | undefined,
+  commands: CommandTransport,
+): TmuxEventStream {
+  return new ControlConnection(connection, options, true, commands).subscribe();
 }

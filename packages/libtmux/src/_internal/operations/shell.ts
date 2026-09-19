@@ -1,6 +1,7 @@
 import type { JoinOptions } from "../../types.js";
 import type { IfShellOptions, RespawnOptions, RunShellOptions } from "../../types.js";
-import { TmuxCommandError } from "../../exc.js";
+import { PANE_DIRECTION_FLAG_MAP } from "../../constants.js";
+import { TmuxCommandError } from "../../errors.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { assertName } from "./names.js";
@@ -11,11 +12,13 @@ export async function runShell(
   command: string,
   options: RunShellOptions = {},
 ): Promise<readonly string[]> {
-  return runCommand(runtime, [
-    "run-shell",
-    ...(options.target == null ? [] : ["-t", options.target]),
-    command,
-  ]);
+  return runCommand(
+    runtime,
+    // `--` keeps a command starting with `-` from being read as one of
+    // run-shell's own flags (`-b`, `-d5`) instead of the caller's shell text.
+    ["run-shell", ...(options.target == null ? [] : ["-t", options.target]), "--", command],
+    options,
+  );
 }
 
 /**
@@ -36,6 +39,9 @@ export async function ifShell(
       "if-shell",
       ...(options.format === true ? ["-F"] : []),
       ...(options.target == null ? [] : ["-t", options.target]),
+      // `--` before the condition guards it and every positional after it,
+      // since tmux stops reading flags at the first one.
+      "--",
       condition,
       command,
       ...(options.otherwise === undefined ? [] : [options.otherwise]),
@@ -54,6 +60,9 @@ export async function displayMessage(
     "display-message",
     "-p",
     ...(target == null ? [] : ["-t", target]),
+    // `--` keeps a message starting with `-` from being read as one of
+    // display-message's own flags (`-a` lists every variable instead).
+    "--",
     message,
   ]);
 }
@@ -76,7 +85,9 @@ export async function respawnPane(
         `${name}=${value}`,
       ]),
       ...(paneId == null ? [] : ["-t", paneId]),
-      ...(command === undefined ? [] : [command]),
+      // `--` keeps a command starting with `-` from being read as one of
+      // respawn-pane's own flags instead of the caller's replacement command.
+      ...(command === undefined ? [] : ["--", command]),
     ],
     options,
   );
@@ -106,7 +117,8 @@ export async function respawnWindow(
         `${name}=${value}`,
       ]),
       ...(windowId == null ? [] : ["-t", windowId]),
-      ...(command === undefined ? [] : [command]),
+      // `--` guards the command the same way `respawnPane` does.
+      ...(command === undefined ? [] : ["--", command]),
     ],
     options,
   );
@@ -142,7 +154,29 @@ export async function breakPane(
   if (!renames || windowName === undefined) return;
   const created = printed[0];
   if (created === undefined || created === "") return;
-  await runCommand(runtime, ["rename-window", "-t", created, assertName("window", windowName)]);
+  // `--` guards the name the same way `renameWindow` does; this renders its
+  // own argv rather than calling that operation, so it needs its own guard.
+  await runCommand(runtime, [
+    "rename-window",
+    "-t",
+    created,
+    "--",
+    assertName("window", windowName),
+  ]);
+}
+
+/**
+ * The axis flags a join takes, refusing the two spellings together.
+ *
+ * `direction` names a side, which is what tmux's `-b` pairing exists for;
+ * `vertical` names only the axis and cannot reach "above" or "left".
+ */
+function joinAxis(options: JoinOptions): readonly string[] {
+  if (options.direction !== undefined && options.vertical !== undefined) {
+    throw new TypeError("Choose direction without the deprecated vertical option");
+  }
+  if (options.direction !== undefined) return PANE_DIRECTION_FLAG_MAP[options.direction];
+  return options.vertical === false ? ["-h"] : [];
 }
 
 /** Move a pane into another window, joining it as a split. */
@@ -157,7 +191,7 @@ export async function joinPane(
     [
       "join-pane",
       "-d",
-      ...(options.vertical === false ? ["-h"] : []),
+      ...joinAxis(options),
       ...(paneId == null ? [] : ["-s", paneId]),
       "-t",
       target,

@@ -1,6 +1,6 @@
 import { types as nodeTypes } from "node:util";
 
-import { QueryValidationError } from "../../exc.js";
+import { QueryValidationError } from "../../errors.js";
 import type { WhereDocumentV1 } from "../../selection.js";
 
 type LegacyModel = "session" | "window";
@@ -8,7 +8,7 @@ type LegacyModel = "session" | "window";
 function invalidLegacyWhere(cause?: unknown): QueryValidationError {
   return new QueryValidationError({
     ...(cause === undefined ? {} : { cause }),
-    code: "invalid-query",
+    reason: "invalid-query",
     message: "Invalid legacy where query",
   });
 }

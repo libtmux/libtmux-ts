@@ -21,10 +21,17 @@ export function connectionArguments(connection: TmuxConnection): string[] {
   return args;
 }
 
+/** What a request is built from: the caller's options with the deadline already resolved. */
+type RequestOptions = Omit<CommandOptions, "timeoutMs"> & {
+  readonly daemonGuard?: DaemonGuard;
+  readonly rawOutput?: true;
+  readonly timeoutMs?: number;
+};
+
 export function prepareCommandRequest(
   connection: TmuxConnection,
   args: readonly string[],
-  options: CommandOptions & { readonly daemonGuard?: DaemonGuard; readonly rawOutput?: true } = {},
+  options: RequestOptions = {},
 ): CommandRequest {
   return prepareInvocationRequest(connection, [args], options);
 }
@@ -38,7 +45,7 @@ function prepareCommand(args: readonly string[]): TmuxCommand {
 export function prepareInvocationRequest(
   connection: TmuxConnection,
   commands: readonly (readonly string[])[],
-  options: CommandOptions & { readonly daemonGuard?: DaemonGuard; readonly rawOutput?: true } = {},
+  options: RequestOptions = {},
 ): CommandRequest {
   const [first, ...rest] = commands;
   if (first === undefined) throw new TypeError("tmux invocation must contain a command");
@@ -88,7 +95,7 @@ export function adaptRawResult(raw: RawCommandResult): CommandResult {
 
   return Object.freeze({
     cmd: Object.freeze([...raw.cmd]),
-    returncode: raw.returncode,
+    exitCode: raw.exitCode,
     stderr: Object.freeze(stderr),
     stdout: Object.freeze(adaptedStdout),
   });
@@ -105,7 +112,7 @@ export async function executeBatch(
       // eslint-disable-next-line no-await-in-loop -- independent batches execute sequentially by contract.
       const rawResult = await transport.execute(request);
       const result = adaptRawResult(rawResult);
-      const status: OperationStatus = rawResult.returncode === 0 ? "complete" : "failed";
+      const status: OperationStatus = rawResult.exitCode === 0 ? "complete" : "failed";
       outcomes.push(
         Object.freeze({
           delivery: "replied" as const,

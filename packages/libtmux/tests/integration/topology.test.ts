@@ -14,7 +14,7 @@ import {
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
-import { MultipleMatchesError } from "../../src/exc.js";
+import { MultipleMatchesError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -75,6 +75,19 @@ describe("window and pane topology", () => {
       await window.rename("renamed");
 
       expect((await server.snapshot()).windows.count({ name: "renamed" })).toBe(1);
+    });
+  }, 40_000);
+
+  test("guards a window name starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+
+      // rename-window takes no flag besides `-t`; without the guard this
+      // name would be refused as an unrecognized one instead of applied.
+      await window.rename("-dashed-window");
+
+      expect((await server.snapshot()).windows.count({ name: "-dashed-window" })).toBe(1);
     });
   }, 40_000);
 
@@ -369,6 +382,195 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
+  // Two releases answer an unreadable layout by exiting, on opposite inputs.
+  // tmux 3.3 and 3.3a die on a value with no readable checksum — `-o` forced
+  // through `--`, `garbage`, an unknown preset, a JSON layout before 3.8.
+  // tmux 3.7 through 3.7d die on one whose checksum is correct and whose
+  // cells are not. Each must be refused before tmux sees it: the call
+  // rejects, the layout is untouched, and the server that served the call is
+  // still there to answer the next one.
+  test("refuses layout values tmux would misread or crash on, before dispatch", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+      await window.selectLayout("even-horizontal");
+      await window.selectLayout("main-vertical");
+      const beforeAttempt = (await server.snapshot()).windows.one({ id: window.id }).format
+        .window_layout;
+      const jsonSupported = await server.versionAtLeast("3.8");
+
+      const refusals: [string, abstract new (...args: never[]) => Error][] = [
+        ["-o", TypeError],
+        ["garbage", TypeError],
+        ["no-such-preset", TypeError],
+        ["", TypeError],
+        // Bodies that carry a correct checksum and then fail inside a child
+        // list. tmux 3.7 through 3.7d exit the whole server on each of these:
+        // `layout_construct` answers an unreadable cell with NULL, returns
+        // success anyway when a terminator follows, and `layout_free_cell`
+        // later walks onto it. Every release outside that range refuses them,
+        // so this corpus only ever proves the guard on some of the matrix —
+        // which is the point of running the matrix.
+        ["64aa,80x24,0,0{", TypeError],
+        ["648a,80x24,0,0[", TypeError],
+        ["32d2,80x24,0,0{}", TypeError],
+        ["99bd,80x24,0,0{,}", TypeError],
+        ["923d,80x24,0,0{40x24,0,0,0,}", TypeError],
+        ["04e0,80x24,0,0[80x12,0,0,1,80x11,0,13{", TypeError],
+        ["0000,80x24,0,0,0", TypeError],
+        // A size past tmux's own WINDOW_MAXIMUM. `layout_parse` is the one
+        // place tmux does not bound one, and the arithmetic below it
+        // overflows on every supported release and on master — but only when
+        // the cell count matches the pane count, so this window's two panes
+        // would hide it. The single-pane window below is where it bites.
+        ["c228,4294967295x24,0,0,0", TypeError],
+        ["4b3f,80x4294967295,0,0,0", TypeError],
+      ];
+      if (!jsonSupported) refusals.push(['{"V":2,"L":{"t":"p"}}', VersionTooLowError]);
+
+      for (const [value, expected] of refusals) {
+        // eslint-disable-next-line no-await-in-loop -- each refusal is checked against the layout the previous one left.
+        const failure = await window
+          .selectLayout(value)
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(failure, `selectLayout(${JSON.stringify(value)})`).toBeInstanceOf(expected);
+        // eslint-disable-next-line no-await-in-loop -- the snapshot must follow the attempt it checks.
+        const after = (await server.snapshot()).windows.one({ id: window.id }).format.window_layout;
+        expect(after, `layout after ${JSON.stringify(value)}`).toBe(beforeAttempt);
+      }
+      expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
+  // The crash the corpus above cannot reach: a cell whose size overflows the
+  // arithmetic under `layout_parse` only gets there when the cell count
+  // matches, so it needs a window with exactly one pane. Every supported
+  // release and master exit on this; nothing upstream fixes it.
+  test("refuses an oversized layout on a window whose pane count would accept it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      expect(window.panes.length).toBe(1);
+      const before = (await window.refreshed()).format.window_layout;
+
+      for (const value of ["c228,4294967295x24,0,0,0", "4b3f,80x4294967295,0,0,0"]) {
+        // eslint-disable-next-line no-await-in-loop -- each refusal is checked against the layout the previous one left.
+        const failure = await window
+          .selectLayout(value)
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(failure, `selectLayout(${JSON.stringify(value)})`).toBeInstanceOf(TypeError);
+        // eslint-disable-next-line no-await-in-loop -- the server has to answer after each attempt.
+        expect(await server.isAlive(), `alive after ${value}`).toBe(true);
+      }
+      expect((await window.refreshed()).format.window_layout).toBe(before);
+    });
+  }, 40_000);
+
+  // The other half of the guard: parsing the layout ourselves may not refuse
+  // one tmux itself dumped. Each preset produces a different shape — nested
+  // containers, a pane id on every leaf — so applying one and feeding its own
+  // `window_layout` back proves the parser against this tmux's own output
+  // rather than against a fixture written from another release's.
+  test("accepts every layout this tmux reports for its own windows", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+      await window.split();
+
+      for (const preset of ["even-horizontal", "even-vertical", "main-vertical", "tiled"]) {
+        // eslint-disable-next-line no-await-in-loop -- each round trip reads the layout the preset before it left.
+        await window.selectLayout(preset);
+        // eslint-disable-next-line no-await-in-loop -- the dump must follow the preset it describes.
+        const dumped = (await window.refreshed()).format.window_layout;
+        expect(dumped, `window_layout after ${preset}`).toBeTruthy();
+        // eslint-disable-next-line no-await-in-loop -- reapplying is what proves the dump parses.
+        await window.selectLayout(dumped!);
+        // eslint-disable-next-line no-await-in-loop -- the comparison must follow the reapplication.
+        expect((await window.refreshed()).format.window_layout, `round trip of ${preset}`).toBe(
+          dumped,
+        );
+      }
+      expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
+  // tmux's own `layout_set_lookup` (layout-set.c) is a prefix match, so
+  // `tile` and `even-h` apply on every version tested and never reach
+  // `layout_parse`, the 3.3a crash path. An ambiguous prefix is still
+  // refused, and a classic layout's checksum is read case-insensitively.
+  test("accepts a unique layout preset prefix and refuses an ambiguous one", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+
+      await window.selectLayout("tile");
+      expect(
+        (await server.snapshot()).windows.one({ id: window.id }).format.window_layout,
+      ).toBeDefined();
+
+      await window.selectLayout("even-h");
+      const current = (await server.snapshot()).windows.one({ id: window.id }).format.window_layout;
+      expect(current).toBeDefined();
+
+      const ambiguous = await window
+        .selectLayout("even-")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(ambiguous).toBeInstanceOf(TypeError);
+      const message = (ambiguous as TypeError).message;
+      expect(message).toContain("even-horizontal");
+      expect(message).toContain("even-vertical");
+
+      // A classic layout string's checksum is read case-insensitively by tmux
+      // (`sscanf(value, "%hx,")`); only test it against a server that still
+      // speaks the classic format (pre-3.8 uses it for `window_layout`).
+      if (current !== null && current !== undefined && /^[0-9a-f]{4},/u.test(current)) {
+        const uppercased = current.replace(/^[0-9a-f]{4}/u, (checksum) => checksum.toUpperCase());
+        await window.selectLayout(uppercased);
+      }
+      expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
+  // `layout_set_lookup`'s table holds the mirrored presets only from tmux 3.5
+  // (CHANGES, 3.4 to 3.5), so `main-v` is a unique prefix of `main-vertical`
+  // below that release and ambiguous from it on - checked against whichever
+  // side of the boundary the running tmux is on.
+  test("resolves main-v/main-h against the running tmux's own preset table", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      await window.split();
+      const mirroredKnown = await server.versionAtLeast("3.5");
+
+      const prefixes: readonly [prefix: string, full: string, mirrored: string][] = [
+        ["main-v", "main-vertical", "main-vertical-mirrored"],
+        ["main-h", "main-horizontal", "main-horizontal-mirrored"],
+      ];
+      for (const [prefix, full, mirrored] of prefixes) {
+        // eslint-disable-next-line no-await-in-loop -- each prefix is checked against the layout the previous one left.
+        const outcome = await window
+          .selectLayout(prefix)
+          .then(() => "applied" as const)
+          .catch((thrown: unknown) => thrown);
+        if (mirroredKnown) {
+          expect(outcome, prefix).toBeInstanceOf(TypeError);
+          const message = (outcome as TypeError).message;
+          expect(message, prefix).toContain(full);
+          expect(message, prefix).toContain(mirrored);
+        } else {
+          expect(outcome, prefix).toBe("applied");
+        }
+      }
+      expect(await server.isAlive()).toBe(true);
+    });
+  }, 40_000);
+
   test("zooms the pane it was asked for, in the window it is in", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -561,6 +763,26 @@ describe("window and pane topology", () => {
       }
 
       expect(command).toBe("sleep");
+      await session.kill();
+    });
+  }, 60_000);
+
+  test("guards a respawn-pane command starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "respawn-dash" });
+      const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
+      // `-h` cannot be exec'd, which would otherwise close the pane, its
+      // window, its session, and (being the only one) the server itself
+      // before this reads anything back.
+      await pane.setOption("remain-on-exit", "on");
+
+      // `-h` is none of respawn-pane's own flags (`-k`, `-c`, `-e`, `-t`);
+      // without the guard this would be refused as an unrecognized one
+      // instead of becoming the pane's own recorded start command.
+      await pane.respawn("-h", { kill: true });
+
+      expect((await pane.displayMessage("#{pane_start_command}"))[0]).toBe("-h");
       await session.kill();
     });
   }, 60_000);
@@ -807,6 +1029,22 @@ describe("window and pane topology", () => {
       await window.respawn("sh", { kill: true });
 
       expect(await pidOf()).not.toBe(before);
+    });
+  }, 40_000);
+
+  test("guards a respawn-window command starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const window = (await server.snapshot()).windows.one();
+      // See the respawn-pane guard test: without this, `-h` failing to exec
+      // would close the window, its session, and the server itself.
+      await window.setOption("remain-on-exit", "on");
+
+      // Guards the command the same way respawn-pane does.
+      await window.respawn("-h", { kill: true });
+
+      const started = await window.cmd("display-message", ["-p", "#{pane_start_command}"]);
+      expect(started[0]).toBe("-h");
     });
   }, 40_000);
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { parsePaneId, parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
-import { QueryValidationError } from "../../src/exc.js";
+import { QueryValidationError } from "../../src/errors.js";
 
 describe("tmux IDs", () => {
   test("parses each owned tmux ID kind", () => {
@@ -32,7 +32,7 @@ describe("tmux IDs", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(QueryValidationError);
       const queryError = error as QueryValidationError;
-      expect(queryError.code).toBe("invalid-id");
+      expect(queryError.reason).toBe("invalid-id");
       expect(queryError.message).toBe("Invalid pane ID");
       expect(queryError.cause).toBeInstanceOf(Error);
       expect(queryError.message).not.toContain("Zod");
@@ -47,7 +47,7 @@ describe("tmux IDs", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(QueryValidationError);
       const queryError = error as QueryValidationError;
-      expect(queryError.code).toBe("invalid-id");
+      expect(queryError.reason).toBe("invalid-id");
       expect(queryError.message).toBe("Invalid session ID");
       expect(queryError.cause).toBeInstanceOf(Error);
     }
@@ -60,7 +60,7 @@ describe("tmux IDs", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(QueryValidationError);
       const queryError = error as QueryValidationError;
-      expect(queryError.code).toBe("invalid-id");
+      expect(queryError.reason).toBe("invalid-id");
       expect(queryError.message).toBe("Invalid window ID");
       expect(queryError.cause).toBeInstanceOf(Error);
     }
@@ -73,7 +73,7 @@ describe("tmux IDs", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(QueryValidationError);
       const queryError = error as QueryValidationError;
-      expect(queryError.code).toBe("invalid-id");
+      expect(queryError.reason).toBe("invalid-id");
       expect(queryError.message).toBe("Invalid pane ID");
       expect(queryError.cause).toBeInstanceOf(Error);
     }

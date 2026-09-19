@@ -86,15 +86,24 @@ export interface CommandOptions {
    *
    * Must be a positive timer-safe integer.
    *
-   * Overrides the server's default. Without either, a command waits as long as
-   * tmux takes, which for a wedged daemon is forever.
+   * Overrides the server's default, which is 30 seconds unless the server was
+   * built with another. `null` removes the deadline for this call alone.
+   *
+   * Bounds only this call's own wait. On `["wait-for", "-L", name]` in
+   * particular, tmux queues a lock request and hands it to the first queued
+   * locker regardless of whether that locker is still around to claim it
+   * (`cmd-wait-for.c`) — so a caller whose bounded wait timed out or was
+   * cancelled can still be the one tmux is holding the lock for, wedging that
+   * channel for every future locker until the process that requested it
+   * unlocks it, which a caller that gave up on the wait will never do.
    */
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | null;
 }
 
 export interface CommandResult {
   readonly cmd: readonly string[];
-  readonly returncode: number;
+  /** The completed command's exit status, including nonzero tmux refusals. */
+  readonly exitCode: number;
   readonly stderr: readonly string[];
   readonly stdout: readonly string[];
 }
@@ -108,23 +117,43 @@ export interface CommandOutcome {
   readonly status: OperationStatus;
 }
 
-export type TmuxLogContext = Readonly<Record<string, boolean | number | string | undefined>>;
-
-export interface TmuxLogger {
-  debug(message: string, context?: TmuxLogContext): void;
-  error(message: string, context?: TmuxLogContext): void;
-  info(message: string, context?: TmuxLogContext): void;
-  warn(message: string, context?: TmuxLogContext): void;
+/**
+ * What one tmux invocation cost and how it ended.
+ *
+ * Every command this package runs produces one of these, including the four
+ * listings behind a snapshot and the probe that reads the version, and
+ * including commands a custom engine executed.
+ */
+export interface TmuxInvocationReport {
+  /** The commands tmux received, without the connection flags. */
+  readonly commands: readonly (readonly string[])[];
+  /** How far the command got. `replied` for one that finished either way. */
+  readonly delivery: DeliveryStatus;
+  /** Wall time from dispatch to answer, excluding any wait for a slot. */
+  readonly durationMs: number;
+  /** What the invocation threw, when it did not answer. */
+  readonly error?: unknown;
+  /** tmux's own status, when there was one. Nonzero is a refusal, not a fault. */
+  readonly exitCode?: number;
+  /** Time spent waiting for a slot under `maxInFlight`. */
+  readonly queuedMs: number;
 }
 
-export interface TmuxWarning {
-  readonly code: string;
-  readonly message: string;
-}
-
-export interface TmuxWarningSink {
-  warn(warning: TmuxWarning): void;
-}
+/**
+ * Called once per tmux invocation, after it answers or fails.
+ *
+ * This is the seam for logs, traces and metrics: a caller that wants to see
+ * what the library is doing has otherwise to supply a whole engine. It runs
+ * after the invocation is decided and cannot change its outcome — anything it
+ * throws is swallowed, because a command must not fail on account of the code
+ * watching it.
+ *
+ * Returning a promise is allowed and never awaited: the invocation has already
+ * been decided, so waiting would only delay it. A rejection is swallowed on
+ * the same grounds as a throw, rather than left to the host's unhandled
+ * rejection policy.
+ */
+export type TmuxInvocationObserver = (report: TmuxInvocationReport) => void;
 
 interface LogicalRefBase<Kind extends TmuxIdKind, Id extends TmuxId<Kind>> {
   readonly connection: ConnectionAlias;

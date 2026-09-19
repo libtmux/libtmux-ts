@@ -26,7 +26,7 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxException, WaitTimeout } from "../../src/exc.js";
+import { LibTmuxError, WaitTimeoutError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
 
@@ -586,8 +586,8 @@ describe("Server.watch", () => {
           (error: unknown) => error,
         );
 
-      expect(failure).toBeInstanceOf(WaitTimeout);
-      expect(failure).toBeInstanceOf(LibTmuxException);
+      expect(failure).toBeInstanceOf(WaitTimeoutError);
+      expect(failure).toBeInstanceOf(LibTmuxError);
     });
   }, 60_000);
 
@@ -1134,7 +1134,7 @@ describe("Server.watch", () => {
         await new Promise((resolve) => setTimeout(resolve, 250));
 
         const ours = unhandled.filter(
-          (reason) => reason instanceof LibTmuxException || reason instanceof WaitTimeout,
+          (reason) => reason instanceof LibTmuxError || reason instanceof WaitTimeoutError,
         );
         expect(ours).toEqual([]);
       } finally {
@@ -1154,7 +1154,91 @@ describe("Server.watch", () => {
         timeoutMs: 30_000,
       });
       await live.close();
-      await expect(armed).rejects.toThrow(LibTmuxException);
+      await expect(armed).rejects.toThrow(LibTmuxError);
+    });
+  }, 40_000);
+
+  // On tmux 3.8+, a control client without `-f new-layouts` receives the
+  // classic `window_layout` string in `%layout-change` while a snapshot
+  // already reports JSON, so an event's layout must match a same-instant
+  // snapshot's `window_layout` on every attached tmux version.
+  test("a layout-change event's layout matches a same-instant snapshot's window_layout", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const events = server.watch();
+      const window = (await server.snapshot()).windows.one();
+
+      const arrived = until(events, (event) => event.kind === "layout-change");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await window.split();
+
+      const event = await arrived;
+      if (event.kind !== "layout-change") throw new Error("expected layout-change");
+
+      const snapshot = await server.snapshot();
+      expect(snapshot.windows.where({ layout: { equals: event.layout } }).count()).toBe(1);
+      expect(snapshot.windows.one({ layout: { equals: event.layout } }).id).toBe(window.id);
+    });
+  }, 60_000);
+
+  /**
+   * A watch runs commands of its own — `refresh-client -f`, each format
+   * subscription, a pane resume — and they are commands this server ran. They
+   * went through a transport built on the spot rather than the server's, so
+   * they were invisible to `onInvocation` and uncounted against `maxInFlight`,
+   * while `connect()` on the next method down passed the server's transport.
+   */
+  test("runs a watch's own commands through the server's transport", async () => {
+    await withServer(async (fixture) => {
+      const seen: string[] = [];
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        onInvocation: (report) => seen.push(report.commands[0]?.[0] ?? ""),
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      await using events = server.watch({ pauseAfterSeconds: 5 });
+      await events.ready();
+
+      expect(seen, "the watch's own refresh-client reports").toContain("refresh-client");
+    });
+  }, 40_000);
+
+  /**
+   * A watch's own commands share the server's transport, so they can sit
+   * queued behind unrelated work for their whole deadline. Unsignalled, one
+   * then runs after the caller disposed the watch, against a client already
+   * retired — a wasted process and a failed invocation reported for a
+   * connection nobody is holding.
+   */
+  test("cancels its own queued commands when the watch is disposed", async () => {
+    await withServer(async (fixture) => {
+      const reports: { readonly delivery: string; readonly name: string }[] = [];
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        maxInFlight: 1,
+        onInvocation: (report) =>
+          reports.push({ delivery: report.delivery, name: report.commands[0]?.[0] ?? "" }),
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      // Hold the only slot, so the watch's pause-after command queues behind it.
+      const hog = server.runShell("sleep 2");
+      const events = server.watch({ pauseAfterSeconds: 3 });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await events.close();
+
+      await hog.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      const refresh = reports.filter((report) => report.name === "refresh-client");
+      // Either it never started, or it never ran at all. What it must not do
+      // is complete against a client the dispose already retired.
+      for (const report of refresh) {
+        expect(report.delivery, "a queued observer command after dispose").toBe("not_started");
+      }
     });
   }, 40_000);
 });

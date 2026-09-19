@@ -5,8 +5,9 @@
     "tests/**/*.test.ts",
     "tests/support/bun_hooks.ts",
     "tests/fixtures/ambient-free/consumer.ts",
-    "tests/fixtures/type-aware-lint/no_floating_promise.ts"
+    "tests/fixtures/type-aware-lint/no_floating_promise.ts",
+    "tests/support/bun_test_on_node.ts"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
-  "ignoreBinaries": ["uv"]
+  "ignoreBinaries": ["uv", "mkfifo"]
 }

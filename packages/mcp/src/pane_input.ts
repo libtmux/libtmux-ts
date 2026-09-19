@@ -3,6 +3,12 @@ import type { Pane } from "libtmux";
 
 import type { PaneInputConflict } from "./command.js";
 import type { PaneInputObservation } from "./context.js";
+import {
+  noteKeyDispatch,
+  noteLiteralWrite,
+  pruneDeadPanes,
+  type PaneServerIdentity,
+} from "./pane_echo.js";
 import { fail } from "./results.js";
 import {
   isFailure,
@@ -131,6 +137,10 @@ export function planPaneInput(
   verb: string,
 ): CallToolResult | PaneInputPlan {
   const { identity, snapshot } = observation;
+  // Bounds the echo store: a pane that no longer exists cannot be waited on
+  // again, so nothing needs to keep discounting its typed text. Piggybacks on
+  // a snapshot every pane-input call already has, rather than a timer.
+  pruneDeadPanes(new Set(snapshot.panes.toArray().map((candidate) => candidate.id)));
   const pane = requirePaneInputTarget(snapshot, identity, paneId, force, verb);
   if (isFailure(pane)) return pane;
   const resolvedPaneIds = resolvedPaneInputTargetIds(pane);
@@ -193,17 +203,41 @@ export function busyPane(conflict: PaneInputConflict): ReturnType<typeof fail> {
   });
 }
 
-/** Dispatch keys and optional Enter as one daemon-guarded tmux command list. */
+/**
+ * Dispatch keys and optional Enter as one daemon-guarded tmux command list.
+ *
+ * Recorded (`pane_echo.ts`, via `identity`) before the command is sent, not
+ * after: tmux can emit the resulting `%output` notification to a stream
+ * `wait_for_text` is already watching before this call's own acknowledgement
+ * comes back, and a wait must never see that echo before the pending record
+ * that discounts it exists. `identity` is omitted only by callers that have
+ * no `InputAuthority` on hand (some framed-command tests); the dispatch still
+ * happens, just without an echo record to discount it by.
+ */
 export async function dispatchPaneKeys(
   pane: Pane,
   keys: string,
-  options: { readonly enter?: boolean; readonly literal?: boolean } = {},
+  options: {
+    readonly enter?: boolean;
+    readonly identity?: PaneServerIdentity;
+    readonly literal?: boolean;
+  } = {},
 ): Promise<void> {
   const enter = options.enter !== false;
+  if (options.identity !== undefined) {
+    if (options.literal === true) {
+      noteLiteralWrite(pane.id, options.identity, keys, enter);
+    } else {
+      noteKeyDispatch(pane.id, options.identity, keys, enter);
+    }
+  }
+  // `--` keeps a value starting with `-` (`-R` resets the terminal) from being
+  // read as one of send-keys's own flags: this bypasses the library's
+  // `Pane.sendKeys`, so it carries the same guard on its own.
   await pane.cmd(
     "send-keys",
     options.literal === true
-      ? ["-l", enter ? `${keys}\n` : keys]
-      : [keys, ...(enter ? ["Enter"] : [])],
+      ? ["-l", "--", enter ? `${keys}\n` : keys]
+      : ["--", keys, ...(enter ? ["Enter"] : [])],
   );
 }

@@ -1981,14 +1981,14 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
       "status": "implemented",
-      "typescript": "LibTmuxException",
+      "typescript": "LibTmuxError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:LibTmuxException"]
+      "typescriptSymbols": ["./errors#value:LibTmuxError"]
     },
     {
       "adaptation": null,
@@ -2019,14 +2019,14 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
       "status": "implemented",
-      "typescript": "MultipleObjectsReturned",
+      "typescript": "MultipleObjectsError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:MultipleObjectsReturned"]
+      "typescriptSymbols": ["./errors#value:MultipleObjectsError"]
     },
     {
       "adaptation": null,
@@ -2095,14 +2095,14 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
       "status": "implemented",
-      "typescript": "ObjectDoesNotExist",
+      "typescript": "ObjectNotFoundError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:ObjectDoesNotExist"]
+      "typescriptSymbols": ["./errors#value:ObjectNotFoundError"]
     },
     {
       "adaptation": null,
@@ -2228,14 +2228,14 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
       "status": "implemented",
-      "typescript": "TmuxObjectDoesNotExist",
+      "typescript": "TmuxObjectNotFoundError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:TmuxObjectDoesNotExist"]
+      "typescriptSymbols": ["./errors#value:TmuxObjectNotFoundError"]
     },
     {
       "adaptation": null,
@@ -2323,14 +2323,14 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
       "status": "implemented",
-      "typescript": "VersionTooLow",
+      "typescript": "VersionTooLowError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:VersionTooLow"]
+      "typescriptSymbols": ["./errors#value:VersionTooLowError"]
     },
     {
       "adaptation": null,
@@ -2342,14 +2342,14 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/exc.py",
       "status": "implemented",
-      "typescript": "WaitTimeout",
+      "typescript": "WaitTimeoutError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: symbol has no direct tmux I/O behavior",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:WaitTimeout"]
+      "typescriptSymbols": ["./errors#value:WaitTimeoutError"]
     },
     {
       "adaptation": null,
@@ -7662,14 +7662,14 @@
       "reason": null,
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py",
       "status": "implemented",
-      "typescript": "Server.raiseIfDead",
+      "typescript": "Server.checkAlive",
       "unitTest": null,
       "evidenceApplicability": {
         "declarationTest": "not-applicable: the member's declaration is pinned with its class, not one test per member",
         "realTmuxScenario": "required",
         "unitTest": "not-applicable: the behaviour is a tmux command, so it is exercised against a real server rather than a mock"
       },
-      "typescriptSymbols": ["./server#instance:Server.raiseIfDead"]
+      "typescriptSymbols": ["./server#instance:Server.checkAlive"]
     },
     {
       "adaptation": null,
@@ -7906,7 +7906,7 @@
       "owner": "libtmux.server.Server",
       "python": "libtmux.server.Server.start_server",
       "realTmuxScenario": null,
-      "reason": "the server starts on its first command, so a caller never has to ask for one; `Server.isAlive` and `Server.raiseIfDead` answer whether it is running",
+      "reason": "the server starts on its first command, so a caller never has to ask for one; `Server.isAlive` and `Server.checkAlive` answer whether it is running",
       "source": "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/server.py",
       "status": "unsupported",
       "typescript": null,
@@ -9773,7 +9773,7 @@
         "https://github.com/tmux-python/libtmux/blob/38e368c11117fb4aeb2f082d552cd4f210eae06a/src/libtmux/_internal/query_list.py"
       ],
       "realTmuxScenario": null,
-      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `raiseIfDead()` are the explicit probes for asking which one it is",
+      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `checkAlive()` are the explicit probes for asking which one it is",
       "status": "unsupported",
       "typescript": "Server.attached_sessions()",
       "unitTest": null,
@@ -9793,7 +9793,7 @@
         "https://github.com/tmux-python/libtmux/blob/38e368c11117fb4aeb2f082d552cd4f210eae06a/src/libtmux/window.py"
       ],
       "realTmuxScenario": null,
-      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `raiseIfDead()` are the explicit probes for asking which one it is",
+      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `checkAlive()` are the explicit probes for asking which one it is",
       "status": "unsupported",
       "typescript": "Window.linked_sessions()",
       "unitTest": null,
@@ -9820,7 +9820,7 @@
         "https://github.com/tmux-python/libtmux/blob/38e368c11117fb4aeb2f082d552cd4f210eae06a/src/libtmux/common.py"
       ],
       "realTmuxScenario": null,
-      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `raiseIfDead()` are the explicit probes for asking which one it is",
+      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `checkAlive()` are the explicit probes for asking which one it is",
       "status": "unsupported",
       "typescript": "Server topology collection producers",
       "unitTest": null,
@@ -9846,7 +9846,7 @@
         "https://github.com/tmux-python/libtmux/blob/38e368c11117fb4aeb2f082d552cd4f210eae06a/src/libtmux/window.py"
       ],
       "realTmuxScenario": null,
-      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `raiseIfDead()` are the explicit probes for asking which one it is",
+      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `checkAlive()` are the explicit probes for asking which one it is",
       "status": "unsupported",
       "typescript": "Server/Session/Window point lookup",
       "unitTest": null,
@@ -9874,7 +9874,7 @@
         "https://github.com/tmux-python/libtmux/blob/38e368c11117fb4aeb2f082d552cd4f210eae06a/src/libtmux/window.py"
       ],
       "realTmuxScenario": null,
-      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `raiseIfDead()` are the explicit probes for asking which one it is",
+      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `checkAlive()` are the explicit probes for asking which one it is",
       "status": "unsupported",
       "typescript": "Session/Window relation collection producers",
       "unitTest": null,
@@ -9916,7 +9916,7 @@
         "https://github.com/tmux-python/libtmux/blob/38e368c11117fb4aeb2f082d552cd4f210eae06a/src/libtmux/window.py"
       ],
       "realTmuxScenario": null,
-      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `raiseIfDead()` are the explicit probes for asking which one it is",
+      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `checkAlive()` are the explicit probes for asking which one it is",
       "status": "unsupported",
       "typescript": "collection and point schema boundary",
       "unitTest": null,
@@ -9940,7 +9940,7 @@
         "https://github.com/tmux-python/libtmux/blob/38e368c11117fb4aeb2f082d552cd4f210eae06a/src/libtmux/server.py"
       ],
       "realTmuxScenario": null,
-      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `raiseIfDead()` are the explicit probes for asking which one it is",
+      "reason": "the leniency this describes is not ported: an unreachable server raises here rather than answering an empty Selection, so absence and failure stay distinct, and `isAlive()` and `checkAlive()` are the explicit probes for asking which one it is",
       "status": "unsupported",
       "typescript": "Server.sessions()/clients()/attached_sessions()",
       "unitTest": null,
@@ -11115,14 +11115,14 @@
       "realTmuxScenario": null,
       "reason": null,
       "status": "implemented",
-      "typescript": "MultipleMatchesError extends MultipleObjectsReturned",
+      "typescript": "MultipleMatchesError extends MultipleObjectsError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: extension behavior is validated without tmux I/O",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:MultipleMatchesError"]
+      "typescriptSymbols": ["./errors#value:MultipleMatchesError"]
     },
     {
       "adaptation": null,
@@ -11132,14 +11132,14 @@
       "realTmuxScenario": null,
       "reason": null,
       "status": "implemented",
-      "typescript": "NoMatchError extends ObjectDoesNotExist",
+      "typescript": "NoMatchError extends ObjectNotFoundError",
       "unitTest": "tests/unit/exc.test.ts",
       "evidenceApplicability": {
         "declarationTest": "required",
         "realTmuxScenario": "not-applicable: extension behavior is validated without tmux I/O",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:NoMatchError"]
+      "typescriptSymbols": ["./errors#value:NoMatchError"]
     },
     {
       "adaptation": null,
@@ -11190,7 +11190,7 @@
         "realTmuxScenario": "not-applicable: extension behavior is validated without tmux I/O",
         "unitTest": "required"
       },
-      "typescriptSymbols": ["./exc#value:QueryValidationError"]
+      "typescriptSymbols": ["./errors#value:QueryValidationError"]
     },
     {
       "adaptation": null,

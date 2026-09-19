@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describeStartupFailure } from "../src/server.js";
+import { describeStartup } from "../src/startup.js";
 import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
 
 test("the stdio server executes the retained capability surface end to end", async () => {
@@ -171,6 +175,22 @@ test("the stdio server executes the retained capability surface end to end", asy
       await call("rename_window", { name: "renamed-extra", windowId: extraWindow.window.id });
       await call("select_pane", { paneId: split.pane.id });
       await call("select_layout", { layout: "even-horizontal", windowId: created.windowId });
+      // The MCP tool passes a caller's layout straight to
+      // `Window.selectLayout`, so it inherits the `--` guard against tmux
+      // reading a bare `-o` as its own undo flag. Without the guard this call
+      // would silently succeed and revert the window's layout.
+      const beforeUndoAttempt = (await serverFor(fixture).snapshot()).windows.one({
+        id: created.windowId,
+      }).format.window_layout;
+      const undoAttempt = await client.callTool({
+        arguments: { layout: "-o", windowId: created.windowId },
+        name: "select_layout",
+      });
+      expect(undoAttempt.isError).toBe(true);
+      const afterUndoAttempt = (await serverFor(fixture).snapshot()).windows.one({
+        id: created.windowId,
+      }).format.window_layout;
+      expect(afterUndoAttempt).toBe(beforeUndoAttempt);
       await call("resize_pane", { amount: 1, direction: "right", paneId: created.paneId });
       await call("resize_window", { height: 32, width: 104, windowId: created.windowId });
       await call("swap_pane", { otherPaneId: split.pane.id, paneId: created.paneId });
@@ -187,6 +207,17 @@ test("the stdio server executes the retained capability surface end to end", asy
       await new Promise((resolve) => setTimeout(resolve, 50));
       await call("signal_channel", { channel: "mcp-contract-ready" });
       await channelWait;
+
+      // Both tools pass the channel straight to tmux's own `wait-for`, so a
+      // name starting with `-` proves the same `--` guard `select_layout`
+      // gets above. `-e` is not one of `wait-for`'s own flags (`-L`, `-S`,
+      // `-U`): without the guard tmux's parser would refuse it outright as
+      // an unknown option before any wait was even registered, and either
+      // call below would reject instead of resolving.
+      const dashChannelWait = call("wait_for_channel", { channel: "-e", timeoutMs: 2_000 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await call("signal_channel", { channel: "-e" });
+      await dashChannelWait;
 
       await call("set_synchronize_panes", { enabled: true, windowId: created.windowId });
       const synchronizedAnswer = await call("send_keys", {
@@ -234,6 +265,205 @@ test("the stdio server executes the retained capability surface end to end", asy
   });
 }, 60_000);
 
+// `tile`/`even-h` are unique preset prefixes tmux's own `select-layout`
+// applies (`layout_set_lookup`), so `select_layout`'s "ignored" heuristic
+// must recognise a prefix form rather than only the full preset names.
+test("select_layout applies a unique preset prefix without reporting it ignored", async () => {
+  await withServer(async (fixture) => {
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string; windowId: string }>(
+        await client.callTool({ arguments: { name: "prefix-layout" }, name: "create_session" }),
+      );
+      await client.callTool({
+        arguments: { direction: "right", paneId: created.paneId },
+        name: "split_window",
+      });
+
+      const answer = await client.callTool({
+        arguments: { layout: "tile", windowId: created.windowId },
+        name: "select_layout",
+      });
+      expect(answer.isError, JSON.stringify(answer)).not.toBe(true);
+      const text = (answer as { content: readonly { text?: string; type: string }[] }).content[0];
+      expect(text?.type === "text" ? text.text : "").not.toContain("was not applied");
+
+      const result = structured<{ window: { layout: string | null } }>(answer);
+      expect(result.window.layout).not.toBeNull();
+    });
+  });
+}, 40_000);
+
+// `wait_for_text` must never match keys the caller typed but never ran. A
+// pane whose reader has not started yet queues type-ahead with echo off; once
+// the reader starts, it re-prints the queue as genuinely new bytes arriving
+// after a wait subscribes. `stty raw -echo; sleep; cat` reproduces that
+// deterministically instead of depending on the caller's own zsh.
+test("wait_for_text does not match its own unsubmitted type-ahead", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText([
+      "set-option",
+      "-g",
+      "default-command",
+      "stty raw -echo; sleep 0.4; exec cat",
+    ]);
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string }>(
+        await client.callTool({
+          arguments: { height: 24, name: "echo-trap", width: 80 },
+          name: "create_session",
+        }),
+      );
+      const marker = `QAMARK-${String(Date.now())}`;
+
+      const sent = await client.callTool({
+        arguments: { enter: false, keys: marker, literal: true, paneId: created.paneId },
+        name: "send_keys",
+      });
+      expect(sent.isError, JSON.stringify(sent)).not.toBe(true);
+
+      const waited = structured<{ alreadyOnScreen: boolean; outcome: string }>(
+        await client.callTool({
+          arguments: { paneId: created.paneId, patterns: [marker], timeoutMs: 1_200 },
+          name: "wait_for_text",
+        }),
+      );
+
+      // Never a plain match on text this server typed but never submitted —
+      // the pane's own delayed reader re-printing it does not change that.
+      expect(waited.outcome).not.toBe("matched");
+      expect(waited.outcome).toBe("timed_out");
+      expect(waited.alreadyOnScreen).toBe(true);
+    });
+  });
+}, 20_000);
+
+// A wait continued from an earlier cursor reads exactly the bytes after that
+// cursor, so unlike a fresh subscribe it carries no ambiguity about whether
+// they are a redraw of old content. Suppressing them the same way as a fresh
+// wait's entry screen defeats the retry the tool's own hint recommends: text
+// that printed between two calls reads as already on screen instead of as
+// what the caller asked to be told about.
+test("wait_for_text matches new output on a cursor continued from a timed-out wait", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string }>(
+        await client.callTool({
+          arguments: { height: 24, name: "cursor-continue", width: 80 },
+          name: "create_session",
+        }),
+      );
+      const marker = `QACONT-${String(Date.now())}`;
+
+      const first = structured<{ cursor: string | null; outcome: string }>(
+        await client.callTool({
+          arguments: { paneId: created.paneId, patterns: [marker], timeoutMs: 300 },
+          name: "wait_for_text",
+        }),
+      );
+      expect(first.outcome).toBe("timed_out");
+      expect(first.cursor).toBeString();
+
+      await fixture.executeText([
+        "send-keys",
+        "-t",
+        created.paneId,
+        `printf '${marker}\\n'`,
+        "Enter",
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const second = structured<{ matched: string | null; outcome: string }>(
+        await client.callTool({
+          arguments: {
+            cursor: first.cursor,
+            paneId: created.paneId,
+            patterns: [marker],
+            timeoutMs: 1_000,
+          },
+          name: "wait_for_text",
+        }),
+      );
+      expect(second.outcome).toBe("matched");
+      expect(second.matched).toBe(marker);
+    });
+  });
+}, 20_000);
+
+// `attachedClients` is an accurate raw tmux count, but it includes this
+// server's own control-mode observers - a `wait_for_text` in flight opens
+// one. `humanAttachedClients` excludes them.
+test("list_sessions separates a raw attached count from a human-only one", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string; session: { id: string } }>(
+        await client.callTool({ arguments: { name: "attach-count" }, name: "create_session" }),
+      );
+
+      const before = structured<{
+        sessions: readonly { attachedClients: number; humanAttachedClients: number; id: string }[];
+      }>(await client.callTool({ arguments: {}, name: "list_sessions" }));
+      const beforeSession = before.sessions.find((session) => session.id === created.session.id);
+      expect(beforeSession).toMatchObject({ attachedClients: 0, humanAttachedClients: 0 });
+
+      const waiting = client.callTool({
+        arguments: { paneId: created.paneId, patterns: ["NEVER-MATCHES-D2"], timeoutMs: 3_000 },
+        name: "wait_for_text",
+      });
+      // Let the control connection actually attach before reading its effect.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const during = structured<{
+        sessions: readonly { attachedClients: number; humanAttachedClients: number; id: string }[];
+      }>(await client.callTool({ arguments: {}, name: "list_sessions" }));
+      const duringSession = during.sessions.find((session) => session.id === created.session.id);
+      expect(duringSession).toMatchObject({ attachedClients: 1, humanAttachedClients: 0 });
+
+      await waiting;
+    });
+  });
+}, 20_000);
+
+// The trailer that removes the private mkdtemp directory (`command.ts`
+// `deliverFramedScript`) only runs once the sourced script exits. A pane
+// killed mid-run never gets there, so the directory outlives it - documented
+// in `packages/mcp/AGENTS.md` and confirmed here against a real pane.
+test("a private directory is left behind when the pane is killed mid-run", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
+    try {
+      await withClient(
+        fixture,
+        async (client) => {
+          const created = structured<{ paneId: string }>(
+            await client.callTool({
+              arguments: { height: 24, name: "kill-mid-run", width: 80 },
+              name: "create_session",
+            }),
+          );
+          const running = client.callTool({
+            arguments: { command: "sleep 4", paneId: created.paneId, timeoutMs: 6_000 },
+            name: "run_shell_command",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await fixture.executeText(["kill-pane", "-t", created.paneId]);
+
+          const result = structured<{ outcome: string }>(await running);
+          expect(result.outcome).toBe("pane_died");
+        },
+        { TMPDIR: scratchTmp },
+      );
+
+      const leftover = await readdir(scratchTmp);
+      expect(leftover.some((name) => name.startsWith("ltx-"))).toBe(true);
+    } finally {
+      await rm(scratchTmp, { force: true, recursive: true });
+    }
+  });
+}, 20_000);
+
 /**
  * Run the server as a program, the way a client launches it, and report what a
  * failed launch wrote. `bun` rather than the emitted build: the failure is in
@@ -273,6 +503,28 @@ test("a retired variable refuses with its own message and no stack", async () =>
   expect(stderr).not.toContain("    at ");
   expect(stderr.trimEnd().split("\n")).toHaveLength(1);
 }, 30_000);
+
+/**
+ * Joining a daemon somebody else started is the one startup fact with two
+ * consequences an operator meets later: the toolsets narrow, because a server
+ * this process did not create keeps `teardown` off, and the agent is sharing a
+ * tmux with whoever else is on that socket. The line said neither.
+ */
+test("the startup line says whether this process started the server", () => {
+  const facts = {
+    caller: {},
+    policy: { excludeTools: new Set(), tools: new Set(), toolsets: new Set(["inspect"]) },
+    server: { socketName: "agent" },
+    version: "0.0.0",
+  } as unknown as Parameters<typeof describeStartup>[0];
+
+  const created = describeStartup({ ...facts, serverState: "created" });
+  const existing = describeStartup({ ...facts, serverState: "existing" });
+
+  expect(created).toContain("serving new agent");
+  expect(existing).toContain("serving existing agent");
+  expect(created).not.toEqual(existing);
+});
 
 test("describeStartupFailure falls back to the message for an unrecognized failure", () => {
   expect(describeStartupFailure(new TypeError("LIBTMUX_SOCKET must not be empty"), {})).toBe(

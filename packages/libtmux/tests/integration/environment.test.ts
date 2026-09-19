@@ -11,6 +11,7 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
+import { TmuxCommandError } from "../../src/errors.js";
 import type { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
 
@@ -126,6 +127,35 @@ describe("session environment", () => {
 
       expect(await session.getEnvironment("LTX_GONE")).toBeUndefined();
       expect((await session.showEnvironment()).has("LTX_GONE")).toBe(false);
+    });
+  }, 30_000);
+
+  test("guards a variable name starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const session = await sessionOf(fixture);
+      // Read through the raw escape hatch rather than `getEnvironment`:
+      // tmux's own removal-marker line is a bare `-NAME` with no `=`, which
+      // is indistinguishable from a value-carrying line only when a name
+      // legitimately starting with `-` is not also handled on the read
+      // side — a separate, pre-existing gap this is not the fix for.
+      const raw = async (): Promise<readonly string[]> =>
+        session.cmd("show-environment", ["--", "-x"]);
+
+      // `-h` is set-environment's own hidden flag and `-x` is none of its
+      // flags; without the guard `-x` would be refused as one instead of
+      // reaching a variable named `-x`.
+      await session.setEnvironment("-x", "value");
+      expect(await raw()).toEqual(["-x=value"]);
+
+      await session.removeEnvironment("-x");
+      expect(await raw()).toEqual(["--x"]);
+
+      await session.unsetEnvironment("-x");
+      const absent = await raw()
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(absent).toBeInstanceOf(TmuxCommandError);
+      expect((absent as TmuxCommandError).stderrIncludes("unknown variable")).toBe(true);
     });
   }, 30_000);
 

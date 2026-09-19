@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { QueryValidationError } from "../../src/exc.js";
+import { QueryValidationError } from "../../src/errors.js";
 import type { RawCompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import {
   createGraphRecordRef,
@@ -36,7 +36,7 @@ function expectInvalidQuery(action: () => unknown, rawError?: unknown): void {
   }
   if (rawError !== undefined) expect(observed).not.toBe(rawError);
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
 }
 
 function assertFrozenData(value: unknown, seen = new Set<object>()): void {

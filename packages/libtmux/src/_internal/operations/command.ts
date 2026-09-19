@@ -1,10 +1,32 @@
-import { TmuxCommandError, TmuxServerRestarted } from "../../exc.js";
+import { TmuxCommandError, TmuxServerRestartedError } from "../../errors.js";
 import type { CommandOptions, CommandResult } from "../../common.js";
 import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { reachesUnboundedCommand } from "../transport/bounded_transport.js";
 import { carriesTmuxId } from "../transport/daemon_guard.js";
 import type { RawCommandResult } from "../transport/types.js";
 import { adaptRawResult, prepareCommandRequest, prepareInvocationRequest } from "./request.js";
+
+/**
+ * The deadline one invocation runs under.
+ *
+ * The call's own wins, `null` meaning none. Otherwise the server's applies,
+ * unless a command in the invocation waits on a person: a default would cut
+ * them off mid-prompt. One such command exempts the whole invocation, where
+ * the `maxInFlight` rule needs every command to block — a deadline kills the
+ * process, which ends every command in it.
+ */
+function deadlineFor(
+  runtime: RuntimeContext,
+  commands: readonly (readonly string[])[],
+  timeoutMs: number | null | undefined,
+): number | undefined {
+  if (timeoutMs !== undefined) return timeoutMs ?? undefined;
+  const waitsOnPerson = commands.some(
+    ([name]) => name !== undefined && reachesUnboundedCommand(name),
+  );
+  return waitsOnPerson ? undefined : runtime.timeoutMs;
+}
 
 interface ExecutedCommand {
   readonly raw: RawCommandResult;
@@ -17,16 +39,14 @@ async function executeCommand(
   options: CommandOptions,
   rawOutput = false,
 ): Promise<ExecutedCommand> {
-  // A command with no deadline of its own inherits the server's. Without
-  // either it waits as long as tmux takes, which for a wedged daemon is
-  // forever.
-  const deadline = options.timeoutMs ?? runtime.timeoutMs;
+  const { timeoutMs, ...rest } = options;
+  const deadline = deadlineFor(runtime, [args], timeoutMs);
   const daemon = carriesTmuxId(args) ? lastObservedDaemon(runtime) : undefined;
   let raw: RawCommandResult;
   try {
     raw = await runtime.transport.execute(
       prepareCommandRequest(runtime.connection, args, {
-        ...options,
+        ...rest,
         ...(daemon === undefined ? {} : { daemonGuard: daemon }),
         ...(deadline === undefined ? {} : { timeoutMs: deadline }),
         ...(rawOutput ? { rawOutput: true as const } : {}),
@@ -36,15 +56,15 @@ async function executeCommand(
     // The daemon this runtime believed in is gone. Moving the epoch on is what
     // makes every other handle from it refuse locally, instead of each one
     // learning the same thing from tmux one command at a time.
-    if (error instanceof TmuxServerRestarted) invalidateRuntimeEpoch(runtime);
+    if (error instanceof TmuxServerRestartedError) invalidateRuntimeEpoch(runtime);
     throw error;
   }
   const result = adaptRawResult(raw);
-  if (result.returncode !== 0) {
+  if (result.exitCode !== 0) {
     const target = args.indexOf("-t");
     throw new TmuxCommandError({
       args,
-      exitCode: result.returncode,
+      exitCode: result.exitCode,
       stderr: result.stderr,
       stdout: result.stdout,
       ...(target === -1 ? {} : { target: args[target + 1] }),
@@ -95,28 +115,29 @@ export async function runCommands(
   commands: readonly (readonly string[])[],
   options: CommandOptions = {},
 ): Promise<readonly string[]> {
-  const deadline = options.timeoutMs ?? runtime.timeoutMs;
+  const { timeoutMs, ...rest } = options;
+  const deadline = deadlineFor(runtime, commands, timeoutMs);
   const flat = commands.flat();
   const daemon = carriesTmuxId(flat) ? lastObservedDaemon(runtime) : undefined;
   let raw: RawCommandResult;
   try {
     raw = await runtime.transport.execute(
       prepareInvocationRequest(runtime.connection, commands, {
-        ...options,
+        ...rest,
         ...(daemon === undefined ? {} : { daemonGuard: daemon }),
         ...(deadline === undefined ? {} : { timeoutMs: deadline }),
       }),
     );
   } catch (error) {
-    if (error instanceof TmuxServerRestarted) invalidateRuntimeEpoch(runtime);
+    if (error instanceof TmuxServerRestartedError) invalidateRuntimeEpoch(runtime);
     throw error;
   }
   const result = adaptRawResult(raw);
-  if (result.returncode !== 0) {
+  if (result.exitCode !== 0) {
     const target = flat.indexOf("-t");
     throw new TmuxCommandError({
       args: flat,
-      exitCode: result.returncode,
+      exitCode: result.exitCode,
       stderr: result.stderr,
       stdout: result.stdout,
       ...(target === -1 ? {} : { target: flat[target + 1] }),

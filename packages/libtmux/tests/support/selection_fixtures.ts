@@ -72,10 +72,10 @@ export interface SessionProvenanceHarness {
 function resultFor(request: CommandRequest): RawCommandResult {
   return {
     cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode("3.7b\t101\t202\n"),
+    stdout: encoder.encode("3.7b;101;202\n"),
   };
 }
 

@@ -314,7 +314,7 @@ describe("transport cancellation", () => {
 
       const result = await execution;
 
-      expect(result.returncode).toBe(0);
+      expect(result.exitCode).toBe(0);
       expect(result.signal).toBeNull();
       expect(performance.now() - interruptedAt).toBeLessThan(3_000);
       expect(sameIdentity(await readProcessIdentity(holder.pid), holder)).toBe(true);
@@ -346,7 +346,7 @@ describe("transport cancellation", () => {
       holder = await readHolderIdentity(markerPath);
       const result = await execution;
 
-      expect(result.returncode).toBe(0);
+      expect(result.exitCode).toBe(0);
       expect(result.signal).toBeNull();
       // Well under the descendant's hold: the point is that it did not wait.
       expect(performance.now() - startedAt).toBeLessThan(4_000);

@@ -13,7 +13,7 @@ import {
 
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
-import { LibTmuxException, TmuxCommandError } from "../../src/exc.js";
+import { LibTmuxError, TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -66,6 +66,87 @@ async function captureUntil(
 }
 
 describe("lifecycle mutations", () => {
+  /**
+   * `newSession`, `newWindow` and `split` take `CommandOptions` and were typed
+   * as though they honoured them, while the plan path called `runCommand` with
+   * no options at all: an already-aborted signal was ignored and the object
+   * was created anyway. The only coverage was a compile-only assertion that
+   * the types accept `signal`, which a dropped option satisfies perfectly.
+   */
+  test("honours a signal on the operations that accept one", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const dead = AbortSignal.abort(new Error("caller gave up"));
+      const cancelled = { code: "TmuxTransportError", kind: "cancelled" };
+
+      await expect(server.newSession({ name: "never", signal: dead })).rejects.toMatchObject(
+        cancelled,
+      );
+      const session = await server.newSession({ name: "host" });
+      await expect(session.newWindow({ name: "never", signal: dead })).rejects.toMatchObject(
+        cancelled,
+      );
+      const pane = session.windows.one().panes.one();
+      const panesBefore = (await server.snapshot()).panes.length;
+      await expect(pane.split({ signal: dead })).rejects.toMatchObject(cancelled);
+
+      // Refused before tmux ran, so nothing was made.
+      const after = await server.snapshot();
+      expect(after.sessions.toArray().map((one) => one.name)).not.toContain("never");
+      expect(after.windows.toArray().map((one) => one.name)).not.toContain("never");
+      expect(after.panes.length).toBe(panesBefore);
+    });
+  }, 60_000);
+
+  /**
+   * `batch` forwards its options to the commands and then took its resolving
+   * snapshot unsignalled, so a caller who abandoned the group between the two
+   * got handles read from a server they had stopped waiting for. The window
+   * is narrow, so the abort is fired from the observer the moment the last
+   * command answers rather than by racing a timer.
+   */
+  test("honours a signal between a batch's commands and its snapshot", async () => {
+    await withServer(async (fixture) => {
+      const controller = new AbortController();
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        onInvocation: (report) => {
+          if (report.commands.some((command) => command[0] === "new-window")) controller.abort();
+        },
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      const session = (await server.snapshot()).sessions.one();
+
+      await expect(
+        server.batch([session.plan.newWindow({ name: "batched" })], {
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ code: "TmuxTransportError", kind: "cancelled" });
+    });
+  }, 60_000);
+
+  /**
+   * Why a create reads the whole server rather than the session it was made
+   * in: a session group shares one window list, so a window made in one member
+   * is linked into every member. Resolved against its own session alone, this
+   * handle would report one link where tmux holds two.
+   */
+  test("resolves a created window's links across its session group", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const first = await server.newSession({ name: "grouped-a" });
+      await server.newSession({ groupWith: "grouped-a", name: "grouped-b" });
+
+      const window = await first.newWindow({ name: "shared" });
+
+      expect(window.linkedSessions.toArray().map((session) => session.name)).toEqual(
+        expect.arrayContaining(["grouped-a", "grouped-b"]),
+      );
+      expect(window.linkedSessions.length).toBe(2);
+    });
+  }, 60_000);
+
   test("creates a session, window, and pane, resolving each as a handle", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -186,9 +267,9 @@ describe("lifecycle mutations", () => {
       // The window is on the server and in plain sight; only the placement the
       // handle names is gone. Saying it no longer exists sends the reader
       // looking for something they can already see.
-      expect(failure).toBeInstanceOf(LibTmuxException);
-      expect((failure as LibTmuxException).message).toContain("no longer at that placement");
-      expect((failure as LibTmuxException).message).toContain("other");
+      expect(failure).toBeInstanceOf(LibTmuxError);
+      expect((failure as LibTmuxError).message).toContain("no longer at that placement");
+      expect((failure as LibTmuxError).message).toContain("other");
     });
   }, 40_000);
 

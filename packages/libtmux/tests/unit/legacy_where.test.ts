@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { MultipleMatchesError, QueryValidationError } from "../../src/exc.js";
+import { MultipleMatchesError, QueryValidationError } from "../../src/errors.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import { parseLegacyWhere } from "../../src/selection.js";
 import { createSessionHarness } from "../support/selection_fixtures.js";
@@ -14,7 +14,7 @@ function expectInvalidQuery(action: () => unknown, escaped?: unknown): QueryVali
   }
   if (escaped !== undefined) expect(observed).not.toBe(escaped);
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
   return observed as QueryValidationError;
 }
 

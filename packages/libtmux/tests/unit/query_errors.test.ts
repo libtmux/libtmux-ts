@@ -15,7 +15,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { compileWhere } from "../../src/_internal/selection/compile.js";
-import { QueryValidationError } from "../../src/exc.js";
+import { QueryValidationError } from "../../src/errors.js";
 
 function refusal(model: string, criteria: unknown): QueryValidationError {
   try {
@@ -134,6 +134,6 @@ describe("a refused query", () => {
   });
 
   test("keeps the code every caller already switches on", () => {
-    expect(refusal("window", { nmae: "x" }).code).toBe("invalid-query");
+    expect(refusal("window", { nmae: "x" }).reason).toBe("invalid-query");
   });
 });

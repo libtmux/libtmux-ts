@@ -24,14 +24,62 @@ describe("tmux versions", () => {
     expect(Object.isFrozen(version)).toBe(true);
   });
 
-  test("orders development builds above every tagged release", () => {
+  test("lets an untargeted development build outrank every tagged release", () => {
     const latestTagged = parseTmuxVersion("99.9z");
 
+    // Bare "master", or "<tag>-master", names no release it is heading
+    // toward, so nothing bounds it.
     expect(compareTmuxVersions(parseTmuxVersion("master"), latestTagged)).toBeGreaterThan(0);
     expect(compareTmuxVersions(parseTmuxVersion("3.6a-master"), latestTagged)).toBeGreaterThan(0);
-    expect(compareTmuxVersions(parseTmuxVersion("next-3.8"), latestTagged)).toBeGreaterThan(0);
     expect(parseTmuxVersion("3.6a-master").raw).toBe("3.6a-master");
+  });
+
+  test("parses every shape it is willing to rank", () => {
+    // A version this file ranks has to be one it can also read: `-master`
+    // and `next-` are stripped independently, in the order classification
+    // tests them, so a string carrying both parses and ranks consistently.
+    // No tmux emits this shape.
+    const both = parseTmuxVersion("next-3.9-master");
+
+    expect(both).toMatchObject({ major: 3, minor: 9, raw: "next-3.9-master" });
+    // `-master` wins, as the classification says: a build naming no release it
+    // is heading toward, so nothing bounds it.
+    expect(compareTmuxVersions(both, parseTmuxVersion("99.9z"))).toBeGreaterThan(0);
+  });
+
+  test("bounds a named-next build to the release it names", () => {
+    // `next-X.Y` is a real tmux version string: a build heading toward
+    // release X.Y, which it has not shipped. It ranks above the release
+    // before it and below the one it names — not above every tagged
+    // release, which is what unconditionally ranking every development
+    // build above every tagged release would give it.
     expect(parseTmuxVersion("next-3.8")).toMatchObject({ major: 3, minor: 8, suffix: "" });
+
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.8"))).toBe(true);
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.9"))).toBe(false);
+  });
+
+  test("does not let a named-next build leak past the release it names", () => {
+    // A fix that only special-cases "next-X.Y equals tagged X.Y" still gets
+    // this wrong: it would leave next-3.9 outranking a later, unrelated
+    // release like 4.0, or next-3.8 outranking 99.9z.
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("4.0"))).toBe(false);
+    expect(
+      compareTmuxVersions(parseTmuxVersion("next-3.8"), parseTmuxVersion("99.9z")),
+    ).toBeLessThan(0);
+  });
+
+  test("compares a named-next build's suffix before its development kind", () => {
+    // The parser also admits a lettered target, such as "next-3.7a": it
+    // still precedes the exact release it names but follows the plain
+    // release before it. Comparing development-ness before the suffix
+    // (rather than after) would rank this below "3.7" too.
+    expect(
+      compareTmuxVersions(parseTmuxVersion("next-3.7a"), parseTmuxVersion("3.7")),
+    ).toBeGreaterThan(0);
+    expect(
+      compareTmuxVersions(parseTmuxVersion("next-3.7a"), parseTmuxVersion("3.7a")),
+    ).toBeLessThan(0);
   });
 
   test("carries ordinary version floors into later patch releases", () => {
@@ -53,7 +101,8 @@ describe("tmux versions", () => {
     for (const value of [
       "3",
       "3.7aa",
-      "3.7-rc1",
+      "3.7-rc-junk",
+      "3.7-rcx",
       "v3.7",
       "tmux 3.7",
       "3.7 ",
@@ -64,5 +113,27 @@ describe("tmux versions", () => {
     ]) {
       expect(() => parseTmuxVersion(value)).toThrow("invalid tmux version");
     }
+  });
+
+  /**
+   * tmux ships a candidate as `3.8-rc`, and the version probe runs before the
+   * first command — so this threw, making the library unusable on a candidate
+   * rather than degraded on one.
+   *
+   * It ranks as the release it names, not below it. Measured: 3.8-rc dumps the
+   * v2 JSON layout that arrived in 3.8, so a gate asking whether this tmux has
+   * a 3.8 feature has to answer yes. That is what separates a candidate from a
+   * `next-X.Y` build, which sits somewhere in the cycle and may predate any of
+   * it.
+   */
+  test("ranks a release candidate as the release it is frozen at", () => {
+    for (const raw of ["3.8-rc", "3.8-rc1"]) {
+      const parsed = parseTmuxVersion(raw);
+      expect(parsed, raw).toMatchObject({ major: 3, minor: 8, raw, suffix: "" });
+      expect(tmuxVersionAtLeast(parsed, parseTmuxVersion("3.8")), `${raw} >= 3.8`).toBe(true);
+      expect(tmuxVersionAtLeast(parsed, parseTmuxVersion("3.9")), `${raw} >= 3.9`).toBe(false);
+    }
+    // A mid-cycle build still ranks below the release it names.
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.9"))).toBe(false);
   });
 });

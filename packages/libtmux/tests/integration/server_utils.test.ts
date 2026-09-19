@@ -13,6 +13,7 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
+import { TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -76,6 +77,37 @@ describe("server utilities", () => {
     });
   }, 40_000);
 
+  test("keeps a dash-prefixed buffer payload literal", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      // `-a` is set-buffer's own append flag; without the guard this data
+      // would be refused as one instead of stored as the buffer's contents.
+      await server.setBuffer("dashed", "-a");
+
+      expect(await server.showBuffer("dashed")).toEqual(["-a"]);
+    });
+  }, 40_000);
+
+  test("guards a save-buffer path starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.setBuffer("savedash", "payload");
+
+      // Neither `-n` nor any other save-buffer flag matches this whole
+      // token; which error tmux gives is what proves the path arrived
+      // whole: refused as an unrecognized flag without the guard, "no such
+      // file" with it, once the path itself is what tmux tried to open.
+      const failure = await server
+        .saveBuffer("savedash", "-nonexistent-ltx-dir/out")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+
+      expect(failure).toBeInstanceOf(TmuxCommandError);
+      expect((failure as TmuxCommandError).stderrIncludes("-nonexistent-ltx-dir")).toBe(true);
+    });
+  }, 40_000);
+
   test("lists tmux commands", async () => {
     await withServer(async (fixture) => {
       const commands = await serverFor(fixture).listCommands();
@@ -94,6 +126,23 @@ describe("server utilities", () => {
       await server.sourceFile(config);
 
       expect((await server.showOptions()).get("history-file")).toBe("/tmp/ltx-sourced");
+    });
+  }, 40_000);
+
+  test("guards a source-file path starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      // Reaching tmux's own "no such file" reader, rather than being
+      // refused as an unrecognized flag, is what proves the path arrived
+      // whole.
+      const failure = await server
+        .sourceFile("-nonexistent-ltx-source")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+
+      expect(failure).toBeInstanceOf(TmuxCommandError);
+      expect((failure as TmuxCommandError).stderrIncludes("-nonexistent-ltx-source")).toBe(true);
     });
   }, 40_000);
 
@@ -116,10 +165,24 @@ describe("server utilities", () => {
     });
   }, 40_000);
 
+  test("guards a session name starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+
+      // rename-session takes no flag besides `-t`; without the guard this
+      // name would be refused as an unrecognized one instead of applied.
+      await session.rename("-dashed-name");
+
+      expect((await server.snapshot()).sessions.count({ name: "-dashed-name" })).toBe(1);
+    });
+  }, 40_000);
+
   test("reports a reachable server as alive and a missing one as not", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       expect(await server.isAlive()).toBe(true);
+      await expect(server.checkAlive()).resolves.toBeUndefined();
       await expect(server.raiseIfDead()).resolves.toBeUndefined();
 
       const absent = new Server({
@@ -130,6 +193,7 @@ describe("server utilities", () => {
 
       // A socket that was never created is a negative answer, not a failure.
       expect(await absent.isAlive()).toBe(false);
+      await expect(absent.checkAlive()).rejects.toThrow(/list-sessions failed/);
       await expect(absent.raiseIfDead()).rejects.toThrow(/list-sessions failed/);
     });
   }, 40_000);

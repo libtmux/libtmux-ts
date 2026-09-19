@@ -25,7 +25,9 @@ export async function displayPopup(
       ...(options.height === undefined ? [] : ["-h", options.height]),
       ...(options.directory === undefined ? [] : ["-d", options.directory]),
       ...target(clientOrPane),
-      ...(command === undefined ? [] : [command]),
+      // `--` keeps a command starting with `-` from being read as one of
+      // display-popup's own flags (`-C` closes the popup instead).
+      ...(command === undefined ? [] : ["--", command]),
     ],
     options,
   );
@@ -50,6 +52,10 @@ export async function displayMenu(
     "-T",
     title,
     ...target(paneId),
+    // `--` guards every flattened item: each carries a name, a key, and a
+    // command, any of which could otherwise be read as one of display-menu's
+    // own flags.
+    "--",
     ...items.flatMap((item) => (item === "separator" ? [""] : [item.name, item.key, item.command])),
   ]);
 }
@@ -83,7 +89,9 @@ export async function findWindow(
   paneId: string | null,
   pattern: string,
 ): Promise<void> {
-  await runCommand(runtime, ["find-window", ...target(paneId), pattern]);
+  // `--` keeps a pattern starting with `-` from being read as one of
+  // find-window's own flags.
+  await runCommand(runtime, ["find-window", ...target(paneId), "--", pattern]);
 }
 
 /** Send the configured prefix key to a pane. */

@@ -11,7 +11,7 @@
 import { cpus } from "node:os";
 import { join } from "node:path";
 
-import { TmuxServerRestarted } from "../src/exc.js";
+import { TmuxServerRestartedError } from "../src/errors.js";
 import { Server, type DaemonIdentity } from "../src/server.js";
 import { createEventStream } from "../src/_internal/control/stream.js";
 import { parsePaneId } from "../src/_internal/runtime/ids.js";
@@ -294,7 +294,7 @@ async function measureReplacement(runRoot: string, tmuxBin: string): Promise<Row
           // eslint-disable-next-line no-await-in-loop -- checks this predecessor after adoption.
           await stale.refreshed();
         } catch (error) {
-          if (error instanceof TmuxServerRestarted) staleRefusals += 1;
+          if (error instanceof TmuxServerRestartedError) staleRefusals += 1;
           else throw error;
         }
       }

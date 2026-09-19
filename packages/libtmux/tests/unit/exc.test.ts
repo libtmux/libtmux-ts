@@ -51,7 +51,7 @@ describe("query exceptions", () => {
     });
 
     expect(error).toBeInstanceOf(LibTmuxException);
-    expect(error.name).toBe("MultipleObjectsReturned");
+    expect(error.name).toBe("MultipleObjectsError");
     expect(error.count).toBe(2);
     expect(error.query).toEqual({ pane_id: "%3" });
     expect(error.cause).toBe(cause);
@@ -63,6 +63,32 @@ describe("query exceptions", () => {
     expect(new NoMatchError({ query: { window_id: "@2" } })).toBeInstanceOf(ObjectDoesNotExist);
     expect(new MultipleMatchesError({ count: 2 })).toBeInstanceOf(MultipleObjectsReturned);
     expect(new TmuxObjectDoesNotExist()).toBeInstanceOf(ObjectDoesNotExist);
+  });
+
+  test("keeps error constructors identical across public and compatibility imports", async () => {
+    const errors = await import("libtmux/errors");
+    const legacy = await import("libtmux/exc");
+    const root = await import("libtmux");
+
+    expect(legacy.LibTmuxException).toBe(errors.LibTmuxError);
+    expect(root.LibTmuxError).toBe(errors.LibTmuxError);
+    expect(root.LibTmuxException).toBe(errors.LibTmuxError);
+    expect(legacy.ObjectDoesNotExist).toBe(errors.ObjectNotFoundError);
+    expect(legacy.MultipleObjectsReturned).toBe(errors.MultipleObjectsError);
+    expect(legacy.TmuxObjectDoesNotExist).toBe(errors.TmuxObjectNotFoundError);
+    expect(legacy.VersionTooLow).toBe(errors.VersionTooLowError);
+    expect(legacy.WaitTimeout).toBe(errors.WaitTimeoutError);
+    expect(legacy.TmuxServerRestarted).toBe(errors.TmuxServerRestartedError);
+
+    const cause = new Error("connection closed");
+    const restarted = new errors.TmuxServerRestartedError("daemon replaced", { cause });
+    expect(restarted).toBeInstanceOf(legacy.TmuxServerRestarted);
+    expect(restarted).toBeInstanceOf(root.LibTmuxException);
+    expect(restarted.cause).toBe(cause);
+    expect(restarted.delivery).toBe("not_started");
+    expect(restarted.name).toBe("TmuxServerRestartedError");
+    expect(new errors.NoMatchError()).toBeInstanceOf(legacy.ObjectDoesNotExist);
+    expect(new errors.MultipleMatchesError()).toBeInstanceOf(legacy.MultipleObjectsReturned);
   });
 
   test("formats every valid depth-64 criterion without a depth sentinel", () => {
@@ -106,12 +132,12 @@ describe("query exceptions", () => {
     const cause = new Error("regex implementation detail");
     const error = new QueryValidationError({
       cause,
-      code: "invalid-id",
+      reason: "invalid-id",
       message: "Invalid pane ID",
     });
 
     expect(error.name).toBe("QueryValidationError");
-    expect(error.code).toBe("invalid-id");
+    expect(error.reason).toBe("invalid-id");
     expect(error.cause).toBe(cause);
     expect(error.message).toBe("Invalid pane ID");
     expect(error.message).not.toContain("regex");

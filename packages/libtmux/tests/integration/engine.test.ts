@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -13,7 +14,7 @@ import {
 
 import { Server } from "../../src/server.js";
 import { flattenInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
-import { TmuxServerRestarted } from "../../src/exc.js";
+import { TmuxServerRestartedError } from "../../src/errors.js";
 import type {
   DaemonGuard,
   TmuxCommandResult,
@@ -40,23 +41,22 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
     const quoted = [executable, ...args]
       .map((argument) => `'${argument.replaceAll("'", `'\\''`)}'`)
       .join(" ");
-    const child = Bun.spawn(["sh", "-c", quoted], {
-      env: { ...environment },
-      ...(stdin === undefined ? {} : { stdin }),
-      stderr: "pipe",
-      stdout: "pipe",
+    const child = spawn("sh", ["-c", quoted], { env: { ...environment } });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdin.end(stdin === undefined ? undefined : Buffer.from(stdin));
+    const code = await new Promise<number>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", (exitCode) => resolve(exitCode ?? -1));
     });
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).arrayBuffer(),
-      new Response(child.stderr).arrayBuffer(),
-    ]);
     return {
       cmd: [executable, ...args],
-      returncode: code,
+      exitCode: code,
       signal: null,
-      stderr: new Uint8Array(stderr),
-      stdout: new Uint8Array(stdout),
+      stderr: new Uint8Array(Buffer.concat(stderr)),
+      stdout: new Uint8Array(Buffer.concat(stdout)),
     };
   };
 
@@ -80,8 +80,8 @@ function shellEngine(onInvocation: (argv: readonly string[]) => void): TmuxEngin
         guarded.request.environment,
         guarded.request.stdin,
       );
-      if (guarded.refusedBy(result.returncode, result.stderr)) {
-        throw new TmuxServerRestarted("the daemon this handle was read from is gone");
+      if (guarded.refusedBy(result.exitCode, result.stderr)) {
+        throw new TmuxServerRestartedError("the daemon this handle was read from is gone");
       }
       return result;
     },

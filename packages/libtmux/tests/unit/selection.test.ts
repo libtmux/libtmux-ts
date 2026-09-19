@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { types as nodeTypes } from "node:util";
 
 import { Client } from "../../src/client.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/exc.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import {
   entityRefForHandle,
@@ -30,7 +30,7 @@ function expectInvalidQuery(action: () => unknown): QueryValidationError {
     observed = error;
   }
   expect(observed).toBeInstanceOf(QueryValidationError);
-  expect(observed).toMatchObject({ code: "invalid-query" });
+  expect(observed).toMatchObject({ reason: "invalid-query" });
   return observed as QueryValidationError;
 }
 
@@ -65,6 +65,32 @@ function assertDeepFrozenData(value: unknown, seen = new Set<object>()): void {
 }
 
 describe("Selection collection contract", () => {
+  /**
+   * `where({ ... }).one()` is the chain the quickstart teaches, and the error
+   * it raised named nothing: `one` had no argument, so the criteria that had
+   * already narrowed the selection were reported as an empty query. A
+   * predicate keeps none, because a predicate is not reifiable as a query.
+   */
+  test("names the criteria that narrowed it when one() is called bare", async () => {
+    const harness = await createSessionHarness(["alpha"]);
+    const selection = createProjectedSelection("session", harness.values, harness.projection);
+    const absent = { name: "no-such-session" } as const;
+
+    const queryOf = (action: () => unknown): unknown => {
+      try {
+        action();
+      } catch (error: unknown) {
+        return (error as { query?: unknown }).query;
+      }
+      return undefined;
+    };
+
+    expect(queryOf(() => selection.one(absent))).toEqual(absent);
+    expect(queryOf(() => selection.where(absent).one())).toEqual(absent);
+    // A predicate is not reifiable, so it still reports nothing.
+    expect(queryOf(() => selection.filter(() => false).one())).toEqual({});
+  });
+
   test("is a type-only public interface with private runtime construction", async () => {
     const harness = await createSessionHarness(["alpha"]);
     const selection = createProjectedSelection("session", harness.values, harness.projection);
@@ -92,9 +118,13 @@ describe("Selection collection contract", () => {
 
     expect(selection).not.toBeInstanceOf(Array);
     expect(Array.isArray(selection)).toBe(false);
+    // Drained before any matcher sees them: a matcher that formats an
+    // iterator can walk it, leaving the next assertion an empty one.
+    const first = [...firstIterator];
+    const second = [...secondIterator];
     expect(firstIterator).not.toBe(secondIterator);
-    expect([...firstIterator]).toEqual([...harness.values]);
-    expect([...secondIterator]).toEqual([...harness.values]);
+    expect(first).toEqual([...harness.values]);
+    expect(second).toEqual([...harness.values]);
     expect([...selection]).toEqual([...harness.values]);
     expect([...selection].map(({ name }) => name)).toEqual(["alpha", "beta", "alpha"]);
     expect(selection.length).toBe(3);

@@ -1,5 +1,6 @@
 import * as clientModule from "../../src/client.js";
 import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
+import type { TmuxInvocationObserver } from "../../src/common.js";
 import type { TmuxEngine } from "../../src/engine.js";
 import type { RowWithIdentities } from "../../src/field_types.js";
 import type {
@@ -50,8 +51,6 @@ import type {
   PaneId,
   SafeInteger,
   SessionId,
-  TmuxLogger,
-  TmuxWarningSink,
   WindowId,
 } from "../../src/common.js";
 import { Client } from "../../src/client.js";
@@ -79,9 +78,12 @@ type ExpectedServerOptions = {
   readonly engine?: TmuxEngine;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly maxInFlight?: number;
+  // The other public seam, and the reason the no-op logger and warning sink
+  // that used to sit in the runtime are gone: this one is reachable.
+  readonly onInvocation?: TmuxInvocationObserver;
   readonly socketName?: string;
   readonly socketPath?: string;
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | null;
   readonly tmuxBin?: string;
 };
 
@@ -90,10 +92,8 @@ type ExpectedRuntimeContextOptions = {
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
   readonly engine?: CommandTransport;
-  readonly logger?: TmuxLogger;
   readonly timeoutMs?: number;
   readonly transport: CommandTransport;
-  readonly warnings?: TmuxWarningSink;
 };
 
 type ExpectedRuntimeContext = {
@@ -102,10 +102,8 @@ type ExpectedRuntimeContext = {
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
   readonly engine: CommandTransport | undefined;
-  readonly logger: TmuxLogger;
   readonly timeoutMs: number | undefined;
   readonly transport: CommandTransport;
-  readonly warnings: TmuxWarningSink;
 };
 
 type Child = Client | Pane | Session | Window;
@@ -395,10 +393,11 @@ void session.where;
 void pane;
 // @ts-expect-error on_init is not a constructor option.
 void new Server({ on_init: () => undefined });
-// @ts-expect-error internal logger injection is not a public Server option.
-void new Server({ logger: {} as TmuxLogger });
-// @ts-expect-error internal warning injection is not a public Server option.
-void new Server({ warnings: {} as TmuxWarningSink });
+// The options these two replaced are gone, and asserting on a deleted type
+// name would satisfy `@ts-expect-error` with "cannot find name" rather than
+// with the rejection it claims to prove. This is the live one.
+// @ts-expect-error an observer is a function, not a sink object.
+void new Server({ onInvocation: { warn: () => undefined } });
 
 export type {
   _AllNominalModels,

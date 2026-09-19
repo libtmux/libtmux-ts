@@ -48,6 +48,12 @@
       "import": "./dist/common.js",
       "default": "./dist/common.js"
     },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "bun": "./src/errors.ts",
+      "import": "./dist/errors.js",
+      "default": "./dist/errors.js"
+    },
     "./exc": {
       "types": "./dist/exc.d.ts",
       "bun": "./src/exc.ts",
@@ -119,6 +125,12 @@
       "bun": "./src/engine.ts",
       "import": "./dist/engine.js",
       "default": "./dist/engine.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "bun": "./src/testing.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
@@ -142,6 +154,7 @@
     "test:types": "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
     "test:unit": "bun run build && bun scripts/run-unit-tests.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "typecheck:readme": "bun scripts/doc-examples/check-readme-examples.ts",
     "typecheck:ambient-free": "bun run build && tsc -p tests/fixtures/ambient-free/tsconfig.json",
     "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
@@ -160,6 +173,8 @@
     "oxlint": "1.81.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "7.0.2",
+    "typescript-floor": "npm:typescript@5.7.3",
+    "vitest": "5.0.1",
     "zod": "4.5.4"
   },
   "engines": {

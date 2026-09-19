@@ -1,4 +1,4 @@
-import { LibTmuxException } from "../../exc.js";
+import { LibTmuxError } from "../../errors.js";
 import type { AbortLike } from "../../types.js";
 import { prepareCommandRequest, prepareInvocationRequest } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
@@ -49,19 +49,16 @@ function decodedStderr(bytes: Uint8Array): string {
 function commandFailure(
   listCommand: ListCommand | undefined,
   result: RawCommandResult,
-): LibTmuxException | undefined {
+): LibTmuxError | undefined {
   const stderr = decodedStderr(result.stderr);
-  if (result.returncode === 0 && result.signal === null && stderr === "") return undefined;
+  if (result.exitCode === 0 && result.signal === null && stderr === "") return undefined;
   const message =
     stderr !== ""
       ? stderr
       : result.signal === null
-        ? `tmux command failed with status ${result.returncode}`
+        ? `tmux command failed with status ${result.exitCode}`
         : `tmux command failed with signal ${result.signal}`;
-  return new LibTmuxException(
-    message,
-    listCommand === undefined ? {} : { subcommand: listCommand },
-  );
+  return new LibTmuxError(message, listCommand === undefined ? {} : { subcommand: listCommand });
 }
 
 function transportFailure(
@@ -177,7 +174,7 @@ export async function executeGuardedListGroup(
   const failure = commandFailure(undefined, result);
   const expectedEmptyFailure =
     failure !== undefined &&
-    result.returncode === 1 &&
+    result.exitCode === 1 &&
     result.signal === null &&
     decodedStderr(result.stderr) === "no current target" &&
     prepared[0]?.listing.listCommand === "list-sessions";

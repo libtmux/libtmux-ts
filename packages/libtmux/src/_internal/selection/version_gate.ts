@@ -3,7 +3,7 @@ import {
   WHERE_RELATIONS_V1,
   type WhereModel,
 } from "../../_generated/where_fields.js";
-import { VersionTooLow } from "../../exc.js";
+import { VersionTooLowError } from "../../errors.js";
 import { compareTmuxVersions, parseTmuxVersion } from "../runtime/tmux_version.js";
 
 /** Refuse criteria that the captured tmux version could not have answered. */
@@ -37,7 +37,7 @@ export function refuseFieldsNewerThanServer(
       const field = WHERE_FIELDS_V1[scope].find((candidate) => candidate.wireName === key);
       if (field === undefined) continue;
       if (compareTmuxVersions(actual, parseTmuxVersion(field.since)) >= 0) continue;
-      throw new VersionTooLow({
+      throw new VersionTooLowError({
         criteriaName: field.criteriaName,
         serverVersion,
         since: field.since,

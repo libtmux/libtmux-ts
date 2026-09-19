@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { shellQuote } from "./startup.js";
+
 const INHERITED_TRAP_LIMIT = 64 * 1024;
 
 function captureInheritedTraps(scope: string, traps: string, status: string): string {
@@ -70,8 +72,49 @@ export function frame(command: string, id: string, suppressHistory: boolean): st
 
 /** A framing marker: `<id>_S` or `<id>_E`, as the shell prints it. */
 const MARKER = /\b(ltx[0-9a-f]+)_([SE])\b/u;
-/** A framing command, as the pane echoes it back when somebody types one. */
-const FRAMING_ECHO = /(?:^|\s)__ltx_[0-9a-f]+\(\)/u;
+/**
+ * A framing dispatch, as the pane echoes it back when somebody types one.
+ *
+ * The dispatched line sources a short path rather than carrying the script's
+ * own body (see `sourcingDispatch`), so this matches that shape instead of
+ * the function definition an older design typed in full. The directory is a
+ * fresh `mkdtemp` result each run and not itself predictable, so only the
+ * `<id>.sh` suffix is matched. A run that fell back to typing the script
+ * still echoes the sourcing line it tried first, so this matches either.
+ */
+const FRAMING_ECHO = /(?:^|\s)\. '[^']*\/ltx[0-9a-f]+\.sh'/u;
+
+/**
+ * The line that sources the script, and says so when it cannot.
+ *
+ * `save-buffer` writes on the tmux server's host. A pane whose shell is
+ * somewhere else — inside `ssh`, a container, or another user's `su` — cannot
+ * open that path, and nothing it prints then resembles a framing marker, so
+ * the run would spend its whole budget waiting for output that cannot arrive.
+ * Testing for the file first turns that into an immediate answer.
+ *
+ * The readability test is what makes this work on every shell rather than
+ * most. `.` is a POSIX special builtin, and dash answers a missing operand by
+ * abandoning the whole command line, so `. path || fallback` runs the
+ * fallback under bash and zsh and silently does nothing under dash — measured
+ * on all three. `[ -r … ]` is an ordinary builtin, so the `else` branch is
+ * reached wherever the file cannot be read.
+ *
+ * The token is assembled by `printf` rather than written out, because the pane
+ * echoes whatever is typed into it: a literal `<id>_N` in the dispatch would
+ * appear in the stream the moment the line was typed and read as a failure on
+ * every successful run.
+ */
+export function sourcingDispatch(path: string, id: string): string {
+  if (!/^ltx[0-9a-f]{10}$/u.test(id)) throw new TypeError("invalid command frame id");
+  const quoted = shellQuote(path);
+  return `if [ -r ${quoted} ]; then . ${quoted}; else command printf '%s_N\\n' '${id}'; fi`;
+}
+
+/** Whether the shell answered that it could not read the script file. */
+export function sawSourcingFailure(stream: string, id: string): boolean {
+  return stream.includes(`${id}_N`);
+}
 
 /**
  * Remove another caller's framing, and its output, from this caller's body.

@@ -24,7 +24,7 @@ describe("UTF-8 backslash replacement", () => {
   test("removes only the transport newline and filters empty stderr", () => {
     const result = adaptRawResult({
       cmd: ["tmux", "display-message"],
-      returncode: 1,
+      exitCode: 1,
       signal: null,
       stderr: new TextEncoder().encode("first error\n\nsecond error\n"),
       stdout: new TextEncoder().encode("first\n\nsecond\n\n"),
@@ -32,7 +32,7 @@ describe("UTF-8 backslash replacement", () => {
 
     expect(result).toEqual({
       cmd: ["tmux", "display-message"],
-      returncode: 1,
+      exitCode: 1,
       stderr: ["first error", "second error"],
       stdout: ["first", "", "second", ""],
     });
@@ -41,7 +41,7 @@ describe("UTF-8 backslash replacement", () => {
   test("copies the first has-session error line to empty stdout", () => {
     const result = adaptRawResult({
       cmd: ["tmux", "-Lnamed", "has-session", "-t", "missing"],
-      returncode: 1,
+      exitCode: 1,
       signal: null,
       stderr: new TextEncoder().encode("can't find session: missing\n"),
       stdout: new Uint8Array(),

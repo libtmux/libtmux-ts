@@ -1,15 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
-import type {
-  ConnectionAlias,
-  DaemonEpoch,
-  LogicalRef,
-  TmuxLogger,
-  TmuxWarningSink,
-} from "../../src/common.js";
+import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
 import { safeInteger } from "../../src/common.js";
-import { LibTmuxException, QueryValidationError } from "../../src/exc.js";
+import { LibTmuxError, QueryValidationError } from "../../src/errors.js";
 import {
   CLIENT_ALIASES,
   PANE_ALIASES,
@@ -93,10 +87,10 @@ function epoch(value: number): DaemonEpoch {
 function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult {
   return {
     cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\t101\t202\n`),
+    stdout: encoder.encode(`${version};101;202\n`),
   };
 }
 
@@ -116,10 +110,8 @@ function runtimeFixture(
   options: {
     readonly alias?: string;
     readonly epoch?: number;
-    readonly logger?: TmuxLogger;
     readonly onExecute?: () => void;
     readonly connection?: ServerOptions;
-    readonly warnings?: TmuxWarningSink;
   } = {},
 ): RuntimeFixture {
   const transport = recordingTransport(options.onExecute);
@@ -144,8 +136,6 @@ function runtimeFixture(
     connectionAlias: alias(options.alias ?? "handles-runtime"),
     daemonEpoch: epoch(options.epoch ?? 0),
     transport,
-    ...(options.logger === undefined ? {} : { logger: options.logger }),
-    ...(options.warnings === undefined ? {} : { warnings: options.warnings }),
   });
   return {
     runtime,
@@ -410,73 +400,17 @@ describe("server and runtime foundations", () => {
     );
   });
 
-  test("installs usable no-op observability defaults without public options", () => {
-    const server = new Server();
-    const runtime = runtimeForServer(server);
-
-    expect(Object.isFrozen(runtime)).toBe(true);
-    expect(() => {
-      runtime.logger.debug("debug");
-      runtime.logger.error("error");
-      runtime.logger.info("info");
-      runtime.logger.warn("warn");
-      runtime.warnings.warn({ code: "test-warning", message: "test warning" });
-    }).not.toThrow();
-    expect("logger" in server).toBe(false);
-    expect("warnings" in server).toBe(false);
-  });
-
-  test("retains injected observability resources without snapshot leakage", async () => {
-    const loggerCalls: string[] = [];
-    const warningCodes: string[] = [];
-    const logger: TmuxLogger = {
-      debug(message) {
-        loggerCalls.push(`debug:${message}`);
-      },
-      error(message) {
-        loggerCalls.push(`error:${message}`);
-      },
-      info(message) {
-        loggerCalls.push(`info:${message}`);
-      },
-      warn(message) {
-        loggerCalls.push(`warn:${message}`);
-      },
-    };
-    const warnings: TmuxWarningSink = {
-      warn(warning) {
-        warningCodes.push(warning.code);
-      },
-    };
-    const fixture = runtimeFixture({ logger, warnings });
-
-    expect(Object.isFrozen(fixture.runtime)).toBe(true);
-    expect(fixture.runtime.logger).toBe(logger);
-    expect(fixture.runtime.warnings).toBe(warnings);
-    fixture.runtime.logger.info("retained");
-    fixture.runtime.warnings.warn({ code: "retained", message: "retained" });
-    expect(loggerCalls).toEqual(["info:retained"]);
-    expect(warningCodes).toEqual(["retained"]);
-
-    const graph = await graphFor(fixture.runtime, [
-      source("sessions", "list-sessions", [
-        completeFormatRow({ session_id: "$1", session_name: "observed" }),
-      ]),
-    ]);
-    const projection = projectionFor(graph, "sessions");
-    const handle = await materializeProjectionRecord(
-      fixture.server,
-      projection,
-      graph,
-      projectionRecord(projection),
-    );
-    const snapshot = snapshotForHandle(handle);
-
-    expect(Reflect.ownKeys(snapshot)).toEqual([...FORMAT_FIELD_TOKENS]);
-    expect("logger" in snapshot).toBe(false);
-    expect("warnings" in snapshot).toBe(false);
-    expect("logger" in handle).toBe(false);
-    expect("warnings" in handle).toBe(false);
+  // What replaced the no-op logger and warning sink this used to assert on:
+  // a server built with no observer carries none, and one built with
+  // `onInvocation` keeps the caller's own function rather than a wrapper.
+  test("carries the caller's invocation observer, and none when they gave one", () => {
+    expect(Object.isFrozen(runtimeForServer(new Server()))).toBe(true);
+    const seen: string[] = [];
+    const observed = new Server({
+      onInvocation: (report) => seen.push(report.commands[0]?.[0] ?? ""),
+    });
+    expect(Object.isFrozen(runtimeForServer(observed))).toBe(true);
+    expect(seen).toEqual([]);
   });
 
   test("derives an internal Server and binds the exact runtime object", () => {
@@ -596,7 +530,7 @@ describe("logical reference binding", () => {
       "-Lhandles",
       "display-message",
       "-p",
-      "#{version}\t#{pid}\t#{start_time}",
+      "#{version};#{pid};#{start_time}",
     ]);
   });
 
@@ -618,7 +552,7 @@ describe("logical reference binding", () => {
     }
 
     expect(observed).toBeInstanceOf(QueryValidationError);
-    expect(observed).toMatchObject({ code: "invalid-query" });
+    expect(observed).toMatchObject({ reason: "invalid-query" });
     expect(fixture.transport.requests).toHaveLength(0);
   });
 
@@ -637,12 +571,8 @@ describe("logical reference binding", () => {
       kind: "session",
     });
 
-    await expect(bindLogicalRef(fixture.runtime, wrongAlias)).rejects.toBeInstanceOf(
-      LibTmuxException,
-    );
-    await expect(bindLogicalRef(fixture.runtime, staleEpoch)).rejects.toBeInstanceOf(
-      LibTmuxException,
-    );
+    await expect(bindLogicalRef(fixture.runtime, wrongAlias)).rejects.toBeInstanceOf(LibTmuxError);
+    await expect(bindLogicalRef(fixture.runtime, staleEpoch)).rejects.toBeInstanceOf(LibTmuxError);
     expect(fixture.transport.requests).toHaveLength(0);
   });
 
@@ -656,7 +586,7 @@ describe("logical reference binding", () => {
       kind: "session",
     });
 
-    await expect(bindLogicalRef(right.runtime, leftRef)).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(bindLogicalRef(right.runtime, leftRef)).rejects.toBeInstanceOf(LibTmuxError);
     expect(left.runtime.connection.socketName).toBe(right.runtime.connection.socketName);
     expect(right.transport.requests).toHaveLength(0);
   });
@@ -679,7 +609,7 @@ describe("logical reference binding", () => {
       kind: "pane",
     });
 
-    await expect(bindLogicalRef(runtime, ref)).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(bindLogicalRef(runtime, ref)).rejects.toBeInstanceOf(LibTmuxError);
     expect(runtime.daemonEpoch).toBe(epoch(4));
     expect(transport.requests).toHaveLength(1);
   });
@@ -697,7 +627,7 @@ describe("logical reference binding", () => {
     const pending = bindLogicalRef(fixture.runtime, ref);
     expect(invalidateRuntimeEpoch(fixture.runtime)).toBe(epoch(6));
 
-    await expect(pending).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(pending).rejects.toBeInstanceOf(LibTmuxError);
     expect(fixture.transport.requests).toHaveLength(1);
   });
 });
@@ -1103,7 +1033,7 @@ describe("authenticated handle materialization", () => {
       } catch (error) {
         observed = error;
       }
-      expect(observed).toBeInstanceOf(LibTmuxException);
+      expect(observed).toBeInstanceOf(LibTmuxError);
     }
   });
 
@@ -1123,7 +1053,7 @@ describe("authenticated handle materialization", () => {
     );
     expect(invalidateRuntimeEpoch(fixture.runtime)).toBe(epoch(1));
 
-    await expect(pending).rejects.toBeInstanceOf(LibTmuxException);
+    await expect(pending).rejects.toBeInstanceOf(LibTmuxError);
     expect(fixture.transport.requests).toHaveLength(1);
   });
 

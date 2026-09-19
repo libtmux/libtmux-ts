@@ -1,5 +1,5 @@
 import type { DaemonGuard, GuardedTmuxRequest, TmuxCommand } from "../../engine.js";
-import { TmuxTransportError } from "../../exc.js";
+import { TmuxTransportError } from "../../errors.js";
 import { validateInvocation } from "./invocation.js";
 import { quoteCommand } from "./lexer.js";
 import { refusedUnknownCommand, uniqueUnknownCommand } from "./refusal.js";
@@ -64,7 +64,7 @@ export function guardRequest(request: CommandRequest): GuardedTmuxRequest {
   });
   return Object.freeze({
     request: guarded,
-    refusedBy: (returncode: number, stderr: Uint8Array): boolean =>
-      refusedUnknownCommand(refusal, returncode, stderr),
+    refusedBy: (exitCode: number, stderr: Uint8Array): boolean =>
+      refusedUnknownCommand(refusal, exitCode, stderr),
   });
 }

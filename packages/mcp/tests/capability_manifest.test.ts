@@ -219,6 +219,22 @@ test("one manifest governs every toolset subset, selection, metadata, and report
         openWorldHint: true,
         readOnlyHint: false,
       });
+      // Every tool carries that same value, which is the point: a host that
+      // auto-approves on annotations alone approves none of them, and the
+      // capability row is what tells one tool from another. Five separately
+      // named constants that were all one value used to sit at the call sites
+      // implying otherwise, and the registrar overwrote whatever they passed.
+      const annotated = tools.filter((tool) => tool.annotations !== undefined);
+      expect(annotated).toHaveLength(tools.length);
+      for (const tool of annotated) {
+        expect(tool.annotations, tool.name).toEqual({
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+          readOnlyHint: false,
+        });
+      }
+
       const listedBatch = tools.find(({ name }) => name === "call_read_tools_batch");
       expect(listedBatch?.description).toContain("inner tools receive no separate approval");
       expect(listedBatch?.description).toContain("explicit stop and truncation accounting");
@@ -309,7 +325,7 @@ test("one manifest governs every toolset subset, selection, metadata, and report
         execute: (request) =>
           Promise.resolve({
             cmd: [...request.commands[0]],
-            returncode: 1,
+            exitCode: 1,
             signal: null,
             stderr: new TextEncoder().encode("stopped nested call"),
             stdout: new Uint8Array(),
@@ -317,7 +333,10 @@ test("one manifest governs every toolset subset, selection, metadata, and report
       },
     }),
   );
-});
+  // One test builds every toolset subset and drives the whole manifest, so its
+  // cost is the product of both: about 5s here, which lands on the runner's
+  // 5s default and fails or passes by machine speed rather than by behaviour.
+}, 30_000);
 
 test("target inventory pins a dedicated socket and commandless spawn schemas", async () => {
   const selected = serverFromEnvironment({});
@@ -331,6 +350,32 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
       const tools = (await client.listTools()).tools;
       expect(tools.map(({ name }) => name)).toEqual([...SOURCE_CATALOG_ORDER]);
       expect(tools).toHaveLength(45);
+
+      // An agent picks a tool from its schema alone, so a parameter with no
+      // description is one it has to guess at. This runs against every
+      // toolset, recursing into array items too, which is where
+      // `send_keys_batch`'s per-operation fields live.
+      const undescribed: string[] = [];
+      const walk = (label: string, schema: unknown): void => {
+        const node = schema as {
+          allOf?: readonly unknown[];
+          anyOf?: readonly unknown[];
+          items?: unknown;
+          oneOf?: readonly unknown[];
+          properties?: Record<string, unknown>;
+        };
+        for (const [name, child] of Object.entries(node.properties ?? {})) {
+          if (!(child as { description?: string }).description)
+            undescribed.push(`${label}.${name}`);
+          walk(`${label}.${name}`, child);
+        }
+        if (node.items !== undefined) walk(`${label}[]`, node.items);
+        for (const key of ["allOf", "anyOf", "oneOf"] as const) {
+          node[key]?.forEach((branch, index) => walk(`${label}|${key}[${String(index)}]`, branch));
+        }
+      };
+      for (const tool of tools) walk(tool.name, tool.inputSchema);
+      expect(undescribed.length, `undescribed: ${undescribed.join(", ")}`).toBe(0);
 
       const controlledOpeners = [
         {
@@ -585,7 +630,7 @@ test("tmux-format-bearing input is literalized exactly once", async () => {
       commands.push(request.commands[0]);
       return Promise.resolve({
         cmd: [],
-        returncode: 1,
+        exitCode: 1,
         signal: null,
         stderr: new TextEncoder().encode("stop after recording arguments"),
         stdout: new Uint8Array(),
@@ -686,7 +731,7 @@ test("minimal startup authenticates the daemon creator after start-server", asyn
             : "";
       return Promise.resolve({
         cmd: [],
-        returncode: 0,
+        exitCode: 0,
         signal: null,
         stderr: new Uint8Array(),
         stdout: new TextEncoder().encode(stdout),
@@ -715,7 +760,7 @@ test("minimal startup authenticates the daemon creator after start-server", asyn
     execute: (request) =>
       Promise.resolve({
         cmd: [],
-        returncode: 0,
+        exitCode: 0,
         signal: null,
         stderr: new Uint8Array(),
         stdout: new TextEncoder().encode(
@@ -869,7 +914,7 @@ test("read batch preserves nested results within the shared result ceiling", asy
         execute: (request) =>
           Promise.resolve({
             cmd: [...request.commands[0]],
-            returncode: 1,
+            exitCode: 1,
             signal: null,
             stderr: new TextEncoder().encode("stopped nested call"),
             stdout: new Uint8Array(),

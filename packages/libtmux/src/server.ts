@@ -20,6 +20,7 @@ import type {
   RunShellOptions,
   ServerSnapshot,
   SnapshotOptions,
+  SaveBufferOptions,
   SetHookOptions,
   SetOptionOptions,
   TmuxEventStream,
@@ -31,9 +32,9 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 import { acquireServerGraph } from "./_internal/operations/acquire.js";
 
 import { Client } from "./client.js";
-import type { ConnectionAlias, DaemonEpoch } from "./common.js";
+import type { ConnectionAlias, DaemonEpoch, TmuxInvocationObserver } from "./common.js";
 import type { DaemonGuard, TmuxEngine } from "./engine.js";
-import { LibTmuxException } from "./exc.js";
+import { LibTmuxError } from "./errors.js";
 import { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import { Session } from "./session.js";
@@ -50,7 +51,7 @@ import { ifShell, runShell } from "./_internal/operations/shell.js";
 import {
   deleteBuffer,
   isAlive,
-  raiseIfDead,
+  checkAlive,
   hasSession,
   listBuffers,
   listCommands,
@@ -92,6 +93,10 @@ import type { CommandTransport } from "./_internal/transport/types.js";
  */
 export type DaemonIdentity = DaemonGuard;
 
+// The same bound the MCP server and `waitFor` already use, so one number
+// answers "how long before this library gives up on tmux".
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export interface ServerOptions {
   readonly colors?: 88 | 256;
   readonly configFile?: string;
@@ -108,25 +113,45 @@ export interface ServerOptions {
    *
    * Every invocation is a tmux client process with its own pipes, so a caller
    * that fans out over a whole server turns its own concurrency into process
-   * and descriptor pressure. tmux runs commands on one thread, so measured
-   * throughput stops rising at a handful of clients: the ceiling bounds the
-   * cost without bounding the work. Waiting for a slot spends the request's
-   * own deadline, and a request that never gets one fails `not_started`.
+   * and descriptor pressure. tmux runs commands on one thread: `bench-modes.ts`
+   * measures twelve concurrent creations costing the same twenty-five
+   * invocations as twelve sequential ones — twenty-four either way, plus the
+   * query that reads the result back — and arriving out of order, so the
+   * ceiling bounds the cost without bounding the work. Waiting for a slot spends the request's own deadline,
+   * and a request that never gets one fails `not_started`.
    */
   readonly maxInFlight?: number;
   readonly socketName?: string;
   readonly socketPath?: string;
   /**
-   * Default deadline, in milliseconds, for every command this server runs.
+   * Default deadline, in milliseconds, for every command this server runs:
+   * 30 seconds unless set. `null` removes it, so commands wait as long as tmux
+   * takes.
    *
-   * Must be a positive timer-safe integer.
-   *
-   * A single call can override it. Without either, a command waits as long as
-   * tmux takes; a long-lived process that cannot bound its work cannot recover
-   * from a daemon that stops answering.
+   * Must be a positive timer-safe integer or `null`. A single call can
+   * override it either way. Commands that wait on a person — `display-popup`,
+   * `display-menu`, `command-prompt`, `confirm-before`, `display-panes` and
+   * `wait-for` — get no default, since bounding them would cut the person off;
+   * a deadline passed on the call itself still applies to them.
    */
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | null;
   readonly tmuxBin?: string;
+  /**
+   * Called once per tmux invocation, after it answers or fails.
+   *
+   * The seam for logs, traces and metrics. Every command this server runs
+   * reports here, a custom engine's included, and an observer cannot change
+   * what a command does — see {@link TmuxInvocationObserver}.
+   *
+   * ```ts
+   * const traced = new Server({
+   *   onInvocation: (report) => {
+   *     console.log(report.commands[0]?.[0], report.durationMs, report.delivery);
+   *   },
+   * });
+   * ```
+   */
+  readonly onInvocation?: TmuxInvocationObserver;
   /**
    * Run this server's commands somewhere other than a local `tmux`.
    *
@@ -180,7 +205,7 @@ function serverAddress(runtime: RuntimeContext): string | undefined {
  */
 function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
   if (runtime.engine === undefined) return;
-  throw new LibTmuxException(
+  throw new LibTmuxError(
     `${method}() holds a local tmux control process open, which a server built with an engine has no way to reach. Use snapshot() and the mutating methods, which travel through the engine, or build a Server without one to watch a local daemon.`,
   );
 }
@@ -209,10 +234,13 @@ export class Server {
       connectionAlias: randomUUID() as ConnectionAlias,
       daemonEpoch: 0 as DaemonEpoch,
       ...(options?.engine === undefined ? {} : { engine: options.engine }),
-      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options?.timeoutMs === null
+        ? {}
+        : { timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS }),
       transport: new BoundedTransport(
         options?.engine ?? new NodeSpawnTransport(),
         options?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT,
+        options?.onInvocation,
       ),
     });
     registerServerRuntime(this, runtime, runtimeConstructors);
@@ -356,7 +384,7 @@ export class Server {
   watch(options?: WatchOptions): TmuxEventStream {
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "watch");
-    return watchServer(runtime.connection, options);
+    return watchServer(runtime.connection, options, runtime.transport);
   }
 
   /**
@@ -399,7 +427,7 @@ export class Server {
       await connection.ready();
     } catch (error) {
       await connection.close();
-      throw new LibTmuxException(
+      throw new LibTmuxError(
         error instanceof Error ? error.message : "tmux control mode could not attach",
         { cause: error },
       );
@@ -506,7 +534,7 @@ export class Server {
     const graph = await acquireServerGraph(runtimeForServer(this));
     const identity = graph.capture.daemon;
     if (identity === undefined) {
-      throw new LibTmuxException("live acquisition omitted the daemon identity");
+      throw new LibTmuxError("live acquisition omitted the daemon identity");
     }
     return identity;
   }
@@ -583,7 +611,7 @@ export class Server {
    * await server.saveBuffer("captured", "/tmp/build.log");
    * ```
    */
-  saveBuffer(name: string, path: string, options?: { readonly append?: boolean }): Promise<void> {
+  saveBuffer(name: string, path: string, options?: SaveBufferOptions): Promise<void> {
     return saveBuffer(runtimeForServer(this), name, path, options);
   }
 
@@ -696,8 +724,11 @@ export class Server {
    * Whether this server is at least `minimum`, written the way tmux writes it.
    *
    * This is how a caller gates on a feature that arrived in a known release
-   * without parsing `#{version}` themselves. Development builds such as
-   * `next-3.8` compare above every tagged release.
+   * without parsing `#{version}` themselves. A named development build such
+   * as `next-3.9` has not shipped the release it names: it is at least
+   * `3.8`, but not at least `3.9`. An untargeted development build (bare
+   * `master`, or `<tag>-master`) names no release it is heading toward, so
+   * nothing bounds it — it is at least anything.
    *
    * ```ts
    * if (await server.versionAtLeast("3.3")) {
@@ -921,6 +952,10 @@ export class Server {
   /**
    * Run a shell command through tmux and return whatever it printed.
    *
+   * `signal` and `timeoutMs` bound this call's own wait; the tmux server owns
+   * and runs `run-shell` itself, decoupled from this client, so neither one
+   * stops the command - only this call's own promise settling early.
+   *
    * ```ts
    * const lines = await server.runShell("echo hello");
    * lines[0]; // "hello"
@@ -967,11 +1002,24 @@ export class Server {
    * read to hang it on.
    *
    * ```ts
+   * await server.checkAlive(); // throws when no tmux server is listening
+   * ```
+   */
+  checkAlive(): Promise<void> {
+    return checkAlive(runtimeForServer(this));
+  }
+
+  /**
+   * Assert the server is reachable, raising with tmux's reason if not.
+   *
+   * @deprecated Use {@link checkAlive}. Removed at `0.1.0`.
+   *
+   * ```ts
    * await server.raiseIfDead(); // throws when no tmux server is listening
    * ```
    */
   raiseIfDead(): Promise<void> {
-    return raiseIfDead(runtimeForServer(this));
+    return this.checkAlive();
   }
 
   /**
@@ -1055,8 +1103,13 @@ export class Server {
     );
     // One snapshot for the whole group, taken after every command has run, so
     // each plan reads the same instant and the group costs one snapshot rather
-    // than one per mutation.
-    const snapshot = await this.snapshot();
+    // than one per mutation. It carries the caller's signal: a batch abandoned
+    // between its commands and this read is abandoned, and taking it
+    // unsignalled left the handles resolving against a server the caller had
+    // already stopped waiting for.
+    const snapshot = await this.snapshot(
+      options?.signal === undefined ? {} : { signal: options.signal },
+    );
     return operations.map((operation, index) =>
       operation.resolve(snapshot, printed[index] ?? []),
     ) as { -readonly [K in keyof T]: T[K] extends PlannedOperation<infer R> ? R : never };

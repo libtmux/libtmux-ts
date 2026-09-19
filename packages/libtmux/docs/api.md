@@ -7,9 +7,16 @@ typecheck:symbols` is what keeps that true.
 Start with the [README](../README.md) for a reading order and recipes; this
 page is for looking one thing up.
 
+It covers what `libtmux` itself exports. The package publishes further
+subpaths that this page does not list — `libtmux/testing` for the
+record-and-replay doubles, `libtmux/engine` for supplying a transport, and
+`libtmux/selection` for query documents — each introduced in the README
+where it is used. Not finding a name here means it lives on one of those,
+not that it is unpublished.
+
 ## Functions
 
-[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
 
 ### `encodeWhereDocument`
 
@@ -51,29 +58,6 @@ const document = decodeWhereDocument(
   JSON.parse('{"model":"pane","version":1,"where":{"pane_title":"logs"}}'),
 );
 if (document.model === "pane") snapshot.panes.where(document.where);
-```
-
-### `parseLegacyWhere`
-
-```ts
-function parseLegacyWhere<Model extends "session" | "window">(
-  model: Model,
-  input: unknown,
-): Extract<WhereDocumentV1, { readonly model: Model }>;
-```
-
-Convert the Python port's `name__contains` spelling to canonical criteria.
-
-Accepts one own data property on a plain object and never invokes accessors
-or conversion hooks. The returned document and its criteria are frozen.
-
-@throws QueryValidationError when the model is not `session` or `window`, or
-the input is not exactly one string-valued `name__contains` property.
-
-```ts
-import { parseLegacyWhere } from "libtmux";
-const document = parseLegacyWhere("window", { name__contains: "log" });
-snapshot.windows.where(document.where);
 ```
 
 ### `isSafeInteger`
@@ -226,7 +210,7 @@ void size;
 
 ## Server
 
-[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -546,7 +530,7 @@ await server.unsetOption("escape-time");
 #### `Server.saveBuffer`
 
 ```ts
-saveBuffer(name: string, path: string, options?: { readonly append?: boolean }): Promise<void>
+saveBuffer(name: string, path: string, options?: SaveBufferOptions): Promise<void>
 ```
 
 Write a paste buffer to a file instead of reading it back.
@@ -672,8 +656,11 @@ async versionAtLeast(minimum: string): Promise<boolean>
 Whether this server is at least `minimum`, written the way tmux writes it.
 
 This is how a caller gates on a feature that arrived in a known release
-without parsing `#{version}` themselves. Development builds such as
-`next-3.8` compare above every tagged release.
+without parsing `#{version}` themselves. A named development build such
+as `next-3.9` has not shipped the release it names: it is at least
+`3.8`, but not at least `3.9`. An untargeted development build (bare
+`master`, or `<tag>-master`) names no release it is heading toward, so
+nothing bounds it — it is at least anything.
 
 ```ts
 if (await server.versionAtLeast("3.3")) {
@@ -914,6 +901,10 @@ runShell(command: string, options?: RunShellOptions): Promise<readonly string[]>
 
 Run a shell command through tmux and return whatever it printed.
 
+`signal` and `timeoutMs` bound this call's own wait; the tmux server owns
+and runs `run-shell` itself, decoupled from this client, so neither one
+stops the command - only this call's own promise settling early.
+
 ```ts
 const lines = await server.runShell("echo hello");
 lines[0]; // "hello"
@@ -949,10 +940,10 @@ if (await server.isAlive()) {
 }
 ```
 
-#### `Server.raiseIfDead`
+#### `Server.checkAlive`
 
 ```ts
-raiseIfDead(): Promise<void>
+checkAlive(): Promise<void>
 ```
 
 Assert the server is reachable, raising with tmux's reason if not.
@@ -961,6 +952,20 @@ Every read already raises on an unreachable server, so this is not what
 tells an empty result from a missing one — it is the assertion form of
 [`isAlive`](#serverisalive), for a caller that wants the check and the reason without a
 read to hang it on.
+
+```ts
+await server.checkAlive(); // throws when no tmux server is listening
+```
+
+#### `Server.raiseIfDead`
+
+```ts
+raiseIfDead(): Promise<void>
+```
+
+Assert the server is reachable, raising with tmux's reason if not.
+
+@deprecated Use [`checkAlive`](#servercheckalive). Removed at `0.1.0`.
 
 ```ts
 await server.raiseIfDead(); // throws when no tmux server is listening
@@ -1304,6 +1309,12 @@ newWindow(options?: NewWindowOptions): Promise<Window>
 
 Create a window in this session and resolve it as a handle.
 
+The handle costs a snapshot of the whole server, not of this session: a
+window made here is linked into every session grouped with it, and the
+handle reports those links. When the id is enough,
+`server.pipeline([session.plan.newWindow().argv])` returns it for one
+command, whatever the server's size.
+
 ```ts
 const created = await session.newWindow({ name: "editor" });
 created.name; // "editor"
@@ -1615,8 +1626,11 @@ split(options?: SplitOptions): Promise<Pane>
 
 Split this window and resolve the created pane.
 
+@throws TypeError when `options` combines `direction` with `vertical`.
+
 ```ts
-const created = await window.split({ vertical: true });
+import { PaneDirection } from "libtmux";
+const created = await window.split({ direction: PaneDirection.Below });
 created.id;
 ```
 
@@ -1817,6 +1831,29 @@ selectLayout(layout: string): Promise<void>
 ```
 
 Apply a named or custom layout.
+
+Applying any layout while a pane is zoomed unzooms the window first —
+tmux's own behavior, not this method's.
+
+A `window_layout` saved earlier and passed back here is not guaranteed
+to put every pane back where it was. Before tmux 3.8, the classic
+layout string restores the arrangement's shape but can rotate which
+pane lands in which position; a JSON layout (3.8+, and only for a
+reader that actually receives JSON — see [`Server.connect`](#serverconnect)) restores
+exactly.
+
+Only a preset name, a layout string that parses here, or JSON on tmux
+3.8+ is accepted: anything else is refused rather than sent, because two
+ranges of tmux exit on a layout they cannot read and take every session
+on the socket with them. tmux 3.3 and 3.3a die on a value with no
+readable checksum, and 3.7 through 3.7d on one whose checksum is correct
+and whose cells are not — so the checksum alone is not evidence, and the
+layout is parsed in full before dispatch.
+
+@throws TypeError when `layout` is ambiguous, or is neither a preset nor
+a layout string this package can parse.
+@throws VersionTooLowError when `layout` names a mirrored preset or JSON
+layout the running tmux is too old to apply.
 
 ```ts
 await window.selectLayout("even-horizontal");
@@ -2042,8 +2079,11 @@ split(options?: SplitOptions): Promise<Pane>
 
 Split this pane and resolve the created pane.
 
+@throws TypeError when `options` combines `direction` with `vertical`.
+
 ```ts
-const created = await pane.split({ vertical: true });
+import { PaneDirection } from "libtmux";
+const created = await pane.split({ direction: PaneDirection.Below });
 created.id;
 ```
 
@@ -2290,7 +2330,8 @@ joinTo(target: Pane | Window | string, options?: JoinOptions): Promise<void>
 Move this pane into another window as a split.
 
 ```ts
-await pane.joinTo(window.id, { vertical: true });
+import { PaneDirection } from "libtmux";
+await pane.joinTo(window.id, { direction: PaneDirection.Below });
 ```
 
 #### `Pane.enterCopyMode`
@@ -2349,6 +2390,10 @@ chooseTree(options?: ChooseTreeOptions): Promise<void>
 
 Open the interactive session and window chooser in this pane.
 
+The promise resolves once the chooser is on screen, not once someone
+has chosen: tmux answers this command as soon as it opens the mode.
+Bind a tmux command to the selection to act on what was picked.
+
 tmux needs a client attached to the session to draw this. With none, it
 does nothing and reports success, so a headless run is told it worked.
 
@@ -2364,6 +2409,10 @@ chooseBuffer(): Promise<void>
 
 Open the interactive buffer chooser in this pane.
 
+The promise resolves once the chooser is on screen, not once someone
+has chosen: tmux answers this command as soon as it opens the mode.
+Bind a tmux command to the selection to act on what was picked.
+
 tmux needs a client attached to the session to draw this. With none, it
 does nothing and reports success, so a headless run is told it worked.
 
@@ -2378,6 +2427,10 @@ findWindow(pattern: string): Promise<void>
 ```
 
 Search windows interactively from this pane.
+
+The promise resolves once the mode is on screen, not once someone has
+chosen: tmux answers this command as soon as it opens the mode. Bind a
+tmux command to the selection to act on what was picked.
 
 tmux needs a client attached to the session to draw this. With none, it
 does nothing and reports success, so a headless run is told it worked.
@@ -2408,6 +2461,10 @@ customizeMode(): Promise<void>
 ```
 
 Open tmux's interactive option editor in this pane.
+
+The promise resolves once the mode is on screen, not once someone has
+chosen: tmux answers this command as soon as it opens the mode. Bind a
+tmux command to the selection to act on what was picked.
 
 tmux needs a client attached to the session to draw this. With none, it
 does nothing and reports success, so a headless run is told it worked.
@@ -2668,7 +2725,7 @@ Criteria are data: equality, string operators, `AND`/`OR`/`NOT`, regular
 expressions expressed as `{ pattern, flags }`, and quantifiers over
 relations. Matching is case-sensitive unless a criterion says otherwise.
 
-@throws VersionTooLow when a criterion names a field newer than the tmux
+@throws VersionTooLowError when a criterion names a field newer than the tmux
 that answered. Such a field is not absent from the data, it is absent from
 that release, and matching it against nothing would answer "no member has
 this" — which is a different statement and the one a caller would act on.

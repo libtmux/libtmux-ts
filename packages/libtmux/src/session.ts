@@ -16,7 +16,7 @@ import type { AliasedFields, RowWithIdentities, SessionAliasMap } from "./field_
 import { readTmuxEnvironment } from "./_internal/operations/env.js";
 import { detachClient } from "./_internal/operations/shell.js";
 import { panesOfSession, windowsOfSession } from "./_internal/operations/relations.js";
-import { LibTmuxException } from "./exc.js";
+import { LibTmuxError } from "./errors.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killTarget, newWindow } from "./_internal/operations/mutations.js";
 import { planKill, planNewWindow } from "./_internal/operations/plans.js";
@@ -272,6 +272,12 @@ export class Session {
   /**
    * Create a window in this session and resolve it as a handle.
    *
+   * The handle costs a snapshot of the whole server, not of this session: a
+   * window made here is linked into every session grouped with it, and the
+   * handle reports those links. When the id is enough,
+   * `server.pipeline([session.plan.newWindow().argv])` returns it for one
+   * command, whatever the server's size.
+   *
    * ```ts
    * const created = await session.newWindow({ name: "editor" });
    * created.name; // "editor"
@@ -372,11 +378,11 @@ export class Session {
     const snapshot = await server.snapshot();
     const pane = snapshot.panes.filter((candidate) => candidate.id === paneId).first();
     if (pane === undefined) {
-      throw new LibTmuxException(`${paneId} is not present on ${socketPath}`);
+      throw new LibTmuxError(`${paneId} is not present on ${socketPath}`);
     }
     const session = pane.session;
     if (session === undefined) {
-      throw new LibTmuxException(`${paneId} has no session on ${socketPath}`);
+      throw new LibTmuxError(`${paneId} has no session on ${socketPath}`);
     }
     return session;
   }

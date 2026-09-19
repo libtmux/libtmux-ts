@@ -7,7 +7,7 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 import type { TmuxCommand } from "../../src/engine.js";
-import { TmuxTransportError } from "../../src/exc.js";
+import { TmuxTransportError } from "../../src/errors.js";
 
 /**
  * The ceiling on tmux invocations in flight.
@@ -59,7 +59,7 @@ function gate(failWith?: Error, blockMs = 0): Gate {
       if (failWith !== undefined) throw failWith;
       return {
         cmd: ["tmux"],
-        returncode: 0,
+        exitCode: 0,
         signal: null,
         stderr: new Uint8Array(),
         stdout: new Uint8Array(),
@@ -130,6 +130,26 @@ describe("bounded transport", () => {
     inner.release();
     await expect(second).rejects.toThrow("inner failed");
     expect(inner.started()).toBe(2);
+  });
+
+  test("fails loudly and releases the slot on a pre-rename returncode result", async () => {
+    const legacyEngine: CommandTransport = {
+      execute: () =>
+        Promise.resolve({
+          cmd: ["tmux", "list-panes"],
+          returncode: 0,
+          signal: null,
+          stderr: new Uint8Array(),
+          stdout: new Uint8Array(),
+        } as never),
+    };
+    const bounded = new BoundedTransport(legacyEngine, 1);
+
+    await expect(bounded.execute(requestFor())).rejects.toMatchObject({
+      delivery: "indeterminate",
+      kind: "contract",
+    });
+    await expect(bounded.execute(requestFor())).rejects.toBeInstanceOf(TmuxTransportError);
   });
 
   test("refuses a queued request on its own deadline, as never sent", async () => {

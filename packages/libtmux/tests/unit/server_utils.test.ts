@@ -3,12 +3,13 @@ import { describe, expect, test } from "bun:test";
 import { Server } from "../../src/server.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
+import { TmuxTransportError } from "../../src/errors.js";
 import { singleCommandTransport } from "../support/transport_double.js";
 
 function success(request: TmuxInvocationRequest): TmuxCommandResult {
   return {
     cmd: [request.executable, ...flattenInvocation(request)],
-    returncode: 0,
+    exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
     stdout: new Uint8Array(),
@@ -67,9 +68,43 @@ describe("server utility requests", () => {
     expect(requests[0]?.timeoutMs).toBe(37);
   });
 
+  test("rejects on a timeout rather than answering that nothing is there", async () => {
+    const engine = singleCommandTransport(() =>
+      Promise.reject(
+        new TmuxTransportError("tmux did not answer", {
+          delivery: "indeterminate",
+          kind: "timeout",
+          signal: "SIGTERM",
+          stderr: new Uint8Array(),
+          stdout: new Uint8Array(),
+        }),
+      ),
+    );
+    const server = new Server({ engine });
+
+    await expect(server.isAlive()).rejects.toMatchObject({ kind: "timeout" });
+    await expect(server.hasSession("work")).rejects.toMatchObject({ kind: "timeout" });
+  });
+
   test("does not hide an engine programming error as a dead server", async () => {
     const engine = singleCommandTransport(() => Promise.reject(new TypeError("broken engine")));
 
     await expect(new Server({ engine }).isAlive()).rejects.toThrow("broken engine");
+  });
+
+  test("does not report a live server as dead when the engine still returns returncode", async () => {
+    const engine = singleCommandTransport((request) =>
+      Promise.resolve({
+        cmd: [request.executable, ...flattenInvocation(request)],
+        returncode: 0,
+        signal: null,
+        stderr: new Uint8Array(),
+        stdout: new Uint8Array(),
+      } as never),
+    );
+    const server = new Server({ engine });
+
+    await expect(server.isAlive()).rejects.toMatchObject({ kind: "contract" });
+    await expect(server.hasSession("work")).rejects.toMatchObject({ kind: "contract" });
   });
 });

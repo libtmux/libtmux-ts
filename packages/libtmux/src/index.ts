@@ -8,7 +8,6 @@ export {
   compileBoundedRegex,
   decodeWhereDocument,
   encodeWhereDocument,
-  parseLegacyWhere,
   type ClientWhere,
   type PaneWhere,
   type RegexCriteriaData,
@@ -43,6 +42,7 @@ export type {
   ResizeOptions,
   ResizeWindowOptions,
   RunShellOptions,
+  SaveBufferOptions,
   SendKeysOptions,
   ServerSnapshot,
   SnapshotOptions,
@@ -80,19 +80,20 @@ export type {
 export { isSplitSize, isTmuxName, splitSize } from "./types.js";
 
 export {
-  LibTmuxException,
+  LibTmuxError,
+  type LibTmuxErrorCode,
   MultipleMatchesError,
-  MultipleObjectsReturned,
+  MultipleObjectsError,
   NoMatchError,
-  ObjectDoesNotExist,
+  ObjectNotFoundError,
   QueryValidationError,
   TmuxCommandError,
-  TmuxServerRestarted,
+  TmuxServerRestartedError,
   TmuxTransportError,
   type TmuxTransportErrorKind,
-  VersionTooLow,
-  WaitTimeout,
-} from "./exc.js";
+  VersionTooLowError,
+  WaitTimeoutError,
+} from "./errors.js";
 export type {
   CommandOptions,
   DeliveryStatus,
@@ -101,6 +102,8 @@ export type {
   SafeInteger,
   SessionId,
   SessionIdInput,
+  TmuxInvocationObserver,
+  TmuxInvocationReport,
   TmuxId,
   TmuxIdInput,
   TmuxIdKind,
@@ -114,3 +117,16 @@ export {
   ResizeAdjustmentDirection,
   WindowDirection,
 } from "./constants.js";
+
+/** @deprecated Use {@link LibTmuxError}. Removed at `0.1.0`. */
+export { LibTmuxException } from "./errors.js";
+/** @deprecated Use {@link ObjectNotFoundError}. Removed at `0.1.0`. */
+export { ObjectDoesNotExist } from "./errors.js";
+/** @deprecated Use {@link MultipleObjectsError}. Removed at `0.1.0`. */
+export { MultipleObjectsReturned } from "./errors.js";
+/** @deprecated Use {@link VersionTooLowError}. Removed at `0.1.0`. */
+export { VersionTooLow } from "./errors.js";
+/** @deprecated Use {@link WaitTimeoutError}. Removed at `0.1.0`. */
+export { WaitTimeout } from "./errors.js";
+/** @deprecated Use {@link TmuxServerRestartedError}. Removed at `0.1.0`. */
+export { TmuxServerRestarted } from "./errors.js";

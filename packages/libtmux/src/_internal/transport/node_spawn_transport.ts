@@ -14,7 +14,7 @@ import {
 } from "./invocation.js";
 import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
 import { guardRequest } from "./daemon_guard.js";
-import { TmuxServerRestarted } from "../../exc.js";
+import { TmuxServerRestartedError } from "../../errors.js";
 import { timerDelay } from "../timing.js";
 
 export interface NodeSpawnTransportOptions {
@@ -68,8 +68,25 @@ function collect(
   });
 }
 
+/**
+ * The chunks as one plain `Uint8Array` over memory of its own.
+ *
+ * `Buffer.concat` answers with a `Buffer`, which the result's type admits only
+ * as a subclass: its `toString()` decodes where a `Uint8Array`'s lists
+ * numbers, so code written against this engine read differently under the
+ * replay double, and a small one is a view into Node's shared pool, so
+ * `.buffer` reached 64 KiB of bytes that were never this command's.
+ */
 function collectedBytes(chunks: readonly Buffer[]): Uint8Array {
-  return Buffer.concat(chunks);
+  let length = 0;
+  for (const chunk of chunks) length += chunk.byteLength;
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 function isAborted(signal: AbortLike | undefined): boolean {
@@ -95,6 +112,7 @@ export class NodeSpawnTransport {
     const submitted = guarded.request;
     if (isAborted(submitted.signal)) {
       throw new TmuxTransportError("command cancelled before spawn", {
+        ...(request.signal?.reason === undefined ? {} : { cause: request.signal.reason }),
         delivery: "not_started",
         kind: "cancelled",
       });
@@ -293,6 +311,11 @@ export class NodeSpawnTransport {
             ? `command output exceeded ${String(this.#maxOutputBytes)} bytes`
             : "command cancelled",
         {
+          // The caller's own reason, when they gave one: `abort(myError)`
+          // should come back rather than be replaced by a generic refusal.
+          ...(interruption === "cancelled" && request.signal?.reason !== undefined
+            ? { cause: request.signal.reason }
+            : {}),
           delivery,
           kind: interruption === "output" ? "protocol" : interruption,
           ...(observedExit === undefined ? {} : { signal: observedExit.signal }),
@@ -350,7 +373,7 @@ export class NodeSpawnTransport {
 
     const stderr = stderrState.status === "fulfilled" ? stderrState.value : new Uint8Array();
     if (guarded.refusedBy(terminal.code, stderr)) {
-      throw new TmuxServerRestarted(
+      throw new TmuxServerRestartedError(
         "tmux refused the command: the daemon on this socket is not the one these ids came from",
         { subcommand: request.commands[0][0] },
       );
@@ -358,7 +381,7 @@ export class NodeSpawnTransport {
 
     return {
       cmd: Object.freeze([submitted.executable, ...args]),
-      returncode: terminal.code,
+      exitCode: terminal.code,
       signal: terminal.signal,
       stderr,
       stdout: stdoutState.status === "fulfilled" ? stdoutState.value : new Uint8Array(),

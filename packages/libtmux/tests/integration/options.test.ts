@@ -11,6 +11,7 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
+import { TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -124,6 +125,31 @@ describe("option reads", () => {
     });
   }, 30_000);
 
+  test("guards an option name starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const session = (await serverFor(fixture).snapshot()).sessions.one();
+
+      // `-e` is not a real option name, so this fails either way; which
+      // error tmux gives is what proves the guard. Refused outright, tmux
+      // reports an "unknown option" (libc getopt, 3.2a) or "unknown flag"
+      // (`args_parse`, 3.3+) and never looks the name up; reaching option
+      // lookup, it reports "invalid option" instead, on every release.
+      const setFailure = await session
+        .setOption("-e", "value")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(setFailure).toBeInstanceOf(TmuxCommandError);
+      expect((setFailure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
+
+      const unsetFailure = await session
+        .unsetOption("-e")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(unsetFailure).toBeInstanceOf(TmuxCommandError);
+      expect((unsetFailure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
+    });
+  }, 30_000);
+
   test("sets and unsets hooks at every tmux scope", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -154,6 +180,29 @@ describe("option reads", () => {
       expect((await window.showHooks()).has("window-renamed")).toBe(false);
       await pane.unsetHook("pane-title-changed");
       expect((await pane.showHooks()).has("pane-title-changed")).toBe(false);
+    });
+  }, 30_000);
+
+  test("guards a hook name starting with a dash", async () => {
+    await withServer(async (fixture) => {
+      const session = (await serverFor(fixture).snapshot()).sessions.one();
+
+      // Same proof as the option-name guard: `-e` is not a real hook name,
+      // so this fails either way, and which error tmux gives is what shows
+      // the name reached hook lookup rather than being read as a flag.
+      const setFailure = await session
+        .setHook("-e", "display-message hi")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(setFailure).toBeInstanceOf(TmuxCommandError);
+      expect((setFailure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
+
+      const unsetFailure = await session
+        .unsetHook("-e")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+      expect(unsetFailure).toBeInstanceOf(TmuxCommandError);
+      expect((unsetFailure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
     });
   }, 30_000);
 
