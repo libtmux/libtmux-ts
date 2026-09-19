@@ -43,11 +43,17 @@ export function parseTmuxVersion(raw: string): TmuxVersion {
     });
   }
 
-  const tagged = raw.startsWith(nextPrefix)
-    ? raw.slice(nextPrefix.length)
-    : raw.endsWith(masterSuffix)
-      ? raw.slice(0, -masterSuffix.length)
-      : raw.replace(releaseCandidate, "");
+  // Stripped in the order `developmentKind` tests them, and each independently
+  // rather than as alternatives: read as a chain of `else if`, a string
+  // carrying two of these markers is classified on one and parsed on another,
+  // so `next-3.9-master` is `untargeted` to one function and invalid to the
+  // other. No tmux emits that shape, but a version this file accepts must be
+  // one it can also rank.
+  const withoutMaster = raw.endsWith(masterSuffix) ? raw.slice(0, -masterSuffix.length) : raw;
+  const withoutNext = withoutMaster.startsWith(nextPrefix)
+    ? withoutMaster.slice(nextPrefix.length)
+    : withoutMaster;
+  const tagged = withoutNext.replace(releaseCandidate, "");
   const match = taggedVersionPattern.exec(tagged);
   if (match === null) throw invalidVersion(raw);
   return Object.freeze({

@@ -34,6 +34,19 @@ describe("tmux versions", () => {
     expect(parseTmuxVersion("3.6a-master").raw).toBe("3.6a-master");
   });
 
+  test("parses every shape it is willing to rank", () => {
+    // A version this file ranks has to be one it can also read: `-master`
+    // and `next-` are stripped independently, in the order classification
+    // tests them, so a string carrying both parses and ranks consistently.
+    // No tmux emits this shape.
+    const both = parseTmuxVersion("next-3.9-master");
+
+    expect(both).toMatchObject({ major: 3, minor: 9, raw: "next-3.9-master" });
+    // `-master` wins, as the classification says: a build naming no release it
+    // is heading toward, so nothing bounds it.
+    expect(compareTmuxVersions(both, parseTmuxVersion("99.9z"))).toBeGreaterThan(0);
+  });
+
   test("bounds a named-next build to the release it names", () => {
     // `next-X.Y` is a real tmux version string: a build heading toward
     // release X.Y, which it has not shipped. It ranks above the release
