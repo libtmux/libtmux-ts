@@ -11,6 +11,9 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
+import type { TmuxEngine } from "../../src/engine.js";
+import { flattenInvocation } from "../../src/engine.js";
+import { TmuxServerRestartedError, TmuxTransportError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import { recordInvocations, replayInvocations, type TmuxRecording } from "../../src/testing.js";
 
@@ -140,6 +143,84 @@ describe("published test doubles", () => {
     });
     // The recording is untouched, so the same call without a signal still answers.
     expect(await replayed.runShell("true")).toEqual([]);
+  });
+
+  // The queue is positional, so a failure the recorder drops does not merely
+  // lose itself: the next call gets the answer belonging to the one after it.
+  // A recorded failure would replay as a pass, and every later call is off by
+  // one — a double that turns a red run green.
+  test("writes a failure down, so a replay fails where the run failed", async () => {
+    const answers = ["first\n", "third\n"];
+    let calls = 0;
+    const inner: TmuxEngine = {
+      execute(request) {
+        calls += 1;
+        if (calls === 2) {
+          throw new TmuxTransportError("command timed out", {
+            delivery: "indeterminate",
+            kind: "timeout",
+          });
+        }
+        return Promise.resolve({
+          cmd: [request.executable, ...flattenInvocation(request)],
+          exitCode: 0,
+          signal: null,
+          stderr: new Uint8Array(),
+          stdout: new TextEncoder().encode(answers.shift() ?? ""),
+        });
+      },
+    };
+
+    const recorder = recordInvocations(inner);
+    const live = new Server({ engine: recorder.engine });
+    expect(await live.runShell("x")).toEqual(["first"]);
+    await expect(live.runShell("x")).rejects.toMatchObject({ kind: "timeout" });
+    expect(await live.runShell("x")).toEqual(["third"]);
+
+    const replayed = new Server({ engine: replayInvocations(recorder.recording()) });
+    expect(await replayed.runShell("x")).toEqual(["first"]);
+    // Rebuilt as the error the caller would have caught, not a bare Error:
+    // a consumer branches on `code` and `delivery`, and a failure they cannot
+    // branch on is no cheaper to test against than no failure at all.
+    await expect(replayed.runShell("x")).rejects.toMatchObject({
+      code: "TmuxTransportError",
+      delivery: "indeterminate",
+      kind: "timeout",
+    });
+    // The one that proves alignment: drop the failure and this call is the
+    // one answered above, leaving nothing here.
+    expect(await replayed.runShell("x")).toEqual(["third"]);
+  });
+
+  // The other error the built-in engine raises. Flattened to its message it
+  // replays as a bare `Error`, so a consumer testing their restart handling
+  // gets a false negative on exactly the branch they meant to exercise.
+  test("replays a daemon restart as the error a consumer branches on", async () => {
+    const inner: TmuxEngine = {
+      execute() {
+        throw new TmuxServerRestartedError("tmux refused the command", {
+          subcommand: "list-panes",
+        });
+      },
+    };
+    const recorder = recordInvocations(inner);
+    const live = new Server({ engine: recorder.engine });
+    await expect(live.runShell("x")).rejects.toMatchObject({
+      code: "TmuxServerRestartedError",
+    });
+
+    const replayed = new Server({ engine: replayInvocations(recorder.recording()) });
+    const failure = await replayed.runShell("x").then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(TmuxServerRestartedError);
+    expect(failure).toMatchObject({
+      code: "TmuxServerRestartedError",
+      delivery: "not_started",
+      subcommand: "list-panes",
+    });
   });
 
   test("refuses an invocation the recording never saw, rather than inventing one", async () => {
