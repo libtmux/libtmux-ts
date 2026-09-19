@@ -108,24 +108,11 @@ function commandFailure(command: string, result: RawCommandResult): Error {
 /**
  * Read the frame the launch wrote, which is tab-separated and must not be.
  *
- * tmux sanitizes a literal tab out of `display-message` output when the
- * client's locale is not a UTF-8 one, substituting `_` and running the fields
- * together — the shipped code was moved off tabs for exactly this reason. The
- * harness has not followed, so `TestServer.create` under `env -i` fails here
- * with "tmux returned an invalid launch frame".
- *
- * Inert today: nothing in CI or the test tree strips `LANG`/`LC_*` before the
- * bootstrap runs. It bites a contributor running the suite in a locale-stripped
- * container, and the failure says nothing about why.
- *
- * Deliberately not fixed in passing. This frame has three readers that have to
- * agree — the format written here, the argv `records.ts` validates, and the
- * generation discovery `reaper.ts` correlates — plus shell wrappers in
- * `tests/integration/test_server_recovery.test.ts` that synthesize it with
- * `printf` and `cut`. Converting them one at a time desynchronised the set and
- * timed out the reaping tests; it wants doing as one change, with a
- * locale-stripped case to prove it. A global `-u` was measured to stop the
- * substitution at the source and is the other option worth weighing.
+ * tmux replaces a literal tab in `display-message` output with `_` when the
+ * client's locale is not UTF-8, so this throws under `env -i`. Moving it
+ * would cost `records.ts`'s argv check, `reaper.ts`'s generation discovery
+ * and the `printf`/`cut` wrappers in `test_server_recovery.test.ts`
+ * together; `tmux -u` is the alternative.
  */
 function parseLaunchFrame(
   bytes: Uint8Array,
