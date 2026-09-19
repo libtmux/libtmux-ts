@@ -446,8 +446,8 @@ if (pinParagraph === undefined) {
  * either runtime, and counting it would overstate what `test:node` has to
  * cover. The `node:` alternative is anchored to a quoted module specifier for
  * the same reason: a bare word-boundary match also matches a parameter named
- * `node` before its type annotation, which counted a pure query-validation
- * module that imports nothing at all.
+ * `node` before its type annotation, which counted a query-validation module
+ * whose every import is one of this package's own.
  */
 const runtimeApi =
   /["']node:[a-z0-9_/.-]+["']|\bAbortController\b|\bAbortSignal\b|\bTextDecoder\b|\bTextEncoder\b|\bBuffer\b|\bperformance\.now\b|\bset(?:Timeout|Interval|Immediate)\b|\bclear(?:Timeout|Interval)\b|\bprocess\./u;

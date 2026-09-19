@@ -288,9 +288,9 @@ them, and why `Promise.all` is the slowest of the four are in
 $ bun packages/libtmux/scripts/bench-modes.ts
 ```
 
-## What this package promises
+## What this project promises
 
-- **Zero runtime dependencies.** A property [under test](packages/libtmux/tests/unit/package_contract.test.ts), not an aspiration.
+- **The library ships zero runtime dependencies.** A property [under test](packages/libtmux/tests/unit/package_contract.test.ts), not an aspiration. `@libtmux/mcp` and `@libtmux/workspace` declare their own.
 - **Real tmux, every commit.** CI runs the suite against every tmux release the badge above names — no mocks stand in for a server.
 - **Documentation is a gate.** Every public symbol carries a compiled example, [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it, and every link, install command and recipe on this page is checked on each run.
 - **Softly tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and shapes follow 0.62.0 where TypeScript agrees with them; each departure is a decision a gate holds to the code.
