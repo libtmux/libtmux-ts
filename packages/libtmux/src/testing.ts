@@ -12,7 +12,9 @@
  * plain JSON, so it belongs in a fixture file and a reviewer can read it.
  *
  * `record` is the only thing here that needs tmux. `replay` needs nothing,
- * which is the point.
+ * which is the point. It still refuses an already-cancelled command, because
+ * a caller testing their own cancellation deserves an answer rather than a
+ * recording that never looked.
  *
  * What a recording cannot cover: `Server.watch` and `Server.connect` refuse on
  * any server built with an engine, because both hold a local `tmux -C attach`
@@ -23,6 +25,7 @@
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import type { TmuxCommandResult, TmuxEngine } from "./engine.js";
 import { flattenInvocation } from "./engine.js";
+import { TmuxTransportError } from "./errors.js";
 
 /** One invocation and what tmux answered, as JSON. */
 export interface RecordedInvocation {
@@ -161,6 +164,17 @@ export function replayInvocations(recording: TmuxRecording): TmuxEngine {
     // none is never reported equal to another, which is the answer that cannot
     // be wrong when the reach is a file rather than a socket.
     execute(request) {
+      // A replayed command answers from a file, which makes it easy to forget
+      // it is still a command: a caller's own cancellation test would pass
+      // against a recording that never checked, which is the same shape of
+      // false pass as ignoring stdin. Refuse exactly as the spawning engine
+      // refuses before it starts a process.
+      if (request.signal?.aborted === true) {
+        throw new TmuxTransportError("command cancelled before spawn", {
+          delivery: "not_started",
+          kind: "cancelled",
+        });
+      }
       const stdin = request.stdin === undefined ? undefined : [...request.stdin];
       const next = remaining.get(keyOf(request.commands, stdin))?.shift();
       if (next === undefined) {

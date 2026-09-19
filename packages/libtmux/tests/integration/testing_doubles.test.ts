@@ -120,6 +120,28 @@ describe("published test doubles", () => {
     await expect(other.loadBuffer("probe", "QQQ")).rejects.toThrow(/no recorded answer/u);
   }, 60_000);
 
+  // A replayed command answers from a file, which makes it easy to forget it
+  // is still a command. A caller testing their own cancellation against a
+  // recording that never checked would pass without exercising anything.
+  test("refuses an already-cancelled command as the spawning engine does", async () => {
+    const replayed = new Server({
+      engine: replayInvocations({
+        invocations: [{ commands: [["run-shell", "true"]], exitCode: 0, stderr: [], stdout: [] }],
+        version: 1,
+      }),
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(replayed.runShell("true", { signal: controller.signal })).rejects.toMatchObject({
+      code: "TmuxTransportError",
+      delivery: "not_started",
+      kind: "cancelled",
+    });
+    // The recording is untouched, so the same call without a signal still answers.
+    expect(await replayed.runShell("true")).toEqual([]);
+  });
+
   test("refuses an invocation the recording never saw, rather than inventing one", async () => {
     const replayed = new Server({
       engine: replayInvocations({ invocations: [], version: 1 }),
