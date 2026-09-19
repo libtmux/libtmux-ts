@@ -19,7 +19,7 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * it, and went on saying so through five published releases. Nothing was in a
  * position to notice.
  *
- * Eight claims are checked, all of them answerable from the tree:
+ * Nine claims are checked, all of them answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
  * - a package named in an install command is one this workspace publishes;
@@ -32,7 +32,8 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * - the two module counts CONTRIBUTING gives for `test:node`'s scope match
  *   the tree; and
  * - the README and CHANGELOG tables of contents list exactly the headings
- *   each file has, in order, with the anchor GitHub would mint for each.
+ *   each file has, in order, with the anchor GitHub would mint for each; and
+ * - the MCP tool count the root README gives matches the registry.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -488,6 +489,40 @@ if (claimedCounts === null) {
   );
 }
 
+/**
+ * The MCP tool count the root README gives a reader.
+ *
+ * Three suites in `packages/mcp` already pin the registry at 45, so the code
+ * cannot drift silently — but the README's copy of the number is prose beside
+ * them, and prose is what goes stale. Counted from the registrations
+ * themselves so the two cannot disagree.
+ */
+function registeredMcpTools(): number {
+  const root = join(repositoryRoot, "packages/mcp/src/tools");
+  const names = new Set<string>();
+  for (const file of new Bun.Glob("*.ts").scanSync({ cwd: root })) {
+    // The name may sit on the line after the call opens, so this spans lines.
+    for (const match of readFileSync(join(root, file), "utf8").matchAll(
+      /registerTool\(\s*"([a-z_]+)"/gu,
+    )) {
+      names.add(match[1] ?? "");
+    }
+  }
+  return names.size;
+}
+
+const mcpTools = registeredMcpTools();
+const claimedTools = /The (\d+) tools are split into/u.exec(
+  await Bun.file(join(repositoryRoot, "README.md")).text(),
+);
+if (claimedTools === null) {
+  failures.push('README.md: has no "The <n> tools are split into" claim to check');
+} else if (Number(claimedTools[1]) !== mcpTools) {
+  failures.push(
+    `README.md: claims ${String(claimedTools[1])} MCP tools; packages/mcp registers ${String(mcpTools)}`,
+  );
+}
+
 const engineManifests = [
   "package.json",
   "packages/libtmux/package.json",
@@ -526,5 +561,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)} shipped modules touching a runtime API, and ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)} shipped modules touching a runtime API, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, and ${String(mcpTools)} MCP tools\n`,
 );
