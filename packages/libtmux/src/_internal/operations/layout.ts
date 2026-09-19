@@ -1,9 +1,9 @@
 import type { CommandOptions } from "../../common.js";
-import { LibTmuxException, TmuxCommandError, TmuxTransportError } from "../../exc.js";
+import { TmuxTransportError } from "../../exc.js";
 import type { TmuxVersion } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
-import { runCommand } from "./command.js";
+import { isColdEndpoint, runCommand } from "./command.js";
 
 const classicNames = [
   "even-horizontal",
@@ -30,20 +30,6 @@ export function layoutIsValid(layout: string, panes: number, version: TmuxVersio
   if (checksum !== Number.parseInt(layout.slice(0, 4), 16)) return false;
   const parser = new LayoutParser(body);
   return parser.cell(0) && parser.offset === body.length && parser.leaves >= panes;
-}
-
-/** No daemon answers this endpoint, so only the client can name a version. */
-function isColdEndpoint(error: unknown): boolean {
-  const reason =
-    error instanceof TmuxCommandError
-      ? error.stderr.join("\n").trim()
-      : error instanceof LibTmuxException
-        ? error.message.replace(/^cannot reach tmux: /u, "")
-        : "";
-  return (
-    reason.startsWith("no server running on ") ||
-    (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)"))
-  );
 }
 
 export async function validateLayouts(

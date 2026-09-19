@@ -63,6 +63,36 @@ describe("server utility requests", () => {
     expect(await server.hasSession("alphabet")).toBe(true);
   });
 
+  test.each([
+    "no server running on /tmp/ltx-absent/socket\n",
+    "error connecting to /tmp/ltx-absent/socket (No such file or directory)\n",
+  ])("hasSession reads a cold socket as no session: %s", async (reason) => {
+    const engine = singleCommandTransport((request) =>
+      Promise.resolve({
+        ...success(request),
+        returncode: 1,
+        stderr: new TextEncoder().encode(reason),
+      }),
+    );
+
+    expect(await new Server({ engine }).hasSession("work")).toBe(false);
+  });
+
+  test.each([
+    "error connecting to /tmp/ltx-private/socket (Permission denied)",
+    "no current target",
+  ])("hasSession raises a non-cold failure to list sessions: %s", async (reason) => {
+    const engine = singleCommandTransport((request) =>
+      Promise.resolve({
+        ...success(request),
+        returncode: 1,
+        stderr: new TextEncoder().encode(reason),
+      }),
+    );
+
+    await expect(new Server({ engine }).hasSession("work")).rejects.toThrow(reason);
+  });
+
   test("forwards setHook command controls to the engine", async () => {
     const requests: TmuxInvocationRequest[] = [];
     const engine = singleCommandTransport((request) => {

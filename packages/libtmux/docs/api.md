@@ -813,7 +813,9 @@ normally accepts a unique prefix as a session target, which would make
 checking `work` answer yes for `workspace`; this method does not, and it
 lists every session and compares in JavaScript rather than asking tmux
 to resolve a target, since no target spelling is both exact and correct
-for a name holding a target separator.
+for a name holding a target separator. No server running on the socket
+answers `false`; any other failure to list sessions raises rather than
+being read as "no such session".
 
 ```ts
 if (!(await server.hasSession("work"))) {
