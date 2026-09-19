@@ -10,7 +10,215 @@ remember.
 
 <!-- KEEP THIS PLACEHOLDER: new work lands under "Unreleased" until a release is cut. -->
 
+<!-- toc -->
+
+- [Unreleased](#unreleased)
+- [0.1.0-alpha.9 (2026-09-12)](#010-alpha9-2026-09-12)
+- [0.1.0-alpha.8 (2026-09-06)](#010-alpha8-2026-09-06)
+- [0.1.0-alpha.7 (2026-08-30)](#010-alpha7-2026-08-30)
+- [0.1.0-alpha.6](#010-alpha6)
+- [0.1.0-alpha.5](#010-alpha5)
+- [0.1.0-alpha.4](#010-alpha4)
+- [0.1.0-alpha.3](#010-alpha3)
+- [0.1.0-alpha.2](#010-alpha2)
+- [0.1.0-alpha.1](#010-alpha1)
+- [0.0.1-alpha.7](#001-alpha7)
+- [0.0.1-alpha.6](#001-alpha6)
+- [0.0.1-alpha.5](#001-alpha5)
+
+<!-- /toc -->
+
 ## Unreleased
+
+### `libtmux`
+
+#### Errors
+
+`LibTmuxError` and every error class under a consistent `*Error` name are
+exported from `libtmux/errors`; the old class names and `libtmux/exc`
+remain deprecated aliases, and `instanceof` checks keep their meaning.
+(#26)
+
+**Breaking.** `error.name` and `error.code` hold the canonical `*Error`
+name (`WaitTimeoutError`); a check against an old name string needs
+updating. Both are now declared strings rather than read from the
+constructor, so they survive identifier minification, and `code` is typed
+`LibTmuxErrorCode` — the check to use where `instanceof` cannot reach.
+(#26)
+
+**Breaking.** `QueryValidationError.code`, which named the validation
+failure, is now `QueryValidationError.reason`; `code` on that error now
+means what it does on every other one. `QueryValidationErrorCode` is kept
+as a deprecated alias for the renamed `QueryValidationReason`. (#26)
+
+#### Queries and criteria
+
+**Breaking.** `parseLegacyWhere` is no longer exported from the package
+root; it already lived on `libtmux/selection`, where it now stays alone.
+Change the import path — the function is unchanged. (#26)
+
+`where({ ... }).one()` and `oneOrUndefined()` now name the criteria they
+were called with in a `NoMatchError`, instead of reporting an empty query;
+a selection derived from `filter()` still names nothing. (#26)
+
+A numeric criterion takes a plain `number`: `where({ index: 3 })` no
+longer needs `safeInteger(3)`. A non-integer still raises
+`QueryValidationError` naming the field. (#26)
+
+#### Commands, deadlines and cancellation
+
+**Breaking.** A command now gets 30 seconds unless the server or the call
+says otherwise; it used to wait as long as tmux took, which is forever
+against a daemon that stops answering. A call that needs longer passes its
+own `timeoutMs`; `timeoutMs: null` on a call, or `new Server({ timeoutMs:
+null })` on a server, restores the old behaviour. Commands that wait on a
+person or another command, such as `wait-for` and `display-popup`, get no
+default. A timeout rejects with `kind: "timeout"`. (#26)
+
+**Breaking.** The default engine's `stdout` and `stderr` are plain
+`Uint8Array`s over their own memory now, not Node `Buffer`s. Decode with
+`TextDecoder` if you called `toString()` on one. (#26)
+
+A cancelled command now carries the caller's abort reason as the
+rejection's `cause`, whether it was running or queued under `maxInFlight`;
+it was discarded before. `AbortLike` gains an optional `reason`, which a
+real `AbortSignal` already satisfies. (#26)
+
+**Breaking.** `CommandResult` and custom `TmuxEngine` results use
+`exitCode` instead of `returncode`, matching `TmuxCommandError`; update
+both result construction and property reads. An engine that resolves
+without a numeric `exitCode` now fails with `TmuxTransportError` and
+`kind: "contract"`. (#26)
+
+`newSession`, `newWindow`, `split` and `server.runShell()` now forward the
+`signal`, `timeoutMs` and `stdin` options they already accept to the
+command, instead of silently discarding them; `signal` also reaches the
+snapshot that turns a printed id into a handle, here and on
+`Server.batch`. (#26)
+
+#### Handles and options
+
+`Server.checkAlive()` asserts that the server is reachable; use it in
+place of the deprecated `Server.raiseIfDead()` alias. (#26)
+
+`SplitOptions.direction` and `JoinOptions.direction` replace the
+deprecated `vertical` option on a split and on `Pane.joinTo`; `vertical`
+named only an axis, so two of the four sides were unreachable on a join.
+Supplying both `direction` and `vertical` throws `TypeError` before
+dispatch. (#26)
+
+#### Observing a server
+
+`ServerOptions.onInvocation` reports every tmux invocation once it
+settles: the command sent, `durationMs`, `queuedMs` under `maxInFlight`,
+and either `exitCode` or `error` and `delivery`. Watching the library no
+longer means supplying a whole engine — a custom engine's commands report
+too, and any rejection an observer throws is swallowed. (#26)
+
+**Breaking.** `TmuxLogger`, `TmuxLogContext`, `TmuxWarning` and
+`TmuxWarningSink` are removed; they were exported no-ops that nothing
+called and no option ever reached. `onInvocation` is what they were shaped
+to be. (#26)
+
+A control connection (`Server.watch()`, `Server.connect()`) now configures
+its client once, and attaches with `refresh-client -f new-layouts`: on
+tmux 3.8+ a `%layout-change` event's `layout` arrives as JSON, matching a
+snapshot's own form, so a `.where({ layout: { equals } })` built from that
+event now matches a same-instant snapshot on every supported version.
+(#26)
+
+#### tmux versions and layouts
+
+The capability probe no longer separates its fields with a tab, which
+tmux sanitizes out of `display-message` output in a non-UTF-8 locale, so
+the library now works in a stripped environment — a systemd unit, a
+container, cron, or an MCP client that curates what it passes on. (#26)
+
+A tmux release candidate is read rather than refused: `parseTmuxVersion`
+no longer throws on tmux's own `3.8-rc` string. A candidate now ranks as
+the release it names, unlike a `next-X.Y` development build, which sits
+somewhere in the cycle and may predate any of it. (#26)
+
+`Server.versionAtLeast` no longer treats a named development build such
+as `next-3.9` as satisfying every minimum: it now ranks below the release
+it names and above the one before it. An untargeted build (bare `master`,
+or `<tag>-master`) still satisfies any minimum. (#26)
+
+`Window.selectLayout()` refuses, before tmux sees it, any layout value
+that is not a preset or a string this package has parsed itself: a bare
+`-o` no longer runs as tmux's own undo flag, and `garbage` throws
+`TypeError`. Several tmux releases exit the whole server on an unreadable
+layout rather than refusing it, so a mistyped or hostile string could
+previously kill every session on the socket. Mirrored presets before tmux
+3.5 and JSON layouts before 3.8 throw `VersionTooLowError`. (#26)
+
+`Window.selectLayout()` also accepts a unique, unambiguous prefix of a
+layout preset name — `tile` for `tiled` — matching tmux's own
+`select-layout`; an ambiguous prefix (`even-`) still throws `TypeError`,
+naming every preset it could mean. (#26)
+
+#### Testing
+
+`libtmux/testing` publishes test doubles. `recordInvocations` wraps an
+engine — or, called with nothing, the one a `Server` builds for itself —
+and keeps what tmux answered; `replayInvocations` answers from that
+recording with no server, no binary and no daemon. A recording is JSON: a
+call it never saw raises, and one that raised when recorded replays as the
+same error, carrying its `code`, `delivery` and `kind`. (#26)
+
+### `@libtmux/mcp`
+
+#### Reaching the daemon
+
+Reading the daemon's authority no longer separates its fields with a tab,
+the same non-UTF-8-locale fix as the capability probe: `send_keys` and
+`run_shell_command` failed wherever an MCP client curates the environment
+it passes on. The socket path now comes last, since it may itself contain
+the `;` the other fields cannot. (#26)
+
+The startup line says whether this process started the tmux it is driving
+(`serving new`) or attached to one already running (`serving existing`) —
+the same fact that decides whether `teardown` tools are offered. (#26)
+
+#### Tool descriptions
+
+Every input parameter across all tools, including
+`call_read_tools_batch`'s per-tool `arguments` and `tool` fields, now
+carries a description, and a gate holds them to it. `force` now says what
+it allows and refuses, rather than that it "never overrides attention" —
+a term no schema defined. (#26)
+
+#### Pane input and shell commands
+
+A blocked pane write now says whether a retry can help: a malformed
+caller environment or a stale daemon or socket is the server's own
+context, read once at startup, so the refusal says to restart the server
+instead of retrying; a client's transient state keeps its retry advice.
+(#26)
+
+`run_shell_command` now writes its framing script to a private, per-run
+file instead of typing it into the pane as one literal line: a human
+sharing the pane no longer sees it, and a heavy line editor no longer
+redraws on every byte of it. The file is removed when the run ends. A
+pane whose shell cannot reach that file, such as inside `ssh` or another
+user's `su`, is told so and falls back to typing the script directly.
+(#26)
+
+#### Registration and results
+
+Registering a tool with its own MCP annotations is now refused rather
+than silently overwritten; every tool carries the same conservative
+annotations, and `tmux://capabilities` is what tells them apart. (#26)
+
+`wait_for_text` no longer reports a plain `matched` for text this server
+itself typed into a pane but never submitted, or text already on screen
+before the wait subscribed. A genuinely slow command's own output still
+matches normally. (#26)
+
+`list_sessions`, `get_session_info`, `create_session` and
+`rename_session` now report `humanAttachedClients` alongside
+`attachedClients`, excluding this server's own control-mode observers — a
+`wait_for_text` or other live read holds one open while it runs. (#26)
 
 ## 0.1.0-alpha.9 (2026-09-12)
 
