@@ -1,5 +1,13 @@
 /* eslint-disable no-await-in-loop -- Each mutation and progress record depends on the preceding tmux state. */
-import { LibTmuxException, Server, type Pane, type ServerSnapshot, type Session, type Window } from "libtmux";
+import {
+  isTmuxName,
+  LibTmuxException,
+  Server,
+  type Pane,
+  type ServerSnapshot,
+  type Session,
+  type Window,
+} from "libtmux";
 import { setTimeout as sleep } from "node:timers/promises";
 import { basename, extname, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
@@ -15,7 +23,15 @@ import {
   type Json,
 } from "./documents.ts";
 import { normalize, type PaneSpec, type WorkspaceSpec } from "./normalize.ts";
-import { CliError, colorEnabled, emitJson, OperationOutput, styled, write } from "./output.ts";
+import {
+  CliError,
+  colorEnabled,
+  emitJson,
+  OperationOutput,
+  styled,
+  write,
+  type MachineCode,
+} from "./output.ts";
 import type { Request } from "./parser.ts";
 import { openTerminal, processRun } from "./process.ts";
 import type { ProcessResult } from "./process.ts";
@@ -980,7 +996,9 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         (result.session_id && !result.session_removed),
     );
     const unreachable = !(error instanceof CliError) && isTmuxUnavailable(error);
-    const code = interrupted
+    // Cancellation is the one answer outside the shared code set: the command
+    // did not fail, the user stopped it.
+    const code: MachineCode | "interrupted" = interrupted
       ? "interrupted"
       : error instanceof CliError
         ? error.code
@@ -1082,6 +1100,18 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
 async function capture(server: Server, request: Request, context: CLIContext): Promise<number> {
   const session = await freezeSession(server, request, context);
   const acquisition = context.signal ? { signal: context.signal } : {};
+  // A capture never writes a document load would refuse. tmux reads "." and
+  // ":" as the separators of target syntax, so a name holding one cannot be
+  // addressed by name; the refusal happens before any file is written.
+  const addressable = (name: string): boolean => isTmuxName(name);
+  const requireAddressable = (kind: "session" | "window", name: string | null): void => {
+    if (name !== null && !addressable(name))
+      throw new CliError(
+        "invalid_workspace",
+        `The ${kind} named ${name} cannot be captured: tmux reads "." and ":" as target separators, so a workspace could not name it again`,
+      );
+  };
+  requireAddressable("session", session.name);
   // A pane at its default shell needs no shell_command; naming it reloads a
   // shell inside a shell. Match by name as well as basename(default-shell),
   // because macOS runs bash for /bin/sh and the pane reports "bash".
@@ -1104,6 +1134,7 @@ async function capture(server: Server, request: Request, context: CLIContext): P
     command === defaultShell || ordinaryShells.has(command);
   const windows: Document[] = [];
   for (const window of session.windows.toArray()) {
+    requireAddressable("window", window.name);
     const panes = window.panes.toArray().map((pane) => ({
       ...(pane.currentCommand !== null && !isDefaultShell(pane.currentCommand)
         ? { shell_command: [pane.currentCommand] }

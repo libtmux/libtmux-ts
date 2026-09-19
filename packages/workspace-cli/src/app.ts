@@ -48,7 +48,9 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
     : options.includes("--json")
       ? "json"
       : "human";
-  const report = async (code: string, message: string) => {
+  // "log_error" is the one answer outside the shared code set: the diagnostic
+  // sink failed, which is about the log destination, not the command.
+  const report = async (code: MachineCode | "log_error", message: string) => {
     const text =
       mode === "human"
         ? `tmux-workspace: ${message}\n`
