@@ -678,6 +678,21 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
+  test("attaches to a session name exactly, not to one it prefixes", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      await server.newSession({ name: "doomsday" });
+
+      // tmux matches a bare -t name as a prefix, so "doom" would attach to
+      // "doomsday" and stream a session nobody asked for.
+      await expect(server.connect({ target: "doom" })).rejects.toThrow(
+        /could not attach.*find session/u,
+      );
+      await using exact = await server.connect({ target: "doomsday" });
+      expect(exact).toBeDefined();
+    });
+  }, 60_000);
+
   test("rejects a buffer size that cannot hold an event", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
