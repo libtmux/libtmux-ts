@@ -179,6 +179,17 @@ snapshot.panes.filter((pane) => pane.currentCommand?.startsWith("v") === true);
 snapshot.panes.map((pane) => pane.id); // an array, not a Selection
 ```
 
+Most programs need equality and a relation: `one({ id })` to re-find something
+they already hold, `{ session: { is: { id } } }` to scope to it. Both consumers
+in this repository use those and nothing else, and `.filter()` covers the rest
+of what a program that built the server itself wants.
+
+The operators below are for the other case — a caller exploring a server it did
+not build, or one holding a query it did not write: a saved filter, a `--where`
+flag, an argument from an agent. That is also what `encodeWhereDocument` and
+`decodeWhereDocument` are for, and why criteria are data rather than a
+predicate. If you know the ids, you do not need any of this.
+
 Criteria support equality, string operators, `AND`/`OR`/`NOT`, regular
 expressions as data, and relation quantifiers:
 
