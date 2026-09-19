@@ -157,6 +157,17 @@ layout preset name — `tile` for `tiled` — matching tmux's own
 `select-layout`; an ambiguous prefix (`even-`) still throws `TypeError`,
 naming every preset it could mean. (#26)
 
+#### Argument safety
+
+Every library operation that passes caller-supplied text to tmux as a
+positional argument — a shell command, a session or window name, literal
+`send-keys` text, a buffer's data, a hook or option name, or a
+`display-message` format — now puts `--` before it, the same guard
+`Window.selectLayout()` already carried. A value starting with `-` no
+longer reaches tmux's own argument parser as a flag: `send-keys -R` reset
+the pane's saved terminal state instead of typing it, and `pipe-pane -o`
+closed an existing pipe instead of opening the one asked for. (#26)
+
 #### Testing
 
 `libtmux/testing` publishes test doubles. `recordInvocations` wraps an
@@ -203,6 +214,12 @@ redraws on every byte of it. The file is removed when the run ends. A
 pane whose shell cannot reach that file, such as inside `ssh` or another
 user's `su`, is told so and falls back to typing the script directly.
 (#26)
+
+`send_keys`, `send_keys_batch`, `wait_for_channel`, and `signal_channel`
+build their own tmux argv rather than going through the library's now-
+guarded operations, so each carried the argument-safety gap above on its
+own: pane input dispatch now puts `--` before the caller's keys, and both
+channel tools put it before the channel name. (#26)
 
 #### Registration and results
 
