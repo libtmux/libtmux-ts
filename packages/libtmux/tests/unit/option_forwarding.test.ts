@@ -24,24 +24,49 @@ interface Declaration {
 }
 
 function* declarations(file: string, text: string): Generator<Declaration> {
-  const heading = /^(?:export (?:async )?function (\w+)|  (?:async )?(\w+)(?:<[^>\n]*>)?)\(/gmu;
+  // The name, then its parameters, then its body. Everything between them is
+  // walked rather than matched: a pattern that stops at the first `>` skips
+  // `batch<const T extends readonly PlannedOperation<unknown>[]>` entirely,
+  // and `indexOf("{")` after the parameters can land in a return type like
+  // `Promise<{ -readonly [K in keyof T]: … }>` rather than in the body. A
+  // heading that requires `export` also hides a non-exported method like
+  // `runPlan`.
+  const heading = /^(?:(?:export )?(?:async )?function (\w+)|  (?:async )?(\w+))(?=[<(])/gmu;
   for (const match of text.matchAll(heading)) {
     const name = match[1] ?? match[2]!;
-    let cursor = match.index + match[0].length;
-    for (let depth = 1; depth > 0 && cursor < text.length; cursor += 1) {
-      if (text[cursor] === "(") depth += 1;
-      else if (text[cursor] === ")") depth -= 1;
+    let cursor = skipBalanced(text, match.index + match[0].length, "<", ">");
+    if (text[cursor] !== "(") continue;
+    const parametersFrom = cursor + 1;
+    cursor = skipBalanced(text, cursor, "(", ")");
+    const parameters = text.slice(parametersFrom, cursor - 1);
+
+    // The first brace that opens a block rather than a type: one at angle depth
+    // zero whose closing brace is not itself followed by another brace.
+    let open = cursor;
+    for (let angles = 0; open < text.length; open += 1) {
+      if (text[open] === "=" && text[open + 1] === ">") open += 1;
+      else if (text[open] === "<") angles += 1;
+      else if (text[open] === ">") angles -= 1;
+      else if (text[open] === "{" && angles <= 0) {
+        const close = skipBalanced(text, open, "{", "}");
+        if (text.slice(close).trimStart().startsWith("{")) open = close - 1;
+        else break;
+      }
     }
-    const parameters = text.slice(match.index + match[0].length, cursor - 1);
-    const open = text.indexOf("{", cursor);
-    if (open < 0) continue;
-    let end = open + 1;
-    for (let depth = 1; depth > 0 && end < text.length; end += 1) {
-      if (text[end] === "{") depth += 1;
-      else if (text[end] === "}") depth -= 1;
-    }
-    yield { body: text.slice(open, end), file, name, parameters };
+    if (open >= text.length) continue;
+    yield { body: text.slice(open, skipBalanced(text, open, "{", "}")), file, name, parameters };
   }
+}
+
+/** The index just past the `open` at `from` and everything it encloses. */
+function skipBalanced(text: string, from: number, open: string, close: string): number {
+  if (text[from] !== open) return from;
+  let cursor = from + 1;
+  for (let depth = 1; depth > 0 && cursor < text.length; cursor += 1) {
+    if (text[cursor] === open) depth += 1;
+    else if (text[cursor] === close) depth -= 1;
+  }
+  return cursor;
 }
 
 /** The whole bag went on, or its two deadline members were read out of it. */
@@ -49,6 +74,33 @@ const FORWARDS =
   /[(,]\s*options\s*[,)]|\.\.\.options\b|options\??\.(?:signal|timeoutMs)|\boptions,\s*$/mu;
 
 const TAKES_OPTIONS = /\boptions\??\s*:\s*[A-Za-z]*Options\b/u;
+
+/**
+ * A declaration with somewhere to forward to: it awaits something, or returns
+ * a call's result. This excludes eight — five argv builders like
+ * `newWindowArgs`, the two `window.ts` helpers that rewrite a destination and
+ * hand the bag back, and `Server`'s constructor. None has a call under it that
+ * could carry a deadline, and requiring a forward would only teach the gate to
+ * lie.
+ */
+const RUNS = /\bawait\b|\breturn\s+[A-Za-z_$][\w$.]*\(/u;
+
+/**
+ * Reads of the whole server inside `body` whose arguments never mention a
+ * signal. `FORWARDS` asks only whether the bag appears somewhere, so a body
+ * that forwards to its command and then reads the server unsignalled satisfies
+ * it — which is what `batch` did.
+ */
+function unsignalledReads(body: string): string[] {
+  const reads = /\b(?:this\.snapshot|server\.snapshot|buildServerSnapshot)\(/gu;
+  const found: string[] = [];
+  for (const match of body.matchAll(reads)) {
+    const open = match.index + match[0].length - 1;
+    const args = body.slice(open + 1, skipBalanced(body, open, "(", ")") - 1);
+    if (!/\bsignal\b|^\s*options\b/u.test(args)) found.push(`${match[0]}${args.trim()})`);
+  }
+  return found;
+}
 
 describe("command option forwarding", () => {
   /**
@@ -63,28 +115,41 @@ describe("command option forwarding", () => {
    * can do without a live server for most of them. It proves the argument is
    * passed on, not that the transport honoured it — the case below proves
    * that end of it for the paths a fake engine can reach.
+   *
+   * Forwarding once is not forwarding: `batch` handed the bag to its commands
+   * and then read the server unsignalled, which satisfies a check that asks
+   * only whether the bag appears. Each read is examined on its own.
    */
   test("hands the options bag to the command in every operation that takes one", async () => {
     const root = new URL("../../src/", import.meta.url).pathname;
     const checked: string[] = [];
     const dropped: string[] = [];
+    const unsignalled: string[] = [];
 
     const HANDLES = new Set(["client.ts", "pane.ts", "server.ts", "session.ts", "window.ts"]);
     for await (const relative of new Bun.Glob("**/*.ts").scan({ cwd: root })) {
       if (!relative.startsWith("_internal/operations/") && !HANDLES.has(relative)) continue;
       const text = await Bun.file(`${root}${relative}`).text();
       for (const declaration of declarations(relative, text)) {
-        if (!TAKES_OPTIONS.test(declaration.parameters)) continue;
+        if (!TAKES_OPTIONS.test(declaration.parameters) || !RUNS.test(declaration.body)) continue;
         checked.push(`${declaration.file}:${declaration.name}`);
         if (!FORWARDS.test(declaration.body)) {
           dropped.push(`${declaration.file}:${declaration.name}`);
         }
+        for (const read of unsignalledReads(declaration.body)) {
+          unsignalled.push(`${declaration.file}:${declaration.name} ${read}`);
+        }
       }
     }
 
-    // A scan that matched nothing would report a clean tree.
+    // A scan that matched nothing would report a clean tree, and so would one
+    // that matched all but the declaration at issue: both read as a clean
+    // tree while carrying a dropped option.
     expect(checked.length).toBeGreaterThanOrEqual(60);
+    expect(checked).toContain("server.ts:batch");
+    expect(checked).toContain("_internal/operations/mutations.ts:runPlan");
     expect(dropped).toEqual([]);
+    expect(unsignalled).toEqual([]);
   });
 
   test("carries a per-call deadline through to the invocation", async () => {

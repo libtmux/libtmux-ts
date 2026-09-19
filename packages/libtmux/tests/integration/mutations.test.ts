@@ -67,8 +67,8 @@ async function captureUntil(
 
 describe("lifecycle mutations", () => {
   /**
-   * `newSession`, `newWindow` and `split` take `CommandOptions` and typed as
-   * though they honoured them, while the plan path called `runCommand` with
+   * `newSession`, `newWindow` and `split` take `CommandOptions` and were typed
+   * as though they honoured them, while the plan path called `runCommand` with
    * no options at all: an already-aborted signal was ignored and the object
    * was created anyway. The only coverage was a compile-only assertion that
    * the types accept `signal`, which a dropped option satisfies perfectly.
