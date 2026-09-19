@@ -1136,9 +1136,11 @@ bounded.tmuxBin;
 
 The ceiling costs no throughput, because there was none to lose: tmux runs
 commands on one thread. [The benchmarks](docs/benchmarks.md) show `Promise.all`
-over twelve creations reordering a third of them and saving no processes, and
-on an idle machine finishing slower than doing them in order. A wider fan-out
-buys queueing and process pressure rather than work.
+over twelve creations costing the same twenty-five processes as doing them in
+order, and arriving out of order in two or three of every three runs. Fanning
+out buys no work — `pipeline` does the same twelve in thirteen. Both totals
+count the query that reads the result back, which is why neither is a multiple
+of twelve.
 
 Waiting for a slot spends the request's own deadline rather than extending it.
 A request that never gets one raises `TmuxTransportError` with

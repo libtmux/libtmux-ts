@@ -110,9 +110,10 @@ export interface ServerOptions {
    * Every invocation is a tmux client process with its own pipes, so a caller
    * that fans out over a whole server turns its own concurrency into process
    * and descriptor pressure. tmux runs commands on one thread: `bench-modes.ts`
-   * measures twelve concurrent creations running slower than twelve sequential
-   * ones and arriving out of order, so the ceiling bounds the cost without
-   * bounding the work. Waiting for a slot spends the request's own deadline,
+   * measures twelve concurrent creations costing the same twenty-five
+   * invocations as twelve sequential ones — twenty-four either way, plus the
+   * query that reads the result back — and arriving out of order, so the
+   * ceiling bounds the cost without bounding the work. Waiting for a slot spends the request's own deadline,
    * and a request that never gets one fails `not_started`.
    */
   readonly maxInFlight?: number;

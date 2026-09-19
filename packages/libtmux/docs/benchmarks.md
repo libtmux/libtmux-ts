@@ -46,14 +46,16 @@ about 32 times a 1-pane server for 192 times the objects.
 $ bun packages/libtmux/scripts/bench-modes.ts
 ```
 
-Twelve windows created, then queried.
+Twelve windows created, then queried. tmux 3.7c on an idle machine, three
+invocations of the script; each wall-clock below is one invocation's median of
+three, and each order cell counts that invocation's three repeats.
 
-| batching      | concurrency | wall-clock | processes | order           |
-| ------------- | ----------- | ---------- | --------- | --------------- |
-| one-at-a-time | sequential  | 353 ms     | 25        | as requested    |
-| one-at-a-time | concurrent  | 404 ms     | 25        | reordered (1/3) |
-| pipeline      | sequential  | 72 ms      | 13        | as requested    |
-| planned       | sequential  | 139 ms     | 14        | as requested    |
+| batching      | concurrency | wall-clock       | processes | order                    |
+| ------------- | ----------- | ---------------- | --------- | ------------------------ |
+| one-at-a-time | sequential  | 463, 649, 676 ms | 25        | as requested             |
+| one-at-a-time | concurrent  | 471, 537, 642 ms | 25        | out of order in 2-3 of 3 |
+| pipeline      | sequential  | 88, 109, 114 ms  | 13        | as requested             |
+| planned       | sequential  | 149, 161, 259 ms | 14        | as requested             |
 
 The process counts are the deterministic part. Creating one at a time costs two
 invocations per window — one to run the command, one to take the snapshot that
@@ -62,12 +64,20 @@ the twelve commands as twelve invocations and returns their printed output
 directly: 13. `batch` does the same and adds one snapshot that resolves all
 twelve handles at once: 14.
 
-Concurrency is the row worth reading twice. `Promise.all` over the same twelve
-creations reorders a third of them and saves no processes, and on this run
-finished _slower_ than doing them in order — the ordering of those two
-wall-clock figures is the one number here that a loaded machine can invert:
-tmux runs commands on one thread, so fanning out buys queueing rather than
-throughput, and nothing preserves the order the calls were made in. That is the
+Concurrency is the row worth reading twice, and not for the reason this page
+used to give. `Promise.all` over the same twelve creations saves no processes —
+25 either way — and does not preserve order: the batch arrived out of order in
+two or three of every three runs, so treat reordering as what happens rather
+than as a risk. What it does _not_ do is run slower. Every wall-clock figure in
+the first two rows overlaps, and concurrent was the faster of the pair in two
+of the three medians. A single earlier run showing it slower was published here
+as though it were a finding; medians of three disagree with it.
+
+So the case for `pipeline` or `batch` is not that fanning out is slow. It is
+that fanning out costs the same twelve processes, gives up ordering, and buys
+nothing — while `pipeline` does the same work in 13 processes and a fifth of
+the time. Read the order column as whole runs, not windows: a run either
+arrived in the order it was asked for or it did not. That is the
 measurement behind `maxInFlight` defaulting to 16 rather than something larger,
 and behind the README telling you to use `pipeline` or `batch` when order
 matters.
