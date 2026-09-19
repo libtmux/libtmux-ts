@@ -106,6 +106,14 @@ export class WorkspaceApplyError extends Error {
  * options a previous version of the file had set, because tmux cannot say which
  * of an option's current values this file is responsible for.
  *
+ * This is not the builder behind the `tmux-workspace` command. The two are
+ * separate implementations of one idea and they answer differently: this one
+ * converges a session that exists, while the CLI compares it against the
+ * document and refuses when they disagree. The document language differs too —
+ * the schema here is strict, so `environment`, `before_script`, `window_index`,
+ * `suppress_history`, `x-` keys and the CLI's other fields are rejected. A file
+ * written for the CLI is not necessarily one this accepts.
+ *
  * @throws ZodError when the workspace does not satisfy the strict config schema.
  * @throws TypeError when operation options, layouts or version replies are invalid.
  * @throws WorkspaceApplyError when tmux fails after applying may have started.
@@ -283,20 +291,21 @@ async function applyWindow(
     await current.server.batch(surplus.map((pane) => pane.plan.killIfWindowUnshared()));
     current = await current.refreshed();
   }
-  // The completed window needs one snapshot rather than one per split. `-d`
-  // keeps the active pane stable while the missing panes are created.
+  // Halving one pane in turn runs out of room by the fifth at a default 80x24,
+  // where tmux answers "no space for a new pane", so the window is rebalanced
+  // between splits. `desired.layout` below still has the final say, and a
+  // batch cannot interleave the layout pass.
   const present = current.panes.length;
-  if (present < wanted) {
-    await current.server.batch(
-      Array.from({ length: wanted - present }, (_, offset) => {
-        const entry = desired.panes[present + offset];
-        const directory =
-          entry === undefined ? undefined : paneStartDirectory(entry, desired, workspace);
-        return current.plan.split(directory === undefined ? {} : { startDirectory: directory });
-      }),
-    );
-    current = await current.refreshed();
+  for (let offset = 0; present + offset < wanted; offset += 1) {
+    const entry = desired.panes[present + offset];
+    const directory =
+      entry === undefined ? undefined : paneStartDirectory(entry, desired, workspace);
+    // eslint-disable-next-line no-await-in-loop -- Each split needs the room the last one left.
+    await current.split(directory === undefined ? {} : { startDirectory: directory });
+    // eslint-disable-next-line no-await-in-loop -- The layout pass is what reclaims the room.
+    await current.selectLayout("tiled");
   }
+  if (present < wanted) current = await current.refreshed();
 
   // Panes at or past the count this apply found are the ones it just split; a
   // window it created has no older panes at all.

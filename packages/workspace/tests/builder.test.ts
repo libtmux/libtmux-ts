@@ -990,7 +990,7 @@ test("layout preflight preserves a borrowed workspace before options", async () 
   });
 });
 
-test("empty workspace layout leaves tmux's default arrangement", async () => {
+test("an empty workspace layout is never handed to tmux", async () => {
   await withServer(async (fixture) => {
     const recorded: string[][] = [];
     const server = new Server({
@@ -1011,8 +1011,22 @@ test("empty workspace layout leaves tmux's default arrangement", async () => {
     const applied = recorded.filter((args) =>
       args.some((argument) => argument.includes("select-layout")),
     );
-    expect(applied).toHaveLength(1);
-    expect(applied[0]!.some((argument) => argument.includes("tiled"))).toBe(true);
+    // Rebalancing between splits is the builder's own pass, so tiled is the
+    // only layout tmux is asked for; the empty string is never handed over.
+    expect(applied.length).toBeGreaterThan(0);
+    expect(applied.every((args) => args.some((argument) => argument === "tiled"))).toBe(true);
     expect(session.windows.one({ name: "default" }).panes.length).toBe(2);
+  });
+});
+
+test("builds a six-pane window at a default terminal size", async () => {
+  await withServer(async (fixture) => {
+    const server = serverFor(fixture);
+    const session = await applyWorkspace(server, {
+      session_name: "crowded",
+      windows: [{ window_name: "many", panes: ["true", "true", "true", "true", "true", "true"] }],
+    });
+    const window = (await session.refreshed()).windows.one({ name: "many" });
+    expect(window.panes.length).toBe(6);
   });
 });

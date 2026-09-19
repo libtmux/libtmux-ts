@@ -43,6 +43,14 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.9 libtmux@0.1.0-alpha.9
 `libtmux` is a peer of this package in practice: you pass it the `Server`.
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
 
+This package and [`@libtmux/workspace-cli`](../workspace-cli) are two
+implementations, not one product with two faces. They differ in what they do
+with a session that already exists — this one converges it, the CLI compares it
+against the document and refuses when they disagree — and in what a document may
+say: the schema here is strict, so `environment`, `before_script`,
+`window_index`, `suppress_history`, `x-` keys and the CLI's other fields are
+rejected. A file written for the CLI is not necessarily one this accepts.
+
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
 unproven. WSL is untested.
@@ -92,8 +100,11 @@ delivery indeterminate.
 `applyWorkspace` validates every window layout before claiming a session or
 changing options. Names accept unique abbreviations supported by the running
 daemon; saved layouts require a valid checksum, a nonempty tree and enough pane
-cells. An empty layout string leaves the default arrangement in place, as an
-omitted layout does. tmux remains responsible for geometry and pruning.
+cells. A window is rebalanced between splits, because halving one pane in turn
+runs out of room by the fifth at a default 80x24, so a window that names no
+layout — or names the empty string — comes up tiled. A declared layout is
+applied last and has the final say. tmux remains responsible for geometry and
+pruning.
 The library limits custom layouts to 8192 characters and 256 nested groups;
 these are application limits, separate from tmux's parser.
 
