@@ -17,13 +17,7 @@ import {
   MAX_RESULT_BYTES,
 } from "../policy.js";
 import { busyPane, dispatchPaneKeys, paneInputChanged, planPaneInput } from "../pane_input.js";
-import {
-  MUTATING,
-  OPEN_WORLD,
-  READ_BATCH_TOOLS,
-  READ_ONLY,
-  type ToolRegistry,
-} from "../register.js";
+import { READ_BATCH_TOOLS, type ToolRegistry } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import {
   inlineRequestText,
@@ -196,7 +190,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "get_session_info",
     {
-      annotations: READ_ONLY,
       description: "Return metadata for one session without listing every session.",
       inputSchema: { session: requestText("session") },
       outputSchema: { session: sessionViewSchema },
@@ -221,7 +214,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "get_window_info",
     {
-      annotations: READ_ONLY,
       description: "Return metadata and placements for one window.",
       inputSchema: { windowId: windowIdSchema },
       outputSchema: { window: windowViewSchema },
@@ -239,7 +231,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "find_pane_by_position",
     {
-      annotations: READ_ONLY,
       description: "Find the pane occupying a named corner of a window.",
       inputSchema: { corner: z.enum(CORNERS), windowId: windowIdSchema },
       outputSchema: { pane: paneViewSchema },
@@ -267,7 +258,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "get_tmux_variables",
     {
-      annotations: READ_ONLY,
       description: "Resolve validated tmux variable names without accepting raw format syntax.",
       inputSchema: {
         names: z
@@ -306,7 +296,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "snapshot_pane",
     {
-      annotations: READ_ONLY,
       description:
         "Return bounded terminal content and pane metadata in one MCP response. The metadata " +
         "and capture come from separate tmux requests and are not an atomic snapshot.",
@@ -355,7 +344,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "wait_for_channel",
     {
-      annotations: MUTATING,
       description: "Wait until a tmux wait-for channel is signalled.",
       inputSchema: {
         channel: inlineRequestText("channel"),
@@ -377,7 +365,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "signal_channel",
     {
-      annotations: MUTATING,
       description: "Signal a tmux wait-for channel.",
       inputSchema: { channel: inlineRequestText("channel") },
       outputSchema: { channel: z.string(), signalled: z.boolean() },
@@ -392,7 +379,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "set_mouse_enabled",
     {
-      annotations: MUTATING,
       description: "Set the global tmux mouse option through a closed boolean schema.",
       inputSchema: { enabled: z.boolean() },
       outputSchema: { enabled: z.boolean() },
@@ -407,7 +393,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "set_history_limit",
     {
-      annotations: MUTATING,
       description: "Set the default retained scrollback line limit through a bounded integer.",
       inputSchema: { lines: z.number().int().min(0).max(2_000_000) },
       outputSchema: { lines: z.number().int() },
@@ -422,7 +407,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "set_synchronize_panes",
     {
-      annotations: OPEN_WORLD,
       description:
         "Set the window default for synchronized pane input. Pane overrides still determine " +
         "each effective configured cohort.",
@@ -445,7 +429,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "send_keys_batch",
     {
-      annotations: OPEN_WORLD,
       description:
         "Send an ordered batch of pane-input operations, resolving and checking each row's " +
         "configured cohort immediately before input. Stop or continue on error.",
@@ -542,7 +525,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "clear_pane_scrollback",
     {
-      annotations: MUTATING,
       description: "Discard the retained scrollback history for one pane.",
       inputSchema: { paneId: paneIdSchema },
       outputSchema: { cleared: paneIdSchema },
@@ -580,7 +562,6 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   registry.registerTool(
     "call_read_tools_batch",
     {
-      annotations: READ_ONLY,
       description:
         "Invoke a serial batch of at most 16 inspect tools. One client approval covers every " +
         "nested name; inner tools receive no separate approval. The structured result is capped " +

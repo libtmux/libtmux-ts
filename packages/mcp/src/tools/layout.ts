@@ -14,7 +14,7 @@ import { ResizeAdjustmentDirection } from "libtmux/constants";
 import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
-import { MUTATING, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
   inlineRequestText,
@@ -112,7 +112,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "resize_pane",
     {
-      annotations: MUTATING,
       description:
         "Resize a pane, either to a size or by an amount in a direction. Give " +
         "width/height for an absolute size, or direction with amount for a nudge.",
@@ -176,7 +175,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "select_pane",
     {
-      annotations: MUTATING,
       description:
         "Make a pane the active one in its window. Moves the cursor of anyone " +
         "attached to that window.",
@@ -199,7 +197,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "select_window",
     {
-      annotations: MUTATING,
       description: "Make a window the current one in its session.",
       inputSchema: {
         sourceIndex: sourceIndexSchema,
@@ -228,7 +225,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "select_layout",
     {
-      annotations: MUTATING,
       description:
         "Rearrange a window's panes. Takes one of tmux's named layouts, or a layout " +
         "string from an earlier window whose `metadataComplete` is true to reproduce it exactly.",
@@ -267,7 +263,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "swap_pane",
     {
-      annotations: MUTATING,
       description: "Exchange two panes' positions. Their ids and contents travel with them.",
       inputSchema: { otherPaneId: paneIdSchema, paneId: paneIdSchema },
       outputSchema: {
@@ -306,7 +301,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "move_window",
     {
-      annotations: MUTATING,
       description: "Move a window to another index, or into another session.",
       inputSchema: {
         index: z.number().int().nonnegative().optional(),
@@ -345,7 +339,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "resize_window",
     {
-      annotations: MUTATING,
       description:
         "Set a window's size in cells. A detached window is whatever size tmux " +
         "guessed, and a program that formats to its terminal width truncates to " +
@@ -385,7 +378,6 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "set_pane_title",
     {
-      annotations: MUTATING,
       description:
         "Give a pane a title. Useful for labelling what an agent put where, since " +
         "the title shows in list_panes and survives the command changing.",

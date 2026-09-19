@@ -14,7 +14,7 @@ import { PaneDirection } from "libtmux/constants";
 import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
 import { MAX_INLINE_REQUEST_BYTES } from "../policy.js";
-import { DESTRUCTIVE, MUTATING, MUTATING_OPEN_WORLD, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
   fitsInlineRequest,
@@ -68,7 +68,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "create_session",
     {
-      annotations: MUTATING_OPEN_WORLD,
       description:
         "Create a detached session and return it with its first window and pane, " +
         "so you can start working without listing anything first.",
@@ -142,7 +141,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "create_window",
     {
-      annotations: MUTATING_OPEN_WORLD,
       description: "Add a window to a session and return it with its pane.",
       inputSchema: z
         .object({
@@ -184,7 +182,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "split_window",
     {
-      annotations: MUTATING_OPEN_WORLD,
       description:
         "Split a pane and return the new one. Direction is where the new pane goes " +
         "relative to the one you split.",
@@ -229,7 +226,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "rename_session",
     {
-      annotations: MUTATING,
       description: "Rename a session. Its id does not change, so targets by id keep working.",
       inputSchema: { name: literalTmuxText("name"), session: requestText("session") },
       outputSchema: { session: sessionViewSchema },
@@ -253,7 +249,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "rename_window",
     {
-      annotations: MUTATING,
       description: "Rename a window. Its id does not change.",
       inputSchema: { name: literalTmuxText("name"), windowId: windowIdSchema },
       outputSchema: { window: windowViewSchema },
@@ -273,7 +268,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "respawn_pane",
     {
-      annotations: MUTATING_OPEN_WORLD,
       description:
         "Restart a pane's command in place, keeping the pane and its id. Use to " +
         "recover a pane whose process died, rather than killing and re-splitting.",
@@ -309,7 +303,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "kill_pane",
     {
-      annotations: DESTRUCTIVE,
       description:
         "Close a pane and the process in it. Refuses the pane this server runs in " +
         "and every pane a person is watching; force confirms only this server's exact caller pane.",
@@ -329,7 +322,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "kill_window",
     {
-      annotations: DESTRUCTIVE,
       description: "Close a window and every pane in it.",
       inputSchema: { force: z.boolean().optional(), windowId: windowIdSchema },
       outputSchema: { killed: windowIdSchema },
@@ -354,7 +346,6 @@ export function registerLifecycle(mcp: ToolRegistrar, context: ToolContext): voi
   mcp.registerTool(
     "kill_session",
     {
-      annotations: DESTRUCTIVE,
       description:
         "Remove a session. Windows and panes shared with another session remain available there.",
       inputSchema: { force: z.boolean().optional(), session: requestText("session") },

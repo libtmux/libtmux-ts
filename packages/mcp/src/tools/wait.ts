@@ -14,7 +14,7 @@ import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { pendingUnsubmittedEcho } from "../pane_input.js";
 import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
-import { READ_ONLY, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
 import { isFailure, requirePane, type ReadablePane } from "../target_resolution.js";
@@ -466,7 +466,6 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
   mcp.registerTool(
     "wait_for_text",
     {
-      annotations: READ_ONLY,
       description,
       inputSchema,
       outputSchema: waitOutputSchema,

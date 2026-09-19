@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
-import { READ_ONLY, type ToolRegistrar } from "../register.js";
+import { type ToolRegistrar } from "../register.js";
 import { fail, limitEntries, ok, renderEntries } from "../results.js";
 import { inlineRequestText, requestText } from "../schemas.js";
 import { isFailure, requirePane, requireSession, requireWindow } from "../target_resolution.js";
@@ -105,7 +105,6 @@ export function registerSettings(mcp: ToolRegistrar, context: ToolContext): void
   mcp.registerTool(
     "show_option",
     {
-      annotations: READ_ONLY,
       description: "Read one named tmux option at server, session, window, or pane scope.",
       inputSchema: {
         name: inlineRequestText("name"),
@@ -139,7 +138,6 @@ export function registerSettings(mcp: ToolRegistrar, context: ToolContext): void
   mcp.registerTool(
     "show_hooks",
     {
-      annotations: READ_ONLY,
       description:
         "Read the hooks a server or session runs. Read-only: a hook set here would " +
         "outlive this process and keep firing in somebody's tmux. Put hooks a " +
@@ -201,7 +199,6 @@ export function registerSettings(mcp: ToolRegistrar, context: ToolContext): void
   mcp.registerTool(
     "show_environment",
     {
-      annotations: READ_ONLY,
       description:
         "The environment tmux gives processes it starts, at server or session " +
         "scope. This is what a new pane will inherit, not what a running one has.",

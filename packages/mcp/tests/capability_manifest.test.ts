@@ -219,6 +219,22 @@ test("one manifest governs every toolset subset, selection, metadata, and report
         openWorldHint: true,
         readOnlyHint: false,
       });
+      // Every tool carries that same value, which is the point: a host that
+      // auto-approves on annotations alone approves none of them, and the
+      // capability row is what tells one tool from another. Five separately
+      // named constants that were all one value used to sit at the call sites
+      // implying otherwise, and the registrar overwrote whatever they passed.
+      const annotated = tools.filter((tool) => tool.annotations !== undefined);
+      expect(annotated).toHaveLength(tools.length);
+      for (const tool of annotated) {
+        expect(tool.annotations, tool.name).toEqual({
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+          readOnlyHint: false,
+        });
+      }
+
       const listedBatch = tools.find(({ name }) => name === "call_read_tools_batch");
       expect(listedBatch?.description).toContain("inner tools receive no separate approval");
       expect(listedBatch?.description).toContain("explicit stop and truncation accounting");
