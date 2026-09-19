@@ -13,14 +13,15 @@ was asked for.
 A Bun workspace. Every package declares its own dependencies — one the root
 happens to install is not one a package may use.
 
-| Path                 | Package              | What it is                                                                                                                      |
-| -------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/libtmux`   | `libtmux`            | The library. Server, sessions, windows, panes, clients, formats, selections, snapshots, and engines. Zero runtime dependencies. |
-| `packages/mcp`       | `@libtmux/mcp`       | Serves one tmux server to Model Context Protocol clients.                                                                       |
-| `packages/workspace` | `@libtmux/workspace` | Builds tmux sessions from declarative YAML.                                                                                     |
-| `examples`           | —                    | Runnable examples, used as tests. The only `private` package.                                                                   |
+| Path                     | Package                  | What it is                                                                                                                      |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/libtmux`       | `libtmux`                | The library. Server, sessions, windows, panes, clients, formats, selections, snapshots, and engines. Zero runtime dependencies. |
+| `packages/mcp`           | `@libtmux/mcp`           | Serves one tmux server to Model Context Protocol clients.                                                                       |
+| `packages/workspace`     | `@libtmux/workspace`     | Builds tmux sessions from declarative YAML.                                                                                     |
+| `packages/workspace-cli` | `@libtmux/workspace-cli` | Runs the native tmux-workspace command for Node and Bun.                                                                        |
+| `examples`               | —                        | Runnable examples, used as tests. The only `private` package.                                                                   |
 
-The three published packages ship together under one version, from one tag.
+The release packages share one version and one tag.
 `attic/` is where reference material goes to rest; `packages/libtmux/parity` is
 not that — it is a gate input, read by `check-parity.ts`,
 `generate-formats.ts` and five unit tests, and it lives beside its readers.

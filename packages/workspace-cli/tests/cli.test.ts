@@ -1,0 +1,470 @@
+/* eslint-disable no-await-in-loop -- Command cases share one isolated fixture. */
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Readable, Writable } from "node:stream";
+import { run as runCli } from "../src/app.ts";
+import manifest from "../package.json" with { type: "json" };
+
+let root: string;
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "ltx-wcli-run-"));
+  await mkdir(join(root, ".tmuxp"));
+});
+afterEach(async () => {
+  await rm(root, { recursive: true, force: true });
+});
+function environment(extra: Record<string, string>) {
+  return {
+    ...process.env,
+    HOME: root,
+    TMUXP_CONFIGDIR: join(root, ".tmuxp"),
+    XDG_CONFIG_HOME: join(root, ".config"),
+    TMUX: "",
+    TMUX_PANE: "",
+    ...extra,
+  };
+}
+async function run(argv: string[], extra: Record<string, string> = {}) {
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  const capture = (chunks: Buffer[]) =>
+    new Writable({
+      write(chunk, _encoding, done) {
+        chunks.push(Buffer.from(chunk));
+        done();
+      },
+    });
+  const code = await runCli(argv, {
+    cwd: root,
+    env: environment(extra),
+    stdin: Readable.from([]),
+    stdout: capture(stdout),
+    stderr: capture(stderr),
+  });
+  return {
+    stdout: Buffer.concat(stdout).toString(),
+    stderr: Buffer.concat(stderr).toString(),
+    code,
+  };
+}
+async function runExecutable(argv: string[], extra: Record<string, string> = {}) {
+  const child = Bun.spawn(
+    [process.execPath, new URL("../src/main.ts", import.meta.url).pathname, ...argv],
+    {
+      cwd: root,
+      env: environment(extra),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { stdout, stderr, code };
+}
+
+test("--version prints the program name and its own version", async () => {
+  const result = await run(["--version"]);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toBe(`tmux-workspace ${manifest.version}\n`);
+  expect(result.stderr).toBe("");
+});
+
+test("every reference command has executable help", async () => {
+  for (const command of [
+    [],
+    ["load"],
+    ["freeze"],
+    ["ls"],
+    ["search"],
+    ["convert"],
+    ["import"],
+    ["import", "teamocil"],
+    ["import", "tmuxinator"],
+    ["edit"],
+    ["debug-info"],
+    ["shell"],
+    ["completion"],
+  ]) {
+    const result = await runExecutable([...command, "--help"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Usage:");
+    expect(result.stderr).toBe("");
+  }
+});
+
+test("completion prints sourceable scripts or structured content without a backend", async () => {
+  for (const shell of ["bash", "zsh", "fish"]) {
+    const script = await run(["completion", shell], { TMUX_BIN: "/missing-tmux" });
+    expect(script.code).toBe(0);
+    expect(script.stderr).toBe("");
+    expect(script.stdout).toContain("tmux-workspace");
+    for (const flag of ["--json", "--ndjson"]) {
+      const machine = await run(["completion", shell, flag, "--color", "always"], {
+        TMUX_BIN: "/missing-tmux",
+      });
+      expect(machine.code).toBe(0);
+      expect(machine.stderr).toBe("");
+      expect(JSON.parse(machine.stdout)).toMatchObject({
+        schema_version: 1,
+        command: "completion",
+        status: "ok",
+        shell,
+        script: script.stdout,
+      });
+    }
+  }
+});
+
+test("empty listing retains the JSON shape and emits no NDJSON records", async () => {
+  const result = await run(["--json", "ls"]);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout).workspaces).toEqual([]);
+  expect(result.stderr).toBe("");
+  expect((await run(["ls", "--json", "--ndjson"])).stdout).toBe("");
+});
+
+test("all extension inputs are validated before Python or tmux starts", async () => {
+  const first = join(root, "first.json");
+  const second = join(root, "second.json");
+  await writeFile(first, JSON.stringify({ session_name: "first", windows: [{}] }));
+  for (const fields of [
+    { plugins: "module.Plugin" },
+    { workspace_builder: 4 },
+    { workspace_builder_paths: ["missing"] },
+    { workspace_builder: "module:Custom", before_script: null },
+  ]) {
+    await writeFile(second, JSON.stringify({ session_name: "second", windows: [{}], ...fields }));
+    const result = await run(["load", first, second, "--append", "--json"], {
+      TMUX_BIN: "/missing-tmux",
+      TMUX_WORKSPACE_PYTHON: "/missing-python",
+    });
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
+  }
+  await writeFile(
+    second,
+    JSON.stringify({ session_name: "second", workspace_builder: "module:Custom" }),
+  );
+  const runtime = await run(["load", first, second, "-d", "--json"], {
+    TMUX_BIN: "/missing-tmux",
+    TMUX_WORKSPACE_PYTHON: "/missing-python",
+  });
+  expect(JSON.parse(runtime.stderr).code).toBe("script_failed");
+  expect(runtime.stdout).toBe("");
+});
+
+test("a malformed document reports invalid_workspace, not the generic fallback", async () => {
+  const bad = join(root, "bad.yaml");
+  await writeFile(bad, "a: [\n");
+  const result = await run(["load", bad, "-d", "--json"]);
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
+});
+
+test("an invalid layout name reports invalid_workspace", async () => {
+  const bad = join(root, "layout.yaml");
+  await writeFile(
+    bad,
+    "session_name: lay\nwindows:\n  - window_name: w\n    layout: definitely-not-a-layout\n    panes: [echo A]\n",
+  );
+  const result = await run(["load", bad, "-d", "--json"]);
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
+});
+
+test("convert and load give a malformed document the same code", async () => {
+  const bad = join(root, "broken.yaml");
+  await writeFile(bad, "a: [\n");
+  const converted = await run(["convert", bad, "--json"]);
+  const loaded = await run(["load", bad, "-d", "--json"]);
+  expect(converted.stdout).toBe("");
+  expect(JSON.parse(converted.stderr).code).toBe("invalid_workspace");
+  expect(JSON.parse(converted.stderr).code).toBe(JSON.parse(loaded.stderr).code);
+});
+
+test("a top-level unsupported key reports unsupported_key, not the generic fallback", async () => {
+  const bad = join(root, "bogus.yaml");
+  await writeFile(bad, "session_name: cb\nbogus: 1\nwindows:\n  - {}\n");
+  const result = await run(["load", bad, "-d", "--json"]);
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr).code).toBe("unsupported_key");
+});
+
+test("tmux unreachable reports tmux_unavailable on stdout and a flat stderr record", async () => {
+  const config = join(root, "ok.yaml");
+  await writeFile(config, "session_name: ok\nwindows:\n  - {}\n");
+  const result = await run(["load", config, "-d", "--json"], { TMUX_BIN: "/missing-tmux" });
+  expect(result.code).toBe(1);
+  expect(JSON.parse(result.stdout).errors[0]).toMatchObject({ code: "tmux_unavailable" });
+  const stderrLines = result.stderr
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const record = stderrLines.find((line) => line.code === "tmux_unavailable");
+  expect(record).toMatchObject({ schema_version: 1, code: "tmux_unavailable" });
+  // The user reads about the endpoint they named, not the transport's own words.
+  expect(result.stdout + result.stderr).not.toContain("cannot reach tmux");
+});
+
+test("convert without --yes or --save-to in human mode prints a plain sentence", async () => {
+  const source = join(root, "source.yaml");
+  await writeFile(source, "session_name: dev\nwindows:\n  - {}\n");
+  const result = await run(["convert", source]);
+  expect(result.code).toBe(2);
+  expect(result.stderr).toContain("Confirm conversion with --yes or provide --save-to");
+});
+
+test("invalid machine arguments leave stdout empty with a structured usage diagnostic", async () => {
+  for (const args of [
+    ["--json"],
+    ["--ndjson"],
+    ["import", "--json"],
+    ["import", "--ndjson"],
+    ["search", "--ndjson"],
+    ["search", "[", "--json"],
+    ["load", "x", "-2", "-8", "--json"],
+  ]) {
+    const result = await run(args);
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr).code).toBe("usage");
+  }
+  const executable = await runExecutable(["load", "--json"]);
+  expect(executable.code).toBe(2);
+  expect(executable.stdout).toBe("");
+  expect(JSON.parse(executable.stderr).code).toBe("usage");
+});
+
+test("an unknown subcommand is reported as such, not as excess arguments", async () => {
+  const result = await run(["frobnicate"]);
+  expect(result.code).toBe(2);
+  expect(result.stderr).toContain("unknown command");
+  expect(result.stderr).toContain("frobnicate");
+  expect(result.stderr).not.toContain("too many arguments");
+});
+
+test("legacy 88-color load fails before invoking tmux in every output mode", async () => {
+  const wrapper = join(root, "tmux-probe");
+  const marker = join(root, "called");
+  await writeFile(wrapper, '#!/bin/sh\nprintf called > "$WORKSPACE_TEST_MARKER"\nexit 99\n', {
+    mode: 0o700,
+  });
+  await writeFile(join(root, "dev.json"), JSON.stringify({ session_name: "dev", windows: [{}] }));
+  for (const mode of ["human", "json", "ndjson"]) {
+    const response = await run(
+      ["load", "dev.json", "-d", "-8", ...(mode === "human" ? [] : [`--${mode}`])],
+      { TMUX_BIN: wrapper, WORKSPACE_TEST_MARKER: marker },
+    );
+    expect(await Bun.file(marker).exists()).toBe(false);
+    expect(response.code).toBe(2);
+    expect(response.stdout).toBe("");
+    expect(response.stderr).toContain("88-color");
+    if (mode !== "human") expect(JSON.parse(response.stderr).code).toBe("usage");
+  }
+});
+
+test("native imports validate before preview, creation or replacement", async () => {
+  const source = join(root, "source.json");
+  const destination = join(root, "saved.json");
+  const cases = [
+    ["tmuxinator", { name: "x", pre: "touch unsupported", windows: [{ main: "true" }] }],
+    ["tmuxinator", { name: "x", windows: [] }],
+    ["tmuxinator", { windows: [{ main: "true" }] }],
+    ["teamocil", { name: "x", windows: [{ name: "main", filters: { after: "true" } }] }],
+    ["teamocil", { name: "x", windows: [{ name: "main", panes: [{ commands: [42] }] }] }],
+    ["tmuxinator", { name: "x", root: "<%= dynamic_root %>", windows: [{ main: "true" }] }],
+    ["tmuxinator", { name: "x", windows: [{ main: "echo <%= dynamic_command %>" }] }],
+    ["tmuxinator", { name: "x", windows: [{ "<%= dynamic_window %>": "true" }] }],
+  ] as const;
+  for (const [kind, document] of cases) {
+    await writeFile(source, JSON.stringify(document));
+    for (const mode of [[], ["--json"], ["--ndjson"]]) {
+      for (const publication of ["preview", "create", "replace"]) {
+        await rm(destination, { force: true });
+        if (publication === "replace") await writeFile(destination, "original bytes");
+        const args = ["import", kind, source, ...mode];
+        if (publication !== "preview") args.push("--save-to", destination, "--force");
+        const result = await run(args, {
+          TMUX_BIN: "/missing-tmux",
+          TMUX_WORKSPACE_PYTHON: "/missing-python",
+        });
+        expect(result.code, result.stderr).toBe(1);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).not.toContain("missing-tmux");
+        expect(result.stderr).not.toContain("missing-python");
+        if (JSON.stringify(document).includes("<%")) expect(result.stderr).toContain("ERB");
+        if (publication === "replace")
+          expect(await readFile(destination, "utf8")).toBe("original bytes");
+        else expect(await Bun.file(destination).exists()).toBe(false);
+      }
+    }
+  }
+});
+
+test("native imports save without checking the backend or directory availability", async () => {
+  await writeFile(
+    join(root, "source.json"),
+    JSON.stringify({
+      name: "later",
+      root: "not-created",
+      windows: [{ main: "true" }],
+    }),
+  );
+  const result = await run(
+    [
+      "import",
+      "tmuxinator",
+      "source.json",
+      "--save-to",
+      "saved.json",
+      "--workspace-format",
+      "json",
+      "--json",
+    ],
+    { TMUX_BIN: "/missing-tmux", TMUX_WORKSPACE_PYTHON: "/missing-python" },
+  );
+  expect(result.code, result.stderr).toBe(0);
+  expect(JSON.parse(await readFile(join(root, "saved.json"), "utf8")).start_directory).toBe(
+    join(root, "not-created"),
+  );
+});
+
+test("convert machine stdout preserves the document and performs no guessed write", async () => {
+  await writeFile(
+    join(root, "dev.yaml"),
+    "session_name: dev\nwindows: []\nplugins: [demo.Plugin]\n",
+  );
+  const result = await run(["convert", "dev.yaml", "--json"]);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({
+    session_name: "dev",
+    windows: [],
+    plugins: ["demo.Plugin"],
+  });
+  expect(result.stderr).toBe("");
+  // Machine output is one compact line, matching five of the six other ports;
+  // an indented document makes a poor diff and cannot be piped into a file.
+  expect(result.stdout).toBe(
+    JSON.stringify({ session_name: "dev", windows: [], plugins: ["demo.Plugin"] }) + "\n",
+  );
+});
+
+test("search combines qualified fields and returns a stable empty array", async () => {
+  await writeFile(
+    join(root, ".tmuxp/dev.yaml"),
+    "session_name: service\nwindows:\n  - window_name: editor\n    panes: [vim, 'npm test', 'echo constructor:vim']\n",
+  );
+  const result = await run(["search", "session:service", "pane:vim", "--json"]);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)[0]).toMatchObject({
+    name: "dev",
+    session_name: "service",
+    matched_fields: ["session_name", "pane"],
+  });
+  expect(JSON.parse((await run(["search", "absent", "--json"])).stdout)).toEqual([]);
+  expect((await run(["search", "editor", "-f", "WINDOW", "--json"])).code).toBe(0);
+  expect((await run(["search", "editor", "-f", "window,pane", "--json"])).code).toBe(2);
+  expect((await run(["search", "editor", "-f", "constructor", "--json"])).code).toBe(2);
+  expect(JSON.parse((await run(["search", "constructor:vim", "--json"])).stdout)).toHaveLength(1);
+  expect(JSON.parse((await run(["search", "cmd:vim", "--json"])).stdout)).toEqual([]);
+});
+
+test("forced human color styles separate roles while machine data stays ANSI-free", async () => {
+  await writeFile(
+    join(root, ".tmuxp/dev.json"),
+    JSON.stringify({ session_name: "Unicode Δ\n\u001b[31m", windows: [] }),
+  );
+  const human = await run(["--color", "always", "ls"], { NO_COLOR: "" });
+  expect(human.code).toBe(0);
+  expect(human.stdout).toContain("\u001b[1;36m");
+  expect(human.stdout).toContain("\u001b[1;35m");
+  const machine = await run(["--color", "always", "ls", "--json"], {
+    FORCE_COLOR: "1",
+    NO_COLOR: "",
+  });
+  expect(machine.stdout).not.toContain("\u001b");
+  expect(JSON.parse(machine.stdout).workspaces[0].session_name).toBe("Unicode Δ\n\u001b[31m");
+});
+
+test("editor uses quoted argv, returns child status, and keeps machine stdout structured", async () => {
+  await writeFile(
+    join(root, ".tmuxp/dev.json"),
+    JSON.stringify({ session_name: "dev", windows: [] }),
+  );
+  const script = join(root, "test editor.js");
+  await writeFile(
+    script,
+    'process.stdout.write(JSON.stringify(process.argv.slice(2)));process.stderr.write("editor diagnostic");process.exit(7);',
+  );
+  const result = await runExecutable(["edit", "dev", "--json"], {
+    EDITOR: `'${process.execPath}' '${script}' --wait`,
+  });
+  expect(result.code).toBe(7);
+  expect(result.stderr).toBe("");
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({
+    schema_version: 1,
+    command: "edit",
+    child_status: 7,
+    status: "error",
+    stderr: "editor diagnostic",
+  });
+  expect(JSON.parse(output.stdout)).toEqual(["--wait", join(root, ".tmuxp/dev.json")]);
+});
+
+test("diagnostics reports runtime and masked paths without needing a live server", async () => {
+  const result = await run(["debug-info", "--json"]);
+  expect(result.code).toBe(0);
+  expect(result.stderr).toBe("");
+  const data = JSON.parse(result.stdout);
+  expect(data.port).toBe("typescript");
+  expect(data.cwd).toBe("~");
+  expect(data.runtime.version).toBeString();
+  expect(data.tmux.version).toStartWith("tmux ");
+});
+
+test("load logging records preflight errors and honors the selected severity", async () => {
+  const log = join(root, "load.ndjson");
+  const result = await run([
+    "--log-level",
+    "debug",
+    "load",
+    "missing",
+    "-d",
+    "--json",
+    "--log-file",
+    log,
+  ]);
+  expect(result.code).toBe(1);
+  const records = (await readFile(log, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(
+    records.some((record) => record.level === "debug" && record.event === "command-started"),
+  ).toBe(true);
+  expect(
+    records.some((record) => record.level === "error" && record.event === "command-failed"),
+  ).toBe(true);
+  expect((await stat(log)).mode & 0o777).toBe(0o600);
+  const before = await readFile(log, "utf8");
+  await run(["--log-level", "critical", "load", "missing", "-d", "--json", "--log-file", log]);
+  expect(await readFile(log, "utf8")).toBe(before);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).not.toContain("\u001b");
+  expect(
+    result.stderr
+      .trim()
+      .split("\n")
+      .every((line) => JSON.parse(line).schema_version === 1),
+  ).toBe(true);
+});

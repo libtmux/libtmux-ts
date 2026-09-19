@@ -1,4 +1,4 @@
-import { TmuxCommandError, TmuxServerRestarted } from "../../exc.js";
+import { LibTmuxException, TmuxCommandError, TmuxServerRestarted } from "../../exc.js";
 import type { CommandOptions, CommandResult } from "../../common.js";
 import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.js";
 import type { RuntimeContext } from "../runtime/context.js";
@@ -123,4 +123,22 @@ export async function runCommands(
     });
   }
   return result.stdout;
+}
+
+/**
+ * Whether a command failed only because no daemon is listening on the socket,
+ * as opposed to a daemon that answered and refused the command, or a socket a
+ * caller has no permission to reach.
+ */
+export function isColdEndpoint(error: unknown): boolean {
+  const reason =
+    error instanceof TmuxCommandError
+      ? error.stderr.join("\n").trim()
+      : error instanceof LibTmuxException
+        ? error.message.replace(/^cannot reach tmux: /u, "")
+        : "";
+  return (
+    reason.startsWith("no server running on ") ||
+    (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)"))
+  );
 }

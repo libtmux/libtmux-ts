@@ -34,12 +34,12 @@ function serverFor(fixture: TestServer): Server {
  * Trimmed from the library's own engine fixture. What matters here is only
  * that nothing this package does spawns tmux itself.
  */
-function shellEngine(onInvocation: () => void): TmuxEngine {
+function shellEngine(onInvocation: (args: readonly string[]) => void): TmuxEngine {
   const run = async (
     request: TmuxInvocationRequest,
     args: readonly string[],
   ): Promise<TmuxCommandResult> => {
-    onInvocation();
+    onInvocation(args);
     const quoted = [request.executable, ...args]
       .map((argument) => `'${argument.replaceAll("'", `'\\''`)}'`)
       .join(" ");
@@ -620,12 +620,14 @@ windows:
             `    layout: ${layout}`,
             "    panes:",
             `      - "echo ran >> ${marker}"`,
+            "      - {}",
           ].join("\n"),
         );
 
-      await expect(applyWorkspace(server, workspace("not-a-layout"))).rejects.toBeInstanceOf(
-        WorkspaceApplyError,
-      );
+      // This safe tree reaches tmux, which rejects its mismatched child heights.
+      await expect(
+        applyWorkspace(server, workspace("79f5,80x24,0,0{39x23,0,0,0,40x24,40,0,1}")),
+      ).rejects.toBeInstanceOf(WorkspaceApplyError);
       await drain(server, "once", marker);
       expect(ranCount(await readMarker(marker))).toBe(1);
 
@@ -957,4 +959,91 @@ windows:
       await rm(parent, { force: true, recursive: true });
     }
   }, 60_000);
+});
+
+test("layout preflight preserves a borrowed workspace before options", async () => {
+  await withServer(async (fixture) => {
+    const server = serverFor(fixture);
+    const before = await server.snapshot();
+    await expect(
+      applyWorkspace(
+        server,
+        {
+          session_name: fixture.sessionName,
+          options: { "@changed": "yes" },
+          windows: [
+            { window_name: "invalid", layout: "b25d,80x24,0,0,0", panes: ["true", "true"] },
+          ],
+        },
+        { commands: "create-only" },
+      ),
+    ).rejects.toBeInstanceOf(TypeError);
+    const after = await server.snapshot();
+    expect(after.daemonIdentity).toEqual(before.daemonIdentity);
+    expect(after.windows.toArray().map((window) => window.id)).toEqual(
+      before.windows.toArray().map((window) => window.id),
+    );
+    expect(after.panes.toArray().map((pane) => pane.id)).toEqual(
+      before.panes.toArray().map((pane) => pane.id),
+    );
+    expect((await after.sessions.one().showOptions()).has("@changed")).toBe(false);
+  });
+});
+
+test("an empty workspace layout is never handed to tmux", async () => {
+  await withServer(async (fixture) => {
+    const recorded: string[][] = [];
+    const server = new Server({
+      engine: shellEngine((args) => {
+        recorded.push([...args]);
+      }),
+      environment: fixture.controllerEnvironment,
+      socketPath: fixture.socketPath,
+      tmuxBin: fixture.tmuxExecutable,
+    });
+    const session = await applyWorkspace(server, {
+      session_name: "empty-layout",
+      windows: [
+        { window_name: "default", layout: "", panes: ["true", "true"] },
+        { window_name: "arranged", layout: "tiled", panes: ["true", "true"] },
+      ],
+    });
+    const applied = recorded.filter((args) =>
+      args.some((argument) => argument.includes("select-layout")),
+    );
+    // Rebalancing between splits is the builder's own pass, so tiled is the
+    // only layout tmux is asked for; the empty string is never handed over.
+    expect(applied.length).toBeGreaterThan(0);
+    expect(applied.every((args) => args.some((argument) => argument === "tiled"))).toBe(true);
+    expect(session.windows.one({ name: "default" }).panes.length).toBe(2);
+  });
+});
+
+test("builds a six-pane window at a default terminal size", async () => {
+  await withServer(async (fixture) => {
+    const server = serverFor(fixture);
+    const session = await applyWorkspace(server, {
+      session_name: "crowded",
+      windows: [{ window_name: "many", panes: ["true", "true", "true", "true", "true", "true"] }],
+    });
+    const window = (await session.refreshed()).windows.one({ name: "many" });
+    expect(window.panes.length).toBe(6);
+  });
+});
+
+test("an already-aborted signal stops applyWorkspace before any session exists", async () => {
+  await withServer(async (fixture) => {
+    const server = serverFor(fixture);
+    // The rejection has to come from the signal reaching the layout preflight,
+    // not from `signal` being an unrecognized option -- that would also throw
+    // and also leave no session behind, and prove nothing about cancellation.
+    await expect(
+      applyWorkspace(
+        server,
+        { session_name: "aborted-before-build", windows: [{}] },
+        { signal: AbortSignal.abort() },
+      ),
+    ).rejects.toThrow(/cancelled/);
+    expect(await server.hasSession("aborted-before-build")).toBe(false);
+  });
 });

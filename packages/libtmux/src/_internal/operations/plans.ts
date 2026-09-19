@@ -57,13 +57,23 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
 }
 
 function newWindowArgs(sessionId: string | null, options: NewWindowOptions): readonly string[] {
+  if (options.index !== undefined) {
+    if (!Number.isInteger(options.index) || options.index < 0 || options.index > 2_147_483_647) {
+      throw new TypeError("window index must be an integer from 0 to 2147483647");
+    }
+    if (options.direction !== undefined) {
+      throw new TypeError("window index cannot be combined with direction");
+    }
+  }
+  const target =
+    options.index === undefined ? sessionId : `${sessionId ?? ""}:${String(options.index)}`;
   return [
     "new-window",
     "-d",
     "-P",
     "-F",
     "#{window_id}",
-    ...(sessionId == null ? [] : ["-t", sessionId]),
+    ...(target == null ? [] : ["-t", target]),
     ...(options.name === undefined ? [] : ["-n", assertName("window", options.name)]),
     ...(options.direction === undefined ? [] : [WINDOW_DIRECTION_FLAG_MAP[options.direction]]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),

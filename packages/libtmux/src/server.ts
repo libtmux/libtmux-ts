@@ -40,6 +40,7 @@ import { Session } from "./session.js";
 import { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killServer, newSession } from "./_internal/operations/mutations.js";
+import { validateLayouts } from "./_internal/operations/layout.js";
 import {
   setOption,
   showOptions,
@@ -93,7 +94,7 @@ import type { CommandTransport } from "./_internal/transport/types.js";
 export type DaemonIdentity = DaemonGuard;
 
 export interface ServerOptions {
-  readonly colors?: 88 | 256;
+  readonly colors?: 256;
   readonly configFile?: string;
   /**
    * The complete environment passed to every spawned `tmux` process.
@@ -247,13 +248,13 @@ export class Server {
   }
 
   /**
-   * How many colours this server was told the terminal has.
+   * The terminal color override; undefined leaves detection to tmux.
    *
    * ```ts
    * new Server({ colors: 256 }).colors; // 256
    * ```
    */
-  get colors(): 88 | 256 | undefined {
+  get colors(): 256 | undefined {
     return runtimeForServerValue(this)?.connection.colors;
   }
 
@@ -425,9 +426,11 @@ export class Server {
    * Acquisition is the only step that talks to tmux. Everything reachable from
    * the returned value resolves locally, so traversal and filtering issue no
    * commands and an earlier snapshot keeps reporting its own instant.
+   * `daemonIdentity` identifies the daemon captured with these collections.
    *
    * ```ts
    * const now = await server.snapshot();
+   * now.daemonIdentity.pid;
    * now.windows.count();
    * ```
    */
@@ -502,8 +505,8 @@ export class Server {
    * before.pid === after.pid;
    * ```
    */
-  async daemonIdentity(): Promise<DaemonIdentity> {
-    const graph = await acquireServerGraph(runtimeForServer(this));
+  async daemonIdentity(options: SnapshotOptions = {}): Promise<DaemonIdentity> {
+    const graph = await acquireServerGraph(runtimeForServer(this), options.signal);
     const identity = graph.capture.daemon;
     if (identity === undefined) {
       throw new LibTmuxException("live acquisition omitted the daemon identity");
@@ -531,8 +534,8 @@ export class Server {
    * options.get("escape-time");
    * ```
    */
-  showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForServer(this), "server");
+  showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForServer(this), "server", null, options);
   }
 
   /**
@@ -546,8 +549,8 @@ export class Server {
    * (await server.showResolvedOptions()).get("message-limit");
    * ```
    */
-  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
-    return showResolvedOptions(runtimeForServer(this), "server", null);
+  showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForServer(this), "server", null, options);
   }
 
   /**
@@ -601,8 +604,11 @@ export class Server {
    * defaults.get("default-shell");
    * ```
    */
-  showGlobalOptions(scope: "session" | "window"): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForServer(this), scope, null, { global: true });
+  showGlobalOptions(
+    scope: "session" | "window",
+    options?: CommandOptions,
+  ): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForServer(this), scope, null, { ...options, global: true });
   }
 
   /**
@@ -678,6 +684,32 @@ export class Server {
   }
 
   /**
+   * Check every planned window layout before setup scripts or mutations.
+   *
+   * Names accept unique abbreviations. Only version-sensitive names query the
+   * daemon; a cold endpoint uses the selected client. Checksums, bounded tree
+   * structure and pane counts are checked locally; tmux owns geometry and pruning.
+   * This API limits custom layouts to 8192 characters and 256 nested groups.
+   *
+   * @throws TypeError when a layout, pane count or version reply is invalid.
+   * @throws TmuxCommandError when the daemon or client version cannot be read.
+   * @throws TmuxTransportError when validation is cancelled or a version probe fails.
+   *
+   * ```ts
+   * await server.validateLayouts([
+   *   { layout: "even-h", panes: 2 },
+   *   { layout: "tiled", panes: 1 },
+   * ]);
+   * ```
+   */
+  validateLayouts(
+    layouts: readonly { readonly layout: string; readonly panes: number }[],
+    options?: CommandOptions,
+  ): Promise<void> {
+    return validateLayouts(runtimeForServer(this), layouts, options);
+  }
+
+  /**
    * The tmux version this server is running.
    *
    * The version is probed once per connection and cached with the rest of the
@@ -696,8 +728,11 @@ export class Server {
    * Whether this server is at least `minimum`, written the way tmux writes it.
    *
    * This is how a caller gates on a feature that arrived in a known release
-   * without parsing `#{version}` themselves. Development builds such as
-   * `next-3.8` compare above every tagged release.
+   * without parsing `#{version}` themselves. A named development build such
+   * as `next-3.9` has not shipped the release it names: it is at least
+   * `3.8`, but not at least `3.9`. An untargeted development build (bare
+   * `master`, or `<tag>-master`) names no release it is heading toward, so
+   * nothing bounds it — it is at least anything.
    *
    * ```ts
    * if (await server.versionAtLeast("3.3")) {
@@ -795,9 +830,14 @@ export class Server {
   /**
    * Whether a session with this name exists.
    *
-   * The name is matched exactly. tmux normally accepts a unique prefix as a
-   * session target, which would make checking `work` answer yes for
-   * `workspace`; this method does not.
+   * The name is matched exactly, including one holding "." or ":". tmux
+   * normally accepts a unique prefix as a session target, which would make
+   * checking `work` answer yes for `workspace`; this method does not, and it
+   * lists every session and compares in JavaScript rather than asking tmux
+   * to resolve a target, since no target spelling is both exact and correct
+   * for a name holding a target separator. No server running on the socket
+   * answers `false`; any other failure to list sessions raises rather than
+   * being read as "no such session".
    *
    * ```ts
    * if (!(await server.hasSession("work"))) {

@@ -51,15 +51,6 @@ const ADJUSTMENTS = {
   up: ResizeAdjustmentDirection.Up,
 } as const;
 
-/** tmux's named arrangements, which `select_layout` also accepts a layout string for. */
-const LAYOUTS = [
-  "even-horizontal",
-  "even-vertical",
-  "main-horizontal",
-  "main-vertical",
-  "tiled",
-] as const;
-
 const sourceSessionSchema = requestText("sourceSession")
   .optional()
   .describe("Source session id or name. Required when the id has several placements.");
@@ -212,11 +203,14 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
     {
       annotations: MUTATING,
       description:
-        "Rearrange a window's panes. Takes one of tmux's named layouts, or a layout " +
-        "string from an earlier window whose `metadataComplete` is true to reproduce it exactly.",
+        "Rearrange a window's panes using a named layout, a unique abbreviation for the " +
+        "running daemon, or a checksummed saved layout from a window whose metadataComplete " +
+        "is true. tmux may adapt dimensions or prune extra cells; the returned window.layout " +
+        "reports the observed result.",
       inputSchema: {
         layout: inlineRequestText("layout").describe(
-          `One of ${LAYOUTS.join(", ")}, or a tmux layout string.`,
+          "A tmux named layout, unique abbreviation for the running version, or checksummed " +
+            "saved layout. Geometry and pruning follow tmux.",
         ),
         windowId: windowIdSchema,
       },
@@ -230,20 +224,7 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
       await window.selectLayout(layout);
       const view = projectWindow(await context.snapshot(), windowId);
       if (isFailure(view)) return view;
-      // A layout string describing a different number of panes is accepted and
-      // does nothing: tmux exits 0 and leaves the window alone. A named layout
-      // is always applied, so only the string form can silently miss — and the
-      // window this returns already knows which layout it ended up with.
-      const ignored =
-        !LAYOUTS.includes(layout as (typeof LAYOUTS)[number]) && view.layout !== layout;
-      return ok(
-        { window: view },
-        windowLine(view) +
-          (ignored
-            ? `\n\n[the layout string was not applied: the returned window.layout is unchanged. ` +
-              `tmux accepts a layout describing a different set of panes and changes nothing.]`
-            : ""),
-      );
+      return ok({ window: view }, windowLine(view));
     },
   );
 
