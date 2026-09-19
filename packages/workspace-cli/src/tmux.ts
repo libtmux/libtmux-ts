@@ -513,7 +513,20 @@ async function create(
     }
   }
   result.stage = "session-options";
-  await options(session, spec.data.options, context.signal);
+  // pane-base-index and its like are window options in tmux, and setting one
+  // through a session target lands it on whichever window is current -- here,
+  // the bootstrap window that is about to be removed. A session's options are
+  // split by scope, and the window-scoped ones follow every window this builds.
+  const declared = spec.data.options === undefined ? {} : mapping(spec.data.options, "options");
+  const sessionScoped: Document = {};
+  const windowScoped: Document = {};
+  if (Object.keys(declared).length > 0) {
+    const windowOptions = await server.showGlobalOptions("window", acquisition);
+    for (const [name, value] of Object.entries(declared))
+      if (windowOptions.has(name)) windowScoped[name] = value;
+      else sessionScoped[name] = value;
+  }
+  await options(session, sessionScoped, context.signal);
   for (const [name, value] of Object.entries(
     spec.data.global_options ? mapping(spec.data.global_options) : {},
   ))
@@ -589,6 +602,9 @@ async function create(
       await removePlaceholder(session, placeholder, result);
     }
     result.stage = "window-options";
+    // The document's own window options come second, so a window that names
+    // one again wins over the session-scoped spelling.
+    await options(window, windowScoped, context.signal);
     await options(window, desired.data.options, context.signal);
     await output.event("window-created", {
       input_index: inputIndex,

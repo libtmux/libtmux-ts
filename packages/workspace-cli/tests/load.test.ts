@@ -2308,3 +2308,22 @@ test("an unknown builder option and a missing start_directory warn without refus
     expect(await server.hasSession("warned")).toBe(true);
   });
 });
+
+test("a window option under the session's options is applied at window scope", async () => {
+  await fixture(async (server, root, run) => {
+    const file = join(root, "pbi.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        session_name: "pbi",
+        options: { "pane-base-index": 1, "history-limit": 9999 },
+        windows: [{ window_name: "w", panes: ["true", "true"] }],
+      }),
+    );
+    const result = await run(["load", file, "-d", "--json"]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const session = (await server.snapshot()).sessions.one({ name: "pbi" });
+    expect(Number(session.windows.one({ name: "w" }).panes.at(0)!.index)).toBe(1);
+    expect((await session.showOptions()).get("history-limit")).toBe("9999");
+  });
+});
