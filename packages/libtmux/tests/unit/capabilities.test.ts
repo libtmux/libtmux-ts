@@ -31,7 +31,7 @@ function resultFor(request: CommandRequest, version: string): RawCommandResult {
     exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\t101\t202\n`),
+    stdout: encoder.encode(`${version};101;202\n`),
   };
 }
 
@@ -149,7 +149,7 @@ describe("tmux capabilities", () => {
       "-S/tmp/capability.sock",
       "display-message",
       "-p",
-      "#{version}\t#{pid}\t#{start_time}",
+      "#{version};#{pid};#{start_time}",
     ]);
 
     currentEpoch = epoch(10);
@@ -312,19 +312,19 @@ describe("tmux capabilities", () => {
         diagnostic: "invalid tmux version",
         exitCode: 0,
         stderr: "",
-        stdout: "#{version}\t101\t202\n",
+        stdout: "#{version};101;202\n",
       },
       {
         diagnostic: "tmux capability probe returned an invalid daemon identity",
         exitCode: 0,
         stderr: "",
-        stdout: "3.7b\t101\n",
+        stdout: "3.7b;101\n",
       },
       {
         diagnostic: "tmux capability probe returned an invalid daemon identity",
         exitCode: 0,
         stderr: "",
-        stdout: "3.7b\tone\t202\n",
+        stdout: "3.7b;one;202\n",
       },
       {
         diagnostic: "cannot reach tmux: no server running",
@@ -365,7 +365,7 @@ describe("tmux capabilities", () => {
         "-N",
         "display-message",
         "-p",
-        "#{version}\t#{pid}\t#{start_time}",
+        "#{version};#{pid};#{start_time}",
       ]);
       expect(probeError).toBeInstanceOf(LibTmuxError);
       expect((probeError as Error).message).toContain(reply.diagnostic);

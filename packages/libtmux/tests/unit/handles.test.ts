@@ -90,7 +90,7 @@ function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult 
     exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version}\t101\t202\n`),
+    stdout: encoder.encode(`${version};101;202\n`),
   };
 }
 
@@ -530,7 +530,7 @@ describe("logical reference binding", () => {
       "-Lhandles",
       "display-message",
       "-p",
-      "#{version}\t#{pid}\t#{start_time}",
+      "#{version};#{pid};#{start_time}",
     ]);
   });
 

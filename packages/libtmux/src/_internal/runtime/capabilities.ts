@@ -169,7 +169,15 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
     if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);
     return snapshotInvocationRequest({
-      commands: [["display-message", "-p", "#{version}\t#{pid}\t#{start_time}"]],
+      // `;` rather than a tab: tmux sanitizes a literal tab out of
+      // `display-message` output when the client's locale is not a UTF-8 one,
+      // substituting `_` and running the three fields together. A stripped
+      // environment is ordinary — a systemd unit, a container, cron, an MCP
+      // client that curates its env — and this probe runs before every other
+      // command, so the whole library failed there. Measured on 3.2a, 3.7c,
+      // 3.8-rc and master; `;` survives all four. Every other format this
+      // package reads is already `;`-separated.
+      commands: [["display-message", "-p", "#{version};#{pid};#{start_time}"]],
       environment: this.#connection.environment,
       executable: this.#connection.executable,
       globalArgs: args,
@@ -215,7 +223,7 @@ export class LazyCapabilityBinding implements CapabilityBinding {
         subcommand: "display-message",
       });
     }
-    const [rawVersion, pid, startTime, extra] = replies[0]!.split("\t");
+    const [rawVersion, pid, startTime, extra] = replies[0]!.split(";");
     if (
       rawVersion === undefined ||
       pid === undefined ||
