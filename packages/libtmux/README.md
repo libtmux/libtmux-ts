@@ -1489,7 +1489,31 @@ constant surface. Each model is also its own subpath: `libtmux/server`,
 `libtmux/selection`. Supporting subpaths are `libtmux/formats`,
 `libtmux/constants`, `libtmux/common`, and `libtmux/errors`.
 
-Three specialist subpaths keep their complete contracts out of the root:
+`libtmux/testing` records a real server's answers and replays them, so a
+consumer's own unit tests need no tmux:
+
+<!-- static: the recording is written by a run against a real server -->
+
+```ts
+import { recordInvocations, replayInvocations } from "libtmux/testing";
+
+// Once, against real tmux: wrap the engine and keep what it answered.
+const recorder = recordInvocations();
+const recording = new Server({ engine: recorder.engine, socketPath: server.socketPath });
+await recording.snapshot();
+
+// Ever after, with no server, no binary and no daemon.
+const replayed = new Server({ engine: replayInvocations(recorder.recording()) });
+(await replayed.snapshot()).sessions.count();
+```
+
+A recording is JSON and replays a run rather than answering a query: the same
+calls in the same order get the same answers, and one the recording never saw
+raises rather than reporting an empty server. Record guards are rewritten to
+the ones each replayed call asks for, so a fixture is not tied to the run that
+made it.
+
+Four specialist subpaths keep their complete contracts out of the root:
 `libtmux/engine` for custom execution engines, `libtmux/types` for the full
 operation and event type inventory, and `libtmux/field-types` for generated
 format-field, decoded-value, and handle-alias types.

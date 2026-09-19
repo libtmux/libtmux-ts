@@ -125,6 +125,12 @@
       "bun": "./src/engine.ts",
       "import": "./dist/engine.js",
       "default": "./dist/engine.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "bun": "./src/testing.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {

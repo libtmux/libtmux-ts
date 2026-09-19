@@ -267,6 +267,7 @@ describe("package contract", () => {
       "./client",
       "./selection",
       "./engine",
+      "./testing",
     ]);
     expect(packageManifest.exports["."]).toEqual({
       types: "./dist/index.d.ts",

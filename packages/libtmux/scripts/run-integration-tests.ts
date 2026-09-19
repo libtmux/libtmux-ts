@@ -53,6 +53,7 @@ const SUITES: readonly string[] = [
   // types name `format_types` as what proves them on every version CI runs.
   "tests/integration/environment.test.ts",
   "tests/integration/format_types.test.ts",
+  "tests/integration/testing_doubles.test.ts",
 ];
 
 /** Run by `test:differential`, which needs the Python oracle this runner has no part in. */
