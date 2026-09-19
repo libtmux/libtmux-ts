@@ -7,6 +7,7 @@ import {
   checkBunVersionAgreement,
   extractVersionLiterals,
 } from "./bun_version_pins.js";
+import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
 
 /**
  * Hold the shell blocks and version claims in the docs to what the repository
@@ -18,19 +19,20 @@ import {
  * it, and went on saying so through five published releases. Nothing was in a
  * position to notice.
  *
- * Seven claims are checked, all of them answerable from the tree:
+ * Eight claims are checked, all of them answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
  * - a package named in an install command is one this workspace publishes;
  * - a public install example pins prerelease packages to the manifest version;
  * - a tmux badge lists exactly the versions CI runs the suite against;
  * - every published package README states the tested host-platform boundary;
- *   and
  * - the Bun versions recorded in the CI matrix, the regex corpus, the
  *   `packageManager` pin, every manifest's `engines.bun` floor, and the
- *   CONTRIBUTING prose all agree; and
+ *   CONTRIBUTING prose all agree;
  * - the two module counts CONTRIBUTING gives for `test:node`'s scope match
- *   the tree.
+ *   the tree; and
+ * - the README and CHANGELOG tables of contents list exactly the headings
+ *   each file has, in order, with the anchor GitHub would mint for each.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -245,6 +247,121 @@ for (const file of packageReadmes) {
   }
 }
 
+/**
+ * The two long documents this repository ships get a table of contents,
+ * checked against the headings each file actually has rather than hand-kept.
+ * The README's previous, hand-grouped index had already drifted — it silently
+ * dropped five headings a themed grouping missed — which is the failure mode
+ * a mechanical listing cannot reproduce.
+ *
+ * `depth` is the deepest heading level the table of contents lists. It is
+ * fixed per file rather than inferred from the block: inferring it from
+ * whatever the table currently lists would let a whole level of entries be
+ * deleted without this noticing.
+ */
+const tablesOfContents = [
+  { depth: 3, file: "packages/libtmux/README.md" },
+  { depth: 2, file: "packages/libtmux/CHANGELOG.md" },
+] as const;
+
+interface DocHeading {
+  readonly level: number;
+  readonly line: number;
+  readonly text: string;
+}
+
+/** Headings at level 2 up to `maxLevel`, skipping fenced code so a `#` in a shell block cannot count. */
+function headingsUpTo(markdown: string, maxLevel: number): readonly DocHeading[] {
+  const headings: DocHeading[] = [];
+  let fenced = false;
+  for (const [index, line] of markdown.split("\n").entries()) {
+    if (/^\s*```/u.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    const match = /^(#{1,6})\s+(.*)$/u.exec(line);
+    if (match?.[1] === undefined) continue;
+    if (match[1].length < 2 || match[1].length > maxLevel) continue;
+    headings.push({ level: match[1].length, line: index + 1, text: match[2] ?? "" });
+  }
+  return headings;
+}
+
+/** The anchor GitHub mints for each heading, de-duplicating repeats with `-1`, `-2`, ... */
+function githubAnchors(headings: readonly DocHeading[]): readonly string[] {
+  const seen = new Map<string, number>();
+  return headings.map(({ text }) => {
+    const base = slugify(text);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return count === 0 ? base : `${base}-${String(count)}`;
+  });
+}
+
+interface TocEntry {
+  readonly anchor: string;
+  readonly level: number;
+  readonly line: number;
+  readonly text: string;
+}
+
+/** The `- [text](#anchor)` lines between the `<!-- toc -->` markers this gate owns. */
+function tocEntries(markdown: string): readonly TocEntry[] | undefined {
+  const lines = markdown.split("\n");
+  const start = lines.findIndex((line) => line.trim() === "<!-- toc -->");
+  const end = lines.findIndex((line) => line.trim() === "<!-- /toc -->");
+  if (start === -1 || end === -1 || end <= start) return undefined;
+
+  const entries: TocEntry[] = [];
+  for (let index = start + 1; index < end; index += 1) {
+    const line = lines[index] ?? "";
+    const match = /^(\s*)- \[(.+)\]\(#(.+)\)$/u.exec(line);
+    if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) continue;
+    entries.push({
+      anchor: match[3],
+      level: 2 + match[1].length / 2,
+      line: index + 1,
+      text: match[2],
+    });
+  }
+  return entries;
+}
+
+let tocEntriesChecked = 0;
+
+for (const { depth, file } of tablesOfContents) {
+  // eslint-disable-next-line no-await-in-loop -- two documents, reported in list order.
+  const markdown = await Bun.file(join(repositoryRoot, file)).text();
+  const entries = tocEntries(markdown);
+  if (entries === undefined) {
+    failures.push(`${file}: has no <!-- toc --> ... <!-- /toc --> block to check`);
+    continue;
+  }
+
+  const headings = headingsUpTo(markdown, depth);
+  const anchors = githubAnchors(headings);
+
+  if (entries.length !== headings.length) {
+    failures.push(
+      `${file}: table of contents lists ${String(entries.length)} headings; the file has ${String(headings.length)} up to level ${String(depth)}`,
+    );
+    continue;
+  }
+
+  for (const [index, entry] of entries.entries()) {
+    const heading = headings[index];
+    const anchor = anchors[index];
+    if (heading === undefined || anchor === undefined) continue;
+    tocEntriesChecked += 1;
+    if (entry.level !== heading.level || entry.text !== heading.text || entry.anchor !== anchor) {
+      failures.push(
+        `${file}:${String(entry.line)}: table of contents entry ${String(index + 1)} is "${entry.text}" (#${entry.anchor}, level ${String(entry.level)}); heading ${String(index + 1)} is "${heading.text}" (#${anchor}, level ${String(heading.level)})`,
+      );
+    }
+  }
+}
+
 // The tmux badge is the one version claim a reader takes at face value, so it
 // is pinned to the matrix that proves it rather than to someone's memory.
 const workflow = await Bun.file(join(repositoryRoot, ".github/workflows/typescript.yml")).text();
@@ -404,5 +521,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, and ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)} shipped modules touching a runtime API\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)} shipped modules touching a runtime API, and ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files\n`,
 );

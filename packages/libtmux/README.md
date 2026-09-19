@@ -73,49 +73,49 @@ when a program needs it, and nothing above depends on any of it.
 <details>
 <summary><b>Everything on this page</b></summary>
 
-**Reading the server** ·
-[Snapshots](#snapshots) ·
-[Querying](#querying) ·
-[Relations](#relations) ·
-[Field names](#field-names) ·
-[Field values](#field-values)
+<!-- toc -->
 
-**Changing it** ·
-[Operations](#operations) ·
-[Running several commands at once](#running-several-commands-at-once) ·
-[Commands this package does not model](#commands-this-package-does-not-model) ·
-[Options and hooks](#options-and-hooks) ·
-[Environments](#environments)
+- [Quickstart](#quickstart)
+- [Start here](#start-here)
+- [Snapshots](#snapshots)
+- [Querying](#querying)
+- [Relations](#relations)
+- [Field names](#field-names)
+- [Field values](#field-values)
+- [Operations](#operations)
+- [Commands this package does not model](#commands-this-package-does-not-model)
+- [Running several commands at once](#running-several-commands-at-once)
+- [Watching](#watching)
+  - [Subscribing to a format](#subscribing-to-a-format)
+  - [Waiting for something to happen](#waiting-for-something-to-happen)
+  - [Commands beside a connection](#commands-beside-a-connection)
+- [Recipes](#recipes)
+  - [Wait for a pane to print something](#wait-for-a-pane-to-print-something)
+  - [Act, then wait, with an observer](#act-then-wait-with-an-observer)
+  - [Build a workspace](#build-a-workspace)
+  - [Drive a pane and read what it said](#drive-a-pane-and-read-what-it-said)
+  - [Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
+- [Seeing what it runs](#seeing-what-it-runs)
+- [Deadlines and cancellation](#deadlines-and-cancellation)
+- [Choosing how work is arranged](#choosing-how-work-is-arranged)
+  - [How many commands run at once](#how-many-commands-run-at-once)
+  - [Supplying an engine](#supplying-an-engine)
+- [Options and hooks](#options-and-hooks)
+- [Environments](#environments)
+- [Errors](#errors)
+  - [Migrating from alpha.9](#migrating-from-alpha9)
+- [Running inside tmux](#running-inside-tmux)
+- [Dependencies](#dependencies)
+- [Consumers](#consumers)
+- [Examples](#examples)
+- [Entrypoints](#entrypoints)
+- [tmux versions](#tmux-versions)
+- [Parity with the Python library](#parity-with-the-python-library)
+- [License](#license)
 
-**Reacting to it** ·
-[Watching](#watching) ·
-[Waiting for something to happen](#waiting-for-something-to-happen) ·
-[Commands beside a connection](#commands-beside-a-connection)
+<!-- /toc -->
 
-**Getting the cost right** ·
-[Choosing how work is arranged](#choosing-how-work-is-arranged) ·
-[Supplying an engine](#supplying-an-engine) ·
-[Seeing what it runs](#seeing-what-it-runs) ·
-[Deadlines and cancellation](#deadlines-and-cancellation)
-
-**Recipes** ·
-[Wait for a pane to print something](#wait-for-a-pane-to-print-something) ·
-[Act, then wait, with an observer](#act-then-wait-with-an-observer) ·
-[Build a workspace](#build-a-workspace) ·
-[Drive a pane and read what it said](#drive-a-pane-and-read-what-it-said) ·
-[Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
-
-**The rest** ·
-[Errors](#errors) ·
-[Running inside tmux](#running-inside-tmux) ·
-[Dependencies](#dependencies) ·
-[Entrypoints](#entrypoints) ·
-[tmux versions](#tmux-versions) ·
-[Consumers](#consumers) ·
-[Examples](#examples) ·
-[Parity with the Python library](#parity-with-the-python-library) ·
-[API reference](docs/api.md) ·
-[Benchmarks](docs/benchmarks.md)
+Also: [API reference](docs/api.md) · [Benchmarks](docs/benchmarks.md)
 
 </details>
 
