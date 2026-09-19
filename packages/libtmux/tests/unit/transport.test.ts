@@ -84,8 +84,12 @@ describe("NodeSpawnTransport", () => {
 
     expect(raw.exitCode).toBe(7);
     expect(adaptRawResult(raw).exitCode).toBe(7);
-    expect(raw.stdout).toBeInstanceOf(Uint8Array);
-    expect(raw.stderr).toBeInstanceOf(Uint8Array);
+    // Exactly a Uint8Array, over its own memory: a Buffer passes
+    // `toBeInstanceOf(Uint8Array)` as a subclass, which is how one got through.
+    for (const bytes of [raw.stdout, raw.stderr]) {
+      expect(Object.getPrototypeOf(bytes)).toBe(Uint8Array.prototype);
+      expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
+    }
     expect(JSON.parse(decodeBackslashReplace(raw.stdout))).toEqual(["kept"]);
   });
 

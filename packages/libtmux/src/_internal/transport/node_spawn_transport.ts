@@ -68,8 +68,25 @@ function collect(
   });
 }
 
+/**
+ * The chunks as one plain `Uint8Array` over memory of its own.
+ *
+ * `Buffer.concat` answers with a `Buffer`, which the result's type admits only
+ * as a subclass: its `toString()` decodes where a `Uint8Array`'s lists
+ * numbers, so code written against this engine read differently under the
+ * replay double, and a small one is a view into Node's shared pool, so
+ * `.buffer` reached 64 KiB of bytes that were never this command's.
+ */
 function collectedBytes(chunks: readonly Buffer[]): Uint8Array {
-  return Buffer.concat(chunks);
+  let length = 0;
+  for (const chunk of chunks) length += chunk.byteLength;
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 function isAborted(signal: AbortLike | undefined): boolean {
