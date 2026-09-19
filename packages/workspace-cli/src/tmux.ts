@@ -667,7 +667,9 @@ async function create(
       });
       if (paneSpec.data.focus) focusPane = pane;
     }
-    if (focusPane) await focusPane.select();
+    // With no pane declaring focus, the one left active is the last pane
+    // created, which is where tmuxp leaves the cursor.
+    await (focusPane ?? panes.at(-1)!).select();
     result.stage = "window-options-after";
     await options(window, desired.data.options_after, context.signal);
     await output.event("window-completed", {

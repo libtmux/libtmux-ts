@@ -255,7 +255,7 @@ test.each(["before", "after", "teamocil"])(
       }
       /* eslint-enable no-await-in-loop */
       expect(observed).toEqual(expected);
-      expect(session.activePane?.id).toBe(panes[phase === "teamocil" ? 1 : 0]!.id);
+      expect(session.activePane?.id).toBe(panes.at(-1)!.id);
       expect((await server.snapshot()).sessions.one({ id: keeper.id }).panes.one().id).toBe(
         keeperPane,
       );
@@ -2271,5 +2271,24 @@ test("a window option under the session's options is applied at window scope", a
     const session = (await server.snapshot()).sessions.one({ name: "pbi" });
     expect(Number(session.windows.one({ name: "w" }).panes.at(0)!.index)).toBe(1);
     expect((await session.showOptions()).get("history-limit")).toBe("9999");
+  });
+});
+
+test("with no pane asking for focus, the last pane created is left active", async () => {
+  await fixture(async (server, root, run) => {
+    const file = join(root, "focus.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        session_name: "focus-default",
+        windows: [{ window_name: "w", panes: [null, null, null] }],
+      }),
+    );
+    const result = await run(["load", file, "-d", "--json"]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const window = (await server.snapshot()).sessions
+      .one({ name: "focus-default" })
+      .windows.one({ name: "w" });
+    expect(window.activePane?.id).toBe(window.panes.at(-1)!.id);
   });
 });

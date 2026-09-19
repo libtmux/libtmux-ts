@@ -59,19 +59,21 @@ it is applied.
 The CLI limits custom layouts to 8192 characters and 256 nested groups;
 these are application limits, separate from tmux's parser.
 
-Two defaults differ from tmuxp on purpose: a window that names no `layout`
-tiles its panes, where tmuxp stacks them by halving the last one, and the
-first pane in a window is focused when none sets `focus`, where tmuxp
-focuses the last. Explicit `layout` and `focus` agree with tmuxp either way.
+One default differs from tmuxp on purpose: a window that names no `layout`
+tiles its panes, where tmuxp stacks them by halving the last one. Explicit
+`layout` and `focus` agree with tmuxp, and so does the pane left active when
+nothing sets `focus`: the last pane created in the focused window.
 
-Loading reuses an existing session. Without `-d`, it attaches the final workspace
-or switches the current tmux client. Attachment uses the controlling terminal,
-including when standard streams are redirected; no terminal means failure
-before creating sessions. Inside tmux, attached load stays on the current server;
-use `-d` to load on another server. Explicit append adds windows
-to the current pane's session. Bootstrap failure removes a session created by
-that load; it preserves a session borrowed for append. Other partial failures
-report the created objects and the failed stage.
+Loading reuses an existing session, and compares it against the document rather
+than rebuilding it: a window the document names that the session does not hold
+is reported, exit 1, and nothing is changed. Without `-d`, load attaches the
+final workspace or switches the current tmux client. Attachment uses the
+controlling terminal, including when standard streams are redirected; no
+terminal means failure before creating sessions. Inside tmux, attached load
+stays on the current server; use `-d` to load on another server. Explicit append
+adds windows to the current pane's session. A load that cannot finish a session
+it created removes it, so a rerun starts clean; an append keeps the windows it
+added and names them.
 
 When clients share a session, tmux selects its most recently active client before
 loading. The CLI captures that client and targets the switch explicitly.
@@ -79,8 +81,9 @@ loading. The CLI captures that client and targets the switch explicitly.
 `load -2` forces 256-color terminal handling. Legacy `-8` is rejected before
 calling tmux because supported tmux versions do not implement that legacy flag.
 
-Pane readiness waits apply before sending commands. Empty panes skip the wait,
-including with `workspace_builder_options.pane_readiness: always`.
+Pane readiness waits apply before sending commands, whatever the pane's shell
+is. Empty panes skip the wait, including with
+`workspace_builder_options.pane_readiness: always`.
 
 Explicit `window_index` values reserve their slots before implicit windows are
 allocated from the effective `base-index`; `null` leaves the index unspecified.
