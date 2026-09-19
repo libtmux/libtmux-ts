@@ -173,4 +173,47 @@ describe("invocation observer", () => {
     expect(reports[0]?.queuedMs).toBe(0);
     expect(reports[1]?.queuedMs).toBeGreaterThan(0);
   });
+
+  /**
+   * The reporting paths above were added by splitting the dispatch in two, and
+   * a permit released twice or not at all is the way that goes wrong: the
+   * ceiling would drift, or the queue would stall with slots nobody holds.
+   * Forty invocations mixing answers, engine failures and deadline refusals,
+   * then one more that can only run if a permit survived all of it.
+   */
+  test("keeps the permit count honest across answers, failures and refusals", async () => {
+    let live = 0;
+    let peak = 0;
+    const deliveries: string[] = [];
+    const server = new Server({
+      engine: singleCommandTransport(async (request) => {
+        live += 1;
+        peak = Math.max(peak, live);
+        const refuses = request.commands[0][1] === "boom";
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        live -= 1;
+        if (refuses) throw new Error("engine refused");
+        return result(request);
+      }),
+      maxInFlight: 2,
+      onInvocation: (report) => deliveries.push(report.delivery),
+    });
+
+    const settled = await Promise.all(
+      Array.from({ length: 40 }, (_, index) =>
+        server
+          .runShell(index % 5 === 0 ? "boom" : "ok", index % 7 === 0 ? { timeoutMs: 1 } : {})
+          .then(
+            () => "answered",
+            () => "refused",
+          ),
+      ),
+    );
+
+    expect(settled).toHaveLength(40);
+    expect(peak, "the ceiling holds").toBe(2);
+    // Only reachable if no permit leaked.
+    expect(await server.runShell("after")).toEqual([]);
+    expect([...new Set(deliveries)].sort()).toEqual(["indeterminate", "not_started", "replied"]);
+  }, 20_000);
 });
