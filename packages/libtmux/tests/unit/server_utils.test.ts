@@ -33,7 +33,12 @@ describe("server utility requests", () => {
     const requests: TmuxInvocationRequest[] = [];
     const engine = singleCommandTransport((request) => {
       requests.push(request);
-      return Promise.resolve(success(request));
+      const isNameQuery = request.commands[0]?.includes("#{session_name}") === true;
+      return Promise.resolve(
+        isNameQuery
+          ? { ...success(request), stdout: new TextEncoder().encode("work\n") }
+          : success(request),
+      );
     });
     const server = new Server({ engine, timeoutMs: 37 });
 
@@ -43,9 +48,19 @@ describe("server utility requests", () => {
     expect(
       requests.map((request) => ({ commands: request.commands, timeoutMs: request.timeoutMs })),
     ).toEqual([
-      { commands: [["has-session", "-t", "=work"]], timeoutMs: 37 },
+      { commands: [["list-sessions", "-F", "#{session_name}"]], timeoutMs: 37 },
       { commands: [["list-sessions"]], timeoutMs: 37 },
     ]);
+  });
+
+  test("does not answer yes for a name that is only a prefix of a real session", async () => {
+    const engine = singleCommandTransport((request) =>
+      Promise.resolve({ ...success(request), stdout: new TextEncoder().encode("alphabet\n") }),
+    );
+    const server = new Server({ engine, timeoutMs: 37 });
+
+    expect(await server.hasSession("alpha")).toBe(false);
+    expect(await server.hasSession("alphabet")).toBe(true);
   });
 
   test("forwards setHook command controls to the engine", async () => {

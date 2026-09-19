@@ -6,21 +6,27 @@ import type { RuntimeContext } from "../runtime/context.js";
 /**
  * Ask tmux whether a session exists.
  *
- * `has-session` reports absence with a nonzero exit rather than empty output,
- * so this deliberately bypasses the raising runner: "no such session" is an
- * answer, not a failure.
+ * No `-t` target spelling is both exact and correct for every name: `=name`
+ * matches exactly but tmux reads a "." or ":" in `name` as a target
+ * separator first, so `=my.proj` fails even when a session is named exactly
+ * that; `name:` survives those characters but resolves a unique prefix the
+ * same way a bare name does, so `work:` would answer yes for `workspace`.
+ * Listing every session and comparing the name in JavaScript is exact for
+ * any name tmux can store. `list-sessions` fails the same way `has-session`
+ * did against a socket with no server running, and that failure is answered
+ * false, not raised: "no such session" is an answer, not a failure.
  */
 export async function hasSession(runtime: RuntimeContext, name: string): Promise<boolean> {
   const result = adaptRawResult(
     await runtime.transport.execute(
       prepareCommandRequest(
         runtime.connection,
-        ["has-session", "-t", `=${name}`],
+        ["list-sessions", "-F", "#{session_name}"],
         runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs },
       ),
     ),
   );
-  return result.returncode === 0;
+  return result.returncode === 0 && result.stdout.includes(name);
 }
 
 /** Run a tmux config file against the server. */

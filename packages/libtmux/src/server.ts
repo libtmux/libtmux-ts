@@ -827,9 +827,12 @@ export class Server {
   /**
    * Whether a session with this name exists.
    *
-   * The name is matched exactly. tmux normally accepts a unique prefix as a
-   * session target, which would make checking `work` answer yes for
-   * `workspace`; this method does not.
+   * The name is matched exactly, including one holding "." or ":". tmux
+   * normally accepts a unique prefix as a session target, which would make
+   * checking `work` answer yes for `workspace`; this method does not, and it
+   * lists every session and compares in JavaScript rather than asking tmux
+   * to resolve a target, since no target spelling is both exact and correct
+   * for a name holding a target separator.
    *
    * ```ts
    * if (!(await server.hasSession("work"))) {
