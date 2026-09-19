@@ -77,6 +77,16 @@ function isColdEndpoint(error: unknown): boolean {
 function isTmuxUnavailable(error: unknown): boolean {
   return error instanceof LibTmuxException && error.message.startsWith("cannot reach tmux");
 }
+/**
+ * Why tmux could not be reached, in the command's own words: the endpoint the
+ * caller named, or the executable, rather than the transport's sentence.
+ */
+function unreachableMessage(server: Server, error: unknown): string {
+  const endpoint = server.socketPath ?? server.socketName ?? "the default tmux socket";
+  return isColdEndpoint(error)
+    ? `No tmux server is running on ${endpoint}`
+    : "The tmux executable could not be run for this command";
+}
 function currentEndpoint(context: CLIContext): { socketPath: string; pid: string } | undefined {
   if (!context.env.TMUX) return undefined;
   const match = /^(.*),([0-9]+),[0-9]+$/s.exec(context.env.TMUX);
@@ -155,12 +165,21 @@ async function currentSession(server: Server, context: CLIContext): Promise<Borr
       2,
     );
   const selected = await verifyCurrentServer(server, context, endpoint);
-  const session = selected.panes.one({
-    id: context.env.TMUX_PANE,
-  }).session;
-  if (!session)
-    throw new CliError("session_not_found", "The current pane has no session on this server");
-  return { session, daemon: selected.daemonIdentity };
+  // The whole context is resolved before anything is built, and every way it
+  // can be wrong reads the same: this pane cannot be the one to load from.
+  let pane: Pane | undefined;
+  try {
+    pane = selected.panes.oneOrUndefined({ id: context.env.TMUX_PANE });
+  } catch {
+    pane = undefined;
+  }
+  if (!pane?.session || !pane.format.pane_tty)
+    throw new CliError(
+      "usage",
+      `TMUX_PANE does not name a pane with a terminal on this server: ${context.env.TMUX_PANE}`,
+      2,
+    );
+  return { session: pane.session, daemon: selected.daemonIdentity };
 }
 export type AttachTarget = { mode: "attach" } | { mode: "switch"; client?: string };
 async function attachmentClient(server: Server, context: CLIContext): Promise<AttachTarget> {
@@ -960,19 +979,24 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         result.stage === "completed" ||
         (result.session_id && !result.session_removed),
     );
+    const unreachable = !(error instanceof CliError) && isTmuxUnavailable(error);
     const code = interrupted
       ? "interrupted"
       : error instanceof CliError
         ? error.code
-        : isTmuxUnavailable(error)
+        : unreachable
           ? "tmux_unavailable"
           : "tmux_failed";
     const kept = results.flatMap((result) =>
       result.session_id && !result.session_removed ? (result.created_window_names ?? []) : [],
     );
     const message =
-      (error instanceof Error ? error.message : String(error)) +
-      (kept.length > 0 ? `. Windows kept: ${kept.join(", ")}` : "");
+      // A message a user reads describes their request, not the transport.
+      (unreachable
+        ? unreachableMessage(server, error)
+        : error instanceof Error
+          ? error.message
+          : String(error)) + (kept.length > 0 ? `. Windows kept: ${kept.join(", ")}` : "");
     await output.result({
       status: changed ? "partial" : "error",
       results,
@@ -1044,19 +1068,18 @@ async function freezeSession(
 }
 
 export async function freeze(request: Request, context: CLIContext): Promise<number> {
+  const server = connection(request.values, context);
   try {
-    return await capture(request, context);
+    return await capture(server, request, context);
   } catch (error) {
     if (error instanceof CliError || context.signal?.aborted) throw error;
-    throw new CliError(
-      isTmuxUnavailable(error) ? "tmux_unavailable" : "tmux_failed",
-      error instanceof Error ? error.message : String(error),
-    );
+    if (isTmuxUnavailable(error))
+      throw new CliError("tmux_unavailable", unreachableMessage(server, error));
+    throw new CliError("tmux_failed", error instanceof Error ? error.message : String(error));
   }
 }
 
-async function capture(request: Request, context: CLIContext): Promise<number> {
-  const server = connection(request.values, context);
+async function capture(server: Server, request: Request, context: CLIContext): Promise<number> {
   const session = await freezeSession(server, request, context);
   const acquisition = context.signal ? { signal: context.signal } : {};
   // A pane at its default shell needs no shell_command; naming it reloads a

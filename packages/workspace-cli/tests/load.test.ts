@@ -2199,3 +2199,32 @@ test("an append that fails partway names the windows it kept", async () => {
     expect(after.windows.toArray().map((window) => window.name)).toContain("kept");
   });
 });
+
+test("every broken current-pane context is one refusal, and builds nothing", async () => {
+  await fixture(async (server, root, run) => {
+    const identity = await server.daemonIdentity();
+    const pane = (await server.snapshot()).sessions.one({ name: "fixture" }).panes.at(0)!.id;
+    const config = join(root, "probe.json");
+    await writeFile(
+      config,
+      JSON.stringify({ session_name: "probe", windows: [{ window_name: "w", panes: [null] }] }),
+    );
+    for (const [label, tmux, tmuxPane] of [
+      ["stale daemon", `${server.socketPath},999999,0`, pane],
+      ["dead socket", `${join(root, "gone.sock")},${identity.pid},0`, pane],
+      ["pane not on this server", `${server.socketPath},${identity.pid},0`, "%9999"],
+      ["pane is not an id", `${server.socketPath},${identity.pid},0`, "nonsense"],
+      ["unparsable TMUX", server.socketPath!, pane],
+    ] as const) {
+      const result = await run(["load", config, "--append", "--json"], {
+        TMUX: tmux,
+        TMUX_PANE: tmuxPane,
+      });
+      expect(result.code, `${label}: ${result.stderr}`).toBe(2);
+      expect(JSON.parse(result.stderr).code, label).toBe("usage");
+      for (const leak of ["No objects found", "Invalid selection query", "error connecting to"])
+        expect(result.stderr, label).not.toContain(leak);
+      expect(await server.hasSession("probe"), label).toBe(false);
+    }
+  });
+});
