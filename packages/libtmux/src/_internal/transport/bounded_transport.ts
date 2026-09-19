@@ -179,7 +179,7 @@ export class BoundedTransport implements CommandTransport {
     const observe = this.#observe;
     if (observe === undefined) return;
     try {
-      observe({
+      const watching: unknown = observe({
         commands: request.commands,
         // A `TmuxTransportError` knows how far it got. Anything else threw
         // without saying, and a command that did not finish must not read as
@@ -195,6 +195,14 @@ export class BoundedTransport implements CommandTransport {
         ...(outcome.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
         queuedMs,
       });
+      // A `void` return is bivariant, so an `async` observer type-checks here
+      // and reports its failure as a rejected promise rather than a throw.
+      // Left alone that is an unhandled rejection, which on the default Node
+      // policy takes the host process down — the command failing on account of
+      // the code watching it, by a longer route than the `catch` below covers.
+      if (typeof (watching as PromiseLike<void> | undefined)?.then === "function") {
+        (watching as PromiseLike<void>).then(undefined, () => undefined);
+      }
     } catch {
       // Deliberately swallowed; see above.
     }

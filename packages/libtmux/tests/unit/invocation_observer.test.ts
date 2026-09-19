@@ -98,10 +98,47 @@ describe("invocation observer", () => {
   });
 
   /**
-   * `TmuxInvocationReport` models `delivery: "not_started"` and a `queuedMs`,
-   * which is precisely a request refused while queued — and no code path
-   * produced one, because the refusal happens before the invocation reaches
-   * the engine and the report was written there.
+   * The `void` return type is bivariant, so an `async` observer type-checks
+   * against it — and reports its failure as a rejected promise rather than a
+   * throw, which the `try`/`catch` guarding the callback cannot see. Left
+   * alone it is an unhandled rejection, and on the default Node policy that
+   * takes the host process down: the same broken promise as a throwing
+   * observer failing the command, by a longer route.
+   */
+  test("does not let an async observer's rejection escape", async () => {
+    const escaped: unknown[] = [];
+    const watch = (reason: unknown): void => void escaped.push(reason);
+    // Bun's `process` types admit only `memoryPressure`, so the listener pair
+    // is reached through a narrow handle rather than a blanket cast.
+    type RejectionEvents = Record<
+      "off" | "on",
+      (event: "unhandledRejection", listener: (reason: unknown) => void) => void
+    >;
+    const rejections = process as unknown as RejectionEvents;
+
+    rejections.on("unhandledRejection", watch);
+    try {
+      const server = new Server({
+        engine: singleCommandTransport((request) => Promise.resolve(result(request))),
+        onInvocation: () => Promise.reject(new Error("observer is broken")),
+      });
+
+      expect(await server.runShell("true")).toEqual([]);
+      // Rejections are reported once the microtask queue has drained, so give
+      // the loop a turn rather than a timer.
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      rejections.off("unhandledRejection", watch);
+    }
+
+    expect(escaped).toEqual([]);
+  });
+
+  /**
+   * `TmuxInvocationReport` models `delivery: "not_started"` and a `queuedMs`
+   * for exactly this case: a request refused while queued, before the
+   * invocation reaches the engine.
    */
   test("reports a request refused while it waited for a slot", async () => {
     const reports: TmuxInvocationReport[] = [];

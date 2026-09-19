@@ -147,6 +147,11 @@ export interface TmuxInvocationReport {
  * after the invocation is decided and cannot change its outcome — anything it
  * throws is swallowed, because a command must not fail on account of the code
  * watching it.
+ *
+ * Returning a promise is allowed and never awaited: the invocation has already
+ * been decided, so waiting would only delay it. A rejection is swallowed on
+ * the same grounds as a throw, rather than left to the host's unhandled
+ * rejection policy.
  */
 export type TmuxInvocationObserver = (report: TmuxInvocationReport) => void;
 
