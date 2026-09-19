@@ -16,6 +16,12 @@ every change is held to, and the map of what is where, are in
 Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.2a
 or newer.
 
+A consumer needs TypeScript 5.7 or newer: 5.6 and below ship no `ES2024` lib,
+which the emitted declarations are built against. `test:install` compiles its
+fixture with that exact compiler, pinned as the `typescript-floor` alias, as
+well as with the newest — the declarations being built by the newest says
+nothing about whether an older one can read them.
+
 Development uses the exact Bun 1.4.2 `packageManager` pin; CI also runs the
 supported 1.3.14 floor and the 1.4.0 mid-range version. The three-runtime
 regex corpus is evidence that Bun, Node and Python agree on a pattern, and it

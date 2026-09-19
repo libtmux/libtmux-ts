@@ -12,7 +12,8 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
-Requires tmux 3.2a or newer, and Node 22+ or Bun 1.3.14+.
+Requires tmux 3.2a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
+5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is

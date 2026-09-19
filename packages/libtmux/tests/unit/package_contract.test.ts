@@ -92,6 +92,11 @@ const expectedDevDependencies = {
   oxlint: "1.81.0",
   "oxlint-tsgolint": "7.0.2001",
   typescript: "7.0.2",
+  // The oldest TypeScript a consumer may hold. Aliased rather than a second
+  // `typescript` entry because `test:install` compiles its fixture with both:
+  // the declarations being built by the newest says nothing about whether an
+  // older one can read them, and 5.6 ships no `ES2024` lib at all.
+  "typescript-floor": "npm:typescript@5.7.3",
   zod: "4.5.4",
 };
 
