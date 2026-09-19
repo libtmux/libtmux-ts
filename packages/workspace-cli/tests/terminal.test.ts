@@ -604,8 +604,8 @@ test("inside tmux, without --yes, answering (n) to a mismatched already-running 
         } catch (error) {
           throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
         }
-        // A declined attach never went to reuse this session (D12a), so the
-        // compare D1a would otherwise run against it never happens either:
+        // A declined attach never went to reuse this session, so the
+        // comparison that would otherwise run against it never happens either:
         // exit 0, not a session_mismatch for a session the load left alone.
         expect(await readFile(done, "utf8")).toBe("0");
         const client = (await server.snapshot()).clients.at(0)!;
