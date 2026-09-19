@@ -716,7 +716,10 @@ describe("Claude scopes", () => {
     expect(reverted.status).toBe(0);
     expect(await readFile(claude.configPath, "utf8")).toBe(original);
     expect(await Bun.file(nativeStatePath()).exists()).toBe(false);
-  });
+    // Four swaps, each a spawned CLI whose startup dominates the assertions:
+    // about 3.5s apiece where process spawn and module load are slow, which is
+    // over the 5s default and nothing to do with what is being tested.
+  }, 30_000);
 
   test("refuses a scoped revert that would skip a newer Claude layer", async () => {
     const claude = cliFor("claude");
@@ -1082,7 +1085,9 @@ describe("native recovery ledger", () => {
       // eslint-disable-next-line no-await-in-loop -- every consumed backup must be removed.
       expect(await Bun.file(entry.backupPath).exists()).toBe(false);
     }
-  });
+    // Eight clients seeded and swapped through spawned CLIs; same startup cost
+    // as above, over the 5s default on a slow filesystem.
+  }, 30_000);
 
   test("adds a Claude project layer without reformatting unrelated JSON", async () => {
     const claude = cliFor("claude");
