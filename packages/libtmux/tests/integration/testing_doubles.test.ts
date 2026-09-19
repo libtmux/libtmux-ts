@@ -230,6 +230,25 @@ describe("published test doubles", () => {
     await expect(replayed.snapshot()).rejects.toThrow(/no recorded answer/u);
   });
 
+  // `TmuxEngine.execute` promises a promise. A plain function that throws
+  // hands a synchronous exception to a caller who wrote only `.catch()`,
+  // skipping their handler entirely — masked here only because the one real
+  // caller happens to `await` inside a `try`.
+  test("rejects rather than throwing, as its own contract promises", async () => {
+    const engine = replayInvocations({ invocations: [], version: 1 });
+    const request = {
+      commands: [["list-sessions"]],
+      executable: "tmux",
+      globalFlags: [],
+    } as unknown as Parameters<TmuxEngine["execute"]>[0];
+
+    let returned: ReturnType<TmuxEngine["execute"]> | undefined;
+    expect(() => {
+      returned = engine.execute(request);
+    }).not.toThrow();
+    await expect(returned).rejects.toThrow(/no recorded answer/u);
+  });
+
   test("answers repeated commands in the order they were recorded", async () => {
     let recording: TmuxRecording | undefined;
 

@@ -281,7 +281,10 @@ export function replayInvocations(recording: TmuxRecording): TmuxEngine {
     // back different fixtures would compare equal. An engine that declares
     // none is never reported equal to another, which is the answer that cannot
     // be wrong when the reach is a file rather than a socket.
-    execute(request) {
+    // `async` is the contract, not a convenience: `TmuxEngine.execute`
+    // promises a promise, and a caller who wrote only `.catch()` must not take
+    // a synchronous exception past it. Every refusal below is a rejection.
+    async execute(request) {
       // A replayed command answers from a file, which makes it easy to forget
       // it is still a command: a caller's own cancellation test would pass
       // against a recording that never checked, which is the same shape of
@@ -315,7 +318,7 @@ export function replayInvocations(recording: TmuxRecording): TmuxEngine {
         stderr: withRequestGuards(next.stderr, from, to),
         stdout: withRequestGuards(next.stdout, from, to),
       };
-      return Promise.resolve(result);
+      return result;
     },
   };
 }
