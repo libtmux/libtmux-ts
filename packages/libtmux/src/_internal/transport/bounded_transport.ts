@@ -11,7 +11,7 @@ export const DEFAULT_MAX_IN_FLIGHT = 16;
  * Each returns `CMD_RETURN_WAIT` and then waits on a second command or on a
  * person: `wait-for <channel>` on `wait-for -S <channel>`, a popup or menu on
  * its dismissal, a prompt on an answer. Counting one against the ceiling
- * would make it hold the permit that its own release needs in order to run:
+ * would make it hold the permit that its own release needs to run:
  * one wait deadlocks the pair at a ceiling of one, and sixteen popups deadlock
  * it at the default. So they are exempt. They occupy a tmux client and no
  * throughput, which is the opposite of what the ceiling exists to bound.
