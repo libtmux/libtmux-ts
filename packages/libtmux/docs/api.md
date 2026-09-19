@@ -7,6 +7,13 @@ typecheck:symbols` is what keeps that true.
 Start with the [README](../README.md) for a reading order and recipes; this
 page is for looking one thing up.
 
+It covers what `libtmux` itself exports. The package publishes further
+subpaths that this page does not list — `libtmux/testing` for the
+record-and-replay doubles, `libtmux/engine` for supplying a transport, and
+`libtmux/selection` for query documents — each introduced in the README
+where it is used. Not finding a name here means it lives on one of those,
+not that it is unpublished.
+
 ## Functions
 
 [`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
