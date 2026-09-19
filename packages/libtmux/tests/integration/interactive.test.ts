@@ -13,6 +13,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { safeInteger } from "../../src/common.js";
+import { TmuxCommandError } from "../../src/errors.js";
 import type { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
 
@@ -70,6 +71,24 @@ describe("interactive commands", () => {
     });
   }, 40_000);
 
+  test("guards a popup command starting with a dash", async () => {
+    await withAttachedPane(async (pane) => {
+      // `-1` is not a program either, so the popup still closes reporting
+      // failure whether or not the guard is applied — what the guard
+      // changes is whether tmux's own parser ever let it open. Refused
+      // outright, tmux reports an "unknown option" (libc getopt, 3.2a) or
+      // "unknown flag" (`args_parse`, 3.3+) and never attempts to run
+      // anything; opened and then unable to exec `-1`, it reports nothing.
+      const failure = await pane
+        .displayPopup("-1")
+        .then(() => undefined)
+        .catch((thrown: unknown) => thrown);
+
+      expect(failure).toBeInstanceOf(TmuxCommandError);
+      expect((failure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
+    });
+  }, 40_000);
+
   test("enters the chooser modes and leaves the pane in a mode", async () => {
     await withAttachedPane(async (pane) => {
       await pane.chooseTree({ sessionsOnly: true });
@@ -92,6 +111,18 @@ describe("interactive commands", () => {
       await pane.findWindow("inter");
       await pane.exitCopyMode();
       await expect(pane.customizeMode()).resolves.toBeUndefined();
+    });
+  }, 40_000);
+
+  test("guards a find-window pattern starting with a dash", async () => {
+    await withAttachedPane(async (pane) => {
+      // `-1` matches none of find-window's own flags; without the guard it
+      // would be refused as one before the chooser ever opened, leaving the
+      // pane's mode unchanged instead of entering it.
+      await pane.findWindow("-1");
+
+      expect((await pane.refreshed()).inMode).toBe(safeInteger(1));
+      await pane.exitCopyMode();
     });
   }, 40_000);
 });

@@ -129,7 +129,9 @@ describe("published test doubles", () => {
   test("refuses an already-cancelled command as the spawning engine does", async () => {
     const replayed = new Server({
       engine: replayInvocations({
-        invocations: [{ commands: [["run-shell", "true"]], exitCode: 0, stderr: [], stdout: [] }],
+        invocations: [
+          { commands: [["run-shell", "--", "true"]], exitCode: 0, stderr: [], stdout: [] },
+        ],
         version: 1,
       }),
     });

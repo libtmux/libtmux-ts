@@ -24,7 +24,10 @@ export async function sendKeys(
   options: SendKeysOptions = {},
 ): Promise<void> {
   const at = paneId == null ? [] : ["-t", paneId];
-  const text = ["send-keys", ...at, ...(options.literal === true ? ["-l"] : []), keys];
+  // tmux stops reading flags at the first positional, so a lone `--` before
+  // the caller's text is what keeps a value starting with `-` (`-R` resets
+  // the terminal) from being read as one of send-keys's own flags.
+  const text = ["send-keys", ...at, ...(options.literal === true ? ["-l"] : []), "--", keys];
   if (options.enter === false) {
     await runCommand(runtime, text, options);
     return;
@@ -91,6 +94,8 @@ export async function pipePane(
     ...(options.toggle === true ? ["-o"] : []),
     "-t",
     paneId,
-    ...(command === undefined ? [] : [command]),
+    // `--` before the command keeps a leading `-` from being read as another
+    // of pipe-pane's own flags (`-I` or `-O` close the existing pipe).
+    ...(command === undefined ? [] : ["--", command]),
   ]);
 }

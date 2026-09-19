@@ -73,6 +73,9 @@ export async function setHook(
       "set-hook",
       ...(options.append === true ? ["-a"] : []),
       ...scopeArguments(scope, target),
+      // `--` keeps a name or command starting with `-` from being read as
+      // one of set-hook's own flags.
+      "--",
       literalFormat(name),
       command,
     ],
@@ -87,10 +90,12 @@ export async function unsetHook(
   target: string | null | undefined,
   name: string,
 ): Promise<void> {
+  // `--` keeps a name starting with `-` from being read as a flag.
   await runCommand(runtime, [
     "set-hook",
     "-u",
     ...scopeArguments(scope, target),
+    "--",
     literalFormat(name),
   ]);
 }

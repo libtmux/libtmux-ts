@@ -22,7 +22,14 @@ export async function renameWindow(
   windowId: string | null,
   name: string,
 ): Promise<void> {
-  await runCommand(runtime, ["rename-window", ...target(windowId), assertName("window", name)]);
+  // `--` keeps a name starting with `-` from being read as a flag:
+  // `assertName` refuses `.`, `:`, and control characters, not a dash.
+  await runCommand(runtime, [
+    "rename-window",
+    ...target(windowId),
+    "--",
+    assertName("window", name),
+  ]);
 }
 
 /**
