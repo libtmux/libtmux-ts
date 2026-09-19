@@ -32,29 +32,32 @@ export async function extensionPlan(
     !Array.isArray(plugins) ||
     plugins.some((item) => typeof item !== "string" || !/^\w+(?:\.\w+)+$/.test(item))
   )
-    throw new CliError("extension_config", "plugins must be an array of Python dotted class names");
+    throw new CliError(
+      "invalid_workspace",
+      "plugins must be an array of Python dotted class names",
+    );
   const builder = data.workspace_builder ?? "";
   if (typeof builder !== "string" || builder.includes("\0"))
-    throw new CliError("extension_config", "workspace_builder must be a string");
+    throw new CliError("invalid_workspace", "workspace_builder must be a string");
   const rawPaths = data.workspace_builder_paths ?? [];
   const paths = typeof rawPaths === "string" ? [rawPaths] : rawPaths;
   if (
     !Array.isArray(paths) ||
     paths.some((entry) => typeof entry !== "string" || entry.includes("\0"))
   )
-    throw new CliError("extension_config", "workspace_builder_paths must contain directory paths");
+    throw new CliError("invalid_workspace", "workspace_builder_paths must contain directory paths");
   for (const entry of paths) {
     const directory = resolve(dirname(path), expand(entry as string, context));
     if (!(await stat(directory).catch(() => undefined))?.isDirectory())
       throw new CliError(
-        "extension_config",
+        "invalid_workspace",
         `Builder import directory does not exist: ${privatePath(directory, context)}`,
       );
   }
   if (!plugins.length && !builder.trim()) return undefined;
   if (append && Object.hasOwn(data, "before_script"))
     throw new CliError(
-      "extension_config",
+      "invalid_workspace",
       "Python extension append cannot use before_script; run the script separately",
     );
   const name = workspaceName(data, context, override);
@@ -88,7 +91,7 @@ export async function extensionRuntime(context: CLIContext): Promise<string> {
   } catch (error) {
     context.signal?.throwIfAborted();
     throw new CliError(
-      "python_runtime",
+      "script_failed",
       `Python extensions require tmuxp 1.74.0 and its builder registry: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
@@ -226,7 +229,7 @@ export async function buildExtension(
       !sameDaemon(borrowed.daemon, before.daemonIdentity) ||
       !before.sessions.toArray().some((session) => session.id === borrowed.session.id))
   )
-    throw new CliError("tmux_context", "The authenticated append session or daemon changed");
+    throw new CliError("tmux_failed", "The authenticated append session or daemon changed");
   const existing =
     !borrowed && before?.sessions.toArray().find((session) => session.name === spec.name);
   if (existing) {
@@ -277,7 +280,7 @@ export async function buildExtension(
       });
       if (result.script_output.code !== 0)
         throw new CliError(
-          "extension_failed",
+          "script_failed",
           `Python extension exited with status ${result.script_output.code}`,
         );
     } catch (error) {
@@ -306,7 +309,7 @@ export async function buildExtension(
       result.session_name = session.name ?? spec.name;
     } catch (error) {
       result.observation_error = error instanceof Error ? error.message : String(error);
-      failed ??= new CliError("extension_observation", result.observation_error);
+      failed ??= new CliError("tmux_failed", result.observation_error);
     }
     if (failed !== undefined) throw failed;
     result.completed_stages.push("extension-built");

@@ -58,7 +58,7 @@ test("a failed error log preserves the command diagnostic and exit status", asyn
   }
 });
 
-test("convert's unmet confirmation logs confirmation_required, not input_required", async () => {
+test("convert's unmet confirmation logs a usage failure", async () => {
   const root = await mkdtemp(join(tmpdir(), "ltx-wcli-convert-"));
   const capture = captured();
   const events: unknown[] = [];
@@ -73,10 +73,10 @@ test("convert's unmet confirmation logs confirmation_required, not input_require
   });
   try {
     await writeFile(join(root, "source.yaml"), "session_name: dev\nwindows:\n  - {}\n");
-    expect(await run(["convert", "source.yaml"], { ...capture.context, cwd: root })).toBe(1);
+    expect(await run(["convert", "source.yaml"], { ...capture.context, cwd: root })).toBe(2);
     expect(events).toEqual([
       {
-        code: "confirmation_required",
+        code: "usage",
         message: "Confirm conversion with --yes or provide --save-to",
       },
     ]);

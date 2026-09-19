@@ -50,7 +50,7 @@ export class Diagnostics {
       );
       try {
         if (!(await file.stat()).isFile())
-          throw new CliError("log_file", "Log destination must be a regular file");
+          throw new CliError("usage", "Log destination must be a regular file", 2);
       } catch (error) {
         await file.close();
         throw error;

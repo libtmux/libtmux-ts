@@ -77,7 +77,8 @@ function isTmuxUnavailable(error: unknown): boolean {
 function currentEndpoint(context: CLIContext): { socketPath: string; pid: string } | undefined {
   if (!context.env.TMUX) return undefined;
   const match = /^(.*),([0-9]+),[0-9]+$/s.exec(context.env.TMUX);
-  if (!match?.[1]) throw new CliError("tmux_context", "TMUX does not identify a valid socket");
+  if (!match?.[1])
+    throw new CliError("usage", "TMUX must name the current server as socket,pid,session", 2);
   return { socketPath: match[1], pid: match[2]! };
 }
 export function connection(values: Record<string, unknown>, context: CLIContext): Server {
@@ -195,7 +196,7 @@ async function attachmentClient(server: Server, context: CLIContext): Promise<At
     query.code !== 0 ||
     !clients.toArray().some((client) => client.name === name && client.session?.id === session.id)
   )
-    throw new CliError("tmux_context", "The current pane has no attached client; pass -d");
+    throw new CliError("usage", "The current pane has no attached client; pass -d", 2);
   return { mode: "switch", client: name };
 }
 async function options(
@@ -271,7 +272,7 @@ function freeIndex(occupied: ReadonlySet<number>, first: number): number {
   let index = first;
   while (occupied.has(index)) {
     if (index === 2147483647)
-      throw new CliError("window_index_exhausted", `No free window index at or above ${first}`);
+      throw new CliError("invalid_workspace", `No free window index at or above ${first}`);
     index++;
   }
   return index;
@@ -439,7 +440,7 @@ async function create(
   for (const window of spec.windows) {
     if (window.index === undefined) continue;
     if (occupied.has(window.index))
-      throw new CliError("window_index_conflict", `Window index ${window.index} already exists`);
+      throw new CliError("invalid_workspace", `Window index ${window.index} already exists`);
     reserved.add(window.index);
   }
   let next = spec.windows.some((window) => window.index === undefined)
@@ -582,7 +583,7 @@ async function promptChoice(
 export async function load(request: Request, context: CLIContext): Promise<number> {
   if (request.values.colors === 88)
     throw new CliError(
-      "unsupported_color_mode",
+      "usage",
       "tmux 3.2a+ rejects the legacy 88-color flag (-8); remove it or use -2 for 256 colors",
       2,
     );
@@ -643,18 +644,25 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     ? await bridge!.extensionRuntime(context)
     : undefined;
   const server = connection(request.values, context);
-  await server.validateLayouts(
-    inputs.flatMap((input) =>
-      input.kind === "native"
-        ? input.spec.windows.flatMap((window) =>
-            window.data.layout
-              ? [{ layout: scalarText(window.data.layout), panes: window.panes.length }]
-              : [],
-          )
-        : [],
-    ),
-    context.signal ? { signal: context.signal } : {},
-  );
+  try {
+    await server.validateLayouts(
+      inputs.flatMap((input) =>
+        input.kind === "native"
+          ? input.spec.windows.flatMap((window) =>
+              window.data.layout
+                ? [{ layout: scalarText(window.data.layout), panes: window.panes.length }]
+                : [],
+            )
+          : [],
+      ),
+      context.signal ? { signal: context.signal } : {},
+    );
+  } catch (error) {
+    // A layout name no tmux accepts is a defect in the document, caught before
+    // anything is built; a failure reaching the server is not.
+    if (!(error instanceof TypeError)) throw error;
+    throw new CliError("invalid_workspace", error.message);
+  }
   let attached = request.mode === "human" && !request.values.detached && !appendRequested;
   let client = attached ? await attachmentClient(server, context) : undefined;
   const interactive =
@@ -711,7 +719,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         if (window.index !== undefined) {
           if (reserved.has(window.index))
             throw new CliError(
-              "window_index_conflict",
+              "invalid_workspace",
               `Append cannot replace existing window index ${window.index}`,
             );
           reserved.add(window.index);
@@ -849,7 +857,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
       });
       if (child.code !== 0)
         throw new CliError(
-          "attach_failed",
+          "tmux_failed",
           `tmux attachment failed${child.stderr.trim() ? ": " + child.stderr.trim() : ""}`,
           child.code,
         );
@@ -934,13 +942,25 @@ async function freezeSession(
   if (sessions.length === 1) return sessions[0]!;
   if (!sessions.length) throw new CliError("session_not_found", "No live sessions to capture");
   throw new CliError(
-    "input_required",
+    "usage",
     "Several sessions are available; specify a session name or ID to freeze",
     2,
   );
 }
 
 export async function freeze(request: Request, context: CLIContext): Promise<number> {
+  try {
+    return await capture(request, context);
+  } catch (error) {
+    if (error instanceof CliError || context.signal?.aborted) throw error;
+    throw new CliError(
+      isTmuxUnavailable(error) ? "tmux_unavailable" : "tmux_failed",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+async function capture(request: Request, context: CLIContext): Promise<number> {
   const server = connection(request.values, context);
   const session = await freezeSession(server, request, context);
   const acquisition = context.signal ? { signal: context.signal } : {};

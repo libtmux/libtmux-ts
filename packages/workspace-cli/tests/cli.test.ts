@@ -145,7 +145,7 @@ test("all extension inputs are validated before Python or tmux starts", async ()
     });
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
-    expect(JSON.parse(result.stderr).code).toBe("extension_config");
+    expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
   }
   await writeFile(
     second,
@@ -155,7 +155,7 @@ test("all extension inputs are validated before Python or tmux starts", async ()
     TMUX_BIN: "/missing-tmux",
     TMUX_WORKSPACE_PYTHON: "/missing-python",
   });
-  expect(JSON.parse(runtime.stderr).code).toBe("python_runtime");
+  expect(JSON.parse(runtime.stderr).code).toBe("script_failed");
   expect(runtime.stdout).toBe("");
 });
 
@@ -166,6 +166,28 @@ test("a malformed document reports invalid_workspace, not the generic fallback",
   expect(result.code).toBe(1);
   expect(result.stdout).toBe("");
   expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
+});
+
+test("an invalid layout name reports invalid_workspace", async () => {
+  const bad = join(root, "layout.yaml");
+  await writeFile(
+    bad,
+    "session_name: lay\nwindows:\n  - window_name: w\n    layout: definitely-not-a-layout\n    panes: [echo A]\n",
+  );
+  const result = await run(["load", bad, "-d", "--json"]);
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
+});
+
+test("convert and load give a malformed document the same code", async () => {
+  const bad = join(root, "broken.yaml");
+  await writeFile(bad, "a: [\n");
+  const converted = await run(["convert", bad, "--json"]);
+  const loaded = await run(["load", bad, "-d", "--json"]);
+  expect(converted.stdout).toBe("");
+  expect(JSON.parse(converted.stderr).code).toBe("invalid_workspace");
+  expect(JSON.parse(converted.stderr).code).toBe(JSON.parse(loaded.stderr).code);
 });
 
 test("a top-level unsupported key reports unsupported_key, not the generic fallback", async () => {
@@ -195,7 +217,7 @@ test("convert without --yes or --save-to in human mode prints a plain sentence",
   const source = join(root, "source.yaml");
   await writeFile(source, "session_name: dev\nwindows:\n  - {}\n");
   const result = await run(["convert", source]);
-  expect(result.code).toBe(1);
+  expect(result.code).toBe(2);
   expect(result.stderr).toContain("Confirm conversion with --yes or provide --save-to");
 });
 
@@ -244,7 +266,7 @@ test("legacy 88-color load fails before invoking tmux in every output mode", asy
     expect(response.code).toBe(2);
     expect(response.stdout).toBe("");
     expect(response.stderr).toContain("88-color");
-    if (mode !== "human") expect(JSON.parse(response.stderr).code).toBe("unsupported_color_mode");
+    if (mode !== "human") expect(JSON.parse(response.stderr).code).toBe("usage");
   }
 });
 
