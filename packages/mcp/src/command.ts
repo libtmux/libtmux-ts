@@ -124,7 +124,9 @@ export function reservePaneInput(
   return {
     release,
     settleWith: (settled) => {
-      void settled.then(release, () => undefined);
+      // Both branches release: a rejection is settlement failing, not the
+      // command succeeding, and either way nothing else ever frees this pane.
+      void settled.then(release, release);
     },
   };
 }
