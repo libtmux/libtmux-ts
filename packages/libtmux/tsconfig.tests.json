@@ -8,5 +8,5 @@
     "types": ["bun", "node"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["tests/fixtures/**"]
+  "exclude": ["tests/fixtures/**", "tests/support/bun_test_on_node.ts"]
 }

@@ -118,9 +118,13 @@ describe("Selection collection contract", () => {
 
     expect(selection).not.toBeInstanceOf(Array);
     expect(Array.isArray(selection)).toBe(false);
+    // Drained before any matcher sees them: a matcher that formats an
+    // iterator can walk it, leaving the next assertion an empty one.
+    const first = [...firstIterator];
+    const second = [...secondIterator];
     expect(firstIterator).not.toBe(secondIterator);
-    expect([...firstIterator]).toEqual([...harness.values]);
-    expect([...secondIterator]).toEqual([...harness.values]);
+    expect(first).toEqual([...harness.values]);
+    expect(second).toEqual([...harness.values]);
     expect([...selection]).toEqual([...harness.values]);
     expect([...selection].map(({ name }) => name)).toEqual(["alpha", "beta", "alpha"]);
     expect(selection.length).toBe(3);

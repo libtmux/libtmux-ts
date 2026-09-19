@@ -22,7 +22,7 @@ export interface TmuxCapabilities {
   readonly tmuxVersion: TmuxVersion;
 }
 
-export interface CapabilityBinding {
+interface CapabilityBinding {
   bind(signal?: AbortLike): Promise<TmuxCapabilities>;
 }
 

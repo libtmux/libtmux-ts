@@ -19,7 +19,7 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * it, and went on saying so through five published releases. Nothing was in a
  * position to notice.
  *
- * Ten claims are checked, all of them answerable from the tree:
+ * Every claim below is checked and answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
  * - a package named in an install command is one this workspace publishes;
@@ -29,8 +29,6 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * - the Bun versions recorded in the CI matrix, the regex corpus, the
  *   `packageManager` pin, every manifest's `engines.bun` floor, and the
  *   CONTRIBUTING prose all agree;
- * - the two module counts CONTRIBUTING gives for `test:node`'s scope match
- *   the tree; and
  * - the README and CHANGELOG tables of contents list exactly the headings
  *   each file has, in order, with the anchor GitHub would mint for each; and
  * - the MCP tool count the root README gives matches the registry; and
@@ -445,62 +443,6 @@ if (pinParagraph === undefined) {
 }
 
 /**
- * Anything whose behaviour belongs to the runtime rather than to this package.
- *
- * Type-only mentions are stripped before this is applied: a module that names
- * `AbortSignal` in a signature and never evaluates one runs identically on
- * either runtime, and counting it would overstate what `test:node` has to
- * cover. The `node:` alternative is anchored to a quoted module specifier for
- * the same reason: a bare word-boundary match also matches a parameter named
- * `node` before its type annotation, which counted a query-validation module
- * whose every import is one of this package's own.
- */
-const runtimeApi =
-  /["']node:[a-z0-9_/.-]+["']|\bAbortController\b|\bAbortSignal\b|\bTextDecoder\b|\bTextEncoder\b|\bBuffer\b|\bperformance\.now\b|\bset(?:Timeout|Interval|Immediate)\b|\bclear(?:Timeout|Interval)\b|\bprocess\./u;
-
-function shippedModuleCounts(): { readonly runtime: number; readonly total: number } {
-  const root = join(repositoryRoot, "packages/libtmux");
-  const modules = Array.from(new Bun.Glob("src/**/*.ts").scanSync({ cwd: root })).filter(
-    (file) =>
-      !file.includes("_generated/") &&
-      !file.includes("_internal/test/") &&
-      !file.endsWith(".test.ts"),
-  );
-  let runtime = 0;
-  for (const file of modules) {
-    const code = readFileSync(join(root, file), "utf8")
-      .replaceAll(/\/\*[\s\S]*?\*\//gu, "")
-      .split("\n")
-      .filter(
-        (line) => !/^\s*(?:\/\/|\*)/u.test(line) && !/^\s*(?:import|export)\s+type\b/u.test(line),
-      )
-      .join("\n");
-    if (runtimeApi.test(code)) runtime += 1;
-  }
-  return { runtime, total: modules.length };
-}
-
-// The counts are the whole argument for `test:node` running scenarios rather
-// than the suite, and they drift every time a module is added. Stated and
-// never checked, they were wrong: the prose said 22 when the tree held 24.
-const moduleCounts = shippedModuleCounts();
-const claimedCounts = /(\d+) of the (\d+) shipped modules/u.exec(contributingText);
-if (claimedCounts === null) {
-  failures.push(`${contributingPath}: has no "<n> of the <total> shipped modules" claim to check`);
-} else if (
-  Number(claimedCounts[1]) !== moduleCounts.runtime ||
-  Number(claimedCounts[2]) !== moduleCounts.total
-) {
-  failures.push(
-    `${contributingPath}: claims ${String(claimedCounts[1])} of ${String(claimedCounts[2])} shipped modules touch a runtime API; the tree has ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)}`,
-  );
-} else if (!contributingText.includes(`one of those ${String(moduleCounts.runtime)}`)) {
-  failures.push(
-    `${contributingPath}: the scenario rule does not refer back to the same ${String(moduleCounts.runtime)} modules`,
-  );
-}
-
-/**
  * The MCP tool count the root README gives a reader.
  *
  * Three suites in `packages/mcp` already pin the registry at 45, so the code
@@ -591,5 +533,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)} shipped modules touching a runtime API, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, ${String(mcpTools)} MCP tools, and ${String(benchScripts.length)} benchmark scripts\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, ${String(mcpTools)} MCP tools, and ${String(benchScripts.length)} benchmark scripts\n`,
 );

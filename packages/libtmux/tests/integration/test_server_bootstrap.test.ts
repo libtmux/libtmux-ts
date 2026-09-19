@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { chmod, lstat, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -22,6 +23,7 @@ import {
   type TestServerRequestSnapshot,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
+import { closeChild } from "../support/owned_child.js";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -84,13 +86,8 @@ async function runTmux(args: readonly string[]): Promise<{
   readonly stdout: string;
 }> {
   const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  const child = Bun.spawn([tmux, ...args], { stderr: "pipe", stdout: "pipe" });
-  const [code, stderr, stdout] = await Promise.all([
-    child.exited,
-    new Response(child.stderr).text(),
-    new Response(child.stdout).text(),
-  ]);
-  return { code, stderr, stdout };
+  const { code, stderr, stdout } = await closeChild(spawn(tmux, [...args]));
+  return { code: code ?? -1, stderr, stdout };
 }
 
 describe("TestServer bootstrap", () => {
@@ -159,7 +156,7 @@ describe("TestServer bootstrap", () => {
         }
       | undefined;
     await prepareRunRoot(runRoot);
-    expect(await Bun.spawn(["mkfifo", releasePipe]).exited).toBe(0);
+    expect((await closeChild(spawn("mkfifo", [releasePipe]))).code).toBe(0);
     const wrapper = await writeSnapshotLaunchWrapper(
       parent,
       entered,
@@ -366,7 +363,7 @@ describe("TestServer bootstrap", () => {
     const environmentLog = join(parent, "bootstrap.env");
     const releasePipe = join(parent, "release.fifo");
     await prepareRunRoot(runRoot);
-    expect(await Bun.spawn(["mkfifo", releasePipe]).exited).toBe(0);
+    expect((await closeChild(spawn("mkfifo", [releasePipe]))).code).toBe(0);
     const wrapper = await writeBootstrapBarrierWrapper(
       parent,
       entered,

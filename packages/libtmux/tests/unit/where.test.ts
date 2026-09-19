@@ -1,5 +1,3 @@
-import { fileURLToPath } from "node:url";
-
 import { describe, expect, test } from "bun:test";
 
 import { NoMatchError, QueryValidationError } from "../../src/exc.js";
@@ -17,6 +15,7 @@ import {
   type WhereDocumentV1,
   type WindowWhere,
 } from "../../src/selection.js";
+import { builtModuleUrl, runModule } from "../support/runtime_build.js";
 import { createRichProjectedHarness, createSessionHarness } from "../support/selection_fixtures.js";
 
 interface RegexCorpusCase {
@@ -40,8 +39,6 @@ interface RegexCorpus {
     readonly python: string;
   };
 }
-
-const tsRootPath = fileURLToPath(new URL("../..", import.meta.url));
 
 /**
  * The regex corpus is evidence only for the Bun versions it recorded results
@@ -1223,7 +1220,7 @@ describe("plain-data validation", () => {
 describe("WhereDocumentV1 serialization", () => {
   test("does not invoke inherited object or array toJSON hooks", () => {
     const script = String.raw`
-      import { encodeWhereDocument } from "./src/_internal/selection/serialization.js";
+      import { encodeWhereDocument } from ${JSON.stringify(builtModuleUrl("_internal/selection/serialization"))};
 
       const document = { model: "session", version: 1, where: { OR: [{ name: "alpha" }] } };
       let objectCalls = 0;
@@ -1259,13 +1256,9 @@ describe("WhereDocumentV1 serialization", () => {
 
       process.stdout.write(JSON.stringify({ arrayCalls, arrayEncoded, objectCalls, objectEncoded }));
     `;
-    const result = Bun.spawnSync(["bun", "--eval", script], {
-      cwd: tsRootPath,
-      stderr: "pipe",
-      stdout: "pipe",
-    });
-    expect(result.exitCode, result.stderr.toString()).toBe(0);
-    expect(JSON.parse(result.stdout.toString()) as unknown).toEqual({
+    const result = runModule(script);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout) as unknown).toEqual({
       arrayCalls: 0,
       arrayEncoded: '{"model":"session","version":1,"where":{"OR":[{"name":"alpha"}]}}',
       objectCalls: 0,
@@ -1275,8 +1268,8 @@ describe("WhereDocumentV1 serialization", () => {
 
   test("keeps intrinsic Date operations after callers patch globals", () => {
     const script = String.raw`
-      import { decodeFormatValue } from "./src/_internal/codec/format_values.js";
-      import { compileWhere } from "./src/_internal/selection/compile.js";
+      import { decodeFormatValue } from ${JSON.stringify(builtModuleUrl("_internal/codec/format_values"))};
+      import { compileWhere } from ${JSON.stringify(builtModuleUrl("_internal/selection/compile"))};
 
       const IntrinsicDate = Date;
       const originalGetTime = Date.prototype.getTime;
@@ -1306,13 +1299,9 @@ describe("WhereDocumentV1 serialization", () => {
         globalThis.Date = IntrinsicDate;
       }
     `;
-    const result = Bun.spawnSync(["bun", "--eval", script], {
-      cwd: tsRootPath,
-      stderr: "pipe",
-      stdout: "pipe",
-    });
-    expect(result.exitCode, result.stderr.toString()).toBe(0);
-    expect(JSON.parse(result.stdout.toString()) as unknown).toEqual({
+    const result = runModule(script);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout) as unknown).toEqual({
       calls: 0,
       decodedByIntrinsicDate: true,
       query: { session_created: "1" },

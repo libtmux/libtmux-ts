@@ -11,6 +11,7 @@ import {
   RUN_ROOT_ENV,
   sweepStaleRunRoots,
   makeTestDirectory,
+  testParallelism,
 } from "../src/_internal/test/testkit.js";
 
 interface Arguments {
@@ -950,4 +951,27 @@ try {
   console.log(`${version} runtime scenarios passed: ${report.scenarios.join(", ")}`);
 } finally {
   if (exactCleanupComplete) await rm(temporaryRoot, { force: true, recursive: true });
+}
+
+// The suites themselves, on the same Node, against the emitted `dist`. The
+// scenarios above reach what only a fresh process can; these run every test
+// that exercises the library, which Bun runs against `src`.
+const vitest = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url));
+await access(vitest).catch(() => {
+  throw new Error(`vitest is not installed beside the package: ${vitest}`);
+});
+for (const suite of ["unit", "integration"] as const) {
+  const run = spawnSync(
+    executable,
+    [
+      vitest,
+      "run",
+      "--config",
+      "vitest.node.config.ts",
+      ...(suite === "integration" ? [`--maxWorkers=${String(testParallelism())}`] : []),
+    ],
+    { cwd: tsRoot, env: { ...process.env, LTX_NODE_SUITE: suite }, stdio: "inherit" },
+  );
+  if (run.error !== undefined) throw run.error;
+  if (run.status !== 0) throw new Error(`the ${suite} suite failed on ${version}`);
 }

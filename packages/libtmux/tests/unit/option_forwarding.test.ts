@@ -1,3 +1,5 @@
+import { readFile, readdir } from "node:fs/promises";
+
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../src/server.js";
@@ -133,9 +135,11 @@ describe("command option forwarding", () => {
     const unsignalled: string[] = [];
 
     const HANDLES = new Set(["client.ts", "pane.ts", "server.ts", "session.ts", "window.ts"]);
-    for await (const relative of new Bun.Glob("**/*.ts").scan({ cwd: root })) {
+    for (const relative of await readdir(root, { recursive: true })) {
+      if (!relative.endsWith(".ts")) continue;
       if (!relative.startsWith("_internal/operations/") && !HANDLES.has(relative)) continue;
-      const text = await Bun.file(`${root}${relative}`).text();
+      // eslint-disable-next-line no-await-in-loop -- one file at a time keeps the report in order.
+      const text = await readFile(`${root}${relative}`, "utf8");
       for (const declaration of declarations(relative, text)) {
         if (!TAKES_OPTIONS.test(declaration.parameters) || !RUNS.test(declaration.body)) continue;
         checked.push(`${declaration.file}:${declaration.name}`);

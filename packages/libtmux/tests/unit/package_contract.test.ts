@@ -97,6 +97,8 @@ const expectedDevDependencies = {
   // the declarations being built by the newest says nothing about whether an
   // older one can read them, and 5.6 ships no `ES2024` lib at all.
   "typescript-floor": "npm:typescript@5.7.3",
+  // Runs the Bun suites on Node against `dist`, `bun:test` answered by a shim.
+  vitest: "5.0.1",
   zod: "4.5.4",
 };
 

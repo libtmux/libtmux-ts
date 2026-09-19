@@ -18,14 +18,19 @@ or newer.
 
 `test:node` runs the emitted `dist` on Node 22, which is the artifact a Node
 consumer gets — the `bun` export condition serves `src` only to Bun. It runs
-scenarios rather than the whole suite on purpose: 23 of the 90 shipped modules
-touch an API whose behaviour is the runtime's — a `node:` builtin, `process`, a
-timer, `AbortSignal`, `TextDecoder`, `Buffer` or `performance.now`, named
-anywhere but a type position — and the rest are parsers, codecs and query
-compilation that cannot differ by runtime. A scenario belongs here when it
-exercises one of those 23; anything else is covered once, under Bun, and
-running it twice buys nothing. `docs:claims` recomputes both counts from the
-tree, so neither can drift unremarked again.
+the unit and integration suites there through vitest, with `bun:test` answered
+by `tests/support/bun_test_on_node.ts`, and then the scenarios that only a
+fresh process can reach. `vitest.node.config.ts` names what does not run on
+Node and why: gates over the repository — packing, publishing, tsc — rather
+than over the library. A test that needs a process of its own uses `runModule`
+from `tests/support/runtime_build.ts`, which spawns the runtime running the
+test against the build that runtime tests; spawning `bun` from both would test
+Bun twice and Node never.
+
+Running the suite a second time is not redundant. vitest's `toEqual` tells a
+`Buffer` from a `Uint8Array` where bun:test's does not, and that difference
+found the default engine answering with Node's pooled `Buffer` where its type
+promises plain bytes.
 
 A consumer needs TypeScript 5.7 or newer: 5.6 and below ship no `ES2024` lib,
 which the emitted declarations are built against. `test:install` compiles its

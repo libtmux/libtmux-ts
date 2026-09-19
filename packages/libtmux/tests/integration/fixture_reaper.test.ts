@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   access,
   chmod,
@@ -80,9 +81,12 @@ function shellQuote(value: string): string {
 }
 
 async function writeLaunchingHoldWrapper(parent: string, marker: string): Promise<string> {
-  const python = Bun.which("python3");
+  const python = (process.env.PATH ?? "")
+    .split(":")
+    .map((directory) => join(directory, "python3"))
+    .find((candidate) => existsSync(candidate));
   const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  if (python === null) throw new Error("python3 is required");
+  if (python === undefined) throw new Error("python3 is required");
   const wrapper = join(parent, "tmux-launching-hold");
   const program = `import ctypes
 import os
