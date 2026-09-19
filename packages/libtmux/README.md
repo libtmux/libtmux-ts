@@ -147,8 +147,9 @@ before.sessions.length; // unchanged
 ```
 
 `server.sessions()`, `windows()`, `panes()`, and `clients()` each take a
-snapshot of their own — four tmux commands apiece — so reaching for several in
-a row costs several round trips and describes several different instants. In a
+snapshot of their own — one invocation apiece, carrying an identity read and
+four listings — so reaching for several in a row costs several round trips and
+describes several different instants. In a
 loop that is an N+1. Take one `snapshot()` and read the collections off it:
 they are cheaper together and they agree with each other.
 

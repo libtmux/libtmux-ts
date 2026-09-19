@@ -26,6 +26,20 @@ describe("observe", () => {
       // One slot and four concurrent snapshots: three of them had to wait.
       expect(run.queued).toBe(3);
 
+      // The shape the README describes, asserted rather than restated: the
+      // probe is one command, and every snapshot after it is one invocation
+      // carrying an identity read and four listings.
+      expect(run.reports[0]?.commands.map((command) => command[0])).toEqual(["display-message"]);
+      for (const report of run.reports.slice(1)) {
+        expect(report.commands.map((command) => command[0])).toEqual([
+          "display-message",
+          "list-sessions",
+          "list-windows",
+          "list-panes",
+          "list-clients",
+        ]);
+      }
+
       // Every report carries what the invocation cost and how it ended.
       expect(run.reports.length).toBeGreaterThan(0);
       for (const report of run.reports) {
