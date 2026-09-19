@@ -933,6 +933,23 @@ describe("command framing", () => {
     }
   });
 
+  /**
+   * A rejection is not a promise anyone else awaits, so a reservation that
+   * only released on fulfillment would hold the pane forever the one time
+   * settlement itself fails rather than the command it was watching.
+   */
+  test("settleWith releases the reservation even when settlement rejects", async () => {
+    const reservation = reserveFramedCommand(authority, "%91", "settlement failure");
+    if (isPaneInputConflict(reservation)) throw new Error("reservation conflicted");
+
+    reservation.settleWith(Promise.reject(new Error("settlement lost the pane")));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const next = reserveFramedCommand(authority, "%91", "next run");
+    expect(isPaneInputConflict(next)).toBe(false);
+    if (!isPaneInputConflict(next)) next.release();
+  });
+
   test("reads a complete marker buffered before the live tail closes", async () => {
     const tail = new PaneTail("%1");
     const buffers = fakeBuffers();
