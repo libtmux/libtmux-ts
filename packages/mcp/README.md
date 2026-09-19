@@ -226,8 +226,11 @@ libtmux-mcp 0.1.0-alpha.9 serving libtmux-mcp, toolsets execute,inspect,manage,t
 ## Tools
 
 Grouped by what you are trying to do. Every tool returns typed
-`structuredContent` alongside its text, and carries MCP annotations so a host
-can decide what to auto-approve.
+`structuredContent` alongside its text, and carries the same deliberately
+conservative MCP annotations — so a host that auto-approves on annotations
+alone approves none of them. What distinguishes one tool from another is the
+capability row in `tmux://capabilities`, described under
+[Toolsets and trust](#toolsets-and-trust).
 
 These existing names are unchanged: `list_sessions`, `list_windows`,
 `list_panes`, `capture_pane`, `search_panes`, `send_keys`, `paste_text`,

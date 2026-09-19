@@ -89,7 +89,7 @@ describe("error identity", () => {
         known.add(name!);
         declarations.push(`${relative}:${name!}`);
         expect(body, `${relative} declares a code on ${name!}`).toContain(
-          `static override readonly code: string = ${JSON.stringify(name!)}`,
+          `static override readonly code: LibTmuxErrorCode = ${JSON.stringify(name!)}`,
         );
       }
     }
@@ -105,10 +105,11 @@ describe("error identity", () => {
   /**
    * The reason the identifier is a declared literal rather than
    * `new.target.name`: a constructor's `name` is its identifier, and a
-   * consumer bundling with identifier minification renames it. Before this,
-   * nine of the classes here reported names like `"m"` in a `--minify` build,
-   * while the two that hard-coded a string survived — so the property under
-   * test is exactly the one a consumer's build decides.
+   * consumer bundling with identifier minification renames it. Measured on
+   * the tree immediately before this fix: ten of the twelve classes reported
+   * names like `"m"` in a `--minify` build, and the two survivors were
+   * exactly the two that hard-coded a string — so the property under test is
+   * the one a consumer's build decides.
    */
   test("survives a consumer bundling with identifier minification", async () => {
     const directory = await makeTestDirectory("ltx-minify-");

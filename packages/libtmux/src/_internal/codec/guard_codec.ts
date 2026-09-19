@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
-import { LibTmuxError } from "../../errors.js";
+import { LibTmuxError, type LibTmuxErrorCode } from "../../errors.js";
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand, type OutputFormatField } from "./format_types.js";
 import type { TmuxVersion } from "../runtime/tmux_version.js";
@@ -44,7 +44,7 @@ export interface GuardCodecCapabilities {
 }
 
 export class FormatProtocolError extends LibTmuxError {
-  static override readonly code: string = "FormatProtocolError";
+  static override readonly code: LibTmuxErrorCode = "FormatProtocolError";
 }
 
 /**

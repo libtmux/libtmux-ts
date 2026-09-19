@@ -31,6 +31,8 @@ export { NoMatchError } from "./errors.js";
 export { MultipleMatchesError } from "./errors.js";
 /** @deprecated Import from `libtmux/errors` instead. Removed at `0.1.0`. */
 export type { QueryValidationReason } from "./errors.js";
+/** @deprecated Use `QueryValidationReason` from `libtmux/errors`. Removed at `0.1.0`. */
+export type { QueryValidationErrorCode } from "./errors.js";
 /** @deprecated Import from `libtmux/errors` instead. Removed at `0.1.0`. */
 export { QueryValidationError } from "./errors.js";
 /** @deprecated Import from `libtmux/errors` instead. Removed at `0.1.0`. */

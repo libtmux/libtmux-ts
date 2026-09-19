@@ -21,6 +21,8 @@ import type {
   WindowRef,
 } from "../../src/common.js";
 import { isSafeInteger, safeInteger } from "../../src/common.js";
+import type { LibTmuxErrorCode } from "../../src/errors.js";
+import type { WaitTimeoutError } from "../../src/errors.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
 import * as exception from "../../src/exc.js";
 import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
@@ -326,3 +328,17 @@ export type {
   _OptionFlags,
   _HookFlags,
 };
+
+// `code` is a union of every value it can hold, so a comparison against a name
+// this package does not have is a type error rather than a branch that never
+// runs. The literal-per-class alternative is not available: the hierarchy is
+// three deep in places, and a literal on the parent makes the child's
+// declaration an illegal override.
+declare const waitTimeout: WaitTimeoutError;
+const matchesCode: boolean = waitTimeout.code === "WaitTimeoutError";
+// @ts-expect-error no error in this package is named this.
+const typoInCode: boolean = waitTimeout.code === "WaitTimeoutErrro";
+const anyCode: LibTmuxErrorCode = "TmuxCommandError";
+void matchesCode;
+void typoInCode;
+void anyCode;

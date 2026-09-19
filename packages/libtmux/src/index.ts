@@ -82,6 +82,7 @@ export { isSplitSize, isTmuxName, splitSize } from "./types.js";
 
 export {
   LibTmuxError,
+  type LibTmuxErrorCode,
   MultipleMatchesError,
   MultipleObjectsError,
   NoMatchError,
