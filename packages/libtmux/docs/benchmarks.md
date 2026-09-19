@@ -68,14 +68,13 @@ the twelve commands as twelve invocations and returns their printed output
 directly: 13. `batch` does the same and adds one snapshot that resolves all
 twelve handles at once: 14.
 
-Concurrency is the row worth reading twice, and not for the reason this page
-used to give. `Promise.all` over the same twelve creations saves no processes —
-25 either way — and does not preserve order: the batch arrived out of order in
-two or three of every three runs, so treat reordering as what happens rather
-than as a risk. What it does _not_ do is run slower. Every wall-clock figure in
-the first two rows overlaps, and concurrent was the faster of the pair in two
-of the three medians. A single earlier run showing it slower was published here
-as though it were a finding; medians of three disagree with it.
+Concurrency is the row worth reading twice. `Promise.all` over the same twelve
+creations saves no processes — 25 either way — and does not preserve order: the
+batch arrived out of order in two or three of every three runs, so treat
+reordering as what happens rather than as a risk. What it does _not_ do is run
+slower: every wall-clock figure in the first two rows overlaps, and concurrent
+was the faster of the pair in two of the three medians. A single run can look
+otherwise; only the median across several says so.
 
 So the case for `pipeline` or `batch` is not that fanning out is slow. It is
 that fanning out costs the same twenty-five processes, gives up ordering, and
@@ -138,8 +137,8 @@ This one is a correctness workload that reports timings, not a benchmark that
 checks a number: it throws if any value in the right-hand column is wrong, so
 that column is the result and the wall-clock is context. The attempt counts the
 script also prints are not in it, because nothing throws on them — they are
-observations of how many tries recovery happened to need, and three runs here
-gave two every time where an earlier published run recorded three. **0 dropped**
+observations of how many tries recovery happened to need, and that count can
+vary between runs. **0 dropped**
 on sustained output says a fast producer loses nothing, and **64 retained, 99936
 dropped** says a consumer that stops reading costs a bounded 64 slots rather
 than unbounded memory — the two halves of the backpressure claim. The last two
