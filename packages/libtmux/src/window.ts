@@ -496,6 +496,11 @@ export class Window {
    * readable checksum, and 3.7 through 3.7d on one whose checksum is correct
    * and whose cells are not — so the checksum alone is not evidence, and the
    * layout is parsed in full before dispatch.
+   *
+   * @throws TypeError when `layout` is ambiguous, or is neither a preset nor
+   * a layout string this package can parse.
+   * @throws VersionTooLowError when `layout` names a mirrored preset or JSON
+   * layout the running tmux is too old to apply.
    */
   selectLayout(layout: string): Promise<void> {
     return selectLayout(runtimeForHandle(this), this.id, layout);
