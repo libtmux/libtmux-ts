@@ -505,7 +505,12 @@ async function create(
       }
       result.completed_stages.push("before-script");
     } catch (error) {
-      if (!existing) {
+      // An interrupt is not a failure: the tool was stopped, not refused, and
+      // it does not know every effect that landed. Removing the session here
+      // would be a second unbounded operation started at the moment the user
+      // asked to stop, so a new session is only ever removed for a failure
+      // the tool can actually diagnose.
+      if (!existing && !context.signal?.aborted) {
         await session.kill();
         markRemoved(result);
       }
@@ -985,7 +990,9 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
               futureIndexes,
             );
           } catch (error) {
-            if (!append) await discardSession(server, result);
+            // Same rule as the before-script catch above: a session this load
+            // created is only discarded for a failure, never for an interrupt.
+            if (!append && !context.signal?.aborted) await discardSession(server, result);
             throw error;
           }
         }

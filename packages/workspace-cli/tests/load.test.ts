@@ -1901,47 +1901,101 @@ test("append leaves the session's active window alone unless a window asks for f
   });
 });
 
-test.each(["json", "ndjson"])("bootstrap cancellation retains a final %s result", async (mode) => {
-  await fixture(async (server, root) => {
-    const config = join(root, "input.json");
-    await writeFile(
-      config,
-      JSON.stringify({
-        session_name: "interrupted-cli",
-        before_script: `'${process.execPath}' -e 'process.stdout.write("ready");setInterval(()=>{},1000)'`,
-        windows: [{}],
-      }),
-    );
-    const controller = new AbortController();
-    let text = "";
-    const code = await runCli(
-      ["--log-level", "info", "load", config, "-d", `--${mode}`, "-S", server.socketPath!],
-      {
-        cwd: root,
-        env: { ...process.env, HOME: root, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
-        stdin: Readable.from([]),
-        stdout: new Writable({
-          write(chunk, _encoding, done) {
-            text += String(chunk);
-            done();
-          },
+test.each(["json", "ndjson"])(
+  "bootstrap cancellation retains the session and a final %s result",
+  async (mode) => {
+    await fixture(async (server, root) => {
+      const config = join(root, "input.json");
+      await writeFile(
+        config,
+        JSON.stringify({
+          session_name: "interrupted-cli",
+          before_script: `'${process.execPath}' -e 'process.stdout.write("ready");setInterval(()=>{},1000)'`,
+          windows: [{}],
         }),
-        stderr: new Writable({
-          write(chunk, _encoding, done) {
-            if (JSON.parse(String(chunk)).event === "script-output") controller.abort();
-            done();
-          },
-        }),
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
-      },
-    );
-    expect(code).toBe(130);
-    const result = JSON.parse(text.trim().split("\n").at(-1)!);
-    expect(result.errors[0]).toMatchObject({ code: "interrupted", failed_stage: "before-script" });
-    expect(result.results[0].session_removed).toBe(true);
-    expect(await server.hasSession("interrupted-cli")).toBe(false);
-  });
-});
+      );
+      const controller = new AbortController();
+      let text = "";
+      const code = await runCli(
+        ["--log-level", "info", "load", config, "-d", `--${mode}`, "-S", server.socketPath!],
+        {
+          cwd: root,
+          env: { ...process.env, HOME: root, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
+          stdin: Readable.from([]),
+          stdout: new Writable({
+            write(chunk, _encoding, done) {
+              text += String(chunk);
+              done();
+            },
+          }),
+          stderr: new Writable({
+            write(chunk, _encoding, done) {
+              if (JSON.parse(String(chunk)).event === "script-output") controller.abort();
+              done();
+            },
+          }),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+        },
+      );
+      expect(code).toBe(130);
+      const result = JSON.parse(text.trim().split("\n").at(-1)!);
+      expect(result.errors[0]).toMatchObject({
+        code: "interrupted",
+        failed_stage: "before-script",
+      });
+      // An interrupt is not a failure this load can diagnose, so the session it
+      // was building is left in place rather than torn down.
+      expect(result.status).toBe("partial");
+      expect(result.results[0].session_removed).toBeUndefined();
+      expect(await server.hasSession("interrupted-cli")).toBe(true);
+    });
+  },
+);
+
+test.each(["json", "ndjson"])(
+  "an interrupt while building a window retains the session it already created",
+  async (mode) => {
+    await fixture(async (server, root) => {
+      const config = join(root, "input.json");
+      await writeFile(
+        config,
+        JSON.stringify({ session_name: "interrupted-window", windows: [{}, {}, {}] }),
+      );
+      const controller = new AbortController();
+      let text = "";
+      const code = await runCli(
+        ["--log-level", "debug", "load", config, "-d", `--${mode}`, "-S", server.socketPath!],
+        {
+          cwd: root,
+          env: { ...process.env, HOME: root, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
+          stdin: Readable.from([]),
+          stdout: new Writable({
+            write(chunk, _encoding, done) {
+              text += String(chunk);
+              done();
+            },
+          }),
+          stderr: new Writable({
+            write(chunk, _encoding, done) {
+              if (JSON.parse(String(chunk)).event === "window-created") controller.abort();
+              done();
+            },
+          }),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+        },
+      );
+      expect(code).toBe(130);
+      const result = JSON.parse(text.trim().split("\n").at(-1)!);
+      expect(result.errors[0].code).toBe("interrupted");
+      // The window this load already created is a retained effect, so the
+      // session it belongs to is reported, not torn down on the way out.
+      expect(result.status).toBe("partial");
+      expect(result.results[0].session_removed).toBeUndefined();
+      expect(result.results[0].created_windows.length).toBe(1);
+      expect(await server.hasSession("interrupted-window")).toBe(true);
+    });
+  },
+);
 
 test("append rejects another server even when its pane ID matches", async () => {
   await fixture(async (selected, root, run) => {
