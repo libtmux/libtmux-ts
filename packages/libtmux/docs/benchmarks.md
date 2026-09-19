@@ -110,7 +110,9 @@ wall-clock worthless and leaves a count unchanged.
 The handle costs one invocation more than the id at every size, and that
 invocation is a snapshot: its bytes track the snapshot table above, and so does
 its time — the acquire wall there, 10 ms on a one-pane server and 319 ms on a
-192-pane one. The id costs the create alone and reads four bytes. The snapshot
+192-pane one. The id costs the create alone and reads only the printed id
+itself — three bytes while a single digit names it, four once the counter
+reaches double digits. The snapshot
 cannot be narrowed to the session the window was made in: a window made in a
 grouped session is linked into every member, and the handle reports those
 links. A test holds that.
