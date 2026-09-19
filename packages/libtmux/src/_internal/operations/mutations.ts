@@ -21,21 +21,18 @@ import {
 import { buildServerSnapshot } from "./snapshot.js";
 
 /**
- * Run one planned operation on its own.
+ * Run one planned operation on its own, resolving what it made into a handle.
  *
  * The same description a batch would carry, spent on a single command: the
  * arguments go out, a snapshot comes back, and the plan reads its result from
  * it. Running one this way costs the snapshot that a batch would have shared,
  * which is the whole of the difference between the two.
- */
-/**
- * Run one planned mutation and resolve what it made into a handle.
  *
- * `options` reaches both halves. A create is a command and then the snapshot
- * that turns the printed id into a handle, and a caller who passed a `signal`
- * or a `timeoutMs` means it for the whole thing — dropping it here typed
- * exactly like honouring it, so `newSession({ signal })` ran against an
- * already-aborted signal and reported success.
+ * `options` reaches the command; its `signal` reaches that snapshot too,
+ * because a caller who passed one means it for the create as a whole. A
+ * snapshot takes no `timeoutMs` of its own — the server's applies. Dropping
+ * either typed exactly like honouring it: `newSession({ signal })` ran
+ * against an already-aborted signal and reported success.
  */
 async function runPlan<T>(
   server: Server,
