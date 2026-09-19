@@ -1402,7 +1402,9 @@ if (await server.versionAtLeast("3.4")) {
 ```
 
 `raw` is tmux's own string, so a development form such as `next-3.8` survives
-the parsed fields. Development builds compare above every tagged release.
+the parsed fields. `next-X.Y` ranks below the release it names and above the
+one before it; an untargeted build (bare `master`, or `<tag>-master`) names no
+release, so nothing bounds it.
 
 One behaviour differs across the range rather than being gated: tmux 3.3a
 suppressed `run-shell` output for an invocation with no attached client, which
