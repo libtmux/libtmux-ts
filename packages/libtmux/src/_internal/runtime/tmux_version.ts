@@ -5,13 +5,21 @@ export type { TmuxVersion };
 const taggedVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)([a-z]?)$/u;
 const masterSuffix = "-master";
 const nextPrefix = "next-";
+// A release candidate names the release it precedes, as `next-X.Y` does: 3.8 ships
+// its candidates as `3.8-rc`, and older releases numbered them `3.0-rc3`.
+const releaseCandidatePattern = /-rc(?:[1-9]\d*)?$/u;
 
 function invalidVersion(raw: string): TypeError {
   return new TypeError(`invalid tmux version: ${raw}`);
 }
 
 function isDevelopmentVersion(raw: string): boolean {
-  return raw === "master" || raw.startsWith(nextPrefix) || raw.endsWith(masterSuffix);
+  return (
+    raw === "master" ||
+    raw.startsWith(nextPrefix) ||
+    raw.endsWith(masterSuffix) ||
+    releaseCandidatePattern.test(raw)
+  );
 }
 
 export function parseTmuxVersion(raw: string): TmuxVersion {
@@ -28,7 +36,7 @@ export function parseTmuxVersion(raw: string): TmuxVersion {
     ? raw.slice(nextPrefix.length)
     : raw.endsWith(masterSuffix)
       ? raw.slice(0, -masterSuffix.length)
-      : raw;
+      : raw.replace(releaseCandidatePattern, "");
   const match = taggedVersionPattern.exec(tagged);
   if (match === null) throw invalidVersion(raw);
   return Object.freeze({

@@ -30,8 +30,17 @@ describe("tmux versions", () => {
     expect(compareTmuxVersions(parseTmuxVersion("master"), latestTagged)).toBeGreaterThan(0);
     expect(compareTmuxVersions(parseTmuxVersion("3.6a-master"), latestTagged)).toBeGreaterThan(0);
     expect(compareTmuxVersions(parseTmuxVersion("next-3.8"), latestTagged)).toBeGreaterThan(0);
+    expect(compareTmuxVersions(parseTmuxVersion("3.8-rc"), latestTagged)).toBeGreaterThan(0);
+    expect(compareTmuxVersions(parseTmuxVersion("3.0-rc3"), latestTagged)).toBeGreaterThan(0);
     expect(parseTmuxVersion("3.6a-master").raw).toBe("3.6a-master");
     expect(parseTmuxVersion("next-3.8")).toMatchObject({ major: 3, minor: 8, suffix: "" });
+    expect(parseTmuxVersion("3.8-rc")).toMatchObject({
+      major: 3,
+      minor: 8,
+      raw: "3.8-rc",
+      suffix: "",
+    });
+    expect(compareTmuxVersions(parseTmuxVersion("3.8-rc"), parseTmuxVersion("next-3.8"))).toBe(0);
   });
 
   test("carries ordinary version floors into later patch releases", () => {
@@ -53,7 +62,8 @@ describe("tmux versions", () => {
     for (const value of [
       "3",
       "3.7aa",
-      "3.7-rc1",
+      "3.7-rc0",
+      "3.7-rc1-junk",
       "v3.7",
       "tmux 3.7",
       "3.7 ",
