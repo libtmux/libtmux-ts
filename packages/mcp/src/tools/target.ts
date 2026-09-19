@@ -590,8 +590,14 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
   const readBatchOperationSchemas = eligibleReadBatchTools.map((tool) =>
     z
       .object({
-        arguments: z.object(registry.nativeInputShape(tool)).strict().optional(),
-        tool: z.literal(tool),
+        arguments: z
+          .object(registry.nativeInputShape(tool))
+          .strict()
+          .optional()
+          .describe(
+            `Arguments for \`${tool}\`, exactly the shape it takes when called on its own.`,
+          ),
+        tool: z.literal(tool).describe(`Run \`${tool}\` as this step of the batch.`),
       })
       .strict(),
   );

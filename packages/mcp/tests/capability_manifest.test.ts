@@ -358,7 +358,10 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
       const undescribed: string[] = [];
       const walk = (label: string, schema: unknown): void => {
         const node = schema as {
+          allOf?: readonly unknown[];
+          anyOf?: readonly unknown[];
           items?: unknown;
+          oneOf?: readonly unknown[];
           properties?: Record<string, unknown>;
         };
         for (const [name, child] of Object.entries(node.properties ?? {})) {
@@ -367,6 +370,9 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
           walk(`${label}.${name}`, child);
         }
         if (node.items !== undefined) walk(`${label}[]`, node.items);
+        for (const key of ["allOf", "anyOf", "oneOf"] as const) {
+          node[key]?.forEach((branch, index) => walk(`${label}|${key}[${String(index)}]`, branch));
+        }
       };
       for (const tool of tools) walk(tool.name, tool.inputSchema);
       expect(undescribed.length, `undescribed: ${undescribed.join(", ")}`).toBe(0);
