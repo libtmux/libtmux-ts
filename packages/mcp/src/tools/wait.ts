@@ -81,12 +81,15 @@ async function screenAtEntry(context: ToolContext, pane: ReadablePane): Promise<
  * before it attached, so reading first and subscribing second waits forever on
  * text that already arrived.
  *
- * Two things a fresh stream match is not allowed to be: text already on
- * the screen when this wait started, and this server's own not-yet-submitted
- * type-ahead. A pane's line editor re-prints a pending line once it starts
- * reading, and that re-print is genuinely new bytes arriving after subscribe —
- * indistinguishable from real output by timing alone, so both are excluded by
- * what they are rather than when they arrived.
+ * A fresh subscribe's first match is not allowed to be either of two things:
+ * text already on the screen when this wait started, or this server's own
+ * not-yet-submitted type-ahead. A pane's line editor re-prints a pending line
+ * once it starts reading, and that re-print is genuinely new bytes arriving
+ * after subscribe — indistinguishable from real output by timing alone, so
+ * both are excluded by what they are rather than when they arrived. A wait
+ * continued from an earlier `cursor` carries no such ambiguity — the cursor
+ * already names exactly which bytes are new — so only a fresh subscribe
+ * pays for the entry screen or excludes against it.
  */
 async function waitForOutput(
   context: ToolContext,
@@ -99,7 +102,7 @@ async function waitForOutput(
   },
 ): Promise<WaitReport> {
   const sessionId = pane.format.session_id;
-  const entryScreen = await screenAtEntry(context, pane);
+  const entryScreen = options.cursor === undefined ? await screenAtEntry(context, pane) : "";
   const tail = context.policy.liveEnabled
     ? await context.hub.tail(sessionId, pane.id, options.signal)
     : undefined;
@@ -138,7 +141,8 @@ async function waitForOutput(
     const candidate = withoutPendingEcho(seen.text, pane.id);
     const hit = options.matches(candidate);
     // A hit that is only ever a replay of what the entry screen already showed
-    // is not counted until real output has been observed at least once.
+    // is not counted until real output has been observed at least once. Moot
+    // once `options.cursor` was given: `entryScreen` is already empty then.
     const echoOnly = hit !== undefined && !freshOutputSeen && entryScreen.includes(hit);
     if (hit !== undefined && !echoOnly) {
       return {

@@ -326,6 +326,59 @@ test("wait_for_text does not match its own unsubmitted type-ahead", async () => 
   });
 }, 20_000);
 
+// A wait continued from an earlier cursor reads exactly the bytes after that
+// cursor, so unlike a fresh subscribe it carries no ambiguity about whether
+// they are a redraw of old content. Suppressing them the same way as a fresh
+// wait's entry screen defeats the retry the tool's own hint recommends: text
+// that printed between two calls reads as already on screen instead of as
+// what the caller asked to be told about.
+test("wait_for_text matches new output on a cursor continued from a timed-out wait", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    await withClient(fixture, async (client) => {
+      const created = structured<{ paneId: string }>(
+        await client.callTool({
+          arguments: { height: 24, name: "cursor-continue", width: 80 },
+          name: "create_session",
+        }),
+      );
+      const marker = `QACONT-${String(Date.now())}`;
+
+      const first = structured<{ cursor: string | null; outcome: string }>(
+        await client.callTool({
+          arguments: { paneId: created.paneId, patterns: [marker], timeoutMs: 300 },
+          name: "wait_for_text",
+        }),
+      );
+      expect(first.outcome).toBe("timed_out");
+      expect(first.cursor).toBeString();
+
+      await fixture.executeText([
+        "send-keys",
+        "-t",
+        created.paneId,
+        `printf '${marker}\\n'`,
+        "Enter",
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const second = structured<{ matched: string | null; outcome: string }>(
+        await client.callTool({
+          arguments: {
+            cursor: first.cursor,
+            paneId: created.paneId,
+            patterns: [marker],
+            timeoutMs: 1_000,
+          },
+          name: "wait_for_text",
+        }),
+      );
+      expect(second.outcome).toBe("matched");
+      expect(second.matched).toBe(marker);
+    });
+  });
+}, 20_000);
+
 // `attachedClients` is an accurate raw tmux count, but it includes this
 // server's own control-mode observers - a `wait_for_text` in flight opens
 // one. `humanAttachedClients` excludes them.
