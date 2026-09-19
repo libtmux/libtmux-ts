@@ -20,22 +20,22 @@ Part of [libtmux for Bun and TypeScript](../../README.md). Built on
 ## Install
 
 ```console
-$ bun add --exact @libtmux/workspace@0.1.0-alpha.9 libtmux@0.1.0-alpha.9
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.10 libtmux@0.1.0-alpha.10
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i --save-exact @libtmux/workspace@0.1.0-alpha.9 libtmux@0.1.0-alpha.9
+$ npm i --save-exact @libtmux/workspace@0.1.0-alpha.10 libtmux@0.1.0-alpha.10
 ```
 
 ```console
-$ pnpm add --save-exact @libtmux/workspace@0.1.0-alpha.9 libtmux@0.1.0-alpha.9
+$ pnpm add --save-exact @libtmux/workspace@0.1.0-alpha.10 libtmux@0.1.0-alpha.10
 ```
 
 ```console
-$ yarn add --exact @libtmux/workspace@0.1.0-alpha.9 libtmux@0.1.0-alpha.9
+$ yarn add --exact @libtmux/workspace@0.1.0-alpha.10 libtmux@0.1.0-alpha.10
 ```
 
 </details>
