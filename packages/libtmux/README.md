@@ -1135,12 +1135,10 @@ bounded.tmuxBin;
 ```
 
 The ceiling costs no throughput, because there was none to lose: tmux runs
-commands on one thread — [the benchmarks](docs/benchmarks.md) show
-`Promise.all` over twelve creations running slower than doing them in order,
-and reordering a third of them. Measured against a live server on one machine, capture
-throughput stops rising at four concurrent clients and is flat from there to
-sixty-four, so a wider fan-out buys queueing and process pressure rather than
-work.
+commands on one thread. [The benchmarks](docs/benchmarks.md) show `Promise.all`
+over twelve creations reordering a third of them and saving no processes, and
+on an idle machine finishing slower than doing them in order. A wider fan-out
+buys queueing and process pressure rather than work.
 
 Waiting for a slot spends the request's own deadline rather than extending it.
 A request that never gets one raises `TmuxTransportError` with

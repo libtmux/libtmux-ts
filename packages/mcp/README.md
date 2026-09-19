@@ -569,6 +569,11 @@ import { createTmuxMcpServer, serverFromEnvironment } from "@libtmux/mcp";
 const mcp = createTmuxMcpServer(serverFromEnvironment());
 ```
 
+Embedded, the default is the conservative one — `inspect`, `manage`, `execute`
+— because a host passing its own `Server` is naming a daemon this process did
+not create. That is a smaller surface than the CLI on a socket it started
+itself, which also gets `teardown`. Pass `toolsets` to choose deliberately.
+
 To drive it in-process — a test, or a host that is both ends — link a transport
 pair rather than spawning anything. This is a literal excerpt of
 [`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts), which the integration

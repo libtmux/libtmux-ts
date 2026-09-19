@@ -1,7 +1,9 @@
 /**
  * Reading a version 1 layout string the way tmux reads it.
  *
- * tmux 3.7 through 3.7d exit the whole server on a layout whose cell text is
+ * tmux 3.7 through 3.7d — the three releases and the 3.7 branch after them,
+ * which reports 3.7d and has no release of its own — exit the whole server on
+ * a layout whose cell text is
  * unparseable at a point where a terminator follows. `layout_construct`
  * (layout-custom.c) answers such a cell with `NULL` and then returns success
  * anyway, its caller links that `NULL` into the cell list, and

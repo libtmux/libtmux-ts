@@ -19,7 +19,7 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * it, and went on saying so through five published releases. Nothing was in a
  * position to notice.
  *
- * Nine claims are checked, all of them answerable from the tree:
+ * Ten claims are checked, all of them answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
  * - a package named in an install command is one this workspace publishes;
@@ -33,7 +33,8 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  *   the tree; and
  * - the README and CHANGELOG tables of contents list exactly the headings
  *   each file has, in order, with the anchor GitHub would mint for each; and
- * - the MCP tool count the root README gives matches the registry.
+ * - the MCP tool count the root README gives matches the registry; and
+ * - every `bench-*` script is named by the page that reports benchmarks.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -528,6 +529,25 @@ if (claimedTools === null) {
   );
 }
 
+/**
+ * Every benchmark script is named by the page that reports benchmarks.
+ *
+ * `bench-control.ts` existed, had a unit test, and appeared nowhere in
+ * `docs/benchmarks.md` — so the workload that measures backpressure and
+ * reconnection was invisible from the page a reader goes to for exactly that.
+ * Nothing would have said so.
+ */
+const benchmarksPath = "packages/libtmux/docs/benchmarks.md";
+const benchmarksPage = await Bun.file(join(repositoryRoot, benchmarksPath)).text();
+const benchScripts = Array.from(
+  new Bun.Glob("bench-*.ts").scanSync({ cwd: join(repositoryRoot, "packages/libtmux/scripts") }),
+).toSorted((left, right) => left.localeCompare(right));
+for (const script of benchScripts) {
+  if (!benchmarksPage.includes(script)) {
+    failures.push(`${benchmarksPath}: does not name packages/libtmux/scripts/${script}`);
+  }
+}
+
 const engineManifests = [
   "package.json",
   "packages/libtmux/package.json",
@@ -566,5 +586,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)} shipped modules touching a runtime API, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, and ${String(mcpTools)} MCP tools\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(moduleCounts.runtime)} of ${String(moduleCounts.total)} shipped modules touching a runtime API, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, ${String(mcpTools)} MCP tools, and ${String(benchScripts.length)} benchmark scripts\n`,
 );

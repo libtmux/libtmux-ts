@@ -139,9 +139,9 @@ interface Waiter {
  * Every invocation is a tmux client process with its own pipes, so a caller
  * that fans out — an agent driving every pane, a reconciler sweeping a server
  * — turns its own concurrency into process and descriptor pressure. It buys
- * nothing for it: tmux runs commands on one thread, and measured against a
- * live server throughput stops rising at a handful of clients and stays flat
- * from there to sixty-four.
+ * nothing for it: tmux runs commands on one thread, and `bench-modes.ts`
+ * measures twelve concurrent creations running slower than twelve sequential
+ * ones and arriving out of order.
  *
  * Waiting for a permit spends the caller's deadline rather than extending it:
  * the inner engine gets what is left of `timeoutMs`, not a fresh copy of it,

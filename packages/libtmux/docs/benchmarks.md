@@ -1,9 +1,9 @@
 # Benchmarks
 
-Measured, not estimated. Every number here came from the two benchmark scripts
-below, run from the repository root against a real
-tmux, and both scripts print the machine and version they ran on so a rerun can
-be compared with this one rather than guessed against it.
+Measured, not estimated. Every number here came from one of the three benchmark
+scripts below, run from the repository root against a real tmux, and each script
+prints the machine and tmux it ran on so a rerun can be compared with this one
+rather than guessed against it.
 
 Wall-clock is machine-specific and will differ on yours. The invocation counts
 are not: they follow from the design and are what the claims in the README rest
@@ -63,9 +63,36 @@ directly: 13. `batch` does the same and adds one snapshot that resolves all
 twelve handles at once: 14.
 
 Concurrency is the row worth reading twice. `Promise.all` over the same twelve
-creations is _slower_ than doing them in order, and reorders a third of them:
+creations reorders a third of them and saves no processes, and on this run
+finished _slower_ than doing them in order — the ordering of those two
+wall-clock figures is the one number here that a loaded machine can invert:
 tmux runs commands on one thread, so fanning out buys queueing rather than
 throughput, and nothing preserves the order the calls were made in. That is the
 measurement behind `maxInFlight` defaulting to 16 rather than something larger,
 and behind the README telling you to use `pipeline` or `batch` when order
 matters.
+
+## Observing a server
+
+```console
+$ bun packages/libtmux/scripts/bench-control.ts
+```
+
+Run: tmux 3.7c, Linux, 10 cores. The script medians the daemon-replacement row
+internally and reports the others from one pass.
+
+| workload              | size                     | wall-clock    | bounded outcome                                    |
+| --------------------- | ------------------------ | ------------- | -------------------------------------------------- |
+| sustained pane output | 1024 KiB                 | 294 ms        | 1048576 B payload, 0 dropped                       |
+| slow subscriber       | 100000 events / 64 slots | 49 ms         | 64 retained, 99936 dropped                         |
+| same-daemon reconnect | 5 detachments            | 308 ms        | 5 recovered, max attempt 1                         |
+| daemon replacement    | 3 daemons                | 323 ms median | 3 stale handles refused, max attempt 3, max 561 ms |
+
+This one is a correctness workload that reports timings, not a benchmark that
+checks a number: it throws if the terminal state is wrong, so the right-hand
+column is the result and the wall-clock is context. **0 dropped** on sustained
+output says a fast producer loses nothing, and **64 retained, 99936 dropped**
+says a consumer that stops reading costs a bounded 64 slots rather than
+unbounded memory — the two halves of the backpressure claim. The last two rows
+are the recovery path: a connection that survives its client detaching, and
+handles that refuse rather than address a daemon that has been replaced.
