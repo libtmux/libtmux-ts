@@ -40,6 +40,7 @@ export type WorkspaceSpec = {
   windows: WindowSpec[];
   bootstrap: string[] | undefined;
   readiness: "auto" | "always" | "never";
+  warnings: string[];
 };
 
 const fields = {
@@ -145,12 +146,21 @@ function behavior(data: Document, base: string, context: FileContext): void {
     }
   for (const name of ["layout", "window_shell", "shell"]) optionalString(data[name], name);
 }
-function readiness(data: Document, allowExtensionFields: boolean): WorkspaceSpec["readiness"] {
+function readiness(
+  data: Document,
+  allowExtensionFields: boolean,
+  warnings: string[],
+): WorkspaceSpec["readiness"] {
   const catalog =
     data.workspace_builder_options == null
       ? {}
       : mapping(data.workspace_builder_options, "workspace_builder_options");
-  validateFields(catalog, "readiness", "workspace_builder_options", allowExtensionFields);
+  // A builder option this port does not know is a setting for another port's
+  // builder, not a defect: the document still loads.
+  if (!allowExtensionFields)
+    for (const key of Object.keys(catalog))
+      if (!key.startsWith("x-") && !fields.readiness.includes(key))
+        warnings.push(`Ignoring unknown workspace_builder_options key: ${key}`);
   const value =
     catalog.pane_readiness == null
       ? "auto"
@@ -234,12 +244,13 @@ export function normalize(
   options: { allowExtensionFields?: boolean } = {},
 ): WorkspaceSpec {
   const data = structuredClone(document);
+  const warnings: string[] = [];
   const allowExtensionFields = options.allowExtensionFields ?? false;
   validateFields(data, "workspace", "workspace", allowExtensionFields);
   const name = workspaceName(data, context, override);
   const base = dirname(path);
   behavior(data, base, context);
-  const policy = readiness(data, allowExtensionFields);
+  const policy = readiness(data, allowExtensionFields, warnings);
   const cwd = directory(data.start_directory, undefined, base, context);
   const sessionEnvironment = environment(data.environment, base, context);
   const sessionBefore = commands(
@@ -349,5 +360,6 @@ export function normalize(
     windows: normalized,
     bootstrap,
     readiness: policy,
+    warnings,
   };
 }
