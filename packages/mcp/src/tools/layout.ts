@@ -122,10 +122,13 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
           .positive()
           .optional()
           .describe("Cells to move by. Needs direction."),
-        direction: z.enum(["up", "down", "left", "right"]).optional(),
-        height: z.number().int().positive().optional(),
+        direction: z
+          .enum(["up", "down", "left", "right"])
+          .optional()
+          .describe("Adjust by an amount in this direction instead of setting a size."),
+        height: z.number().int().positive().optional().describe("Set the pane height, in rows."),
         paneId: paneIdSchema,
-        width: z.number().int().positive().optional(),
+        width: z.number().int().positive().optional().describe("Set the width, in columns."),
         zoom: z
           .boolean()
           .optional()
@@ -303,7 +306,12 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
     {
       description: "Move a window to another index, or into another session.",
       inputSchema: {
-        index: z.number().int().nonnegative().optional(),
+        index: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe("Destination index. Defaults to the next free one."),
         session: requestText("session").optional().describe("Destination session id or name."),
         sourceIndex: sourceIndexSchema,
         sourceSession: sourceSessionSchema,
@@ -348,8 +356,8 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
         "overwrite this when it next changes; window-size manual makes a size of " +
         "your own stick.",
       inputSchema: {
-        height: z.number().int().positive().optional(),
-        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional().describe("Set the height, in rows."),
+        width: z.number().int().positive().optional().describe("Set the width, in columns."),
         windowId: windowIdSchema,
       },
       outputSchema: { window: windowViewSchema },
@@ -381,7 +389,10 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
       description:
         "Give a pane a title. Useful for labelling what an agent put where, since " +
         "the title shows in list_panes and survives the command changing.",
-      inputSchema: { paneId: paneIdSchema, title: literalTmuxText("title") },
+      inputSchema: {
+        paneId: paneIdSchema,
+        title: literalTmuxText("title").describe("The pane's new title."),
+      },
       outputSchema: { pane: paneViewSchema },
       title: "Set pane title",
     },

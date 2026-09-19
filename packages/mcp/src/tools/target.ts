@@ -360,8 +360,13 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     {
       description: "Wait until a tmux wait-for channel is signalled.",
       inputSchema: {
-        channel: inlineRequestText("channel"),
-        timeoutMs: z.number().int().positive().optional(),
+        channel: inlineRequestText("channel").describe("The tmux wait-for channel name."),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Give up after this long. Defaults to the server's wait ceiling."),
       },
       outputSchema: { channel: z.string(), signalled: z.boolean() },
       title: "Wait for channel",
@@ -380,7 +385,9 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     "signal_channel",
     {
       description: "Signal a tmux wait-for channel.",
-      inputSchema: { channel: inlineRequestText("channel") },
+      inputSchema: {
+        channel: inlineRequestText("channel").describe("The tmux wait-for channel to signal."),
+      },
       outputSchema: { channel: z.string(), signalled: z.boolean() },
       title: "Signal channel",
     },
@@ -394,7 +401,9 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     "set_mouse_enabled",
     {
       description: "Set the global tmux mouse option through a closed boolean schema.",
-      inputSchema: { enabled: z.boolean() },
+      inputSchema: {
+        enabled: z.boolean().describe("Whether tmux should report mouse events."),
+      },
       outputSchema: { enabled: z.boolean() },
       title: "Set mouse enabled",
     },
@@ -408,7 +417,14 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
     "set_history_limit",
     {
       description: "Set the default retained scrollback line limit through a bounded integer.",
-      inputSchema: { lines: z.number().int().min(0).max(2_000_000) },
+      inputSchema: {
+        lines: z
+          .number()
+          .int()
+          .min(0)
+          .max(2_000_000)
+          .describe("Scrollback lines each new pane keeps. Applies to panes made after this."),
+      },
       outputSchema: { lines: z.number().int() },
       title: "Set history limit",
     },
@@ -424,7 +440,12 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
       description:
         "Set the window default for synchronized pane input. Pane overrides still determine " +
         "each effective configured cohort.",
-      inputSchema: { enabled: z.boolean(), windowId: windowIdSchema },
+      inputSchema: {
+        enabled: z
+          .boolean()
+          .describe("Whether typing into one pane of this window types into all of them."),
+        windowId: windowIdSchema,
+      },
       outputSchema: { enabled: z.boolean(), windowId: windowIdSchema },
       title: "Set synchronize panes",
     },
@@ -454,10 +475,16 @@ export function registerTargetTools(registry: ToolRegistry, context: ToolContext
         operations: z
           .array(
             z.object({
-              enter: z.boolean().optional(),
-              force: z.boolean().optional(),
-              keys: inlineRequestText("keys"),
-              literal: z.boolean().optional(),
+              enter: z.boolean().optional().describe("Press Enter afterwards. Default true."),
+              force: z
+                .boolean()
+                .optional()
+                .describe("Allow this server's own caller pane, as on `send_keys`."),
+              keys: inlineRequestText("keys").describe("Keys for this pane, as on `send_keys`."),
+              literal: z
+                .boolean()
+                .optional()
+                .describe("Send the text literally rather than resolving key names."),
               paneId: paneIdSchema,
             }),
           )

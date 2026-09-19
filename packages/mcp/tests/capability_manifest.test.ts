@@ -235,23 +235,6 @@ test("one manifest governs every toolset subset, selection, metadata, and report
         });
       }
 
-      // An agent picks a tool from its schema alone, so a parameter with no
-      // description is one it has to guess at. `maxLines` was explained on
-      // `capture_pane` and silent on the four tools that take the same
-      // argument, and `force` referred to "attention", a word defined nowhere
-      // in any schema.
-      const undescribed: string[] = [];
-      for (const tool of tools) {
-        const properties = (tool.inputSchema as { properties?: Record<string, unknown> })
-          .properties;
-        for (const [parameter, schema] of Object.entries(properties ?? {})) {
-          if (!(schema as { description?: string }).description) {
-            undescribed.push(`${tool.name}.${parameter}`);
-          }
-        }
-      }
-      expect(undescribed.length, `undescribed: ${undescribed.join(", ")}`).toBe(0);
-
       const listedBatch = tools.find(({ name }) => name === "call_read_tools_batch");
       expect(listedBatch?.description).toContain("inner tools receive no separate approval");
       expect(listedBatch?.description).toContain("explicit stop and truncation accounting");
@@ -364,6 +347,26 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
       const tools = (await client.listTools()).tools;
       expect(tools.map(({ name }) => name)).toEqual([...SOURCE_CATALOG_ORDER]);
       expect(tools).toHaveLength(45);
+
+      // An agent picks a tool from its schema alone, so a parameter with no
+      // description is one it has to guess at. This runs against every
+      // toolset, recursing into array items too, which is where
+      // `send_keys_batch`'s per-operation fields live.
+      const undescribed: string[] = [];
+      const walk = (label: string, schema: unknown): void => {
+        const node = schema as {
+          items?: unknown;
+          properties?: Record<string, unknown>;
+        };
+        for (const [name, child] of Object.entries(node.properties ?? {})) {
+          if (!(child as { description?: string }).description)
+            undescribed.push(`${label}.${name}`);
+          walk(`${label}.${name}`, child);
+        }
+        if (node.items !== undefined) walk(`${label}[]`, node.items);
+      };
+      for (const tool of tools) walk(tool.name, tool.inputSchema);
+      expect(undescribed.length, `undescribed: ${undescribed.join(", ")}`).toBe(0);
 
       const controlledOpeners = [
         {

@@ -204,7 +204,10 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
               "still refused with force.",
           ),
         paneId: paneIdSchema,
-        text: inlineRequestText("text"),
+        text: inlineRequestText("text").describe(
+          "Text to paste. Sent through a tmux buffer, so a shell's line editor does " +
+            "not redraw on every character.",
+        ),
       },
       outputSchema: { bytes: z.number().int(), paneId: paneIdSchema },
       title: "Paste text",
