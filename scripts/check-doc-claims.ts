@@ -369,7 +369,12 @@ for (const { depth, file } of tablesOfContents) {
 const workflow = await Bun.file(join(repositoryRoot, ".github/workflows/typescript.yml")).text();
 const matrix = /tmux-version:\s*\[([^\]]+)\]/u.exec(workflow)?.[1];
 if (matrix === undefined) throw new Error("could not read the tmux matrix from typescript.yml");
-const tested = matrix.split(",").map((entry) => entry.trim().replaceAll('"', ""));
+// The formatter adds a trailing comma once the list wraps, which splits into
+// a final empty entry and would otherwise read as a version named "".
+const tested = matrix
+  .split(",")
+  .map((entry) => entry.trim().replaceAll('"', ""))
+  .filter((entry) => entry !== "");
 
 // The badge names the range's ends rather than every release in it: eight
 // entries is a badge nobody reads, and the ends are the claim — everything

@@ -243,7 +243,23 @@ jobs:
         # that logic no tagged binary can exercise. It tracks someone else's
         # branch, so it reports without blocking; see `continue-on-error`.
         tmux-version:
-          ["3.2a", "3.3a", "3.4", "3.5", "3.6", "3.7", "3.7a", "3.7b", "3.7c", "3.8-rc", "master"]
+          [
+            "3.2a",
+            "3.3",
+            "3.3a",
+            "3.4",
+            "3.5",
+            "3.5a",
+            "3.6",
+            "3.6a",
+            "3.6b",
+            "3.7",
+            "3.7a",
+            "3.7b",
+            "3.7c",
+            "3.8-rc",
+            "master",
+          ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
