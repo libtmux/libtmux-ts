@@ -12,6 +12,263 @@ remember.
 
 ## Unreleased
 
+### `@libtmux/workspace-cli`
+
+A new package: `tmux-workspace` discovers, loads, captures, converts and imports
+tmuxp workspaces from Node and Bun, with JSON and NDJSON output, terminal load
+progress and generated shell completion. (#24)
+
+`import` preserves source command groups, pane order, focus and directory
+context. Tmuxinator window arrays stay in one pane; Teamocil `commands` and
+legacy `cmd` retain their grouped execution. Tmuxinator imports refuse
+unexpanded ERB markup in a key or value before output or overwrite; Teamocil
+evaluates no templates, so such text in a Teamocil source is preserved
+literally. `import teamocil` derives a session name from the file for the
+current teamocil format, which starts at `windows:` with no session name of its
+own. Unsupported source behavior and invalid native fields fail before preview
+or destination replacement. (#24)
+
+`load` rejects unsupported workspace, window, pane, command, and readiness
+fields before scripts or tmux mutations, and treats a misspelled execution key
+or a control placed at the wrong scope the same way. Descriptions, native option
+and environment names, lossless conversion, and delegated Python extension
+fields are accepted; `focus: 'true'` and `focus: 'false'`, the quoted strings
+`tmuxp freeze` writes, are accepted alongside the YAML boolean. A key starting
+with `x-`, at any scope, is accepted and ignored at load, matching `convert`;
+the refusal for any other unsupported key names `x-` as the way to keep a custom
+one. An unknown key inside `workspace_builder_options` is a warning, and a
+`start_directory` tmux cannot change into is a warning naming the path and the
+fallback to `$HOME`, neither one stopping the build. A window option named under
+a session's `options:` -- `pane-base-index` and its like -- applies at window
+scope to every window the load creates. With no pane declaring `focus`, the pane
+left active after a load is the last pane created in the window, matching tmuxp.
+`load` splits one pane at a time and rebalances between splits, so a window of
+five or more panes builds without tmux refusing "no space for a new pane"; it
+builds every pane in a window and applies the window's layout before typing into
+any of them, so a window with `synchronize-panes` set sends every command to
+every pane regardless of build order. A pane's prompt is waited for whatever the
+server's `default-shell` is; `workspace_builder_options.pane_readiness` turns
+the wait off. (#24)
+
+`load` starts the tmux server itself when none is listening on the target
+socket, whether or not the load will attach, so `tmux-workspace load -L project
+-d ws.yaml` is a valid first command against a socket with no daemon yet.
+Loading onto a different tmux server than the current pane's, an `--append` with
+no current pane, an attached load with no terminal outside tmux, and a stale
+daemon PID, a socket that no longer exists, a pane id not on the target server,
+a pane id that is not an id, or a `TMUX` that does not parse each refuse with
+one message, `code: "usage"`, exit 2, before anything is built; the message for
+an unreachable tmux names the socket the caller gave or the executable. `load -d
+--append` builds a new detached session and ignores `--append`, matching tmuxp:
+`--append` only takes effect without `-d`, inside tmux or out. `load --append`
+moves the client to the first appended window only when that window sets `focus:
+true`. (#24)
+
+`load`, run from a real terminal without `--yes`, asks before acting. Inside
+tmux, loading a session that does not exist yet asks `switch (y), load detached
+(n), or append (a)`; loading a session that already exists asks `Attach? [Y/n]`,
+inside tmux or out. Piped or non-interactive input answers yes, and `--yes`,
+`-d`, `--json` and `--ndjson` never prompt. An attached load inside tmux needs
+no controlling terminal: it ends in `switch-client`, which needs none, so a
+`bind-key ... run-shell "tmux-workspace load -y ws.yaml"` key binding loads and
+switches; outside tmux, or for `--append`, a terminal (respectively a current
+pane) is still required. Declining the "already running. Attach?" prompt leaves
+the session exactly as it was -- exit 0, nothing compared, no `session_mismatch`
+reported, since declining means the tool never goes to reuse that session.
+Accepting the prompt still compares, as does every other reuse: a `load` that
+reuses an existing session compares it against the document, and a window the
+document declares that the session does not hold gives `code:
+"session_mismatch"`, `status: "error"`, exit 1, and a message naming it, with
+the session left exactly as it was. (#24)
+
+A `load` that creates a session and cannot finish it removes that session:
+`status: "error"`, exit 1, `session_removed: true`, and the result's
+`created_windows`/`created_panes` are empty. An interrupted `load` is the
+exception: it was stopped, not refused, so it leaves standing whatever session
+and windows it had already built, with `status: "partial"`. An `--append` that
+fails partway names the windows it kept, in the machine message and the human
+line; load results carry `created_window_names` and, on a reuse mismatch,
+`missing_windows`, and a session that could not be removed carries
+`session_removal_error`. (#24)
+
+`--json`/`--ndjson` error records carry one of ten closed `code` values:
+`workspace_not_found`, `invalid_workspace`, `unsupported_key`,
+`session_not_found`, `session_mismatch`, `tmux_unavailable`, `tmux_failed`,
+`script_failed`, `destination_exists` and `usage`. An invalid layout name, and a
+document `convert` cannot parse, are both `invalid_workspace`. A `before_script`
+that cannot start at all -- missing or not executable -- is `script_failed`,
+matching tmuxp's `BeforeLoadScriptNotExists`, removes the session `load` created
+for it, and names the failed step `before_script` in its message, which never
+ends in a bare `: ` when the script produced no output. `convert` with neither
+`--yes` nor `--save-to`, an interactive `shell` with no terminal, the legacy
+`-8` colour flag, an ambiguous `freeze`, an unusable `--log-file`, and `freeze
+<name>` with no `--save-to` and no `--json`/`--ndjson` are all `usage`, exit 2.
+A cancelled load reports `interrupted`, and a failed diagnostic sink reports
+`log_error`. A failed `--json`/`--ndjson` load, whether the failure is at
+argument parsing or during the load itself, writes exactly one flat
+`{"schema_version":1,"code":"…","message":"…"}` error record to stderr, the
+shape every other reported failure uses, with nothing else ahead of it. An
+unrecognized subcommand reports `unknown command '<name>'`. (#24)
+
+`--ndjson` spells a load result's input path `input`, in `results[]` and in
+every event that carries one (`workspace-started`, `workspace-completed`,
+`completed`, `failed`), matching cxx, dotnet, go, java and rs; the
+`--progress-format` token `{workspace_path}` and `freeze`'s own `workspace`
+field (the captured document) are a different thing and are unaffected. The
+`started` event spells the input count `inputs`; `window-created`,
+`window-completed` and `pane-created` spell position
+`window_index`/`pane_index`; every window and pane event carries `session_id`.
+`--ndjson` brackets a `before_script`'s output with `script-started`
+(`input_index`) and `script-completed` (`input_index`, `child_status`,
+`truncated`), matching go. (#24)
+
+Attached `load` sizes `-x`/`-y` to the real terminal a client attaches from, the
+way `tmuxp` and `TMUXP_DETECT_TERMINAL_SIZE` do; every window, focused or not,
+matches the session's size from creation. `convert`'s YAML output quotes any
+string scalar a YAML 1.1 or YAML 1.2 resolver would read as
+`true`/`false`/`null`/a number -- `yes`, `off`, `on`, `1.0`, `08` and similar
+bare spellings. `convert --json` emits the document as one compact line.
+`--version` prints `tmux-workspace <version>`. (#24)
+
+`freeze` refuses a session or window whose name `load` would reject -- one
+holding `.` or `:`, which tmux reads as target separators -- and writes no
+file. An explicit `freeze <name>` checks the requested name itself before
+looking for a session, so a name holding either character is refused whether
+or not a session exists under it. Against a socket whose server has not
+started, `freeze <name>` otherwise reports `session_not_found`, the same
+answer as a name that is not running. `freeze`
+writes window options under `options_after`, since `automatic-rename: off` only
+holds when applied after the panes exist (`load` accepts both spellings); it
+omits a pane's `shell_command` when the pane runs the session's default shell,
+and otherwise writes it as a one-element array; it writes no `default-size`,
+since that option records the capturing terminal, not anything the workspace
+declared. (#24)
+
+The published package ships `THIRD-PARTY-NOTICES.md`, reproducing the license
+text of every package the bundle inlines -- `commander`, `yaml`, `cli-truncate`,
+`string-width` and their runtime dependencies. MIT and ISC both require the
+notice to travel with the copy; a check fails the build when a bundled package
+is missing from it. (#24)
+
+### `@libtmux/workspace`
+
+- `applyWorkspace` and `planWorkspace` accept a `signal`, so a build that is
+  no longer wanted stops instead of running to completion. Every tmux call
+  they make carries it, and the gap between two calls is checked as well.
+  A build already begun is not rolled back; planning changes nothing, so
+  there is nothing to unwind. (#24)
+- The README states what happens when two calls race on one session name:
+  tmux offers no lock on a session that does not exist yet, so both can
+  observe none and each start one. Serialize calls that target the same
+  name. (#24)
+- **Breaking.** `applyWorkspace` now rebalances a window between splits, so a
+  window of five or more panes builds at a default 80x24 where tmux previously
+  answered `size or position no space for a new pane` on the fifth. A window
+  that names no layout, or names the empty string, now comes up tiled; a
+  declared layout is still applied last. (#24)
+- The README and `applyWorkspace` now state that this package and
+  `@libtmux/workspace-cli` are separate implementations: they answer
+  differently for a session that already exists, and the strict schema here
+  rejects the CLI's additional document fields. (#24)
+
+### `libtmux`
+
+#### Layouts
+
+`Server.validateLayouts` checks complete window plans before scripts or tmux
+mutations. `Window.selectLayout` rejects invalid names and serialized trees;
+unique abbreviations use the daemon's version, while geometry and pruning stay
+with tmux. Both workspace builders use this preflight before applying
+inputs. (#24)
+
+#### Server
+
+A tmux release candidate is read rather than refused: `parseTmuxVersion` no
+longer throws on tmux's own `3.8-rc` or `3.0-rc3` spellings. A candidate now
+ranks as the release it names, unlike a `next-X.Y` development build, which
+sits somewhere in that release's cycle and may predate any of it. (#24)
+
+`Server.versionAtLeast` no longer treats a named development build such as
+`next-3.9` as satisfying every minimum: it now ranks below the release it
+names and above the one before it. An untargeted build (bare `master`, or
+`<tag>-master`) still satisfies any minimum. (#24)
+
+`Server.connect({ target })` attaches to the session with exactly that name.
+The name went to tmux as a bare target, which it matches as a prefix, so
+asking for `doom` when only `doomsday` existed attached to `doomsday` and
+streamed its output. A session id is still addressed as given. (#24)
+
+**Breaking.** `ServerOptions.colors` accepts `256` alone, and `Server.colors`
+reports `256` or `undefined`. Any other value throws `TypeError` before tmux is
+contacted.
+
+Before:
+
+    new Server({ colors: 88 })
+
+After:
+
+    new Server({ colors: 256 })
+
+Every supported tmux answers `-8` with `unknown option`, so `88` built an
+invocation none of them could run. (#24)
+
+**Breaking.** `ServerSnapshot` carries `daemonIdentity`, the daemon that
+answered the acquisition, so a value standing in for a snapshot supplies it too.
+
+Before:
+
+    { clients, panes, sessions, windows }
+
+After:
+
+    { clients, daemonIdentity, panes, sessions, windows }
+
+A snapshot of a server with no sessions named no daemon, so a reader could not
+tell whether two instants came from the same one. `Server.snapshot` throws
+`LibTmuxException` when acquisition omits the identity. (#24)
+
+`Server.newSession`, `Session.newWindow`, `Window.split` and `Pane.split` apply
+the `signal` and `timeoutMs` they accept, to the command and to the acquisition
+that resolves the created object. A cancelled caller previously created it
+anyway. (#24)
+
+`Session.newWindow`, and `session.plan.newWindow`, accept an exact `index`,
+placing the window at that slot instead of the first free one; an occupied
+index fails without touching the window there. `index` cannot be combined
+with `direction`. (#24)
+
+`showOptions` and `showResolvedOptions` on `Server`, `Session`, `Window` and
+`Pane`, plus `Server.showGlobalOptions` and `Server.daemonIdentity`, now
+accept `CommandOptions` (`daemonIdentity` only a `signal`), so a caller's
+deadline or cancellation reaches these reads too. (#24)
+
+`Server.hasSession` now lists sessions and compares the name in JavaScript,
+rather than asking tmux to resolve a `-t` target: no target spelling is both
+exact and correct for a name holding `.` or `:`, so a session actually named
+`my.proj` previously answered no. A cold socket still answers `false`; any
+other failure to list sessions now raises instead of also reading as
+"no such session". (#24)
+
+### `@libtmux/mcp`
+
+The stdio server now closes pending waits and joins its control connections on
+stdin EOF, preserving existing tmux sessions. Backend cleanup errors reach the
+process exit status. (#24)
+
+`select_layout` reports the observed window layout without falsely warning
+that a valid abbreviation, mirrored name or adapted saved layout was not
+applied. Descriptions now explain that tmux may resize or prune saved
+cells. (#24)
+
+### Release tooling
+
+`@libtmux/workspace-cli` participates in coordinated version checks, package
+canaries, and publication with the library, MCP server, and workspace builder.
+The release policy declares it as not yet published, so the release that creates
+it admits a package-level 404 for that package on the coordinated `latest`
+channel. Every other package must exist in the registry. (#24)
+
 ## 0.1.0-alpha.9 (2026-09-12)
 
 ### `libtmux`
