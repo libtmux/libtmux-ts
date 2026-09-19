@@ -247,7 +247,8 @@ export class BoundedTransport implements CommandTransport {
       }
 
       const queue = this.#waiting;
-      const deadline = request.timeoutMs === undefined ? undefined : Date.now() + request.timeoutMs;
+      const deadline =
+        request.timeoutMs === undefined ? undefined : performance.now() + request.timeoutMs;
       const waiter: Waiter = {
         grant: () => {
           // Reached only from `#handOn`, which has already shifted this off.
@@ -256,6 +257,12 @@ export class BoundedTransport implements CommandTransport {
           // busy loop can leave it pending past its own deadline. Deciding
           // here as well means one answer either way, and a mutation whose
           // caller has already given up never reaches tmux.
+          //
+          // Both sides read `performance.now()`. Built from `Date.now()` this
+          // compared an epoch against a process-relative monotonic clock, so
+          // it was false for every realistic process lifetime and the check
+          // never fired; `afterWaiting` caught the same case one async hop
+          // later, which is why nothing looked wrong.
           if (deadline !== undefined && performance.now() >= deadline) {
             refuse("timeout", "timed out waiting for a tmux invocation slot");
             return false;
