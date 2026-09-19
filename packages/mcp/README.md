@@ -223,11 +223,16 @@ The startup line on stderr names the selected socket, effective toolsets, named
 inclusions, and exclusions. Stdout remains exclusively MCP JSON-RPC, so that
 diagnostic cannot corrupt the protocol stream.
 
+The verb says whether this process started that tmux (`serving new`) or
+attached to one already running (`serving existing`) — which is both why the
+toolsets differ between the two and the only notice that an agent is sharing a
+daemon with whoever else is on that socket.
+
 On a fresh default socket, that diagnostic is:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.0-alpha.9 serving libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
+libtmux-mcp 0.1.0-alpha.9 serving new libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
 ```
 
 ## Tools

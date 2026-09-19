@@ -261,6 +261,7 @@ export async function main(): Promise<void> {
       caller: readCallerEnvironment(),
       policy,
       server: tmux,
+      serverState: startup.serverState,
       version: PACKAGE_VERSION,
     })}\n`,
   );

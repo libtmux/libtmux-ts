@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describeStartupFailure } from "../src/server.js";
+import { describeStartup } from "../src/startup.js";
 import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
 
 test("the stdio server executes the retained capability surface end to end", async () => {
@@ -438,6 +439,28 @@ test("a retired variable refuses with its own message and no stack", async () =>
   expect(stderr).not.toContain("    at ");
   expect(stderr.trimEnd().split("\n")).toHaveLength(1);
 }, 30_000);
+
+/**
+ * Joining a daemon somebody else started is the one startup fact with two
+ * consequences an operator meets later: the toolsets narrow, because a server
+ * this process did not create keeps `teardown` off, and the agent is sharing a
+ * tmux with whoever else is on that socket. The line said neither.
+ */
+test("the startup line says whether this process started the server", () => {
+  const facts = {
+    caller: {},
+    policy: { excludeTools: new Set(), tools: new Set(), toolsets: new Set(["inspect"]) },
+    server: { socketName: "agent" },
+    version: "0.0.0",
+  } as unknown as Parameters<typeof describeStartup>[0];
+
+  const created = describeStartup({ ...facts, serverState: "created" });
+  const existing = describeStartup({ ...facts, serverState: "existing" });
+
+  expect(created).toContain("serving new agent");
+  expect(existing).toContain("serving existing agent");
+  expect(created).not.toEqual(existing);
+});
 
 test("describeStartupFailure falls back to the message for an unrecognized failure", () => {
   expect(describeStartupFailure(new TypeError("LIBTMUX_SOCKET must not be empty"), {})).toBe(
