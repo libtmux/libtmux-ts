@@ -626,8 +626,8 @@ await pane.displayMenu("Pane", [{ command: "kill-pane", key: "k", name: "Kill" }
 
 The rest resolve as soon as the chooser is on screen. Awaiting one tells you it
 opened, never what was chosen — measured on tmux 3.7c, where `choose-tree`
-returns in single-digit milliseconds against the three seconds a menu takes to
-be dismissed. Bind a tmux command to the selection if you need to act on it:
+returns in milliseconds against the seconds a menu spends waiting to be
+dismissed. Bind a tmux command to the selection if you need to act on it:
 
 <!-- static: each opens a chooser that stays on screen until a person dismisses it -->
 
