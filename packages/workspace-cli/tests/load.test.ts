@@ -255,7 +255,9 @@ test.each(["before", "after", "teamocil"])(
       }
       /* eslint-enable no-await-in-loop */
       expect(observed).toEqual(expected);
-      expect(session.activePane?.id).toBe(panes.at(-1)!.id);
+      // The importer writes an explicit focus on the first pane unless the
+      // source names one, and an explicit focus still wins over the default.
+      expect(session.activePane?.id).toBe(panes[phase === "teamocil" ? 1 : 0]!.id);
       expect((await server.snapshot()).sessions.one({ id: keeper.id }).panes.one().id).toBe(
         keeperPane,
       );
