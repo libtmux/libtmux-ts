@@ -61,6 +61,13 @@
         "libtmux": "workspace:*",
       },
     },
+    "examples/observe": {
+      "name": "@example/observe",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
     "examples/quickstart": {
       "name": "@example/quickstart",
       "version": "0.0.0",
@@ -155,6 +162,8 @@
     "@example/libtmux": ["@example/libtmux@workspace:examples"],
 
     "@example/mcp-agent": ["@example/mcp-agent@workspace:examples/mcp-agent"],
+
+    "@example/observe": ["@example/observe@workspace:examples/observe"],
 
     "@example/quickstart": ["@example/quickstart@workspace:examples/quickstart"],
 
