@@ -33,6 +33,9 @@ export type LoadResult = {
   created_windows: string[];
   created_panes: string[];
   session_removed?: boolean;
+  session_removal_error?: string;
+  created_window_names?: string[];
+  missing_windows?: string[];
   script_output?: ProcessResult;
   renumber_restore_error?: string;
   effects_scope?: "observed";
@@ -289,6 +292,8 @@ async function removePlaceholder(
   try {
     if (renumber) await session.setOption("renumber-windows", "off");
     await placeholder.kill();
+    const dropped = result.created_windows.indexOf(placeholder.id);
+    if (dropped >= 0) result.created_window_names?.splice(dropped, 1);
     result.created_windows = result.created_windows.filter((id) => id !== placeholder.id);
     const removed = new Set<string>(placeholder.panes.toArray().map((pane) => pane.id));
     result.created_panes = result.created_panes.filter((id) => !removed.has(id));
@@ -306,6 +311,61 @@ async function removePlaceholder(
     }
   }
   if (failure) throw failure;
+}
+
+/**
+ * Windows the document asks for that the session does not hold. A declared
+ * window matches by name where it has one, and a window with no `window_name`
+ * matches any window nothing else claimed; reuse compares, it never rebuilds.
+ */
+function missingWindows(spec: WorkspaceSpec, session: Session): string[] {
+  const available = new Map<string, number>();
+  let spare = 0;
+  for (const window of session.windows.toArray()) {
+    if (window.name === null) spare++;
+    else available.set(window.name, (available.get(window.name) ?? 0) + 1);
+  }
+  const missing: string[] = [];
+  const unnamed: string[] = [];
+  for (const [ordinal, window] of spec.windows.entries()) {
+    if (window.name === undefined) {
+      unnamed.push(`#${String(ordinal + 1)}`);
+      continue;
+    }
+    const held = available.get(window.name) ?? 0;
+    if (held > 0) available.set(window.name, held - 1);
+    else missing.push(window.name);
+  }
+  spare += [...available.values()].reduce((total, count) => total + count, 0);
+  return [...missing, ...unnamed.slice(spare)];
+}
+
+/** A removed session retains nothing, so its effects are no longer claimed. */
+function markRemoved(result: LoadResult): void {
+  result.session_removed = true;
+  result.completed_stages.push("session-removed");
+  result.created_windows = [];
+  result.created_panes = [];
+  delete result.created_window_names;
+}
+
+/**
+ * Remove a session this load created and could not finish. Reporting `error`
+ * while the server still holds a half-built session are two answers to one
+ * question; the session goes so the next run starts clean.
+ */
+async function discardSession(server: Server, result: LoadResult): Promise<void> {
+  if (!result.session_id || result.session_removed) return;
+  const id = result.session_id;
+  try {
+    const session = (
+      await server.snapshot({ signal: AbortSignal.timeout(5000) })
+    ).sessions.oneOrUndefined({ id });
+    if (session) await session.kill();
+    markRemoved(result);
+  } catch (error) {
+    result.session_removal_error = error instanceof Error ? error.message : String(error);
+  }
 }
 
 async function create(
@@ -336,6 +396,7 @@ async function create(
   if (!existing) {
     const bootstrap = session.windows.at(0)!;
     result.created_windows.push(bootstrap.id);
+    (result.created_window_names ??= []).push(bootstrap.name ?? String(bootstrap.index));
     result.created_panes.push(...bootstrap.panes.toArray().map((pane) => pane.id));
   }
   result.completed_stages.push(existing ? "session-resolved" : "session-created");
@@ -392,8 +453,7 @@ async function create(
     } catch (error) {
       if (!existing) {
         await session.kill();
-        result.session_removed = true;
-        result.completed_stages.push("session-removed");
+        markRemoved(result);
       }
       throw error;
     }
@@ -470,6 +530,7 @@ async function create(
       ...(context.signal ? { signal: context.signal } : {}),
     });
     result.created_windows.push(window.id);
+    (result.created_window_names ??= []).push(window.name ?? String(indexes[windowIndex]!));
     result.created_panes.push(window.panes.at(0)!.id);
     if (windowIndex === 0 && placeholder) {
       result.stage = "bootstrap-removal";
@@ -813,9 +874,34 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
           }
         }
         result.reused = existing !== undefined;
-        session =
-          existing ??
-          (await create(server, input.spec, context, output, result, append, futureIndexes));
+        if (existing) {
+          session = existing;
+          const missing = missingWindows(input.spec, existing);
+          if (missing.length > 0) {
+            result.session_id = existing.id;
+            result.session_name = existing.name ?? input.spec.name;
+            result.missing_windows = missing;
+            throw new CliError(
+              "invalid_workspace",
+              `Session ${input.spec.name} is already running and does not hold ${missing.join(", ")}; it was left as it is`,
+            );
+          }
+        } else {
+          try {
+            session = await create(
+              server,
+              input.spec,
+              context,
+              output,
+              result,
+              append,
+              futureIndexes,
+            );
+          } catch (error) {
+            if (!append) await discardSession(server, result);
+            throw error;
+          }
+        }
       }
       result.session_id = session.id;
       result.session_name = session.name ?? input.spec.name;
@@ -881,7 +967,12 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         : isTmuxUnavailable(error)
           ? "tmux_unavailable"
           : "tmux_failed";
-    const message = error instanceof Error ? error.message : String(error);
+    const kept = results.flatMap((result) =>
+      result.session_id && !result.session_removed ? (result.created_window_names ?? []) : [],
+    );
+    const message =
+      (error instanceof Error ? error.message : String(error)) +
+      (kept.length > 0 ? `. Windows kept: ${kept.join(", ")}` : "");
     await output.result({
       status: changed ? "partial" : "error",
       results,
@@ -899,7 +990,11 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         if (result.session_id && !result.session_removed)
           await write(
             context.stderr,
-            `Session ${styled("subject", result.session_name, false)} remains available (${result.stage}).\n`,
+            `Session ${styled("subject", result.session_name, false)} remains available (${result.stage})${
+              result.created_window_names?.length
+                ? `; windows kept: ${result.created_window_names.join(", ")}`
+                : ""
+            }.\n`,
             context.signal,
           );
       throw error;
