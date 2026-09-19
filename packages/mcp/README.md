@@ -572,7 +572,9 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 Embedded, the default is the conservative one — `inspect`, `manage`, `execute`
 — because a host passing its own `Server` is naming a daemon this process did
 not create. That is a smaller surface than the CLI on a socket it started
-itself, which also gets `teardown`. Pass `toolsets` to choose deliberately.
+itself, which also gets `teardown`. To choose deliberately, pass
+`environment: { LIBTMUX_TOOLSETS: ... }` or a whole `policy`; there is no
+`toolsets` option.
 
 To drive it in-process — a test, or a host that is both ends — link a transport
 pair rather than spawning anything. This is a literal excerpt of
