@@ -1030,3 +1030,21 @@ test("builds a six-pane window at a default terminal size", async () => {
     expect(window.panes.length).toBe(6);
   });
 });
+
+test("an already-aborted signal stops applyWorkspace before any session exists", async () => {
+  await withServer(async (fixture) => {
+    const server = serverFor(fixture);
+    // The rejection has to come from the signal reaching the layout preflight,
+    // not from `signal` being an unrecognized option -- that would also throw
+    // and also leave no session behind, and prove nothing about cancellation.
+    await expect(
+      applyWorkspace(
+        server,
+        { session_name: "aborted-before-build", windows: [{}] },
+        { signal: AbortSignal.abort() },
+      ),
+    ).rejects.toThrow(/cancelled/);
+    expect(await server.hasSession("aborted-before-build")).toBe(false);
+  });
+});
+

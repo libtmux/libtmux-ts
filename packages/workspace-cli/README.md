@@ -84,6 +84,11 @@ added and names them.
 When clients share a session, tmux selects its most recently active client before
 loading. The CLI captures that client and targets the switch explicitly.
 
+Two `load`s racing on the same session name are not coordinated: tmux offers no
+lock on a session that does not exist yet, so the loser's create can fail after
+the winner's session exists, or both can observe no session and each start one.
+Run concurrent loads against distinct session names.
+
 `load -2` forces 256-color terminal handling. Legacy `-8` is rejected before
 calling tmux because supported tmux versions do not implement that legacy flag.
 

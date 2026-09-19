@@ -193,6 +193,12 @@ await applyWorkspace(
 `"always"` does not claim the session or stamp persistent ownership. A later
 apply using the default `"owned"` policy leaves new surplus alone.
 
+Two `applyWorkspace` calls racing on the same session name are not
+coordinated: tmux offers no lock on a session that does not exist yet, so
+either can observe no session and both attempt to create one, or one apply's
+converge can run against a session mid-build by the other. Serialize calls
+that target the same name.
+
 ## A worked example
 
 [`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) calls

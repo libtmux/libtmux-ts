@@ -1,3 +1,4 @@
+import type { AbortLike } from "libtmux";
 import type { PrunePolicy } from "./ownership.js";
 
 /**
@@ -13,43 +14,51 @@ export interface ApplyWorkspaceOptions {
   readonly commands?: CommandPolicy;
   /** How this apply treats undescribed topology; `always` does not claim ownership. */
   readonly prune?: PrunePolicy;
+  /** Abandon the apply when this signal fires. A build already begun is not rolled back. */
+  readonly signal?: AbortLike;
 }
 
 /** Structural planning options; pane command delivery is apply-only. */
 export interface PlanWorkspaceOptions {
   /** How this plan treats undescribed topology; `always` does not claim ownership. */
   readonly prune?: PrunePolicy;
+  /** Abandon the plan when this signal fires. Planning changes nothing, so there is nothing to unwind. */
+  readonly signal?: AbortLike;
 }
 
 /** Validate and snapshot apply options before server access. */
 export function normalizeApplyWorkspaceOptions(options: ApplyWorkspaceOptions): {
   readonly commands: CommandPolicy;
   readonly prune: PrunePolicy;
+  readonly signal: AbortLike | undefined;
 } {
   assertOptionBag(options, "applyWorkspace");
   for (const name of Reflect.ownKeys(options)) {
-    if (name !== "commands" && name !== "prune") {
+    if (name !== "commands" && name !== "prune" && name !== "signal") {
       throw new TypeError(`applyWorkspace does not accept option ${String(name)}`);
     }
   }
   const commands = Object.hasOwn(options, "commands") ? options.commands : undefined;
   const prune = Object.hasOwn(options, "prune") ? options.prune : undefined;
-  return { commands: commandPolicy(commands), prune: prunePolicy(prune) };
+  return { commands: commandPolicy(commands), prune: prunePolicy(prune), signal: options.signal };
 }
 
 /** Validate and snapshot planning options before server access. */
-export function normalizePlanWorkspaceOptions(options: PlanWorkspaceOptions): PrunePolicy {
+export function normalizePlanWorkspaceOptions(options: PlanWorkspaceOptions): {
+  readonly prune: PrunePolicy;
+  readonly signal: AbortLike | undefined;
+} {
   assertOptionBag(options, "planWorkspace");
   if (Object.hasOwn(options, "commands")) {
     throw new TypeError("planWorkspace does not plan pane command delivery");
   }
   for (const name of Reflect.ownKeys(options)) {
-    if (name !== "prune") {
+    if (name !== "prune" && name !== "signal") {
       throw new TypeError(`planWorkspace does not accept option ${String(name)}`);
     }
   }
   const prune = Object.hasOwn(options, "prune") ? options.prune : undefined;
-  return prunePolicy(prune);
+  return { prune: prunePolicy(prune), signal: options.signal };
 }
 
 function assertOptionBag(value: unknown, method: string): asserts value is object {

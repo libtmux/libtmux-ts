@@ -1,3 +1,4 @@
+import type { AbortLike } from "libtmux";
 import type { Session } from "libtmux/session";
 
 /**
@@ -21,14 +22,22 @@ export const OWNERSHIP_OPTION = "@libtmux-workspace";
 export type PrunePolicy = "always" | "never" | "owned";
 
 /** Whether this session carries the mark for `name`. */
-export async function ownedByWorkspace(session: Session, name: string): Promise<boolean> {
-  const options = await session.showOptions();
+export async function ownedByWorkspace(
+  session: Session,
+  name: string,
+  acquisition: { signal?: AbortLike } = {},
+): Promise<boolean> {
+  const options = await session.showOptions(acquisition);
   return options.get(OWNERSHIP_OPTION) === name;
 }
 
 /** Claim a session this apply created. */
-export async function claimSession(session: Session, name: string): Promise<void> {
-  await session.setOption(OWNERSHIP_OPTION, name);
+export async function claimSession(
+  session: Session,
+  name: string,
+  acquisition: { signal?: AbortLike } = {},
+): Promise<void> {
+  await session.setOption(OWNERSHIP_OPTION, name, acquisition);
 }
 
 /**
