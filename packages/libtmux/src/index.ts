@@ -8,7 +8,6 @@ export {
   compileBoundedRegex,
   decodeWhereDocument,
   encodeWhereDocument,
-  parseLegacyWhere,
   type ClientWhere,
   type PaneWhere,
   type RegexCriteriaData,

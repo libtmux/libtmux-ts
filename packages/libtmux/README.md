@@ -1386,8 +1386,10 @@ target that does not exist (`TmuxObjectNotFoundError`) both extend it.
 from Python, which catches `ObjectDoesNotExist` and `MultipleObjectsReturned`,
 has a name to catch. Import library errors from `libtmux` or `libtmux/errors`.
 
-`parseLegacyWhere` converts Python-style `name__contains=` filter strings into
-criteria, for code being ported rather than written fresh.
+`libtmux/selection` carries `parseLegacyWhere`, which converts Python-style
+`name__contains=` filter strings into criteria. It is for code being ported
+rather than written fresh, so it sits on the subpath rather than in the root
+export, as the engine and type inventories do.
 
 ### Migrating from alpha.9
 

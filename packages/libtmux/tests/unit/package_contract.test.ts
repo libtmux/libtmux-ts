@@ -209,7 +209,6 @@ describe("package contract", () => {
       "isSafeInteger",
       "isSplitSize",
       "isTmuxName",
-      "parseLegacyWhere",
       "safeInteger",
       "splitSize",
     ]);

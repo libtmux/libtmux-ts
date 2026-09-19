@@ -9,7 +9,7 @@ page is for looking one thing up.
 
 ## Functions
 
-[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`parseLegacyWhere`](#parselegacywhere) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
 
 ### `encodeWhereDocument`
 
@@ -51,29 +51,6 @@ const document = decodeWhereDocument(
   JSON.parse('{"model":"pane","version":1,"where":{"pane_title":"logs"}}'),
 );
 if (document.model === "pane") snapshot.panes.where(document.where);
-```
-
-### `parseLegacyWhere`
-
-```ts
-function parseLegacyWhere<Model extends "session" | "window">(
-  model: Model,
-  input: unknown,
-): Extract<WhereDocumentV1, { readonly model: Model }>;
-```
-
-Convert the Python port's `name__contains` spelling to canonical criteria.
-
-Accepts one own data property on a plain object and never invokes accessors
-or conversion hooks. The returned document and its criteria are frozen.
-
-@throws QueryValidationError when the model is not `session` or `window`, or
-the input is not exactly one string-valued `name__contains` property.
-
-```ts
-import { parseLegacyWhere } from "libtmux";
-const document = parseLegacyWhere("window", { name__contains: "log" });
-snapshot.windows.where(document.where);
 ```
 
 ### `isSafeInteger`

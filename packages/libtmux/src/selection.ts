@@ -558,7 +558,7 @@ export function decodeWhereDocument(input: unknown): WhereDocumentV1 {
  * the input is not exactly one string-valued `name__contains` property.
  *
  * ```ts
- * import { parseLegacyWhere } from "libtmux";
+ * import { parseLegacyWhere } from "libtmux/selection";
  * const document = parseLegacyWhere("window", { name__contains: "log" });
  * snapshot.windows.where(document.where);
  * ```
