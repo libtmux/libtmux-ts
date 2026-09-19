@@ -88,7 +88,8 @@ describe("tmux versions", () => {
     for (const value of [
       "3",
       "3.7aa",
-      "3.7-rc1",
+      "3.7-rc-junk",
+      "3.7-rcx",
       "v3.7",
       "tmux 3.7",
       "3.7 ",
@@ -99,5 +100,27 @@ describe("tmux versions", () => {
     ]) {
       expect(() => parseTmuxVersion(value)).toThrow("invalid tmux version");
     }
+  });
+
+  /**
+   * tmux ships a candidate as `3.8-rc`, and the version probe runs before the
+   * first command — so this threw, making the library unusable on a candidate
+   * rather than degraded on one.
+   *
+   * It ranks as the release it names, not below it. Measured: 3.8-rc dumps the
+   * v2 JSON layout that arrived in 3.8, so a gate asking whether this tmux has
+   * a 3.8 feature has to answer yes. That is what separates a candidate from a
+   * `next-X.Y` build, which sits somewhere in the cycle and may predate any of
+   * it.
+   */
+  test("ranks a release candidate as the release it is frozen at", () => {
+    for (const raw of ["3.8-rc", "3.8-rc1"]) {
+      const parsed = parseTmuxVersion(raw);
+      expect(parsed, raw).toMatchObject({ major: 3, minor: 8, raw, suffix: "" });
+      expect(tmuxVersionAtLeast(parsed, parseTmuxVersion("3.8")), `${raw} >= 3.8`).toBe(true);
+      expect(tmuxVersionAtLeast(parsed, parseTmuxVersion("3.9")), `${raw} >= 3.9`).toBe(false);
+    }
+    // A mid-cycle build still ranks below the release it names.
+    expect(tmuxVersionAtLeast(parseTmuxVersion("next-3.9"), parseTmuxVersion("3.9"))).toBe(false);
   });
 });
