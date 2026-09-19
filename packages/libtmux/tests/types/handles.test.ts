@@ -1,5 +1,6 @@
 import * as clientModule from "../../src/client.js";
 import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
+import type { TmuxInvocationObserver } from "../../src/common.js";
 import type { TmuxEngine } from "../../src/engine.js";
 import type { RowWithIdentities } from "../../src/field_types.js";
 import type {
@@ -50,8 +51,6 @@ import type {
   PaneId,
   SafeInteger,
   SessionId,
-  TmuxLogger,
-  TmuxWarningSink,
   WindowId,
 } from "../../src/common.js";
 import { Client } from "../../src/client.js";
@@ -79,6 +78,9 @@ type ExpectedServerOptions = {
   readonly engine?: TmuxEngine;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly maxInFlight?: number;
+  // The other public seam, and the reason the no-op logger and warning sink
+  // that used to sit in the runtime are gone: this one is reachable.
+  readonly onInvocation?: TmuxInvocationObserver;
   readonly socketName?: string;
   readonly socketPath?: string;
   readonly timeoutMs?: number;
@@ -90,10 +92,8 @@ type ExpectedRuntimeContextOptions = {
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
   readonly engine?: CommandTransport;
-  readonly logger?: TmuxLogger;
   readonly timeoutMs?: number;
   readonly transport: CommandTransport;
-  readonly warnings?: TmuxWarningSink;
 };
 
 type ExpectedRuntimeContext = {
@@ -102,10 +102,8 @@ type ExpectedRuntimeContext = {
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
   readonly engine: CommandTransport | undefined;
-  readonly logger: TmuxLogger;
   readonly timeoutMs: number | undefined;
   readonly transport: CommandTransport;
-  readonly warnings: TmuxWarningSink;
 };
 
 type Child = Client | Pane | Session | Window;

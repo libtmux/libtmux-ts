@@ -1,3 +1,4 @@
+import type { TmuxInvocationObserver } from "../../common.js";
 import { TmuxTransportError } from "../../errors.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "./types.js";
 
@@ -148,15 +149,47 @@ interface Waiter {
 export class BoundedTransport implements CommandTransport {
   readonly #inner: CommandTransport;
   readonly #limit: number;
+  readonly #observe: TmuxInvocationObserver | undefined;
   #active = 0;
   readonly #waiting: Waiter[] = [];
 
-  constructor(inner: CommandTransport, limit: number) {
+  constructor(inner: CommandTransport, limit: number, observe?: TmuxInvocationObserver) {
     if (!Number.isSafeInteger(limit) || limit < 1) {
       throw new RangeError("maxInFlight must be a positive safe integer");
     }
     this.#inner = inner;
     this.#limit = limit;
+    this.#observe = observe;
+  }
+
+  /**
+   * Hand one finished invocation to the caller's observer.
+   *
+   * Every command reaches tmux through `#run`, a custom engine's included, so
+   * this is the one place that sees all of them. It throws nothing: a command
+   * must not fail on account of the code watching it, and an observer that
+   * does throw has no way to say so that is not worse.
+   */
+  #report(
+    request: CommandRequest,
+    startedAt: number,
+    queuedMs: number,
+    outcome: { readonly error?: unknown; readonly exitCode?: number },
+  ): void {
+    const observe = this.#observe;
+    if (observe === undefined) return;
+    try {
+      observe({
+        commands: request.commands,
+        delivery: outcome.error instanceof TmuxTransportError ? outcome.error.delivery : "replied",
+        durationMs: performance.now() - startedAt,
+        ...(outcome.error === undefined ? {} : { error: outcome.error }),
+        ...(outcome.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
+        queuedMs,
+      });
+    } catch {
+      // Deliberately swallowed; see above.
+    }
   }
 
   execute(request: CommandRequest): Promise<RawCommandResult> {
@@ -172,8 +205,16 @@ export class BoundedTransport implements CommandTransport {
     return this.#waitThenDispatch(request);
   }
 
-  async #run(request: CommandRequest): Promise<RawCommandResult> {
-    return validateRawResult(await this.#inner.execute(request), request);
+  async #run(request: CommandRequest, queuedMs = 0): Promise<RawCommandResult> {
+    const startedAt = performance.now();
+    try {
+      const result = validateRawResult(await this.#inner.execute(request), request);
+      this.#report(request, startedAt, queuedMs, { exitCode: result.exitCode });
+      return result;
+    } catch (error) {
+      this.#report(request, startedAt, queuedMs, { error });
+      throw error;
+    }
   }
 
   async #waitThenDispatch(request: CommandRequest): Promise<RawCommandResult> {
@@ -183,7 +224,8 @@ export class BoundedTransport implements CommandTransport {
 
   async #dispatch(request: CommandRequest, queuedAt: number): Promise<RawCommandResult> {
     try {
-      return await this.#run(afterWaiting(request, queuedAt));
+      const queuedMs = queuedAt === 0 ? 0 : performance.now() - queuedAt;
+      return await this.#run(afterWaiting(request, queuedAt), queuedMs);
     } finally {
       this.#active -= 1;
       this.#handOn();

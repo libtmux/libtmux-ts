@@ -117,23 +117,38 @@ export interface CommandOutcome {
   readonly status: OperationStatus;
 }
 
-export type TmuxLogContext = Readonly<Record<string, boolean | number | string | undefined>>;
-
-export interface TmuxLogger {
-  debug(message: string, context?: TmuxLogContext): void;
-  error(message: string, context?: TmuxLogContext): void;
-  info(message: string, context?: TmuxLogContext): void;
-  warn(message: string, context?: TmuxLogContext): void;
+/**
+ * What one tmux invocation cost and how it ended.
+ *
+ * Every command this package runs produces one of these, including the four
+ * listings behind a snapshot and the probe that reads the version, and
+ * including commands a custom engine executed.
+ */
+export interface TmuxInvocationReport {
+  /** The commands tmux received, without the connection flags. */
+  readonly commands: readonly (readonly string[])[];
+  /** How far the command got. `replied` for one that finished either way. */
+  readonly delivery: DeliveryStatus;
+  /** Wall time from dispatch to answer, excluding any wait for a slot. */
+  readonly durationMs: number;
+  /** What the invocation threw, when it did not answer. */
+  readonly error?: unknown;
+  /** tmux's own status, when there was one. Nonzero is a refusal, not a fault. */
+  readonly exitCode?: number;
+  /** Time spent waiting for a slot under `maxInFlight`. */
+  readonly queuedMs: number;
 }
 
-export interface TmuxWarning {
-  readonly code: string;
-  readonly message: string;
-}
-
-export interface TmuxWarningSink {
-  warn(warning: TmuxWarning): void;
-}
+/**
+ * Called once per tmux invocation, after it answers or fails.
+ *
+ * This is the seam for logs, traces and metrics: a caller that wants to see
+ * what the library is doing has otherwise to supply a whole engine. It runs
+ * after the invocation is decided and cannot change its outcome — anything it
+ * throws is swallowed, because a command must not fail on account of the code
+ * watching it.
+ */
+export type TmuxInvocationObserver = (report: TmuxInvocationReport) => void;
 
 interface LogicalRefBase<Kind extends TmuxIdKind, Id extends TmuxId<Kind>> {
   readonly connection: ConnectionAlias;

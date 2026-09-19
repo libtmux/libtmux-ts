@@ -32,7 +32,7 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 import { acquireServerGraph } from "./_internal/operations/acquire.js";
 
 import { Client } from "./client.js";
-import type { ConnectionAlias, DaemonEpoch } from "./common.js";
+import type { ConnectionAlias, DaemonEpoch, TmuxInvocationObserver } from "./common.js";
 import type { DaemonGuard, TmuxEngine } from "./engine.js";
 import { LibTmuxError } from "./errors.js";
 import { Pane } from "./pane.js";
@@ -129,6 +129,22 @@ export interface ServerOptions {
   readonly timeoutMs?: number;
   readonly tmuxBin?: string;
   /**
+   * Called once per tmux invocation, after it answers or fails.
+   *
+   * The seam for logs, traces and metrics. Every command this server runs
+   * reports here, a custom engine's included, and an observer cannot change
+   * what a command does — see {@link TmuxInvocationObserver}.
+   *
+   * ```ts
+   * const traced = new Server({
+   *   onInvocation: (report) => {
+   *     console.log(report.commands[0]?.[0], report.durationMs, report.delivery);
+   *   },
+   * });
+   * ```
+   */
+  readonly onInvocation?: TmuxInvocationObserver;
+  /**
    * Run this server's commands somewhere other than a local `tmux`.
    *
    * The built-in engine spawns a process per command; supplying one moves every
@@ -214,6 +230,7 @@ export class Server {
       transport: new BoundedTransport(
         options?.engine ?? new NodeSpawnTransport(),
         options?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT,
+        options?.onInvocation,
       ),
     });
     registerServerRuntime(this, runtime, runtimeConstructors);

@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
-import type {
-  ConnectionAlias,
-  DaemonEpoch,
-  LogicalRef,
-  TmuxLogger,
-  TmuxWarningSink,
-} from "../../src/common.js";
+import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
 import { safeInteger } from "../../src/common.js";
 import { LibTmuxError, QueryValidationError } from "../../src/errors.js";
 import {
@@ -116,10 +110,8 @@ function runtimeFixture(
   options: {
     readonly alias?: string;
     readonly epoch?: number;
-    readonly logger?: TmuxLogger;
     readonly onExecute?: () => void;
     readonly connection?: ServerOptions;
-    readonly warnings?: TmuxWarningSink;
   } = {},
 ): RuntimeFixture {
   const transport = recordingTransport(options.onExecute);
@@ -144,8 +136,6 @@ function runtimeFixture(
     connectionAlias: alias(options.alias ?? "handles-runtime"),
     daemonEpoch: epoch(options.epoch ?? 0),
     transport,
-    ...(options.logger === undefined ? {} : { logger: options.logger }),
-    ...(options.warnings === undefined ? {} : { warnings: options.warnings }),
   });
   return {
     runtime,
@@ -410,73 +400,17 @@ describe("server and runtime foundations", () => {
     );
   });
 
-  test("installs usable no-op observability defaults without public options", () => {
-    const server = new Server();
-    const runtime = runtimeForServer(server);
-
-    expect(Object.isFrozen(runtime)).toBe(true);
-    expect(() => {
-      runtime.logger.debug("debug");
-      runtime.logger.error("error");
-      runtime.logger.info("info");
-      runtime.logger.warn("warn");
-      runtime.warnings.warn({ code: "test-warning", message: "test warning" });
-    }).not.toThrow();
-    expect("logger" in server).toBe(false);
-    expect("warnings" in server).toBe(false);
-  });
-
-  test("retains injected observability resources without snapshot leakage", async () => {
-    const loggerCalls: string[] = [];
-    const warningCodes: string[] = [];
-    const logger: TmuxLogger = {
-      debug(message) {
-        loggerCalls.push(`debug:${message}`);
-      },
-      error(message) {
-        loggerCalls.push(`error:${message}`);
-      },
-      info(message) {
-        loggerCalls.push(`info:${message}`);
-      },
-      warn(message) {
-        loggerCalls.push(`warn:${message}`);
-      },
-    };
-    const warnings: TmuxWarningSink = {
-      warn(warning) {
-        warningCodes.push(warning.code);
-      },
-    };
-    const fixture = runtimeFixture({ logger, warnings });
-
-    expect(Object.isFrozen(fixture.runtime)).toBe(true);
-    expect(fixture.runtime.logger).toBe(logger);
-    expect(fixture.runtime.warnings).toBe(warnings);
-    fixture.runtime.logger.info("retained");
-    fixture.runtime.warnings.warn({ code: "retained", message: "retained" });
-    expect(loggerCalls).toEqual(["info:retained"]);
-    expect(warningCodes).toEqual(["retained"]);
-
-    const graph = await graphFor(fixture.runtime, [
-      source("sessions", "list-sessions", [
-        completeFormatRow({ session_id: "$1", session_name: "observed" }),
-      ]),
-    ]);
-    const projection = projectionFor(graph, "sessions");
-    const handle = await materializeProjectionRecord(
-      fixture.server,
-      projection,
-      graph,
-      projectionRecord(projection),
-    );
-    const snapshot = snapshotForHandle(handle);
-
-    expect(Reflect.ownKeys(snapshot)).toEqual([...FORMAT_FIELD_TOKENS]);
-    expect("logger" in snapshot).toBe(false);
-    expect("warnings" in snapshot).toBe(false);
-    expect("logger" in handle).toBe(false);
-    expect("warnings" in handle).toBe(false);
+  // What replaced the no-op logger and warning sink this used to assert on:
+  // a server built with no observer carries none, and one built with
+  // `onInvocation` keeps the caller's own function rather than a wrapper.
+  test("carries the caller's invocation observer, and none when they gave one", () => {
+    expect(Object.isFrozen(runtimeForServer(new Server()))).toBe(true);
+    const seen: string[] = [];
+    const observed = new Server({
+      onInvocation: (report) => seen.push(report.commands[0]?.[0] ?? ""),
+    });
+    expect(Object.isFrozen(runtimeForServer(observed))).toBe(true);
+    expect(seen).toEqual([]);
   });
 
   test("derives an internal Server and binds the exact runtime object", () => {

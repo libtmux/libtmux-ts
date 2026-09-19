@@ -9,10 +9,6 @@ import type {
   DeliveryStatus,
   OperationStatus,
   SafeInteger,
-  TmuxLogger,
-  TmuxLogContext,
-  TmuxWarning,
-  TmuxWarningSink,
   PaneId,
   PaneRef,
   SessionId,
@@ -20,6 +16,7 @@ import type {
   WindowId,
   WindowRef,
 } from "../../src/common.js";
+import type { TmuxInvocationObserver, TmuxInvocationReport } from "../../src/common.js";
 import { isSafeInteger, safeInteger } from "../../src/common.js";
 import type { LibTmuxErrorCode } from "../../src/errors.js";
 import type { WaitTimeoutError } from "../../src/errors.js";
@@ -69,14 +66,11 @@ import type { Equal, Expect } from "./assert.js";
 
 declare const options: CommandOptions;
 declare const result: CommandResult;
-declare const logger: TmuxLogger;
 declare const outcome: CommandOutcome;
 declare const ref: LogicalRef;
 declare const sessionRef: SessionRef;
 declare const windowRef: WindowRef;
 declare const paneRef: PaneRef;
-declare const warning: TmuxWarning;
-declare const warningSink: TmuxWarningSink;
 
 void options.signal;
 void options.stdin;
@@ -84,11 +78,6 @@ void result.cmd;
 void result.stdout;
 void result.stderr;
 void result.exitCode;
-logger.debug("tmux command", { tmux_subcommand: "list-sessions" });
-logger.info("tmux command");
-logger.warn("tmux command");
-logger.error("tmux command");
-warningSink.warn(warning);
 void outcome.delivery;
 void outcome.result;
 void outcome.status;
@@ -96,8 +85,6 @@ void ref.connection;
 void ref.epoch;
 void ref.id;
 void ref.kind;
-void warning.code;
-void warning.message;
 void sessionRef.id;
 void windowRef.id;
 void paneRef.id;
@@ -106,8 +93,6 @@ void paneRef.id;
 result.exitCode = 1;
 // @ts-expect-error Outcomes are readonly snapshots.
 outcome.status = "failed";
-// @ts-expect-error Warning payloads are readonly.
-warning.code = "changed";
 // @ts-expect-error Logical references are readonly.
 sessionRef.kind = "window";
 // @ts-expect-error Flag maps are readonly.
@@ -213,23 +198,12 @@ type _CommandOutcome = Expect<
     }
   >
 >;
-type _Warning = Expect<Equal<TmuxWarning, { readonly code: string; readonly message: string }>>;
-type _WarningSink = Expect<Equal<TmuxWarningSink["warn"], (warning: TmuxWarning) => void>>;
-type _LogContext = Expect<
-  Equal<TmuxLogContext, Readonly<Record<string, boolean | number | string | undefined>>>
+type _InvocationObserver = Expect<
+  Equal<TmuxInvocationObserver, (report: TmuxInvocationReport) => void>
 >;
-type _LoggerDebug = Expect<
-  Equal<TmuxLogger["debug"], (message: string, context?: TmuxLogContext) => void>
->;
-type _LoggerInfo = Expect<
-  Equal<TmuxLogger["info"], (message: string, context?: TmuxLogContext) => void>
->;
-type _LoggerWarn = Expect<
-  Equal<TmuxLogger["warn"], (message: string, context?: TmuxLogContext) => void>
->;
-type _LoggerError = Expect<
-  Equal<TmuxLogger["error"], (message: string, context?: TmuxLogContext) => void>
->;
+type _InvocationReportDelivery = Expect<Equal<TmuxInvocationReport["delivery"], DeliveryStatus>>;
+type _InvocationReportDuration = Expect<Equal<TmuxInvocationReport["durationMs"], number>>;
+type _InvocationReportExit = Expect<Equal<TmuxInvocationReport["exitCode"], number | undefined>>;
 type _SessionRef = Expect<
   Equal<
     SessionRef,

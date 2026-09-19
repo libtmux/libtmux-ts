@@ -103,6 +103,8 @@ export type {
   SafeInteger,
   SessionId,
   SessionIdInput,
+  TmuxInvocationObserver,
+  TmuxInvocationReport,
   TmuxId,
   TmuxIdInput,
   TmuxIdKind,

@@ -94,6 +94,7 @@ when a program needs it, and nothing above depends on any of it.
 **Getting the cost right** ·
 [Choosing how work is arranged](#choosing-how-work-is-arranged) ·
 [Supplying an engine](#supplying-an-engine) ·
+[Seeing what it runs](#seeing-what-it-runs) ·
 [Deadlines and cancellation](#deadlines-and-cancellation)
 
 **Recipes** ·
@@ -1002,6 +1003,35 @@ const opened = await live.subscribe().find((event) => event.kind === "window-add
   timeoutMs: 5_000,
 });
 ```
+
+## Seeing what it runs
+
+`onInvocation` is called once per tmux invocation, after it answers or fails —
+the seam for logs, traces and metrics, so watching the library does not mean
+supplying a whole engine:
+
+```ts
+import type { TmuxInvocationReport } from "libtmux";
+
+const reports: TmuxInvocationReport[] = [];
+const traced = new Server({
+  socketPath: server.socketPath,
+  onInvocation: (report) => reports.push(report),
+});
+await traced.snapshot();
+
+reports[0]?.commands[0]?.[0]; // "display-message", the identity read
+reports[0]?.durationMs;
+```
+
+`TmuxInvocationReport` is exported for a typed collector. Every command
+reports, including the identity read and four listings behind `snapshot()`, the version probe, and commands a custom engine executed. The
+report carries the commands tmux received, `durationMs` for the invocation
+itself, `queuedMs` for any wait under `maxInFlight`, `exitCode` when tmux
+answered, and `error` with `delivery` when it did not.
+
+An observer cannot change what a command does. Anything it throws is
+swallowed: a command must not fail on account of the code watching it.
 
 ## Deadlines and cancellation
 

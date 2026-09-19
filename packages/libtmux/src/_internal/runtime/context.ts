@@ -1,10 +1,4 @@
-import type {
-  ConnectionAlias,
-  DaemonEpoch,
-  LogicalRef,
-  TmuxLogger,
-  TmuxWarningSink,
-} from "../../common.js";
+import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../common.js";
 import { LibTmuxError } from "../../errors.js";
 import type { DaemonIdentity, Server } from "../../server.js";
 import { decodeLogicalRef } from "../graph/refs.js";
@@ -44,26 +38,14 @@ function nextDaemonRevision(state: RuntimeEpochState): number {
 const runtimeEpochStates = new WeakMap<RuntimeContext, RuntimeEpochState>();
 const serverRuntimes = new WeakMap<object, RuntimeContext>();
 
-const noopLogger: TmuxLogger = Object.freeze({
-  debug: () => undefined,
-  error: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-});
-const noopWarnings: TmuxWarningSink = Object.freeze({
-  warn: () => undefined,
-});
-
 export interface RuntimeContextOptions {
   readonly connection: TmuxConnection;
   readonly connectionAlias: ConnectionAlias;
   readonly daemonEpoch: DaemonEpoch;
   /** The caller's engine, when they supplied one. See {@link RuntimeContext.engine}. */
   readonly engine?: CommandTransport;
-  readonly logger?: TmuxLogger;
   readonly timeoutMs?: number;
   readonly transport: CommandTransport;
-  readonly warnings?: TmuxWarningSink;
 }
 
 export interface RuntimeContext {
@@ -82,9 +64,7 @@ export interface RuntimeContext {
    * that spawn have to know, and what tells two servers apart.
    */
   readonly engine: CommandTransport | undefined;
-  readonly logger: TmuxLogger;
   readonly transport: CommandTransport;
-  readonly warnings: TmuxWarningSink;
 }
 
 function epochStateFor(runtime: RuntimeContext): RuntimeEpochState {
@@ -126,10 +106,8 @@ export function createRuntimeContext(options: RuntimeContextOptions): RuntimeCon
       return state.daemonEpoch;
     },
     engine: options.engine,
-    logger: options.logger ?? noopLogger,
     timeoutMs,
     transport: options.transport,
-    warnings: options.warnings ?? noopWarnings,
   });
   runtimeEpochStates.set(runtime, state);
   return runtime;
