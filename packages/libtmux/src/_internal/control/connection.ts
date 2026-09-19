@@ -12,6 +12,7 @@ import type {
 import { assertSubscriptionFormat, assertSubscriptionName } from "../operations/names.js";
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
+import { isSessionId } from "../runtime/ids.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import type { CommandTransport } from "../transport/types.js";
 import { TmuxTransportError } from "../transport/types.js";
@@ -111,6 +112,13 @@ export interface ControlObserverBinding {
  * Commands use process boundaries because control mode cannot frame arbitrary
  * alias-expanded or waiting command output truthfully.
  */
+// A session id addresses exactly one session. A name is anchored, because tmux
+// matches a bare -t name as a prefix and would attach to another session that
+// merely starts with it.
+function attachTarget(target: string): string {
+  return isSessionId(target) ? target : `=${target}`;
+}
+
 export class ControlConnection {
   readonly #children: ControlChildLifecycle;
   readonly #argv: readonly string[];
@@ -242,7 +250,7 @@ export class ControlConnection {
       "-N",
       "-C",
       "attach-session",
-      ...(options.target === undefined ? [] : ["-t", options.target]),
+      ...(options.target === undefined ? [] : ["-t", attachTarget(options.target)]),
     ];
     this.#argv = Object.freeze(argv);
     this.#executable = connection.executable;
