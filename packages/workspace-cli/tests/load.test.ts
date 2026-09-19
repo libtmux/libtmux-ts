@@ -2045,6 +2045,7 @@ test("a tmux failure names its unfinished stage and leaves no session behind", a
     // Re-running a document that failed is the natural response to a failure,
     // so the second answer has to be the first.
     for (const attempt of [1, 2]) {
+      // eslint-disable-next-line no-await-in-loop -- The second run answers about the first.
       const result = await run(["load", config, "-d", "--json"]);
       expect(result.code, `attempt ${String(attempt)}: ${result.stdout}`).toBe(1);
       const summary = JSON.parse(result.stdout);
@@ -2055,6 +2056,7 @@ test("a tmux failure names its unfinished stage and leaves no session behind", a
         created_windows: [],
         created_panes: [],
       });
+      // eslint-disable-next-line no-await-in-loop -- Read the server between attempts.
       expect(await server.hasSession("partial-cli")).toBe(false);
     }
   });
@@ -2162,6 +2164,7 @@ test("every broken current-pane context is one refusal, and builds nothing", asy
       ["pane is not an id", `${server.socketPath},${identity.pid},0`, "nonsense"],
       ["unparsable TMUX", server.socketPath!, pane],
     ] as const) {
+      // eslint-disable-next-line no-await-in-loop -- Each case reuses the same owned endpoint.
       const result = await run(["load", config, "--append", "--json"], {
         TMUX: tmux,
         TMUX_PANE: tmuxPane,
@@ -2170,7 +2173,36 @@ test("every broken current-pane context is one refusal, and builds nothing", asy
       expect(JSON.parse(result.stderr).code, label).toBe("usage");
       for (const leak of ["No objects found", "Invalid selection query", "error connecting to"])
         expect(result.stderr, label).not.toContain(leak);
+      // eslint-disable-next-line no-await-in-loop -- Read the server after each case.
       expect(await server.hasSession("probe"), label).toBe(false);
     }
+  });
+});
+
+test("freeze refuses a name load would reject, and writes nothing", async () => {
+  await fixture(async (server, root, run) => {
+    // tmux itself accepts a dotted name; only addressing it by name is
+    // ambiguous, so the session has to be made without the library's guard.
+    const tmux = async (...args: string[]) => {
+      const child = await processRun([server.tmuxBin, "-S", server.socketPath!, ...args], {
+        cwd: root,
+        env: process.env,
+      });
+      expect(child.code, child.stderr).toBe(0);
+    };
+    await tmux("new-session", "-d", "-s", "my.proj");
+    const destination = join(root, "dotted.yaml");
+    const result = await run(["freeze", "my.proj", "--save-to", destination, "--json"]);
+    expect(result.code, result.stdout + result.stderr).toBe(1);
+    expect(JSON.parse(result.stderr).code).toBe("invalid_workspace");
+    expect(result.stderr).toContain("my.proj");
+    expect(await Bun.file(destination).exists()).toBe(false);
+
+    await tmux("new-window", "-d", "-t", "fixture:", "-n", "a.b");
+    const second = join(root, "dotted-window.yaml");
+    const window = await run(["freeze", "fixture", "--save-to", second, "--json"]);
+    expect(window.code, window.stdout + window.stderr).toBe(1);
+    expect(JSON.parse(window.stderr).code).toBe("invalid_workspace");
+    expect(await Bun.file(second).exists()).toBe(false);
   });
 });
