@@ -798,6 +798,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
   let client = attached ? await attachmentClient(server, context) : undefined;
   const interactive =
     attached && !request.values.answer_yes && Boolean((context.stdin as { isTTY?: boolean }).isTTY);
+  // Set when the last input's "already running, Attach?" is declined: the
+  // tool never went to reuse that session, so its per-input compare below is
+  // skipped rather than reporting a mismatch against a session it left alone.
+  let declinedReuse = false;
   if (attached) {
     const lastName = inputs.at(-1)!.spec.name;
     let existingLast = false;
@@ -818,6 +822,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
       if (answer === "n") {
         attached = false;
         client = undefined;
+        declinedReuse = true;
       }
     } else if (client?.mode === "switch") {
       const answer = interactive
@@ -955,7 +960,10 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
         result.reused = existing !== undefined;
         if (existing) {
           session = existing;
-          const missing = missingWindows(input.spec, existing);
+          // The attach prompt is asked only about the last input (see
+          // `declinedReuse` above), so a decline can only ever apply here.
+          const skipCompare = declinedReuse && index === inputs.length - 1;
+          const missing = skipCompare ? [] : missingWindows(input.spec, existing);
           if (missing.length > 0) {
             result.session_id = existing.id;
             result.session_name = existing.name ?? input.spec.name;
