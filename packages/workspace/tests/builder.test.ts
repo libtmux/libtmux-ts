@@ -1047,4 +1047,3 @@ test("an already-aborted signal stops applyWorkspace before any session exists",
     expect(await server.hasSession("aborted-before-build")).toBe(false);
   });
 });
-
