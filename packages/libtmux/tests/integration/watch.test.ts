@@ -1204,4 +1204,41 @@ describe("Server.watch", () => {
       expect(seen, "the watch's own refresh-client reports").toContain("refresh-client");
     });
   }, 40_000);
+
+  /**
+   * A watch's own commands share the server's transport, so they can sit
+   * queued behind unrelated work for their whole deadline. Unsignalled, one
+   * then runs after the caller disposed the watch, against a client already
+   * retired — a wasted process and a failed invocation reported for a
+   * connection nobody is holding.
+   */
+  test("cancels its own queued commands when the watch is disposed", async () => {
+    await withServer(async (fixture) => {
+      const reports: { readonly delivery: string; readonly name: string }[] = [];
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        maxInFlight: 1,
+        onInvocation: (report) =>
+          reports.push({ delivery: report.delivery, name: report.commands[0]?.[0] ?? "" }),
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      // Hold the only slot, so the watch's pause-after command queues behind it.
+      const hog = server.runShell("sleep 2");
+      const events = server.watch({ pauseAfterSeconds: 3 });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await events.close();
+
+      await hog.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      const refresh = reports.filter((report) => report.name === "refresh-client");
+      // Either it never started, or it never ran at all. What it must not do
+      // is complete against a client the dispose already retired.
+      for (const report of refresh) {
+        expect(report.delivery, "a queued observer command after dispose").toBe("not_started");
+      }
+    });
+  }, 40_000);
 });

@@ -126,6 +126,10 @@ describe("invocation observer", () => {
     expect(queued, "the refused request reports").toBeDefined();
     expect(queued?.exitCode).toBeUndefined();
     expect(queued?.queuedMs).toBeGreaterThan(0);
+    // `durationMs` is time on the invocation, and this never became one. The
+    // whole elapsed time was the wait, which `queuedMs` already carries —
+    // reporting it as both makes a consumer summing them count it twice.
+    expect(queued?.durationMs).toBeLessThan(queued?.queuedMs ?? 0);
 
     release[0]?.();
     await holding;

@@ -230,22 +230,27 @@ export class BoundedTransport implements CommandTransport {
     // deadline that passed during the wait, never reaches `#run` — and so
     // never reached the observer, though `TmuxInvocationReport` models exactly
     // that case with `delivery: "not_started"` and the wait in `queuedMs`.
-    const startedAt = performance.now();
+    const waitedFrom = performance.now();
     let queuedAt = 0;
     try {
       queuedAt = await this.#acquire(request);
     } catch (error) {
-      this.#report(request, startedAt, performance.now() - startedAt, { error });
+      // `durationMs` is time spent on the invocation, and this one never
+      // became an invocation — the whole elapsed time was the wait, which
+      // `queuedMs` already carries. Reporting it as both would make a
+      // consumer summing the two count the wait twice.
+      const refusedAt = performance.now();
+      this.#report(request, refusedAt, refusedAt - waitedFrom, { error });
       throw error;
     }
-    const queuedMs = queuedAt === 0 ? 0 : performance.now() - queuedAt;
+    const queuedMs = performance.now() - waitedFrom;
     let waited: CommandRequest;
     try {
       waited = afterWaiting(request, queuedAt);
     } catch (error) {
       this.#active -= 1;
       this.#handOn();
-      this.#report(request, startedAt, queuedMs, { error });
+      this.#report(request, performance.now(), queuedMs, { error });
       throw error;
     }
     return this.#dispatchWaited(waited, queuedMs);

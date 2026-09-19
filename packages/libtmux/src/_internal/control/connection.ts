@@ -770,21 +770,29 @@ export class ControlConnection {
     if (fallback === undefined || child.pid === undefined) {
       throw new Error("watch observer has no spawning transport");
     }
-    const result = await fallback.execute({
-      commands: [
-        [
-          "refresh-client",
-          "-t",
-          `client-${String(child.pid)}`,
-          "-f",
-          `pause-after=${String(seconds)}`,
+    // Signalled and raced against close, as every observer command must be.
+    // These share the server's transport, so they can sit queued behind
+    // unrelated work for their whole deadline — and an unsignalled one then
+    // runs after the caller disposed the watch, against a client already
+    // retired, reporting a failure for a connection nobody is holding.
+    const result = await this.#untilClosed(
+      fallback.execute({
+        commands: [
+          [
+            "refresh-client",
+            "-t",
+            `client-${String(child.pid)}`,
+            "-f",
+            `pause-after=${String(seconds)}`,
+          ],
         ],
-      ],
-      executable: this.#executable,
-      environment: this.#environment,
-      globalArgs: this.#commandPrefix,
-      timeoutMs: 30_000,
-    });
+        executable: this.#executable,
+        environment: this.#environment,
+        globalArgs: this.#commandPrefix,
+        signal: this.#lifetimeAbort.signal,
+        timeoutMs: 30_000,
+      }),
+    );
     if (result.exitCode !== 0) {
       throw new TmuxTransportError("tmux refused pause-after", {
         delivery: "replied",
@@ -820,6 +828,7 @@ export class ControlConnection {
       executable: this.#executable,
       environment: this.#environment,
       globalArgs: this.#commandPrefix,
+      signal: this.#lifetimeAbort.signal,
       timeoutMs: 30_000,
     };
     const isCurrent = (): boolean =>
