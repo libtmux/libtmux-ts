@@ -65,6 +65,32 @@ function assertDeepFrozenData(value: unknown, seen = new Set<object>()): void {
 }
 
 describe("Selection collection contract", () => {
+  /**
+   * `where({ ... }).one()` is the chain the quickstart teaches, and the error
+   * it raised named nothing: `one` had no argument, so the criteria that had
+   * already narrowed the selection were reported as an empty query. A
+   * predicate keeps none, because a predicate is not reifiable as a query.
+   */
+  test("names the criteria that narrowed it when one() is called bare", async () => {
+    const harness = await createSessionHarness(["alpha"]);
+    const selection = createProjectedSelection("session", harness.values, harness.projection);
+    const absent = { name: "no-such-session" } as const;
+
+    const queryOf = (action: () => unknown): unknown => {
+      try {
+        action();
+      } catch (error: unknown) {
+        return (error as { query?: unknown }).query;
+      }
+      return undefined;
+    };
+
+    expect(queryOf(() => selection.one(absent))).toEqual(absent);
+    expect(queryOf(() => selection.where(absent).one())).toEqual(absent);
+    // A predicate is not reifiable, so it still reports nothing.
+    expect(queryOf(() => selection.filter(() => false).one())).toEqual({});
+  });
+
   test("is a type-only public interface with private runtime construction", async () => {
     const harness = await createSessionHarness(["alpha"]);
     const selection = createProjectedSelection("session", harness.values, harness.projection);
