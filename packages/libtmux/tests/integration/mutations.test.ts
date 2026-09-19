@@ -66,6 +66,38 @@ async function captureUntil(
 }
 
 describe("lifecycle mutations", () => {
+  /**
+   * `newSession`, `newWindow` and `split` take `CommandOptions` and typed as
+   * though they honoured them, while the plan path called `runCommand` with
+   * no options at all: an already-aborted signal was ignored and the object
+   * was created anyway. The only coverage was a compile-only assertion that
+   * the types accept `signal`, which a dropped option satisfies perfectly.
+   */
+  test("honours a signal on the operations that accept one", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const dead = AbortSignal.abort(new Error("caller gave up"));
+      const cancelled = { code: "TmuxTransportError", kind: "cancelled" };
+
+      await expect(server.newSession({ name: "never", signal: dead })).rejects.toMatchObject(
+        cancelled,
+      );
+      const session = await server.newSession({ name: "host" });
+      await expect(session.newWindow({ name: "never", signal: dead })).rejects.toMatchObject(
+        cancelled,
+      );
+      const pane = session.windows.one().panes.one();
+      const panesBefore = (await server.snapshot()).panes.length;
+      await expect(pane.split({ signal: dead })).rejects.toMatchObject(cancelled);
+
+      // Refused before tmux ran, so nothing was made.
+      const after = await server.snapshot();
+      expect(after.sessions.toArray().map((one) => one.name)).not.toContain("never");
+      expect(after.windows.toArray().map((one) => one.name)).not.toContain("never");
+      expect(after.panes.length).toBe(panesBefore);
+    });
+  }, 60_000);
+
   test("creates a session, window, and pane, resolving each as a handle", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

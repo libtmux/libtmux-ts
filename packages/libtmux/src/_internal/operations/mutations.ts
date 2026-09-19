@@ -4,6 +4,7 @@ import type {
   PlannedOperation,
   SplitOptions,
 } from "../../types.js";
+import type { CommandOptions } from "../../common.js";
 import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
@@ -27,13 +28,23 @@ import { buildServerSnapshot } from "./snapshot.js";
  * it. Running one this way costs the snapshot that a batch would have shared,
  * which is the whole of the difference between the two.
  */
+/**
+ * Run one planned mutation and resolve what it made into a handle.
+ *
+ * `options` reaches both halves. A create is a command and then the snapshot
+ * that turns the printed id into a handle, and a caller who passed a `signal`
+ * or a `timeoutMs` means it for the whole thing — dropping it here typed
+ * exactly like honouring it, so `newSession({ signal })` ran against an
+ * already-aborted signal and reported success.
+ */
 async function runPlan<T>(
   server: Server,
   runtime: RuntimeContext,
   plan: PlannedOperation<T>,
+  options: CommandOptions = {},
 ): Promise<T> {
-  const lines = await runCommand(runtime, plan.argv);
-  return plan.resolve(await buildServerSnapshot(server, runtime), lines);
+  const lines = await runCommand(runtime, plan.argv, options);
+  return plan.resolve(await buildServerSnapshot(server, runtime, options.signal), lines);
 }
 
 export function newSession(
@@ -41,7 +52,7 @@ export function newSession(
   runtime: RuntimeContext,
   options: NewSessionOptions = {},
 ): Promise<Session> {
-  return runPlan(server, runtime, planNewSession(options));
+  return runPlan(server, runtime, planNewSession(options), options);
 }
 
 export function newWindow(
@@ -50,7 +61,7 @@ export function newWindow(
   sessionId: string | null,
   options: NewWindowOptions = {},
 ): Promise<Window> {
-  return runPlan(server, runtime, planNewWindow(sessionId, options));
+  return runPlan(server, runtime, planNewWindow(sessionId, options), options);
 }
 
 export function splitWindow(
@@ -59,7 +70,7 @@ export function splitWindow(
   target: string | null,
   options: SplitOptions = {},
 ): Promise<Pane> {
-  return runPlan(server, runtime, planSplitWindow(target, options));
+  return runPlan(server, runtime, planSplitWindow(target, options), options);
 }
 
 export async function killTarget(
