@@ -5,6 +5,13 @@ declare const connectionAliasBrand: unique symbol;
 declare const daemonEpochBrand: unique symbol;
 declare const safeIntegerBrand: unique symbol;
 
+/**
+ * Which of tmux's three id spaces an id belongs to.
+ *
+ * The three are numbered independently, so `$1`, `@1` and `%1` can all exist
+ * at once and name unrelated objects. The kind is what keeps a pane id from
+ * being passed where a window id belongs.
+ */
 export type TmuxIdKind = "session" | "window" | "pane";
 
 /** A tmux object ID authenticated for one object kind. */
@@ -69,9 +76,28 @@ export function safeInteger(value: number): SafeInteger {
   return value;
 }
 
+/**
+ * Which connection a handle came through.
+ *
+ * Two servers on different sockets number their objects from the same place,
+ * so an id alone does not identify anything. This is the other half.
+ */
 export type ConnectionAlias = string & { readonly [connectionAliasBrand]: "connection" };
+/**
+ * Which run of the daemon a handle came from, counted from zero.
+ *
+ * A restarted tmux on the same socket issues `%0` again to a different pane,
+ * so an id from the previous run names nothing. Comparing epochs is what
+ * catches that, and it is why {@link SessionRef} and friends carry one.
+ */
 export type DaemonEpoch = number & { readonly [daemonEpochBrand]: "daemon" };
 
+/**
+ * What every command accepts, whichever handle it is called on.
+ *
+ * Both fields bound how long a caller waits, from opposite ends: the deadline
+ * is set when the command starts, the signal can arrive at any time.
+ */
 export interface CommandOptions {
   /**
    * Abandon the command when this signal fires.
@@ -100,6 +126,13 @@ export interface CommandOptions {
   readonly timeoutMs?: number | null;
 }
 
+/**
+ * A finished `tmux` invocation, as the process left it.
+ *
+ * `cmd` is the argument vector as run, so it includes the connection flags
+ * this library adds. A non-zero `exitCode` is not an exception here — the
+ * callers that raise are the ones that promised a value.
+ */
 export interface CommandResult {
   readonly cmd: readonly string[];
   /** The completed command's exit status, including nonzero tmux refusals. */
@@ -108,9 +141,30 @@ export interface CommandResult {
   readonly stdout: readonly string[];
 }
 
+/**
+ * How far a command got before something interrupted it.
+ *
+ * This is what a caller needs to decide whether retrying is safe: a command
+ * that was never written changed nothing, and one that was written but not
+ * answered may have done its work already. `indeterminate` is the honest
+ * answer, not a missing one.
+ */
 export type DeliveryStatus = "not_started" | "written" | "replied" | "indeterminate";
+/**
+ * What became of one step of a multi-step operation.
+ *
+ * `skipped` is not a failure: a step whose precondition no longer holds is
+ * reported rather than retried, so the caller sees why the whole did less
+ * than it asked for.
+ */
 export type OperationStatus = "complete" | "failed" | "skipped" | "unknown";
 
+/**
+ * One command's result together with how far it got.
+ *
+ * The two are separate because they can disagree: a command can be delivered
+ * and still fail, and one that failed to deliver has no result at all.
+ */
 export interface CommandOutcome {
   readonly delivery: DeliveryStatus;
   readonly result?: CommandResult;
@@ -155,6 +209,13 @@ export interface TmuxInvocationReport {
  */
 export type TmuxInvocationObserver = (report: TmuxInvocationReport) => void;
 
+/**
+ * The three parts that together name one tmux object for certain.
+ *
+ * An id alone is ambiguous across servers and across restarts of one server,
+ * so a reference carries the connection it came through and the daemon run it
+ * came from as well.
+ */
 interface LogicalRefBase<Kind extends TmuxIdKind, Id extends TmuxId<Kind>> {
   readonly connection: ConnectionAlias;
   readonly epoch: DaemonEpoch;
@@ -162,7 +223,16 @@ interface LogicalRefBase<Kind extends TmuxIdKind, Id extends TmuxId<Kind>> {
   readonly kind: Kind;
 }
 
+/** One session, named unambiguously across servers and daemon restarts. */
 export type SessionRef = LogicalRefBase<"session", SessionId>;
+/** One window, named unambiguously across servers and daemon restarts. */
 export type WindowRef = LogicalRefBase<"window", WindowId>;
+/** One pane, named unambiguously across servers and daemon restarts. */
 export type PaneRef = LogicalRefBase<"pane", PaneId>;
+/**
+ * Any of the three, discriminated by `kind`.
+ *
+ * Clients are absent on purpose: a client has a name rather than an id, and
+ * nothing numbers it.
+ */
 export type LogicalRef = SessionRef | WindowRef | PaneRef;
