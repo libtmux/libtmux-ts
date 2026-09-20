@@ -70,11 +70,7 @@ describe("server utilities", () => {
       // this can be exercised. newSession refuses such a name before tmux
       // ever sees it, so this spawns tmux directly instead.
       if (await server.versionAtLeast("3.7a")) {
-        const child = Bun.spawn(
-          [fixture.tmuxExecutable, "-S", fixture.socketPath, "new-session", "-d", "-s", "my.proj"],
-          { stderr: "pipe", stdout: "pipe" },
-        );
-        expect(await child.exited).toBe(0);
+        await fixture.executeText(["new-session", "-d", "-s", "my.proj"]);
         expect(await server.hasSession("my.proj")).toBe(true);
       }
     });

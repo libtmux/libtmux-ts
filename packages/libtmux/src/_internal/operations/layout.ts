@@ -15,6 +15,7 @@ const classicNames = [
 const mirroredNames = [...classicNames, "main-horizontal-mirrored", "main-vertical-mirrored"];
 const beforeMirrors = parseTmuxVersion("3.4");
 const withMirrors = parseTmuxVersion("3.5");
+const withJsonLayouts = parseTmuxVersion("3.8");
 
 /** Geometry correction and pruning remain tmux's responsibility. */
 export function layoutIsValid(layout: string, panes: number, version: TmuxVersion): boolean {
@@ -22,10 +23,11 @@ export function layoutIsValid(layout: string, panes: number, version: TmuxVersio
   const names = tmuxVersionAtLeast(version, withMirrors) ? mirroredNames : classicNames;
   if (names.includes(layout) || names.filter((name) => name.startsWith(layout)).length === 1)
     return true;
-  if (layout.length > 8192 || parseClassicLayout(layout).kind !== "valid") return false;
-  const body = layout.slice(5);
-  const parser = new LayoutParser(body);
-  return parser.cell(0) && parser.offset === body.length && parser.leaves >= panes;
+  if (layout.length > 8192) return false;
+  if (layout.startsWith("{"))
+    return tmuxVersionAtLeast(version, withJsonLayouts) && jsonLayoutIsValid(layout, panes);
+  const parsed = parseClassicLayout(layout);
+  return parsed.kind === "valid" && parsed.depth <= 256 && parsed.panes >= panes;
 }
 
 export async function validateLayouts(
@@ -42,7 +44,7 @@ export async function validateLayouts(
   const needsVersion: { layout: string; panes: number }[] = [];
   for (const { layout, panes } of layouts) {
     const before = layoutIsValid(layout, panes, beforeMirrors);
-    const after = layoutIsValid(layout, panes, withMirrors);
+    const after = layoutIsValid(layout, panes, withJsonLayouts);
     if (!before && !after) throw new TypeError(`invalid tmux layout or pane count: ${layout}`);
     if (before !== after) needsVersion.push({ layout, panes });
   }
@@ -79,56 +81,103 @@ function assertLayouts(
   }
 }
 
-class LayoutParser {
-  offset = 0;
-  leaves = 0;
-  private readonly text: string;
-  constructor(text: string) {
-    this.text = text;
-  }
-
-  private take(character: string): boolean {
-    if (this.text[this.offset] !== character) return false;
-    this.offset++;
-    return true;
-  }
-
-  private number(): boolean {
-    const start = this.offset;
-    let value = 0;
-    while (this.offset < this.text.length) {
-      const digit = this.text.charCodeAt(this.offset) - 48;
-      if (digit < 0 || digit > 9) break;
-      value = value * 10 + digit;
-      if (value > 0xffff_ffff) return false;
-      this.offset++;
+/** tmux validates escapes without decoding them and accepts only integer JSON. */
+function parseLayoutJson(layout: string): unknown {
+  const token =
+    // eslint-disable-next-line no-control-regex -- JSON strings forbid literal control bytes.
+    /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\dA-Fa-f]{4}))+"|-?(?:0|[1-9]\d*)|true|false|[{}[\],:]|[ \t\r\n]+/uy;
+  const objects: Set<string>[] = [];
+  const parts: string[] = [];
+  let offset = 0;
+  while (offset < layout.length) {
+    token.lastIndex = offset;
+    const match = token.exec(layout);
+    if (match === null) return undefined;
+    const text = match[0];
+    offset = token.lastIndex;
+    if (text === "{") {
+      objects.push(new Set());
+      if (objects.length > 200) return undefined;
+    } else if (text === "}") objects.pop();
+    if (text.startsWith('"')) {
+      const raw = text.slice(1, -1);
+      if (/^\s*:/u.test(layout.slice(offset))) {
+        const keys = objects.at(-1);
+        if (keys === undefined || keys.has(raw)) return undefined;
+        keys.add(raw);
+      }
+      parts.push(JSON.stringify(raw));
+    } else {
+      if (/^-?\d/u.test(text)) {
+        const value = BigInt(text);
+        if (value < -0x8000_0000_0000_0000n || value > 0x7fff_ffff_ffff_ffffn) return undefined;
+      }
+      parts.push(text);
     }
-    return this.offset > start;
   }
+  return JSON.parse(parts.join("")) as unknown;
+}
 
-  cell(depth: number): boolean {
+function jsonLayoutIsValid(layout: string, panes: number): boolean {
+  const record = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  const integer = (value: unknown, minimum: number, maximum: number): value is number =>
+    typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum;
+  let document: unknown;
+  try {
+    document = parseLayoutJson(layout);
+  } catch {
+    return false;
+  }
+  if (!record(document) || document.V !== 2) return false;
+  const values: unknown[] = [document];
+  while (values.length > 0) {
+    const value = values.pop();
+    if (Array.isArray(value)) {
+      if (!value.every(record)) return false;
+      values.push(...value);
+    } else if (record(value)) values.push(...Object.values(value));
+  }
+  const indexes = new Set<number>();
+  const last = new Set<number>();
+  const floating = new Set<number>();
+  let active = false;
+  const pending = [{ value: document.L, depth: 0 }];
+  while (pending.length > 0) {
+    const { value, depth } = pending.pop()!;
     if (
+      !record(value) ||
       depth > 256 ||
-      !this.number() ||
-      !this.take("x") ||
-      !this.number() ||
-      !this.take(",") ||
-      !this.number() ||
-      !this.take(",") ||
-      !this.number()
+      !integer(value.w, 1, MAX_DIMENSION) ||
+      !integer(value.h, 1, MAX_DIMENSION) ||
+      !integer(value.x, -MAX_DIMENSION, MAX_DIMENSION) ||
+      !integer(value.y, -MAX_DIMENSION, MAX_DIMENSION)
     )
       return false;
-    const saved = this.offset;
-    if (this.take(",") && (!this.number() || this.text[this.offset] === "x")) this.offset = saved;
-    const close = this.take("{") ? "}" : this.take("[") ? "]" : undefined;
-    if (close === undefined) {
-      this.leaves++;
-      return true;
-    }
-    if (!this.cell(depth + 1)) return false;
-    while (this.take(",")) if (!this.cell(depth + 1)) return false;
-    return this.take(close);
+    if (value.t === "p") {
+      if (Object.hasOwn(value, "c") || !integer(value.i, 0, 2_147_483_647) || indexes.has(value.i))
+        return false;
+      indexes.add(value.i);
+      if (Object.hasOwn(value, "a")) {
+        if (typeof value.a !== "boolean" || (active && value.a)) return false;
+        active ||= value.a;
+      } else if (Object.hasOwn(value, "l")) {
+        if (!integer(value.l, 0, 2_147_483_647) || last.has(value.l)) return false;
+        last.add(value.l);
+      }
+      if (Object.hasOwn(value, "z")) {
+        if (!integer(value.z, 0, 2_147_483_646) || floating.has(value.z)) return false;
+        floating.add(value.z);
+      }
+    } else if (
+      (value.t === "h" || value.t === "v") &&
+      Array.isArray(value.c) &&
+      value.c.length >= 2
+    ) {
+      for (const child of value.c) pending.push({ value: child, depth: depth + 1 });
+    } else return false;
   }
+  return indexes.size >= panes;
 }
 
 /**
@@ -194,7 +243,7 @@ export type LayoutRejection =
 export type ClassicLayoutParse =
   | { readonly kind: "not-classic" }
   | { readonly kind: "invalid"; readonly reason: LayoutRejection }
-  | { readonly kind: "valid" };
+  | { readonly kind: "valid"; readonly panes: number; readonly depth: number };
 
 /**
  * tmux's `layout_checksum`: rotate the running 16-bit sum right by one, then
@@ -260,19 +309,28 @@ function cell(body: string, from: number): number | "dimension" | null {
   // So a trailing comma with nothing after it is consumed, not rejected.
   const afterComma = cursor + 1;
   const afterDigits = digits(body, afterComma) ?? afterComma;
-  return body[afterDigits] === "x" ? cursor : afterDigits;
+  if (body[afterDigits] === "x") return cursor;
+  if (Number(body.slice(afterComma, afterDigits)) > 0xffff_ffff) return null;
+  return afterDigits;
 }
 
 const CLOSERS: Readonly<Record<string, string>> = Object.freeze({ "[": "]", "{": "}" });
 
 /** Consume one cell and, when it opens a container, its whole child list. */
-function container(body: string, from: number, depth: number): number | LayoutRejection {
+function container(
+  body: string,
+  from: number,
+  depth: number,
+  shape: { panes: number; depth: number },
+): number | LayoutRejection {
   if (depth > MAX_DEPTH) return "depth";
+  shape.depth = Math.max(shape.depth, depth);
   const afterCell = cell(body, from);
   if (afterCell === null) return "structure";
   if (afterCell === "dimension") return "dimension";
   const opener = body[afterCell];
   if (opener === undefined || opener === "," || opener === "}" || opener === "]") {
+    shape.panes++;
     return afterCell;
   }
   const closer = CLOSERS[opener];
@@ -280,7 +338,7 @@ function container(body: string, from: number, depth: number): number | LayoutRe
 
   let cursor = afterCell;
   do {
-    const child = container(body, cursor + 1, depth + 1);
+    const child = container(body, cursor + 1, depth + 1, shape);
     if (typeof child !== "number") return child;
     cursor = child;
   } while (body[cursor] === ",");
@@ -299,7 +357,10 @@ export function parseClassicLayout(layout: string): ClassicLayoutParse {
   if (layoutChecksum(body) !== layout.slice(0, 4).toLowerCase()) {
     return { kind: "invalid", reason: "checksum" };
   }
-  const end = container(body, 0, 0);
+  const shape = { panes: 0, depth: 0 };
+  const end = container(body, 0, 0, shape);
   if (typeof end !== "number") return { kind: "invalid", reason: end };
-  return end === body.length ? { kind: "valid" } : { kind: "invalid", reason: "structure" };
+  return end === body.length
+    ? { kind: "valid", ...shape }
+    : { kind: "invalid", reason: "structure" };
 }

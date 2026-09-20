@@ -99,14 +99,15 @@ delivery indeterminate.
 
 `applyWorkspace` validates every window layout before claiming a session or
 changing options. Names accept unique abbreviations supported by the running
-daemon; saved layouts require a valid checksum, a nonempty tree and enough pane
-cells. A window is rebalanced between splits, because halving one pane in turn
+daemon; classic layouts require a valid checksum. Classic and JSON layouts
+require a nonempty tree and enough pane cells; JSON requires tmux 3.8 or newer.
+A window is rebalanced between splits, because halving one pane in turn
 runs out of room by the fifth at a default 80x24, so a window that names no
 layout — or names the empty string — comes up tiled. A declared layout is
 applied last and has the final say. tmux remains responsible for geometry and
 pruning.
-The library limits custom layouts to 8192 characters and 256 nested groups;
-these are application limits, separate from tmux's parser.
+The library limits custom layouts to 8192 characters and classic layouts to
+256 nested groups. JSON layouts share tmux's limit of 200 nested objects.
 
 ## The shape
 

@@ -736,10 +736,11 @@ export class Server {
   /**
    * Check every planned window layout before setup scripts or mutations.
    *
-   * Names accept unique abbreviations. Only version-sensitive names query the
+   * Names accept unique abbreviations. Only version-sensitive layouts query the
    * daemon; a cold endpoint uses the selected client. Checksums, bounded tree
    * structure and pane counts are checked locally; tmux owns geometry and pruning.
-   * This API limits custom layouts to 8192 characters and 256 nested groups.
+   * Custom layouts are limited to 8192 characters and 256 classic groups.
+   * JSON layouts require tmux 3.8 and permit at most 200 nested objects.
    *
    * @throws TypeError when a layout, pane count or version reply is invalid.
    * @throws TmuxCommandError when the daemon or client version cannot be read.

@@ -67,6 +67,45 @@ async function captureUntil(
 }
 
 describe("window and pane topology", () => {
+  test("preflights JSON layouts against the daemon before changing topology", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const before = await server.snapshot();
+      const window = before.windows.one();
+      const json = '{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}';
+      if (await server.versionAtLeast("3.8")) {
+        await server.validateLayouts([{ layout: json, panes: 1 }]);
+        await window.selectLayout(json);
+        const captured = (await server.snapshot()).windows.one().layout!;
+        expect(captured.startsWith("{")).toBe(true);
+        await server.validateLayouts([{ layout: captured, panes: 1 }]);
+        await window.selectLayout(captured);
+        for (const invalid of [
+          json.replace('"V":2', '"V":2e0'),
+          json.replace('"i":0', '"i":0,"i":0'),
+        ]) {
+          // Raw dispatch verifies the native parser's rejection after local preflight.
+          // eslint-disable-next-line no-await-in-loop -- Each case leaves the same live window in place.
+          await expect(server.validateLayouts([{ layout: invalid, panes: 1 }])).rejects.toThrow(
+            TypeError,
+          );
+          // eslint-disable-next-line no-await-in-loop -- Verify the native answer to this case.
+          await expect(window.cmd("select-layout", ["--", invalid])).rejects.toThrow();
+        }
+      } else {
+        await expect(server.validateLayouts([{ layout: json, panes: 1 }])).rejects.toThrow(
+          TypeError,
+        );
+      }
+      await expect(server.validateLayouts([{ layout: json, panes: 2 }])).rejects.toThrow(TypeError);
+      const after = await server.snapshot();
+      expect(after.daemonIdentity).toEqual(before.daemonIdentity);
+      expect(after.panes.toArray().map((pane) => pane.id)).toEqual(
+        before.panes.toArray().map((pane) => pane.id),
+      );
+    });
+  });
+
   test("renames a window", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

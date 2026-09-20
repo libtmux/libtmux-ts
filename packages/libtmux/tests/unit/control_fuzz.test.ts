@@ -237,3 +237,21 @@ test(`layout grammar and checksum fuzz (seed ${SEED.toString(16)})`, () => {
     expect(layoutIsValid(badChecksum, count, version), `checksum ${iteration}`).toBe(false);
   }
 });
+
+test(`JSON layout grammar fuzz (seed ${SEED.toString(16)})`, () => {
+  const next = random(SEED);
+  const version = parseTmuxVersion("3.8");
+  for (let iteration = 0; iteration < ITERATIONS; iteration++) {
+    const width = 1 + Math.floor(next() * 10_000);
+    const pane = { t: "p", w: width, h: 24, x: 0, y: 0, i: iteration };
+    const valid = JSON.stringify({ V: 2, L: pane });
+    expect(layoutIsValid(valid, 1, version), `valid ${iteration}`).toBe(true);
+    expect(layoutIsValid(valid, 2, version), `count ${iteration}`).toBe(false);
+    const invalid = valid.replace(`"w":${width}`, `"w":${width + 10_000}`);
+    expect(layoutIsValid(invalid, 1, version), `dimension ${iteration}`).toBe(false);
+    const offset = Math.floor(next() * valid.length);
+    const damaged =
+      valid.slice(0, offset) + String.fromCharCode(Math.floor(next() * 128)) + valid.slice(offset);
+    expect(typeof layoutIsValid(damaged, 1, version)).toBe("boolean");
+  }
+});
