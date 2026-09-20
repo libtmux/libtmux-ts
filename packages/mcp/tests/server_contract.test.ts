@@ -475,6 +475,7 @@ test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
         };
         const server = structured<{ pid: string; version: string }>(await call("get_server_info"));
         expect(server.pid).toMatch(/^\d+$/u);
+        const hasMirroredLayouts = await serverFor(fixture).versionAtLeast("3.5");
         const created = structured<{ paneId: string; windowId: string }>(
           await call("create_session", {
             height: 30,
@@ -490,10 +491,7 @@ test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
         expect(before.metadataComplete).toBe(true);
         let layout = "even-h";
         if (form === "mirrored") {
-          layout =
-            Number.parseInt(server.version.slice(2), 10) >= 5
-              ? "main-horizontal-mirrored"
-              : "main-horizontal";
+          layout = hasMirroredLayouts ? "main-horizontal-mirrored" : "main-horizontal";
         } else if (form === "uppercase-saved") {
           layout = before.layout.slice(0, 4).toUpperCase() + before.layout.slice(4);
         } else if (form === "pruned-saved") {
@@ -519,8 +517,7 @@ test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
         expect(JSON.stringify(result.content)).not.toContain("not applied");
         expect(structured<{ pid: string }>(await call("get_server_info")).pid).toBe(server.pid);
 
-        const invalidName =
-          Number.parseInt(server.version.slice(2), 10) >= 5 ? "main-h" : "main-horizontal-mirrored";
+        const invalidName = hasMirroredLayouts ? "main-h" : "main-horizontal-mirrored";
         await Promise.all(
           ["not-a-layout", "ffff,80x24,0,0,0", invalidName].map(async (invalid) => {
             const rejected = await client.callTool({
@@ -529,7 +526,7 @@ test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
             });
             expect(rejected.isError).toBe(true);
             expect(rejected.structuredContent).toBeUndefined();
-            expect(JSON.stringify(rejected.content)).toContain("invalid tmux layout");
+            expect(JSON.stringify(rejected.content)).toContain(invalid);
             expect(
               structured<{ window: { layout: string } }>(
                 await call("get_window_info", { windowId: created.windowId }),
