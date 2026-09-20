@@ -90,12 +90,12 @@ test("closing a log reports failure without replacing a completed result", async
   const capture = captured();
   // eslint-disable-next-line @typescript-eslint/unbound-method -- Rebind the saved method to each real logger below.
   const original = Diagnostics.prototype.close;
-  const close = spyOn(Diagnostics.prototype, "close").mockImplementation(
-    async function (this: Diagnostics) {
-      await original.call(this);
-      throw new Error("log close failed");
-    },
-  );
+  const close = spyOn(Diagnostics.prototype, "close").mockImplementation(async function (
+    this: Diagnostics,
+  ) {
+    await original.call(this);
+    throw new Error("log close failed");
+  });
   try {
     expect(await run(["ls", "--json"], capture.context)).toBe(0);
     expect(JSON.parse(capture.output().stdout).workspaces).toBeArray();

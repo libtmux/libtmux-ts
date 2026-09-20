@@ -35,7 +35,7 @@
     "cli-truncate": "6.1.1",
     "commander": "15.0.0",
     "libtmux": "0.1.0-alpha.10",
-    "oxfmt": "0.66.0",
+    "oxfmt": "0.68.0",
     "string-width": "8.2.2",
     "yaml": "2.9.0"
   },
