@@ -81,15 +81,15 @@ const expectedScripts = {
 const expectedDependencies = {};
 
 const expectedDevDependencies = {
-  "@types/bun": "1.4.0",
+  "@types/bun": "1.4.2",
   // Held at the floor deliberately: `engines.node` is ">=22", and types
   // describing a newer Node would compile calls the floor cannot run. The root
   // `overrides` pins it for the whole workspace, so a manifest naming anything
   // else would name a version that does not install.
   "@types/node": "22.20.1",
-  knip: "6.34.0",
-  oxfmt: "0.66.0",
-  oxlint: "1.81.0",
+  knip: "6.36.0",
+  oxfmt: "0.68.0",
+  oxlint: "1.83.0",
   "oxlint-tsgolint": "7.0.2001",
   typescript: "7.0.2",
   // The oldest TypeScript a consumer may hold. Aliased rather than a second
@@ -99,7 +99,7 @@ const expectedDevDependencies = {
   "typescript-floor": "npm:typescript@5.7.3",
   // Runs the Bun suites on Node against `dist`, `bun:test` answered by a shim.
   vitest: "5.0.1",
-  zod: "4.5.4",
+  zod: "4.6.5",
 };
 
 const tsRoot = new URL("../..", import.meta.url);
