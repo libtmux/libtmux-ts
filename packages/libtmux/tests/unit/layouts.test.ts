@@ -32,8 +32,11 @@ function serialized(body: string): string {
 test("layout parser bounds unsigned fields and nesting", () => {
   const version = parseTmuxVersion("3.7c");
   const accepts = (body: string): boolean => layoutIsValid(serialized(body), 1, version);
-  expect(accepts("4294967295x0,0,0,4294967295")).toBe(true);
+  expect(accepts("10000x10000,0,0,4294967295")).toBe(true);
   for (const body of [
+    "4294967295x0,0,0,4294967295",
+    "10001x1,0,0",
+    "1x10001,0,0",
     "4294967296x1,0,0",
     "1x1,0,4294967296",
     "1x1,0,0,4294967296",

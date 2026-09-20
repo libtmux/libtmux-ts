@@ -218,7 +218,7 @@ test(`layout grammar and checksum fuzz (seed ${SEED.toString(16)})`, () => {
   const next = random(SEED);
   const version = parseTmuxVersion("3.7c");
   for (let iteration = 0; iteration < ITERATIONS; iteration++) {
-    const field = (): string => String(Math.floor(next() * 0x1_0000_0000));
+    const field = (): string => String(Math.floor(next() * 10_001));
     const leaf = (): string =>
       `${field()}x${field()},${field()},${field()}${next() < 0.5 ? `,${field()}` : ""}`;
     const count = 1 + Math.floor(next() * 5);

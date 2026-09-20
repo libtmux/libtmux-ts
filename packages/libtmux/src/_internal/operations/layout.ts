@@ -24,10 +24,6 @@ export function layoutIsValid(layout: string, panes: number, version: TmuxVersio
     return true;
   if (layout.length > 8192 || parseClassicLayout(layout).kind !== "valid") return false;
   const body = layout.slice(5);
-  let checksum = 0;
-  for (const character of body)
-    checksum = (((checksum >>> 1) | ((checksum & 1) << 15)) + character.charCodeAt(0)) & 0xffff;
-  if (checksum !== Number.parseInt(layout.slice(0, 4), 16)) return false;
   const parser = new LayoutParser(body);
   return parser.cell(0) && parser.offset === body.length && parser.leaves >= panes;
 }

@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop -- Each mutation and progress record depends on the preceding tmux state. */
 import {
   isTmuxName,
-  LibTmuxException,
+  LibTmuxError,
   Server,
   type Pane,
   type ServerSnapshot,
@@ -78,7 +78,7 @@ function option(value: Json): string {
  * keeps privately for layout validation against a cold endpoint.
  */
 function isColdEndpoint(error: unknown): boolean {
-  if (!(error instanceof LibTmuxException)) return false;
+  if (!(error instanceof LibTmuxError)) return false;
   const reason = error.message.replace(/^cannot reach tmux: /u, "");
   return (
     reason.startsWith("no server running on ") ||
@@ -92,7 +92,7 @@ function isColdEndpoint(error: unknown): boolean {
  * prefix -- libtmux's capability probe is the only place that writes it.
  */
 function isTmuxUnavailable(error: unknown): boolean {
-  return error instanceof LibTmuxException && error.message.startsWith("cannot reach tmux");
+  return error instanceof LibTmuxError && error.message.startsWith("cannot reach tmux");
 }
 /**
  * Why tmux could not be reached, in the command's own words: the endpoint the
