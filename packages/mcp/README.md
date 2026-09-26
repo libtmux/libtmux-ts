@@ -59,6 +59,10 @@ client launches it as a subprocess. To pin it in a project instead:
 $ bun add --exact @libtmux/mcp@0.1.0-alpha.10
 ```
 
+Closing the subprocess's stdin cancels pending waits and joins its control
+connections before exit. Existing tmux sessions and panes keep running.
+Backend cleanup failures produce a nonzero exit status.
+
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
@@ -395,6 +399,12 @@ loaded configuration, and the supported foreground shell.
 `rename_session`, `rename_window`, `resize_pane`, `resize_window`,
 `select_pane`, `select_window`, `select_layout`, `swap_pane`, `move_window`, and
 `set_pane_title`.
+
+`select_layout` accepts tmux's named layouts, unique abbreviations for the
+running daemon, and checksummed saved layouts. The native core validates the
+input before dispatch; tmux owns geometry and may resize or prune saved cells.
+The result's `window.layout` comes from a fresh snapshot. Check
+`metadataComplete` before reusing it as input.
 
 Copy mode and other client modes are human-owned, modal state. A nonzero
 `snapshot_pane.inMode` reports that state; input may be interpreted by the

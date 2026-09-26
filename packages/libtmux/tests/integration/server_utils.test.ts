@@ -61,6 +61,18 @@ describe("server utilities", () => {
 
       await server.newSession({ name: "prefix-long" });
       expect(await server.hasSession("prefix")).toBe(false);
+
+      // "." is a target separator with no `-t` spelling that is both exact
+      // and correct, so hasSession lists sessions and compares directly --
+      // verified here against a session actually named with one. tmux keeps
+      // the name verbatim only from 3.7a on (earlier releases rewrite the
+      // delimiter, and 3.7 itself refuses the name), so that is the one era
+      // this can be exercised. newSession refuses such a name before tmux
+      // ever sees it, so this spawns tmux directly instead.
+      if (await server.versionAtLeast("3.7a")) {
+        await fixture.executeText(["new-session", "-d", "-s", "my.proj"]);
+        expect(await server.hasSession("my.proj")).toBe(true);
+      }
     });
   }, 40_000);
 

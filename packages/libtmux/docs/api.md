@@ -223,17 +223,17 @@ replacement numbers panes from `%0` again — see `DaemonIdentity`.
 
 @throws TypeError if both `socketName` and `socketPath` are given.
 
-[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`validateLayouts`](#servervalidatelayouts) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
 #### `Server.colors`
 
 ```ts
-get colors(): 88 | 256 | undefined
+get colors(): 256 | undefined
 ```
 
-How many colours this server was told the terminal has.
+The terminal color override; undefined leaves detection to tmux.
 
 ```ts
 new Server({ colors: 256 }).colors; // 256
@@ -393,9 +393,11 @@ Acquire an immutable view of the server at this instant.
 Acquisition is the only step that talks to tmux. Everything reachable from
 the returned value resolves locally, so traversal and filtering issue no
 commands and an earlier snapshot keeps reporting its own instant.
+`daemonIdentity` identifies the daemon captured with these collections.
 
 ```ts
 const now = await server.snapshot();
+now.daemonIdentity.pid;
 now.windows.count();
 ```
 
@@ -454,7 +456,7 @@ panes.where({ currentCommand: "vim" }).count();
 #### `Server.daemonIdentity`
 
 ```ts
-async daemonIdentity(): Promise<DaemonIdentity>
+async daemonIdentity(options: SnapshotOptions = {}): Promise<DaemonIdentity>
 ```
 
 Which daemon is answering on this socket right now.
@@ -490,7 +492,7 @@ clients.map((entry) => entry.tty);
 #### `Server.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every server-scope option tmux currently reports.
@@ -503,7 +505,7 @@ options.get("escape-time");
 #### `Server.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this server, own and inherited together.
@@ -559,7 +561,7 @@ await server.saveBuffer("captured", "/tmp/build.log");
 #### `Server.showGlobalOptions`
 
 ```ts
-showGlobalOptions(scope: "session" | "window"): Promise<ReadonlyMap<string, string>>
+showGlobalOptions( scope: "session" | "window", options?: CommandOptions, ): Promise<ReadonlyMap<string, string>>
 ```
 
 Read the defaults every session or window inherits.
@@ -642,6 +644,31 @@ Remove a global hook.
 
 ```ts
 await server.unsetHook("session-created");
+```
+
+#### `Server.validateLayouts`
+
+```ts
+validateLayouts( layouts: readonly { readonly layout: string; readonly panes: number }[], options?: CommandOptions, ): Promise<void>
+```
+
+Check every planned window layout before setup scripts or mutations.
+
+Names accept unique abbreviations. Only version-sensitive layouts query the
+daemon; a cold endpoint uses the selected client. Checksums, bounded tree
+structure and pane counts are checked locally; tmux owns geometry and pruning.
+Custom layouts are limited to 8192 characters and 256 classic groups.
+JSON layouts require tmux 3.8 and permit at most 200 nested objects.
+
+@throws TypeError when a layout, pane count or version reply is invalid.
+@throws TmuxCommandError when the daemon or client version cannot be read.
+@throws TmuxTransportError when validation is cancelled or a version probe fails.
+
+```ts
+await server.validateLayouts([
+  { layout: "even-h", panes: 2 },
+  { layout: "tiled", panes: 1 },
+]);
 ```
 
 #### `Server.version`
@@ -779,9 +806,14 @@ hasSession(name: string): Promise<boolean>
 
 Whether a session with this name exists.
 
-The name is matched exactly. tmux normally accepts a unique prefix as a
-session target, which would make checking `work` answer yes for
-`workspace`; this method does not.
+The name is matched exactly, including one holding "." or ":". tmux
+normally accepts a unique prefix as a session target, which would make
+checking `work` answer yes for `workspace`; this method does not, and it
+lists every session and compares in JavaScript rather than asking tmux
+to resolve a target, since no target spelling is both exact and correct
+for a name holding a target separator. No server running on the socket
+answers `false`; any other failure to list sessions raises rather than
+being read as "no such session".
 
 ```ts
 if (!(await server.hasSession("work"))) {
@@ -1140,8 +1172,8 @@ so the planned mutations share one final snapshot.
 
 ```ts
 const [editor, logs] = await server.batch([
-  session.plan.newWindow({ name: "editor" }),
-  session.plan.newWindow({ name: "logs" }),
+  session.plan.newWindow({ index: 3, name: "editor" }),
+  session.plan.newWindow({ index: 4, name: "logs" }),
 ]);
 ```
 
@@ -1150,7 +1182,7 @@ const [editor, logs] = await server.batch([
 #### `Session.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every option set on this session itself, not the ones it inherits.
@@ -1167,7 +1199,7 @@ options.get("status");
 #### `Session.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this session, own and inherited together.
@@ -1328,9 +1360,16 @@ handle reports those links. When the id is enough,
 `server.pipeline([session.plan.newWindow().argv])` returns it for one
 command, whatever the server's size.
 
+`index` selects an exact slot. An occupied slot fails without replacing
+its window; omitting `index` leaves placement to tmux.
+
+@throws TypeError when `index` is outside 0 through 2147483647, is not an
+integer, or is combined with `direction`.
+
 ```ts
-const created = await session.newWindow({ name: "editor" });
+const created = await session.newWindow({ index: 3, name: "editor" });
 created.name; // "editor"
+created.index; // 3
 ```
 
 #### `Session.kill`
@@ -1577,7 +1616,7 @@ await window.unsetHook("window-renamed");
 #### `Window.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every option set on this window itself, not the ones it inherits.
@@ -1594,7 +1633,7 @@ options.get("automatic-rename");
 #### `Window.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this window, own and inherited together.
@@ -1845,6 +1884,12 @@ selectLayout(layout: string): Promise<void>
 
 Apply a named or custom layout.
 
+Names accept unique abbreviations. Checksums and tree structure are checked
+before dispatch; tmux remains responsible for geometry and pruning.
+This API limits custom layouts to 8192 characters and 256 nested groups.
+
+@throws TypeError when the layout name or serialized tree is invalid.
+
 Applying any layout while a pane is zoomed unzooms the window first —
 tmux's own behavior, not this method's.
 
@@ -2030,7 +2075,7 @@ await pane.unsetHook("pane-title-changed");
 #### `Pane.showOptions`
 
 ```ts
-showOptions(): Promise<ReadonlyMap<string, string>>
+showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 Every option set on this pane itself, not the ones it inherits.
@@ -2047,7 +2092,7 @@ options.get("remain-on-exit");
 #### `Pane.showResolvedOptions`
 
 ```ts
-showResolvedOptions(): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this pane, own and inherited together.

@@ -1,3 +1,4 @@
+import type { AbortLike } from "libtmux";
 import type { PaneId, SessionId, WindowId } from "libtmux/common";
 import type { Server } from "libtmux/server";
 import type { Session } from "libtmux/session";
@@ -95,17 +96,24 @@ export interface WorkspacePlan {
  * daemon behind it is holding this session in the way an empty server is: not
  * at all.
  */
-export async function runningSession(server: Server, name: string): Promise<Session | undefined> {
+export async function runningSession(
+  server: Server,
+  name: string,
+  acquisition: { signal?: AbortLike } = {},
+): Promise<Session | undefined> {
+  // Server.isAlive() takes no options: it is a fixed, cheap probe with no
+  // signal to thread through until libtmux's own signature grows one.
   if (!(await server.isAlive())) return undefined;
-  return (await server.snapshot()).sessions.oneOrUndefined({ name });
+  return (await server.snapshot(acquisition)).sessions.oneOrUndefined({ name });
 }
 
 export async function planWorkspace(
   server: Server,
   workspace: Workspace,
   prune: PrunePolicy,
+  acquisition: { signal?: AbortLike } = {},
 ): Promise<WorkspacePlan> {
-  const existing = await runningSession(server, workspace.session_name);
+  const existing = await runningSession(server, workspace.session_name, acquisition);
   if (existing === undefined) {
     return Object.freeze({
       createsPanes: freezeEntries(
@@ -129,7 +137,7 @@ export async function planWorkspace(
     });
   }
 
-  const owned = await ownedByWorkspace(existing, workspace.session_name);
+  const owned = await ownedByWorkspace(existing, workspace.session_name, acquisition);
   const pruning = mayPrune(prune, owned);
   const current = existing.windows.toArray();
   const createsWindows: WorkspaceWindowCreation[] = [];

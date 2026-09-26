@@ -463,6 +463,83 @@ test("a private directory is left behind when the pane is killed mid-run", async
     }
   });
 }, 20_000);
+test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
+  "select_layout reports native readback for %s input",
+  async (form) => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call = async (name: string, arguments_: Readonly<Record<string, unknown>> = {}) => {
+          const result = await client.callTool({ arguments: arguments_, name });
+          expect(result.isError, JSON.stringify(result)).not.toBe(true);
+          return result;
+        };
+        const server = structured<{ pid: string; version: string }>(await call("get_server_info"));
+        expect(server.pid).toMatch(/^\d+$/u);
+        const hasMirroredLayouts = await serverFor(fixture).versionAtLeast("3.5");
+        const created = structured<{ paneId: string; windowId: string }>(
+          await call("create_session", {
+            height: 30,
+            name: "layout-forms",
+            width: 100,
+          }),
+        );
+        await call("split_window", { direction: "right", paneId: created.paneId });
+        await call("select_layout", { layout: "even-vertical", windowId: created.windowId });
+        const before = structured<{ window: { layout: string; metadataComplete: boolean } }>(
+          await call("get_window_info", { windowId: created.windowId }),
+        ).window;
+        expect(before.metadataComplete).toBe(true);
+        let layout = "even-h";
+        if (form === "mirrored") {
+          layout = hasMirroredLayouts ? "main-horizontal-mirrored" : "main-horizontal";
+        } else if (form === "uppercase-saved") {
+          layout = before.layout.slice(0, 4).toUpperCase() + before.layout.slice(4);
+        } else if (form === "pruned-saved") {
+          const extra = structured<{ pane: { id: string } }>(
+            await call("split_window", { direction: "below", paneId: created.paneId }),
+          );
+          layout = structured<{ window: { layout: string } }>(
+            await call("get_window_info", { windowId: created.windowId }),
+          ).window.layout;
+          await call("kill_pane", { force: true, paneId: extra.pane.id });
+        }
+        const result = await call("select_layout", { layout, windowId: created.windowId });
+        const actual = structured<{ window: { layout: string; metadataComplete: boolean } }>(
+          result,
+        ).window;
+        const reread = structured<{ window: { layout: string } }>(
+          await call("get_window_info", { windowId: created.windowId }),
+        ).window;
+        expect(actual.metadataComplete).toBe(true);
+        expect(actual.layout).toBe(reread.layout);
+        if (form === "prefix") expect(actual.layout).not.toBe(before.layout);
+        if (form === "pruned-saved") expect(actual.layout).not.toBe(layout);
+        expect(JSON.stringify(result.content)).not.toContain("not applied");
+        expect(structured<{ pid: string }>(await call("get_server_info")).pid).toBe(server.pid);
+
+        const invalidName = hasMirroredLayouts ? "main-h" : "main-horizontal-mirrored";
+        await Promise.all(
+          ["not-a-layout", "ffff,80x24,0,0,0", invalidName].map(async (invalid) => {
+            const rejected = await client.callTool({
+              arguments: { layout: invalid, windowId: created.windowId },
+              name: "select_layout",
+            });
+            expect(rejected.isError).toBe(true);
+            expect(rejected.structuredContent).toBeUndefined();
+            expect(JSON.stringify(rejected.content)).toContain(invalid);
+            expect(
+              structured<{ window: { layout: string } }>(
+                await call("get_window_info", { windowId: created.windowId }),
+              ).window.layout,
+            ).toBe(actual.layout);
+          }),
+        );
+        expect(structured<{ pid: string }>(await call("get_server_info")).pid).toBe(server.pid);
+      });
+    });
+  },
+  20_000,
+);
 
 /**
  * Run the server as a program, the way a client launches it, and report what a

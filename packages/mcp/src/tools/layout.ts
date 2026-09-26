@@ -51,33 +51,6 @@ const ADJUSTMENTS = {
   up: ResizeAdjustmentDirection.Up,
 } as const;
 
-/** tmux's named arrangements, which `select_layout` also accepts a layout string for. */
-const LAYOUTS = [
-  "even-horizontal",
-  "even-vertical",
-  "main-horizontal",
-  "main-vertical",
-  "tiled",
-] as const;
-
-// tmux's own `select-layout` resolves a name by unambiguous prefix
-// (`layout_set_lookup`), so `tile` and `even-h` are named layouts too, not a
-// round-tripped layout string — `window.selectLayout` below already refused
-// anything ambiguous before this runs. Included here so the "ignored"
-// heuristic does not mistake one for a custom string that failed to apply.
-const NAMED_LAYOUT_SPELLINGS: readonly string[] = [
-  ...LAYOUTS,
-  "main-horizontal-mirrored",
-  "main-vertical-mirrored",
-];
-
-function isNamedLayoutSpelling(layout: string): boolean {
-  if (NAMED_LAYOUT_SPELLINGS.includes(layout)) return true;
-  return (
-    layout !== "" && NAMED_LAYOUT_SPELLINGS.filter((name) => name.startsWith(layout)).length === 1
-  );
-}
-
 const sourceSessionSchema = requestText("sourceSession")
   .optional()
   .describe("Source session id or name. Required when the id has several placements.");
@@ -229,11 +202,14 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
     "select_layout",
     {
       description:
-        "Rearrange a window's panes. Takes one of tmux's named layouts, or a layout " +
-        "string from an earlier window whose `metadataComplete` is true to reproduce it exactly.",
+        "Rearrange a window's panes using a named layout, a unique abbreviation for the " +
+        "running daemon, or a checksummed saved layout from a window whose metadataComplete " +
+        "is true. tmux may adapt dimensions or prune extra cells; the returned window.layout " +
+        "reports the observed result.",
       inputSchema: {
         layout: inlineRequestText("layout").describe(
-          `One of ${LAYOUTS.join(", ")}, or a tmux layout string.`,
+          "A tmux named layout, unique abbreviation for the running version, or checksummed " +
+            "saved layout. Geometry and pruning follow tmux.",
         ),
         windowId: windowIdSchema,
       },
@@ -247,19 +223,7 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
       await window.selectLayout(layout);
       const view = projectWindow(await context.snapshot(), windowId);
       if (isFailure(view)) return view;
-      // A layout string describing a different number of panes is accepted and
-      // does nothing: tmux exits 0 and leaves the window alone. A named layout
-      // is always applied, so only the string form can silently miss — and the
-      // window this returns already knows which layout it ended up with.
-      const ignored = !isNamedLayoutSpelling(layout) && view.layout !== layout;
-      return ok(
-        { window: view },
-        windowLine(view) +
-          (ignored
-            ? `\n\n[the layout string was not applied: the returned window.layout is unchanged. ` +
-              `tmux accepts a layout describing a different set of panes and changes nothing.]`
-            : ""),
-      );
+      return ok({ window: view }, windowLine(view));
     },
   );
 

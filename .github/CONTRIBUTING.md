@@ -103,6 +103,12 @@ $ bun run typecheck:readme
 $ bun run docs:links
 ```
 
+Build the CLI before checking commands that reference its executable:
+
+```console
+$ bun run --cwd packages/workspace-cli build
+```
+
 ```console
 $ bun run docs:claims
 ```
@@ -198,7 +204,13 @@ it does not take. `packages/mcp` and `packages/workspace` compile their tests
 in their one `typecheck`.
 
 `packages/mcp` and `packages/workspace` each run `typecheck`, `test` and
-`test:package`. `examples` runs `typecheck` and `test`: every example is a
+`test:package`. `packages/workspace-cli` runs `typecheck`, `test`, and
+`test:install`. Its installed-package suite uses Node 22 and Bun; `test:package`
+runs the portable package checks on macOS. CLI completion tests require bash,
+fish, and zsh. CI provisions an isolated `tmuxp==1.74.0` runtime for optional
+Python extension tests through `LIBTMUX_TEST_PYTHON` and `TMUX_WORKSPACE_PYTHON`.
+The native commands do not need Python. `examples` runs `typecheck` and `test`:
+every example is a
 package of its own, and the umbrella runs each sibling, so adding one adds no
 step here.
 
@@ -361,15 +373,42 @@ matrix. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
 locally to use its dry-run mode without an npm identity.
 
 The release coordinator first requires every package version and internal
-`libtmux` dependency to agree. It then builds all three npm tarballs and reads
+`libtmux` dependency to agree. It then builds every npm tarball and reads
 every package, target version, integrity digest, and dist-tag before publishing
-any of them. It publishes those exact tarballs, then checks all three registry
+any of them. It publishes those exact tarballs, then checks all registry
 artifacts and tags again. A partial rerun skips an existing version only when
 its integrity and intended tag match. A different artifact, a missing
 established package, or any registry error other than a target-version 404
 stops the release.
 
-npm cannot publish three packages as one transaction. A failure can therefore
+A package the registry does not hold yet carries `firstPublication` in
+`RELEASE_PACKAGES`, and `@libtmux/workspace-cli` carries it now, so a tag
+release does not stop on that package's absence. Only a structured
+package-level 404 for a declared package is admitted; registry errors and
+missing established packages still stop the release. The first publication must
+use the coordinated `latest` channel: either a prerelease before the first
+stable release, or a stable version. Bootstrapping into `alpha` or another later
+prerelease channel is refused before any publication. Once the target exists, a
+retry requires the same tarball integrity and intended tag.
+
+Choose a new coordinated version and complete the package and install gates
+before the first publication. From that reviewed checkout, preview the
+coordinator with:
+
+```console
+$ GITHUB_EVENT_NAME=workflow_dispatch bun scripts/publish-release.ts
+```
+
+A trusted publisher cannot be configured for a package the registry does not
+hold, so the maintainer performs the first coordinated publication with an
+authenticated npm session, then configures the CLI's
+[trusted publisher](https://docs.npmjs.com/trusted-publishers/) for
+`libtmux/libtmux-ts` and `publish.yml`. Enable direct publishing for that
+publisher to match the existing workflow. Drop `firstPublication` from the
+descriptor once the package exists; later tag releases require every package to
+exist.
+
+npm cannot publish the packages as one transaction. A failure can therefore
 leave a prefix published for the next run to verify and resume. Trusted
 publishing authenticates `npm publish`, not `npm dist-tag add`, so a matching
 artifact with the wrong tag also stops with a manual-repair diagnostic instead
@@ -377,7 +416,7 @@ of adding a long-lived token to the workflow.
 
 ### Stable release gate
 
-`0.1.0` is a coordinated release of all three packages. Cut it only when:
+`0.1.0` is a coordinated release of every release package. Cut it only when:
 
 - no known P0 or P1 correctness or security finding remains;
 - both Bun versions, Node 22 package consumers, every advertised tmux version,
@@ -385,12 +424,12 @@ of adding a long-lived token to the workflow.
 - real-tmux cancellation and process ownership pass on each advertised host
   platform, or the platform contract names the narrower set;
 - the published declaration graph, examples, and install canaries cover all
-  three packages; and
+  release packages; and
 - one release candidate has spent 30 days in production-like use without a new
   P0 or P1 finding.
 
-The three packages keep one release number. A tag names the tested state of the
-library, MCP server, and workspace package together.
+The packages keep one release number. A tag names the tested state of the
+library, MCP server, workspace builder, and workspace CLI together.
 
 `test:package` reads the tarball and `test:install` uses it — a clean
 directory, `npm install` of the packed file, and a Node 22 process that imports

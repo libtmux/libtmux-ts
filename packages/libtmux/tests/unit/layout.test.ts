@@ -104,8 +104,14 @@ describe("classic layout parsing", () => {
 
   test("accepts every body tmux parses, so a round trip still applies", () => {
     for (const body of TMUX_APPLIES) {
-      expect(parseClassicLayout(dumped(body)), body).toEqual({ kind: "valid" });
+      expect(parseClassicLayout(dumped(body)), body).toMatchObject({ kind: "valid" });
     }
+  });
+
+  test("reports pane counts and depth for workspace preflight", () => {
+    expect(
+      parseClassicLayout(dumped("80x24,0,0{40x24,0,0,0,39x24,41,0[39x12,41,0,1,39x11,41,13,2]}")),
+    ).toEqual({ kind: "valid", panes: 3, depth: 2 });
   });
 
   test("refuses every body tmux refuses", () => {
@@ -126,6 +132,8 @@ describe("classic layout parsing", () => {
     const value = dumped("80x24,0,0,0");
     expect(parseClassicLayout(value.toUpperCase().slice(0, 4) + value.slice(4))).toEqual({
       kind: "valid",
+      panes: 1,
+      depth: 0,
     });
   });
 
@@ -143,6 +151,6 @@ describe("classic layout parsing", () => {
   test("accepts nesting up to the depth tmux allows", () => {
     const depth = 400;
     const body = `80x24,0,0${"{80x24,0,0".repeat(depth)}${"}".repeat(depth)}`;
-    expect(parseClassicLayout(dumped(body))).toEqual({ kind: "valid" });
+    expect(parseClassicLayout(dumped(body))).toMatchObject({ kind: "valid" });
   });
 });

@@ -24,6 +24,8 @@ export interface TmuxCapabilities {
 
 interface CapabilityBinding {
   bind(signal?: AbortLike): Promise<TmuxCapabilities>;
+  /** What `bind` would answer without a command, or nothing. */
+  bound(): TmuxCapabilities | undefined;
 }
 
 export interface DeriveTmuxCapabilitiesOptions {
@@ -95,10 +97,15 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     this.#timeoutMs = options.timeoutMs;
   }
 
+  bound(): TmuxCapabilities | undefined {
+    return this.#cached?.daemonEpoch === this.#getDaemonEpoch() ? this.#cached : undefined;
+  }
+
   async bind(signal?: AbortLike): Promise<TmuxCapabilities> {
     if (signal?.aborted === true) throw this.#cancelled("not_started");
+    const bound = this.bound();
+    if (bound !== undefined) return bound;
     const daemonEpoch = this.#getDaemonEpoch();
-    if (this.#cached?.daemonEpoch === daemonEpoch) return this.#cached;
     let inFlight = this.#inFlight;
     if (
       inFlight === undefined ||
@@ -164,7 +171,6 @@ export class LazyCapabilityBinding implements CapabilityBinding {
   #request(signal: AbortLike): CommandRequest {
     const args = ["-N"];
     if (this.#connection.colors === 256) args.push("-2");
-    if (this.#connection.colors === 88) args.push("-8");
     if (this.#connection.configFile !== undefined) args.push(`-f${this.#connection.configFile}`);
     if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
     if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);

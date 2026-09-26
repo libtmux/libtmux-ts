@@ -183,6 +183,28 @@ describe("a supplied engine", () => {
     });
   }, 60_000);
 
+  test("checks an abbreviated layout without probing the version again", async () => {
+    await withServer(async (fixture) => {
+      const invocations: (readonly string[])[] = [];
+      const server = new Server({
+        engine: shellEngine((argv) => invocations.push(argv)),
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      // Only an abbreviation the mirrored names made ambiguous needs the
+      // daemon's version at all.
+      const ambiguous = [
+        { layout: (await server.versionAtLeast("3.5")) ? "main-horizontal-m" : "main-h", panes: 1 },
+      ];
+      await server.validateLayouts(ambiguous);
+      const bound = invocations.length;
+      await server.validateLayouts(ambiguous);
+      await server.validateLayouts(ambiguous);
+      expect(invocations.length).toBe(bound);
+    });
+  });
+
   test("refuses the two calls that can only drive a local tmux", async () => {
     await withServer(async (fixture) => {
       const server = new Server({

@@ -1,3 +1,4 @@
+import type { CommandOptions } from "./common.js";
 import {
   getEnvironment,
   removeEnvironment,
@@ -113,8 +114,8 @@ export class Session {
    * options.get("status");
    * ```
    */
-  showOptions(): Promise<ReadonlyMap<string, string>> {
-    return showOptions(runtimeForHandle(this), "session", this.id);
+  showOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showOptions(runtimeForHandle(this), "session", this.id, options);
   }
 
   /**
@@ -128,8 +129,8 @@ export class Session {
    * (await session.showResolvedOptions()).get("history-limit");
    * ```
    */
-  showResolvedOptions(): Promise<ReadonlyMap<string, string>> {
-    return showResolvedOptions(runtimeForHandle(this), "session", this.id);
+  showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>> {
+    return showResolvedOptions(runtimeForHandle(this), "session", this.id, options);
   }
 
   /**
@@ -290,9 +291,16 @@ export class Session {
    * `server.pipeline([session.plan.newWindow().argv])` returns it for one
    * command, whatever the server's size.
    *
+   * `index` selects an exact slot. An occupied slot fails without replacing
+   * its window; omitting `index` leaves placement to tmux.
+   *
+   * @throws TypeError when `index` is outside 0 through 2147483647, is not an
+   * integer, or is combined with `direction`.
+   *
    * ```ts
-   * const created = await session.newWindow({ name: "editor" });
+   * const created = await session.newWindow({ index: 3, name: "editor" });
    * created.name; // "editor"
+   * created.index; // 3
    * ```
    */
   newWindow(options?: NewWindowOptions): Promise<Window> {
@@ -308,8 +316,8 @@ export class Session {
    *
    * ```ts
    * const [editor, logs] = await server.batch([
-   *   session.plan.newWindow({ name: "editor" }),
-   *   session.plan.newWindow({ name: "logs" }),
+   *   session.plan.newWindow({ index: 3, name: "editor" }),
+   *   session.plan.newWindow({ index: 4, name: "logs" }),
    * ]);
    * ```
    */

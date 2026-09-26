@@ -381,7 +381,7 @@ describe("server and runtime foundations", () => {
     expect(Object.isFrozen(runtime.connection)).toBe(true);
   });
 
-  test("defaults the executable and rejects conflicting socket selectors", () => {
+  test("defaults the executable and rejects invalid connection options", () => {
     const server = new Server();
     const defaultEnvironment = runtimeForServer(server).connection.environment;
 
@@ -397,6 +397,9 @@ describe("server and runtime foundations", () => {
     ).toBe(true);
     expect(() => new Server({ socketName: "named", socketPath: "/tmp/handles.sock" })).toThrow(
       "socketName and socketPath are mutually exclusive",
+    );
+    expect(() => new Server({ colors: 88 as 256, tmuxBin: "missing-tmux" })).toThrow(
+      "colors must be 256 or omitted",
     );
   });
 
@@ -416,7 +419,7 @@ describe("server and runtime foundations", () => {
   test("derives an internal Server and binds the exact runtime object", () => {
     const fixture = runtimeFixture({
       connection: {
-        colors: 88,
+        colors: 256,
         configFile: "/tmp/runtime-only.conf",
         environment: { FIXTURE_ENV: "runtime-only" },
         socketPath: "/tmp/runtime-only.sock",
@@ -427,7 +430,7 @@ describe("server and runtime foundations", () => {
     const boundRuntime = runtimeForServer(fixture.server);
     expect(boundRuntime).toBe(fixture.runtime);
     expect(fixture.server).toMatchObject({
-      colors: 88,
+      colors: 256,
       configFile: "/tmp/runtime-only.conf",
       socketName: undefined,
       socketPath: "/tmp/runtime-only.sock",
@@ -1225,7 +1228,6 @@ describe("Python-compatible handle equality", () => {
     }
 
     const left = new Server({
-      colors: 88,
       configFile: "left.conf",
       environment: { LEFT: "1" },
       socketName: "same",
