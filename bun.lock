@@ -92,7 +92,7 @@
     },
     "packages/libtmux": {
       "name": "libtmux",
-      "version": "0.1.0-alpha.10",
+      "version": "0.1.0-alpha.11",
       "devDependencies": {
         "@types/bun": "1.4.2",
         "@types/node": "22.20.4",
@@ -108,45 +108,45 @@
     },
     "packages/mcp": {
       "name": "@libtmux/mcp",
-      "version": "0.1.0-alpha.10",
+      "version": "0.1.0-alpha.11",
       "bin": {
         "libtmux-mcp": "dist/server.js",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
-        "libtmux": "0.1.0-alpha.10",
+        "libtmux": "0.1.0-alpha.11",
         "zod": "4.6.5",
       },
     },
     "packages/workspace": {
       "name": "@libtmux/workspace",
-      "version": "0.1.0-alpha.10",
+      "version": "0.1.0-alpha.11",
       "dependencies": {
         "zod": "4.6.5",
       },
       "devDependencies": {
-        "libtmux": "0.1.0-alpha.10",
+        "libtmux": "0.1.0-alpha.11",
       },
       "peerDependencies": {
-        "libtmux": "0.1.0-alpha.10",
+        "libtmux": "0.1.0-alpha.11",
       },
     },
     "packages/workspace-cli": {
       "name": "@libtmux/workspace-cli",
-      "version": "0.1.0-alpha.10",
+      "version": "0.1.0-alpha.11",
       "bin": {
         "tmux-workspace": "./dist/main.js",
       },
       "devDependencies": {
         "cli-truncate": "6.1.1",
         "commander": "15.0.0",
-        "libtmux": "0.1.0-alpha.10",
+        "libtmux": "0.1.0-alpha.11",
         "oxfmt": "0.68.0",
         "string-width": "8.2.2",
         "yaml": "2.9.0",
       },
       "peerDependencies": {
-        "libtmux": "0.1.0-alpha.10",
+        "libtmux": "0.1.0-alpha.11",
       },
     },
   },

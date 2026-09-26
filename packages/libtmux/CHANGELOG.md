@@ -13,6 +13,7 @@ remember.
 <!-- toc -->
 
 - [Unreleased](#unreleased)
+- [0.1.0-alpha.11 (2026-09-26)](#010-alpha11-2026-09-26)
 - [0.1.0-alpha.10 (2026-09-19)](#010-alpha10-2026-09-19)
 - [0.1.0-alpha.9 (2026-09-12)](#010-alpha9-2026-09-12)
 - [0.1.0-alpha.8 (2026-09-06)](#010-alpha8-2026-09-06)
@@ -30,6 +31,8 @@ remember.
 <!-- /toc -->
 
 ## Unreleased
+
+## 0.1.0-alpha.11 (2026-09-26)
 
 ### `@libtmux/workspace-cli`
 
