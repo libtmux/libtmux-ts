@@ -247,10 +247,11 @@ describe("control-mode event bounds", () => {
   }, 40_000);
 
   // `timeoutMs` bounds only the caller's own wait on `["wait-for", "-L",
-  // name]`. tmux hands a released lock to the first queued locker regardless
-  // of whether that locker's client is still around (`cmd-wait-for.c`), so a
-  // bounded caller giving up does not free the channel for the next one.
-  test("a timed-out wait-for -L lock wedges the channel for the next locker", async () => {
+  // name]`. Before tmux 3.8, `cmd-wait-for.c` hands a released lock to the
+  // first queued locker even after that locker's client is gone, so a bounded
+  // caller giving up leaves the channel held for good. tmux 3.8 drops a
+  // killed client's wait (tmux issue 5614), so the next locker gets the lock.
+  test("a timed-out wait-for -L locker wedges the channel before tmux 3.8", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const channel = "ltx-lock-wedge";
@@ -269,7 +270,11 @@ describe("control-mode event bounds", () => {
         .cmd("wait-for", ["-L", channel], { timeoutMs: 500 })
         .then(() => undefined)
         .catch((thrown: unknown) => thrown);
-      expect(third).toBeInstanceOf(TmuxTransportError);
+      if (await server.versionAtLeast("3.8")) {
+        expect(third).toBeUndefined();
+      } else {
+        expect(third).toBeInstanceOf(TmuxTransportError);
+      }
     });
   }, 40_000);
 });
