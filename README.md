@@ -141,13 +141,13 @@ Criteria are data. `encodeWhereDocument` writes a model-tagged query;
 
 The library, MCP server, workspace builder, and workspace CLI share one release version.
 
-| Package                                              | What it is                                                                     | npm                                                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| **[libtmux](packages/libtmux)**                      | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837&label=)](https://www.npmjs.com/package/libtmux)                       |
-| **[@libtmux/mcp](packages/mcp)**                     | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/mcp)             |
-| **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace) |
-| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native `tmux-workspace` command for Node and Bun.                          | Pending first publication; build from this checkout.                                                                            |
-| [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                               |
+| Package                                              | What it is                                                                     | npm                                                                                                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **[libtmux](packages/libtmux)**                      | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837&label=)](https://www.npmjs.com/package/libtmux)                               |
+| **[@libtmux/mcp](packages/mcp)**                     | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/mcp)                     |
+| **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace)         |
+| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native `tmux-workspace` command for Node and Bun.                          | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
+| [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                                       |
 
 ---
 
