@@ -89,8 +89,8 @@ const expectedDevDependencies = {
   "@types/node": "22.20.1",
   knip: "6.36.0",
   oxfmt: "0.70.0",
-  oxlint: "1.83.0",
-  "oxlint-tsgolint": "7.0.2001",
+  oxlint: "1.85.0",
+  "oxlint-tsgolint": "7.0.2002",
   typescript: "7.0.2",
   // The oldest TypeScript a consumer may hold. Aliased rather than a second
   // `typescript` entry because `test:install` compiles its fixture with both:
