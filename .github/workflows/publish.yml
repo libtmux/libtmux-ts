@@ -54,6 +54,14 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # The workspace CLI's install canary drives its Python bridge, which
+      # refuses an interpreter without this exact tmuxp.
+      - name: Install the workspace Python runtime
+        run: |
+          python3 -m venv "$RUNNER_TEMP/workspace-python"
+          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
       # `cd`, not `bun --cwd`: that flag does not exist, and bun answers an
       # unknown flag with its usage text and exit code 0 — so every step passed
       # while doing nothing, and the first release shipped a package with no
