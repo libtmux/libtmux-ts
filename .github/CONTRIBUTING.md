@@ -382,14 +382,13 @@ established package, or any registry error other than a target-version 404
 stops the release.
 
 A package the registry does not hold yet carries `firstPublication` in
-`RELEASE_PACKAGES`, and `@libtmux/workspace-cli` carries it now, so a tag
-release does not stop on that package's absence. Only a structured
-package-level 404 for a declared package is admitted; registry errors and
-missing established packages still stop the release. The first publication must
-use the coordinated `latest` channel: either a prerelease before the first
-stable release, or a stable version. Bootstrapping into `alpha` or another later
-prerelease channel is refused before any publication. Once the target exists, a
-retry requires the same tarball integrity and intended tag.
+`RELEASE_PACKAGES`, so a tag release does not stop on that package's absence.
+Only a structured package-level 404 for a declared package is admitted; registry
+errors and missing established packages still stop the release. The first
+publication must use the coordinated `latest` channel: either a prerelease
+before the first stable release, or a stable version. Bootstrapping into `alpha`
+or another later prerelease channel is refused before any publication. Once the
+target exists, a retry requires the same tarball integrity and intended tag.
 
 Choose a new coordinated version and complete the package and install gates
 before the first publication. From that reviewed checkout, preview the
@@ -401,7 +400,7 @@ $ GITHUB_EVENT_NAME=workflow_dispatch bun scripts/publish-release.ts
 
 A trusted publisher cannot be configured for a package the registry does not
 hold, so the maintainer performs the first coordinated publication with an
-authenticated npm session, then configures the CLI's
+authenticated npm session, then configures the package's
 [trusted publisher](https://docs.npmjs.com/trusted-publishers/) for
 `libtmux/libtmux-ts` and `publish.yml`. Enable direct publishing for that
 publisher to match the existing workflow. Drop `firstPublication` from the

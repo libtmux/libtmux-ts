@@ -45,6 +45,11 @@ export interface CoordinateReleaseOptions {
   readonly artifactDirectory: string;
   readonly dryRun: boolean;
   readonly eventName: string;
+  /**
+   * The package whose package-level 404 this release admits. Defaults to the
+   * release policy's `firstPublication` package, if one is declared.
+   */
+  readonly firstPublication?: string;
   readonly refName?: string;
   readonly repositoryRoot: string;
 }
@@ -135,6 +140,7 @@ const FIRST_PUBLICATION_NAME = RELEASE_PACKAGES.find(
 async function queryPackages(
   manifests: readonly ReleaseManifest[],
   io: ReleaseIO,
+  firstPublication: string | undefined,
 ): Promise<readonly (RegistryPackageState | undefined)[]> {
   return await Promise.all(
     manifests.map(async ({ name }) => {
@@ -142,7 +148,7 @@ async function queryPackages(
         return await io.queryPackage(name);
       } catch (error) {
         if (error instanceof RegistryPackageNotFound) {
-          if (name === FIRST_PUBLICATION_NAME && error.packageName === name) return undefined;
+          if (name === firstPublication && error.packageName === name) return undefined;
           throw new Error(`established package ${error.packageName} is missing from the registry`, {
             cause: error,
           });
@@ -198,8 +204,9 @@ async function verifyPostcondition(
   artifacts: readonly PackedArtifact[],
   distTag: string,
   io: ReleaseIO,
+  firstPublication: string | undefined,
 ): Promise<PostconditionFindings> {
-  const packageStates = await queryPackages(manifests, io);
+  const packageStates = await queryPackages(manifests, io, firstPublication);
   const versionStates = await Promise.all(
     manifests.map(async ({ name, version }) => await io.queryVersion(name, version)),
   );
@@ -350,7 +357,8 @@ export async function coordinateRelease(
     }
   }
 
-  const packageStates = await queryPackages(manifests, io);
+  const firstPublication = options.firstPublication ?? FIRST_PUBLICATION_NAME;
+  const packageStates = await queryPackages(manifests, io, firstPublication);
   const versionStates = await Promise.all(
     manifests.map(async ({ name }) => await io.queryVersion(name, version)),
   );
@@ -367,8 +375,7 @@ export async function coordinateRelease(
   for (const [index, artifact] of artifacts.entries()) {
     const versionState = versionStates[index];
     const packageState =
-      packageStates[index] ??
-      (artifact.name === FIRST_PUBLICATION_NAME ? { distTags: {} } : undefined);
+      packageStates[index] ?? (artifact.name === firstPublication ? { distTags: {} } : undefined);
     if (packageState === undefined) {
       failures.push(`${artifact.name}: package state was not read`);
     } else if (versionState === undefined) {
@@ -411,7 +418,7 @@ export async function coordinateRelease(
     let findings: PostconditionFindings = { absent: [], lagging: [] };
     for (let attempt = 1; attempt <= POSTCONDITION_ATTEMPTS; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop -- each read follows the prior delay.
-      findings = await verifyPostcondition(manifests, artifacts, distTag, io);
+      findings = await verifyPostcondition(manifests, artifacts, distTag, io, firstPublication);
       if (findings.absent.length === 0 && findings.lagging.length === 0) break;
       // eslint-disable-next-line no-await-in-loop -- bound registry convergence between reads.
       if (attempt < POSTCONDITION_ATTEMPTS) await io.wait(POSTCONDITION_INTERVAL_MS);

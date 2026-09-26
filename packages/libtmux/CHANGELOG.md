@@ -32,6 +32,11 @@ remember.
 
 ## Unreleased
 
+### Release tooling
+
+`@libtmux/workspace-cli` is an established package: a tag release stops when
+the registry lacks it, as it does for every other package.
+
 ## 0.1.0-alpha.11 (2026-09-26)
 
 ### `@libtmux/workspace-cli`

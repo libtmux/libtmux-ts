@@ -606,7 +606,7 @@ describe("coordinated release", () => {
     }
   });
 
-  test.each(["libtmux", "@libtmux/mcp", "@libtmux/workspace"])(
+  test.each(["libtmux", "@libtmux/mcp", "@libtmux/workspace", "@libtmux/workspace-cli"])(
     "rejects package-level 404 for %s before publishing",
     async (name) => {
       const fixture = await makeReleaseFixture("1.0.0");
@@ -651,6 +651,7 @@ describe("coordinated release", () => {
         artifactDirectory: fixture.artifacts,
         dryRun: false,
         eventName: "push",
+        firstPublication: "@libtmux/workspace-cli",
         refName: `v${version}`,
         repositoryRoot: fixture.root,
       };
@@ -700,6 +701,7 @@ describe("coordinated release", () => {
             artifactDirectory: fixture.artifacts,
             dryRun: false,
             eventName: "push",
+            firstPublication: "@libtmux/workspace-cli",
             refName: "v1.1.0-alpha.1",
             repositoryRoot: fixture.root,
           },
@@ -722,6 +724,7 @@ describe("coordinated release", () => {
       artifactDirectory: fixture.artifacts,
       dryRun: false,
       eventName: "push",
+      firstPublication: "@libtmux/workspace-cli",
       refName: "v1.0.0",
       repositoryRoot: fixture.root,
     };
@@ -794,6 +797,7 @@ describe("coordinated release", () => {
             artifactDirectory: fixture.artifacts,
             dryRun: false,
             eventName: "push",
+            firstPublication: "@libtmux/workspace-cli",
             refName: "v1.0.0",
             repositoryRoot: fixture.root,
           },
@@ -818,6 +822,7 @@ describe("coordinated release", () => {
           artifactDirectory: fixture.artifacts,
           dryRun: true,
           eventName: "workflow_dispatch",
+          firstPublication: "@libtmux/workspace-cli",
           repositoryRoot: fixture.root,
         },
         io,

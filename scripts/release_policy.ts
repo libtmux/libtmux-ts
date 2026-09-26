@@ -41,7 +41,6 @@ export const RELEASE_PACKAGES: readonly ReleasePackageDescriptor[] = [
   },
   {
     directory: "workspace-cli",
-    firstPublication: true,
     internalVersionFields: ["peerDependencies", "devDependencies"],
     name: "@libtmux/workspace-cli",
   },
