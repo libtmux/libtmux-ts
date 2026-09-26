@@ -86,7 +86,7 @@ const expectedDevDependencies = {
   // describing a newer Node would compile calls the floor cannot run. The root
   // `overrides` pins it for the whole workspace, so a manifest naming anything
   // else would name a version that does not install.
-  "@types/node": "22.20.1",
+  "@types/node": "22.20.4",
   knip: "6.37.0",
   oxfmt: "0.70.0",
   oxlint: "1.85.0",

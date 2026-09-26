@@ -167,7 +167,7 @@
   },
   "devDependencies": {
     "@types/bun": "1.4.2",
-    "@types/node": "22.20.1",
+    "@types/node": "22.20.4",
     "knip": "6.37.0",
     "oxfmt": "0.70.0",
     "oxlint": "1.85.0",
