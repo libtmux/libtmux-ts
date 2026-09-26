@@ -50,9 +50,9 @@ async function makeReleaseFixture(version: string): Promise<{
       const packageRoot = join(root, "packages", directory);
       await mkdir(packageRoot, { recursive: true });
       const internalVersions =
-        directory === "mcp"
+        directory === "mcp" || directory === "workspace-cli"
           ? { dependencies: { libtmux: version } }
-          : directory === "workspace" || directory === "workspace-cli"
+          : directory === "workspace"
             ? {
                 devDependencies: { libtmux: version },
                 peerDependencies: { libtmux: version },
@@ -556,8 +556,7 @@ describe("coordinated release", () => {
     ["mcp", "dependencies"],
     ["workspace", "peerDependencies"],
     ["workspace", "devDependencies"],
-    ["workspace-cli", "peerDependencies"],
-    ["workspace-cli", "devDependencies"],
+    ["workspace-cli", "dependencies"],
   ] as const)("rejects a stale %s %s libtmux edge before packing", async (directory, field) => {
     const fixture = await makeReleaseFixture("1.0.0");
     const manifestPath = join(fixture.root, "packages", directory, "package.json");

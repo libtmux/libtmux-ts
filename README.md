@@ -255,6 +255,19 @@ await applyWorkspace(server, {
 Read next: [The config shape](packages/workspace/README.md#the-shape) ·
 [Converging](packages/workspace/README.md#converging-not-just-creating)
 
+### [@libtmux/workspace-cli](packages/workspace-cli) — tmuxp workspaces from the shell
+
+`tmux-workspace` loads, captures and converts tmuxp workspace files on Node or
+Bun. Ordinary loads start no Python.
+
+```console
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.11 load ./workspace.yaml
+```
+
+Read next: [Install](packages/workspace-cli/README.md#install) ·
+[Load and capture](packages/workspace-cli/README.md#load-and-capture) ·
+[Command reference](packages/workspace-cli/docs/command-reference.md)
+
 ### [examples](examples) — runnable, and run
 
 Four programs covering acquisition, control-mode watching, the act-then-wait

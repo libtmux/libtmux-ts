@@ -32,6 +32,13 @@ remember.
 
 ## Unreleased
 
+### `@libtmux/workspace-cli`
+
+`@libtmux/workspace-cli` now depends on `libtmux` rather than declaring it a
+peer, so `yarn dlx @libtmux/workspace-cli` runs `tmux-workspace`. Yarn installs
+no peer dependencies, and the command failed at startup when it could not
+import `libtmux`. (#32)
+
 ### Release tooling
 
 `@libtmux/workspace-cli` is an established package: a tag release stops when

@@ -1,23 +1,57 @@
 # Workspace CLI
 
 Manage tmux workspaces from YAML and JSON with Node.js 22.12+ or Bun 1.3.14+.
-This local implementation is in development.
+`tmux-workspace` loads, captures, converts and imports tmuxp workspace files.
+This implementation is in development.
 
-## Build
+## Install
 
-Run from the repository root:
-
-```console
-$ bun run --cwd packages/libtmux build
-```
+Run the command without installing it. With Node:
 
 ```console
-$ bun run --cwd packages/workspace-cli build
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.11 --help
 ```
 
+With Bun. The command names `node` in its shebang, so `bunx` runs it on Node
+when Node is installed; `--bun` runs it on Bun:
+
 ```console
-$ node packages/workspace-cli/dist/main.js --help
+$ bunx --bun @libtmux/workspace-cli@0.1.0-alpha.11 --help
 ```
+
+With pnpm:
+
+```console
+$ pnpm dlx @libtmux/workspace-cli@0.1.0-alpha.11 --help
+```
+
+With Yarn. Yarn refuses a release younger than its `npmMinimalAgeGate`, one
+day by default:
+
+```console
+$ yarn dlx @libtmux/workspace-cli@0.1.0-alpha.11 --help
+```
+
+Or install it globally, which puts `tmux-workspace` on `PATH`. With npm:
+
+```console
+$ npm install --global @libtmux/workspace-cli@0.1.0-alpha.11
+```
+
+With pnpm:
+
+```console
+$ pnpm add --global @libtmux/workspace-cli@0.1.0-alpha.11
+```
+
+With Bun:
+
+```console
+$ bun add --global @libtmux/workspace-cli@0.1.0-alpha.11
+```
+
+The rest of this page runs the installed `tmux-workspace`. A runner passes
+the same arguments to the command when they follow the package name.
 
 ## Load and capture
 
@@ -36,7 +70,7 @@ windows:
 Load on a separate tmux socket:
 
 ```console
-$ node packages/workspace-cli/dist/main.js load ./workspace.yaml \
+$ tmux-workspace load ./workspace.yaml \
     -L workspace-cli-demo \
     -d \
     --json
@@ -45,7 +79,7 @@ $ node packages/workspace-cli/dist/main.js load ./workspace.yaml \
 Capture its live topology:
 
 ```console
-$ node packages/workspace-cli/dist/main.js freeze dev \
+$ tmux-workspace freeze dev \
     -L workspace-cli-demo \
     --json
 ```
@@ -126,17 +160,22 @@ lists and blank builder names still use native validation.
 ## Inspect a workspace through MCP
 
 The separate [MCP server](../mcp/README.md) inspects loaded workspaces on the
-same tmux socket. Build it from the repository root:
+same tmux socket. After the detached load above, add it to your MCP client with
+that socket and the `inspect` toolset:
 
-```console
-$ bun run --cwd packages/mcp build
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "npx",
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.11"],
+      "env": { "LIBTMUX_SOCKET": "workspace-cli-demo", "LIBTMUX_TOOLSETS": "inspect" }
+    }
+  }
+}
 ```
 
-After the detached load above, configure your MCP client to launch `node` with
-the built `packages/mcp/dist/server.js` as its argument. Use an absolute program
-path if the client starts outside this repository. Set `LIBTMUX_SOCKET` to
-`workspace-cli-demo` and `LIBTMUX_TOOLSETS` to `inspect` in that subprocess's
-environment. The socket is selected when the MCP server starts.
+The socket is selected when the MCP server starts.
 
 For a workspace loaded with `-S`, set `LIBTMUX_SOCKET_PATH` to the same absolute
 socket path instead of `LIBTMUX_SOCKET`. If the CLI uses `TMUX_BIN`, select that
@@ -287,7 +326,7 @@ their completion scope.
 Completion is tested on Linux with Bash 5.2, Zsh 5.9, and fish 4.8. Bash 3.2 is
 a syntax target; older shells and filenames containing newlines remain unverified.
 
-After installing the local package, load the script for your shell. Bash:
+With `tmux-workspace` on `PATH`, load the script for your shell. Bash:
 
 ```console
 $ source <(tmux-workspace completion bash)
@@ -306,6 +345,22 @@ $ tmux-workspace completion fish | source
 ```
 
 For automation, `--json` and `--ndjson` wrap the script in a structured result.
+
+## Build from source
+
+Run from the repository root:
+
+```console
+$ bun run --cwd packages/libtmux build
+```
+
+```console
+$ bun run --cwd packages/workspace-cli build
+```
+
+```console
+$ node packages/workspace-cli/dist/main.js --help
+```
 
 ## Development status
 
