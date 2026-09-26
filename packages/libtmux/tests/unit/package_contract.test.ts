@@ -347,7 +347,7 @@ describe("package contract", () => {
   test("pins the complete dependency boundary to the accepted runtime floors", async () => {
     const packageManifest = await readJson<PackageManifest>("package.json");
 
-    const [rootManifest, mcpManifest, workspaceManifest] = await Promise.all([
+    const [rootManifest, mcpManifest, workspaceManifest, cliManifest] = await Promise.all([
       readJson<{ engines: Record<string, string> }>("../../package.json"),
       readJson<{
         dependencies?: Record<string, string>;
@@ -357,6 +357,10 @@ describe("package contract", () => {
         engines: Record<string, string>;
         peerDependencies?: Record<string, string>;
       }>("../workspace/package.json"),
+      readJson<{
+        dependencies?: Record<string, string>;
+        peerDependencies?: Record<string, string>;
+      }>("../workspace-cli/package.json"),
     ]);
     const runtimeManifests = [rootManifest, packageManifest, mcpManifest, workspaceManifest];
     for (const manifest of runtimeManifests) {
@@ -364,6 +368,10 @@ describe("package contract", () => {
     }
     expect(mcpManifest.dependencies?.libtmux).toBe(packageManifest.version);
     expect(workspaceManifest.peerDependencies?.libtmux).toBe(packageManifest.version);
+    // A command has no host project to provide a peer, and Yarn installs none:
+    // `yarn dlx` could not import libtmux while the CLI declared it as one.
+    expect(cliManifest.dependencies?.libtmux).toBe(packageManifest.version);
+    expect(cliManifest.peerDependencies).toBeUndefined();
     // Absent, not empty: an empty `dependencies` object is noise in a manifest.
     expect(packageManifest.dependencies ?? {}).toEqual(expectedDependencies);
     expect(packageManifest.devDependencies).toEqual(expectedDevDependencies);

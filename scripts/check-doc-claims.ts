@@ -22,7 +22,7 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * Every claim below is checked and answerable from the tree:
  *
  * - a repository-relative path named in a shell block exists;
- * - a package named in an install command is one this workspace publishes;
+ * - a package named in an install or run command is one this workspace publishes;
  * - a public install example pins prerelease packages to the manifest version;
  * - a tmux badge lists exactly the versions CI runs the suite against;
  * - every published package README states the tested host-platform boundary;
@@ -40,12 +40,19 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const installers = new Map<string, number>([
   ["bun add", 2],
   ["bun install", 2],
-  ["bunx", 1],
   ["npm i", 2],
   ["npm install", 2],
-  ["npx", 1],
   ["pnpm add", 2],
   ["yarn add", 2],
+]);
+
+/** Runners fetch one package and pass the arguments after it to its command. */
+const runners = new Map<string, number>([
+  ["bunx", 1],
+  ["npx", 1],
+  ["pnpm dlx", 2],
+  ["pnpx", 1],
+  ["yarn dlx", 2],
 ]);
 
 const failures: string[] = [];
@@ -125,7 +132,7 @@ function packageReferences(body: string, name: string): readonly RegExpMatchArra
 }
 
 const installerInBlock =
-  /(?:^|[\s"'`])(?:bun\s+add|npm\s+(?:i|install)|pnpm\s+add|yarn\s+add|bunx|npx)(?=$|[\s"'`])/mu;
+  /(?:^|[\s"'`])(?:bun\s+add|npm\s+(?:i|install)|pnpm\s+(?:add|dlx)|yarn\s+(?:add|dlx)|bunx|npx|pnpx)(?=$|[\s"'`])/mu;
 
 function isPublicReadme(file: string): boolean {
   return file === "README.md" || file.endsWith("/README.md");
@@ -196,6 +203,16 @@ for (const file of files) {
             `${where}: \`${command}\` installs ${argument}, which this workspace does not publish`,
           );
         }
+      }
+      break;
+    }
+    for (const [prefix, skip] of runners) {
+      if (!command.startsWith(`${prefix} `)) continue;
+      const argument = argv.slice(skip).find((token) => !token.startsWith("-"));
+      if (argument !== undefined && !packages.has(argument.replace(/@[^@/]*$/u, ""))) {
+        failures.push(
+          `${where}: \`${command}\` runs ${argument}, which this workspace does not publish`,
+        );
       }
       break;
     }
