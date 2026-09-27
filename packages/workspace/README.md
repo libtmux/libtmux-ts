@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for TypeScript workspace">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # @libtmux/workspace
 
 **Describe a tmux session as data; apply it. Applying twice converges rather

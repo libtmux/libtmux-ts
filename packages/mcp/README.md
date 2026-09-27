@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for TypeScript MCP">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # @libtmux/mcp
 
 **A Model Context Protocol server that gives an AI agent a real tmux server.**

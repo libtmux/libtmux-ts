@@ -12,6 +12,7 @@
     "tmux-workspace": "./dist/main.js"
   },
   "files": [
+    "assets",
     "dist",
     "docs",
     "THIRD-PARTY-NOTICES.md"

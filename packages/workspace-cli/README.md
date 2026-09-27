@@ -1,3 +1,12 @@
+<!-- libtmux-logo -->
+<p align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for TypeScript workspace">
+  </picture>
+</p>
+<!-- /libtmux-logo -->
+
 # Workspace CLI
 
 Manage tmux workspaces from YAML and JSON with Node.js 22.12+ or Bun 1.3.14+.
