@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: libtmux/docs
-          ref: 9206f46d23a0fbe1b15fcbf28efe74b59ba8292c
+          ref: 1e459615e9b2bd072b78df46622b1988fe8f88a0
           path: docs
 
       # This repo has its own package.json; the pnpm pin lives in the docs one.
@@ -78,7 +78,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@9206f46d23a0fbe1b15fcbf28efe74b59ba8292c
+    uses: libtmux/docs/.github/workflows/reusable-deploy.yml@1e459615e9b2bd072b78df46622b1988fe8f88a0
     with:
       # Unprefixed by locale — reusable-deploy prepends <locale>/ itself when
       # `port` is set, so this becomes en/ts/latest.
