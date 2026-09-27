@@ -248,6 +248,7 @@ describe("package contract", () => {
     expect(packageManifest.main).toBe("./dist/index.js");
     expect(packageManifest.types).toBe("./dist/index.d.ts");
     expect(packageManifest.files).toEqual([
+      "assets",
       "CHANGELOG.md",
       "dist",
       "!dist/_internal/test",

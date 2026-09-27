@@ -24,6 +24,7 @@
     "directory": "packages/libtmux"
   },
   "files": [
+    "assets",
     "CHANGELOG.md",
     "dist",
     "!dist/_internal/test",

@@ -28,6 +28,7 @@ describe("selection package boundary", () => {
     expect(Reflect.get(selectionModule, "Selection")).toBeUndefined();
     expect(Object.keys(manifest.exports)).toContain("./selection");
     expect(manifest.files).toEqual([
+      "assets",
       "CHANGELOG.md",
       "dist",
       "!dist/_internal/test",
