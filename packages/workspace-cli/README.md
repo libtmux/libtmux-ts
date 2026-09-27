@@ -9,45 +9,45 @@ This implementation is in development.
 Run the command without installing it. With Node:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0-alpha.11 --help
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.12 --help
 ```
 
 With Bun. The command names `node` in its shebang, so `bunx` runs it on Node
 when Node is installed; `--bun` runs it on Bun:
 
 ```console
-$ bunx --bun @libtmux/workspace-cli@0.1.0-alpha.11 --help
+$ bunx --bun @libtmux/workspace-cli@0.1.0-alpha.12 --help
 ```
 
 With pnpm:
 
 ```console
-$ pnpm dlx @libtmux/workspace-cli@0.1.0-alpha.11 --help
+$ pnpm dlx @libtmux/workspace-cli@0.1.0-alpha.12 --help
 ```
 
 With Yarn. Yarn refuses a release younger than its `npmMinimalAgeGate`, one
 day by default:
 
 ```console
-$ yarn dlx @libtmux/workspace-cli@0.1.0-alpha.11 --help
+$ yarn dlx @libtmux/workspace-cli@0.1.0-alpha.12 --help
 ```
 
 Or install it globally, which puts `tmux-workspace` on `PATH`. With npm:
 
 ```console
-$ npm install --global @libtmux/workspace-cli@0.1.0-alpha.11
+$ npm install --global @libtmux/workspace-cli@0.1.0-alpha.12
 ```
 
 With pnpm:
 
 ```console
-$ pnpm add --global @libtmux/workspace-cli@0.1.0-alpha.11
+$ pnpm add --global @libtmux/workspace-cli@0.1.0-alpha.12
 ```
 
 With Bun:
 
 ```console
-$ bun add --global @libtmux/workspace-cli@0.1.0-alpha.11
+$ bun add --global @libtmux/workspace-cli@0.1.0-alpha.12
 ```
 
 The rest of this page runs the installed `tmux-workspace`. A runner passes
@@ -168,7 +168,7 @@ that socket and the `inspect` toolset:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.11"],
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.12"],
       "env": { "LIBTMUX_SOCKET": "workspace-cli-demo", "LIBTMUX_TOOLSETS": "inspect" }
     }
   }
