@@ -7,6 +7,8 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # @libtmux/mcp
 
 **A Model Context Protocol server that gives an AI agent a real tmux server.**
@@ -16,6 +18,8 @@
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
 [![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8--rc2-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+</div>
 
 Part of [libtmux for Bun and TypeScript](../../README.md). Built on
 [`libtmux`](../libtmux).

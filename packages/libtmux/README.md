@@ -7,6 +7,8 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # libtmux
 
 Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
@@ -17,6 +19,8 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 [![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8--rc2-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+</div>
 
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.

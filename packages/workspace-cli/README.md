@@ -7,11 +7,15 @@
 </p>
 <!-- /libtmux-logo -->
 
+<div align="center">
+
 # Workspace CLI
 
 Manage tmux workspaces from YAML and JSON with Node.js 22.12+ or Bun 1.3.14+.
 `tmux-workspace` loads, captures, converts and imports tmuxp workspace files.
 This implementation is in development.
+
+</div>
 
 ## Install
 
