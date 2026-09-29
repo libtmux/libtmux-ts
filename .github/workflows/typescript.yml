@@ -44,6 +44,16 @@ jobs:
       - name: Point the emitted-Node lane at the provisioned Node 22
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 
+      # The Deno lanes pin the floor exactly: Deno before 2.9.7 reports no
+      # signal for a child that SIGKILL ended, so a newer one would pass a claim
+      # the floor cannot keep.
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: "2.9.7"
+
+      - name: Point the Deno lanes at the provisioned Deno 2.9.7
+        run: echo "LIBTMUX_DENO=$(which deno)" >> "$GITHUB_ENV"
+
       # One tmux, because the suites below start servers; which one they start
       # is the version job's question. The floor, so nothing here can depend on
       # something newer without the version job saying so.
@@ -147,6 +157,7 @@ jobs:
         run: |
           bun run test:types
           bun run test:node
+          bun run test:deno
           # Both suites in one run, because they cover different things: a
           # pane's methods are proven against a real server, so a floor
           # measured on the unit suite alone would push work towards mocking
@@ -207,6 +218,13 @@ jobs:
 
       - name: Point installed-package canaries at Node 22
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: "2.9.7"
+
+      - name: Point installed-package canaries at Deno 2.9.7
+        run: echo "LIBTMUX_DENO=$(which deno)" >> "$GITHUB_ENV"
 
       - run: bun install --frozen-lockfile
 
