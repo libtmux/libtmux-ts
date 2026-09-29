@@ -53,6 +53,7 @@ const installers = new Map<string, number>([
 /** Runners fetch one package and pass the arguments after it to its command. */
 const runners = new Map<string, number>([
   ["bunx", 1],
+  ["deno run", 2],
   ["npx", 1],
   ["pnpm dlx", 2],
   ["pnpx", 1],
@@ -99,7 +100,7 @@ interface FencedBlock {
   readonly line: number;
 }
 
-/** Fenced examples, including JSON client configuration that launches `npx`. */
+/** Fenced examples, including JSON client configuration that launches `npx` or `deno`. */
 function fencedBlocks(markdown: string): readonly FencedBlock[] {
   const blocks: FencedBlock[] = [];
   const lines = markdown.split("\n");
@@ -136,7 +137,7 @@ function packageReferences(body: string, name: string): readonly RegExpMatchArra
 }
 
 const installerInBlock =
-  /(?:^|[\s"'`])(?:bun\s+add|deno\s+add|npm\s+(?:i|install)|pnpm\s+(?:add|dlx)|yarn\s+(?:add|dlx)|bunx|npx|pnpx)(?=$|[\s"'`])/mu;
+  /(?:^|[\s"'`])(?:bun\s+add|deno\s+(?:add|run)|npm\s+(?:i|install)|pnpm\s+(?:add|dlx)|yarn\s+(?:add|dlx)|bunx|npx|pnpx)(?=$|[\s"'`])|"deno"/mu;
 
 function isPublicReadme(file: string): boolean {
   return file === "README.md" || file.endsWith("/README.md");
@@ -213,7 +214,12 @@ for (const file of files) {
     for (const [prefix, skip] of runners) {
       if (!command.startsWith(`${prefix} `)) continue;
       const argument = argv.slice(skip).find((token) => !token.startsWith("-"));
-      if (argument !== undefined && !packages.has(argument.replace(/@[^@/]*$/u, ""))) {
+      // `deno run` also runs a local script; only an `npm:` specifier names a package.
+      if (prefix === "deno run" && argument?.startsWith("npm:") !== true) break;
+      if (
+        argument !== undefined &&
+        !packages.has(argument.replace(/^npm:/u, "").replace(/@[^@/]*$/u, ""))
+      ) {
         failures.push(
           `${where}: \`${command}\` runs ${argument}, which this workspace does not publish`,
         );
@@ -532,16 +538,15 @@ const engines = await Promise.all(
   }),
 );
 
-// The Deno floor is recorded in the resolver every Deno lane uses, each
-// workflow that provisions Deno, every manifest's engines.deno, and each
-// README's requirement line. Nothing else compares them.
+// Nothing else compares the copies of the Deno floor.
 const denoLanes = [".github/workflows/typescript.yml", ".github/workflows/publish.yml"];
-const workflowPaths = new Set([
-  ...denoLanes,
-  ...(await Array.fromAsync(
-    new Bun.Glob(".github/workflows/*.{yml,yaml}").scan({ cwd: repositoryRoot }),
-  )),
-]);
+const scannedWorkflows = await Array.fromAsync(
+  new Bun.Glob(".github/workflows/*.{yml,yaml}").scan({ cwd: repositoryRoot, dot: true }),
+);
+if (!denoLanes.some((lane) => scannedWorkflows.includes(lane))) {
+  failures.push(`the workflow scan found neither ${denoLanes.join(" nor ")}`);
+}
+const workflowPaths = new Set([...denoLanes, ...scannedWorkflows]);
 const denoWorkflows = await Promise.all(
   [...workflowPaths]
     .toSorted((left, right) => left.localeCompare(right))
