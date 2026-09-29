@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 import { npmPack } from "../../../scripts/npm_pack.js";
-import { resolveNode22 } from "../src/_internal/test/testkit.js";
+import { DENO_FLOOR, resolveDeno, resolveNode22 } from "../src/_internal/test/testkit.js";
 
 /**
  * Install the tarball into a project that has never seen this repository.
@@ -17,13 +17,17 @@ import { resolveNode22 } from "../src/_internal/test/testkit.js";
  * file named by `exports` has to be packed.
  *
  * Node 22 exercises the emitted JavaScript and Bun exercises the packed
- * TypeScript source selected by its export condition.
+ * TypeScript source selected by its export condition. Deno 2.9.7 exercises the
+ * same emitted JavaScript through its own resolver, and checks the
+ * declarations with its own bundled TypeScript.
  */
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
 const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024;
 const COMMAND_TIMEOUT_MILLISECONDS = 120_000;
 const RUNTIME_TIMEOUT_MILLISECONDS = 30_000;
+/** What the README tells a Deno program to grant, and nothing more. */
+const DENO_CONSUMER_PERMISSIONS = ["--allow-run=tmux", "--allow-env"] as const;
 
 function fail(message: string): never {
   throw new Error(message);
@@ -96,6 +100,7 @@ const runtimeExports = Object.entries(manifest.exports).flatMap(([subpath, targe
   ];
 });
 const node = await resolveNode22();
+const deno = await resolveDeno();
 
 // `ltx` so a sweep can tell this apart from another libtmux port's leavings.
 const project = await mkdtemp(join(tmpdir(), "ltx-install-"));
@@ -171,6 +176,25 @@ try {
     COMMAND_TIMEOUT_MILLISECONDS,
   );
 
+  // Deno's own resolver and bundled TypeScript, which is neither the newest
+  // compiler nor the floor.
+  await writeFile(
+    join(project, "deno.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          exactOptionalPropertyTypes: true,
+          lib: ["ES2024", "ESNext.Disposable"],
+          noUncheckedIndexedAccess: true,
+          strict: true,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await run([deno, "check", "declarations.ts"], project, COMMAND_TIMEOUT_MILLISECONDS);
+
   // Resolving proves each runtime selects its intended packed tree; calling
   // proves the modules evaluate rather than merely resolve.
   const probe = join(project, "probe.mjs");
@@ -221,9 +245,40 @@ try {
     RUNTIME_TIMEOUT_MILLISECONDS,
   );
   const bunResult = await run([process.execPath, probe], project, RUNTIME_TIMEOUT_MILLISECONDS);
+  const denoResult = await run(
+    [deno, "run", "--allow-all", probe],
+    project,
+    RUNTIME_TIMEOUT_MILLISECONDS,
+  );
+
+  // The README's flags rather than `--allow-all`: what a consumer is told to
+  // grant is what has to reach tmux. No server answers this socket, so tmux
+  // refusing the connection is the pass; Deno refusing to run tmux is not.
+  const permissions = join(project, "permissions.mjs");
+  await writeFile(
+    permissions,
+    [
+      `import { Server } from "${manifest.name}";`,
+      "try {",
+      "  await new Server({ socketName: 'ltx-canary-permissions' }).snapshot();",
+      "} catch (error) {",
+      "  if (error instanceof Deno.errors.NotCapable) throw error;",
+      "  if (String(error?.message).includes('could not run tmux')) throw error;",
+      "}",
+      "process.stdout.write('ok\\n');",
+      "",
+    ].join("\n"),
+  );
+  const permitted = await run(
+    [deno, "run", ...DENO_CONSUMER_PERMISSIONS, permissions],
+    project,
+    RUNTIME_TIMEOUT_MILLISECONDS,
+  );
   for (const [runtime, stdout] of [
     ["Node 22", nodeResult.stdout],
     [`Bun ${Bun.version}`, bunResult.stdout],
+    [`Deno ${DENO_FLOOR}`, denoResult.stdout],
+    [`Deno ${DENO_FLOOR} with ${DENO_CONSUMER_PERMISSIONS.join(" ")}`, permitted.stdout],
   ] as const) {
     if (stdout.trim() !== "ok") {
       fail(`${runtime} answered ${JSON.stringify(stdout.trim())} for the installed package`);
@@ -234,6 +289,7 @@ try {
     `${JSON.stringify({
       installed: `${manifest.name}@${manifest.version}`,
       bun: Bun.version,
+      deno: DENO_FLOOR,
       node: node.split("/").at(-1) ?? "node",
       protocol: "libtmux-install-canary-v1",
       status: "passed",
