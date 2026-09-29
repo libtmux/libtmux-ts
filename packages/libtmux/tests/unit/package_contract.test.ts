@@ -366,7 +366,7 @@ describe("package contract", () => {
     ]);
     const runtimeManifests = [rootManifest, packageManifest, mcpManifest, workspaceManifest];
     for (const manifest of runtimeManifests) {
-      expect(manifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
+      expect(manifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14", deno: ">=2.9.7" });
     }
     expect(mcpManifest.dependencies?.libtmux).toBe(packageManifest.version);
     expect(workspaceManifest.peerDependencies?.libtmux).toBe(packageManifest.version);

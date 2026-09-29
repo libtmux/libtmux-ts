@@ -33,6 +33,18 @@ remember.
 
 ## Unreleased
 
+### Deno
+
+`libtmux`, `@libtmux/mcp`, `@libtmux/workspace`, and `@libtmux/workspace-cli`
+run on Deno 2.9.7 or newer, installed from npm. A Deno program grants
+`--allow-run=tmux --allow-env`. On Deno before 2.9.7, a cancelled command's
+`TmuxTransportError.signal` is `undefined`.
+
+### `@libtmux/workspace-cli`
+
+`debug-info` names Deno and its version when Deno runs the CLI, rather than
+Node.js and Deno's Node-compatibility version.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`
