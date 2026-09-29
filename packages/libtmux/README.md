@@ -37,12 +37,15 @@ unproven. WSL is untested. This is a proof boundary, not an OS rejection.
 $ bun add --exact libtmux@0.1.0-alpha.12
 ```
 
-On Deno, install it from npm. tmux inherits the environment, so
-`--allow-env` cannot be narrowed to named variables:
+On Deno, install it from npm:
 
 ```console
 $ deno add --save-exact npm:libtmux@0.1.0-alpha.12
 ```
+
+A program that uses it runs tmux and reads the environment, which the library
+copies to every tmux it starts, so `--allow-env` cannot be narrowed to named
+variables:
 
 ```console
 $ deno run \
@@ -50,6 +53,9 @@ $ deno run \
     --allow-env \
     main.ts
 ```
+
+A `tmuxBin` outside `PATH` needs its own `--allow-run` path; `--allow-run=tmux`
+does not cover it.
 
 > [!WARNING]
 > **Alpha.** Prerelease software: the API can change between alpha releases

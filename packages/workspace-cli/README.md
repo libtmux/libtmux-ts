@@ -32,6 +32,12 @@ when Node is installed; `--bun` runs it on Bun:
 $ bunx --bun @libtmux/workspace-cli@0.1.0-alpha.12 --help
 ```
 
+With Deno. `--allow-all` is the only permission set tested for this command:
+
+```console
+$ deno run --allow-all npm:@libtmux/workspace-cli@0.1.0-alpha.12 --help
+```
+
 With pnpm:
 
 ```console

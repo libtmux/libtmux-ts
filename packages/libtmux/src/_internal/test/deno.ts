@@ -8,10 +8,10 @@ import { executableOnPath } from "./node22.js";
 /**
  * Resolve the Deno that the Deno lanes run against.
  *
- * The floor is exact. Deno before 2.9.7 reports no signal for a child that
- * `SIGKILL` ended, so a cancelled command's `TmuxTransportError.signal` reads
- * `undefined` there; a newer Deno says nothing about the release the package
- * claims.
+ * The floor is exact. On Deno before 2.9.7, a cancelled command's
+ * `TmuxTransportError.signal` reads `undefined` and a process that ignores
+ * `SIGTERM` keeps running; a newer Deno says nothing about the release the
+ * package claims.
  *
  * The same policy as `resolveNode22`: the variable if it is set, mise if it is
  * installed, and an error naming both otherwise.

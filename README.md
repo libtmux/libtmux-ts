@@ -156,7 +156,7 @@ The library, MCP server, workspace builder, and workspace CLI share one release 
 | **[libtmux](packages/libtmux)**                      | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837&label=)](https://www.npmjs.com/package/libtmux)                               |
 | **[@libtmux/mcp](packages/mcp)**                     | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/mcp)                     |
 | **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace)         |
-| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native `tmux-workspace` command for Node and Bun.                          | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
+| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native `tmux-workspace` command for Node, Bun, and Deno 2.9.7+.            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
 | [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                                       |
 
 ---
