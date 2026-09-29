@@ -19,7 +19,7 @@ const NODE22_VARIABLE = "LIBTMUX_NODE22";
 
 const MAJOR = 22;
 
-function executableOnPath(name: string): string | undefined {
+export function executableOnPath(name: string): string | undefined {
   for (const entry of (process.env.PATH ?? "").split(delimiter)) {
     if (entry === "") continue;
     const candidate = resolve(entry, name);

@@ -2,10 +2,13 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 /**
- * Whether Bun runs this suite, testing `src`, rather than Node, testing the
- * emitted `dist` — the artifact a Node consumer actually loads.
+ * Whether Bun runs this suite, testing `src`, rather than Node or Deno, testing
+ * the emitted `dist` — the artifact their consumers load.
  */
 const ON_BUN = "Bun" in globalThis;
+
+/** Deno evaluates source through a subcommand rather than a flag. */
+const ON_DENO = "Deno" in globalThis;
 
 const packageRoot = new URL("../../", import.meta.url);
 
@@ -27,7 +30,11 @@ export function runModule(
 ): { readonly exitCode: number | null; readonly stderr: string; readonly stdout: string } {
   const result = spawnSync(
     process.execPath,
-    ON_BUN ? ["--eval", source] : ["--input-type=module", "--eval", source],
+    ON_BUN
+      ? ["--eval", source]
+      : ON_DENO
+        ? ["eval", source]
+        : ["--input-type=module", "--eval", source],
     { cwd: fileURLToPath(packageRoot), encoding: "utf8", env, timeout: 5_000 },
   );
   return { exitCode: result.status, stderr: result.stderr, stdout: result.stdout };

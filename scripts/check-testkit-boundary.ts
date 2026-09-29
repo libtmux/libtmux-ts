@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const legacyModule = /(?:^|[/])run_root\.(?:[cm]?[jt]s|[jt]sx)/u;
 const implementationModule =
-  /(?:^|[/])(?:cleanup|control_mode|deadlines|fixture_launch|handle_prototypes|node22|process_identity|reaper|records|supervisor|temp_root|test_server)\.(?:[cm]?[jt]s|[jt]sx)/u;
+  /(?:^|[/])(?:cleanup|control_mode|deadlines|deno|fixture_launch|handle_prototypes|node22|process_identity|reaper|records|supervisor|temp_root|test_server)\.(?:[cm]?[jt]s|[jt]sx)/u;
 const internalTestDirectory = "packages/libtmux/src/_internal/test/";
 const testkitEntrypoint = "packages/libtmux/src/_internal/test/testkit.ts";
 const boundaryChecker = "scripts/check-testkit-boundary.ts";

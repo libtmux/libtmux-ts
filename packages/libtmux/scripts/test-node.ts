@@ -6,6 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   deadlineMs,
+  DENO_FLOOR,
+  resolveDeno,
   resolveNode22,
   reapStaleRunRoot,
   RUN_ROOT_ENV,
@@ -14,13 +16,13 @@ import {
   testParallelism,
 } from "../src/_internal/test/testkit.js";
 
-interface Arguments {
-  readonly expectMajor: number;
-  readonly nodeArgument?: string;
-}
+type Arguments =
+  | { readonly runtime: "deno" }
+  | { readonly expectMajor: number; readonly nodeArgument?: string; readonly runtime: "node" };
 
 interface ScenarioReport {
   readonly protocol: "libtmux-node-scenarios-v1";
+  readonly runtime: string;
   readonly scenarios: readonly string[];
   readonly status: "passed";
 }
@@ -28,18 +30,30 @@ interface ScenarioReport {
 function parseArguments(argv: readonly string[]): Arguments {
   let expectMajor: number | undefined;
   let nodeArgument: string | undefined;
+  let runtime = "node";
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (value === undefined) throw new Error(`${flag ?? "argument"} requires a value`);
     if (flag === "--node") nodeArgument = value;
     else if (flag === "--expect-major") expectMajor = Number.parseInt(value, 10);
+    else if (flag === "--runtime") runtime = value;
     else throw new Error(`unknown argument: ${flag}`);
   }
+  if (runtime === "deno") {
+    // The Deno floor is exact and resolved in one place; a flag could only disagree with it.
+    if (nodeArgument !== undefined || expectMajor !== undefined) {
+      throw new Error("--node and --expect-major apply only to --runtime node");
+    }
+    return { runtime };
+  }
+  if (runtime !== "node") throw new Error(`--runtime must be node or deno, not ${runtime}`);
   if (expectMajor === undefined || !Number.isSafeInteger(expectMajor) || expectMajor < 1) {
     throw new Error("--expect-major must be a positive integer");
   }
-  return nodeArgument === undefined ? { expectMajor } : { expectMajor, nodeArgument };
+  return nodeArgument === undefined
+    ? { expectMajor, runtime }
+    : { expectMajor, nodeArgument, runtime };
 }
 
 async function resolveNode(nodeArgument: string | undefined): Promise<string> {
@@ -71,6 +85,33 @@ function queryMajor(executable: string, expected: number): string {
     );
   }
   return version;
+}
+
+interface Runtime {
+  /** Argv that runs a module file: `[node]`, or `[deno, "run", "--allow-all"]`. */
+  readonly command: readonly [string, ...string[]];
+  /** What the scenario report and the vitest config must both answer. */
+  readonly identity: string;
+}
+
+async function resolveRuntime(args: Arguments): Promise<Runtime> {
+  if (args.runtime === "deno") {
+    return { command: [await resolveDeno(), "run", "--allow-all"], identity: `deno ${DENO_FLOOR}` };
+  }
+  const node = await resolveNode(args.nodeArgument);
+  return { command: [node], identity: `node ${queryMajor(node, args.expectMajor).slice(1)}` };
+}
+
+/**
+ * The scenarios hand `executable` to the transport as if it were tmux, so it
+ * has to run a module from its argv alone. Deno needs `run` first; this puts it
+ * there, and `exec` leaves the process Deno's own.
+ */
+async function writeLauncher(directory: string, command: readonly string[]): Promise<string> {
+  const path = join(directory, "runtime");
+  const quoted = command.map((part) => `'${part.replaceAll("'", "'\\''")}'`).join(" ");
+  await writeFile(path, `#!/bin/sh\nexec ${quoted} "$@"\n`, { mode: 0o755 });
+  return path;
 }
 
 function scenarioSource(tsRoot: string, executable: string): string {
@@ -825,6 +866,7 @@ assert.equal(ceilingSeen[0].delivery, "replied");
 
 console.log(JSON.stringify({
   protocol: "libtmux-node-scenarios-v1",
+  runtime: typeof Deno === "undefined" ? "node " + process.versions.node : "deno " + Deno.version.deno,
   scenarios: [
     "literal-argv",
     "immutable-input",
@@ -858,14 +900,17 @@ console.log(JSON.stringify({
 }
 
 const args = parseArguments(process.argv.slice(2));
-const executable = await resolveNode(args.nodeArgument);
-const version = queryMajor(executable, args.expectMajor);
+const runtime = await resolveRuntime(args);
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
 // Only a top-level runner owns the namespace sweep. A nested runner inherits
 // its parent's exact root and must not race that owner or an explicit reaper.
 if (process.env[RUN_ROOT_ENV] === undefined) await sweepStaleRunRoots();
 
 const temporaryRoot = await makeTestDirectory("ltx-node-scenarios-");
+const executable =
+  runtime.command.length === 1
+    ? runtime.command[0]
+    : await writeLauncher(temporaryRoot, runtime.command);
 const scenarioRunRoot = process.env[RUN_ROOT_ENV] ?? join(temporaryRoot, "node, task4 root");
 // A liveness bound on the whole run, not a performance target: the scenarios
 // spawn a few dozen processes and every one is slower on a busy machine, so a
@@ -929,7 +974,7 @@ try {
     await access(scenarioRunRoot);
     const cleanup = await reapStaleRunRoot(scenarioRunRoot);
     if (cleanup.leaks.length > 0 || !cleanup.rootRemoved) {
-      throw new Error(`Node scenario cleanup leaked: ${cleanup.leaks.join("; ")}`);
+      throw new Error(`${runtime.identity} scenario cleanup leaked: ${cleanup.leaks.join("; ")}`);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -937,23 +982,24 @@ try {
   exactCleanupComplete = true;
   if (result.code !== 0 || result.signal !== null || stderrText !== "") {
     throw new Error(
-      `Node scenarios failed with status ${String(result.code ?? result.signal)}:\n${stderrText}${stdoutText}`.trim(),
+      `${runtime.identity} scenarios failed with status ${String(result.code ?? result.signal)}:\n${stderrText}${stdoutText}`.trim(),
     );
   }
   const report = JSON.parse(stdoutText) as ScenarioReport;
   if (
     report.protocol !== "libtmux-node-scenarios-v1" ||
+    report.runtime !== runtime.identity ||
     report.status !== "passed" ||
     report.scenarios.length !== 25
   ) {
-    throw new Error(`invalid Node scenario report: ${stdoutText.trim()}`);
+    throw new Error(`invalid ${runtime.identity} scenario report: ${stdoutText.trim()}`);
   }
-  console.log(`${version} runtime scenarios passed: ${report.scenarios.join(", ")}`);
+  console.log(`${runtime.identity} runtime scenarios passed: ${report.scenarios.join(", ")}`);
 } finally {
   if (exactCleanupComplete) await rm(temporaryRoot, { force: true, recursive: true });
 }
 
-// The suites themselves, on the same Node, against the emitted `dist`. The
+// The suites themselves, on the same runtime, against the emitted `dist`. The
 // scenarios above reach what only a fresh process can; these run every test
 // that exercises the library, which Bun runs against `src`.
 const vitest = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url));
@@ -962,16 +1008,21 @@ await access(vitest).catch(() => {
 });
 for (const suite of ["unit", "integration"] as const) {
   const run = spawnSync(
-    executable,
+    runtime.command[0],
     [
+      ...runtime.command.slice(1),
       vitest,
       "run",
       "--config",
       "vitest.node.config.ts",
       ...(suite === "integration" ? [`--maxWorkers=${String(testParallelism())}`] : []),
     ],
-    { cwd: tsRoot, env: { ...process.env, LTX_NODE_SUITE: suite }, stdio: "inherit" },
+    {
+      cwd: tsRoot,
+      env: { ...process.env, LTX_EXPECT_RUNTIME: runtime.identity, LTX_NODE_SUITE: suite },
+      stdio: "inherit",
+    },
   );
   if (run.error !== undefined) throw run.error;
-  if (run.status !== 0) throw new Error(`the ${suite} suite failed on ${version}`);
+  if (run.status !== 0) throw new Error(`the ${suite} suite failed on ${runtime.identity}`);
 }
