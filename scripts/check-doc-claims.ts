@@ -137,7 +137,7 @@ function packageReferences(body: string, name: string): readonly RegExpMatchArra
 }
 
 const installerInBlock =
-  /(?:^|[\s"'`])(?:bun\s+add|deno\s+(?:add|run)|npm\s+(?:i|install)|pnpm\s+(?:add|dlx)|yarn\s+(?:add|dlx)|bunx|npx|pnpx)(?=$|[\s"'`])|"deno"/mu;
+  /(?:^|[\s"'`])(?:bun\s+add|deno\s+(?:add|run)|npm\s+(?:i|install)|pnpm\s+(?:add|dlx)|yarn\s+(?:add|dlx)|bunx|npx|pnpx)(?=$|[\s"'`])|"deno"(?!\s*:)/mu;
 
 function isPublicReadme(file: string): boolean {
   return file === "README.md" || file.endsWith("/README.md");
