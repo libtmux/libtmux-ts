@@ -67,10 +67,11 @@ export async function debugInfo(request: Request, context: CLIContext): Promise<
     platform: platform(),
     release: release(),
     cwd: privatePath(context.cwd, context),
-    runtime: {
-      name: process.versions.bun ? "Bun" : "Node.js",
-      version: process.versions.bun ?? process.versions.node,
-    },
+    runtime: process.versions.bun
+      ? { name: "Bun", version: process.versions.bun }
+      : process.versions.deno
+        ? { name: "Deno", version: process.versions.deno }
+        : { name: "Node.js", version: process.versions.node },
     tmux,
     paths: Object.fromEntries(
       ["TMUXP_CONFIGDIR", "XDG_CONFIG_HOME", "SHELL", "TMUX_BIN", "TMUX_WORKSPACE_PYTHON"].flatMap(

@@ -9,7 +9,9 @@ import { npmPack } from "../../../scripts/npm_pack.js";
 import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 import {
   assertOwnedSocketPath,
+  DENO_FLOOR,
   makeTestDirectory,
+  resolveDeno,
   resolveNode22,
   runWithCleanup,
   TestServer,
@@ -19,6 +21,7 @@ import {
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const coreRoot = fileURLToPath(new URL("../../libtmux", import.meta.url));
 const node = await resolveNode22();
+const deno = await resolveDeno();
 const python = process.env.TMUX_WORKSPACE_PYTHON || "python3";
 const project = await makeTestDirectory("ltx-cli-install-");
 const tmux = process.env.LIBTMUX_TEST_TMUX ?? "tmux";
@@ -84,18 +87,41 @@ await runWithCleanup(
       TMUX: "",
       TMUX_PANE: "",
     };
-    for (const runtime of [node, process.execPath]) {
-      const help = await execute([runtime, executable, "--help"], packageEnvironment);
+    const runtimes: readonly {
+      readonly argv: readonly string[];
+      readonly name: string;
+      readonly version?: string;
+    }[] = [
+      { argv: [node], name: "Node.js" },
+      { argv: [process.execPath], name: "Bun", version: Bun.version },
+      { argv: [deno, "run", "--allow-all"], name: "Deno", version: DENO_FLOOR },
+    ];
+    for (const runtime of runtimes) {
+      const help = await execute([...runtime.argv, executable, "--help"], packageEnvironment);
       assert(help.stdout.includes("Usage:"));
       assert.equal(help.stderr, "");
-      const version = await execute([runtime, executable, "--version"], packageEnvironment);
+      const version = await execute([...runtime.argv, executable, "--version"], packageEnvironment);
       assert(version.stdout.includes(manifest.version));
-      const listing = await execute([runtime, executable, "ls", "--json"], packageEnvironment);
+      const listing = await execute(
+        [...runtime.argv, executable, "ls", "--json"],
+        packageEnvironment,
+      );
       assert.deepEqual(JSON.parse(listing.stdout).workspaces, []);
       assert.equal(listing.stderr, "");
+      // A bug report pastes this. Under Deno it named Node.js and Deno's
+      // Node-compatibility version.
+      const diagnostics = await execute(
+        [...runtime.argv, executable, "debug-info", "--json"],
+        packageEnvironment,
+      );
+      const reported = JSON.parse(diagnostics.stdout).runtime;
+      assert.equal(reported.name, runtime.name);
+      if (runtime.version !== undefined) assert.equal(reported.version, runtime.version);
     }
     if (process.argv.includes("--package-only")) {
-      process.stdout.write("Installed workspace CLI passed Node 22 and Bun package checks\n");
+      process.stdout.write(
+        `Installed workspace CLI passed Node 22, Bun, and Deno ${DENO_FLOOR} package checks\n`,
+      );
       return;
     }
     const userBase = (
@@ -186,8 +212,9 @@ class Custom:
             };
             let checked = 0;
             for (const [label, runtime] of [
-              ["node22", node],
-              ["bun", process.execPath],
+              ["node22", [node]],
+              ["bun", [process.execPath]],
+              ["deno", [deno, "run", "--allow-all"]],
             ] as const) {
               for (const mode of ["json", "ndjson"] as const) {
                 const session = `package-${label}-${mode}`;
@@ -198,7 +225,7 @@ class Custom:
                   JSON.stringify({
                     session_name: session,
                     start_directory: project,
-                    before_script: `${quote(runtime)} ${quote(join(project, "before.cjs"))}`,
+                    before_script: `${runtime.map(quote).join(" ")} ${quote(join(project, "before.cjs"))}`,
                     windows: [
                       { window_name: "editor", panes: [`printf ready > ${quote(marker)}`, null] },
                       { window_name: "logs", panes: [null] },
@@ -233,7 +260,7 @@ class Custom:
                   const log = args[0] === "load" ? join(project, `${session}.ndjson`) : undefined;
                   const result = await execute(
                     [
-                      runtime,
+                      ...runtime,
                       executable,
                       ...(log ? ["--log-level", "info"] : []),
                       ...args,
@@ -373,7 +400,7 @@ class Custom:
                 }
                 const extended = await execute(
                   [
-                    runtime,
+                    ...runtime,
                     executable,
                     "load",
                     extension,
@@ -395,15 +422,18 @@ class Custom:
                 assert.equal(terminal.results[0].script_output.stdout, "installed extension\n");
                 checked++;
               }
-              const monochrome = await execute([runtime, executable, "--color", "always", "ls"], {
-                ...env,
-                NO_COLOR: "1",
-              });
+              const monochrome = await execute(
+                [...runtime, executable, "--color", "always", "ls"],
+                {
+                  ...env,
+                  NO_COLOR: "1",
+                },
+              );
               assert.equal(monochrome.stderr, "");
               assert(!monochrome.stdout.includes("\u001b"));
             }
             process.stdout.write(
-              `Installed CLI: ${checked} invocations passed on Node 22 and Bun\n`,
+              `Installed CLI: ${checked} invocations passed on Node 22, Bun, and Deno ${DENO_FLOOR}\n`,
             );
           },
           () => fixture.dispose(),
