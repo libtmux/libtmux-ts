@@ -25,8 +25,9 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
-Requires tmux 3.2a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
-5.6 and below ship no `ES2024` lib, which these declarations are built against.
+Requires tmux 3.2a or newer, Node 22+, Bun 1.3.14+, or Deno 2.9.7+, and
+TypeScript 5.7+ — 5.6 and below ship no `ES2024` lib, which these declarations
+are built against.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
@@ -34,6 +35,20 @@ unproven. WSL is untested. This is a proof boundary, not an OS rejection.
 
 ```console
 $ bun add --exact libtmux@0.1.0-alpha.12
+```
+
+On Deno, install it from npm. tmux inherits the environment, so
+`--allow-env` cannot be narrowed to named variables:
+
+```console
+$ deno add --save-exact npm:libtmux@0.1.0-alpha.12
+```
+
+```console
+$ deno run \
+    --allow-run=tmux \
+    --allow-env \
+    main.ts
 ```
 
 > [!WARNING]

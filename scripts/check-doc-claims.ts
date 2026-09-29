@@ -8,6 +8,7 @@ import {
   extractVersionLiterals,
 } from "./bun_version_pins.js";
 import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
+import { DENO_FLOOR } from "../packages/libtmux/src/_internal/test/testkit.js";
 
 /**
  * Hold the shell blocks and version claims in the docs to what the repository
@@ -29,6 +30,8 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * - the Bun versions recorded in the CI matrix, the regex corpus, the
  *   `packageManager` pin, every manifest's `engines.bun` floor, and the
  *   CONTRIBUTING prose all agree;
+ * - the Deno floor recorded in the testkit, every workflow that provisions
+ *   Deno, every manifest's `engines.deno`, and each package README all agree;
  * - the README and CHANGELOG tables of contents list exactly the headings
  *   each file has, in order, with the anchor GitHub would mint for each; and
  * - the MCP tool count the root README gives matches the registry; and
@@ -40,6 +43,7 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const installers = new Map<string, number>([
   ["bun add", 2],
   ["bun install", 2],
+  ["deno add", 2],
   ["npm i", 2],
   ["npm install", 2],
   ["pnpm add", 2],
@@ -132,7 +136,7 @@ function packageReferences(body: string, name: string): readonly RegExpMatchArra
 }
 
 const installerInBlock =
-  /(?:^|[\s"'`])(?:bun\s+add|npm\s+(?:i|install)|pnpm\s+(?:add|dlx)|yarn\s+(?:add|dlx)|bunx|npx|pnpx)(?=$|[\s"'`])/mu;
+  /(?:^|[\s"'`])(?:bun\s+add|deno\s+add|npm\s+(?:i|install)|pnpm\s+(?:add|dlx)|yarn\s+(?:add|dlx)|bunx|npx|pnpx)(?=$|[\s"'`])/mu;
 
 function isPublicReadme(file: string): boolean {
   return file === "README.md" || file.endsWith("/README.md");
@@ -197,7 +201,7 @@ for (const file of files) {
       if (!command.startsWith(`${prefix} `)) continue;
       for (const argument of argv.slice(skip)) {
         if (argument.startsWith("-")) continue;
-        const name = argument.replace(/@[^@/]*$/u, "");
+        const name = argument.replace(/^npm:/u, "").replace(/@[^@/]*$/u, "");
         if (!packages.has(name) && !packages.has(argument)) {
           failures.push(
             `${where}: \`${command}\` installs ${argument}, which this workspace does not publish`,
@@ -528,6 +532,52 @@ const engines = await Promise.all(
   }),
 );
 
+// The Deno floor is recorded in the resolver every Deno lane uses, each
+// workflow that provisions Deno, every manifest's engines.deno, and each
+// README's requirement line. Nothing else compares them.
+const denoWorkflows = await Promise.all(
+  [".github/workflows/typescript.yml", ".github/workflows/publish.yml"].map(async (path) => ({
+    path,
+    text: await Bun.file(join(repositoryRoot, path)).text(),
+  })),
+);
+for (const { path, text } of denoWorkflows) {
+  const pins = [...text.matchAll(/deno-version:\s*"([^"]*)"/gu)].map((match) => match[1]);
+  if (pins.length === 0) failures.push(`${path}: provisions no Deno for its Deno lanes`);
+  for (const pin of pins) {
+    if (pin !== DENO_FLOOR) {
+      failures.push(`${path}: deno-version ${String(pin)} is not the floor ${DENO_FLOOR}`);
+    }
+  }
+}
+const denoEngines = await Promise.all(
+  [...engineManifests, "packages/workspace-cli/package.json"].map(async (path) => {
+    const manifest = (await Bun.file(join(repositoryRoot, path)).json()) as {
+      readonly engines?: { readonly deno?: unknown };
+    };
+    return { path, spec: manifest.engines?.deno };
+  }),
+);
+for (const { path, spec } of denoEngines) {
+  if (spec !== `>=${DENO_FLOOR}`) {
+    failures.push(`${path}: engines.deno is ${JSON.stringify(spec)}, not ">=${DENO_FLOOR}"`);
+  }
+}
+const denoReadmes = await Promise.all(
+  [
+    "README.md",
+    "packages/libtmux/README.md",
+    "packages/mcp/README.md",
+    "packages/workspace/README.md",
+    "packages/workspace-cli/README.md",
+  ].map(async (path) => ({ path, text: await Bun.file(join(repositoryRoot, path)).text() })),
+);
+for (const { path, text } of denoReadmes) {
+  if (!text.includes(`Deno ${DENO_FLOOR}+`)) {
+    failures.push(`${path}: does not state the Deno ${DENO_FLOOR}+ floor`);
+  }
+}
+
 if (packageManagerBun !== undefined && pinParagraph !== undefined) {
   failures.push(
     ...checkBunVersionAgreement({
@@ -550,5 +600,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, ${String(mcpTools)} MCP tools, and ${String(benchScripts.length)} benchmark scripts\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, Deno ${DENO_FLOOR} agreed across the testkit, workflows, engines, and READMEs, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, ${String(mcpTools)} MCP tools, and ${String(benchScripts.length)} benchmark scripts\n`,
 );
