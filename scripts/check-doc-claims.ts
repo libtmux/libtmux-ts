@@ -535,18 +535,39 @@ const engines = await Promise.all(
 // The Deno floor is recorded in the resolver every Deno lane uses, each
 // workflow that provisions Deno, every manifest's engines.deno, and each
 // README's requirement line. Nothing else compares them.
+const denoLanes = [".github/workflows/typescript.yml", ".github/workflows/publish.yml"];
+const workflowPaths = new Set([
+  ...denoLanes,
+  ...(await Array.fromAsync(
+    new Bun.Glob(".github/workflows/*.{yml,yaml}").scan({ cwd: repositoryRoot }),
+  )),
+]);
 const denoWorkflows = await Promise.all(
-  [".github/workflows/typescript.yml", ".github/workflows/publish.yml"].map(async (path) => ({
-    path,
-    text: await Bun.file(join(repositoryRoot, path)).text(),
-  })),
+  [...workflowPaths]
+    .toSorted((left, right) => left.localeCompare(right))
+    .map(async (path) => ({ path, text: await Bun.file(join(repositoryRoot, path)).text() })),
 );
+// Each setup-deno step needs one pin. Counting them is what makes a pin the
+// pattern cannot read fail, rather than vanish.
 for (const { path, text } of denoWorkflows) {
-  const pins = [...text.matchAll(/deno-version:\s*"([^"]*)"/gu)].map((match) => match[1]);
-  if (pins.length === 0) failures.push(`${path}: provisions no Deno for its Deno lanes`);
+  const setups = [...text.matchAll(/uses:\s*denoland\/setup-deno@/gu)].length;
+  const pins = [...text.matchAll(/deno-version:[ \t]*(.*)/gu)].map((match) =>
+    (match[1] ?? "")
+      .replace(/\s+#.*$/u, "")
+      .trim()
+      .replace(/^(["'])(.*)\1$/u, "$2"),
+  );
+  if (setups === 0 && denoLanes.includes(path)) {
+    failures.push(`${path}: provisions no Deno for its Deno lanes`);
+  }
+  if (pins.length !== setups) {
+    failures.push(
+      `${path}: ${String(setups)} setup-deno steps need ${String(setups)} deno-version pins; found ${String(pins.length)}`,
+    );
+  }
   for (const pin of pins) {
     if (pin !== DENO_FLOOR) {
-      failures.push(`${path}: deno-version ${String(pin)} is not the floor ${DENO_FLOOR}`);
+      failures.push(`${path}: deno-version ${pin} is not the floor ${DENO_FLOOR}`);
     }
   }
 }
