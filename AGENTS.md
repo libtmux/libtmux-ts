@@ -18,7 +18,7 @@ happens to install is not one a package may use.
 | `packages/libtmux`       | `libtmux`                | The library. Server, sessions, windows, panes, clients, formats, selections, snapshots, and engines. Zero runtime dependencies. |
 | `packages/mcp`           | `@libtmux/mcp`           | Serves one tmux server to Model Context Protocol clients.                                                                       |
 | `packages/workspace`     | `@libtmux/workspace`     | Builds tmux sessions from declarative YAML.                                                                                     |
-| `packages/workspace-cli` | `@libtmux/workspace-cli` | Runs the native tmux-workspace command for Node and Bun.                                                                        |
+| `packages/workspace-cli` | `@libtmux/workspace-cli` | Runs the native tmux-workspace command for Node, Bun, and Deno 2.9.7+.                                                          |
 | `examples`               | —                        | Runnable examples, used as tests. The only `private` package.                                                                   |
 
 The release packages share one version and one tag.

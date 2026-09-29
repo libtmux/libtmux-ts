@@ -1,7 +1,7 @@
 {
   "name": "@libtmux/workspace-cli",
   "version": "0.1.0-alpha.12",
-  "description": "A tmuxp-compatible workspace manager for Node and Bun.",
+  "description": "A tmuxp-compatible workspace manager for Node, Bun, and Deno 2.9.7+.",
   "license": "MIT",
   "repository": {
     "type": "git",

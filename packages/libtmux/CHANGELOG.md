@@ -36,9 +36,11 @@ remember.
 ### Deno
 
 `libtmux`, `@libtmux/mcp`, `@libtmux/workspace`, and `@libtmux/workspace-cli`
-run on Deno 2.9.7 or newer, installed from npm. A Deno program that imports
-`libtmux` grants `--allow-run=tmux --allow-env`. On Deno before 2.9.7, a
-cancelled command's `TmuxTransportError.signal` is `undefined`.
+run on Deno 2.9.7 or newer, installed from npm. A program that calls `libtmux`
+needs `--allow-run=tmux --allow-env`; run `@libtmux/mcp` and `tmux-workspace`
+with `--allow-all`. On Deno before 2.9.7, cancelling a command whose process
+ignores `SIGTERM` leaves it running, and a cancelled command's
+`TmuxTransportError.signal` is `undefined`.
 
 ### `@libtmux/workspace-cli`
 

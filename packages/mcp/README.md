@@ -117,6 +117,25 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
 </details>
 
 <details>
+<summary>Deno</summary>
+
+`--allow-all` is the only permission set tested for the server:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "deno",
+      "args": ["run", "--allow-all", "npm:@libtmux/mcp@0.1.0-alpha.12"],
+      "env": { "LIBTMUX_SOCKET": "agent" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
 <summary>Running it from a clone instead</summary>
 
 ```console

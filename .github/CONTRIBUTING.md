@@ -358,9 +358,10 @@ should look for a Node itself.
 
 The Deno lanes run on Deno 2.9.7 exactly, and the floor is never substituted.
 Deno before 2.9.7 reports no signal for a child that `SIGKILL` ended, so a
-cancelled command's `TmuxTransportError.signal` reads `undefined` there.
-`resolveDeno` finds one from `LIBTMUX_DENO` or from mise. Nothing else should
-look for a Deno itself.
+cancelled command's `TmuxTransportError.signal` reads `undefined` there. Deno
+before 2.9.7 also leaves a cancelled command running when its process ignores
+`SIGTERM`. `resolveDeno` finds one from `LIBTMUX_DENO` or from mise. Nothing
+else should look for a Deno itself.
 
 ## Platforms
 
