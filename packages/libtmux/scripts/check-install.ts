@@ -177,7 +177,8 @@ try {
   );
 
   // Deno's own resolver and bundled TypeScript, which is neither the newest
-  // compiler nor the floor.
+  // compiler nor the floor. Without `--all` it checks only this file, not the
+  // packed declarations.
   await writeFile(
     join(project, "deno.json"),
     `${JSON.stringify(
@@ -193,7 +194,7 @@ try {
       2,
     )}\n`,
   );
-  await run([deno, "check", "declarations.ts"], project, COMMAND_TIMEOUT_MILLISECONDS);
+  await run([deno, "check", "--all", "declarations.ts"], project, COMMAND_TIMEOUT_MILLISECONDS);
 
   // Resolving proves each runtime selects its intended packed tree; calling
   // proves the modules evaluate rather than merely resolve.
@@ -253,7 +254,7 @@ try {
 
   // The README's flags rather than `--allow-all`: what a consumer is told to
   // grant is what has to reach tmux. No server answers this socket, so tmux
-  // refusing the connection is the pass; Deno refusing to run tmux is not.
+  // refusing the connection is the pass; any other error, a denial included, is not.
   const permissions = join(project, "permissions.mjs");
   await writeFile(
     permissions,
@@ -262,8 +263,7 @@ try {
       "try {",
       "  await new Server({ socketName: 'ltx-canary-permissions' }).snapshot();",
       "} catch (error) {",
-      "  if (error instanceof Deno.errors.NotCapable) throw error;",
-      "  if (String(error?.message).includes('could not run tmux')) throw error;",
+      "  if (!/^cannot reach tmux: (?:no server running on |error connecting to )/u.test(String(error?.message))) throw error;",
       "}",
       "process.stdout.write('ok\\n');",
       "",
