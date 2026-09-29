@@ -11,13 +11,14 @@ import {
   deadlineMs,
   makeTestDirectory,
   readProcessIdentity,
+  resolveDeno,
   resolveNode22,
   runWithCleanup,
   type TestServer,
 } from "../../libtmux/src/_internal/test/testkit.js";
 import { structured, withServer } from "./support/server_harness.js";
 
-type Runtime = "bun" | "node";
+type Runtime = "bun" | "deno" | "node";
 
 async function withProgram(
   fixture: TestServer,
@@ -30,7 +31,12 @@ async function withProgram(
   }) => Promise<void>,
   script?: string,
 ): Promise<void> {
-  const executable = runtime === "bun" ? process.execPath : await resolveNode22();
+  const executable =
+    runtime === "bun"
+      ? process.execPath
+      : runtime === "deno"
+        ? await resolveDeno()
+        : await resolveNode22();
   const entry = new URL(
     runtime === "bun" ? "../src/server.ts" : "../dist/server.js",
     import.meta.url,
@@ -53,10 +59,10 @@ async function withProgram(
   const child = spawn(
     executable,
     script === undefined
-      ? [fileURLToPath(entry)]
+      ? [...(runtime === "deno" ? ["run", "--allow-all"] : []), fileURLToPath(entry)]
       : [
           ...(runtime === "node" ? ["--input-type=module"] : []),
-          "--eval",
+          runtime === "deno" ? "eval" : "--eval",
           `const entry = ${JSON.stringify(entry.href)};\n${script}`,
         ],
     { cwd: fileURLToPath(new URL("..", import.meta.url)), env: environment, stdio: "pipe" },
@@ -113,7 +119,7 @@ async function boundedExit(
   }
 }
 
-for (const runtime of ["bun", "node"] as const) {
+for (const runtime of ["bun", "node", "deno"] as const) {
   test.each(["active", "completed"] as const)(
     `${runtime} stdin EOF closes the %s live wait and preserves the keeper`,
     async (state) => {
