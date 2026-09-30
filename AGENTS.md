@@ -67,3 +67,12 @@ stated twice, the file listed above is the one that governs.
 - Python library, which this ports: https://libtmux.git-pull.com/
 - tmux manual: http://man.openbsd.org/OpenBSD-current/man1/tmux.1
 - TSDoc, the doc-comment syntax: https://tsdoc.org/
+
+## Merging pull requests
+
+Use a descriptive subject ending in the actual PR number: `Title (#PRNUM)`.
+Follow it with `what:` and `why:` sections describing the change and its
+reason. Never use the default `Merge pull request ... from ...` subject.
+
+Pass the subject and body explicitly to the merge command. Read back the
+resulting commit message before starting another merge.
