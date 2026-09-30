@@ -45,6 +45,27 @@ for (const entry of surface) {
 
 await typecheckExamples(examples, "symbol");
 
+// Separate modules have no preamble: another example cannot supply an import.
+const standaloneNames = new Set([
+  "Server.sessions",
+  "Server.windows",
+  "Server.panes",
+  "Server.newSession",
+  "Pane.capture",
+]);
+const standalone = members
+  .filter((member) => standaloneNames.has(`${member.owner}.${member.name}`))
+  .map((member): Example => ({
+    code: member.example,
+    origin: `${member.file}:${String(member.line)}`,
+  }));
+const server = surface.find((entry) => entry.name === "Server");
+if (server !== undefined)
+  standalone.push(...fencedBlocks(server.prose, (line) => `${server.file}:${String(line)}`));
+if (standalone.length !== standaloneNames.size + 1)
+  throw new Error("Missing complete API examples");
+await typecheckExamples(standalone, "standalone-symbol", true);
+
 process.stdout.write(
   `symbol examples: ${String(members.length)} public members, ${String(
     root.length,

@@ -34,6 +34,18 @@ import { runTypeScriptApi } from "../support/typescript_api.js";
  * second list that would drift the way the first one could.
  */
 
+test("class and interface examples remain available to all documentation gates", () => {
+  const example = 'import { Server } from "libtmux";\nconst server = new Server();';
+  const doc = `/**\n * Setup.\n * \`\`\`ts\n${example
+    .split("\n")
+    .map((line) => ` * ${line}`)
+    .join("\n")}\n * \`\`\`\n */`;
+  for (const declaration of ["export class Server {}", "export interface Selection {}"] as const) {
+    const parsed = classesOf(`${doc}\n${declaration}`, "fixture.ts");
+    expect(parsed[0]?.prose).toContain(`\`\`\`ts\n${example}\n\`\`\``);
+  }
+});
+
 function isError(value: unknown): boolean {
   let prototype: unknown = value;
   while (typeof prototype === "function") {

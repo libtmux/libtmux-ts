@@ -63,7 +63,6 @@ const EXCUSED = new Map<string, string>([
     "Server.connect",
     "reads every event until the process is interrupted, like the README recipe it mirrors",
   ],
-  ["Server.newSession", "creates the session named work that the shared world is built around"],
   [
     "Session.fromEnv",
     "needs $TMUX and $TMUX_PANE pointed at this world's own socket, which the shared world does not expose",
