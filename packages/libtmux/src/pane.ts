@@ -289,9 +289,56 @@ export class Pane {
   /**
    * Capture this pane's contents as lines.
    *
+   * Save this complete program as `capture.ts`. With Bun 1.4.2 or newer,
+   * tmux 3.2a or newer, and `libtmux` installed, run `bun run capture.ts`.
+   * It creates and stops a private tmux server. A failed operation or cleanup
+   * exits with an error; a cleanup error names the retained socket directory.
+   *
    * ```ts
-   * const lines = await pane.capture();
-   * lines.at(-1);
+   * import { mkdtemp, readdir, rm } from "node:fs/promises";
+   * import { tmpdir } from "node:os";
+   * import { join } from "node:path";
+   * import { setTimeout as delay } from "node:timers/promises";
+   * import { Server } from "libtmux";
+   *
+   * const directory = await mkdtemp(join(tmpdir(), "ltx-capture-"));
+   * const server = new Server({
+   *   socketPath: join(directory, "tmux.sock"),
+   *   configFile: "/dev/null",
+   *   timeoutMs: 5_000,
+   * });
+   * const failures: unknown[] = [];
+   * try {
+   *   const signal = AbortSignal.timeout(5_000);
+   *   const session = await server.newSession({
+   *     name: "capture",
+   *     shellCommand: "sh",
+   *     signal,
+   *     environment: { ENV: "/dev/null" },
+   *   });
+   *   const pane = session.activePane;
+   *   if (!pane) throw new Error("The session has no active pane");
+   *   await pane.sendKeys("printf '\\nlibtmux capture ready\\n'", { signal });
+   *   for (;;) {
+   *     const lines = await pane.capture({ signal });
+   *     const line = lines.find((line) => line === "libtmux capture ready");
+   *     if (line !== undefined) {
+   *       console.log(line);
+   *       break;
+   *     }
+   *     await delay(20, undefined, { signal });
+   *   }
+   * } catch (error) {
+   *   failures.push(error);
+   * } finally {
+   *   try {
+   *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+   *     await rm(directory, { recursive: true });
+   *   } catch (error) {
+   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *   }
+   * }
+   * if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
    * ```
    */
   capture(options?: CaptureOptions): Promise<readonly string[]> {

@@ -296,11 +296,12 @@ function split(
 export async function typecheckExamples(
   examples: readonly Example[],
   label: string,
+  standalone = false,
 ): Promise<void> {
   const imports: string[] = [];
   const bodies: string[] = [];
   const taken = new Map<string, string>();
-  for (const [index, example] of examples.entries()) {
+  for (const [index, example] of (standalone ? [] : examples).entries()) {
     const { body, imports: exampleImports } = split(example.code, taken);
     if (exampleImports !== "") imports.push(exampleImports);
     bodies.push(
@@ -315,7 +316,16 @@ export async function typecheckExamples(
   await mkdir(directory, { recursive: true });
   const modulePath = join(directory, "examples.ts");
   try {
-    await writeFile(modulePath, generated);
+    const files = standalone
+      ? examples.map((_, index) => join(directory, `example-${String(index)}.ts`))
+      : [modulePath];
+    if (standalone) {
+      await Promise.all(
+        examples.map(async (example, index) => writeFile(files[index]!, example.code)),
+      );
+    } else {
+      await writeFile(modulePath, generated);
+    }
     await writeFile(
       join(directory, "tsconfig.json"),
       JSON.stringify({
@@ -331,8 +341,13 @@ export async function typecheckExamples(
           strict: true,
           target: "esnext",
           types: ["bun"],
+          ...(standalone
+            ? {
+                paths: { libtmux: ["../../src/index.ts"], "libtmux/*": ["../../src/*.ts"] },
+              }
+            : {}),
         },
-        files: [modulePath],
+        files,
       }),
     );
 
@@ -343,7 +358,13 @@ export async function typecheckExamples(
     const output = `${result.stdout.toString()}${result.stderr.toString()}`.trim();
     if (result.exitCode !== 0 || output !== "") {
       // Map a generated line back to the line a reader would edit.
-      const mapped = output.replaceAll(
+      const located = standalone
+        ? output.replaceAll(
+            /example-(\d+)\.ts/gu,
+            (whole, rawIndex: string) => examples[Number(rawIndex)]?.origin ?? whole,
+          )
+        : output;
+      const mapped = located.replaceAll(
         /examples\.ts\((\d+),(\d+)\)/gu,
         (whole, rawLine: string) => {
           const target = Number.parseInt(rawLine, 10);

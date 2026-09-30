@@ -221,6 +221,51 @@ Sessions, windows and panes are reached from here and carry the server with
 them. Handles taken from one daemon do not survive its restart: the
 replacement numbers panes from `%0` again — see `DaemonIdentity`.
 
+Save this complete program as `server.ts`. With Bun 1.4.2 or newer,
+tmux 3.2a or newer, and `libtmux` installed, run `bun run server.ts`.
+It creates and stops a private tmux server. A failed operation or cleanup
+exits with an error; a cleanup error names the retained socket directory.
+
+```ts
+import { strict as assert } from "node:assert";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Server } from "libtmux";
+
+const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const server = new Server({
+  socketPath: join(directory, "tmux.sock"),
+  configFile: "/dev/null",
+  timeoutMs: 5_000,
+});
+const failures: unknown[] = [];
+try {
+  assert.equal(await server.hasSession("work"), false);
+  const session = await server.newSession({
+    name: "work",
+    windowName: "editor",
+    shellCommand: "cat",
+  });
+  assert.equal(await server.hasSession("work"), true);
+  const snapshot = await server.snapshot();
+  assert.equal(snapshot.sessions.one({ name: "work" }).id, session.id);
+  assert.equal(snapshot.windows.count(), 1);
+  assert.equal(snapshot.panes.count(), 1);
+  console.log("work: 1 session, 1 window, 1 pane");
+} catch (error) {
+  failures.push(error);
+} finally {
+  try {
+    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+    await rm(directory, { recursive: true });
+  } catch (error) {
+    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+  }
+}
+if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+```
+
 @throws TypeError if both `socketName` and `socketPath` are given.
 
 [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`validateLayouts`](#servervalidatelayouts) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
@@ -416,15 +461,59 @@ is an N+1: prefer one
 [`snapshot`](#serversnapshot) and read `sessions`, `windows`, `panes`, and `clients`
 off it, which is both cheaper and consistent.
 
-```ts
-const sessions = await server.sessions();
-sessions.where({ name: "work" }).count();
-```
+Save this complete program as `sessions.ts`. With Bun 1.4.2 or newer,
+tmux 3.2a or newer, and `libtmux` installed, run `bun run sessions.ts`.
+It creates and stops a private tmux server. A failed operation or cleanup
+exits with an error; a cleanup error names the retained socket directory.
 
 ```ts
-// One invocation, and every collection agrees with the others.
-const now = await server.snapshot();
-for (const session of now.sessions) console.log(session.name, session.windows.length);
+import { strict as assert } from "node:assert";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Server, NoMatchError } from "libtmux";
+
+const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const server = new Server({
+  socketPath: join(directory, "tmux.sock"),
+  configFile: "/dev/null",
+  timeoutMs: 5_000,
+});
+const failures: unknown[] = [];
+try {
+  await server.newSession({ name: "prod-api", shellCommand: "cat" });
+  await server.newSession({ name: "dev-api", shellCommand: "cat" });
+  const sessions = await server.sessions();
+  assert.equal(sessions.count(), 2);
+  console.log(
+    "sessions:",
+    sessions
+      .map((item) => item.name)
+      .sort()
+      .join(", "),
+  );
+  const production = sessions.where({ name: { startsWith: "prod-" } }).one();
+  assert.equal(production.name, "prod-api");
+  console.log("production:", production.name);
+  assert.equal(sessions.oneOrUndefined({ name: "missing" }), undefined);
+  try {
+    sessions.one({ name: "missing" });
+    throw new Error("Expected the missing session to fail lookup");
+  } catch (error) {
+    if (!(error instanceof NoMatchError)) throw error;
+    console.log("missing:", error.code);
+  }
+} catch (error) {
+  failures.push(error);
+} finally {
+  try {
+    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+    await rm(directory, { recursive: true });
+  } catch (error) {
+    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+  }
+}
+if (failures.length > 0) throw new AggregateError(failures, "Example failed");
 ```
 
 #### `Server.windows`
@@ -435,9 +524,70 @@ async windows(): Promise<Selection<Window>>
 
 Every window on the server, including each placement of a linked window.
 
+Save this complete program as `windows.ts`. With Bun 1.4.2 or newer,
+tmux 3.2a or newer, and `libtmux` installed, run `bun run windows.ts`.
+It creates and stops a private tmux server. A failed operation or cleanup
+exits with an error; a cleanup error names the retained socket directory.
+
 ```ts
-const windows = await server.windows();
-windows.first()?.name;
+import { strict as assert } from "node:assert";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Server, MultipleMatchesError } from "libtmux";
+
+const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const server = new Server({
+  socketPath: join(directory, "tmux.sock"),
+  configFile: "/dev/null",
+  timeoutMs: 5_000,
+});
+const failures: unknown[] = [];
+try {
+  const session = await server.newSession({
+    name: "home",
+    windowName: "editor",
+    shellCommand: "cat",
+  });
+  const guest = await server.newSession({
+    name: "guest",
+    windowName: "shell",
+    shellCommand: "cat",
+  });
+  const window = await session.newWindow({ name: "logs", shellCommand: "cat" });
+  await window.link({ session: guest });
+  const windows = await server.windows();
+  const logs = windows.where({ name: "logs" });
+  assert.equal(logs.count(), 2);
+  console.log("logs placements:", logs.count());
+  try {
+    logs.one();
+    throw new Error("Expected a linked window lookup to be ambiguous");
+  } catch (error) {
+    if (!(error instanceof MultipleMatchesError)) throw error;
+    console.log("ambiguous:", error.code);
+  }
+  const placed = logs.one({ session: { is: { name: "home" } } });
+  assert.equal(placed.id, window.id);
+  console.log("selected placement:", placed.session?.name);
+  console.log(
+    "linked sessions:",
+    placed.linkedSessions
+      .map((item) => item.name)
+      .sort()
+      .join(", "),
+  );
+} catch (error) {
+  failures.push(error);
+} finally {
+  try {
+    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+    await rm(directory, { recursive: true });
+  } catch (error) {
+    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+  }
+}
+if (failures.length > 0) throw new AggregateError(failures, "Example failed");
 ```
 
 #### `Server.panes`
@@ -448,9 +598,54 @@ async panes(): Promise<Selection<Pane>>
 
 Every pane on the server.
 
+Save this complete program as `panes.ts`. With Bun 1.4.2 or newer,
+tmux 3.2a or newer, and `libtmux` installed, run `bun run panes.ts`.
+It creates and stops a private tmux server. A failed operation or cleanup
+exits with an error; a cleanup error names the retained socket directory.
+
 ```ts
-const panes = await server.panes();
-panes.where({ currentCommand: "vim" }).count();
+import { strict as assert } from "node:assert";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Server, PaneDirection } from "libtmux";
+
+const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const server = new Server({
+  socketPath: join(directory, "tmux.sock"),
+  configFile: "/dev/null",
+  timeoutMs: 5_000,
+});
+const failures: unknown[] = [];
+try {
+  const session = await server.newSession({
+    name: "work",
+    windowName: "editor",
+    shellCommand: "cat",
+  });
+  const pane = session.panes.one();
+  await pane.split({ direction: PaneDirection.Below, shellCommand: "cat" });
+  const panes = await server.panes();
+  assert.equal(panes.count(), 2);
+  const active = panes.where({ active: true });
+  assert.equal(active.count(), 1);
+  console.log("panes:", panes.count(), "active:", active.count());
+  for (const item of panes) {
+    assert.equal(item.session?.name, "work");
+    assert.equal(item.window?.name, "editor");
+    console.log("location:", item.session?.name, item.window?.name);
+  }
+} catch (error) {
+  failures.push(error);
+} finally {
+  try {
+    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+    await rm(directory, { recursive: true });
+  } catch (error) {
+    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+  }
+}
+if (failures.length > 0) throw new AggregateError(failures, "Example failed");
 ```
 
 #### `Server.daemonIdentity`
@@ -781,9 +976,62 @@ newSession(options?: NewSessionOptions): Promise<Session>
 
 Create a detached session and resolve it as a handle.
 
+Save this complete program as `new-session.ts`. With Bun 1.4.2 or newer,
+tmux 3.2a or newer, and `libtmux` installed, run `bun run new-session.ts`.
+It creates and stops a private tmux server. A failed operation or cleanup
+exits with an error; a cleanup error names the retained socket directory.
+
 ```ts
-const created = await server.newSession({ name: "work" });
-created.name; // "work"
+import { strict as assert } from "node:assert";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Server } from "libtmux";
+
+const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const server = new Server({
+  socketPath: join(directory, "tmux.sock"),
+  configFile: "/dev/null",
+  timeoutMs: 5_000,
+});
+const failures: unknown[] = [];
+try {
+  const session = await server.newSession({
+    name: "work",
+    windowName: "editor",
+    shellCommand: "cat",
+    startDirectory: directory,
+    environment: { LIBTMUX_EXAMPLE: "ready" },
+  });
+  assert.equal(session.name, "work");
+  assert.equal(session.windows.one().name, "editor");
+  assert.equal(session.panes.one().currentPath, directory);
+  console.log("created:", session.name, session.windows.one().name);
+
+  await server.newSession({ name: "review", groupWith: session.id });
+  await session.newWindow({ name: "logs", shellCommand: "cat" });
+  const snapshot = await server.snapshot();
+  const review = snapshot.sessions.one({ name: "review" });
+  assert.equal(review.windows.count(), 2);
+  assert.equal(snapshot.sessions.one({ name: "work" }).windows.count(), 2);
+  console.log(
+    "grouped review windows:",
+    review.windows
+      .map((item) => item.name)
+      .sort()
+      .join(", "),
+  );
+} catch (error) {
+  failures.push(error);
+} finally {
+  try {
+    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+    await rm(directory, { recursive: true });
+  } catch (error) {
+    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+  }
+}
+if (failures.length > 0) throw new AggregateError(failures, "Example failed");
 ```
 
 #### `Server.kill`
@@ -2190,9 +2438,56 @@ capture(options?: CaptureOptions): Promise<readonly string[]>
 
 Capture this pane's contents as lines.
 
+Save this complete program as `capture.ts`. With Bun 1.4.2 or newer,
+tmux 3.2a or newer, and `libtmux` installed, run `bun run capture.ts`.
+It creates and stops a private tmux server. A failed operation or cleanup
+exits with an error; a cleanup error names the retained socket directory.
+
 ```ts
-const lines = await pane.capture();
-lines.at(-1);
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { Server } from "libtmux";
+
+const directory = await mkdtemp(join(tmpdir(), "ltx-capture-"));
+const server = new Server({
+  socketPath: join(directory, "tmux.sock"),
+  configFile: "/dev/null",
+  timeoutMs: 5_000,
+});
+const failures: unknown[] = [];
+try {
+  const signal = AbortSignal.timeout(5_000);
+  const session = await server.newSession({
+    name: "capture",
+    shellCommand: "sh",
+    signal,
+    environment: { ENV: "/dev/null" },
+  });
+  const pane = session.activePane;
+  if (!pane) throw new Error("The session has no active pane");
+  await pane.sendKeys("printf '\\nlibtmux capture ready\\n'", { signal });
+  for (;;) {
+    const lines = await pane.capture({ signal });
+    const line = lines.find((line) => line === "libtmux capture ready");
+    if (line !== undefined) {
+      console.log(line);
+      break;
+    }
+    await delay(20, undefined, { signal });
+  }
+} catch (error) {
+  failures.push(error);
+} finally {
+  try {
+    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+    await rm(directory, { recursive: true });
+  } catch (error) {
+    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+  }
+}
+if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
 ```
 
 #### `Pane.clearHistory`

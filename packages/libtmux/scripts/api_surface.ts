@@ -144,9 +144,14 @@ function docAbove(
   return start < 0 ? undefined : { end, start };
 }
 
-/** Split a doc comment into its prose and its example. */
+/** Preserve class examples for rendering and the executable documentation gates. */
+function docBody(block: readonly string[]): string[] {
+  return block.slice(1, -1).map((line) => line.replace(/^\s*\*\s?/u, "").trimEnd());
+}
+
+/** Split a member's doc comment into its prose and its example. */
 function readDoc(block: readonly string[]): { example: string | undefined; prose: string } {
-  const body = block.slice(1, -1).map((line) => line.replace(/^\s*\*\s?/u, "").trimEnd());
+  const body = docBody(block);
   const open = body.findIndex((line) => line.trim() === "```ts");
   if (open < 0) return { example: undefined, prose: body.join("\n").trim() };
   const close = body.findIndex((line, at) => at > open && line.trim() === "```");
@@ -289,7 +294,12 @@ export function classesOf(source: string, file: string): readonly ApiClass[] {
       current = {
         members: [],
         name: opened[1] ?? "",
-        prose: doc === undefined ? "" : readDoc(lines.slice(doc.start, doc.end + 1)).prose,
+        prose:
+          doc === undefined
+            ? ""
+            : docBody(lines.slice(doc.start, doc.end + 1))
+                .join("\n")
+                .trim(),
       };
       classes.push(current);
       continue;
@@ -303,7 +313,12 @@ export function classesOf(source: string, file: string): readonly ApiClass[] {
       current = {
         members: [],
         name: declared[1] ?? "",
-        prose: doc === undefined ? "" : readDoc(lines.slice(doc.start, doc.end + 1)).prose,
+        prose:
+          doc === undefined
+            ? ""
+            : docBody(lines.slice(doc.start, doc.end + 1))
+                .join("\n")
+                .trim(),
       };
       if (BEHAVIOURAL.has(current.name)) classes.push(current);
       else current = undefined;
