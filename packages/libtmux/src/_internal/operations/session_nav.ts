@@ -25,6 +25,23 @@ export async function renameSession(
  * `previous-window`; anything else is treated as a window target.
  */
 
+/**
+ * What tmux reads as a position rather than a name: an index, a window id, a
+ * relative step, or one of its single-character and braced tokens.
+ */
+const WINDOW_POSITION = /^(?:\d+|@\d+|[+-]\d*|[\^$!~]|\{[a-z-]+\})$/u;
+
+/**
+ * Pin a window name to an exact match.
+ *
+ * tmux resolves `session:builde` as a prefix of `builder` and `session:buil*`
+ * as a glob, so selecting a window by name could land on another one. `=`
+ * makes the name exact on every supported release.
+ */
+function exactWindow(target: string): string {
+  return WINDOW_POSITION.test(target) ? target : `=${target}`;
+}
+
 export async function selectWindowIn(
   runtime: RuntimeContext,
   sessionId: string | null,
@@ -36,6 +53,6 @@ export async function selectWindowIn(
   if (target === "previous") {
     return void (await runCommand(runtime, ["previous-window", ...scope]));
   }
-  const qualified = sessionId == null ? target : `${sessionId}:${target}`;
+  const qualified = sessionId == null ? exactWindow(target) : `${sessionId}:${exactWindow(target)}`;
   await runCommand(runtime, ["select-window", "-t", qualified]);
 }

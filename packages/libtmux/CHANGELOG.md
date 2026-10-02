@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`Session.selectWindow` now matches a window name exactly. tmux resolved `selectWindow("builde")` as a prefix of `builder` and `selectWindow("buil*")` as a glob, and selected that window; both now reject with `TmuxCommandError`. An index, a window id and tmux's relative tokens are still taken as given.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

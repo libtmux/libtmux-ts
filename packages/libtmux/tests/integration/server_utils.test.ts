@@ -177,6 +177,26 @@ describe("server utilities", () => {
     });
   }, 40_000);
 
+  test("selects a window by exact name, never by prefix or glob", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({ name: "pick", windowName: "main" });
+      await session.newWindow({ name: "builder" });
+
+      // tmux resolves `pick:builde` and `pick:buil*` to `builder`.
+      await expect(session.selectWindow("builde")).rejects.toBeInstanceOf(TmuxCommandError);
+      await expect(session.selectWindow("buil*")).rejects.toBeInstanceOf(TmuxCommandError);
+
+      await session.selectWindow("builder");
+      expect((await session.refreshed()).activeWindow?.name).toBe("builder");
+      // An index and a window id are still taken as given.
+      await session.selectWindow("0");
+      expect((await session.refreshed()).activeWindow?.name).toBe("main");
+      await session.selectWindow((await session.refreshed()).windows.one({ name: "builder" }).id);
+      expect((await session.refreshed()).activeWindow?.name).toBe("builder");
+    });
+  }, 40_000);
+
   test("guards a session name starting with a dash", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
