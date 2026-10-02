@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+A tmux command past tmux's 16 KB message limit is no longer refused locally with a `TmuxTransportError`; it runs, and tmux's own refusal arrives as a `TmuxCommandError` whose stderr reads `failed to send command` or `command too long`, the same on 3.2a, 3.7c and 3.8-rc. `MAX_PACKED_ARGV_BYTES` remains exported for sizing. Use `Pane.pasteText` for text that long.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

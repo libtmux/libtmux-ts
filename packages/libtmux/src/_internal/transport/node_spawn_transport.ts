@@ -5,13 +5,7 @@ import type { Readable } from "node:stream";
 
 import type { DeliveryStatus } from "../../common.js";
 import type { CommandRequest, RawCommandResult } from "./types.js";
-import {
-  flattenInvocation,
-  MAX_PACKED_ARGV_BYTES,
-  MAX_PACKED_ARGV_COUNT,
-  packedCommandBytes,
-  packedCommandCount,
-} from "./invocation.js";
+import { flattenInvocation, MAX_PACKED_ARGV_COUNT, packedCommandCount } from "./invocation.js";
 import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
 import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestartedError } from "../../errors.js";
@@ -126,14 +120,11 @@ export class NodeSpawnTransport {
         { delivery: "not_started", kind: "protocol" },
       );
     }
-    const packed = packedCommandBytes(submitted);
-    if (packed > MAX_PACKED_ARGV_BYTES) {
-      throw new TmuxTransportError(
-        `a tmux command of ${String(packed)} packed bytes exceeds the ${String(MAX_PACKED_ARGV_BYTES)} byte limit`,
-        { delivery: "not_started", kind: "protocol" },
-      );
-    }
-
+    // No byte check here. tmux itself exits 1 with "failed to send command" or
+    // "command too long" for a command past its 16 KB message, measured the
+    // same on 3.2a, 3.7c and 3.8-rc, and the whole command list is refused, so
+    // nothing partial runs. A single argument past the OS limit fails the
+    // spawn. Either way the failure is loud and carries tmux's own words.
     let child;
     try {
       child = spawn(submitted.executable, [...args], {

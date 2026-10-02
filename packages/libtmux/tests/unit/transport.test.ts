@@ -10,10 +10,7 @@ import {
 } from "../../src/_internal/operations/request.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
-import {
-  flattenInvocation,
-  MAX_PACKED_ARGV_BYTES,
-} from "../../src/_internal/transport/invocation.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type { CommandRequest } from "../../src/_internal/transport/types.js";
 import { TmuxTransportError } from "../../src/errors.js";
 
@@ -178,7 +175,7 @@ describe("NodeSpawnTransport", () => {
     ).toEqual(["-Ltest", "display-message", "-p", "literal\\;", ";", "list-sessions"]);
   });
 
-  test("rejects invalid invocation bytes and size before spawn", async () => {
+  test("rejects invalid invocation bytes before spawn", async () => {
     const transport = new NodeSpawnTransport();
     await expect(
       transport.execute({
@@ -187,13 +184,6 @@ describe("NodeSpawnTransport", () => {
         globalArgs: [],
       }),
     ).rejects.toMatchObject({ delivery: "not_started", kind: "protocol" });
-    await expect(
-      transport.execute({
-        commands: [["display-message", "x".repeat(MAX_PACKED_ARGV_BYTES)]],
-        executable: "/definitely/not/tmux",
-        globalArgs: [],
-      }),
-    ).rejects.toBeInstanceOf(TmuxTransportError);
   });
 });
 

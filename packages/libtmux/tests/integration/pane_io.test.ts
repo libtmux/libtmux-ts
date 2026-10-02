@@ -12,6 +12,7 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
+import { TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -208,4 +209,27 @@ describe("pane input and capture", () => {
       await pane.pipeTo();
     });
   }, 15_000);
+
+  test("reports tmux's own refusal of text too long to send, rather than a local byte count", async () => {
+    await withServer(async (fixture) => {
+      const pane = (await serverFor(fixture).snapshot()).panes.one();
+
+      // tmux exits 1 with "failed to send command" just past 16 KB and
+      // "command too long" beyond, identically on 3.2a, 3.7c and 3.8-rc.
+      for (const size of [16_345, 20_000, 100_000]) {
+        // eslint-disable-next-line no-await-in-loop -- Each size is its own request.
+        const failure = await pane.sendKeys("x".repeat(size), { enter: false, literal: true }).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        expect(failure, `${String(size)} bytes`).toBeInstanceOf(TmuxCommandError);
+        expect((failure as TmuxCommandError).stderr.join(" ")).toMatch(
+          /command too long|failed to send command/u,
+        );
+      }
+      await expect(
+        pane.sendKeys("x".repeat(16_000), { enter: false, literal: true }),
+      ).resolves.toBeUndefined();
+    });
+  }, 40_000);
 });

@@ -9,6 +9,9 @@ import { TmuxTransportError } from "../../errors.js";
  * command of 16364 bytes is accepted by 3.2a and 3.7c alike, 16365 through
  * 16380 report `failed to send command`, and more reports `command too long`.
  *
+ * The transport does not enforce it: tmux refuses a longer command itself, with
+ * exit status 1, and engines and callers use this to size what they send.
+ *
  * What counts is the command alone. tmux parses its own global flags and the
  * executable is the process, so neither reaches the packed payload — charging
  * a caller for a long socket path refused commands tmux would have run.
