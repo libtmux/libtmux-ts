@@ -35,7 +35,7 @@ remember.
 
 ### `libtmux`
 
-`NewSessionOptions.groupWith` now matches a session name exactly, or takes a session id as given, and `Server.newSession` rejects with `ObjectNotFoundError` when no session has the name. Before, tmux resolved `groupWith: "foo"` as a prefix and silently grouped the new session with `foobar`. A planned session still passes the name to tmux unchanged.
+`NewSessionOptions.groupWith` now matches a session name exactly, or takes a session id as given, and `Server.newSession` rejects with `ObjectNotFoundError` when no session has the name. Before, tmux resolved `groupWith: "foo"` as a prefix and silently grouped the new session with `foobar`.
 
 ## 0.1.0-alpha.12 (2026-09-27)
 

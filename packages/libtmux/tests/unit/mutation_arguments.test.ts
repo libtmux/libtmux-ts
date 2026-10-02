@@ -433,3 +433,13 @@ describe("environment command arguments", () => {
     expect(args).toEqual(["show-environment", "-t", "$0", "--", "-h"]);
   });
 });
+
+test("a planned session pins groupWith to an exact name", async () => {
+  const { planNewSession } = await import("../../src/_internal/operations/plans.js");
+  const target = (groupWith: string): string => {
+    const argv = planNewSession({ groupWith }).argv;
+    return argv[argv.indexOf("-t") + 1] ?? "";
+  };
+  expect(target("foo")).toBe("=foo");
+  expect(target("$3")).toBe("$3");
+});

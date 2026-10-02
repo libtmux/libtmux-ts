@@ -30,6 +30,11 @@ function found<T>(created: T | undefined, command: string, identity: string): T 
   return created;
 }
 
+/** A session id passes through; a name is pinned with `=` so tmux cannot read it as a prefix. */
+function exactSessionTarget(target: string): string {
+  return /^\$\d+$/u.test(target) ? target : `=${target}`;
+}
+
 function newSessionArgs(options: NewSessionOptions): readonly string[] {
   return [
     "new-session",
@@ -38,7 +43,7 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
     "-F",
     "#{session_id}",
     ...(options.name === undefined ? [] : ["-s", assertName("session", options.name)]),
-    ...(options.groupWith === undefined ? [] : ["-t", options.groupWith]),
+    ...(options.groupWith === undefined ? [] : ["-t", exactSessionTarget(options.groupWith)]),
     ...(options.windowName === undefined ? [] : ["-n", assertName("window", options.windowName)]),
     ...(options.startDirectory === undefined ? [] : ["-c", options.startDirectory]),
     ...Object.entries(options.environment ?? {}).flatMap(([name, value]) => [
