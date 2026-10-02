@@ -68,4 +68,25 @@ describe("capability probe", () => {
       expect((await server.version()).raw).toMatch(/^\d|^next-/u);
     });
   }, 60_000);
+
+  /**
+   * Without `-u`, a client whose locale is not UTF-8 gets every non-ASCII
+   * character in tmux's output replaced by `_`, so a pane title read back is
+   * not the one written.
+   */
+  test("reads non-ASCII values back unchanged under the C locale", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: { ...fixture.controllerEnvironment, LC_ALL: "C", LANG: "C" },
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      const [session] = (await server.sessions()).toArray();
+      const pane = session?.activePane;
+      if (pane === undefined) throw new Error("fixture session has no pane");
+
+      await pane.setTitle("caf\u00e9 \u2713");
+      expect((await pane.refreshed()).format.pane_title).toBe("caf\u00e9 \u2713");
+    });
+  }, 60_000);
 });

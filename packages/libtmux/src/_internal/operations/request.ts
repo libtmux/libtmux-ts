@@ -66,7 +66,11 @@ export function prepareInvocationRequest(
     ...(options.daemonGuard === undefined ? {} : { daemonGuard: options.daemonGuard }),
     environment: connection.environment,
     executable: connection.executable,
-    globalArgs: connectionArguments(connection),
+    // `-u` because a client in a non-UTF-8 locale gets every non-ASCII byte of
+    // tmux's output rewritten to `_`. Every command here is non-interactive;
+    // `-u` is only wrong for a client that attaches, which this package never
+    // runs through a one-shot invocation.
+    globalArgs: ["-u", ...connectionArguments(connection)],
     ...(options.rawOutput === undefined ? {} : { rawOutput: options.rawOutput }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),

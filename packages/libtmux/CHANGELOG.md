@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+Every tmux command now runs with `-u`, so a process in a non-UTF-8 locale (`LC_ALL=C`, a container, cron) reads non-ASCII names, titles, paths and captured text back unchanged. Before, tmux replaced each non-ASCII character with `_`.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`
