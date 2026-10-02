@@ -11,6 +11,7 @@ import {
 } from "./_internal/operations/environment.js";
 import type { EnvironmentValue, SetEnvironmentOptions } from "./types.js";
 import type {
+  ChannelWaitOptions,
   CmdOptions,
   ConnectOptions,
   ConnectedServer,
@@ -59,6 +60,8 @@ import {
   loadBuffer,
   saveBuffer,
   setBuffer,
+  signalChannel,
+  waitForChannel,
   showBuffer,
   showBufferBytes,
   sourceFile,
@@ -1282,6 +1285,43 @@ export class Server {
    */
   ifShell(condition: string, command: string, options?: IfShellOptions): Promise<void> {
     return ifShell(runtimeForServer(this), condition, command, options);
+  }
+
+  /**
+   * Block until a script, a hook, or another caller signals a channel.
+   *
+   * Rejects with `WaitTimeoutError` at the deadline and with a
+   * `TmuxTransportError` of kind `"cancelled"` when `signal` fires; both
+   * leave the channel with no waiter, so the next signal reaches the next wait
+   * rather than a client that already gave up. Rejects with
+   * `LibTmuxError` when the server exits during the wait, which tmux
+   * otherwise reports as success.
+   *
+   * A signal wakes every waiter on the channel, so use one waiter per channel.
+   *
+   * ```ts
+   * const waiting = server.waitForChannel("build-done", { timeoutMs: 10_000 });
+   * await server.signalChannel("build-done");
+   * await waiting;
+   * ```
+   */
+  waitForChannel(channel: string, options?: ChannelWaitOptions): Promise<void> {
+    return waitForChannel(runtimeForServer(this), channel, options);
+  }
+
+  /**
+   * Wake the clients waiting on a channel, tmux's `wait-for -S`.
+   *
+   * With nobody waiting, the signal is remembered and the next wait on the
+   * channel returns at once.
+   *
+   * ```ts
+   * await server.signalChannel("build-done");
+   * await server.waitForChannel("build-done", { timeoutMs: 5_000 });
+   * ```
+   */
+  signalChannel(channel: string, options?: CommandOptions): Promise<void> {
+    return signalChannel(runtimeForServer(this), channel, options);
   }
 
   /**

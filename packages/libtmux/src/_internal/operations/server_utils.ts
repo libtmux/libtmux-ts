@@ -1,8 +1,10 @@
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
 import { isColdEndpoint, runCommand, runCommandBytes } from "./command.js";
-import { TmuxTransportError } from "../../errors.js";
-import type { SaveBufferOptions } from "../../types.js";
+import { LibTmuxError, TmuxTransportError, WaitTimeoutError } from "../../errors.js";
+import type { CommandOptions } from "../../common.js";
+import type { ChannelWaitOptions, SaveBufferOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { timerDuration } from "../timing.js";
 
 /**
  * Ask tmux whether a session exists.
@@ -158,4 +160,96 @@ export async function isAlive(runtime: RuntimeContext): Promise<boolean> {
  */
 export async function checkAlive(runtime: RuntimeContext): Promise<void> {
   await runCommand(runtime, ["list-sessions"]);
+}
+
+const DEFAULT_CHANNEL_WAIT_MS = 30_000;
+
+/** How long a released waiter has to return before its client is killed. */
+const RELEASE_GRACE_MS = 2_000;
+
+/** Wake every client waiting on a channel, or remember the signal for the next one. */
+export async function signalChannel(
+  runtime: RuntimeContext,
+  channel: string,
+  options: CommandOptions = {},
+): Promise<void> {
+  // `--` keeps a channel starting with `-` from being read as a flag.
+  await runCommand(runtime, ["wait-for", "-S", "--", channel], options);
+}
+
+/**
+ * Block until a channel is signalled, with a deadline this function owns.
+ *
+ * Killing a waiting client does not take it off tmux's queue on 3.2a through
+ * master: it stays as a ghost waiter and swallows the next signal, so a wait
+ * that gives up this way costs whoever waits next. This one signals the
+ * channel when it gives up, which wakes its own live waiter and lets that
+ * client exit normally, leaving nothing queued. The client is killed only when
+ * the release does not bring it back.
+ *
+ * A signal wakes every waiter on the channel, so one waiter per channel is the
+ * safe shape, and a signal that lands in the instant of the deadline is
+ * indistinguishable from the release and counts as the timeout.
+ */
+export async function waitForChannel(
+  runtime: RuntimeContext,
+  channel: string,
+  options: ChannelWaitOptions = {},
+): Promise<void> {
+  if (channel === "") throw new TypeError("channel must not be empty");
+  const deadline =
+    options.timeoutMs === null
+      ? undefined
+      : timerDuration("timeoutMs", options.timeoutMs ?? DEFAULT_CHANNEL_WAIT_MS);
+  const caller = options.signal;
+  if (caller?.aborted === true) {
+    throw new TmuxTransportError("channel wait cancelled before it started", {
+      delivery: "not_started",
+      kind: "cancelled",
+      ...(caller.reason === undefined ? {} : { cause: caller.reason }),
+    });
+  }
+
+  const kill = new AbortController();
+  let released: "cancelled" | "timeout" | undefined;
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
+  const release = (why: "cancelled" | "timeout"): void => {
+    if (released !== undefined) return;
+    released = why;
+    graceTimer = setTimeout(() => kill.abort(), RELEASE_GRACE_MS);
+    // A failed signal means the server is gone, which also ends the waiter.
+    void signalChannel(runtime, channel).catch(() => undefined);
+  };
+  const timer = deadline === undefined ? undefined : setTimeout(() => release("timeout"), deadline);
+  const onAbort = (): void => release("cancelled");
+  caller?.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    await runCommand(runtime, ["wait-for", "--", channel], {
+      signal: kill.signal,
+      timeoutMs: null,
+    });
+  } catch (error) {
+    if (released === undefined) throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (graceTimer !== undefined) clearTimeout(graceTimer);
+    caller?.removeEventListener("abort", onAbort);
+  }
+
+  if (released === "timeout") {
+    throw new WaitTimeoutError(`channel ${channel} was not signalled before the deadline`);
+  }
+  if (released === "cancelled") {
+    throw new TmuxTransportError("channel wait cancelled", {
+      delivery: "indeterminate",
+      kind: "cancelled",
+      ...(caller?.reason === undefined ? {} : { cause: caller.reason }),
+    });
+  }
+  // tmux ends a waiting client with status 0 when the server dies, which is
+  // indistinguishable from a signal until the server is asked.
+  if (!(await isAlive(runtime))) {
+    throw new LibTmuxError(`the tmux server exited while waiting on channel ${channel}`);
+  }
 }

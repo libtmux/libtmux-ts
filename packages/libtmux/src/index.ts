@@ -21,6 +21,7 @@ export {
 export type {
   AbortLike,
   CaptureOptions,
+  ChannelWaitOptions,
   ConnectOptions,
   ConnectionOptions,
   CmdOptions,

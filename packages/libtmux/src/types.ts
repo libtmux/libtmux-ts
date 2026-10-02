@@ -488,6 +488,23 @@ export interface ResizeWindowOptions extends ResizeOptions {
 }
 
 /**
+ * What bounds a wait on a tmux channel.
+ *
+ * Both are this call's own: tmux keeps no record of a wait that gave up.
+ */
+export interface ChannelWaitOptions {
+  /** Abandon the wait when this signal fires, leaving no waiter queued in tmux. */
+  readonly signal?: AbortLike;
+  /**
+   * Give up after this many milliseconds, 30 seconds unless set.
+   *
+   * Must be a positive timer-safe integer. `null` waits for as long as it
+   * takes; a script that never signals the channel then never returns.
+   */
+  readonly timeoutMs?: number | null;
+}
+
+/**
  * Where the shell command runs, and whether the call waits for it.
  *
  * The command runs on the machine the tmux *server* is on, not the caller's.

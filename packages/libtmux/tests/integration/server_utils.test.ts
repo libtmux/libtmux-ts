@@ -13,7 +13,12 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
-import { TmuxCommandError } from "../../src/errors.js";
+import {
+  LibTmuxError,
+  TmuxCommandError,
+  TmuxTransportError,
+  WaitTimeoutError,
+} from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -218,6 +223,70 @@ describe("server utilities", () => {
       await waitForProcessExit(fixture.daemonIdentity.pid);
 
       expect(await server.isAlive()).toBe(false);
+    });
+  }, 40_000);
+
+  test("waits on a channel until it is signalled", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      const waiting = server.waitForChannel("ready", { timeoutMs: 10_000 });
+      await server.signalChannel("ready");
+      await expect(waiting).resolves.toBeUndefined();
+    });
+  }, 40_000);
+
+  test("leaves no waiter behind when a channel wait times out", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      await expect(server.waitForChannel("gone", { timeoutMs: 400 })).rejects.toBeInstanceOf(
+        WaitTimeoutError,
+      );
+
+      // A killed client stays queued on tmux 3.2a through master and swallows
+      // the next signal, so this one would never be remembered for the wait
+      // after it.
+      await server.signalChannel("gone");
+      await expect(server.waitForChannel("gone", { timeoutMs: 5_000 })).resolves.toBeUndefined();
+    });
+  }, 40_000);
+
+  test("releases a channel wait that its caller cancels", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const controller = new AbortController();
+
+      const waiting = server.waitForChannel("cancel", { signal: controller.signal });
+      const failure = waiting.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      setTimeout(() => controller.abort(), 300);
+      const error = await failure;
+      expect(error).toBeInstanceOf(TmuxTransportError);
+      expect((error as TmuxTransportError).kind).toBe("cancelled");
+
+      await server.signalChannel("cancel");
+      await expect(server.waitForChannel("cancel", { timeoutMs: 5_000 })).resolves.toBeUndefined();
+    });
+  }, 40_000);
+
+  test("reports a server that exits during a channel wait instead of returning", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      // tmux ends the waiting client with status 0 when the server dies, which
+      // reads exactly like a signal.
+      const waiting = server.waitForChannel("doomed", { timeoutMs: 20_000 });
+      const failure = waiting.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      setTimeout(() => void server.kill(), 400);
+      const error = await failure;
+      expect(error).toBeInstanceOf(LibTmuxError);
+      expect(String((error as Error).message)).toMatch(/server exited/u);
     });
   }, 40_000);
 

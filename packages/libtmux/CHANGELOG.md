@@ -37,6 +37,8 @@ remember.
 
 A tmux command now settles once its process has exited and its output has been quiet for 250 milliseconds, instead of waiting for every holder of its pipes to close them. tmux's server holds the stdio a client passes it until the client is freed, and under load a `wait-for` whose signal had already arrived stayed pending for twelve seconds.
 
+`Server.waitForChannel` waits on a tmux channel with a deadline (30 seconds unless `timeoutMs` says otherwise, `null` for none) and an `AbortSignal`, and `Server.signalChannel` wakes it. A wait that gives up now releases its own waiter: bounding `server.cmd("wait-for", [name])` with `timeoutMs` killed the client but left it queued in tmux 3.2a through master, where it swallowed the next signal on that channel. The wait rejects with `WaitTimeoutError` at the deadline, with a `TmuxTransportError` of kind `"cancelled"` on abort, and with `LibTmuxError` when the server exits during it, which tmux reports as success.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

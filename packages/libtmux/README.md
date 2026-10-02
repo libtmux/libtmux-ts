@@ -115,6 +115,7 @@ real server.
   - [Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
 - [Seeing what it runs](#seeing-what-it-runs)
 - [Deadlines and cancellation](#deadlines-and-cancellation)
+  - [Waiting on a tmux channel](#waiting-on-a-tmux-channel)
 - [Choosing how work is arranged](#choosing-how-work-is-arranged)
   - [How many commands run at once](#how-many-commands-run-at-once)
   - [Supplying an engine](#supplying-an-engine)
@@ -1129,6 +1130,27 @@ and a default would cut them off; a deadline passed on the call still binds
 them. `signal` is
 typed structurally, so a real `AbortSignal` satisfies it without the published
 types requiring a DOM or Node library.
+
+### Waiting on a tmux channel
+
+`waitForChannel` blocks until a script, a hook or another caller runs
+`wait-for -S` on the channel, which `signalChannel` also does. It has its own
+deadline, 30 seconds unless `timeoutMs` says otherwise or `null` removes it, and
+honours a `signal`:
+
+```ts
+const waiting = server.waitForChannel("deploy-finished", { timeoutMs: 60_000 });
+await server.signalChannel("deploy-finished");
+await waiting;
+```
+
+A wait that gives up releases its own waiter. Bounding a bare
+`server.cmd("wait-for", [name])` with `timeoutMs` kills the client but leaves it
+queued in tmux 3.2a through master, where it swallows the next signal on that
+channel. `waitForChannel` rejects with `WaitTimeoutError` at the deadline, with
+a `TmuxTransportError` of kind `"cancelled"` on abort, and with `LibTmuxError`
+when the server exits during the wait, which tmux reports as success. A signal
+wakes every waiter on the channel, so use one waiter per channel.
 
 ## Choosing how work is arranged
 
