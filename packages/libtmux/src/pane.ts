@@ -5,6 +5,8 @@ import type {
   CmdOptions,
   JoinOptions,
   MenuItem,
+  PaneRunOptions,
+  PaneRunResult,
   PopupOptions,
   ResizeOptions,
   RespawnOptions,
@@ -33,6 +35,7 @@ import {
   splitWindow,
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
+import { runInPane } from "./_internal/operations/pane_run.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
 import {
   setOption,
@@ -284,6 +287,38 @@ export class Pane {
    */
   sendKeys(keys: string, options?: SendKeysOptions): Promise<void> {
     return sendKeys(runtimeForHandle(this), this.id, keys, options);
+  }
+
+  /**
+   * Run a shell command in this pane and report how it ended and what it
+   * printed.
+   *
+   * Reach for this instead of `sendKeys` followed by `capture` when you need to
+   * know that the command finished, its exit status, and its output. Nothing
+   * polls the screen: the pane's shell reports back through the tmux server and
+   * a channel wait. The command runs in the pane's own shell, so `cd` and
+   * `export` take effect there. A nonzero status is a result, not an error.
+   *
+   * The pane must be at an interactive prompt of a Bourne-style shell (bash,
+   * zsh, dash and sh work; fish and csh do not). A syntax error in `command`
+   * is the shell's error and a nonzero `exitCode`; an interrupt ends it with
+   * status 130. The typed line starts with a space and, in bash, removes its
+   * own history entry; zsh keeps it unless `hist_ignore_space` is set.
+   *
+   * Rejects with `PaneRunTimeoutError` at the deadline (120 seconds unless
+   * `timeoutMs` says otherwise), carrying the output so far while the command
+   * keeps running; its `started` is false when the shell never acknowledged
+   * the line. A command that closes the pane, such as `exit`, is reported
+   * after the deadline, because nothing signals.
+   *
+   * ```ts
+   * const result = await pane.run("echo hello");
+   * result.exitCode; // 0
+   * result.stdout; // ["hello"]
+   * ```
+   */
+  run(command: string, options?: PaneRunOptions): Promise<PaneRunResult> {
+    return runInPane(runtimeForHandle(this), this.id, command, options);
   }
 
   /**

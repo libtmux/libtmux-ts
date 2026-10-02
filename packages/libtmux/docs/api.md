@@ -2264,7 +2264,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`run`](#panerun) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -2467,6 +2467,39 @@ Send keys to this pane, following them with Enter unless told not to.
 ```ts
 await pane.sendKeys("echo hello");
 await pane.sendKeys("C-c", { literal: false });
+```
+
+#### `Pane.run`
+
+```ts
+run(command: string, options?: PaneRunOptions): Promise<PaneRunResult>
+```
+
+Run a shell command in this pane and report how it ended and what it
+printed.
+
+Reach for this instead of `sendKeys` followed by `capture` when you need to
+know that the command finished, its exit status, and its output. Nothing
+polls the screen: the pane's shell reports back through the tmux server and
+a channel wait. The command runs in the pane's own shell, so `cd` and
+`export` take effect there. A nonzero status is a result, not an error.
+
+The pane must be at an interactive prompt of a Bourne-style shell (bash,
+zsh, dash and sh work; fish and csh do not). A syntax error in `command`
+is the shell's error and a nonzero `exitCode`; an interrupt ends it with
+status 130. The typed line starts with a space and, in bash, removes its
+own history entry; zsh keeps it unless `hist_ignore_space` is set.
+
+Rejects with `PaneRunTimeoutError` at the deadline (120 seconds unless
+`timeoutMs` says otherwise), carrying the output so far while the command
+keeps running; its `started` is false when the shell never acknowledged
+the line. A command that closes the pane, such as `exit`, is reported
+after the deadline, because nothing signals.
+
+```ts
+const result = await pane.run("echo hello");
+result.exitCode; // 0
+result.stdout; // ["hello"]
 ```
 
 #### `Pane.capture`

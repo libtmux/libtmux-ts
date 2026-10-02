@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -12,7 +13,18 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
+import { PaneRunTimeoutError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
+
+/** Whether this machine has a shell, looked up the way `sh` would, on every runtime. */
+function hasShell(name: string): boolean {
+  try {
+    execFileSync("sh", ["-c", `command -v ${name}`], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -208,4 +220,80 @@ describe("pane input and capture", () => {
       await pane.pipeTo();
     });
   }, 15_000);
+
+  // The fixture's own pane runs `cat`, which is not a shell prompt. Each of
+  // these shells reads the typed line differently (dash has no `history`, zsh
+  // needs a plain `eval`, bash a `command eval`), so the mechanism is shown on
+  // every one this machine has.
+  for (const shell of ["sh", "bash", "zsh"]) {
+    if (!hasShell(shell)) continue;
+
+    test(`runs a command in a ${shell} pane and reports status and output`, async () => {
+      await withServer(async (fixture) => {
+        const base = (await serverFor(fixture).snapshot()).panes.one();
+        const pane = await base.split({ shellCommand: shell });
+
+        const ok = await pane.run("echo hello; echo there");
+        expect(ok.exitCode).toBe(0);
+        expect(ok.stdout).toEqual(["hello", "there"]);
+        expect(ok.truncated).toBe(false);
+
+        // A nonzero status is a result, and the shell's own.
+        const failed = await pane.run("sh -c 'echo oops; exit 3'");
+        expect(failed.exitCode).toBe(3);
+        expect(failed.stdout).toEqual(["oops"]);
+
+        // Typed raw, an open quote would leave the line unfinished and the wait
+        // blocked: the command goes through `eval` on a quoted string instead.
+        expect((await pane.run('echo "unterminated')).exitCode).not.toBe(0);
+
+        // The command runs in the pane's own shell, so state carries over.
+        await pane.run("LT_RUN_STATE=kept");
+        expect((await pane.run('echo "$LT_RUN_STATE"')).stdout).toEqual(["kept"]);
+      });
+    }, 60_000);
+  }
+
+  test("bounds a command that keeps running and returns what it printed", async () => {
+    await withServer(async (fixture) => {
+      const base = (await serverFor(fixture).snapshot()).panes.one();
+      // bash abandons the rest of a typed line on C-c unless the line traps INT.
+      const pane = await base.split({ shellCommand: hasShell("bash") ? "bash" : "sh" });
+
+      const failure = await pane.run("echo before; sleep 30", { timeoutMs: 1_500 }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(PaneRunTimeoutError);
+      const timeout = failure as PaneRunTimeoutError;
+      expect(timeout.started).toBe(true);
+      expect(timeout.stdout).toEqual(["before"]);
+
+      await pane.sendKeys("C-c", { enter: false });
+      expect((await pane.run("echo recovered")).stdout).toEqual(["recovered"]);
+    });
+  }, 60_000);
+
+  test("reports an interrupted command as status 130 rather than losing the line", async () => {
+    await withServer(async (fixture) => {
+      const base = (await serverFor(fixture).snapshot()).panes.one();
+      const pane = await base.split({ shellCommand: hasShell("bash") ? "bash" : "sh" });
+
+      const running = pane.run("sleep 30", { timeoutMs: 20_000 });
+      // C-c only reaches the command once the shell is running it.
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        // eslint-disable-next-line no-await-in-loop -- Polling is inherently sequential.
+        const command = (await pane.refreshed()).format.pane_current_command;
+        if (command === "sleep") break;
+        // eslint-disable-next-line no-await-in-loop -- Each poll follows the wait before it.
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await pane.sendKeys("C-c", { enter: false });
+
+      // Without `trap : INT` the shell abandons the typed line, nothing reports
+      // back, and this waits out its whole deadline.
+      const result = await running;
+      expect(result.exitCode).toBe(130);
+    });
+  }, 60_000);
 });

@@ -487,6 +487,31 @@ export interface ResizeWindowOptions extends ResizeOptions {
   readonly smallest?: boolean;
 }
 
+/** What bounds one `Pane.run`. */
+export interface PaneRunOptions {
+  /** Abandon the run when this signal fires; the command keeps running in the pane. */
+  readonly signal?: AbortLike;
+  /**
+   * Give up after this many milliseconds, 120 seconds unless set.
+   *
+   * Must be a positive timer-safe integer. Every run is bounded; pass a larger
+   * number for a long command.
+   */
+  readonly timeoutMs?: number;
+}
+
+/** How a command run by `Pane.run` ended. */
+export interface PaneRunResult {
+  /** The command as passed to `Pane.run`. */
+  readonly args: string;
+  /** The shell's `$?` after the command; a syntax error is the shell's own nonzero status, an interrupt 130. */
+  readonly exitCode: number;
+  /** Lines the command printed. The terminal carries stdout and stderr together, so both are here. */
+  readonly stdout: readonly string[];
+  /** True when the begin marker had left the pane's history, so `stdout` starts at the oldest line tmux still holds. */
+  readonly truncated: boolean;
+}
+
 /**
  * What bounds a wait on a tmux channel.
  *

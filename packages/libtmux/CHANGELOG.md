@@ -35,6 +35,10 @@ remember.
 
 ### `libtmux`
 
+`Pane.run` runs a shell command in a pane and resolves with its `exitCode`, its `stdout` lines and whether the output `truncated`, without polling the screen: the pane's shell signals the tmux server, and `Pane.run` waits on the channel. A nonzero status is a result, a syntax error in the command is the shell's own nonzero status, and an interrupt is 130. A run still going at its deadline (120 seconds unless `timeoutMs` says otherwise) rejects with the new `PaneRunTimeoutError`, a `WaitTimeoutError` that carries the `command`, the `stdout` so far and whether the shell `started` it. The pane must be at a Bourne-style shell prompt.
+
+### `libtmux`
+
 A tmux command now settles once its process has exited and its output has been quiet for 250 milliseconds, instead of waiting for every holder of its pipes to close them. tmux's server holds the stdio a client passes it until the client is freed, and under load a `wait-for` whose signal had already arrived stayed pending for twelve seconds.
 
 `Server.waitForChannel` waits on a tmux channel with a deadline (30 seconds unless `timeoutMs` says otherwise, `null` for none) and an `AbortSignal`, and `Server.signalChannel` wakes it. A wait that gives up now releases its own waiter: bounding `server.cmd("wait-for", [name])` with `timeoutMs` killed the client but left it queued in tmux 3.2a through master, where it swallowed the next signal on that channel. The wait rejects with `WaitTimeoutError` at the deadline, with a `TmuxTransportError` of kind `"cancelled"` on abort, and with `LibTmuxError` when the server exits during it, which tmux reports as success.

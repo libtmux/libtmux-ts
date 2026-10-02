@@ -620,6 +620,28 @@ await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
+`run` is `sendKeys` followed by a capture, done properly: it runs a command in
+the pane's own shell and answers with its exit status and what it printed, with
+nothing polling the screen. The shell reports back through the tmux server and
+a channel wait, so `cd` and `export` take effect in the pane, and a nonzero
+status is a result rather than an error:
+
+```ts
+const result = await pane.run("echo hello; echo there");
+console.log(result.exitCode, result.stdout); // 0 [ "hello", "there" ]
+```
+
+The pane has to be at a prompt of a Bourne-style shell (bash, zsh, dash and sh
+work; fish and csh do not). Every run is bounded, 120 seconds unless `timeoutMs`
+says otherwise, and a run that is still going rejects with `PaneRunTimeoutError`
+carrying the output so far while the command keeps running. Its `started` is
+false when the shell never acknowledged the line within five seconds, because
+the pane is not at a shell prompt or cannot reach this tmux server, as in an
+`ssh` or `docker exec` pane. A syntax error in the command is the shell's own
+nonzero status, and an interrupt is 130. The typed line starts with a space and,
+in bash, removes its own history entry; zsh keeps it unless `hist_ignore_space`
+is set.
+
 Copy mode needs no client, so a detached pane enters and leaves it like any
 other:
 

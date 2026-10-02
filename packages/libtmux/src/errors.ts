@@ -155,6 +155,7 @@ export type LibTmuxErrorCode =
   | "MultipleObjectsError"
   | "NoMatchError"
   | "ObjectNotFoundError"
+  | "PaneRunTimeoutError"
   | "QueryValidationError"
   | "TmuxCommandError"
   | "TmuxObjectNotFoundError"
@@ -400,6 +401,40 @@ export class VersionTooLowError extends LibTmuxError {
  */
 export class WaitTimeoutError extends LibTmuxError {
   static override readonly code: LibTmuxErrorCode = "WaitTimeoutError";
+}
+
+/**
+ * A command run in a pane did not finish before its deadline.
+ *
+ * The command keeps running in the pane. `stdout` is what it printed up to the
+ * deadline. `started` is false when the pane's shell never acknowledged the
+ * typed line within five seconds: the pane is not at a Bourne-style shell
+ * prompt, or its shell cannot reach this tmux server, as in an `ssh` or
+ * `docker exec` pane, and the line stays typed there.
+ */
+export class PaneRunTimeoutError extends WaitTimeoutError {
+  static override readonly code: LibTmuxErrorCode = "PaneRunTimeoutError";
+
+  /** The command as passed to `Pane.run`. */
+  readonly command: string;
+  /** Whether the pane's shell acknowledged the typed line. */
+  readonly started: boolean;
+  /** Lines the command printed before the deadline. */
+  readonly stdout: readonly string[];
+
+  constructor(
+    message: string,
+    options: {
+      readonly command?: string;
+      readonly started?: boolean;
+      readonly stdout?: readonly string[];
+    } = {},
+  ) {
+    super(message);
+    this.command = options.command ?? "";
+    this.started = options.started ?? true;
+    this.stdout = Object.freeze([...(options.stdout ?? [])]);
+  }
 }
 
 /** A selection that required exactly one match found none. */
