@@ -1,8 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../packages/libtmux/src/server.js";
+import { arenaEvidence, arenaReset, arenaRoute, arenaServer } from "../test-support/arena.js";
 import { withServer } from "../test-support/with-server.js";
 import { moveTextThroughABuffer, readPane } from "./capture.js";
+
+const ARTIFACT = "typescript-capture";
+const SESSION_NAMES = ["capture"];
+
+async function exerciseCapture(server: Server): Promise<void> {
+  const { named, roundTripped } = await moveTextThroughABuffer(server, "one\ntwo");
+  expect(roundTripped).toEqual(["one", "two"]);
+  expect(named.join(" ")).toContain("report");
+  expect((await server.listBuffers()).join(" ")).not.toContain("report");
+
+  expect(Array.isArray(await readPane(server))).toBe(true);
+}
 
 describe("capture", () => {
   test("round-trips text through a named buffer and cleans it up", async () => {
@@ -45,6 +58,30 @@ describe("capture", () => {
       });
 
       expect(Array.isArray(await readPane(server))).toBe(true);
+    });
+  }, 60_000);
+
+  test("runs end to end against real tmux", async () => {
+    const route = arenaRoute(ARTIFACT, process.env);
+    if (route.kind === "arena") {
+      const arena = arenaServer(route, process.env);
+      if (arena === undefined) throw new Error("arena server missing");
+      await arenaReset(arena, SESSION_NAMES);
+      await exerciseCapture(arena);
+      console.log(
+        `LIBTMUX_ARENA_EVIDENCE=${await arenaEvidence(ARTIFACT, arena, route.socketPath)}`,
+      );
+      return;
+    }
+
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+
+      await exerciseCapture(server);
     });
   }, 60_000);
 });
