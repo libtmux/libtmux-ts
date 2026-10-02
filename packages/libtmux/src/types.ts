@@ -98,6 +98,21 @@ export interface NewSessionOptions extends CommandOptions {
    */
   readonly height?: number;
   /**
+   * Lines of scrollback for every pane in the session, the first included.
+   *
+   * `history-limit` is read when a pane is created, so setting the session's
+   * option after `newSession` returns leaves the first pane on the old limit.
+   * Before tmux 3.7 this sets the global option, creates the session and puts
+   * the global back in one tmux invocation, so another client never sees the
+   * temporary value. 3.7 and later set the new session's own option, which
+   * resizes its existing panes.
+   *
+   * Must be an integer from 0 to 2147483647. A planned session
+   * (`server.plan.newSession`) refuses it, because a plan cannot run the
+   * commands around creation.
+   */
+  readonly historyLimit?: number;
+  /**
    * The session's name, tmux's `-s`.
    *
    * Empty names, `:`, `.`, control characters and DEL are refused, because the

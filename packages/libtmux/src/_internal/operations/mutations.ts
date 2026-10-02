@@ -11,7 +11,8 @@ import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
-import { runCommand } from "./command.js";
+import { LibTmuxError } from "../../errors.js";
+import { runCommand, runCommands } from "./command.js";
 import {
   planKill,
   planKillPaneIfUnshared,
@@ -48,13 +49,95 @@ async function runPlan<T>(
 /** The first tmux that sizes a detached session's window from `new-session -x -y`. */
 const NEW_SESSION_SIZE_SINCE = parseTmuxVersion("3.3");
 
+/** The first tmux where a session's own `history-limit` resizes the panes it already has. */
+const SESSION_HISTORY_SINCE = parseTmuxVersion("3.7");
+
+const MAX_HISTORY_LIMIT = 2_147_483_647;
+
+function requiredIdentity(lines: readonly string[]): string {
+  const identity = lines[0];
+  if (identity === undefined || identity === "") {
+    throw new LibTmuxError("new-session did not report the created session's identity");
+  }
+  return identity;
+}
+
+/**
+ * Create a session whose first pane already has `historyLimit` scrollback.
+ *
+ * A pane reads `history-limit` as it is created, so the option has to be in
+ * place before `new-session` runs. Before 3.7 only the global can be, and it
+ * goes out in the same invocation as the creation and is restored in it: a
+ * restore from this process would leave a window in which another client
+ * creates panes with the temporary value. 3.7 trims or grows the panes of a
+ * session whose own option changes, so there the option follows creation.
+ */
+async function createWithHistory(
+  runtime: RuntimeContext,
+  args: readonly string[],
+  historyLimit: number,
+  grouped: boolean,
+  options: CommandOptions,
+): Promise<readonly string[]> {
+  const { tmuxVersion } = await runtime.capabilities.bind(options.signal);
+  const own = (lines: readonly string[]): readonly string[] => [
+    "set-option",
+    "-t",
+    requiredIdentity(lines),
+    "history-limit",
+    String(historyLimit),
+  ];
+  if (grouped || tmuxVersionAtLeast(tmuxVersion, SESSION_HISTORY_SINCE)) {
+    const lines = await runCommand(runtime, args, options);
+    await runCommand(runtime, own(lines), options);
+    return lines;
+  }
+  const [previous = ""] = await runCommand(
+    runtime,
+    ["show-options", "-gv", "history-limit"],
+    options,
+  );
+  const global = (value: string): readonly string[] => ["set-option", "-g", "history-limit", value];
+  let lines: readonly string[];
+  try {
+    lines = await runCommands(
+      runtime,
+      [global(String(historyLimit)), args, global(previous)],
+      options,
+    );
+  } catch (error) {
+    // tmux stops a command list at the first failure, so a failed creation
+    // leaves the temporary global in place.
+    await runCommand(runtime, global(previous)).catch(() => undefined);
+    throw error;
+  }
+  await runCommand(runtime, own(lines), options);
+  return lines;
+}
+
 export async function newSession(
   server: Server,
   runtime: RuntimeContext,
   options: NewSessionOptions = {},
 ): Promise<Session> {
-  const plan = planNewSession(options);
-  const lines = await runCommand(runtime, plan.argv, options);
+  const { historyLimit, ...creation } = options;
+  if (
+    historyLimit !== undefined &&
+    !(Number.isInteger(historyLimit) && historyLimit >= 0 && historyLimit <= MAX_HISTORY_LIMIT)
+  ) {
+    throw new TypeError(`historyLimit must be an integer from 0 to ${MAX_HISTORY_LIMIT}`);
+  }
+  const plan = planNewSession(creation);
+  const lines =
+    historyLimit === undefined
+      ? await runCommand(runtime, plan.argv, options)
+      : await createWithHistory(
+          runtime,
+          plan.argv,
+          historyLimit,
+          options.groupWith !== undefined,
+          options,
+        );
   // tmux 3.2a accepts `-x -y` and still gives a detached session 80x23, so the
   // size is applied to the window afterwards, before the snapshot that
   // resolves the handle reads it. A grouped session makes no window of its own.

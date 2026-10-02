@@ -373,6 +373,26 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
+  test("gives a new session's first pane the history limit it was asked for", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const before = (await server.cmd("show-options", ["-gv", "history-limit"]))[0] ?? "";
+
+      const session = await server.newSession({ name: "scrollback", historyLimit: 123 });
+      const pane = session.panes.one();
+      expect(Number(pane.format.history_limit)).toBe(123);
+
+      // The session's own option, so the windows it makes later keep the limit.
+      const next = await session.newWindow();
+      expect(Number(next.panes.one().format.history_limit)).toBe(123);
+
+      // Another session, and the global, are untouched.
+      const other = await server.newSession({ name: "other" });
+      expect(Number(other.panes.one().format.history_limit)).toBe(Number(before));
+      expect(await server.cmd("show-options", ["-gv", "history-limit"])).toEqual([before]);
+    });
+  }, 40_000);
+
   test("gives each created process its own environment", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

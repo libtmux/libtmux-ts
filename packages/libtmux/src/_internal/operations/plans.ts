@@ -116,6 +116,11 @@ function splitWindowArgs(target: string | null, options: SplitOptions): readonly
 }
 
 export function planNewSession(options: NewSessionOptions = {}): PlannedOperation<Session> {
+  if (options.historyLimit !== undefined) {
+    throw new TypeError(
+      "historyLimit needs commands around new-session, which a plan cannot hold; call Server.newSession",
+    );
+  }
   return {
     argv: newSessionArgs(options),
     resolve: (snapshot, lines) => {
