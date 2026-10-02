@@ -159,6 +159,7 @@ export class NodeSpawnTransport {
     let delivery: DeliveryStatus = "not_started";
     let escalationTimer: NodeJS.Timeout | undefined;
     let postKillTimer: NodeJS.Timeout | undefined;
+    let exitDrainTimer: NodeJS.Timeout | undefined;
     let timeoutTimer: NodeJS.Timeout | undefined;
     let spawnError: unknown;
     let stdinError: unknown;
@@ -174,6 +175,7 @@ export class NodeSpawnTransport {
     const clearLifecycleTimers = (): void => {
       if (escalationTimer !== undefined) clearTimeout(escalationTimer);
       if (postKillTimer !== undefined) clearTimeout(postKillTimer);
+      if (exitDrainTimer !== undefined) clearTimeout(exitDrainTimer);
       if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
     };
 
@@ -202,6 +204,20 @@ export class NodeSpawnTransport {
 
     const armHardSettlement = (): void => {
       postKillTimer ??= setTimeout(forceSettlement, this.#postKillGraceMs);
+    };
+
+    // The process has exited, so it writes nothing more, but `close` waits for
+    // every holder of its pipes. tmux's server holds the stdio a client passed
+    // it until the client is freed, and under load that took twelve seconds
+    // for a `wait-for` whose release had already arrived. Output that is
+    // still arriving keeps pushing the deadline back; a pipe that has gone
+    // quiet is settled with what it carried.
+    const armExitDrain = (): void => {
+      if (observedExit === undefined || interruption !== undefined || closed || forcedSettlement) {
+        return;
+      }
+      if (exitDrainTimer !== undefined) clearTimeout(exitDrainTimer);
+      exitDrainTimer = setTimeout(forceSettlement, this.#postKillGraceMs);
     };
 
     const terminate = (): void => {
@@ -257,11 +273,13 @@ export class NodeSpawnTransport {
         discardDrainage();
         armHardSettlement();
       }
+      armExitDrain();
     });
 
     let outputBytes = 0;
     const retainOutput = (chunk: Buffer): boolean => {
       if (interruption === "output") return false;
+      armExitDrain();
       if (outputBytes + chunk.byteLength > this.#maxOutputBytes) {
         interrupt("output");
         return false;

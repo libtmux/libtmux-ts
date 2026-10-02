@@ -74,6 +74,32 @@ describe("NodeSpawnTransport", () => {
     expect(raw.exitCode).toBe(0);
   });
 
+  test("settles when the process has exited but another process still holds its pipes", async () => {
+    const transport = new NodeSpawnTransport();
+    const started = performance.now();
+    // The background `sleep` inherits stdout, as a tmux server does the stdio
+    // a client passes it, and keeps the pipe open after the shell has exited.
+    const raw = await transport.execute({
+      commands: [["-c", "sleep 4 & echo kept"]],
+      executable: "/bin/sh",
+      globalArgs: [],
+    });
+
+    expect(raw.exitCode).toBe(0);
+    expect(decodeBackslashReplace(raw.stdout)).toBe("kept\n");
+    expect(performance.now() - started).toBeLessThan(2_000);
+  }, 10_000);
+
+  test("keeps reading output that is still arriving after the process has exited", async () => {
+    const raw = await new NodeSpawnTransport().execute({
+      commands: [["-c", "(for i in 1 2 3 4; do sleep 0.15; echo $i; done) & echo first"]],
+      executable: "/bin/sh",
+      globalArgs: [],
+    });
+
+    expect(decodeBackslashReplace(raw.stdout)).toBe("first\n1\n2\n3\n4\n");
+  }, 10_000);
+
   test("returns raw bytes for nonzero exits instead of throwing", async () => {
     const transport = new NodeSpawnTransport();
     const raw = await transport.execute({

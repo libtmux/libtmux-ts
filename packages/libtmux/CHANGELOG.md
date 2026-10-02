@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+A tmux command now settles once its process has exited and its output has been quiet for 250 milliseconds, instead of waiting for every holder of its pipes to close them. tmux's server holds the stdio a client passes it until the client is freed, and under load a `wait-for` whose signal had already arrived stayed pending for twelve seconds.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`
