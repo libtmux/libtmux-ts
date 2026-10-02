@@ -619,6 +619,18 @@ await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
+`sendKeys` passes its text to tmux as one command argument, which tmux refuses
+past about 16 KB. `pasteText` has no such limit: it loads the text into a
+uniquely named paste buffer over stdin, pastes it with line feeds kept as line
+feeds, and deletes the buffer, also when the paste fails. The text is never read
+as key names or flags, so a trailing `;` or a leading `-` arrives as typed, and
+no Enter is sent:
+
+```ts
+await pane.pasteText("echo pasted\n");
+await pane.pasteText(`${"x".repeat(100_000)}\n`, { bracketed: false });
+```
+
 Copy mode needs no client, so a detached pane enters and leaves it like any
 other:
 

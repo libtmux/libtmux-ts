@@ -33,7 +33,13 @@ import {
   splitWindow,
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
-import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import {
+  capturePane,
+  clearHistory,
+  pasteText,
+  pipePane,
+  sendKeys,
+} from "./_internal/operations/pane_io.js";
 import {
   setOption,
   showOptions,
@@ -284,6 +290,26 @@ export class Pane {
    */
   sendKeys(keys: string, options?: SendKeysOptions): Promise<void> {
     return sendKeys(runtimeForHandle(this), this.id, keys, options);
+  }
+
+  /**
+   * Paste text of any size into this pane, without sending Enter.
+   *
+   * Use this instead of `sendKeys` for anything long or arbitrary. `sendKeys`
+   * hands its text to tmux as one command argument, which tmux refuses past
+   * about 16 KB; this loads it into a uniquely named paste buffer over stdin,
+   * pastes with line feeds kept as line feeds, and deletes the buffer, also
+   * when the paste fails. The text is never read as key names or flags, and a
+   * trailing `;` or a leading `-` arrives as typed. `bracketed` (the default)
+   * wraps the paste in bracketed-paste markers, which tmux adds only when the
+   * program in the pane asked for them. An empty string sends nothing.
+   *
+   * ```ts
+   * await pane.pasteText("- first line\nsecond line;\n");
+   * ```
+   */
+  pasteText(text: string, options?: { readonly bracketed?: boolean }): Promise<void> {
+    return pasteText(runtimeForHandle(this), this.id, text, options);
   }
 
   /**

@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -208,4 +208,37 @@ describe("pane input and capture", () => {
       await pane.pipeTo();
     });
   }, 15_000);
+
+  test("pastes text of any size without reading it as keys, flags or a command", async () => {
+    await withServer(async (fixture) => {
+      const directory = await makeTestDirectory("ltx-paste-");
+      try {
+        const server = serverFor(fixture);
+        const session = (await server.snapshot()).sessions.one();
+        // Far past the 16 KB tmux accepts in one command, starting with a dash
+        // and ending in a semicolon, with a newline and an ESC in the middle.
+        const text = `- first line\nsecond;\u001b[0m${"x".repeat(30_000)};`;
+        const bytes = new TextEncoder().encode(text).byteLength;
+        const target = join(directory, "pasted");
+        const pane = await session.activePane!.split({
+          shellCommand: `stty raw -echo; head -c ${String(bytes)} > '${target}'`,
+        });
+
+        await pane.pasteText(text);
+
+        let received = "";
+        for (let attempt = 0; attempt < 200 && received.length < text.length; attempt += 1) {
+          // eslint-disable-next-line no-await-in-loop -- Polling is inherently sequential.
+          received = await readFile(target, "utf8").catch(() => "");
+          // eslint-disable-next-line no-await-in-loop -- Each read follows the wait before it.
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        expect(received).toBe(text);
+        // Nothing is left behind for another caller to find or paste.
+        expect((await server.listBuffers()).filter((name) => name.includes("paste"))).toEqual([]);
+      } finally {
+        await rm(directory, { force: true, recursive: true });
+      }
+    });
+  }, 40_000);
 });

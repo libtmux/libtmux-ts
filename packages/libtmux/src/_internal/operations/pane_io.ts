@@ -1,6 +1,10 @@
 import type { CaptureOptions, SendKeysOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { randomUUID } from "node:crypto";
+
+import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { runCommand, runCommands } from "./command.js";
+import { loadBuffer } from "./server_utils.js";
 
 /**
  * Send keys to a pane.
@@ -98,4 +102,45 @@ export async function pipePane(
     // of pipe-pane's own flags (`-I` or `-O` close the existing pipe).
     ...(command === undefined ? [] : ["--", command]),
   ]);
+}
+
+/** The first tmux whose `paste-buffer -S` stops it from escaping control bytes. */
+const PASTE_NO_ESCAPE_SINCE = parseTmuxVersion("3.7");
+
+/**
+ * Paste text of any size into a pane through a throwaway paste buffer.
+ *
+ * `send-keys` takes its text as one command argument, which tmux caps near
+ * 16 KB, reads a `;` at its end as a command separator, and reads key names
+ * out of anything not sent with `-l`. A buffer loaded over stdin has none of
+ * those limits, and `-r` keeps a line feed a line feed where tmux's default
+ * pastes it as Enter. The buffer is named uniquely, deleted by the paste, and
+ * deleted here when the paste fails.
+ */
+export async function pasteText(
+  runtime: RuntimeContext,
+  paneId: string,
+  text: string,
+  options: { readonly bracketed?: boolean } = {},
+): Promise<void> {
+  if (text === "") return;
+  const name = `libtmux_paste_${randomUUID().replaceAll("-", "")}`;
+  await loadBuffer(runtime, name, text);
+  try {
+    const { tmuxVersion } = await runtime.capabilities.bind();
+    await runCommand(runtime, [
+      "paste-buffer",
+      "-d",
+      "-r",
+      ...(options.bracketed === false ? [] : ["-p"]),
+      ...(tmuxVersionAtLeast(tmuxVersion, PASTE_NO_ESCAPE_SINCE) ? ["-S"] : []),
+      "-b",
+      name,
+      "-t",
+      paneId,
+    ]);
+  } catch (error) {
+    await runCommand(runtime, ["delete-buffer", "-b", name]).catch(() => undefined);
+    throw error;
+  }
 }

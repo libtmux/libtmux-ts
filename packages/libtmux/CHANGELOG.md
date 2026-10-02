@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`Pane.pasteText` pastes text of any size into a pane. `Pane.sendKeys` hands its text to tmux as one command argument, which tmux refuses past about 16 KB; `pasteText` loads the text into a uniquely named paste buffer over stdin, pastes it with line feeds kept as line feeds, and deletes the buffer, also when the paste fails.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`
