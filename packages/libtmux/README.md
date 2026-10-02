@@ -656,6 +656,7 @@ Server-wide commands and paste buffers:
 
 ```ts
 await server.hasSession("work");
+await server.ensureSession({ name: "work" }); // the exact-named session, created once
 await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`); // tmux does not expand `~`
 await server.listCommands();
 await server.runShell("echo hi");

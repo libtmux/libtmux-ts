@@ -37,6 +37,10 @@ remember.
 
 `NewSessionOptions.groupWith` now matches a session name exactly, or takes a session id as given, and `Server.newSession` rejects with `ObjectNotFoundError` when no session has the name. Before, tmux resolved `groupWith: "foo"` as a prefix and silently grouped the new session with `foobar`.
 
+`Server.ensureSession` returns the session with an exact name, creating it when none exists. A call that loses a creation race to another caller returns the winner's session instead of failing with `duplicate session`, and a socket with no server gets one started. An existing session comes back unchanged and the other options are ignored.
+
+`NewSessionOptions.groupWith` now matches a session name exactly, or takes a session id as given, and `Server.newSession` rejects with `ObjectNotFoundError` when no session has the name. Before, tmux resolved `groupWith: "foo"` as a prefix and silently grouped the new session with `foobar`. A planned session still passes the name to tmux unchanged.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

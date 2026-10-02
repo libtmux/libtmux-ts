@@ -268,7 +268,7 @@ if (failures.length > 0) throw new AggregateError(failures, "Example failed");
 
 @throws TypeError if both `socketName` and `socketPath` are given.
 
-[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`validateLayouts`](#servervalidatelayouts) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`validateLayouts`](#servervalidatelayouts) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`ensureSession`](#serverensuresession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -1032,6 +1032,24 @@ try {
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+```
+
+#### `Server.ensureSession`
+
+```ts
+ensureSession(options: NewSessionOptions & { readonly name: string }): Promise<Session>
+```
+
+The session with this exact name, created if there is none.
+
+Idempotent where `newSession` throws `duplicate session`: a second call, or
+a second process racing the first, gets the session that exists. The name
+is matched exactly, so `work` is not satisfied by `workspace`. An existing
+session comes back unchanged and the other options are ignored, since they
+describe creation. A socket with no server gets one started.
+
+```ts
+const session = await server.ensureSession({ name: "work", windowName: "editor" });
 ```
 
 #### `Server.kill`

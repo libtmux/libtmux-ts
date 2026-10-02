@@ -10,8 +10,8 @@ import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { ObjectNotFoundError } from "../../errors.js";
-import { runCommand } from "./command.js";
+import { ObjectNotFoundError, TmuxCommandError } from "../../errors.js";
+import { isColdEndpoint, runCommand } from "./command.js";
 import {
   planKill,
   planKillPaneIfUnshared,
@@ -94,14 +94,14 @@ export async function killServer(runtime: RuntimeContext): Promise<void> {
 const SESSION_ID = /^\$\d+$/u;
 
 /**
- * Turn the session `new-session -t` should group with into its id.
+ * Turn a session name into its id by exact comparison, for `new-session -t`.
  *
  * tmux resolves a bare `-t foo` as a unique prefix of a session name, so
  * grouping with `foo` silently joined `foobar`, and its `=foo` exact form
  * starts a group named `=foo` when no session has the name. The id is the one
  * spelling tmux cannot read as anything else; a name is looked up exactly.
  */
-export async function exactGroupTarget(
+export async function exactSessionId(
   runtime: RuntimeContext,
   name: string,
   options: CommandOptions = {},
@@ -120,4 +120,43 @@ export async function exactGroupTarget(
     message: `No session named ${JSON.stringify(name)} to group with`,
     query: { name },
   });
+}
+
+/**
+ * The session with this exact name, created when none exists.
+ *
+ * Two callers that both find none race to create it, and tmux refuses the
+ * second with `duplicate session`; that caller returns the winner's session
+ * instead of failing. A socket with no server is the ordinary first call, so
+ * it creates one.
+ */
+export async function ensureSession(
+  server: Server,
+  runtime: RuntimeContext,
+  options: NewSessionOptions & { readonly name: string },
+): Promise<Session> {
+  const find = async (): Promise<Session | undefined> => {
+    let id: string;
+    try {
+      id = await exactSessionId(runtime, options.name, options);
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError || isColdEndpoint(error)) return undefined;
+      throw error;
+    }
+    return (await server.sessions()).first({ id });
+  };
+  const existing = await find();
+  if (existing !== undefined) return existing;
+  try {
+    return await newSession(server, runtime, options);
+  } catch (error) {
+    if (
+      error instanceof TmuxCommandError &&
+      error.stderr.join("\n").includes("duplicate session")
+    ) {
+      const winner = await find();
+      if (winner !== undefined) return winner;
+    }
+    throw error;
+  }
 }

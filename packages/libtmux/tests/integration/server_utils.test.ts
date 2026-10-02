@@ -76,6 +76,45 @@ describe("server utilities", () => {
     });
   }, 40_000);
 
+  test("ensures a session by exact name, once, even when callers race", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      const [first, second] = await Promise.all([
+        server.ensureSession({ name: "ensured", windowName: "one" }),
+        server.ensureSession({ name: "ensured", windowName: "two" }),
+      ]);
+      expect(second.id).toBe(first.id);
+      expect((await server.sessions()).count({ name: "ensured" })).toBe(1);
+
+      // An existing session comes back as it is: the options describe creation.
+      const again = await server.ensureSession({ name: "ensured", windowName: "three" });
+      expect(again.id).toBe(first.id);
+      expect(again.windows.map((window) => window.name)).not.toContain("three");
+
+      // A name that is only a prefix of one is a different session.
+      const prefix = await server.ensureSession({ name: "ensure" });
+      expect(prefix.id).not.toBe(first.id);
+    });
+  }, 40_000);
+
+  test("ensures a session on a socket with no server by starting one", async () => {
+    await withServer(async (fixture, parent) => {
+      const cold = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: join(parent, "cold.sock"),
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      expect(await cold.isAlive()).toBe(false);
+      try {
+        const session = await cold.ensureSession({ name: "bootstrapped" });
+        expect(session.name).toBe("bootstrapped");
+      } finally {
+        await cold.kill().catch(() => undefined);
+      }
+    });
+  }, 40_000);
+
   test("round-trips a named paste buffer and deletes it", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

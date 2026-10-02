@@ -40,7 +40,12 @@ import type { Selection } from "./selection.js";
 import { Session } from "./session.js";
 import { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
-import { exactGroupTarget, killServer, newSession } from "./_internal/operations/mutations.js";
+import {
+  ensureSession,
+  exactSessionId,
+  killServer,
+  newSession,
+} from "./_internal/operations/mutations.js";
 import { validateLayouts } from "./_internal/operations/layout.js";
 import {
   setOption,
@@ -1114,8 +1119,25 @@ export class Server {
   async newSession(options?: NewSessionOptions): Promise<Session> {
     const runtime = runtimeForServer(this);
     if (options?.groupWith === undefined) return newSession(this, runtime, options);
-    const groupWith = await exactGroupTarget(runtime, options.groupWith, options);
+    const groupWith = await exactSessionId(runtime, options.groupWith, options);
     return newSession(this, runtime, { ...options, groupWith });
+  }
+
+  /**
+   * The session with this exact name, created if there is none.
+   *
+   * Idempotent where `newSession` throws `duplicate session`: a second call, or
+   * a second process racing the first, gets the session that exists. The name
+   * is matched exactly, so `work` is not satisfied by `workspace`. An existing
+   * session comes back unchanged and the other options are ignored, since they
+   * describe creation. A socket with no server gets one started.
+   *
+   * ```ts
+   * const session = await server.ensureSession({ name: "work", windowName: "editor" });
+   * ```
+   */
+  ensureSession(options: NewSessionOptions & { readonly name: string }): Promise<Session> {
+    return ensureSession(this, runtimeForServer(this), options);
   }
 
   /**
