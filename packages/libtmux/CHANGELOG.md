@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`Pane.waitForExit` blocks until the process tmux started in a pane has exited and resolves with its `{ status, signal }`. It sets `remain-on-exit` for the call and restores it, rejects with `WaitTimeoutError` at the deadline (30 seconds unless `timeoutMs` says otherwise) and `ObjectNotFoundError` for a pane that is gone, and honours an `AbortSignal`. tmux 3.2a reports no signal, so a process ended by one answers `{ status: null, signal: null }` there.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

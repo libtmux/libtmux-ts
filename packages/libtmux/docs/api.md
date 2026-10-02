@@ -2225,7 +2225,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`waitForExit`](#panewaitforexit) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -2428,6 +2428,33 @@ Send keys to this pane, following them with Enter unless told not to.
 ```ts
 await pane.sendKeys("echo hello");
 await pane.sendKeys("C-c", { literal: false });
+```
+
+#### `Pane.waitForExit`
+
+```ts
+waitForExit(options?: PaneExitWaitOptions): Promise<PaneExit>
+```
+
+Block until the process tmux started in this pane has exited, and say how
+it ended.
+
+Waits for the pane's own process (the shell, or the `shellCommand` it was
+split with), not for a command typed into that shell. `remain-on-exit` is
+set for the call and put back, so the pane stays as a dead pane afterwards.
+A pane that closed before the call is gone: set `remain-on-exit` ahead of a
+short-lived process.
+
+Rejects with `WaitTimeoutError` at the deadline (30 seconds unless
+`timeoutMs` says otherwise), `ObjectNotFoundError` when the pane is gone,
+and a `TmuxTransportError` of kind `"cancelled"` when `signal` fires. tmux
+3.2a reports no signal, so a process ended by one answers
+`{ status: null, signal: null }` there.
+
+```ts
+const worker = await pane.split({ shellCommand: "sleep 0.2; exit 3" });
+const exit = await worker.waitForExit({ timeoutMs: 10_000 });
+exit.status; // 3
 ```
 
 #### `Pane.capture`

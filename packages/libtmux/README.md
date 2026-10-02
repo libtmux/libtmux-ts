@@ -619,6 +619,19 @@ await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
+`waitForExit` waits for the process tmux started in a pane, not for a command
+typed into its shell, and answers how it ended. It sets `remain-on-exit` for the
+call and puts it back, so the pane stays as a dead pane afterwards. It rejects
+with `WaitTimeoutError` at the deadline, 30 seconds unless `timeoutMs` says
+otherwise, and with `ObjectNotFoundError` for a pane that is gone, so set
+`remain-on-exit` ahead of a process that may finish first:
+
+```ts
+const worker = await pane.split({ shellCommand: "sleep 0.3" });
+const { signal, status } = await worker.waitForExit({ timeoutMs: 10_000 });
+console.log(status, signal); // 0 null
+```
+
 Copy mode needs no client, so a detached pane enters and leaves it like any
 other:
 

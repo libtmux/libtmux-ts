@@ -487,6 +487,27 @@ export interface ResizeWindowOptions extends ResizeOptions {
   readonly smallest?: boolean;
 }
 
+/** How the process in a pane ended, as tmux recorded it. */
+export interface PaneExit {
+  /** The process's signal number, or `null` when it did not die of one. tmux 3.2a never reports it. */
+  readonly signal: number | null;
+  /** The exit status, or `null` when the process was ended by a signal. */
+  readonly status: number | null;
+}
+
+/** What bounds a wait for a pane's process to exit. */
+export interface PaneExitWaitOptions {
+  /** Abandon the wait when this signal fires; the pane's options are restored first. */
+  readonly signal?: AbortLike;
+  /**
+   * Give up after this many milliseconds, 30 seconds unless set.
+   *
+   * Must be a positive timer-safe integer. `null` waits for as long as the
+   * process runs.
+   */
+  readonly timeoutMs?: number | null;
+}
+
 /**
  * Where the shell command runs, and whether the call waits for it.
  *

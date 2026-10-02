@@ -5,6 +5,8 @@ import type {
   CmdOptions,
   JoinOptions,
   MenuItem,
+  PaneExit,
+  PaneExitWaitOptions,
   PopupOptions,
   ResizeOptions,
   RespawnOptions,
@@ -33,7 +35,13 @@ import {
   splitWindow,
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
-import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import {
+  capturePane,
+  clearHistory,
+  pipePane,
+  sendKeys,
+  waitForPaneExit,
+} from "./_internal/operations/pane_io.js";
 import {
   setOption,
   showOptions,
@@ -284,6 +292,32 @@ export class Pane {
    */
   sendKeys(keys: string, options?: SendKeysOptions): Promise<void> {
     return sendKeys(runtimeForHandle(this), this.id, keys, options);
+  }
+
+  /**
+   * Block until the process tmux started in this pane has exited, and say how
+   * it ended.
+   *
+   * Waits for the pane's own process (the shell, or the `shellCommand` it was
+   * split with), not for a command typed into that shell. `remain-on-exit` is
+   * set for the call and put back, so the pane stays as a dead pane afterwards.
+   * A pane that closed before the call is gone: set `remain-on-exit` ahead of a
+   * short-lived process.
+   *
+   * Rejects with `WaitTimeoutError` at the deadline (30 seconds unless
+   * `timeoutMs` says otherwise), `ObjectNotFoundError` when the pane is gone,
+   * and a `TmuxTransportError` of kind `"cancelled"` when `signal` fires. tmux
+   * 3.2a reports no signal, so a process ended by one answers
+   * `{ status: null, signal: null }` there.
+   *
+   * ```ts
+   * const worker = await pane.split({ shellCommand: "sleep 0.2; exit 3" });
+   * const exit = await worker.waitForExit({ timeoutMs: 10_000 });
+   * exit.status; // 3
+   * ```
+   */
+  waitForExit(options?: PaneExitWaitOptions): Promise<PaneExit> {
+    return waitForPaneExit(runtimeForHandle(this), this.id, options);
   }
 
   /**

@@ -34,6 +34,8 @@ export type {
   MenuEntry,
   MenuItem,
   MoveWindowOptions,
+  PaneExit,
+  PaneExitWaitOptions,
   PlannedOperation,
   NewSessionOptions,
   NewWindowOptions,

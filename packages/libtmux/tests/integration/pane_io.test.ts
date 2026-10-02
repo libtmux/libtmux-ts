@@ -12,6 +12,7 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
+import { ObjectNotFoundError, WaitTimeoutError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -208,4 +209,46 @@ describe("pane input and capture", () => {
       await pane.pipeTo();
     });
   }, 15_000);
+
+  test("waits for a pane's process and reports how it ended", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+      const pane = await session.activePane!.split({ shellCommand: "sleep 0.4; exit 3" });
+
+      const exit = await pane.waitForExit({ timeoutMs: 20_000 });
+      expect(exit.status).toBe(3);
+
+      // The pane stays as a dead pane, and remain-on-exit is put back unset.
+      const refreshed = await pane.refreshed();
+      expect(refreshed.dead).toBe(true);
+      expect((await pane.showOptions()).has("remain-on-exit")).toBe(false);
+      await pane.waitForExit({ timeoutMs: 1_000 });
+    });
+  }, 40_000);
+
+  test("bounds a wait on a pane that keeps running, and restores its options", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+      const pane = await session.activePane!.split({ shellCommand: "sleep 30" });
+      await pane.setOption("remain-on-exit", "failed");
+
+      await expect(pane.waitForExit({ timeoutMs: 300 })).rejects.toBeInstanceOf(WaitTimeoutError);
+      expect((await pane.showOptions()).get("remain-on-exit")).toBe("failed");
+    });
+  }, 40_000);
+
+  test("reports a pane that is gone rather than waiting on it", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = (await server.snapshot()).sessions.one();
+      const pane = await session.activePane!.split();
+      await pane.kill();
+
+      await expect(pane.waitForExit({ timeoutMs: 1_000 })).rejects.toBeInstanceOf(
+        ObjectNotFoundError,
+      );
+    });
+  }, 40_000);
 });

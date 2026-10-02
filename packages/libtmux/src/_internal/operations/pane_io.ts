@@ -1,5 +1,17 @@
-import type { CaptureOptions, SendKeysOptions } from "../../types.js";
+import {
+  LibTmuxError,
+  ObjectNotFoundError,
+  TmuxTransportError,
+  WaitTimeoutError,
+} from "../../errors.js";
+import type {
+  CaptureOptions,
+  PaneExit,
+  PaneExitWaitOptions,
+  SendKeysOptions,
+} from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { timerDuration } from "../timing.js";
 import { runCommand, runCommands } from "./command.js";
 
 /**
@@ -98,4 +110,113 @@ export async function pipePane(
     // of pipe-pane's own flags (`-I` or `-O` close the existing pipe).
     ...(command === undefined ? [] : ["--", command]),
   ]);
+}
+
+const DEFAULT_EXIT_WAIT_MS = 30_000;
+const EXIT_POLL_START_MS = 10;
+const EXIT_POLL_CAP_MS = 100;
+
+/** The pane's exit once its process has ended, or `undefined` while it runs. */
+async function readExit(runtime: RuntimeContext, paneId: string): Promise<PaneExit | undefined> {
+  // `display-message -p` succeeds with empty fields for a pane that does not
+  // exist, so the id is part of the format and the answer is trusted only when
+  // it comes back.
+  const [row = ""] = await runCommand(runtime, [
+    "display-message",
+    "-p",
+    "-t",
+    paneId,
+    "#{pane_id};#{pane_dead};#{pane_dead_status};#{pane_dead_signal}",
+  ]);
+  const [id, dead, status, signal] = row.split(";");
+  if (id !== paneId) {
+    throw new ObjectNotFoundError({ message: `Pane ${paneId} no longer exists` });
+  }
+  if (dead !== "1") return undefined;
+  return Object.freeze({
+    signal: signal === undefined || signal === "" ? null : Number(signal),
+    status: status === undefined || status === "" ? null : Number(status),
+  });
+}
+
+function pause(ms: number, signal: PaneExitWaitOptions["signal"]): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
+/**
+ * Block until the process tmux started in a pane has exited.
+ *
+ * tmux closes a pane when its process exits and takes the exit status with
+ * it, so this sets `remain-on-exit` on the pane for the call and puts it back,
+ * leaving a dead pane the caller can read and then remove. It polls rather than
+ * waiting on a `pane-died` hook: that hook never fires for a pane that is
+ * killed, so a wait with no deadline would block forever, and setting one
+ * replaces whatever hook the pane already has.
+ */
+export async function waitForPaneExit(
+  runtime: RuntimeContext,
+  paneId: string,
+  options: PaneExitWaitOptions = {},
+): Promise<PaneExit> {
+  const limit =
+    options.timeoutMs === null
+      ? undefined
+      : timerDuration("timeoutMs", options.timeoutMs ?? DEFAULT_EXIT_WAIT_MS);
+  const deadline = limit === undefined ? undefined : performance.now() + limit;
+  const cancelled = (): TmuxTransportError =>
+    new TmuxTransportError("pane exit wait cancelled", {
+      delivery: "indeterminate",
+      kind: "cancelled",
+      ...(options.signal?.reason === undefined ? {} : { cause: options.signal.reason }),
+    });
+  const aborted = (): boolean => options.signal?.aborted === true;
+  if (aborted()) throw cancelled();
+
+  const already = await readExit(runtime, paneId);
+  if (already !== undefined) return already;
+
+  const [previous] = await runCommand(runtime, [
+    "show-options",
+    "-p",
+    "-q",
+    "-v",
+    "-t",
+    paneId,
+    "remain-on-exit",
+  ]);
+  await runCommand(runtime, ["set-option", "-p", "-t", paneId, "remain-on-exit", "on"]);
+  try {
+    let interval = EXIT_POLL_START_MS;
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- Each poll follows the wait before it.
+      const exit = await readExit(runtime, paneId);
+      if (exit !== undefined) return exit;
+      if (aborted()) throw cancelled();
+      if (deadline !== undefined && performance.now() >= deadline) {
+        throw new WaitTimeoutError(`pane ${paneId} was still running at the deadline`);
+      }
+      // eslint-disable-next-line no-await-in-loop -- Polling is inherently sequential.
+      await pause(interval, options.signal);
+      interval = Math.min(interval * 2, EXIT_POLL_CAP_MS);
+    }
+  } finally {
+    // The pane may be gone by now; restoring an option on it is then moot.
+    await runCommand(
+      runtime,
+      previous === undefined || previous === ""
+        ? ["set-option", "-p", "-u", "-t", paneId, "remain-on-exit"]
+        : ["set-option", "-p", "-t", paneId, "remain-on-exit", previous],
+    ).catch((error: unknown) => {
+      if (error instanceof LibTmuxError && !(error instanceof TmuxTransportError)) return;
+      throw error;
+    });
+  }
 }
