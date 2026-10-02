@@ -66,7 +66,9 @@ export interface NewSessionOptions extends CommandOptions {
    * Share another session's windows, tmux's `-t`.
    *
    * Names a session to group with, not a group: tmux puts the new session in
-   * that session's group, or starts one named for it. Members share one window
+   * that session's group, or starts one named for it. A name is matched
+   * exactly, never as a prefix, and a session id (`$1`) is taken as given;
+   * `ObjectNotFoundError` when no session has the name. Members share one window
    * list, so a window created in either appears in both and a window moved in
    * either moves in both — unlike a linked window, where each session keeps its
    * own list and its own index for it.

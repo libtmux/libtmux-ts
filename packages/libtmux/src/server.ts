@@ -40,7 +40,7 @@ import type { Selection } from "./selection.js";
 import { Session } from "./session.js";
 import { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
-import { killServer, newSession } from "./_internal/operations/mutations.js";
+import { exactGroupTarget, killServer, newSession } from "./_internal/operations/mutations.js";
 import { validateLayouts } from "./_internal/operations/layout.js";
 import {
   setOption,
@@ -1111,8 +1111,11 @@ export class Server {
    * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
    * ```
    */
-  newSession(options?: NewSessionOptions): Promise<Session> {
-    return newSession(this, runtimeForServer(this), options);
+  async newSession(options?: NewSessionOptions): Promise<Session> {
+    const runtime = runtimeForServer(this);
+    if (options?.groupWith === undefined) return newSession(this, runtime, options);
+    const groupWith = await exactGroupTarget(runtime, options.groupWith, options);
+    return newSession(this, runtime, { ...options, groupWith });
   }
 
   /**

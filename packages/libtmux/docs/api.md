@@ -971,7 +971,7 @@ await server.removeEnvironment("EDITOR");
 #### `Server.newSession`
 
 ```ts
-newSession(options?: NewSessionOptions): Promise<Session>
+async newSession(options?: NewSessionOptions): Promise<Session>
 ```
 
 Create a detached session and resolve it as a handle.

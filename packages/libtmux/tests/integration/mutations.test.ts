@@ -13,7 +13,7 @@ import {
 
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
-import { LibTmuxError, TmuxCommandError } from "../../src/errors.js";
+import { LibTmuxError, ObjectNotFoundError, TmuxCommandError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -423,6 +423,26 @@ describe("lifecycle mutations", () => {
             .map((window) => window.name),
         ).toEqual(["shared", "added"]);
       }
+    });
+  }, 40_000);
+
+  test("groups only with the session it names, never one it is a prefix of", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const leader = await server.newSession({ name: "foobar" });
+      const before = (await server.snapshot()).sessions.length;
+
+      // tmux resolves a bare `-t foo` to foobar and groups with it.
+      await expect(server.newSession({ groupWith: "foo" })).rejects.toBeInstanceOf(
+        ObjectNotFoundError,
+      );
+      expect((await server.snapshot()).sessions.length).toBe(before);
+
+      const byId = await server.newSession({ groupWith: leader.id });
+      const byName = await server.newSession({ groupWith: "foobar" });
+      const snapshot = await server.snapshot();
+      expect(snapshot.sessions.count({ group: "foobar" })).toBe(3);
+      expect([byId.id, byName.id]).not.toContain(leader.id);
     });
   }, 40_000);
 

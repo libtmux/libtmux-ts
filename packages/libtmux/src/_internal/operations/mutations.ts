@@ -10,6 +10,7 @@ import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { ObjectNotFoundError } from "../../errors.js";
 import { runCommand } from "./command.js";
 import {
   planKill,
@@ -88,4 +89,35 @@ export async function killPaneIfWindowUnshared(
 
 export async function killServer(runtime: RuntimeContext): Promise<void> {
   await runCommand(runtime, ["kill-server"]);
+}
+
+const SESSION_ID = /^\$\d+$/u;
+
+/**
+ * Turn the session `new-session -t` should group with into its id.
+ *
+ * tmux resolves a bare `-t foo` as a unique prefix of a session name, so
+ * grouping with `foo` silently joined `foobar`, and its `=foo` exact form
+ * starts a group named `=foo` when no session has the name. The id is the one
+ * spelling tmux cannot read as anything else; a name is looked up exactly.
+ */
+export async function exactGroupTarget(
+  runtime: RuntimeContext,
+  name: string,
+  options: CommandOptions = {},
+): Promise<string> {
+  if (SESSION_ID.test(name)) return name;
+  const rows = await runCommand(
+    runtime,
+    ["list-sessions", "-F", "#{session_id};#{session_name}"],
+    options,
+  );
+  for (const row of rows) {
+    const split = row.indexOf(";");
+    if (split !== -1 && row.slice(split + 1) === name) return row.slice(0, split);
+  }
+  throw new ObjectNotFoundError({
+    message: `No session named ${JSON.stringify(name)} to group with`,
+    query: { name },
+  });
 }
