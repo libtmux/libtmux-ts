@@ -1,6 +1,7 @@
 import type { CaptureOptions, SendKeysOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand, runCommands } from "./command.js";
+import { setOption, showOptions, unsetOption } from "./options.js";
 
 /**
  * Send keys to a pane.
@@ -98,4 +99,57 @@ export async function pipePane(
     // of pipe-pane's own flags (`-I` or `-O` close the existing pipe).
     ...(command === undefined ? [] : ["--", command]),
   ]);
+}
+
+/** The user option that holds a pane's label. */
+const LABEL_OPTION = "@name";
+
+/** Put a name on a pane that survives any change to its index, title or command. */
+export async function setPaneLabel(
+  runtime: RuntimeContext,
+  paneId: string,
+  label: string,
+): Promise<void> {
+  await setOption(runtime, "pane", paneId, LABEL_OPTION, label);
+}
+
+/** The label set on this pane itself, or `undefined` when it has none. */
+export async function getPaneLabel(
+  runtime: RuntimeContext,
+  paneId: string,
+): Promise<string | undefined> {
+  return (await showOptions(runtime, "pane", paneId)).get(LABEL_OPTION);
+}
+
+/** Remove a pane's label. */
+export async function clearPaneLabel(runtime: RuntimeContext, paneId: string): Promise<void> {
+  await unsetOption(runtime, "pane", paneId, LABEL_OPTION);
+}
+
+/**
+ * The ids of every pane carrying exactly this label.
+ *
+ * A format reads `@name` through the window and server tables as well, so a
+ * window or global `@name` would name every pane under it; each candidate is
+ * confirmed against the option set on the pane itself.
+ */
+export async function paneIdsLabelled(
+  runtime: RuntimeContext,
+  label: string,
+): Promise<readonly string[]> {
+  const rows = await runCommand(runtime, [
+    "list-panes",
+    "-a",
+    "-F",
+    `#{pane_id};#{${LABEL_OPTION}}`,
+  ]);
+  const candidates: string[] = [];
+  for (const row of rows) {
+    const split = row.indexOf(";");
+    if (split !== -1 && row.slice(split + 1) === label) candidates.push(row.slice(0, split));
+  }
+  const own = await Promise.all(
+    candidates.map(async (id) => ((await getPaneLabel(runtime, id)) === label ? id : undefined)),
+  );
+  return own.filter((id): id is string => id !== undefined);
 }

@@ -33,7 +33,15 @@ import {
   splitWindow,
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
-import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import {
+  capturePane,
+  clearHistory,
+  clearPaneLabel,
+  getPaneLabel,
+  pipePane,
+  sendKeys,
+  setPaneLabel,
+} from "./_internal/operations/pane_io.js";
 import {
   setOption,
   showOptions,
@@ -284,6 +292,43 @@ export class Pane {
    */
   sendKeys(keys: string, options?: SendKeysOptions): Promise<void> {
     return sendKeys(runtimeForHandle(this), this.id, keys, options);
+  }
+
+  /**
+   * Name this pane with a label that outlives its index, title and command.
+   *
+   * Stored in the pane's `@name` user option, so any tmux client sees it and
+   * `Server.panesLabelled` finds the pane by it.
+   *
+   * ```ts
+   * await pane.setLabel("api");
+   * ```
+   */
+  setLabel(label: string): Promise<void> {
+    return setPaneLabel(runtimeForHandle(this), this.id, label);
+  }
+
+  /**
+   * The label set on this pane, or `undefined` when it has none.
+   *
+   * ```ts
+   * await pane.setLabel("api");
+   * const label = await pane.label(); // "api"
+   * ```
+   */
+  label(): Promise<string | undefined> {
+    return getPaneLabel(runtimeForHandle(this), this.id);
+  }
+
+  /**
+   * Remove this pane's label.
+   *
+   * ```ts
+   * await pane.clearLabel();
+   * ```
+   */
+  clearLabel(): Promise<void> {
+    return clearPaneLabel(runtimeForHandle(this), this.id);
   }
 
   /**

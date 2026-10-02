@@ -28,6 +28,7 @@ import type {
 } from "./types.js";
 import { randomUUID } from "node:crypto";
 
+import { paneIdsLabelled } from "./_internal/operations/pane_io.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
 import { acquireServerGraph } from "./_internal/operations/acquire.js";
 
@@ -1282,6 +1283,21 @@ export class Server {
    */
   ifShell(condition: string, command: string, options?: IfShellOptions): Promise<void> {
     return ifShell(runtimeForServer(this), condition, command, options);
+  }
+
+  /**
+   * The panes carrying exactly this label, on every session.
+   *
+   * Labels come from `Pane.setLabel` and are compared whole, so `api` does not
+   * find `api-2`. Several panes may share one.
+   *
+   * ```ts
+   * const panes = await server.panesLabelled("api");
+   * ```
+   */
+  async panesLabelled(label: string): Promise<Selection<Pane>> {
+    const ids = new Set(await paneIdsLabelled(runtimeForServer(this), label));
+    return (await this.panes()).filter((pane) => ids.has(pane.id));
   }
 
   /**

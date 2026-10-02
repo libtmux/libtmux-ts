@@ -619,6 +619,17 @@ await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
+A label names a pane in a way that survives its index, title and running command.
+It lives in the pane's `@name` user option, so `Server.panesLabelled` finds
+every pane carrying exactly that label, across all sessions:
+
+```ts
+await pane.setLabel("api");
+const label = await pane.label(); // "api", or undefined when unset
+const labelled = await server.panesLabelled("api"); // compared whole: not "api-2"
+await pane.clearLabel();
+```
+
 Copy mode needs no client, so a detached pane enters and leaves it like any
 other:
 

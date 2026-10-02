@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`Pane.setLabel`, `Pane.label` and `Pane.clearLabel` keep a name on a pane in its `@name` user option, and `Server.panesLabelled` returns the panes carrying exactly that label across every session. A `@name` set on a window or the server names none of its panes.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

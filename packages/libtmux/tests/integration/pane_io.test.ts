@@ -208,4 +208,35 @@ describe("pane input and capture", () => {
       await pane.pipeTo();
     });
   }, 15_000);
+
+  test("labels a pane through a user option and finds it by exact label", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const first = (await server.snapshot()).panes.one();
+      const second = await first.split();
+      const third = await first.split();
+
+      expect(await first.label()).toBeUndefined();
+      await first.setLabel("api");
+      await second.setLabel("api-2");
+      await third.setLabel("db;#{pane_id}");
+
+      expect(await first.label()).toBe("api");
+      expect(await third.label()).toBe("db;#{pane_id}");
+      expect((await server.panesLabelled("api")).map((pane) => pane.id)).toEqual([first.id]);
+      expect((await server.panesLabelled("db;#{pane_id}")).map((pane) => pane.id)).toEqual([
+        third.id,
+      ]);
+      expect((await server.panesLabelled("ap")).length).toBe(0);
+
+      await first.clearLabel();
+      expect(await first.label()).toBeUndefined();
+      expect((await server.panesLabelled("api")).length).toBe(0);
+
+      // A window's own `@name` is inherited by every pane in a format, and
+      // names none of them.
+      await server.cmd("set-option", ["-w", "-t", first.id, "@name", "windowwide"]);
+      expect((await server.panesLabelled("windowwide")).length).toBe(0);
+    });
+  }, 40_000);
 });
