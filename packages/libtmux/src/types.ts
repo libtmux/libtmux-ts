@@ -92,8 +92,9 @@ export interface NewSessionOptions extends CommandOptions {
    * afterwards except `Window.resize`, and a width-aware program has already
    * truncated its output by then rather than wrapped it.
    *
-   * tmux 3.2 ignores both for a detached session and gives 80x24 anyway;
-   * 3.3 is the first release that honours them.
+   * tmux 3.2 ignores both for a detached session, so there `newSession`
+   * resizes the first window itself; 3.3 is the first release that honours
+   * them.
    */
   readonly height?: number;
   /**

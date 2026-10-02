@@ -359,6 +359,20 @@ describe("lifecycle mutations", () => {
     });
   }, 40_000);
 
+  test("sizes a new session's first window as asked on every tmux", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+
+      // tmux 3.2a ignores `new-session -x -y` for a detached session.
+      const session = await server.newSession({ name: "sized", width: 132, height: 41 });
+      const window = (await session.refreshed()).activeWindow;
+      expect([Number(window?.width), Number(window?.height)]).toEqual([132, 41]);
+
+      const unsized = await server.newSession({ name: "unsized" });
+      expect(Number((await unsized.refreshed()).activeWindow?.width)).toBe(80);
+    });
+  }, 40_000);
+
   test("gives each created process its own environment", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

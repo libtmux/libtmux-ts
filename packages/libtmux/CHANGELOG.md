@@ -33,6 +33,10 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`Server.newSession` now gives the first window the `width` and `height` it was asked for on tmux 3.2a, which ignores `new-session -x -y` for a detached session and left the window at 80x23.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

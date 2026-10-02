@@ -10,6 +10,7 @@ import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { runCommand } from "./command.js";
 import {
   planKill,
@@ -44,12 +45,37 @@ async function runPlan<T>(
   return plan.resolve(await buildServerSnapshot(server, runtime, options.signal), lines);
 }
 
-export function newSession(
+/** The first tmux that sizes a detached session's window from `new-session -x -y`. */
+const NEW_SESSION_SIZE_SINCE = parseTmuxVersion("3.3");
+
+export async function newSession(
   server: Server,
   runtime: RuntimeContext,
   options: NewSessionOptions = {},
 ): Promise<Session> {
-  return runPlan(server, runtime, planNewSession(options), options);
+  const plan = planNewSession(options);
+  const lines = await runCommand(runtime, plan.argv, options);
+  // tmux 3.2a accepts `-x -y` and still gives a detached session 80x23, so the
+  // size is applied to the window afterwards, before the snapshot that
+  // resolves the handle reads it. A grouped session makes no window of its own.
+  const sized = options.width !== undefined || options.height !== undefined;
+  if (sized && options.groupWith === undefined && lines[0] !== undefined && lines[0] !== "") {
+    const { tmuxVersion } = await runtime.capabilities.bind(options.signal);
+    if (!tmuxVersionAtLeast(tmuxVersion, NEW_SESSION_SIZE_SINCE)) {
+      await runCommand(
+        runtime,
+        [
+          "resize-window",
+          "-t",
+          lines[0],
+          ...(options.width === undefined ? [] : ["-x", String(options.width)]),
+          ...(options.height === undefined ? [] : ["-y", String(options.height)]),
+        ],
+        options,
+      );
+    }
+  }
+  return plan.resolve(await buildServerSnapshot(server, runtime, options.signal), lines);
 }
 
 export function newWindow(
