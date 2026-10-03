@@ -334,6 +334,19 @@ change. The layout and the change discipline live there; how we write is in
 [.github/WRITING.md](.github/WRITING.md), and the gates, real tmux, and
 releases are in [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
+## Attribution
+
+Please use the following BibTeX template to cite libtmux-ts in scientific discourse:
+
+```bibtex
+@misc{libtmux-ts,
+   author = {Tony Narlock},
+   year = {2026},
+   note = {https://libtmux.org/en/ts/},
+   title = {libtmux-ts: TypeScript wrapper for tmux}
+}
+```
+
 ## License
 
 [MIT](LICENSE) — a port of
