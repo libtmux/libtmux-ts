@@ -223,7 +223,9 @@ $ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.0-alpha.12
 An empty toolset plus named inclusions makes a smaller purpose-built surface:
 
 ```console
-$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.0-alpha.12
+$ LIBTMUX_TOOLSETS= \
+    LIBTMUX_TOOLS=list_sessions,capture_pane \
+    npx -y @libtmux/mcp@0.1.0-alpha.12
 ```
 
 Exclusions always win, including inside `call_read_tools_batch`. A tool removed
@@ -471,7 +473,9 @@ an equivalent action.
 To opt into teardown on an explicitly selected server, name it deliberately:
 
 ```console
-$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.0-alpha.12
+$ LIBTMUX_SOCKET=agent \
+    LIBTMUX_TOOLSETS=inspect,teardown \
+    npx -y @libtmux/mcp@0.1.0-alpha.12
 ```
 
 ## Choosing the right tool
@@ -501,7 +505,9 @@ without a cursor once, then pass back the opaque cursor it returns:
 ```console
 $ snapshot_pane  paneId=%1
 $ capture_since  paneId=%1
-$ capture_since  paneId=%1  cursor=ltxc1.0123456789abcdef0123456789abcdef.4096  waitMs=10000
+$ capture_since  paneId=%1 \
+    cursor=ltxc1.0123456789abcdef0123456789abcdef.4096 \
+    waitMs=10000
 ```
 
 The second call is charged only for what arrived after the opaque cursor.
