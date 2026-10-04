@@ -169,13 +169,13 @@
   "devDependencies": {
     "@types/bun": "1.4.2",
     "@types/node": "22.20.4",
-    "knip": "6.37.0",
-    "oxfmt": "0.70.0",
-    "oxlint": "1.85.0",
-    "oxlint-tsgolint": "7.0.2002",
+    "knip": "6.39.0",
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2003",
     "typescript": "7.0.2",
     "typescript-floor": "npm:typescript@5.7.3",
-    "vitest": "5.0.1",
+    "vitest": "5.0.3",
     "zod": "4.6.5"
   },
   "engines": {
