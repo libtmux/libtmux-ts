@@ -5,7 +5,7 @@ import { withServer } from "../test-support/with-server.js";
 import { throughACustomEngine } from "./engine.js";
 
 describe("engine", () => {
-  test("the engine example drives tmux through a supplied transport", async () => {
+  test("drives tmux through a supplied transport", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,
