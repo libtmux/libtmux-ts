@@ -179,7 +179,9 @@ export class Session {
    *
    * ```ts
    * await session.setHook("window-linked", "display-message 'linked'");
-   * await session.setHook("window-linked", "display-message 'twice'", { append: true });
+   * await session.setHook("window-linked", "display-message 'twice'", {
+   *   append: true,
+   * });
    * ```
    */
   setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {

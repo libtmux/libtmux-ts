@@ -35,13 +35,18 @@ export async function reportPanes(server: Server): Promise<PaneReport> {
 
   // Times arrive as Date.
   const created = snapshot.sessions.one({ name: "fields" }).created;
-  if (created === null) throw new Error("expected tmux to report a creation time");
+  if (created === null)
+    throw new Error("expected tmux to report a creation time");
   const sessionAgeMs = Date.now() - created.getTime();
 
   // The text tmux actually sent is still on the row. Each window has an active
   // pane, so this narrows to one window before asking for one pane.
-  const raw = panes.one({ active: true, window: { is: { name: "second" } } }).format.pane_active;
-  if (raw !== "1") throw new Error(`expected the raw row to hold "1", saw ${JSON.stringify(raw)}`);
+  const raw = panes.one({ active: true, window: { is: { name: "second" } } })
+    .format.pane_active;
+  if (raw !== "1")
+    throw new Error(
+      `expected the raw row to hold "1", saw ${JSON.stringify(raw)}`,
+    );
 
   return { activeCount, area, pids, sessionAgeMs };
 }

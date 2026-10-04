@@ -335,7 +335,9 @@ export class Pane {
    *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
    *     await rm(directory, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     failures.push(
+   *       new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+   *     );
    *   }
    * }
    * if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
@@ -566,7 +568,9 @@ export class Pane {
    * Show a menu over the client showing this pane.
    *
    * ```ts
-   * await pane.displayMenu("Actions", [{ command: "kill-pane", key: "k", name: "Kill" }]);
+   * await pane.displayMenu("Actions", [
+   *   { command: "kill-pane", key: "k", name: "Kill" },
+   * ]);
    * ```
    */
   displayMenu(title: string, items: readonly MenuItem[]): Promise<void> {

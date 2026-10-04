@@ -260,7 +260,9 @@ try {
     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
     await rm(directory, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    failures.push(
+      new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+    );
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -426,7 +428,8 @@ snapshot also follows the observer authentication and version probes.
 ```ts
 await using live = await server.connect();
 for await (const event of live.subscribe()) {
-  if (event.kind === "window-add") console.log((await live.snapshot()).windows.count());
+  if (event.kind === "window-add")
+    console.log((await live.snapshot()).windows.count());
 }
 ```
 
@@ -513,7 +516,9 @@ try {
     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
     await rm(directory, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    failures.push(
+      new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+    );
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -587,7 +592,9 @@ try {
     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
     await rm(directory, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    failures.push(
+      new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+    );
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -645,7 +652,9 @@ try {
     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
     await rm(directory, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    failures.push(
+      new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+    );
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -847,7 +856,9 @@ list, so it replaces whatever the hook already ran.
 
 ```ts
 await server.setHook("session-created", "display-message 'hello'");
-await server.setHook("session-created", "display-message 'and this'", { append: true });
+await server.setHook("session-created", "display-message 'and this'", {
+  append: true,
+});
 ```
 
 #### `Server.unsetHook`
@@ -1056,7 +1067,9 @@ try {
     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
     await rm(directory, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    failures.push(
+      new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+    );
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -1562,7 +1575,9 @@ list, so it replaces whatever the hook already ran.
 
 ```ts
 await session.setHook("window-linked", "display-message 'linked'");
-await session.setHook("window-linked", "display-message 'twice'", { append: true });
+await session.setHook("window-linked", "display-message 'twice'", {
+  append: true,
+});
 ```
 
 #### `Session.unsetHook`
@@ -2558,7 +2573,9 @@ try {
     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
     await rm(directory, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    failures.push(
+      new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+    );
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
@@ -2806,7 +2823,9 @@ displayMenu(title: string, items: readonly MenuItem[]): Promise<void>
 Show a menu over the client showing this pane.
 
 ```ts
-await pane.displayMenu("Actions", [{ command: "kill-pane", key: "k", name: "Kill" }]);
+await pane.displayMenu("Actions", [
+  { command: "kill-pane", key: "k", name: "Kill" },
+]);
 ```
 
 #### `Pane.chooseTree`
@@ -3141,7 +3160,9 @@ criteria, `where` says the same thing as data — which can be logged, sent
 to another process, or stored.
 
 ```ts
-snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true);
+snapshot.panes.filter(
+  (entry) => entry.currentCommand?.startsWith("v") === true,
+);
 ```
 
 ```ts

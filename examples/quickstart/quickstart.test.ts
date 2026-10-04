@@ -17,7 +17,9 @@ describe("quickstart", () => {
 
       expect(snapshot.sessions.count({ name: "quickstart" })).toBe(1);
       expect(snapshot.windows.count({ name: "editor" })).toBe(1);
-      expect(snapshot.panes.count({ window: { is: { name: "editor" } } })).toBe(2);
+      expect(snapshot.panes.count({ window: { is: { name: "editor" } } })).toBe(
+        2,
+      );
     });
   }, 60_000);
 });

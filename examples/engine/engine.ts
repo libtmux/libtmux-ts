@@ -1,6 +1,10 @@
 import { Server, TmuxServerRestartedError } from "libtmux";
 import { flattenInvocation, guardRequest } from "libtmux/engine";
-import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
+import type {
+  TmuxCommandResult,
+  TmuxEngine,
+  TmuxInvocationRequest,
+} from "libtmux/engine";
 
 /**
  * Reach tmux through an engine you supply, rather than the built-in transports.
@@ -17,9 +21,12 @@ import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtm
 export async function throughACustomEngine(reference: Server): Promise<number> {
   const tmuxBin = reference.tmuxBin;
   const socketPath = reference.socketPath;
-  if (socketPath === undefined) throw new Error("this example needs a socket-path server");
+  if (socketPath === undefined)
+    throw new Error("this example needs a socket-path server");
 
-  const run = async (request: TmuxInvocationRequest): Promise<TmuxCommandResult> => {
+  const run = async (
+    request: TmuxInvocationRequest,
+  ): Promise<TmuxCommandResult> => {
     const argv = [request.executable, ...flattenInvocation(request)];
     const controller = new AbortController();
     const abort = (): void => controller.abort();
@@ -28,12 +35,16 @@ export async function throughACustomEngine(reference: Server): Promise<number> {
 
     try {
       const child = Bun.spawn([tmuxBin, "-S", socketPath, ...argv.slice(1)], {
-        ...(request.environment === undefined ? {} : { env: request.environment }),
+        ...(request.environment === undefined
+          ? {}
+          : { env: request.environment }),
         signal: controller.signal,
         stderr: "pipe",
         stdout: "pipe",
         stdin: request.stdin === undefined ? "ignore" : "pipe",
-        ...(request.timeoutMs === undefined ? {} : { timeout: request.timeoutMs }),
+        ...(request.timeoutMs === undefined
+          ? {}
+          : { timeout: request.timeoutMs }),
       });
       if (request.stdin !== undefined && child.stdin !== undefined) {
         await child.stdin.write(request.stdin);
@@ -62,7 +73,9 @@ export async function throughACustomEngine(reference: Server): Promise<number> {
       const guarded = guardRequest(request);
       const result = await run(guarded.request);
       if (guarded.refusedBy(result.exitCode, result.stderr)) {
-        throw new TmuxServerRestartedError("the daemon this handle was read from is gone");
+        throw new TmuxServerRestartedError(
+          "the daemon this handle was read from is gone",
+        );
       }
       return result;
     },

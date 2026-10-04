@@ -22,7 +22,9 @@ describe("mcp-agent", () => {
       const client = await connectAgent(server);
       await runWithCleanup(
         async () => {
-          const [paneId = ""] = await buildMcpWorkspace(client, "mcp-example", ["shell"]);
+          const [paneId = ""] = await buildMcpWorkspace(client, "mcp-example", [
+            "shell",
+          ]);
 
           // The echo trap: the text waited for is also in the command sent.
           const ran = await runAndCheck(client, paneId, "echo hello");
@@ -31,7 +33,12 @@ describe("mcp-agent", () => {
           expect(ran.output).toBe("hello");
 
           // A wait that misses is still an answer, not an empty hand.
-          const missed = await waitFor(client, paneId, "never-printed-here", 1_500);
+          const missed = await waitFor(
+            client,
+            paneId,
+            "never-printed-here",
+            1_500,
+          );
           expect(missed.outcome).toBe("timed_out");
           expect(missed.screen).toContain("hello");
 

@@ -13,7 +13,10 @@ describe("capture", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      const { named, roundTripped } = await moveTextThroughABuffer(server, "one\ntwo");
+      const { named, roundTripped } = await moveTextThroughABuffer(
+        server,
+        "one\ntwo",
+      );
 
       expect(roundTripped).toEqual(["one", "two"]);
       expect(named.join(" ")).toContain("report");
@@ -29,7 +32,9 @@ describe("capture", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      await expect(moveTextThroughABuffer(server, "")).rejects.toThrow(/empty buffer/u);
+      await expect(moveTextThroughABuffer(server, "")).rejects.toThrow(
+        /empty buffer/u,
+      );
       // The behaviour that makes the check necessary: tmux reports success.
       await server.setBuffer("silent", "");
       expect((await server.listBuffers()).join(" ")).not.toContain("silent");

@@ -417,13 +417,18 @@ const pids = panes
 
 // Times arrive as Date.
 const created = snapshot.sessions.one({ name: "fields" }).created;
-if (created === null) throw new Error("expected tmux to report a creation time");
+if (created === null)
+  throw new Error("expected tmux to report a creation time");
 const sessionAgeMs = Date.now() - created.getTime();
 
 // The text tmux actually sent is still on the row. Each window has an active
 // pane, so this narrows to one window before asking for one pane.
-const raw = panes.one({ active: true, window: { is: { name: "second" } } }).format.pane_active;
-if (raw !== "1") throw new Error(`expected the raw row to hold "1", saw ${JSON.stringify(raw)}`);
+const raw = panes.one({ active: true, window: { is: { name: "second" } } })
+  .format.pane_active;
+if (raw !== "1")
+  throw new Error(
+    `expected the raw row to hold "1", saw ${JSON.stringify(raw)}`,
+  );
 ```
 
 Criteria are camelCase too. WHERE documents use tmux's stable spellings so a
@@ -491,7 +496,10 @@ if (!isTmuxName(requestedName)) throw new TypeError("invalid window name");
 const window = await session.newWindow({ name: requestedName });
 const requestedSize: unknown = "30%";
 if (!isSplitSize(requestedSize)) throw new TypeError("invalid split size");
-const pane = await window.split({ size: requestedSize, startDirectory: "/srv" });
+const pane = await window.split({
+  size: requestedSize,
+  startDirectory: "/srv",
+});
 await pane.split({ size: splitSize(20) });
 
 const active = session.activePane; // the active window's active pane
@@ -524,7 +532,11 @@ beside, and lets a resize adjust rather than set. tmux reaches "above" and
 "left" only by pairing an axis with `-b`, so a boolean cannot express them:
 
 ```ts
-import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "libtmux";
+import {
+  PaneDirection,
+  ResizeAdjustmentDirection,
+  WindowDirection,
+} from "libtmux";
 
 await pane.split({ direction: PaneDirection.Above });
 await pane.split({ direction: PaneDirection.Left });
@@ -635,7 +647,9 @@ answers only then, so the promise reports that it is over:
 
 ```ts
 await pane.displayPopup("less README.md");
-await pane.displayMenu("Pane", [{ command: "kill-pane", key: "k", name: "Kill" }]);
+await pane.displayMenu("Pane", [
+  { command: "kill-pane", key: "k", name: "Kill" },
+]);
 ```
 
 The rest resolve as soon as the chooser is on screen. Awaiting one tells you it
@@ -860,11 +874,16 @@ changes:
 
 ```ts
 await using events = server.watch({
-  subscriptions: [{ format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }],
+  subscriptions: [
+    { format: "#{pane_current_command}", name: "cmd", scope: "all-panes" },
+  ],
 });
 
-const report = await events.find((event) => event.kind === "subscription-changed");
-if (report?.kind === "subscription-changed") console.log(report.name, report.value);
+const report = await events.find(
+  (event) => event.kind === "subscription-changed",
+);
+if (report?.kind === "subscription-changed")
+  console.log(report.name, report.value);
 ```
 
 tmux expands each subscription at most once per second and reports only when the
@@ -890,7 +909,9 @@ that already came true:
 await using live = await server.connect();
 
 await session.newWindow({ name: "build" });
-const settled = await live.waitFor((server) => server.windows.exists({ name: "build" }));
+const settled = await live.waitFor((server) =>
+  server.windows.exists({ name: "build" }),
+);
 ```
 
 For a single event rather than a state, `find` takes the first one that matches
@@ -899,7 +920,9 @@ and gives up on a deadline:
 <!-- static: waits for a window the reader opens -->
 
 ```ts
-const opened = await live.subscribe().find((event) => event.kind === "window-add");
+const opened = await live
+  .subscribe()
+  .find((event) => event.kind === "window-add");
 ```
 
 Each `subscribe()` is an independent view with its own buffer, so a loop and a
@@ -984,12 +1007,17 @@ const session = await server.newSession({ name: "agent" });
 
 await using live = await server.connect({ target: session.id });
 
-const pane = (await live.snapshot()).sessions.one({ id: session.id }).panes.one();
+const pane = (await live.snapshot()).sessions
+  .one({ id: session.id })
+  .panes.one();
 
 const printed = live
   .subscribe()
   .find(
-    (event) => event.kind === "output" && event.paneId === pane.id && event.data.includes(marker),
+    (event) =>
+      event.kind === "output" &&
+      event.paneId === pane.id &&
+      event.data.includes(marker),
     { timeoutMs: 30_000 },
   );
 
@@ -1045,7 +1073,9 @@ still seen rather than leaving you waiting on something that already happened:
 await using connected = await server.connect();
 
 await session.newWindow({ name: "build" });
-const settled = await connected.waitFor((current) => current.windows.exists({ name: "build" }));
+const settled = await connected.waitFor((current) =>
+  current.windows.exists({ name: "build" }),
+);
 
 settled.windows.count({ name: "build" }); // 1
 ```
@@ -1055,9 +1085,11 @@ For a single event rather than a state, `find` takes the first match and answers
 `undefined` a caller reports on is only ever the thing not happening:
 
 ```ts
-const opened = await live.subscribe().find((event) => event.kind === "window-add", {
-  timeoutMs: 5_000,
-});
+const opened = await live
+  .subscribe()
+  .find((event) => event.kind === "window-add", {
+    timeoutMs: 5_000,
+  });
 ```
 
 ## Seeing what it runs
@@ -1179,7 +1211,11 @@ remote runner has the same obligations:
 ```ts
 import { Server, TmuxServerRestartedError } from "libtmux";
 import { flattenInvocation, guardRequest } from "libtmux/engine";
-import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
+import type {
+  TmuxCommandResult,
+  TmuxEngine,
+  TmuxInvocationRequest,
+} from "libtmux/engine";
 
 /** `run` is yours: execute one complete request and return what tmux wrote. */
 function engineOver(
@@ -1197,7 +1233,9 @@ function engineOver(
       const guarded = guardRequest(request);
       const result = await run(guarded.request);
       if (guarded.refusedBy(result.exitCode, result.stderr)) {
-        throw new TmuxServerRestartedError("the daemon this handle was read from is gone");
+        throw new TmuxServerRestartedError(
+          "the daemon this handle was read from is gone",
+        );
       }
       return result;
     },
@@ -1205,7 +1243,8 @@ function engineOver(
 }
 
 const socketPath = server.socketPath;
-if (socketPath === undefined) throw new Error("this example needs a socket path");
+if (socketPath === undefined)
+  throw new Error("this example needs a socket path");
 const tmuxBin = server.tmuxBin;
 
 const throughEngine = new Server({
@@ -1218,12 +1257,16 @@ const throughEngine = new Server({
 
     try {
       const child = Bun.spawn([tmuxBin, "-S", socketPath, ...argv.slice(1)], {
-        ...(request.environment === undefined ? {} : { env: request.environment }),
+        ...(request.environment === undefined
+          ? {}
+          : { env: request.environment }),
         signal: controller.signal,
         stderr: "pipe",
         stdout: "pipe",
         stdin: request.stdin === undefined ? "ignore" : "pipe",
-        ...(request.timeoutMs === undefined ? {} : { timeout: request.timeoutMs }),
+        ...(request.timeoutMs === undefined
+          ? {}
+          : { timeout: request.timeoutMs }),
       });
       if (request.stdin !== undefined && child.stdin !== undefined) {
         await child.stdin.write(request.stdin);
@@ -1269,7 +1312,9 @@ available, since it needs `Symbol.asyncDispose` in the consumer's `lib`:
 ```ts
 const built = await server.withConnection(async (connected) => {
   await session.newWindow({ name: "build" });
-  return connected.waitFor((current) => current.windows.exists({ name: "build" }));
+  return connected.waitFor((current) =>
+    current.windows.exists({ name: "build" }),
+  );
 });
 ```
 
@@ -1308,7 +1353,9 @@ await server.unsetGlobalOption("window", "remain-on-exit");
 
 // A hook holds a list of commands; a write replaces it unless it appends.
 await server.setHook("after-new-window", "display-message created");
-await server.setHook("after-new-window", "display-message again", { append: true });
+await server.setHook("after-new-window", "display-message again", {
+  append: true,
+});
 await server.showHooks();
 await server.unsetHook("after-new-window");
 ```
@@ -1436,7 +1483,11 @@ reach:
 try {
   await server.snapshot();
 } catch (error) {
-  if (error instanceof Error && "code" in error && error.code === "TmuxTransportError") {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "TmuxTransportError"
+  ) {
     // the command never got an answer
   }
 }
@@ -1578,11 +1629,16 @@ import { recordInvocations, replayInvocations } from "libtmux/testing";
 
 // Once, against real tmux: wrap the engine and keep what it answered.
 const recorder = recordInvocations();
-const recording = new Server({ engine: recorder.engine, socketPath: server.socketPath });
+const recording = new Server({
+  engine: recorder.engine,
+  socketPath: server.socketPath,
+});
 await recording.snapshot();
 
 // Ever after, with no server, no binary and no daemon.
-const replayed = new Server({ engine: replayInvocations(recorder.recording()) });
+const replayed = new Server({
+  engine: replayInvocations(recorder.recording()),
+});
 (await replayed.snapshot()).sessions.count();
 ```
 

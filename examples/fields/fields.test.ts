@@ -18,7 +18,9 @@ describe("fields", () => {
       // Values tmux sent as text, used as the types they stand for.
       expect(report.activeCount).toBe(2);
       expect(report.area).toBeGreaterThan(0);
-      expect(report.pids.every((pid) => Number.isSafeInteger(pid) && pid > 0)).toBe(true);
+      expect(
+        report.pids.every((pid) => Number.isSafeInteger(pid) && pid > 0),
+      ).toBe(true);
       expect(report.pids.length).toBeGreaterThan(0);
       expect(report.sessionAgeMs).toBeGreaterThanOrEqual(0);
       expect(report.sessionAgeMs).toBeLessThan(60_000);

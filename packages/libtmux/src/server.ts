@@ -270,7 +270,9 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
  *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
  *     await rm(directory, { recursive: true });
  *   } catch (error) {
- *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+ *     failures.push(
+ *       new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+ *     );
  *   }
  * }
  * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -468,7 +470,8 @@ export class Server {
    * ```ts
    * await using live = await server.connect();
    * for await (const event of live.subscribe()) {
-   *   if (event.kind === "window-add") console.log((await live.snapshot()).windows.count());
+   *   if (event.kind === "window-add")
+   *     console.log((await live.snapshot()).windows.count());
    * }
    * ```
    *
@@ -592,7 +595,9 @@ export class Server {
    *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
    *     await rm(directory, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     failures.push(
+   *       new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+   *     );
    *   }
    * }
    * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -665,7 +670,9 @@ export class Server {
    *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
    *     await rm(directory, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     failures.push(
+   *       new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+   *     );
    *   }
    * }
    * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -722,7 +729,9 @@ export class Server {
    *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
    *     await rm(directory, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     failures.push(
+   *       new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+   *     );
    *   }
    * }
    * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
@@ -910,7 +919,9 @@ export class Server {
    *
    * ```ts
    * await server.setHook("session-created", "display-message 'hello'");
-   * await server.setHook("session-created", "display-message 'and this'", { append: true });
+   * await server.setHook("session-created", "display-message 'and this'", {
+   *   append: true,
+   * });
    * ```
    */
   setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
@@ -1105,7 +1116,9 @@ export class Server {
    *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
    *     await rm(directory, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     failures.push(
+   *       new Error(`Cleanup failed; inspect ${directory}`, { cause: error }),
+   *     );
    *   }
    * }
    * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
