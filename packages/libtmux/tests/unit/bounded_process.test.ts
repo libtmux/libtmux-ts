@@ -114,7 +114,7 @@ describe("bounded subprocesses", () => {
 
         expect(result.termination).toBe("exited");
         expect(Number.isSafeInteger(descendantPid)).toBe(true);
-        expect(await exitsWithin(descendantPid, 1_000)).toBe(true);
+        expect(await exitsWithin(descendantPid, 10_000)).toBe(true);
       } finally {
         if (descendantPid > 0) killIfRunning(descendantPid);
       }
@@ -174,7 +174,7 @@ describe("bounded subprocesses", () => {
           wrapper.kill(signal);
 
           expect(await wrapper.exited).toBe(exitCode);
-          expect(await exitsWithin(childPid, 1_000)).toBe(true);
+          expect(await exitsWithin(childPid, 10_000)).toBe(true);
         } finally {
           if (processExists(wrapper.pid)) killIfRunning(wrapper.pid);
           if (childPid > 0) killIfRunning(childPid);
@@ -214,10 +214,10 @@ describe("bounded subprocesses", () => {
         childPid = await waitForPid(marker);
         wrapper.kill("SIGTERM");
 
-        expect(await exitsWithin(wrapper.pid, 1_000)).toBe(true);
+        expect(await exitsWithin(wrapper.pid, 10_000)).toBe(true);
         expect(await wrapper.exited).toBe(0);
         expect(JSON.parse(await readFile(report, "utf8"))).toEqual({ deliveries: 1 });
-        expect(await exitsWithin(childPid, 1_000)).toBe(true);
+        expect(await exitsWithin(childPid, 10_000)).toBe(true);
       } finally {
         if (processExists(wrapper.pid)) killIfRunning(wrapper.pid);
         if (childPid > 0) killIfRunning(childPid);

@@ -156,7 +156,7 @@ describe("Server.watch", () => {
       const arrived = until(events, (event) => event.kind === "window-add");
       // The stream has to be listening before the change, which is the whole
       // difference between watching and polling.
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText(["new-window", "-d", "-t", "watch:"]);
 
       expect((await arrived).kind).toBe("window-add");
@@ -169,7 +169,7 @@ describe("Server.watch", () => {
       const events = server.watch();
 
       const arrived = until(events, (event) => event.kind === "window-renamed");
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText(["rename-window", "-t", "watch:", "renamed-by-test"]);
 
       const event = await arrived;
@@ -188,7 +188,7 @@ describe("Server.watch", () => {
         events,
         (event) => event.kind === "output" && event.data.includes("libtmux-watched"),
       );
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText([
         "new-window",
         "-d",
@@ -211,7 +211,7 @@ describe("Server.watch", () => {
       const events = server.watch();
 
       const arrived = until(events, (event) => event.kind === "output" && event.data.includes("→"));
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText([
         "new-window",
         "-d",
@@ -236,7 +236,7 @@ describe("Server.watch", () => {
         return seen;
       })();
 
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await events.close();
 
       // The loop terminating is the assertion: disposal ends iteration rather
@@ -458,7 +458,7 @@ describe("Server.watch", () => {
         for await (const event of events) kinds.push(event.kind);
       })();
 
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await events.close();
       await drained;
 
@@ -1184,7 +1184,7 @@ describe("Server.watch", () => {
       const window = (await server.snapshot()).windows.one();
 
       const arrived = until(events, (event) => event.kind === "layout-change");
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await window.split();
 
       const event = await arrived;
