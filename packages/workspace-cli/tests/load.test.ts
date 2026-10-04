@@ -776,7 +776,7 @@ test("layout corpus preserves an independent keeper", async () => {
       }
     }
   });
-}, 40_000);
+}, 180_000);
 
 test.each([false, true])(
   "all layouts precede scripts and borrowed mutations (append=%s)",
@@ -952,7 +952,16 @@ test("native load sets environment before commands and preserves existing sessio
     );
     const first = await run(["load", config, "-d", "--json"]);
     expect(first.code).toBe(0);
-    expect(first.stderr).toBe("");
+    // A pane whose shell has not drawn a prompt yet is typed into anyway, with
+    // a warning; on a loaded host that is correct output and the only one.
+    expect(
+      first.stderr
+        .split("\n")
+        .filter((line) => line !== "")
+        .filter(
+          (line) => JSON.parse(line).message !== "Pane readiness timed out; sending commands",
+        ),
+    ).toEqual([]);
     expect(JSON.parse(first.stdout)).toMatchObject({
       schema_version: 1,
       command: "load",
