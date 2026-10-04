@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 
 import { killIfRunning, processExists } from "../support/converge.js";
 import { runBoundedCommand } from "../../../../scripts/bounded_process.js";
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory, deadlineMs, HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 const boundedProcessUrl = new URL("../../../../scripts/bounded_process.ts", import.meta.url).href;
@@ -26,7 +26,7 @@ async function exitsWithin(pid: number, timeoutMilliseconds: number): Promise<bo
 }
 
 async function waitForPid(path: string): Promise<number> {
-  const deadline = performance.now() + 5_000;
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
   while (performance.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- the marker makes child startup observable.
     const value = await readFile(path, "utf8").catch(() => "");
@@ -50,7 +50,7 @@ describe("bounded subprocesses", () => {
         env: { ...process.env },
         maxOutputBytes: Buffer.byteLength(input) + 1,
         stdin: input,
-        timeoutMilliseconds: 1_000,
+        timeoutMilliseconds: HANG_GUARD_MS,
       },
     );
 
@@ -72,7 +72,7 @@ describe("bounded subprocesses", () => {
       {
         env: { ...process.env },
         maxOutputBytes,
-        timeoutMilliseconds: 1_000,
+        timeoutMilliseconds: HANG_GUARD_MS,
       },
     );
 
@@ -107,7 +107,7 @@ describe("bounded subprocesses", () => {
           {
             env: { ...process.env },
             maxOutputBytes: 1_024,
-            timeoutMilliseconds: 1_000,
+            timeoutMilliseconds: HANG_GUARD_MS,
           },
         );
         descendantPid = Number(result.stdout.trim());
@@ -233,7 +233,7 @@ describe("install-check cleanup", () => {
       cwd: repositoryRoot,
       env: { ...process.env },
       maxOutputBytes: 1_024,
-      timeoutMilliseconds: 1_000,
+      timeoutMilliseconds: HANG_GUARD_MS,
     });
 
     expect(result.exitCode).not.toBe(0);

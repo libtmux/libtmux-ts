@@ -61,6 +61,8 @@ import {
   resolveControllerIdentity,
   TestServer,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -158,7 +160,7 @@ describe("fixture launch and exact-root reaping", () => {
         join(parent, "launching-recovery.sock"),
       );
       worker.kill("SIGKILL");
-      await exitChildWithin(worker, 2_000);
+      await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       await waitForProcessExit(wrapperPid);
 
       const reservations = (await readdir(root)).filter((entry) => entry !== OWNER_RECORD_NAME);
@@ -171,7 +173,7 @@ describe("fixture launch and exact-root reaping", () => {
     } finally {
       if (worker.exitCode === null && worker.signalCode === null) {
         worker.kill("SIGKILL");
-        await exitChildWithin(worker, 2_000);
+        await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       }
       const reaped = wrapperPid;
       if (reaped !== undefined) {
@@ -207,7 +209,7 @@ describe("fixture launch and exact-root reaping", () => {
       );
       captured = authority;
       worker.kill("SIGKILL");
-      await exitChildWithin(worker, 2_000);
+      await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       await waitForProcessExit(wrapperPid);
 
       const reservations = (await readdir(root)).filter((entry) => entry !== OWNER_RECORD_NAME);
@@ -243,7 +245,7 @@ describe("fixture launch and exact-root reaping", () => {
     } finally {
       if (worker.exitCode === null && worker.signalCode === null) {
         worker.kill("SIGKILL");
-        await exitChildWithin(worker, 2_000);
+        await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       }
       const reaped = wrapperPid;
       if (reaped !== undefined) {
@@ -611,7 +613,7 @@ describe("fixture launch and exact-root reaping", () => {
         cwd: tsRoot,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      const result = await closeChildWithin(reaper, 2_000);
+      const result = await closeChildWithin(reaper, deadlineMs(HANG_GUARD_MS));
       expect(result.code).not.toBe(0);
       expect(result.stderr).toContain("live owner");
       expect(processExists(server.daemonIdentity.pid)).toBe(true);

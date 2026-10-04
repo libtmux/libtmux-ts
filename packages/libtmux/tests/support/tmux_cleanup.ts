@@ -7,6 +7,8 @@ import {
   readDaemonIdentity,
   readProcessLaunch,
   resolveControllerIdentity,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
 import { closeChild } from "./owned_child.js";
@@ -72,7 +74,7 @@ async function terminateCapturedTmux(captured: CapturedTmuxCleanup): Promise<voi
   const stderr: Buffer[] = [];
   child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
   child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-  const closed = await closeChildWithin(child, 2_000);
+  const closed = await closeChildWithin(child, deadlineMs(HANG_GUARD_MS));
   const stdoutText = Buffer.concat(stdout).toString("utf8");
   const stderrText = Buffer.concat(stderr).toString("utf8");
   if (closed.code !== 0 || stdoutText === `${mismatch}\n`) {

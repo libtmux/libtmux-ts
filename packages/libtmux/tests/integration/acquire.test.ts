@@ -16,6 +16,8 @@ import {
   runWithCleanup,
   TestServer,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
@@ -452,8 +454,9 @@ describe("server graph acquisition", () => {
 
       let torn = 0;
       let captures = 0;
-      const until = Date.now() + 2_000;
-      while (Date.now() < until) {
+      // Enough captures race the churn, however slowly this host runs them.
+      const until = Date.now() + deadlineMs(HANG_GUARD_MS);
+      while (captures < 40 && Date.now() < until) {
         captures += 1;
         // eslint-disable-next-line no-await-in-loop -- each capture races the churn on its own.
         const graph = await acquireServerGraph(runtime);
@@ -474,7 +477,7 @@ describe("server graph acquisition", () => {
       // Structural, not lucky: the listings share one command queue drain, so
       // no change can land between them. Issued separately they tore about a
       // fifth of every capture under this churn.
-      expect({ enough: captures > 20, torn }).toEqual({ enough: true, torn: 0 });
+      expect({ enough: captures >= 40, torn }).toEqual({ enough: true, torn: 0 });
     });
   }, 30_000);
 

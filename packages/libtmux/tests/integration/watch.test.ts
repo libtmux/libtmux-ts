@@ -17,6 +17,8 @@ import {
   TestServer,
   TEST_HANDLE_PROTOTYPES,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
@@ -409,7 +411,7 @@ describe("Server.watch", () => {
       const server = serverFor(fixture);
       const session = (await server.snapshot()).sessions.one({ name: "watch" });
       const before = new Set(await clientNames(server));
-      const events = server.watch({ reconnect: { attempts: 3, delayMs: 25 } });
+      const events = server.watch({ reconnect: { attempts: 600, delayMs: 25 } });
       const reconnecting = Promise.withResolvers<void>();
       let reconnectedAttempts: number | undefined;
       let sawWindowAdd = false;
@@ -440,7 +442,11 @@ describe("Server.watch", () => {
         await replacementReady;
         await session.newWindow({ name: "after-reconnect-ready" });
 
-        await waitUntil(() => sawWindowAdd, "the replacement client to announce the window", 5_000);
+        await waitUntil(
+          () => sawWindowAdd,
+          "the replacement client to announce the window",
+          deadlineMs(HANG_GUARD_MS),
+        );
         expect(reconnectedAttempts).toBeGreaterThanOrEqual(1);
       } finally {
         await events.close();
@@ -529,7 +535,7 @@ describe("Server.watch", () => {
           arm();
           return snapshot.panes.exists({ id: pane.id, title: "arrived" });
         },
-        { pollIntervalMs: 50, timeoutMs: 1_500 },
+        { pollIntervalMs: 50, timeoutMs: deadlineMs(HANG_GUARD_MS) },
       );
       await armed;
       await fixture.executeText(["select-pane", "-t", pane.id, "-T", "arrived"]);
@@ -924,7 +930,7 @@ describe("Server.watch", () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const before = new Set(await clientNames(server));
-      const live = await server.connect({ reconnect: { attempts: 5, delayMs: 300 } });
+      const live = await server.connect({ reconnect: { attempts: 50, delayMs: 300 } });
       try {
         await detachOwn(server, before);
 

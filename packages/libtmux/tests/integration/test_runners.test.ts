@@ -14,6 +14,7 @@ import {
   OWNER_RECORD_NAME,
   reapStaleRunRoot,
   makeTestDirectory,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -26,7 +27,8 @@ async function observePathWhileRunning(
   candidatePath: string,
   child: ReturnType<typeof spawn>,
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
+  while (performance.now() < deadline) {
     try {
       // eslint-disable-next-line no-await-in-loop -- observation is bounded by process lifetime.
       await access(candidatePath);
@@ -44,7 +46,8 @@ async function observeReservationWhileRunning(
   runRoot: string,
   child: ReturnType<typeof spawn>,
 ): Promise<{ distinctOwners: boolean; observed: boolean }> {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
+  while (performance.now() < deadline) {
     try {
       // eslint-disable-next-line no-await-in-loop -- this observes worker-owned state while the runner is live.
       const entries = await readdir(runRoot, { withFileTypes: true });

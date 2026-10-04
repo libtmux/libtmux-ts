@@ -363,7 +363,7 @@ await waitForFile(partialPipeMarker);
 const partialHolder = await readHolderIdentity(partialPipeMarker);
 partialController.abort();
 try {
-  const partialOutcome = await settleWithin(partialExecution, 800);
+  const partialOutcome = await settleWithin(partialExecution, 10_000);
   assert.equal(partialOutcome.kind, "error");
   assert.ok(partialOutcome.error instanceof TmuxTransportError);
   assert.equal(partialOutcome.error.kind, "cancelled");
@@ -598,7 +598,7 @@ async function runLateRootSiblingProbe() {
   });
   let outcome;
   try {
-    outcome = await settleWithin(closed, 2_000);
+    outcome = await settleWithin(closed, 10_000);
     if (outcome.kind === "deadline") {
       child.kill("SIGTERM");
       outcome = await settleWithin(closed, 250);

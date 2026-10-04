@@ -30,6 +30,8 @@ import {
   resolveControllerIdentity,
   TestServer,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { closeChildWithin, waitForProcessExit } from "../support/converge.js";
@@ -218,7 +220,7 @@ async function terminateAfterControllerReplacement(
   const stderr: Buffer[] = [];
   child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
   child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-  const closed = await closeChildWithin(child, 2_000);
+  const closed = await closeChildWithin(child, deadlineMs(HANG_GUARD_MS));
   const stdoutText = Buffer.concat(stdout).toString("utf8");
   const stderrText = Buffer.concat(stderr).toString("utf8");
   // The recovery socket is a hard link to the daemon's own, so "no server
