@@ -1,0 +1,20 @@
+width = 80
+shared_digest = "872d3f4cb1eb2b5cd9c5b7adc9cd140a153e4bbed3cb5bd0b7400a905e6dae4d"
+checker_digest = "f261e9a3ef44101ead5fe1ce03331716372aac828f7421ef8f06c83c987ee956"
+markdown = ["**/*.md"]
+sources = ["examples/**/*.ts", "examples/**/*.json"]
+doc_comments = ["packages/*/src/**/*.ts"]
+allow_ceiling = 1
+
+[[exclude]]
+glob = "attic/**"
+reason = "dated design records and plans, not reader-facing documentation"
+
+[[exclude]]
+glob = "**/THIRD-PARTY-NOTICES.md"
+reason = "third-party license text, not ours to wrap"
+
+[[allow]]
+path = ".github/WRITING.md"
+line = "await server.sourceFile(`${process.env[\"HOME\"] ?? \".\"}/.tmux.conf`); // tmux does not expand `~`"
+reason = "the Bad example in the port block; it shows the width problem the Good example fixes"
