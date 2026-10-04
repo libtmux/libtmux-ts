@@ -59,8 +59,14 @@ try:
 finally:
     if status is None:
         try: os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError: pass
-        _, status = os.waitpid(pid, 0)
+        except (ProcessLookupError, PermissionError): pass
+        # A session leader's exit waits for its terminal output to drain on macOS.
+        while True:
+            done, status = os.waitpid(pid, os.WNOHANG)
+            if done: break
+            if select.select([fd], [], [], 0.05)[0]:
+                try: os.read(fd, 65536)
+                except OSError: pass
     os.close(fd)
 code = os.waitstatus_to_exitcode(status)
 sys.exit(code if code >= 0 else 128 - code)
