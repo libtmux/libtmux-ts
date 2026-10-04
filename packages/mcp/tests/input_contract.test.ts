@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
+import { deadlineMs, HANG_GUARD_MS } from "../../libtmux/src/_internal/test/testkit.js";
 import { Server } from "libtmux/server";
 
 import { readCallerEnvironment } from "../src/caller.js";
@@ -68,7 +69,8 @@ async function waitForPaneFormat(
   expected: string | readonly string[],
 ): Promise<void> {
   const accepted = typeof expected === "string" ? [expected] : expected;
-  for (let attempt = 0; attempt < 300; attempt += 1) {
+  const deadline = Date.now() + deadlineMs(HANG_GUARD_MS);
+  while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- state changes asynchronously in tmux.
     const value = await fixture.executeText(["display-message", "-p", "-t", paneId, format]);
     if (accepted.includes(value.stdout[0] ?? "")) return;

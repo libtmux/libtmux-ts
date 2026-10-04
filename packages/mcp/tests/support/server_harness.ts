@@ -83,6 +83,7 @@ export async function waitUntil(
   boundMs = 15_000,
 ): Promise<void> {
   const deadline = Date.now() + boundMs;
+  // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
   while (!(await ready())) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.

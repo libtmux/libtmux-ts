@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { describeStartupFailure } from "../src/server.js";
 import { describeStartup } from "../src/startup.js";
+import { deadlineMs, HANG_GUARD_MS } from "../../libtmux/src/_internal/test/testkit.js";
 import {
   serverFor,
   structured,
@@ -326,7 +327,8 @@ test("wait_for_text does not match its own unsubmitted type-ahead", async () => 
         arguments: { enter: false, keys: marker, literal: true, paneId: created.paneId },
         name: "send_keys",
       });
-      for (let attempt = 0; attempt < 100 && sent.isError === true; attempt += 1) {
+      const settleDeadline = Date.now() + deadlineMs(HANG_GUARD_MS);
+      while (sent.isError === true && Date.now() < settleDeadline) {
         if (!JSON.stringify(sent).includes("changed during send_keys setup")) break;
         // eslint-disable-next-line no-await-in-loop -- each retry follows the refusal before it.
         await new Promise((resolve) => setTimeout(resolve, 20));
