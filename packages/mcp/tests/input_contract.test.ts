@@ -65,16 +65,17 @@ async function waitForPaneFormat(
   fixture: TestServer,
   paneId: string,
   format: string,
-  expected: string,
+  expected: string | readonly string[],
 ): Promise<void> {
+  const accepted = typeof expected === "string" ? [expected] : expected;
   for (let attempt = 0; attempt < 300; attempt += 1) {
     // eslint-disable-next-line no-await-in-loop -- state changes asynchronously in tmux.
     const value = await fixture.executeText(["display-message", "-p", "-t", paneId, format]);
-    if (value.stdout[0] === expected) return;
+    if (accepted.includes(value.stdout[0] ?? "")) return;
     // eslint-disable-next-line no-await-in-loop -- each poll follows the previous observation.
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  throw new Error(`${paneId} did not reach ${format}=${expected}`);
+  throw new Error(`${paneId} did not reach ${format}=${accepted.join("|")}`);
 }
 
 test("live socket aliases share caller and pane ownership", async () => {
@@ -324,7 +325,11 @@ test("a modal, dead, or caller cohort peer blocks input", async () => {
       expect(resultText(active)).toContain(pair.peerPaneId);
       expect(resultText(active)).toContain("run_shell_command");
       await setPairSync(fixture, pair, false, false);
-      await waitForPaneFormat(fixture, pair.peerPaneId, "#{pane_current_command}", "sh");
+      await waitForPaneFormat(fixture, pair.peerPaneId, "#{pane_current_command}", [
+        "sh",
+        // /bin/sh is bash on macOS, and tmux reports the binary's own name.
+        "bash",
+      ]);
       await setPairSync(fixture, pair, true, true);
     });
 

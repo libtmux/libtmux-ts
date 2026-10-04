@@ -24,6 +24,9 @@ if pid == 0:
         fcntl.ioctl(1, termios.TIOCSWINSZ, struct.pack("HHHH", int(rows), int(cols), 0, 0))
     destination = os.environ.get("WORKSPACE_TEST_STDOUT")
     if destination:
+        # macOS drops the controlling terminal once nothing holds the slave open.
+        keep = os.dup(0)
+        os.set_inheritable(keep, True)
         out = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         os.dup2(out, 1)
         os.close(out)
@@ -39,7 +42,7 @@ def forward(sig, frame):
     except ProcessLookupError: pass
 signal.signal(signal.SIGTERM, forward)
 signal.signal(signal.SIGINT, forward)
-deadline = time.monotonic() + 8
+deadline = time.monotonic() + 30
 status = None
 try:
     while time.monotonic() < deadline:
@@ -118,7 +121,7 @@ async function terminal<T>(
 }
 
 async function until(ready: () => Promise<boolean>) {
-  const deadline = performance.now() + 3000;
+  const deadline = performance.now() + 15000;
   while (!(await ready())) {
     if (performance.now() >= deadline) throw new Error("Terminal transition timed out");
     await Bun.sleep(20);

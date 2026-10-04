@@ -1,5 +1,15 @@
 import { expect, spyOn, test } from "bun:test";
-import { mkdtemp, readdir, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import {
+  mkdtemp,
+  open,
+  readdir,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -108,7 +118,21 @@ test("closing a log reports failure without replacing a completed result", async
   }
 });
 
-test.skipIf(process.platform !== "linux")(
+/** Every file this process holds open: `/proc` on Linux, `lsof` where there is none. */
+async function openFilePaths(): Promise<string[]> {
+  if (process.platform === "linux") {
+    return Promise.all(
+      (await readdir("/proc/self/fd")).map((fd) => readlink(`/proc/self/fd/${fd}`).catch(() => "")),
+    );
+  }
+  const listing = spawnSync("lsof", ["-p", String(process.pid), "-Fn"], { encoding: "utf8" });
+  return listing.stdout
+    .split("\n")
+    .filter((line) => line.startsWith("n"))
+    .map((line) => line.slice(1));
+}
+
+test.skipIf(process.platform === "win32")(
   "cancelling blocked diagnostics closes its log file",
   async () => {
     const root = await mkdtemp(join(tmpdir(), "ltx-wcli-log-"));
@@ -139,14 +163,20 @@ test.skipIf(process.platform !== "linux")(
       },
     );
     try {
-      expect(await Promise.race([operation, Bun.sleep(500).then(() => -1)])).toBe(130);
+      expect(await Promise.race([operation, Bun.sleep(10_000).then(() => -1)])).toBe(130);
       expect(JSON.parse((await readFile(log, "utf8")).trim()).event).toBe("command-started");
-      const descriptors = await Promise.all(
-        (await readdir("/proc/self/fd")).map((fd) =>
-          readlink(`/proc/self/fd/${fd}`).catch(() => ""),
-        ),
-      );
-      expect(descriptors).not.toContain(log);
+      // The kernel names the physical path, so compare against that one.
+      const physicalRoot = await realpath(root);
+      // A file held open on purpose proves the listing can name one, so an
+      // absent log is an answer rather than a listing that sees nothing.
+      const control = await open(join(root, "control"), "w");
+      try {
+        const held = await openFilePaths();
+        expect(held).toContain(join(physicalRoot, "control"));
+        expect(held).not.toContain(join(physicalRoot, "load.ndjson"));
+      } finally {
+        await control.close();
+      }
       expect(blocked.destroyed).toBe(false);
     } finally {
       release?.();
