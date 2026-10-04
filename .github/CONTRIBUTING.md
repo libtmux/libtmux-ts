@@ -335,7 +335,10 @@ runs the real Python library as an oracle and compares. Point
 `LIBTMUX_PYTHON_REPO` at a checkout of the pinned commit:
 
 ```console
-$ git clone --branch v0.62.0 --depth 1 https://github.com/tmux-python/libtmux.git
+$ git clone \
+    --branch v0.62.0 \
+    --depth 1 \
+    https://github.com/tmux-python/libtmux.git
 ```
 
 Without it those tests skip rather than fail, because a missing oracle is not
