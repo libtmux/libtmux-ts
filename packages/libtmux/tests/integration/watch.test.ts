@@ -449,6 +449,36 @@ describe("Server.watch", () => {
     });
   }, 60_000);
 
+  test("keeps reading its control client while no command is outstanding", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const directory = await makeTestDirectory("ltx-backpressure-");
+      const done = join(directory, "done");
+      try {
+        await using events = server.watch();
+        await events.ready();
+        // tmux stops reading a pane while every attached client is a control
+        // client with unsent output, so a client nobody reads freezes this
+        // writer before it finishes.
+        await server.newSession({
+          name: "flood",
+          shellCommand: `sh -c 'i=0; while [ $i -lt 6000 ]; do echo "flood-line-$i-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; i=$((i+1)); done; : > ${done}; sleep 60'`,
+        });
+        await waitUntil(
+          () =>
+            stat(done).then(
+              () => true,
+              () => false,
+            ),
+          "the writer to finish",
+          30_000,
+        );
+      } finally {
+        await rm(directory, { force: true, recursive: true });
+      }
+    });
+  }, 45_000);
+
   test("does not reopen by default, so a server going away is visible", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
