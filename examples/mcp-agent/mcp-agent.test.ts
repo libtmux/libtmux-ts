@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../packages/libtmux/src/server.js";
-import { runWithCleanup } from "../../packages/libtmux/src/_internal/test/testkit.js";
-import { withServer } from "../test-support/with-server.js";
+import { runWithCleanup, withServer } from "../test-support/with-server.js";
 import {
   buildWorkspace as buildMcpWorkspace,
   connectAgent,
@@ -12,7 +11,7 @@ import {
 } from "./mcp-agent.js";
 
 describe("mcp-agent", () => {
-  test("the mcp example reports a command's own output and its status", async () => {
+  test("reports a command's output and its status", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,

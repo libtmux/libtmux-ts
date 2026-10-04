@@ -8,6 +8,8 @@ import {
   assertOwnedSocketPath,
 } from "../../packages/libtmux/src/_internal/test/testkit.js";
 
+export { runWithCleanup };
+
 /**
  * Hand a test an isolated, real tmux server and reap it afterwards.
  *
