@@ -29,8 +29,9 @@ not that — it is a gate input, read by `check-parity.ts`,
 ## Which policy applies
 
 - Documentation, user-facing text, `CHANGELOG.md`, release notes, commit
-  messages, TSDoc, and source comments:
-  [.github/WRITING.md](.github/WRITING.md)
+  messages, TSDoc, source comments, and any code example (example programs,
+  TSDoc code, Markdown code blocks): [.github/WRITING.md](.github/WRITING.md),
+  and its [Examples](.github/WRITING.md#examples) section for code a reader sees
 - Building, testing, the gates, real tmux, releases, and pull requests:
   [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md)
 - Anything under `packages/mcp`:
