@@ -2,7 +2,7 @@
   "name": "@example/workspace",
   "version": "0.0.0",
   "private": true,
-  "description": "Build a tmux workspace, by hand or from a declared layout. Never published.",
+  "description": "Build a tmux workspace, by hand or from a declared layout.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
