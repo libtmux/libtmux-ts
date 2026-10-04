@@ -309,11 +309,55 @@ function defaultPidfdInterpreter(): Promise<string | undefined> {
   return resolvedPidfdInterpreter;
 }
 
+/**
+ * Darwin has no pidfd, so the daemon is confirmed immediately before each signal
+ * instead of held by a descriptor. The window is the time between the check and
+ * `kill`, in which the PID would have to exit and be reused by another process
+ * of this user for the signal to land elsewhere.
+ */
+async function reapViaSignals(
+  record: Extract<FixtureRecord, { readonly phase: "launching" | "running" }>,
+  identity: DaemonIdentity,
+): Promise<string | undefined> {
+  const confirmed = async (): Promise<"gone" | "ours" | "other"> => {
+    const current = await readDaemonIdentity(identity.pid);
+    if (current === undefined || current.startIdentity !== identity.startIdentity) return "gone";
+    try {
+      await assertExactProcessLaunch(record, identity);
+    } catch {
+      return "other";
+    }
+    return "ours";
+  };
+  const signal = (name: "SIGKILL" | "SIGTERM"): boolean => {
+    try {
+      process.kill(identity.pid, name);
+      return true;
+    } catch (error) {
+      if (isErrno(error, "ESRCH")) return false;
+      throw error;
+    }
+  };
+  for (const name of ["SIGTERM", "SIGKILL"] as const) {
+    // eslint-disable-next-line no-await-in-loop -- the identity is re-checked before each signal.
+    const state = await confirmed();
+    if (state === "gone") return undefined;
+    if (state === "other") {
+      return `signal cleanup refused daemon ${String(identity.pid)}: identity-mismatch`;
+    }
+    if (!signal(name)) return undefined;
+    // eslint-disable-next-line no-await-in-loop -- the wait is the escalation step.
+    if (await awaitDaemonExit(identity, deadlineMs(DAEMON_EXIT_DEADLINE_MS))) return undefined;
+  }
+  return `signal cleanup left daemon ${String(identity.pid)} live`;
+}
+
 async function reapViaPidfd(
   capability: ReservationCapability,
   record: Extract<FixtureRecord, { readonly phase: "launching" | "running" }>,
   identity: DaemonIdentity,
 ): Promise<string | undefined> {
+  if (process.platform === "darwin") return reapViaSignals(record, identity);
   const environment = controllerEnvironment(capability, record.generation.name);
   // An explicitly configured interpreter is authoritative and is never probed
   // or substituted; probing it would both override the choice and hang on a

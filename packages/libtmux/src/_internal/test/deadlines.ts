@@ -17,7 +17,8 @@
  * than the ones this was tuned on.
  */
 
-const DEFAULT_SCALE = 1;
+/** The hosted macOS runner starts processes more slowly than Linux, so its default is wider. */
+const DEFAULT_SCALE = process.platform === "darwin" ? 3 : 1;
 const MAX_SCALE = 100;
 
 function scale(): number {

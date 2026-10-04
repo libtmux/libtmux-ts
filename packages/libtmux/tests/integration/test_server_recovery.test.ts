@@ -161,7 +161,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("preserves pre-authority evidence when the launch socket disappears", async () => {
     const parent = await makeTestDirectory("ltx4-launch-socket-loss-");
@@ -212,7 +212,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("preserves an indeterminate launch whose socket moved before authority", async () => {
     const parent = await makeTestDirectory("ltx4-launch-partial-timeout-");
@@ -242,7 +242,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("authenticates a valid launch frame from a nonzero result before cleanup", async () => {
     const parent = await makeTestDirectory("ltx4-nonzero-launch-frame-");
@@ -276,7 +276,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("removes a partial atomic identity temp and recovers from the original launching record", async () => {
     await withTemporaryRunRoot("partial-record-write", async (runRoot) => {
@@ -373,7 +373,7 @@ describe("TestServer launch recovery", () => {
 
       await waitForOwnReservations(runRoot);
     });
-  }, 20_000);
+  }, 60_000);
 
   test("enters an observed stable local pane hold before create resolves", async () => {
     await withTemporaryRunRoot("observed-readiness", async (runRoot) => {

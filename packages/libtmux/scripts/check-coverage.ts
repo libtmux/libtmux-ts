@@ -2,7 +2,7 @@ import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
+import { NODE22, PROCESS_HARNESS, preflight, SHORT_TMPDIR } from "./preflight.js";
 
 /**
  * Coverage over the suites together, because they cover different things.
@@ -71,7 +71,7 @@ function percentage(covered: number, total: number): number {
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 
-await preflight([LINUX_HARNESS, NODE22]);
+await preflight([PROCESS_HARNESS, SHORT_TMPDIR, NODE22]);
 
 const coverageDirectory = join(packageRoot, "coverage");
 await rm(coverageDirectory, { force: true, recursive: true });

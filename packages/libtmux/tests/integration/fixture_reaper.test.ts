@@ -93,13 +93,23 @@ import os
 import signal
 import subprocess
 import sys
+import threading
+import time
 
 parent = os.getppid()
-libc = ctypes.CDLL(None, use_errno=True)
-if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
-    raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG) failed")
-if os.getppid() != parent:
-    os.kill(os.getpid(), signal.SIGKILL)
+if sys.platform == "linux":
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG) failed")
+    if os.getppid() != parent:
+        os.kill(os.getpid(), signal.SIGKILL)
+else:
+    # No parent-death signal outside Linux; polling for the reparent is the mechanism.
+    def watch_parent():
+        while os.getppid() == parent:
+            time.sleep(0.05)
+        os.kill(os.getpid(), signal.SIGKILL)
+    threading.Thread(target=watch_parent, daemon=True).start()
 completed = subprocess.run([sys.argv[2], *sys.argv[3:]], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 sys.stdout.buffer.write(completed.stdout)
 sys.stdout.buffer.flush()
@@ -266,7 +276,7 @@ describe("fixture launch and exact-root reaping", () => {
         daemon: {
           ...identity,
           comm: "tmux: server",
-          executablePath: await realpath(`/proc/${String(child.pid)}/exe`),
+          executablePath: await realpath(process.execPath),
         },
         logicalSocketName: "fabricated",
         owner: await readProcessIdentity(process.pid),
