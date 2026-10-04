@@ -29,7 +29,9 @@ describe("observe", () => {
       // The shape the README describes, asserted rather than restated: the
       // probe is one command, and every snapshot after it is one invocation
       // carrying an identity read and four listings.
-      expect(run.reports[0]?.commands.map((command) => command[0])).toEqual(["display-message"]);
+      expect(run.reports[0]?.commands.map((command) => command[0])).toEqual([
+        "display-message",
+      ]);
       for (const report of run.reports.slice(1)) {
         expect(report.commands.map((command) => command[0])).toEqual([
           "display-message",

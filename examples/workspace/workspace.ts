@@ -49,7 +49,10 @@ export function buildWorkspace(server: Server): Promise<Session> {
  * Killing a session that has already gone is not a failure worth propagating,
  * which is the one case worth handling separately from every other tmux error.
  */
-export async function removeWorkspace(server: Server, name: string): Promise<boolean> {
+export async function removeWorkspace(
+  server: Server,
+  name: string,
+): Promise<boolean> {
   const found = (await server.snapshot()).sessions.first({ name });
   if (found === undefined) return false;
   await found.kill();

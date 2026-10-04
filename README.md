@@ -256,7 +256,10 @@ await applyWorkspace(server, {
   session_name: "api",
   windows: [
     { window_name: "editor", panes: ["vim", "git status"] },
-    { window_name: "server", panes: [{ shell_command: "bun dev", focus: true }] },
+    {
+      window_name: "server",
+      panes: [{ shell_command: "bun dev", focus: true }],
+    },
   ],
 });
 ```

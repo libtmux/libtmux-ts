@@ -8,7 +8,9 @@ import type { TmuxEvent } from "libtmux";
  * they happen. The stream is an async disposable, so `await using` closes it on
  * the way out of the scope — including when the loop throws.
  */
-export async function watchUntilWindowOpens(server: Server): Promise<TmuxEvent> {
+export async function watchUntilWindowOpens(
+  server: Server,
+): Promise<TmuxEvent> {
   const session = await server.newSession({ name: "watched" });
 
   // A control client is told about the session it attached to, so watch the
@@ -21,10 +23,13 @@ export async function watchUntilWindowOpens(server: Server): Promise<TmuxEvent> 
   await events.ready();
 
   const opened = session.newWindow({ name: "second" });
-  const event = await events.find((candidate) => candidate.kind === "window-add");
+  const event = await events.find(
+    (candidate) => candidate.kind === "window-add",
+  );
   await opened;
 
-  if (event === undefined) throw new Error("the stream ended before a window opened");
+  if (event === undefined)
+    throw new Error("the stream ended before a window opened");
   return event;
 }
 
@@ -35,7 +40,10 @@ export async function watchUntilWindowOpens(server: Server): Promise<TmuxEvent> 
  * does for you. Payload bytes arrive unescaped and decoded, so multi-byte text
  * survives intact.
  */
-export async function collectPaneOutput(server: Server, until: string): Promise<string> {
+export async function collectPaneOutput(
+  server: Server,
+  until: string,
+): Promise<string> {
   await using events = server.watch();
   let collected = "";
 
@@ -56,20 +64,33 @@ export async function collectPaneOutput(server: Server, until: string): Promise<
  * instead: tmux reports `pause`, this connection asks the pane back, and
  * `continue` follows. The pair is a record of what was missed.
  */
-export async function watchWithBackpressure(server: Server): Promise<readonly string[]> {
+export async function watchWithBackpressure(
+  server: Server,
+): Promise<readonly string[]> {
   const session = await server.newSession({ name: "paced" });
 
-  await using events = server.watch({ pauseAfterSeconds: 5, target: session.id });
+  await using events = server.watch({
+    pauseAfterSeconds: 5,
+    target: session.id,
+  });
   await events.ready();
 
-  const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
+  const pane = (await server.snapshot()).sessions
+    .one({ id: session.id })
+    .panes.one();
 
   // tmux pauses a pane on its own once it falls behind. Asking for it directly
   // reaches the same state without waiting on a real flood.
-  const client = (await server.cmd("list-clients", ["-F", "#{client_name}\t#{client_flags}"]))
-    .find((value) => value.includes("control-mode") && value.includes("pause-after=5"))
+  const client = (
+    await server.cmd("list-clients", ["-F", "#{client_name}\t#{client_flags}"])
+  )
+    .find(
+      (value) =>
+        value.includes("control-mode") && value.includes("pause-after=5"),
+    )
     ?.split("\t")[0];
-  if (client === undefined) throw new Error("the paced observer did not attach");
+  if (client === undefined)
+    throw new Error("the paced observer did not attach");
   await server.cmd("refresh-client", ["-t", client, "-A", `${pane.id}:pause`]);
 
   const seen: string[] = [];
@@ -96,10 +117,15 @@ export async function readOutputUnderBackpressure(
 ): Promise<{ readonly reportedAge: boolean; readonly text: string }> {
   const session = await server.newSession({ name: "paced-output" });
 
-  await using events = server.watch({ pauseAfterSeconds: 5, target: session.id });
+  await using events = server.watch({
+    pauseAfterSeconds: 5,
+    target: session.id,
+  });
   await events.ready();
 
-  const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
+  const pane = (await server.snapshot()).sessions
+    .one({ id: session.id })
+    .panes.one();
 
   let text = "";
   let reportedAge = false;
