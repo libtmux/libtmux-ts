@@ -670,7 +670,8 @@ Server-wide commands and paste buffers:
 
 ```ts
 await server.hasSession("work");
-await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`); // tmux does not expand `~`
+// tmux does not expand `~`.
+await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`);
 await server.listCommands();
 await server.runShell("echo hi");
 await server.ifShell("[ -d /srv ]", "display-message ok");
@@ -942,7 +943,8 @@ await using live = await server.connect();
 
 for await (const event of live.subscribe()) {
   if (event.kind !== "window-add") continue;
-  const snapshot = await live.snapshot(); // one atomic identity-plus-four-listings invocation
+  // One atomic invocation: identity plus four listings.
+  const snapshot = await live.snapshot();
   console.log(snapshot.windows.count());
 }
 ```
@@ -1429,9 +1431,12 @@ try {
   await session.newWindow({ name: "build" });
 } catch (error) {
   if (error instanceof TmuxTransportError) {
-    error.kind; // "cancelled" | "contract" | "pipe" | "protocol" | "spawn" | "timeout"
-    error.delivery; // "not_started" | "written" | "replied" | "indeterminate"
-    error.stdout; // whatever arrived before the failure
+    // "cancelled" | "contract" | "pipe" | "protocol" | "spawn" | "timeout"
+    error.kind;
+    // "not_started" | "written" | "replied" | "indeterminate"
+    error.delivery;
+    // Whatever arrived before the failure.
+    error.stdout;
   }
 }
 ```
