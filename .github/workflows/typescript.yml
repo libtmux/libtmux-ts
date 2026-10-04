@@ -85,6 +85,9 @@ jobs:
       # Formatting, linting and the cross-package READMEs are the workspace's,
       # not any one package's.
       - run: bun run format:check
+      # Examples render in fixed-width boxes; the formatter alone does not
+      # reach comments, doc-comment fences or generated reference code.
+      - run: bun run docs:width
       - run: bun run lint
       # The gates below are themselves TypeScript, and until this ran nothing
       # compiled them: a gate that crashes on its own type error reports no
