@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 
 import { describeStartupFailure } from "../src/server.js";
 import { describeStartup } from "../src/startup.js";
-import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
+import {
+  serverFor,
+  structured,
+  waitUntil,
+  withClient,
+  withServer,
+} from "./support/server_harness.js";
 
 test("the stdio server executes the retained capability surface end to end", async () => {
   await withServer(async (fixture) => {
@@ -423,7 +429,12 @@ test("list_sessions separates a raw attached count from a human-only one", async
         name: "wait_for_text",
       });
       // Let the control connection actually attach before reading its effect.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitUntil(async () => {
+        const listed = structured<{
+          sessions: readonly { attachedClients: number; id: string }[];
+        }>(await client.callTool({ arguments: {}, name: "list_sessions" }));
+        return listed.sessions.find((s) => s.id === created.session.id)?.attachedClients === 1;
+      }, "the control connection to attach");
 
       const during = structured<{
         sessions: readonly { attachedClients: number; humanAttachedClients: number; id: string }[];
@@ -458,7 +469,12 @@ test("a private directory is left behind when the pane is killed mid-run", async
             arguments: { command: "sleep 4", paneId: created.paneId, timeoutMs: 6_000 },
             name: "run_shell_command",
           });
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          // Kill the pane once the framed command has started: before that the
+          // script may still be on its way, and the call would fail instead.
+          await waitUntil(async () => {
+            const shown = await fixture.executeText(["capture-pane", "-p", "-t", created.paneId]);
+            return /ltx[0-9a-f]+_S/u.test(shown.stdout.join("\n"));
+          }, "the command to start");
           await fixture.executeText(["kill-pane", "-t", created.paneId]);
 
           const result = structured<{ outcome: string }>(await running);
