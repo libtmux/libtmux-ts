@@ -350,17 +350,19 @@ should look for a Node itself.
 
 ## Platforms
 
-CI builds, packs, installs, and evaluates every emitted package on macOS. The
-library transport itself uses neither `/proc` nor pidfd:
-`node_spawn_transport.ts` escalates SIGTERM to SIGKILL and force-settles a
-process whose descendants hold the pipe.
+The real-tmux suites run on Linux and on macOS. WSL is untested. macOS: see
+[MACOS_CI.md](MACOS_CI.md).
 
-The supervisor in `src/_internal/test/run_root.ts` is the Linux part: process
-identity is `linux:<boot id>:<start time>`, read from `/proc`. The real-tmux,
-cancellation, and process-ownership suites therefore remain Linux-only. The
-macOS lane proves only the package boundary until that supervisor is ported.
-WSL is untested. `preflight.ts` says which requirement is missing instead of
-letting a checkout discover it as ENOENT from a file nobody mentioned.
+The fixture supervisor, `src/_internal/test/process_identity.ts` and
+`reaper.ts`, identifies a process by what the host reports. On Linux that is
+`/proc`. On macOS it is `ps` and `kern.boottime`, with the command line and
+environment read through `sysctl(KERN_PROCARGS2)` by Python's `ctypes`, and a
+daemon is reaped by signal after its identity is confirmed, where Linux holds a
+pidfd. `preflight.ts` says which requirement is missing instead of letting a
+checkout discover it as ENOENT from a file nobody mentioned.
+
+macOS needs `TMPDIR=/private/tmp`: `/tmp` is a symlink there, which the fixture
+refuses in a run root, and the default is too long for a socket path.
 
 ## Releasing
 
