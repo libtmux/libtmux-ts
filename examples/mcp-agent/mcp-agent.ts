@@ -132,7 +132,7 @@ export async function buildWorkspace(
   });
   const paneIds = [created.paneId];
   for (const name of rest) {
-    // eslint-disable-next-line no-await-in-loop -- window creation follows session mutation order.
+    // eslint-disable-next-line no-await-in-loop -- creation order matters.
     const window = await callTool<{ paneId: string }>(client, "create_window", {
       name,
       session,
