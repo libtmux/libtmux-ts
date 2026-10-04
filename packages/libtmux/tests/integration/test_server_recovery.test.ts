@@ -10,6 +10,7 @@ import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_roo
 import { reapRedLaunch } from "../support/tmux_cleanup.js";
 
 import {
+  deadlineMs,
   prepareRunRoot,
   readFixtureRecord,
   reapOwnedRunRoot,
@@ -141,9 +142,13 @@ describe("TestServer launch recovery", () => {
     await prepareRunRoot(runRoot);
     const wrapper = await writeLaunchWrapper(parent, "hold-after-launch", marker);
     try {
-      await expect(TestServer.create({ launchExecutable: wrapper, runRoot })).rejects.toThrow(
-        /timed out|timeout/u,
-      );
+      await expect(
+        TestServer.create({
+          bootstrapTimeoutMs: deadlineMs(3_000),
+          launchExecutable: wrapper,
+          runRoot,
+        }),
+      ).rejects.toThrow(/timed out|timeout/u);
       const [socketPath, rawPid] = (await readFile(marker, "utf8")).trim().split("\t");
       await waitForProcessExit(Number(rawPid));
       await waitForPathAbsent(socketPath!);
@@ -227,9 +232,13 @@ describe("TestServer launch recovery", () => {
       recoverySocket,
     );
     try {
-      await expect(TestServer.create({ launchExecutable: wrapper, runRoot })).rejects.toThrow(
-        /timed out/u,
-      );
+      await expect(
+        TestServer.create({
+          bootstrapTimeoutMs: deadlineMs(3_000),
+          launchExecutable: wrapper,
+          runRoot,
+        }),
+      ).rejects.toThrow(/timed out/u);
       const [socketPath, rawPid] = (await readFile(marker, "utf8")).trim().split("\t");
       expect(processExists(Number(rawPid))).toBe(true);
       await waitForPathAbsent(socketPath!);

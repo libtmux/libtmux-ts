@@ -6,8 +6,7 @@ import { join } from "node:path";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import {
   DAEMON_EXIT_DEADLINE_MS,
-  DAEMON_REAPED_DEADLINE_MS,
-  FIXTURE_PROBE_DEADLINE_MS,
+  HANG_GUARD_MS,
   PIDFD_HELPER_DEADLINE_MS,
   deadlineMs,
 } from "./deadlines.js";
@@ -560,7 +559,7 @@ async function discoverLaunchingDaemon(
     environment,
     executable: current.record.controller.executablePath,
     globalArgs: ["-N", "-S", current.record.socketPath],
-    timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
+    timeoutMs: deadlineMs(HANG_GUARD_MS),
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
   if (result.exitCode !== 0) throw new Error("fixture generation discovery failed");
@@ -634,7 +633,7 @@ async function connectedGenerationKill(
       environment,
       executable: record.controller.executablePath,
       globalArgs: ["-N", "-S", record.socketPath],
-      timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
+      timeoutMs: deadlineMs(HANG_GUARD_MS),
     })
     .catch(() => undefined);
   if (result === undefined || result.exitCode !== 0) return "unavailable";
@@ -685,7 +684,7 @@ export async function retireFixtureGeneration(
         throw new Error(`fixture generation could not be retired: ${outcome}`);
       }
     }
-    if (!(await awaitDaemonExit(record.daemon, deadlineMs(DAEMON_REAPED_DEADLINE_MS)))) {
+    if (!(await awaitDaemonExit(record.daemon, deadlineMs(HANG_GUARD_MS)))) {
       throw new Error(`daemon ${String(record.daemon.pid)} remained live after retirement`);
     }
 
@@ -769,7 +768,7 @@ async function reapReservation(capability: ReservationCapability): Promise<ReapR
         if (failure !== undefined) return leak(failure);
       }
     }
-    if (!(await awaitDaemonExit(record.daemon, deadlineMs(DAEMON_REAPED_DEADLINE_MS)))) {
+    if (!(await awaitDaemonExit(record.daemon, deadlineMs(HANG_GUARD_MS)))) {
       return leak(`daemon ${String(record.daemon.pid)} remained live after cleanup`);
     }
     const finalPreflight = await preflightReservation(capability);
