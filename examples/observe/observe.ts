@@ -10,7 +10,7 @@ export interface ObservedRun {
    * formats this tmux understands; the other is the snapshot.
    */
   readonly firstCallCalls: number;
-  /** Invocations every snapshot after that costs. One, whatever it describes. */
+  /** Invocations each later snapshot costs. One, whatever it describes. */
   readonly snapshotCalls: number;
   /** Invocations a hundred queries against that snapshot cost. None. */
   readonly queryCalls: number;
