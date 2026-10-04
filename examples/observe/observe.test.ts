@@ -5,7 +5,7 @@ import { withServer } from "../test-support/with-server.js";
 import { whatTheLibraryIsDoing } from "./observe.js";
 
 describe("observe", () => {
-  test("the observe example counts what the library sent, and what waited", async () => {
+  test("counts what the library sent and what waited", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,
