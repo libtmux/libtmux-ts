@@ -5,7 +5,7 @@ import { withServer } from "../test-support/with-server.js";
 import { reportPanes } from "./fields.js";
 
 describe("fields", () => {
-  test("the fields example reads decoded values against real tmux", async () => {
+  test("reads decoded values against real tmux", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,
