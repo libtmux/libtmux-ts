@@ -2,7 +2,7 @@
   "name": "@example/watch",
   "version": "0.0.0",
   "private": true,
-  "description": "Follow tmux's own notifications instead of polling. Never published.",
+  "description": "Follow tmux's own notifications instead of polling.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
