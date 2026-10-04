@@ -169,12 +169,55 @@ function signatureAt(lines: readonly string[], index: number): string {
     collected.push(line.trim());
     if (/[{;]\s*$/u.test(line)) break;
   }
-  return collected
-    .join(" ")
-    .replace(/\s*\{\s*$/u, "")
-    .replace(/;$/u, "")
-    .replace(/\s+/gu, " ")
-    .trim();
+  return wrapSignature(
+    collected
+      .join(" ")
+      .replace(/\s*\{\s*$/u, "")
+      .replace(/;$/u, "")
+      .replace(/\s+/gu, " ")
+      .trim(),
+  );
+}
+
+/** Reference code blocks stay within this many columns. */
+const SIGNATURE_WIDTH = 80;
+
+/**
+ * Put one parameter per line when a signature would run wider than the page.
+ *
+ * Joining a wrapped declaration leaves `( a, b, )` behind; that is tidied
+ * whether or not it needs to wrap.
+ */
+function wrapSignature(signature: string, indent = ""): string {
+  const tidy = signature.replace(/\(\s+/u, "(").replace(/,\s*\)/u, ")");
+  if (indent.length + tidy.length <= SIGNATURE_WIDTH) return tidy;
+  const open = tidy.indexOf("(");
+  if (open < 0) return tidy;
+  const parameters: string[] = [];
+  let depth = 0;
+  let start = open + 1;
+  let close = -1;
+  for (let at = open + 1; at < tidy.length && close < 0; at += 1) {
+    const character = tidy[at];
+    // The `>` of an arrow type is not a closing angle bracket.
+    if (character === ">" && tidy[at - 1] === "=") continue;
+    if ("(<{[".includes(character ?? "")) depth += 1;
+    else if (")>}]".includes(character ?? "")) {
+      if (depth === 0) close = at;
+      else depth -= 1;
+    } else if (character === "," && depth === 0) {
+      parameters.push(tidy.slice(start, at).trim());
+      start = at + 1;
+    }
+  }
+  if (close < 0) return tidy;
+  const last = tidy.slice(start, close).trim();
+  if (last !== "") parameters.push(last);
+  const inner = `${indent}  `;
+  const body = parameters
+    .map((parameter) => `${inner}${wrapSignature(parameter, inner)},`)
+    .join("\n");
+  return `${tidy.slice(0, open + 1)}\n${body}\n${indent}${tidy.slice(close)}`;
 }
 
 interface ParsedDeclaration {

@@ -353,7 +353,10 @@ new Server().tmuxBin; // "tmux"
 #### `Server.withConnection`
 
 ```ts
-async withConnection<T>( body: (live: ConnectedServer) => Promise<T>, options?: ConnectOptions, ): Promise<T>
+async withConnection<T>(
+  body: (live: ConnectedServer) => Promise<T>,
+  options?: ConnectOptions,
+): Promise<T>
 ```
 
 Run `body` against a connected server, closing it afterwards.
@@ -700,7 +703,9 @@ options.get("escape-time");
 #### `Server.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this server, own and inherited together.
@@ -716,7 +721,11 @@ answer wherever it was actually set.
 #### `Server.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set a server-scope option.
@@ -740,7 +749,11 @@ await server.unsetOption("escape-time");
 #### `Server.saveBuffer`
 
 ```ts
-saveBuffer(name: string, path: string, options?: SaveBufferOptions): Promise<void>
+saveBuffer(
+  name: string,
+  path: string,
+  options?: SaveBufferOptions,
+): Promise<void>
 ```
 
 Write a paste buffer to a file instead of reading it back.
@@ -756,7 +769,10 @@ await server.saveBuffer("captured", "/tmp/build.log");
 #### `Server.showGlobalOptions`
 
 ```ts
-showGlobalOptions( scope: "session" | "window", options?: CommandOptions, ): Promise<ReadonlyMap<string, string>>
+showGlobalOptions(
+  scope: "session" | "window",
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 Read the defaults every session or window inherits.
@@ -775,7 +791,12 @@ defaults.get("default-shell");
 #### `Server.setGlobalOption`
 
 ```ts
-setGlobalOption( scope: "session" | "window", name: string, value: string, options?: SetOptionOptions, ): Promise<void>
+setGlobalOption(
+  scope: "session" | "window",
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set a default every session or window inherits.
@@ -844,7 +865,10 @@ await server.unsetHook("session-created");
 #### `Server.validateLayouts`
 
 ```ts
-validateLayouts( layouts: readonly { readonly layout: string; readonly panes: number }[], options?: CommandOptions, ): Promise<void>
+validateLayouts(
+  layouts: readonly { readonly layout: string; readonly panes: number }[],
+  options?: CommandOptions,
+): Promise<void>
 ```
 
 Check every planned window layout before setup scripts or mutations.
@@ -934,7 +958,11 @@ await server.getEnvironment("EDITOR"); // "vim", null, or undefined
 #### `Server.setEnvironment`
 
 ```ts
-setEnvironment(name: string, value: string, options?: SetEnvironmentOptions): Promise<void>
+setEnvironment(
+  name: string,
+  value: string,
+  options?: SetEnvironmentOptions,
+): Promise<void>
 ```
 
 Set a variable in the server's global environment.
@@ -1206,7 +1234,11 @@ lines[0]; // "hello"
 #### `Server.ifShell`
 
 ```ts
-ifShell(condition: string, command: string, options?: IfShellOptions): Promise<void>
+ifShell(
+  condition: string,
+  command: string,
+  options?: IfShellOptions,
+): Promise<void>
 ```
 
 Run one command or another depending on a condition.
@@ -1267,7 +1299,11 @@ await server.raiseIfDead(); // throws when no tmux server is listening
 #### `Server.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model.
@@ -1287,7 +1323,10 @@ await server.cmd("list-keys", ["-T", "copy-mode"]);
 #### `Server.pipeline`
 
 ```ts
-pipeline( commands: readonly (readonly string[])[], options?: CommandOptions, ): Promise<readonly (readonly string[])[]>
+pipeline(
+  commands: readonly (readonly string[])[],
+  options?: CommandOptions,
+): Promise<readonly (readonly string[])[]>
 ```
 
 Run several tmux commands in order.
@@ -1312,7 +1351,10 @@ const [[first], [second]] = await server.pipeline([
 #### `Server.batch`
 
 ```ts
-async batch<const T extends readonly PlannedOperation<unknown>[]>( operations: T, options?: CommandOptions, ): Promise<
+async batch<const T extends readonly PlannedOperation<unknown>[]>(
+  operations: T,
+  options?: CommandOptions,
+): Promise<
 ```
 
 Run planned mutations in order, resolving each to what it made.
@@ -1447,7 +1489,9 @@ options.get("status");
 #### `Session.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this session, own and inherited together.
@@ -1463,7 +1507,11 @@ answer wherever it was actually set.
 #### `Session.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set an option on this session.
@@ -1560,7 +1608,11 @@ await session.getEnvironment("EDITOR"); // "vim", null, or undefined
 #### `Session.setEnvironment`
 
 ```ts
-setEnvironment(name: string, value: string, options?: SetEnvironmentOptions): Promise<void>
+setEnvironment(
+  name: string,
+  value: string,
+  options?: SetEnvironmentOptions,
+): Promise<void>
 ```
 
 Set a variable in this session's environment.
@@ -1677,7 +1729,9 @@ await session.selectWindow("next");
 #### `Session.fromEnv`
 
 ```ts
-static async fromEnv( environment: Readonly<Record<string, string | undefined>> = process.env, ): Promise<Session>
+static async fromEnv(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<Session>
 ```
 
 Resolve the session this process is running inside.
@@ -1705,7 +1759,11 @@ await session.detach();
 #### `Session.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model, addressed at this session.
@@ -1881,7 +1939,9 @@ options.get("automatic-rename");
 #### `Window.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this window, own and inherited together.
@@ -1897,7 +1957,11 @@ answer wherever it was actually set.
 #### `Window.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set an option on this window.
@@ -2198,7 +2262,11 @@ later.panes.count();
 #### `Window.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model, addressed at this window.
@@ -2340,7 +2408,9 @@ options.get("remain-on-exit");
 #### `Pane.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this pane, own and inherited together.
@@ -2356,7 +2426,11 @@ answer wherever it was actually set.
 #### `Pane.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set an option on this pane.
@@ -2829,7 +2903,11 @@ await pane.customizeMode();
 #### `Pane.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model, addressed at this pane.
@@ -3028,7 +3106,10 @@ ordered.slice(0, 2).map((entry) => entry.id);
 #### `Selection.map`
 
 ```ts
-map<Result>( transform: (value: Model, index: number, values: readonly Model[]) => Result, thisArg?: unknown, ): Result[]
+map<Result>(
+  transform: (value: Model, index: number, values: readonly Model[]) => Result,
+  thisArg?: unknown,
+): Result[]
 ```
 
 Apply `transform` to each member, in order.
@@ -3043,7 +3124,14 @@ snapshot.windows.map((entry) => entry.name); // string[]
 #### `Selection.filter`
 
 ```ts
-filter<Narrowed extends Model>( predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed, thisArg?: unknown, ): Selection<Narrowed>
+filter<Narrowed extends Model>(
+  predicate: (
+    value: Model,
+    index: number,
+    values: readonly Model[],
+  ) => value is Narrowed,
+  thisArg?: unknown,
+): Selection<Narrowed>
 ```
 
 Keep the members `predicate` accepts.
@@ -3057,7 +3145,10 @@ snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true)
 ```
 
 ```ts
-filter( predicate: (value: Model, index: number, values: readonly Model[]) => unknown, thisArg?: unknown, ): Selection<Model>
+filter(
+  predicate: (value: Model, index: number, values: readonly Model[]) => unknown,
+  thisArg?: unknown,
+): Selection<Model>
 ```
 
 Keep the members an ordinary predicate accepts without changing their type.
