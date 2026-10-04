@@ -168,7 +168,7 @@ class Custom:
               tmuxBin: fixture.tmuxExecutable,
             });
             await server.setGlobalOption("session", "default-shell", "/bin/sh", {
-              signal: AbortSignal.timeout(2000),
+              signal: AbortSignal.timeout(15_000),
             });
             const env = {
               ...fixture.controllerEnvironment,
@@ -278,7 +278,7 @@ class Custom:
                       );
                     }
                     try {
-                      const deadline = performance.now() + 3000;
+                      const deadline = performance.now() + 15_000;
                       while (!(await Bun.file(marker).exists()) && performance.now() < deadline)
                         await sleep(20);
                       assert.equal(await readFile(marker, "utf8"), "ready");

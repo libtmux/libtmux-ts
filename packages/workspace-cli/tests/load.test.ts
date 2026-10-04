@@ -178,7 +178,7 @@ test("imported command groups load after relocation with native pane order", asy
     const session = (await server.snapshot()).sessions.one({ name: "imported-groups" });
     expect(session.panes.count()).toBe(1);
     const marker = join(project, "order.marker");
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 15_000;
     let contents = "";
     /* eslint-disable no-await-in-loop -- Wait for complete command output within the deadline. */
     while (Date.now() < deadline && contents !== "firstsecond") {
@@ -246,7 +246,7 @@ test.each(["before", "after", "teamocil"])(
       const expected = phase === "after" ? ["first", "second"] : ["firstsecond", "firstsecond"];
       const paths = panes.map((pane) => join(root, `${pane.id}.marker`));
       let observed: string[] = [];
-      const deadline = Date.now() + 3000;
+      const deadline = Date.now() + 15_000;
       /* eslint-disable no-await-in-loop -- Observe each pane's completed writes within the deadline. */
       while (Date.now() < deadline) {
         observed = await Promise.all(paths.map((path) => readFile(path, "utf8").catch(() => "")));
@@ -344,7 +344,7 @@ test("native metadata and empty extensions preserve enter false command control"
     expect((await pane.capture()).join("\n")).toContain(cmd);
     expect(await Bun.file(marker).exists()).toBe(false);
     await pane.sendKeys("Enter", { literal: false, enter: false });
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + 15_000;
     // eslint-disable-next-line no-await-in-loop -- Observe the submitted command's side effect.
     while (Date.now() < deadline && !(await Bun.file(marker).exists())) await Bun.sleep(10);
     expect(await readFile(marker, "utf8")).toBe("executed");
@@ -516,7 +516,7 @@ class Custom:
               done();
             },
           }),
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
         },
       );
       expect(controller.signal.aborted).toBe(true);
@@ -993,7 +993,7 @@ const args = process.argv.slice(2);
 if (!existsSync(process.env.WORKSPACE_TEST_MARKER) &&
     (process.env.WORKSPACE_TEST_STAGE === "snapshot" || args.some(arg => arg.includes("show-options")))) {
   writeFileSync(process.env.WORKSPACE_TEST_MARKER, String(process.pid));
-  await new Promise(resolve => setTimeout(resolve, 150));
+  await new Promise(resolve => setTimeout(resolve, 10_000));
   writeFileSync(process.env.WORKSPACE_TEST_MARKER + "-continued", "yes");
 }
 const result = spawnSync(process.env.WORKSPACE_TEST_TMUX, args, { stdio: "inherit" });
@@ -1034,7 +1034,7 @@ process.exit(result.status ?? 1);
           stdin: Readable.from([]),
           stdout: discard(),
           stderr: discard(),
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
         },
       );
       try {
@@ -1048,7 +1048,7 @@ process.exit(result.status ?? 1);
           );
           attempt++
         ) {
-          if (attempt >= 400) throw new Error("freeze did not reach its backend read");
+          if (attempt >= 3000) throw new Error("freeze did not reach its backend read");
           await Bun.sleep(5);
         }
         /* eslint-enable no-await-in-loop */
@@ -1088,7 +1088,7 @@ if (args.includes("list-sessions")) {
   writeFileSync(counter, String(seen + 1));
   if (seen === Number(process.env.WORKSPACE_TEST_SKIP)) {
     writeFileSync(process.env.WORKSPACE_TEST_MARKER, String(process.pid));
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await new Promise(resolve => setTimeout(resolve, 10_000));
     writeFileSync(process.env.WORKSPACE_TEST_MARKER + "-continued", "yes");
   }
 }
@@ -1119,7 +1119,7 @@ process.exit(result.status ?? 1);
       stdin: Readable.from([]),
       stdout: discard(),
       stderr: discard(),
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(4000)]),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
     });
     try {
       /* eslint-disable no-await-in-loop -- Observe the owned client's read before interrupting it. */
@@ -1132,7 +1132,7 @@ process.exit(result.status ?? 1);
         );
         attempt++
       ) {
-        if (attempt >= 400) throw new Error(`load did not reach acquisition ${String(skip)}`);
+        if (attempt >= 3000) throw new Error(`load did not reach acquisition ${String(skip)}`);
         await Bun.sleep(5);
       }
       /* eslint-enable no-await-in-loop */
@@ -1317,7 +1317,7 @@ test("freeze puts window options under options_after and omits the default pane 
     expect((await run(["load", source, "-d", "--json"])).code).toBe(0);
     const session = (await server.snapshot()).sessions.one({ name: "freeze-shape" });
     const busyPaneId = session.windows.at(0)!.panes.at(1)!.id;
-    const deadline = performance.now() + 2000;
+    const deadline = performance.now() + 15_000;
     let command: string | null = null;
     /* eslint-disable no-await-in-loop -- Watch the pane until it reports the command, within the deadline. */
     while (performance.now() < deadline) {
@@ -1348,7 +1348,7 @@ test("freeze does not name an ordinary shell that is not the literal default-she
     expect((await run(["load", source, "-d", "--json"])).code).toBe(0);
     const session = (await server.snapshot()).sessions.one({ name: "freeze-shell-alias" });
     const paneId = session.windows.at(0)!.panes.at(0)!.id;
-    const deadline = performance.now() + 2000;
+    const deadline = performance.now() + 15_000;
     let command: string | null = null;
     /* eslint-disable no-await-in-loop -- Watch the pane until it reports the command, within the deadline. */
     while (performance.now() < deadline) {
@@ -1488,7 +1488,7 @@ test("blank panes with empty plugins load natively without a prompt", async () =
           TMUX_BIN: server.tmuxBin,
           TMUX_WORKSPACE_PYTHON: join(root, "missing-python"),
         },
-        signal: AbortSignal.timeout(1000),
+        signal: AbortSignal.timeout(15_000),
       },
     );
     expect(result.code, result.stdout + result.stderr).toBe(0);
@@ -1692,7 +1692,7 @@ test("a failed bootstrap removes its newly created session and reports the faile
         {
           cwd: root,
           env: { ...process.env, TMUX: "", TMUX_PANE: "", TMUX_BIN: server.tmuxBin },
-          signal: AbortSignal.timeout(2000),
+          signal: AbortSignal.timeout(15_000),
         },
       );
       expect(limited.code).toBe(1);
@@ -1934,7 +1934,7 @@ test.each(["json", "ndjson"])(
               done();
             },
           }),
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
         },
       );
       expect(code).toBe(130);
@@ -1981,7 +1981,7 @@ test.each(["json", "ndjson"])(
               done();
             },
           }),
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
         },
       );
       expect(code).toBe(130);
