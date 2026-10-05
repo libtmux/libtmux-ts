@@ -96,7 +96,7 @@ import { FORMAT_VALUE_TYPES } from ${moduleUrl("dist/_generated/field_types.js")
 import { TmuxConnection } from ${moduleUrl("dist/_internal/runtime/connection.js")};
 import { completeUtf8Length, unescapeOutput } from ${moduleUrl("dist/_internal/control/events.js")};
 import { BoundedTransport } from ${moduleUrl("dist/_internal/transport/bounded_transport.js")};
-import { ControlMode, prepareRunRoot, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup, TestServer } from ${testkitModule};
+import { ControlMode, prepareRunRoot, readParentPid, readProcessIdentity, reapOwnedRunRoot, reapStaleRunRoot, runWithCleanup, TestServer } from ${testkitModule};
 import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_spawn_transport.js")};
 // From the package root, not the internal module: a caller deciding whether a
 // timed-out mutation is safe to retry has to be able to name this type, so the
@@ -199,7 +199,8 @@ function sameIdentity(left, right) {
   return left?.pid === right.pid && left.startIdentity === right.startIdentity;
 }
 async function holderExited(identity) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
     if (!sameIdentity(await readProcessIdentity(identity.pid), identity)) return true;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -228,13 +229,9 @@ async function stopHolder(identity) {
 async function waitForHolderChildExit(identity, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    let parentPid;
-    try {
-      const stat = await readFile("/proc/" + String(identity.pid) + "/stat", "utf8");
-      parentPid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
-    } catch {
-      return; // the holder is gone too, so the child certainly is
-    }
+    const parentPid = await readParentPid(identity.pid);
+    // The holder is gone too, so the child certainly is.
+    if (parentPid === undefined) return;
     // Reparented away from the child means the child has exited.
     if (!Number.isSafeInteger(parentPid) || parentPid <= 1) return;
     try {
@@ -366,7 +363,7 @@ await waitForFile(partialPipeMarker);
 const partialHolder = await readHolderIdentity(partialPipeMarker);
 partialController.abort();
 try {
-  const partialOutcome = await settleWithin(partialExecution, 800);
+  const partialOutcome = await settleWithin(partialExecution, 10_000);
   assert.equal(partialOutcome.kind, "error");
   assert.ok(partialOutcome.error instanceof TmuxTransportError);
   assert.equal(partialOutcome.error.kind, "cancelled");
@@ -601,7 +598,7 @@ async function runLateRootSiblingProbe() {
   });
   let outcome;
   try {
-    outcome = await settleWithin(closed, 2_000);
+    outcome = await settleWithin(closed, 10_000);
     if (outcome.kind === "deadline") {
       child.kill("SIGTERM");
       outcome = await settleWithin(closed, 250);

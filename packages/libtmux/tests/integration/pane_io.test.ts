@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import type { Pane } from "../../src/pane.js";
+import { captureUntil } from "../support/converge.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -45,22 +45,6 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   } finally {
     if (done) await rm(parent, { force: true, recursive: true });
   }
-}
-
-/** Poll a pane until its contents satisfy a predicate or the deadline passes. */
-async function captureUntil(
-  pane: Pane,
-  matches: (lines: readonly string[]) => boolean,
-  attempts = 100,
-): Promise<readonly string[]> {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    // eslint-disable-next-line no-await-in-loop -- Polling is inherently sequential.
-    const lines = await pane.capture();
-    if (matches(lines)) return lines;
-    // eslint-disable-next-line no-await-in-loop -- Each wait follows the capture before it.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("pane never reached the expected contents");
 }
 
 describe("pane input and capture", () => {

@@ -17,6 +17,8 @@ import {
   TestServer,
   TEST_HANDLE_PROTOTYPES,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
@@ -156,7 +158,7 @@ describe("Server.watch", () => {
       const arrived = until(events, (event) => event.kind === "window-add");
       // The stream has to be listening before the change, which is the whole
       // difference between watching and polling.
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText(["new-window", "-d", "-t", "watch:"]);
 
       expect((await arrived).kind).toBe("window-add");
@@ -169,7 +171,7 @@ describe("Server.watch", () => {
       const events = server.watch();
 
       const arrived = until(events, (event) => event.kind === "window-renamed");
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText(["rename-window", "-t", "watch:", "renamed-by-test"]);
 
       const event = await arrived;
@@ -188,7 +190,7 @@ describe("Server.watch", () => {
         events,
         (event) => event.kind === "output" && event.data.includes("libtmux-watched"),
       );
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText([
         "new-window",
         "-d",
@@ -211,7 +213,7 @@ describe("Server.watch", () => {
       const events = server.watch();
 
       const arrived = until(events, (event) => event.kind === "output" && event.data.includes("→"));
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await fixture.executeText([
         "new-window",
         "-d",
@@ -236,7 +238,7 @@ describe("Server.watch", () => {
         return seen;
       })();
 
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await events.close();
 
       // The loop terminating is the assertion: disposal ends iteration rather
@@ -409,7 +411,7 @@ describe("Server.watch", () => {
       const server = serverFor(fixture);
       const session = (await server.snapshot()).sessions.one({ name: "watch" });
       const before = new Set(await clientNames(server));
-      const events = server.watch({ reconnect: { attempts: 3, delayMs: 25 } });
+      const events = server.watch({ reconnect: { attempts: 600, delayMs: 25 } });
       const reconnecting = Promise.withResolvers<void>();
       let reconnectedAttempts: number | undefined;
       let sawWindowAdd = false;
@@ -440,7 +442,11 @@ describe("Server.watch", () => {
         await replacementReady;
         await session.newWindow({ name: "after-reconnect-ready" });
 
-        await waitUntil(() => sawWindowAdd, "the replacement client to announce the window", 5_000);
+        await waitUntil(
+          () => sawWindowAdd,
+          "the replacement client to announce the window",
+          deadlineMs(HANG_GUARD_MS),
+        );
         expect(reconnectedAttempts).toBeGreaterThanOrEqual(1);
       } finally {
         await events.close();
@@ -448,6 +454,36 @@ describe("Server.watch", () => {
       }
     });
   }, 60_000);
+
+  test("keeps reading its control client while no command is outstanding", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const directory = await makeTestDirectory("ltx-backpressure-");
+      const done = join(directory, "done");
+      try {
+        await using events = server.watch();
+        await events.ready();
+        // tmux stops reading a pane while every attached client is a control
+        // client with unsent output, so a client nobody reads freezes this
+        // writer before it finishes.
+        await server.newSession({
+          name: "flood",
+          shellCommand: `sh -c 'i=0; while [ $i -lt 6000 ]; do echo "flood-line-$i-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; i=$((i+1)); done; : > ${done}; sleep 60'`,
+        });
+        await waitUntil(
+          () =>
+            stat(done).then(
+              () => true,
+              () => false,
+            ),
+          "the writer to finish",
+          30_000,
+        );
+      } finally {
+        await rm(directory, { force: true, recursive: true });
+      }
+    });
+  }, 45_000);
 
   test("does not reopen by default, so a server going away is visible", async () => {
     await withServer(async (fixture) => {
@@ -458,7 +494,7 @@ describe("Server.watch", () => {
         for await (const event of events) kinds.push(event.kind);
       })();
 
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await events.close();
       await drained;
 
@@ -499,7 +535,7 @@ describe("Server.watch", () => {
           arm();
           return snapshot.panes.exists({ id: pane.id, title: "arrived" });
         },
-        { pollIntervalMs: 50, timeoutMs: 1_500 },
+        { pollIntervalMs: 50, timeoutMs: deadlineMs(HANG_GUARD_MS) },
       );
       await armed;
       await fixture.executeText(["select-pane", "-t", pane.id, "-T", "arrived"]);
@@ -894,7 +930,7 @@ describe("Server.watch", () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
       const before = new Set(await clientNames(server));
-      const live = await server.connect({ reconnect: { attempts: 5, delayMs: 300 } });
+      const live = await server.connect({ reconnect: { attempts: 50, delayMs: 300 } });
       try {
         await detachOwn(server, before);
 
@@ -1184,7 +1220,7 @@ describe("Server.watch", () => {
       const window = (await server.snapshot()).windows.one();
 
       const arrived = until(events, (event) => event.kind === "layout-change");
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await events.ready();
       await window.split();
 
       const event = await arrived;

@@ -9,6 +9,7 @@ import {
   decodeDifferentialResponse,
   type DifferentialResponse,
 } from "./raw_tmux.js";
+import { HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 
 const baselineCommit = "38e368c11117fb4aeb2f082d552cd4f210eae06a";
 const oraclePath = fileURLToPath(new URL("./python_oracle.py", import.meta.url));
@@ -59,8 +60,8 @@ async function close(child: ReturnType<typeof spawn>): Promise<ClosedOracleProce
       clearTimeout(hard);
       reject(error);
     };
-    const term = setTimeout(() => child.kill("SIGTERM"), 5_000);
-    const kill = setTimeout(() => child.kill("SIGKILL"), 5_500);
+    const term = setTimeout(() => child.kill("SIGTERM"), HANG_GUARD_MS);
+    const kill = setTimeout(() => child.kill("SIGKILL"), HANG_GUARD_MS + 500);
     const hard = setTimeout(() => {
       child.stdin?.destroy();
       child.stdout?.destroy();

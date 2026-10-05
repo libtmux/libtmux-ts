@@ -17,6 +17,13 @@ const forwarded = Bun.argv.slice(2);
 const selectsFiles = forwarded[0] !== undefined && !forwarded[0].startsWith("-");
 
 process.exitCode = await runSupervisor({
-  command: ["bun", "test", "--no-orphans", ...(selectsFiles ? forwarded : [".", ...forwarded])],
+  command: [
+    "bun",
+    "test",
+    "--no-orphans",
+    "--timeout",
+    "60000",
+    ...(selectsFiles ? forwarded : [".", ...forwarded]),
+  ],
   cwd: new URL("..", import.meta.url).pathname,
 });

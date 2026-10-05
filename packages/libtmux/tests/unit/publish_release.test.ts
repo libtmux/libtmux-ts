@@ -1,3 +1,4 @@
+import { HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -935,12 +936,12 @@ describe("coordinated release", () => {
         [
           [
             'process.stderr.write("x".repeat(65)); await Bun.sleep(60_000);',
-            1_000,
+            HANG_GUARD_MS,
             64,
             "64 output bytes",
           ],
           ["await Bun.sleep(60_000);", 20, 1_024, "20ms"],
-          ['process.kill(process.pid, "SIGKILL");', 1_000, 1_024, "SIGKILL"],
+          ['process.kill(process.pid, "SIGKILL");', HANG_GUARD_MS, 1_024, "SIGKILL"],
         ] as const
       ).map(async ([suffix, timeoutMilliseconds, maxOutputBytes, diagnostic]) => {
         const runner = createNpmCommandRunner(
@@ -1035,7 +1036,7 @@ describe("coordinated release", () => {
   test("terminates an npm command that exceeds its output limit", async () => {
     const runner = createNpmCommandRunner(
       [process.execPath, "-e", 'process.stdout.write("x".repeat(65)); await Bun.sleep(60_000);'],
-      1_000,
+      HANG_GUARD_MS,
       64,
     );
 

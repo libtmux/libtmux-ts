@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 
+import { deadlineMs, HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
+import type { Pane } from "../../src/pane.js";
+
 /**
  * Bounded waits for the resources a failed fixture reclaims.
  *
@@ -156,4 +159,21 @@ export async function closeChildWithin(
   child.stderr?.destroy();
   child.unref();
   throw new Error("owned child did not close after SIGKILL");
+}
+
+/** Poll a pane until its contents satisfy a predicate; the bound is a hang guard. */
+export async function captureUntil(
+  pane: Pane,
+  matches: (lines: readonly string[]) => boolean,
+  boundMs: number = deadlineMs(HANG_GUARD_MS),
+): Promise<readonly string[]> {
+  const deadline = performance.now() + boundMs;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+    const lines = await pane.capture();
+    if (matches(lines)) return lines;
+    if (performance.now() > deadline) throw new Error("pane never reached the expected contents");
+    // eslint-disable-next-line no-await-in-loop -- each wait follows the capture before it.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }

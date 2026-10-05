@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, readFile, readdir, rmdir, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-import { deadlineMs, FIXTURE_PROBE_DEADLINE_MS } from "./deadlines.js";
+import { deadlineMs, HANG_GUARD_MS } from "./deadlines.js";
 import { tmuxCommand } from "../transport/invocation.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import {
   assertControllerCurrent,
   readDaemonIdentity,
   readProcessIdentity,
+  readProcessLaunch,
   sameControllerIdentity,
   sameDaemonIdentity,
   type DaemonIdentity,
@@ -254,17 +255,15 @@ export async function assertExactProcessLaunch(
   if (daemon.executablePath !== record.controller.executablePath) {
     throw new Error(`daemon executable identity mismatch for PID ${String(daemon.pid)}`);
   }
-  const arguments_ = readNulFrames(
-    await readFile(`/proc/${String(daemon.pid)}/cmdline`),
-    "daemon command line",
-  );
+  const launch = await readProcessLaunch(daemon.pid);
+  if (launch === undefined) {
+    throw new Error(`daemon identity mismatch for PID ${String(daemon.pid)}`);
+  }
+  const arguments_ = readNulFrames(launch.commandLine, "daemon command line");
   if (JSON.stringify(arguments_) !== JSON.stringify(record.bootstrapArgv)) {
     throw new Error(`daemon bootstrap argv mismatch for PID ${String(daemon.pid)}`);
   }
-  assertExactGenerationEntry(
-    await readFile(`/proc/${String(daemon.pid)}/environ`),
-    record.generation,
-  );
+  assertExactGenerationEntry(launch.environment, record.generation);
 }
 
 export function controllerEnvironment(
@@ -326,7 +325,7 @@ export async function validateGenerationAuthority(
     environment,
     executable: record.controller.executablePath,
     globalArgs,
-    timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
+    timeoutMs: deadlineMs(HANG_GUARD_MS),
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
   if (result.exitCode !== 0) throw new Error("fixture generation validation request failed");

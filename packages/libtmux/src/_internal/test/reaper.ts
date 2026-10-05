@@ -6,8 +6,7 @@ import { join } from "node:path";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import {
   DAEMON_EXIT_DEADLINE_MS,
-  DAEMON_REAPED_DEADLINE_MS,
-  FIXTURE_PROBE_DEADLINE_MS,
+  HANG_GUARD_MS,
   PIDFD_HELPER_DEADLINE_MS,
   deadlineMs,
 } from "./deadlines.js";
@@ -309,11 +308,55 @@ function defaultPidfdInterpreter(): Promise<string | undefined> {
   return resolvedPidfdInterpreter;
 }
 
+/**
+ * Darwin has no pidfd, so the daemon is confirmed immediately before each signal
+ * instead of held by a descriptor. The window is the time between the check and
+ * `kill`, in which the PID would have to exit and be reused by another process
+ * of this user for the signal to land elsewhere.
+ */
+async function reapViaSignals(
+  record: Extract<FixtureRecord, { readonly phase: "launching" | "running" }>,
+  identity: DaemonIdentity,
+): Promise<string | undefined> {
+  const confirmed = async (): Promise<"gone" | "ours" | "other"> => {
+    const current = await readDaemonIdentity(identity.pid);
+    if (current === undefined || current.startIdentity !== identity.startIdentity) return "gone";
+    try {
+      await assertExactProcessLaunch(record, identity);
+    } catch {
+      return "other";
+    }
+    return "ours";
+  };
+  const signal = (name: "SIGKILL" | "SIGTERM"): boolean => {
+    try {
+      process.kill(identity.pid, name);
+      return true;
+    } catch (error) {
+      if (isErrno(error, "ESRCH")) return false;
+      throw error;
+    }
+  };
+  for (const name of ["SIGTERM", "SIGKILL"] as const) {
+    // eslint-disable-next-line no-await-in-loop -- the identity is re-checked before each signal.
+    const state = await confirmed();
+    if (state === "gone") return undefined;
+    if (state === "other") {
+      return `signal cleanup refused daemon ${String(identity.pid)}: identity-mismatch`;
+    }
+    if (!signal(name)) return undefined;
+    // eslint-disable-next-line no-await-in-loop -- the wait is the escalation step.
+    if (await awaitDaemonExit(identity, deadlineMs(DAEMON_EXIT_DEADLINE_MS))) return undefined;
+  }
+  return `signal cleanup left daemon ${String(identity.pid)} live`;
+}
+
 async function reapViaPidfd(
   capability: ReservationCapability,
   record: Extract<FixtureRecord, { readonly phase: "launching" | "running" }>,
   identity: DaemonIdentity,
 ): Promise<string | undefined> {
+  if (process.platform === "darwin") return reapViaSignals(record, identity);
   const environment = controllerEnvironment(capability, record.generation.name);
   // An explicitly configured interpreter is authoritative and is never probed
   // or substituted; probing it would both override the choice and hang on a
@@ -516,7 +559,7 @@ async function discoverLaunchingDaemon(
     environment,
     executable: current.record.controller.executablePath,
     globalArgs: ["-N", "-S", current.record.socketPath],
-    timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
+    timeoutMs: deadlineMs(HANG_GUARD_MS),
   });
   const output = new TextDecoder("utf-8", { fatal: true }).decode(result.stdout);
   if (result.exitCode !== 0) throw new Error("fixture generation discovery failed");
@@ -590,7 +633,7 @@ async function connectedGenerationKill(
       environment,
       executable: record.controller.executablePath,
       globalArgs: ["-N", "-S", record.socketPath],
-      timeoutMs: deadlineMs(FIXTURE_PROBE_DEADLINE_MS),
+      timeoutMs: deadlineMs(HANG_GUARD_MS),
     })
     .catch(() => undefined);
   if (result === undefined || result.exitCode !== 0) return "unavailable";
@@ -641,7 +684,7 @@ export async function retireFixtureGeneration(
         throw new Error(`fixture generation could not be retired: ${outcome}`);
       }
     }
-    if (!(await awaitDaemonExit(record.daemon, deadlineMs(DAEMON_REAPED_DEADLINE_MS)))) {
+    if (!(await awaitDaemonExit(record.daemon, deadlineMs(HANG_GUARD_MS)))) {
       throw new Error(`daemon ${String(record.daemon.pid)} remained live after retirement`);
     }
 
@@ -725,7 +768,7 @@ async function reapReservation(capability: ReservationCapability): Promise<ReapR
         if (failure !== undefined) return leak(failure);
       }
     }
-    if (!(await awaitDaemonExit(record.daemon, deadlineMs(DAEMON_REAPED_DEADLINE_MS)))) {
+    if (!(await awaitDaemonExit(record.daemon, deadlineMs(HANG_GUARD_MS)))) {
       return leak(`daemon ${String(record.daemon.pid)} remained live after cleanup`);
     }
     const finalPreflight = await preflightReservation(capability);

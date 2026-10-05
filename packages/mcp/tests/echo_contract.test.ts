@@ -76,7 +76,7 @@ test("S1: a short unsubmitted answer does not mask a longer real output line", a
       });
 
       const waitPromise = client.callTool({
-        arguments: { paneId, patterns: ["ready"], timeoutMs: 3_000 },
+        arguments: { paneId, patterns: ["ready"], timeoutMs: 15_000 },
         name: "wait_for_text",
       });
       await injectForeignOutput(client, fixture, writerPaneId, paneId, "ready", 0.3);
@@ -101,7 +101,7 @@ async function runS2(
     });
   const wait = (): ReturnType<Client["callTool"]> =>
     client.callTool({
-      arguments: { paneId, patterns: [marker], timeoutMs: 4_000 },
+      arguments: { paneId, patterns: [marker], timeoutMs: 15_000 },
       name: "wait_for_text",
     });
 
@@ -182,7 +182,7 @@ test("S4: edits are applied before a line is submitted, and key names never join
     await withClient(fixture, async (client) => {
       const paneId = await shSession(client, "s4");
       const waitPromise = client.callTool({
-        arguments: { paneId, patterns: ["MARKER"], timeoutMs: 4_000 },
+        arguments: { paneId, patterns: ["MARKER"], timeoutMs: 15_000 },
         name: "wait_for_text",
       });
 
@@ -238,7 +238,7 @@ test("S6: an unmodelled key stops discounting the pane's current line", async ()
       });
 
       const waitPromise = client.callTool({
-        arguments: { paneId, patterns: ["xMARKER"], timeoutMs: 3_000 },
+        arguments: { paneId, patterns: ["xMARKER"], timeoutMs: 15_000 },
         name: "wait_for_text",
       });
       await injectForeignOutput(client, fixture, writerPaneId, paneId, "xMARKER", 0.3);

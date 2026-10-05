@@ -10,6 +10,8 @@ import {
   TestServer,
   assertOwnedSocketPath,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 
@@ -292,12 +294,12 @@ describe("handle identity", () => {
     const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
     try {
       await server.newSession({ name: "attached" });
-      await using live = await server.connect({ reconnect: { attempts: 100, delayMs: 25 } });
+      await using live = await server.connect({ reconnect: { attempts: 600, delayMs: 25 } });
       const stale = (await live.snapshot()).panes.one();
       expect(stale.id).toBe(parsePaneId("%0"));
       await using events = live.subscribe();
       const reconnected = events.find((event) => event.kind === "reconnected", {
-        timeoutMs: 5_000,
+        timeoutMs: deadlineMs(HANG_GUARD_MS),
       });
 
       // Each spawned command is bound to the daemon carrying the observer.
@@ -328,11 +330,11 @@ describe("handle identity", () => {
   test("a same-daemon control reconnect preserves its handles", async () => {
     await withServers(1, async ([fixture]) => {
       const server = serverFor(fixture!);
-      await using live = await server.connect({ reconnect: { attempts: 3, delayMs: 25 } });
+      await using live = await server.connect({ reconnect: { attempts: 600, delayMs: 25 } });
       const pane = (await live.snapshot()).panes.one();
       await using events = live.subscribe();
       const reconnected = events.find((event) => event.kind === "reconnected", {
-        timeoutMs: 5_000,
+        timeoutMs: deadlineMs(HANG_GUARD_MS),
       });
 
       await server.cmd("detach-client", ["-s", fixture!.sessionName], { target: null });

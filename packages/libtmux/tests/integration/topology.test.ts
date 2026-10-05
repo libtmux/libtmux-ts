@@ -9,10 +9,13 @@ import {
   runWithCleanup,
   TestServer,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
+import { captureUntil } from "../support/converge.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
 import { MultipleMatchesError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
@@ -48,22 +51,6 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   } finally {
     if (done) await rm(parent, { force: true, recursive: true });
   }
-}
-
-/** Poll a pane until its contents satisfy a predicate or the deadline passes. */
-async function captureUntil(
-  pane: Pane,
-  matches: (lines: readonly string[]) => boolean,
-  attempts = 150,
-): Promise<readonly string[]> {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
-    const lines = await pane.capture();
-    if (matches(lines)) return lines;
-    // eslint-disable-next-line no-await-in-loop -- each wait follows the capture before it.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("pane never reached the expected contents");
 }
 
 describe("window and pane topology", () => {
@@ -835,7 +822,11 @@ describe("window and pane topology", () => {
       // the pane's foreground command, so this converges rather than asserting
       // on the instant the respawn returns.
       let command: string | null = null;
-      for (let attempt = 0; attempt < 100 && command !== "sleep"; attempt += 1) {
+      for (
+        let attempt = 0;
+        attempt < deadlineMs(HANG_GUARD_MS) / 20 && command !== "sleep";
+        attempt += 1
+      ) {
         // eslint-disable-next-line no-await-in-loop -- observed within one fixed bound.
         command = (await server.snapshot()).panes.one({ id: pane.id }).currentCommand;
         if (command === "sleep") break;

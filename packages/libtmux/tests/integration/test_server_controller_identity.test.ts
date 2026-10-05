@@ -20,13 +20,18 @@ import { describe, expect, test } from "bun:test";
 
 import {
   ControlMode,
+  readProcessComm,
   readProcessIdentity,
+  readProcessLaunch,
+  readProcessLaunchSync,
   prepareRunRoot,
   reapOwnedRunRoot,
   type FixtureRecord,
   resolveControllerIdentity,
   TestServer,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { closeChildWithin, waitForProcessExit } from "../support/converge.js";
@@ -99,14 +104,16 @@ function captureControllerReplacementSync(
   const socket = lstatSync(record.socketPath, { bigint: true });
   if (!socket.isSocket()) throw new Error("test-owned tmux path is not a socket");
   linkSync(record.socketPath, recoverySocket);
-  const executable = statSync(`/proc/${String(record.daemon.pid)}/exe`, { bigint: true });
+  const launch = readProcessLaunchSync(record.daemon.pid);
+  if (launch === undefined) throw new Error("test-owned tmux daemon disappeared before capture");
+  const executable = statSync(launch.executablePath, { bigint: true });
   const recoveryExecutable = lstatSync(cleanupExecutable, { bigint: true });
   if (executable.dev !== recoveryExecutable.dev || executable.ino !== recoveryExecutable.ino) {
     throw new Error("test cleanup executable does not match the captured daemon inode");
   }
   return {
     cleanupExecutable,
-    commandLine: readFileSync(`/proc/${String(record.daemon.pid)}/cmdline`),
+    commandLine: launch.commandLine,
     daemon: record.daemon,
     executableIdentity: { device: executable.dev, inode: executable.ino },
     recordBytes,
@@ -147,8 +154,10 @@ async function assertControllerEvidence(captured: ReplacedControllerCleanup): Pr
   try {
     const identity = await readProcessIdentity(captured.daemon.pid);
     if (identity === undefined) return;
-    const executable = await stat(`/proc/${String(captured.daemon.pid)}/exe`, { bigint: true });
-    const commandLine = await readFile(`/proc/${String(captured.daemon.pid)}/cmdline`);
+    const launch = await readProcessLaunch(captured.daemon.pid);
+    if (launch === undefined) return;
+    const executable = await stat(launch.executablePath, { bigint: true });
+    const commandLine = launch.commandLine;
     // An exited process nothing has reaped yet keeps its /proc entry, and
     // its cmdline reads as empty rather than failing: the one disappearance
     // the catch below cannot see. A tmux daemon always has a command line.
@@ -168,7 +177,12 @@ async function assertControllerEvidence(captured: ReplacedControllerCleanup): Pr
     pid: captured.daemon.pid,
     startIdentity: captured.daemon.startIdentity,
   });
-  expect(evidence.executable).toEqual(captured.executableIdentity);
+  // Linux keeps the inode a running process was started from; macOS answers
+  // only a path, which names whatever has replaced it, so there is nothing
+  // captured to compare against there.
+  if (process.platform !== "darwin") {
+    expect(evidence.executable).toEqual(captured.executableIdentity);
+  }
   expect(evidence.commandLine).toBe(captured.commandLine.toString("hex"));
 }
 
@@ -182,9 +196,7 @@ async function terminateAfterControllerReplacement(
   // at this instant, so finding it already gone satisfies the check rather than
   // breaking it.
   if ((await readProcessIdentity(captured.daemon.pid)) === undefined) return;
-  expect((await readFile(`/proc/${String(captured.daemon.pid)}/comm`, "utf8")).trim()).toBe(
-    "tmux: server",
-  );
+  expect(await readProcessComm(captured.daemon.pid)).toBe("tmux: server");
   const cleanupExecutable = await lstat(captured.cleanupExecutable, { bigint: true });
   expect({ device: cleanupExecutable.dev, inode: cleanupExecutable.ino }).toEqual(
     captured.executableIdentity,
@@ -208,7 +220,7 @@ async function terminateAfterControllerReplacement(
   const stderr: Buffer[] = [];
   child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
   child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-  const closed = await closeChildWithin(child, 2_000);
+  const closed = await closeChildWithin(child, deadlineMs(HANG_GUARD_MS));
   const stdoutText = Buffer.concat(stdout).toString("utf8");
   const stderrText = Buffer.concat(stderr).toString("utf8");
   // The recovery socket is a hard link to the daemon's own, so "no server

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type { EventEmitter } from "node:events";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { constants as osConstants, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import { resolveControllerIdentity } from "./process_identity.js";
@@ -61,6 +61,29 @@ async function terminateSupervisor(signal: "SIGINT" | "SIGTERM"): Promise<never>
   return new Promise<never>(() => undefined);
 }
 
+/** Where `bun test` writes a JUnit file per run, for the stress workflow to count failures from. */
+const JUNIT_DIR_ENV = "LIBTMUX_TEST_JUNIT_DIR";
+
+/**
+ * Add a JUnit report to a `bun test` command when a directory is asked for.
+ *
+ * One file per supervised command, named for the directory it runs in, so the
+ * four suites a repetition runs do not overwrite each other.
+ */
+function withJunitReport(options: SupervisorOptions): readonly [string, ...string[]] {
+  const directory = process.env[JUNIT_DIR_ENV];
+  const [executable, subcommand, ...rest] = options.command;
+  if (directory === undefined || directory === "" || subcommand !== "test") return options.command;
+  const name = basename(options.cwd ?? process.cwd());
+  return [
+    executable,
+    subcommand,
+    "--reporter=junit",
+    `--reporter-outfile=${join(directory, `${name}.xml`)}`,
+    ...rest,
+  ];
+}
+
 /** Run one test command under signal forwarding and authenticated run-root cleanup. */
 export async function runSupervisor(options: SupervisorOptions): Promise<number> {
   const graceMs = options.graceMs ?? 500;
@@ -75,7 +98,7 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
     await prepareRunRoot(runRoot);
   }
 
-  const [executable, ...args] = options.command;
+  const [executable, ...args] = withJunitReport(options);
   const child = spawn(executable, args, {
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     env: { ...process.env, [RUN_ROOT_ENV]: runRoot },

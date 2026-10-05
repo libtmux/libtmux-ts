@@ -1,4 +1,5 @@
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
+import { HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 
 export const DIFFERENTIAL_PROTOCOL = "libtmux-differential-v1" as const;
 
@@ -146,7 +147,7 @@ export async function queryRawTmux(request: DifferentialRequest): Promise<Differ
     commands: [["list-sessions", "-F", "#{session_name}"]],
     executable: "tmux",
     globalArgs: ["-S", submitted.socketPath],
-    timeoutMs: 3_000,
+    timeoutMs: HANG_GUARD_MS,
   });
   const stdout = new TextDecoder().decode(result.stdout);
   const sessions = stdout

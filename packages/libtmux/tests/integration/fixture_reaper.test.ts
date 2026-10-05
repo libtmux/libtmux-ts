@@ -61,6 +61,8 @@ import {
   resolveControllerIdentity,
   TestServer,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -93,13 +95,23 @@ import os
 import signal
 import subprocess
 import sys
+import threading
+import time
 
 parent = os.getppid()
-libc = ctypes.CDLL(None, use_errno=True)
-if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
-    raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG) failed")
-if os.getppid() != parent:
-    os.kill(os.getpid(), signal.SIGKILL)
+if sys.platform == "linux":
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG) failed")
+    if os.getppid() != parent:
+        os.kill(os.getpid(), signal.SIGKILL)
+else:
+    # No parent-death signal outside Linux; polling for the reparent is the mechanism.
+    def watch_parent():
+        while os.getppid() == parent:
+            time.sleep(0.05)
+        os.kill(os.getpid(), signal.SIGKILL)
+    threading.Thread(target=watch_parent, daemon=True).start()
 completed = subprocess.run([sys.argv[2], *sys.argv[3:]], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 sys.stdout.buffer.write(completed.stdout)
 sys.stdout.buffer.flush()
@@ -148,7 +160,7 @@ describe("fixture launch and exact-root reaping", () => {
         join(parent, "launching-recovery.sock"),
       );
       worker.kill("SIGKILL");
-      await exitChildWithin(worker, 2_000);
+      await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       await waitForProcessExit(wrapperPid);
 
       const reservations = (await readdir(root)).filter((entry) => entry !== OWNER_RECORD_NAME);
@@ -161,7 +173,7 @@ describe("fixture launch and exact-root reaping", () => {
     } finally {
       if (worker.exitCode === null && worker.signalCode === null) {
         worker.kill("SIGKILL");
-        await exitChildWithin(worker, 2_000);
+        await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       }
       const reaped = wrapperPid;
       if (reaped !== undefined) {
@@ -197,7 +209,7 @@ describe("fixture launch and exact-root reaping", () => {
       );
       captured = authority;
       worker.kill("SIGKILL");
-      await exitChildWithin(worker, 2_000);
+      await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       await waitForProcessExit(wrapperPid);
 
       const reservations = (await readdir(root)).filter((entry) => entry !== OWNER_RECORD_NAME);
@@ -233,7 +245,7 @@ describe("fixture launch and exact-root reaping", () => {
     } finally {
       if (worker.exitCode === null && worker.signalCode === null) {
         worker.kill("SIGKILL");
-        await exitChildWithin(worker, 2_000);
+        await exitChildWithin(worker, deadlineMs(HANG_GUARD_MS));
       }
       const reaped = wrapperPid;
       if (reaped !== undefined) {
@@ -266,7 +278,7 @@ describe("fixture launch and exact-root reaping", () => {
         daemon: {
           ...identity,
           comm: "tmux: server",
-          executablePath: await realpath(`/proc/${String(child.pid)}/exe`),
+          executablePath: await realpath(process.execPath),
         },
         logicalSocketName: "fabricated",
         owner: await readProcessIdentity(process.pid),
@@ -601,7 +613,7 @@ describe("fixture launch and exact-root reaping", () => {
         cwd: tsRoot,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      const result = await closeChildWithin(reaper, 2_000);
+      const result = await closeChildWithin(reaper, deadlineMs(HANG_GUARD_MS));
       expect(result.code).not.toBe(0);
       expect(result.stderr).toContain("live owner");
       expect(processExists(server.daemonIdentity.pid)).toBe(true);

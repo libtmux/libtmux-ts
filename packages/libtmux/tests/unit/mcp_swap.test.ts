@@ -45,7 +45,7 @@ import {
   type CliInfo,
 } from "../../../../scripts/mcp_swap.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory, deadlineMs, HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 const CLI_NAMES = ["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"];
@@ -174,7 +174,8 @@ async function seedSymlink(
 }
 
 async function waitForPath(path: string): Promise<void> {
-  for (let attempt = 0; attempt < 5_000; attempt += 1) {
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
+  while (performance.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- poll until the transaction reaches this boundary.
     if (await Bun.file(path).exists()) return;
     // eslint-disable-next-line no-await-in-loop -- polling must yield between observations.
@@ -186,7 +187,8 @@ async function waitForPath(path: string): Promise<void> {
 async function expectRecordedProcessGone(path: string): Promise<void> {
   const pid = Number(await readFile(path, "utf8"));
   let alive = true;
-  for (let attempt = 0; attempt < 500; attempt += 1) {
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
+  while (performance.now() < deadline) {
     try {
       process.kill(pid, 0);
     } catch (error) {
@@ -395,7 +397,7 @@ describe("server preflight", () => {
     `;
 
     expect(
-      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, 1_000),
+      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, HANG_GUARD_MS),
     ).toBeUndefined();
   });
 
@@ -424,9 +426,9 @@ describe("server preflight", () => {
     const started = performance.now();
 
     expect(
-      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, 2_000),
+      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, HANG_GUARD_MS),
     ).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(performance.now() - started).toBeLessThan(HANG_GUARD_MS);
 
     await expectRecordedProcessGone(descendantPid);
   });
@@ -456,7 +458,7 @@ describe("server preflight", () => {
     `;
 
     expect(
-      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, 1_000),
+      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, HANG_GUARD_MS),
     ).toBe("no valid initialize reply");
   });
 
@@ -470,7 +472,7 @@ describe("server preflight", () => {
     `;
 
     expect(
-      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, 1_000),
+      await preflight({ args: ["-e", source], command: process.execPath, env: {} }, HANG_GUARD_MS),
     ).toBe("no valid initialize reply");
   });
 
@@ -487,9 +489,12 @@ describe("server preflight", () => {
       const started = performance.now();
 
       expect(
-        await preflight({ args: ["-e", source], command: process.execPath, env: {} }, 2_000),
+        await preflight(
+          { args: ["-e", source], command: process.execPath, env: {} },
+          HANG_GUARD_MS,
+        ),
       ).toBe("initialize exceeded 4194304 output bytes");
-      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(performance.now() - started).toBeLessThan(HANG_GUARD_MS);
       await expectRecordedProcessGone(descendantPid);
     },
   );

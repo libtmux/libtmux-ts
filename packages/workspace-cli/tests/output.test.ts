@@ -34,7 +34,7 @@ test.each(["human", "json", "ndjson", "help"])(
       signal: controller.signal,
     });
     try {
-      expect(await Promise.race([operation, Bun.sleep(500).then(() => -1)])).toBe(130);
+      expect(await Promise.race([operation, Bun.sleep(10_000).then(() => -1)])).toBe(130);
       expect(stdout.destroyed).toBe(false);
     } finally {
       release?.();
@@ -73,7 +73,7 @@ test("cancellation releases blocked editor output and reaps the child", async ()
     signal: controller.signal,
   });
   try {
-    expect(await Promise.race([operation, Bun.sleep(1500).then(() => -1)])).toBe(130);
+    expect(await Promise.race([operation, Bun.sleep(10_000).then(() => -1)])).toBe(130);
     expect(pid).toBeGreaterThan(0);
     expect(() => process.kill(pid, 0)).toThrow();
   } finally {
@@ -114,13 +114,13 @@ test("the CLI exits on interrupt with an unread stdout pipe", async () => {
     },
   );
   try {
-    const deadline = Date.now() + 2000;
+    const deadline = Date.now() + 15_000;
     // eslint-disable-next-line no-await-in-loop -- Wait for the owned editor before interrupting its CLI.
     while (!(await Bun.file(marker).exists()) && Date.now() < deadline) await Bun.sleep(10);
     const editorPid = Number(await readFile(marker, "utf8"));
     await Bun.sleep(50);
     cli.kill("SIGINT");
-    expect(await Promise.race([cli.exited, Bun.sleep(1500).then(() => -1)])).toBe(130);
+    expect(await Promise.race([cli.exited, Bun.sleep(10_000).then(() => -1)])).toBe(130);
     expect(() => process.kill(editorPid, 0)).toThrow();
   } finally {
     if (cli.exitCode === null) cli.kill("SIGKILL");

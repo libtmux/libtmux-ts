@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+
 import { resolveNode22 } from "../src/_internal/test/testkit.js";
 
 /**
@@ -14,24 +16,52 @@ export interface PreflightRequirement {
 }
 
 /**
- * The fixture supervisor reads `/proc`, and says so before it fails.
+ * The fixture supervisor identifies processes by what the host reports, and
+ * says so before it fails.
  *
- * Process identity there is `linux:<boot id>:<start time>`, read from
- * `/proc/<pid>/stat` and `/proc/sys/kernel/random/boot_id`, and the cancellation
- * tests assume descendants that hold an inherited pipe behave as they do on
- * Linux. None of that has a Darwin equivalent yet. Without this check a macOS
- * checkout gets a wall of ENOENT from a file nobody mentioned; with it, one
- * sentence naming what is missing.
+ * Linux reads `/proc`. Darwin has none: it asks `ps` for a start time and
+ * `sysctl(KERN_PROCARGS2)`, through Python's `ctypes`, for a command line and
+ * environment. Any other host has neither, and without this check gets a wall
+ * of ENOENT from a file nobody mentioned; with it, one sentence.
  */
-export const LINUX_HARNESS: PreflightRequirement = {
+export const PROCESS_HARNESS: PreflightRequirement = {
   check: async () => {
     if (process.platform === "linux") return;
-    throw new Error(
-      `the fixture supervisor identifies processes through /proc, which ${process.platform} does not have.` +
-        " The unit suite runs anywhere; the real-tmux suites need Linux until the supervisor is ported",
-    );
+    if (process.platform !== "darwin") {
+      throw new Error(
+        `the fixture supervisor identifies processes through /proc or ps and sysctl, which ${process.platform} lacks.` +
+          " The unit suite runs anywhere; the real-tmux suites need Linux or macOS",
+      );
+    }
+    const python = "python3";
+    const probe = Bun.spawnSync({
+      cmd: [python, "-I", "-c", "import ctypes; ctypes.CDLL(None).sysctl"],
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    if (probe.exitCode !== 0) {
+      throw new Error(
+        `reading a process's arguments on macOS needs ${python} with ctypes; put one that has it first on PATH`,
+      );
+    }
   },
-  name: "a Linux host for the real-tmux fixture supervisor",
+  name: "a host the real-tmux fixture supervisor can inspect",
+};
+
+/**
+ * A socket path has to fit `sun_path`, and the fixture's longest path already
+ * uses most of it under `/tmp`. macOS's own `$TMPDIR` leaves too little.
+ */
+export const SHORT_TMPDIR: PreflightRequirement = {
+  check: async () => {
+    const directory = tmpdir();
+    if (Buffer.byteLength(directory, "utf8") > 24) {
+      throw new Error(
+        `${directory} leaves too little of a socket path for the fixture; run with TMPDIR=/tmp (TMPDIR=/private/tmp on macOS, where /tmp is a symlink)`,
+      );
+    }
+  },
+  name: "a short temporary directory for tmux sockets",
 };
 
 export const NODE22: PreflightRequirement = {

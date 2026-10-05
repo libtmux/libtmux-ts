@@ -199,7 +199,7 @@ if pid == 0:
     os.execvpe(shell, [shell, '--norc', '--noprofile'] if shell == 'bash' else [shell, '-f'], dict(os.environ, PATH=root + os.pathsep + os.environ['PATH'], TERM='xterm', LC_ALL='C', HISTFILE='/dev/null'))
 trace = bytearray()
 def until(predicate):
-    end = time.monotonic() + 4
+    end = time.monotonic() + 20
     while time.monotonic() < end:
         if predicate(): return
         if select.select([fd], [], [], .01)[0]:
@@ -220,8 +220,15 @@ try:
     print(json.dumps([value.decode() for value in buffers()]))
 finally:
     try: os.killpg(pid, signal.SIGKILL)
-    except ProcessLookupError: pass
-    os.waitpid(pid, 0)
+    except (ProcessLookupError, PermissionError): pass
+    # A session leader's exit waits for its terminal output to drain on macOS.
+    while True:
+        try: done, _ = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError: break
+        if done: break
+        if select.select([fd], [], [], 0.05)[0]:
+            try: os.read(fd, 65536)
+            except OSError: pass
     os.close(fd)
 `;
 

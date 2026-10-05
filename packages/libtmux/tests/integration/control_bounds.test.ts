@@ -10,6 +10,8 @@ import {
   TestServer,
   assertOwnedSocketPath,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { Server } from "../../src/server.js";
@@ -266,11 +268,14 @@ describe("control-mode event bounds", () => {
 
       await server.cmd("wait-for", ["-U", channel]);
 
+      // From 3.8 the lock is granted and the call has only to start a client; an
+      // older tmux keeps it held, and the short bound is the timeout expected.
+      const granted = await server.versionAtLeast("3.8");
       const third = await server
-        .cmd("wait-for", ["-L", channel], { timeoutMs: 500 })
+        .cmd("wait-for", ["-L", channel], { timeoutMs: granted ? deadlineMs(HANG_GUARD_MS) : 500 })
         .then(() => undefined)
         .catch((thrown: unknown) => thrown);
-      if (await server.versionAtLeast("3.8")) {
+      if (granted) {
         expect(third).toBeUndefined();
       } else {
         expect(third).toBeInstanceOf(TmuxTransportError);
