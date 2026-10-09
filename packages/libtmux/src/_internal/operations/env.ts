@@ -1,4 +1,5 @@
 import { LibTmuxError } from "../../errors.js";
+import { tmuxContextSocket } from "../runtime/endpoint.js";
 
 export interface TmuxEnvironment {
   readonly socketPath: string;
@@ -20,11 +21,12 @@ export function readTmuxEnvironment(
   if (tmux === undefined || tmux === "") {
     throw new LibTmuxError("$TMUX is not set; this process is not inside tmux");
   }
-  const separator = tmux.lastIndexOf(",", tmux.lastIndexOf(",") - 1);
-  if (separator <= 0) {
-    throw new LibTmuxError(`$TMUX is malformed: ${tmux}`);
+  let socketPath: string;
+  try {
+    socketPath = tmuxContextSocket(tmux);
+  } catch (cause) {
+    throw new LibTmuxError(`$TMUX is malformed: ${tmux}`, { cause });
   }
-  const socketPath = tmux.slice(0, separator);
 
   const paneId = environment.TMUX_PANE;
   if (paneId === undefined || !/^%\d+$/.test(paneId)) {

@@ -172,8 +172,7 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     const args = ["-N"];
     if (this.#connection.colors === 256) args.push("-2");
     if (this.#connection.configFile !== undefined) args.push(`-f${this.#connection.configFile}`);
-    if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
-    if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);
+    args.push(`-S${this.#connection.socketPath}`);
     return snapshotInvocationRequest({
       // `;` rather than a tab: tmux sanitizes a literal tab out of
       // `display-message` output when the client's locale is not a UTF-8 one,

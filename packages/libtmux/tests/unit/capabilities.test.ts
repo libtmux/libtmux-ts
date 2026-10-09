@@ -363,6 +363,7 @@ describe("tmux capabilities", () => {
       expect(requests).toHaveLength(1);
       expect(flattenInvocation(requests[0]!)).toEqual([
         "-N",
+        `-S/tmp/tmux-${String(process.getuid!())}/default`,
         "display-message",
         "-p",
         "#{version};#{pid};#{start_time}",

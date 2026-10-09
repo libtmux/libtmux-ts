@@ -130,3 +130,32 @@ export { VersionTooLow } from "./errors.js";
 export { WaitTimeout } from "./errors.js";
 /** @deprecated Use {@link TmuxServerRestartedError}. Removed at `0.1.0`. */
 export { TmuxServerRestarted } from "./errors.js";
+
+export {
+  adoptServer,
+  adoptSession,
+  adoptWindow,
+  adoptPane,
+  ownSession,
+  ownWindow,
+  ownPane,
+  withOwned,
+  findOrCreateServer,
+  findOrCreateSession,
+  findOrCreateWindow,
+  findOrCreatePane,
+  TmuxAcquisitionError,
+  type Owned,
+  type OwnershipReceipt,
+  type CleanupState,
+  type FindOrCreateResult,
+  type PaneIdentity,
+} from "./lifecycle.js";
+
+export {
+  discoverServers,
+  type DiscoverServersOptions,
+  type DiscoveryResult,
+  type DiscoveryDiagnostic,
+  type DiscoveredServer,
+} from "./discovery.js";

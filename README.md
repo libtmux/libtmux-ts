@@ -90,23 +90,26 @@ const editors = snapshot.panes.where({ currentCommand: "vim" });
 console.log(editors.count(), editors.at(0)?.session?.name);
 ```
 
-Building something rather than reading it looks like this — and this block is a
-literal excerpt of [`examples/quickstart/quickstart.ts`](examples/quickstart/quickstart.ts), which the
-integration suite runs against a real tmux server:
+Create a session with a scope that destroys it on normal or exceptional exit.
+The [external harness](packages/libtmux/tests/integration/environment.test.ts)
+runs this same file against a private endpoint through its child environment.
 
-<!-- runs: examples/quickstart/quickstart.ts -->
+<!-- runs: examples/quickstart/default-session.ts -->
 
 ```ts
-const session = await server.newSession({ name: "quickstart" });
-const editor = await session.newWindow({ name: "editor" });
-await editor.split();
+import { Server, ownSession } from "libtmux";
 
-const snapshot = await server.snapshot();
+const server = new Server();
+await using owned = await ownSession(server, { name: `example-${crypto.randomUUID()}` });
+const session = owned.value;
 
-const found = snapshot.windows.where({ name: "editor" }).one();
-
-const paneCount = found.panes.length;
+console.log(JSON.stringify({ id: session.id, name: session.name, socketPath: server.socketPath }));
 ```
+
+`new Server()` captures its endpoint from explicit options, `LIBTMUX_SOCKET_PATH`,
+`LIBTMUX_SOCKET_NAME`, `TMUX`, or the named default, in that order. See
+[endpoint defaults](packages/libtmux/README.md#endpoint-and-child-process-defaults)
+for empty values, validation, and the complete child-environment option.
 
 ## What querying looks like
 

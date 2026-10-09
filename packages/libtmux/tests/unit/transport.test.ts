@@ -1,4 +1,6 @@
 import { fileURLToPath } from "node:url";
+import { chmod, lstat, mkdir, rm, symlink } from "node:fs/promises";
+import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
@@ -16,11 +18,124 @@ import {
 } from "../../src/_internal/transport/invocation.js";
 import type { CommandRequest } from "../../src/_internal/transport/types.js";
 import { TmuxTransportError } from "../../src/errors.js";
+import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const echoFixture = fileURLToPath(new URL("../fixtures/echo_argv.mjs", import.meta.url));
 const malformedFixture = fileURLToPath(new URL("../fixtures/malformed_utf8.mjs", import.meta.url));
 
 describe("NodeSpawnTransport", () => {
+  test("prepares the captured named directory and admits tmux's group permissions", async () => {
+    const root = await makeTestDirectory("ltx-endpoint-");
+    const hostEnvironment = { ...process.env };
+    try {
+      const connection = new TmuxConnection({
+        executable: "tmux",
+        environment: { TMUX_TMPDIR: root },
+        socketName: "named",
+      });
+      const directory = connection.socketDirectory!;
+      const transport = new NodeSpawnTransport({ socketDirectory: directory });
+      const request = {
+        executable: process.execPath,
+        globalArgs: [],
+        commands: [[echoFixture, "spawned"]] as const,
+      };
+      expect((await transport.execute(request)).exitCode).toBe(0);
+      expect((await lstat(directory.path)).mode & 0o777).toBe(0o700);
+      await chmod(directory.path, 0o770);
+      expect((await transport.execute(request)).exitCode).toBe(0);
+      await chmod(directory.path, 0o771);
+      await expect(transport.execute(request)).rejects.toMatchObject({
+        kind: "spawn",
+        delivery: "not_started",
+      });
+      await rm(directory.path, { recursive: true });
+      const target = join(root, "target");
+      await mkdir(target, { mode: 0o700 });
+      await symlink(target, directory.path);
+      await expect(transport.execute(request)).rejects.toMatchObject({
+        kind: "spawn",
+        delivery: "not_started",
+      });
+      expect({ ...process.env }).toEqual(hostEnvironment);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a missing named root cannot fall back to the ambient default", async () => {
+    const root = await makeTestDirectory("ltx-missing-root-");
+    try {
+      const connection = new TmuxConnection({
+        executable: "tmux",
+        environment: { TMUX_TMPDIR: join(root, "absent") },
+      });
+      const transport = new NodeSpawnTransport({ socketDirectory: connection.socketDirectory });
+      await expect(
+        transport.execute({
+          executable: process.execPath,
+          globalArgs: [],
+          commands: [[echoFixture, "must-not-run"]],
+        }),
+      ).rejects.toMatchObject({ kind: "spawn", delivery: "not_started" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("missing components before parent traversal cannot redirect a named root", async () => {
+    const root = await makeTestDirectory("ltx-parent-root-");
+    try {
+      const selected = join(root, "selected");
+      await mkdir(selected, { mode: 0o700 });
+      const connection = new TmuxConnection({
+        executable: "tmux",
+        environment: { TMUX_TMPDIR: `${root}/missing/../selected` },
+      });
+      const transport = new NodeSpawnTransport({ socketDirectory: connection.socketDirectory });
+      await expect(
+        transport.execute({
+          executable: process.execPath,
+          globalArgs: [],
+          commands: [[echoFixture, "must-not-run"]],
+        }),
+      ).rejects.toMatchObject({ kind: "spawn", delivery: "not_started" });
+      await expect(lstat(join(selected, `tmux-${String(process.getuid!())}`))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a symlink parent traversal keeps filesystem path semantics", async () => {
+    const root = await makeTestDirectory("ltx-symlink-root-");
+    try {
+      const physical = join(root, "physical");
+      const child = join(physical, "child");
+      await mkdir(child, { recursive: true, mode: 0o700 });
+      const link = join(root, "link");
+      await symlink(child, link);
+      const connection = new TmuxConnection({
+        executable: "tmux",
+        environment: { TMUX_TMPDIR: `${link}/..` },
+      });
+      const transport = new NodeSpawnTransport({ socketDirectory: connection.socketDirectory });
+      expect(
+        (
+          await transport.execute({
+            executable: process.execPath,
+            globalArgs: [],
+            commands: [[echoFixture, "spawned"]],
+          })
+        ).exitCode,
+      ).toBe(0);
+      const uidDirectory = `tmux-${String(process.getuid!())}`;
+      expect((await lstat(join(physical, uidDirectory))).isDirectory()).toBe(true);
+      await expect(lstat(join(root, uidDirectory))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("rejects invalid timer values before spawning", async () => {
     const invalidTimeout = [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648];
     const invalidDelay = [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648];
