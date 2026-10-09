@@ -27,6 +27,7 @@ export function builtModuleUrl(module: string): string {
 export function runModule(
   source: string,
   env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = 5_000,
 ): { readonly exitCode: number | null; readonly stderr: string; readonly stdout: string } {
   const result = spawnSync(
     process.execPath,
@@ -35,7 +36,7 @@ export function runModule(
       : ON_DENO
         ? ["eval", source]
         : ["--input-type=module", "--eval", source],
-    { cwd: fileURLToPath(packageRoot), encoding: "utf8", env, timeout: 5_000 },
+    { cwd: fileURLToPath(packageRoot), encoding: "utf8", env, timeout: timeoutMs },
   );
   return { exitCode: result.status, stderr: result.stderr, stdout: result.stdout };
 }

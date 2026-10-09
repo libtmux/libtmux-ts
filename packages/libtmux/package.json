@@ -42,6 +42,18 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./lifecycle": {
+      "types": "./dist/lifecycle.d.ts",
+      "bun": "./src/lifecycle.ts",
+      "import": "./dist/lifecycle.js",
+      "default": "./dist/lifecycle.js"
+    },
+    "./discovery": {
+      "types": "./dist/discovery.d.ts",
+      "bun": "./src/discovery.ts",
+      "import": "./dist/discovery.js",
+      "default": "./dist/discovery.js"
+    },
     "./package.json": "./package.json",
     "./common": {
       "types": "./dist/common.d.ts",

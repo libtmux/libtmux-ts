@@ -902,6 +902,12 @@ console.log(JSON.stringify({
 const args = parseArguments(process.argv.slice(2));
 const runtime = await resolveRuntime(args);
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
+const exampleBuild = spawnSync("bun", ["run", "--cwd", "../../examples/quickstart", "build"], {
+  cwd: tsRoot,
+  stdio: "inherit",
+});
+if (exampleBuild.error !== undefined) throw exampleBuild.error;
+if (exampleBuild.status !== 0) throw new Error("the ordinary example did not compile");
 // Only a top-level runner owns the namespace sweep. A nested runner inherits
 // its parent's exact root and must not race that owner or an explicit reaper.
 if (process.env[RUN_ROOT_ENV] === undefined) await sweepStaleRunRoots();

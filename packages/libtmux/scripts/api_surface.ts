@@ -25,6 +25,25 @@ export const SOURCES = [
 
 const ROOT_SOURCES = [
   {
+    file: "src/lifecycle.ts",
+    functions: [
+      "ownSession",
+      "ownWindow",
+      "ownPane",
+      "adoptServer",
+      "adoptSession",
+      "adoptWindow",
+      "adoptPane",
+      "withOwned",
+      "findOrCreateServer",
+      "findOrCreateSession",
+      "findOrCreateWindow",
+      "findOrCreatePane",
+    ],
+    types: [],
+  },
+  { file: "src/discovery.ts", functions: ["discoverServers"], types: [] },
+  {
     file: "src/selection.ts",
     functions: ["encodeWhereDocument", "decodeWhereDocument"],
     types: [],
@@ -195,14 +214,14 @@ function declarationAt(
         break;
       }
     }
-    return {
-      hasBody,
-      signature: collected
-        .join("\n")
-        .replace(/^export /u, "")
-        .replace(/\s*\{\s*$/u, ";")
-        .trim(),
-    };
+    const signature = collected
+      .join("\n")
+      .replace(/^export (?:async )?/u, "")
+      .replace(/\s*\{\s*$/u, ";")
+      .trim();
+    // Removing export/async can make a wrapped declaration fit the Markdown code fence.
+    const compact = signature.replace(/\s+/gu, " ").replace(/\( /gu, "(").replace(/, \)/gu, ")");
+    return { hasBody, signature: compact.length <= 100 ? compact : signature };
   }
 
   const collected: string[] = [];
@@ -217,7 +236,7 @@ function declarationAt(
     hasBody: false,
     signature: collected
       .join("\n")
-      .replace(/^export /u, "")
+      .replace(/^export (?:async )?/u, "")
       .trim(),
   };
 }
@@ -232,7 +251,7 @@ function declarationsOf(
   const declarations = new Map<string, ApiDeclaration>();
 
   for (const [index, line] of lines.entries()) {
-    const functionName = /^export function (\w+)/u.exec(line)?.[1];
+    const functionName = /^export (?:async )?function (\w+)/u.exec(line)?.[1];
     const typeName = /^export type (\w+)/u.exec(line)?.[1];
     const kind = functionName === undefined ? "type" : "function";
     const name = functionName ?? typeName;

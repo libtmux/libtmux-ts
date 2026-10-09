@@ -33,6 +33,30 @@ remember.
 
 ## Unreleased
 
+- `ownSession`, `ownWindow`, and `ownPane` return async-disposable owners with generation-bound cleanup and rollback after a known creation ID. `adoptServer`, `adoptSession`, `adoptWindow`, and `adoptPane` accept explicit destruction responsibility for the current endpoint and exact IDs. `withOwned` preserves combined body and cleanup failures; owners expose failed disposal attempts and allow guarded retries.
+- `findOrCreateServer`, `findOrCreateSession`, `findOrCreateWindow`, and `findOrCreatePane` distinguish newly owned resources from borrowed reuse. Calls sharing the documented parent object serialize; independent clients retain tmux's native concurrency behavior.
+- `discoverServers` searches bounded local socket directories with per-candidate diagnostics and truncation. It retains filesystem traversal and uses no-start probes.
+
+### Endpoint defaults
+
+`Server` captures one absolute endpoint at construction: explicit socket options,
+nonempty `LIBTMUX_SOCKET_PATH`, nonempty `LIBTMUX_SOCKET_NAME`, `TMUX`, then the
+named default. Empty environment selectors count as absent; invalid selected
+values raise `TypeError`. Named/default sockets capture `TMUX_TMPDIR` and the
+UID, and commands use `-S` without ambient attachment context. `socketPath` now
+reports the resolved path for named/default endpoints too.
+
+Client environments remain complete copied maps. The child copy excludes `TMUX`
+and `TMUX_PANE`; the host environment and tmux's server/session environment stay
+separate. Named/default local endpoints prepare and validate their per-UID
+directory without falling back from a missing root. Deno needs UID lookup and
+read/write permission for that directory; explicit paths skip preparation.
+
+The ordinary `default-session.ts` example uses `new Server()` and `await using`.
+An external harness runs that file unchanged at its own endpoint and verifies
+normal cleanup, body failure, cleanup failure, and combined `SuppressedError`
+details on the runtimes running the suite.
+
 ### Deno
 
 `libtmux`, `@libtmux/mcp`, `@libtmux/workspace`, and `@libtmux/workspace-cli`

@@ -23,9 +23,10 @@ Or one at a time, each being a package of its own:
 $ bun test examples/watch
 ```
 
-Every example exports a function taking a `Server` rather than constructing
-one, so the suite can hand it an isolated fixture — and you can hand it a
-server of your own:
+The tour examples accept a `Server` from their caller.
+[`default-session.ts`](quickstart/default-session.ts) constructs `new Server()`
+and needs no endpoint arguments; its external harness selects a private socket
+through the child environment. To read from your normal endpoint:
 
 ```ts
 import { Server } from "libtmux";

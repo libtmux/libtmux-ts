@@ -53,6 +53,8 @@ import type { AbortLike } from "./types.js";
  * command keeps its own stdout and stderr either way.
  */
 export type DaemonGuard = {
+  /** Reserved server option accepted with the object ID by an ownership operation. */
+  readonly generation?: string;
   readonly pid: string;
   readonly startTime: string;
 };

@@ -16,7 +16,266 @@ not that it is unpublished.
 
 ## Functions
 
-[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+[`ownSession`](#ownsession) · [`ownWindow`](#ownwindow) · [`ownPane`](#ownpane) · [`adoptServer`](#adoptserver) · [`adoptSession`](#adoptsession) · [`adoptWindow`](#adoptwindow) · [`adoptPane`](#adoptpane) · [`withOwned`](#withowned) · [`findOrCreateServer`](#findorcreateserver) · [`findOrCreateSession`](#findorcreatesession) · [`findOrCreateWindow`](#findorcreatewindow) · [`findOrCreatePane`](#findorcreatepane) · [`discoverServers`](#discoverservers) · [`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+
+### `ownSession`
+
+```ts
+function ownSession(server: Server, options: NewSessionOptions = {}): Promise<Owned<Session>>;
+```
+
+Create a session and destroy it at scope exit, including its windows and panes.
+Readback or cancellation after receiving an ID rolls back that ID on its creating daemon.
+
+```ts
+import { Server, ownSession } from "libtmux";
+await using owned = await ownSession(new Server(), { name: `work-${crypto.randomUUID()}` });
+console.log(owned.value.id);
+```
+
+### `ownWindow`
+
+```ts
+function ownWindow(session: Session, options: NewWindowOptions = {}): Promise<Owned<Window>>;
+```
+
+Create a window owned until disposal, which destroys all of its links and panes.
+
+```ts
+import { Server, ownSession, ownWindow } from "libtmux";
+await using session = await ownSession(new Server());
+await using window = await ownWindow(session.value, { name: "build" });
+console.log(window.value.id);
+```
+
+### `ownPane`
+
+```ts
+function ownPane(parent: Pane | Window, options: SplitOptions = {}): Promise<Owned<Pane>>;
+```
+
+Split a pane or window, owning the new pane until disposal.
+
+```ts
+import { Server, ownSession, ownPane } from "libtmux";
+await using session = await ownSession(new Server());
+await using pane = await ownPane(session.value.windows.one());
+console.log(pane.value.id);
+```
+
+### `adoptServer`
+
+```ts
+function adoptServer(server: Server, options: CommandOptions = {}): Promise<Owned<Server>>;
+```
+
+Accept destruction of the daemon now answering this endpoint. Use only an explicit disposable
+endpoint for whole-server examples. Writes the reserved server option @libtmux_owner_generation
+if absent; callers must not shadow or change that key. Existing malformed values fail.
+This whole-server demonstration takes an explicit socket path inside an existing private directory.
+
+```ts
+import { Server, adoptServer } from "libtmux";
+const socketPath = process.argv[2];
+if (socketPath === undefined) throw new Error("Pass a disposable socket path");
+const disposable = new Server({ socketPath });
+await disposable.newSession();
+await using owned = await adoptServer(disposable);
+console.log(owned.receipt.daemon.generation);
+```
+
+### `adoptSession`
+
+```ts
+function adoptSession(
+  server: Server,
+  id: string,
+  options: CommandOptions = {},
+): Promise<Owned<Session>>;
+```
+
+Accept destruction of the current endpoint's exact session ID, including its windows and panes.
+The ID selects the object at adoption time; passing an old handle's ID does not prove it is
+still the old object. Use the returned receipt for subsequent cleanup.
+
+```ts
+import { Server, adoptSession } from "libtmux";
+const server = new Server();
+const existing = await server.newSession();
+await using owned = await adoptSession(server, existing.id);
+console.log(owned.value.name);
+```
+
+### `adoptWindow`
+
+```ts
+function adoptWindow(
+  server: Server,
+  id: string,
+  options: CommandOptions = {},
+): Promise<Owned<Window>>;
+```
+
+Accept destruction of this endpoint's exact window ID, all links, and all its panes.
+
+```ts
+import { Server, ownSession, adoptWindow } from "libtmux";
+await using session = await ownSession(new Server());
+const existing = await session.value.newWindow({ name: "adopted" });
+await using window = await adoptWindow(session.value.server, existing.id);
+console.log(window.value.name);
+```
+
+### `adoptPane`
+
+```ts
+function adoptPane(server: Server, id: string, options: CommandOptions = {}): Promise<Owned<Pane>>;
+```
+
+Accept destruction of this endpoint's exact pane ID even if it later moves to another window.
+
+```ts
+import { Server, ownSession, adoptPane } from "libtmux";
+await using session = await ownSession(new Server());
+const pane = await session.value.windows.one().split();
+await using owned = await adoptPane(session.value.server, pane.id);
+console.log(owned.value.id);
+```
+
+### `withOwned`
+
+```ts
+function withOwned<T, R>(owned: Owned<T>, body: (value: T) => Promise<R>): Promise<R>;
+```
+
+Run a body and dispose on return or throw. A combined failure raises AggregateError with the
+body first and cleanup second. This block idiom also works without native await-using syntax.
+
+```ts
+import { Server, ownSession, withOwned } from "libtmux";
+await withOwned(await ownSession(new Server()), async (session) => console.log(session.id));
+```
+
+### `findOrCreateServer`
+
+```ts
+function findOrCreateServer(
+  server: Server,
+  options: NewSessionOptions = {},
+): Promise<FindOrCreateResult<Server>>;
+```
+
+Start this endpoint or reuse its daemon. A random child environment marker, tested inside the
+startup command queue, proves which client started it. A reused daemon stays borrowed.
+Calls sharing this Server serialize. Other clients can start a daemon concurrently; the marker
+decides created versus reused without claiming ownership merely from a missing socket.
+This whole-server demonstration takes an explicit socket path inside an existing private directory.
+
+```ts
+import { Server, findOrCreateServer } from "libtmux";
+const socketPath = process.argv[2];
+if (socketPath === undefined) throw new Error("Pass a disposable socket path");
+const result = await findOrCreateServer(new Server({ socketPath }));
+if (result.created) {
+  await using owner = result.owner;
+  console.log(owner.value.socketPath);
+} else console.log(result.value.socketPath);
+```
+
+### `findOrCreateSession`
+
+```ts
+function findOrCreateSession(
+  server: Server,
+  name: string,
+  options: Omit<NewSessionOptions, "name"> = {},
+): Promise<FindOrCreateResult<Session>>;
+```
+
+Match one exact session name, creating that name when absent. Calls sharing this Server
+serialize; another client can win tmux's native duplicate-name check, which remains an error.
+
+```ts
+import { Server, findOrCreateSession } from "libtmux";
+const result = await findOrCreateSession(new Server(), `work-${crypto.randomUUID()}`);
+if (result.created) {
+  await using owner = result.owner;
+  console.log(true, owner.value.id);
+} else console.log(false, result.value.id);
+```
+
+### `findOrCreateWindow`
+
+```ts
+function findOrCreateWindow(
+  session: Session,
+  name: string,
+  options: Omit<NewWindowOptions, "name"> = {},
+): Promise<FindOrCreateResult<Window>>;
+```
+
+Match a window's exact name within this session. Duplicate names raise MultipleMatchesError.
+Calls sharing this Session object serialize; other handles and external clients can race.
+
+```ts
+import { Server, ownSession, findOrCreateWindow } from "libtmux";
+await using session = await ownSession(new Server());
+const result = await findOrCreateWindow(session.value, "build");
+if (result.created) {
+  await using owner = result.owner;
+  console.log(true, owner.value.id);
+} else console.log(false, result.value.id);
+```
+
+### `findOrCreatePane`
+
+```ts
+function findOrCreatePane(
+  window: Window,
+  identity: PaneIdentity,
+  options: SplitOptions = {},
+): Promise<FindOrCreateResult<Pane>>;
+```
+
+Match a pane user-option value inside this window. Creation writes that identity before
+returning; write/readback failures roll back the known pane. Duplicate matches raise
+MultipleMatchesError. Calls sharing this Window object serialize, but another client can
+observe the pane before its identity write or create a duplicate concurrently.
+
+```ts
+import { Server, ownSession, findOrCreatePane } from "libtmux";
+await using session = await ownSession(new Server());
+const result = await findOrCreatePane(session.value.windows.one(), {
+  option: "@app_role",
+  value: "worker",
+});
+if (result.created) {
+  await using owner = result.owner;
+  console.log(true, owner.value.id);
+} else console.log(false, result.value.id);
+```
+
+### `discoverServers`
+
+```ts
+function discoverServers(options: DiscoverServersOptions = {}): Promise<DiscoveryResult>;
+```
+
+Search bounded local socket directories, returning successes and diagnostics. Root symlinks
+follow filesystem traversal; symlink entries are skipped. Hard-link aliases are reported once
+by device/inode. Stale sockets produce probe diagnostics. This is not a machine-wide inventory.
+A deadline aborts active probes and stops new work; an outstanding filesystem call may finish
+later, at which point its directory handle closes. The returned result never changes.
+
+```ts
+import { discoverServers } from "libtmux";
+const result = await discoverServers({ maxEntries: 64, maxProbes: 8, timeoutMs: 500 });
+console.log(
+  result.servers.map((found) => found.socketPath),
+  result.diagnostics,
+  result.truncated,
+);
+```
 
 ### `encodeWhereDocument`
 
@@ -221,7 +480,7 @@ Sessions, windows and panes are reached from here and carry the server with
 them. Handles taken from one daemon do not survive its restart: the
 replacement numbers panes from `%0` again — see `DaemonIdentity`.
 
-@throws TypeError if both `socketName` and `socketPath` are given.
+@throws TypeError for conflicting selectors or an invalid selected endpoint.
 
 [`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`validateLayouts`](#servervalidatelayouts) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
@@ -277,7 +536,7 @@ new Server({ socketName: "work" }).socketName; // "work"
 get socketPath(): string | undefined
 ```
 
-The socket path this server addresses, if it was given one.
+The absolute socket path captured at construction, including named defaults.
 
 ```ts
 new Server({ socketPath: "/tmp/tmux-1000/work" }).socketPath;

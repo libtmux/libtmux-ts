@@ -17,7 +17,10 @@ export function carriesTmuxId(args: readonly string[]): boolean {
 
 /** The condition that is true only on the daemon a handle was read from. */
 export function daemonCondition(daemon: DaemonGuard): string {
-  return `#{==:#{pid}/#{start_time},${daemon.pid}/${daemon.startTime}}`;
+  const numeric = `#{==:#{pid}/#{start_time},${daemon.pid}/${daemon.startTime}}`;
+  return daemon.generation === undefined
+    ? numeric
+    : `#{&&:${numeric},#{==:#{@libtmux_owner_generation},${daemon.generation}}}`;
 }
 
 /**

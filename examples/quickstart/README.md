@@ -23,6 +23,23 @@ The test drives `quickstart()` against a real tmux server the suite starts on
 a socket of its own, asserts on what it built, and tears the server down
 afterwards. Requires tmux 3.2a or newer.
 
+## Ordinary default endpoint
+
+Run `default-session.ts` to create, report, and clean up one session on your
+normal endpoint. It includes its imports and needs no fixture arguments:
+
+```console
+$ bun examples/quickstart/default-session.ts
+```
+
+[`default-session.ts`](default-session.ts) uses the library's `ownSession()` with `await using`. The owner captures its daemon generation and session ID in the creation response, destroys that session at scope exit, and rolls it back if readback fails before handoff. Native scope exit preserves body and cleanup errors through `SuppressedError`; `withOwned()` offers a callback scope with `AggregateError` for runtimes consuming compiled TypeScript.
+
+The [external harness](../../packages/libtmux/tests/integration/environment.test.ts)
+sets `LIBTMUX_SOCKET_PATH` for a child process and executes this file unchanged.
+It retains the fixture's original session, checks example-session cleanup, and
+then verifies daemon exit and socket removal. Failure injection lives in the
+harness. It covers body failure, cleanup failure, both together, timeout, SIGTERM, SIGKILL, and an explicit runner crash without test branches in the example. Node and Deno run the TypeScript-emitted program from `dist`; `build` emits it from the same source.
+
 ## What it shows
 
 <!-- runs: examples/quickstart/quickstart.ts -->

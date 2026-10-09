@@ -196,6 +196,7 @@ describe("package contract", () => {
       "ResizeAdjustmentDirection",
       "Server",
       "Session",
+      "TmuxAcquisitionError",
       "TmuxCommandError",
       "TmuxServerRestarted",
       "TmuxServerRestartedError",
@@ -206,14 +207,27 @@ describe("package contract", () => {
       "WaitTimeoutError",
       "Window",
       "WindowDirection",
+      "adoptPane",
+      "adoptServer",
+      "adoptSession",
+      "adoptWindow",
       "compileBoundedRegex",
       "decodeWhereDocument",
+      "discoverServers",
       "encodeWhereDocument",
+      "findOrCreatePane",
+      "findOrCreateServer",
+      "findOrCreateSession",
+      "findOrCreateWindow",
       "isSafeInteger",
       "isSplitSize",
       "isTmuxName",
+      "ownPane",
+      "ownSession",
+      "ownWindow",
       "safeInteger",
       "splitSize",
+      "withOwned",
     ]);
     expect(packageManifest.name).toBe("libtmux");
     // Stable and prerelease manifests share the same coordinated release path.
@@ -260,6 +274,8 @@ describe("package contract", () => {
     expect(packageManifest.trustedDependencies).toEqual([]);
     expect(Object.keys(packageManifest.exports)).toEqual([
       ".",
+      "./lifecycle",
+      "./discovery",
       "./package.json",
       "./common",
       "./errors",
@@ -326,7 +342,17 @@ describe("package contract", () => {
       import: "./dist/field_types.js",
       default: "./dist/field_types.js",
     });
-    for (const model of ["server", "session", "window", "pane", "client", "selection", "engine"]) {
+    for (const model of [
+      "server",
+      "session",
+      "window",
+      "pane",
+      "client",
+      "selection",
+      "engine",
+      "lifecycle",
+      "discovery",
+    ]) {
       expect(packageManifest.exports[`./${model}`]).toEqual({
         types: `./dist/${model}.d.ts`,
         bun: `./src/${model}.ts`,

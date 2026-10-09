@@ -101,20 +101,22 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 /**
  * How to reach a tmux server, and what to assume when it is quiet.
  *
- * Every field is optional and every default is tmux's own, except
- * {@link ServerOptions.environment}, which replaces the process environment
- * rather than extending it. `socketName` and `socketPath` name the same thing
- * two ways and are mutually exclusive.
+ * Endpoint precedence is explicit `socketPath` or `socketName`, nonempty
+ * `LIBTMUX_SOCKET_PATH`, nonempty `LIBTMUX_SOCKET_NAME`, then `TMUX`, then
+ * the named `default` socket. Construction captures one absolute socket path;
+ * later environment changes cannot redirect it. Explicit selectors conflict.
  */
 export interface ServerOptions {
   readonly colors?: 256;
   readonly configFile?: string;
   /**
-   * The complete environment passed to every spawned `tmux` process.
+   * The complete input environment for this server's tmux client processes.
    *
    * This replaces `process.env`; it is not overlaid on it. Include inherited
-   * entries such as `PATH` explicitly when tmux or its shell needs them. Leave
-   * this unset to inherit the current process environment unchanged.
+   * entries such as `PATH` when tmux or its shell needs them. Construction
+   * copies this map, or `process.env` when omitted, resolves the endpoint,
+   * and removes `TMUX` and `TMUX_PANE` from the child copy. It changes no host
+   * variables and does not replace a running daemon's session environment.
    */
   readonly environment?: Readonly<Record<string, string | undefined>>;
   /**
@@ -174,18 +176,9 @@ export interface ServerOptions {
   readonly engine?: TmuxEngine;
 }
 
-/**
- * How a connection addresses its daemon, as one comparable string.
- *
- * An absolute socket path names the daemon outright. A name does not: it is
- * resolved against `TMUX_TMPDIR` (then the default tmpdir) and a per-user
- * directory, so the tmpdir in force is part of the address. tmux's own default
- * name is `default`, which is why an unnamed connection is not a third case.
- */
+/** Compare the endpoint captured at construction, including a named socket's root. */
 function socketAddress(connection: TmuxConnection): string {
-  if (connection.socketPath !== undefined) return `path ${connection.socketPath}`;
-  const tmpdir = connection.environment.TMUX_TMPDIR ?? "";
-  return `name ${tmpdir} ${connection.socketName ?? "default"}`;
+  return `path ${connection.socketPath}`;
 }
 
 /**
@@ -231,7 +224,7 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
  * them. Handles taken from one daemon do not survive its restart: the
  * replacement numbers panes from `%0` again — see {@link DaemonIdentity}.
  *
- * @throws TypeError if both `socketName` and `socketPath` are given.
+ * @throws TypeError for conflicting selectors or an invalid selected endpoint.
  */
 export class Server {
   declare private readonly serverBrand: undefined;
@@ -261,7 +254,7 @@ export class Server {
         ? {}
         : { timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS }),
       transport: new BoundedTransport(
-        options?.engine ?? new NodeSpawnTransport(),
+        options?.engine ?? new NodeSpawnTransport({ socketDirectory: connection.socketDirectory }),
         options?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT,
         options?.onInvocation,
       ),
@@ -339,7 +332,7 @@ export class Server {
   }
 
   /**
-   * The socket path this server addresses, if it was given one.
+   * The absolute socket path captured at construction, including named defaults.
    *
    * ```ts
    * new Server({ socketPath: "/tmp/tmux-1000/work" }).socketPath;

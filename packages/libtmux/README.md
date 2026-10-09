@@ -51,8 +51,15 @@ variables:
 $ deno run \
     --allow-run=tmux \
     --allow-env \
+    --allow-sys=uid \
+    --allow-read=/tmp \
+    --allow-write=/tmp \
     main.ts
 ```
+
+Named/default endpoints need UID lookup and directory access on Deno. Replace
+`/tmp` in these permissions with a configured `TMUX_TMPDIR`. An explicit socket
+path skips that lookup and directory preparation.
 
 A `tmuxBin` outside `PATH` needs its own `--allow-run` path; `--allow-run=tmux`
 does not cover it.
@@ -65,21 +72,35 @@ does not cover it.
 
 ## Quickstart
 
+The program creates one session at your captured default endpoint, prints its
+identity, and destroys that session at scope exit. `await using` retains body
+and cleanup failures through `SuppressedError`. Compile TypeScript for Node;
+Bun runs this source.
+
+<!-- runs: examples/quickstart/default-session.ts -->
+
 ```ts
-import { Server } from "libtmux";
+import { Server, ownSession } from "libtmux";
 
 const server = new Server();
+await using owned = await ownSession(server, { name: `example-${crypto.randomUUID()}` });
+const session = owned.value;
 
-const session = await server.newSession({ name: "work" });
-const editor = await session.newWindow({ name: "editor" });
-await editor.split();
-
-const snapshot = await server.snapshot();
-const window = snapshot.windows.where({ name: "editor" }).one();
-
-console.log(window.panes.length); // 2
-await window.panes.at(0)?.sendKeys("echo hello");
+console.log(JSON.stringify({ id: session.id, name: session.name, socketPath: server.socketPath }));
 ```
+
+The [external example harness](tests/integration/environment.test.ts) runs this file unchanged with `LIBTMUX_SOCKET_PATH` set in its child environment. It checks normal exit, a thrown body, failed cleanup, both failures together, timeout, signals, and a crashed runner. Its fixture reaps its daemon even when the example's session cleanup fails.
+
+[Owned lifetimes and discovery](docs/lifecycle.md) covers adoption, rollback, created versus reused resources, cleanup retries, and bounded local discovery.
+
+| Resource | Accept cleanup responsibility | Find or create        |
+| -------- | ----------------------------- | --------------------- |
+| Server   | `adoptServer`                 | `findOrCreateServer`  |
+| Session  | `ownSession`, `adoptSession`  | `findOrCreateSession` |
+| Window   | `ownWindow`, `adoptWindow`    | `findOrCreateWindow`  |
+| Pane     | `ownPane`, `adoptPane`        | `findOrCreatePane`    |
+
+`withOwned` runs a callback and preserves simultaneous body and cleanup failures. `TmuxAcquisitionError` records an uncertain creation or failed rollback and exposes cleanup retry for a known receipt. `discoverServers` returns bounded local discovery results with failed-probe diagnostics and truncation.
 
 ## Start here
 
@@ -141,6 +162,8 @@ real server.
   - [Supplying an engine](#supplying-an-engine)
 - [Options and hooks](#options-and-hooks)
 - [Environments](#environments)
+  - [Endpoint and child-process defaults](#endpoint-and-child-process-defaults)
+  - [tmux server and session environment](#tmux-server-and-session-environment)
 - [Errors](#errors)
   - [Migrating from alpha.9](#migrating-from-alpha9)
 - [Running inside tmux](#running-inside-tmux)
@@ -1343,6 +1366,47 @@ constant is clearer than a string literal.
 
 ## Environments
 
+### Endpoint and child-process defaults
+
+`new Server()` resolves one endpoint at construction. The first selected value
+wins; an invalid selected value raises `TypeError` without trying another one:
+
+1. Explicit `socketPath` or `socketName`; supplying both is an error.
+2. Nonempty `LIBTMUX_SOCKET_PATH`.
+3. Nonempty `LIBTMUX_SOCKET_NAME`.
+4. Nonempty `TMUX`, split at its last two commas.
+5. The named `default` socket.
+
+Empty environment selectors count as absent. Values keep their spaces and
+commas. Paths must be absolute and contain no NUL. Names must be nonempty leaf
+names without `/`, `\` or NUL, and cannot equal `.` or `..`. `TMUX` needs an
+absolute path, a
+positive decimal PID, and a nonnegative decimal session ID with an optional
+`$` prefix, or the no-session sentinel `-1`. A higher-priority selector causes
+the library to ignore malformed lower-priority selectors.
+
+Named/default sockets resolve under the captured nonempty `TMUX_TMPDIR`, or
+`/tmp`, in `tmux-<uid>`. The root must be absolute and exist. The local transport
+creates its per-UID directory on first use, checks its owner and permissions,
+and rejects symlinks or access by other users. It permits group access as tmux
+does. Every invocation, including control clients and cleanup, uses the captured
+absolute `-S` path. A later host change cannot redirect the handle, and a missing
+root raises rather than falling back to another server. A custom engine receives
+that path; supply an explicit path for a remote endpoint with a different UID.
+
+`ServerOptions.environment` replaces the complete child environment. Include
+`PATH` and other inherited entries when needed. Construction copies and freezes
+the map, resolves the endpoint, and removes `TMUX` and `TMUX_PANE` from the child
+copy. `Session.fromEnv()` reads pane context from its own input before creating
+a server. Neither path mutates `process.env`; no host restoration scope is
+needed. This map does not overwrite an existing tmux daemon's global/session
+environment. There is no `LIBTMUX_SOCKET_ENV` setting.
+
+The separate MCP executable has its own route configuration. Its historical
+`LIBTMUX_SOCKET` setting is not a core `Server` default.
+
+### tmux server and session environment
+
 A session's environment is what tmux hands to the processes it starts, so it is
 how you seed a variable for every pane a workspace creates. `Server` carries the
 global environment and `Session` its own:
@@ -1481,7 +1545,7 @@ target that does not exist (`TmuxObjectNotFoundError`) both extend it.
 `MultipleObjectsError` is its counterpart and has one subclass today,
 `MultipleMatchesError`; it stays so the pair reads the same, and so code ported
 from Python, which catches `ObjectDoesNotExist` and `MultipleObjectsReturned`,
-has a name to catch. Import library errors from `libtmux` or `libtmux/errors`.
+has a name to catch. Import library errors from `libtmux` or `libtmux/errors`; `TmuxAcquisitionError` is available from `libtmux` or `libtmux/lifecycle`.
 
 `libtmux/selection` carries `parseLegacyWhere`, which converts Python-style
 `name__contains=` filter strings into criteria. It is for code being ported
@@ -1582,6 +1646,8 @@ declarations with no ambient types in scope — no `@types/node`, no DOM — so 
 published types cannot start requiring either without the gate saying so.
 
 ## Entrypoints
+
+Ownership helpers and types are available from `libtmux/lifecycle`, and bounded discovery from `libtmux/discovery`; both are also exported by `libtmux`.
 
 The root export carries the everyday handle, query, operation, error, and
 constant surface. Each model is also its own subpath: `libtmux/server`,

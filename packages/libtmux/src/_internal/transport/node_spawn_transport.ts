@@ -1,5 +1,6 @@
 import type { AbortLike } from "../../types.js";
 import { spawn } from "node:child_process";
+import { lstat, mkdir } from "node:fs/promises";
 
 import type { Readable } from "node:stream";
 
@@ -16,8 +17,10 @@ import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
 import { guardRequest } from "./daemon_guard.js";
 import { TmuxServerRestartedError } from "../../errors.js";
 import { timerDelay } from "../timing.js";
+import type { NamedSocketDirectory } from "../runtime/endpoint.js";
 
 export interface NodeSpawnTransportOptions {
+  readonly socketDirectory?: NamedSocketDirectory | undefined;
   readonly maxOutputBytes?: number;
   readonly postKillGraceMs?: number;
   readonly terminationGraceMs?: number;
@@ -94,11 +97,16 @@ function isAborted(signal: AbortLike | undefined): boolean {
 }
 
 export class NodeSpawnTransport {
+  readonly #socketDirectory: NamedSocketDirectory | undefined;
   readonly #maxOutputBytes: number;
   readonly #postKillGraceMs: number;
   readonly #terminationGraceMs: number;
 
   constructor(options: NodeSpawnTransportOptions = {}) {
+    this.#socketDirectory =
+      options.socketDirectory === undefined
+        ? undefined
+        : Object.freeze({ ...options.socketDirectory });
     this.#maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
     if (!Number.isSafeInteger(this.#maxOutputBytes) || this.#maxOutputBytes < 1) {
       throw new TypeError("maxOutputBytes must be a positive safe integer");
@@ -136,12 +144,34 @@ export class NodeSpawnTransport {
 
     let child;
     try {
+      if (this.#socketDirectory !== undefined) {
+        const { path, uid } = this.#socketDirectory;
+        try {
+          await mkdir(path, { mode: 0o700 });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        }
+        const directory = await lstat(path);
+        if (!directory.isDirectory() || directory.uid !== uid || (directory.mode & 0o007) !== 0) {
+          throw new TypeError(
+            `tmux socket directory ${path} must be owned by uid ${String(uid)} and deny access to other users`,
+          );
+        }
+        if (isAborted(submitted.signal)) {
+          throw new TmuxTransportError("command cancelled before spawn", {
+            ...(submitted.signal?.reason === undefined ? {} : { cause: submitted.signal.reason }),
+            delivery: "not_started",
+            kind: "cancelled",
+          });
+        }
+      }
       child = spawn(submitted.executable, [...args], {
         env: submitted.environment,
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
       });
     } catch (error) {
+      if (error instanceof TmuxTransportError) throw error;
       // Name the executable and the reason. "spawn failed" sends a reader
       // looking through their own code for a bug that is a missing binary or
       // a wrong path.

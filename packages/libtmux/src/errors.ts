@@ -156,6 +156,7 @@ export type LibTmuxErrorCode =
   | "NoMatchError"
   | "ObjectNotFoundError"
   | "QueryValidationError"
+  | "TmuxAcquisitionError"
   | "TmuxCommandError"
   | "TmuxObjectNotFoundError"
   | "TmuxServerRestartedError"

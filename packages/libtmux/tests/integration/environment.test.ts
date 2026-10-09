@@ -1,9 +1,10 @@
-import { rm } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
 import {
+  assertOwnedSocketPath,
   prepareRunRoot,
   reapOwnedRunRoot,
   runWithCleanup,
@@ -14,6 +15,8 @@ import {
 import { TmuxCommandError } from "../../src/errors.js";
 import type { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
+import { runModule } from "../support/runtime_build.js";
+import { waitForProcessExit } from "../support/converge.js";
 
 /**
  * tmux environments against a real server.
@@ -43,7 +46,10 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
         const fixture = await TestServer.create({ runRoot, sessionName: "env" });
         await runWithCleanup(
           () => body(fixture),
-          () => fixture.dispose(),
+          async () => {
+            await fixture.dispose();
+            await waitForProcessExit(fixture.daemonIdentity.pid);
+          },
         );
       },
       async () => {
@@ -232,3 +238,124 @@ describe("server environment", () => {
     });
   }, 30_000);
 });
+
+describe("ordinary example with external endpoint defaults", () => {
+  for (const failures of ["none", "body", "cleanup", "both"] as const) {
+    test(`runs the unchanged example and reports ${failures} failures`, async () => {
+      const hostEnvironment = { ...process.env };
+      let socketPath: string | undefined;
+      let daemonPid: number | undefined;
+      await withServer(async (fixture) => {
+        socketPath = fixture.socketPath;
+        daemonPid = fixture.daemonIdentity.pid;
+        assertOwnedSocketPath(fixture.socketPath);
+        const module = new URL(
+          "Bun" in globalThis
+            ? "../../../../examples/quickstart/default-session.ts"
+            : "../../../../examples/quickstart/dist/default-session.js",
+          import.meta.url,
+        );
+        const failBody = failures === "body" || failures === "both";
+        const failCleanup = failures === "cleanup" || failures === "both";
+        const result = runModule(
+          `
+          import { Server, ownSession } from "libtmux";
+          ${failCleanup ? 'const probe = await ownSession(new Server()); const prototype = Object.getPrototypeOf(probe); await probe.dispose(); prototype.dispose = async () => { throw new Error("injected cleanup failure"); };' : ""}
+          ${failBody ? 'console.log = (line) => { process.stdout.write(line + "\\n"); throw new Error("injected body failure"); };' : ""}
+          try {
+            await import(${JSON.stringify(module.href)});
+          } catch (error) {
+            process.stderr.write(JSON.stringify({
+              name: error.name,
+              message: error.message,
+              cleanup: error.error?.message,
+              body: error.suppressed?.message,
+            }));
+            process.exitCode = 1;
+          }
+        `,
+          {
+            ...fixture.controllerEnvironment,
+            LIBTMUX_SOCKET_PATH: fixture.socketPath,
+            LIBTMUX_SOCKET_NAME: "../ignored",
+            TMUX: "invalid-lower-priority",
+            TMUX_PANE: "%999",
+            TMUX_TMPDIR: "ignored-relative-root",
+          },
+        );
+        const created = JSON.parse(result.stdout) as {
+          id: string;
+          name: string;
+          socketPath: string;
+        };
+        expect(created.socketPath).toBe(fixture.socketPath);
+        expect(created.id).toMatch(/^\$\d+$/u);
+        expect(created.name).toStartWith("example-");
+        const snapshot = await serverFor(fixture).snapshot();
+        expect(snapshot.sessions.exists({ id: fixture.sessionId })).toBe(true);
+        expect(snapshot.sessions.exists({ id: created.id })).toBe(failCleanup);
+        expect(result.exitCode).toBe(failures === "none" ? 0 : 1);
+        if (failures === "none") expect(result.stderr).toBe("");
+        else {
+          const error = JSON.parse(result.stderr) as {
+            name: string;
+            message: string;
+            cleanup?: string;
+            body?: string;
+          };
+          if (failures === "both") {
+            expect(error.name).toBe("SuppressedError");
+            expect(error.cleanup).toBe("injected cleanup failure");
+            expect(error.body).toBe("injected body failure");
+          } else expect(error.message).toBe(`injected ${failures} failure`);
+        }
+      });
+      if (socketPath === undefined || daemonPid === undefined)
+        throw new Error("fixture did not start");
+      await expect(access(socketPath)).rejects.toMatchObject({ code: "ENOENT" });
+      await waitForProcessExit(daemonPid);
+      expect({ ...process.env }).toEqual(hostEnvironment);
+    }, 30_000);
+  }
+});
+
+for (const interruption of ["timeout", "SIGTERM", "SIGKILL", "crash"] as const) {
+  test(`outer harness reaps the unchanged ordinary example after ${interruption}`, async () => {
+    const hostEnvironment = { ...process.env };
+    let pid: number | undefined;
+    await withServer(async (fixture) => {
+      pid = fixture.daemonIdentity.pid;
+      const module = new URL(
+        "Bun" in globalThis
+          ? "../../../../examples/quickstart/default-session.ts"
+          : "../../../../examples/quickstart/dist/default-session.js",
+        import.meta.url,
+      );
+      const interrupt =
+        interruption === "crash"
+          ? "process.exit(37);"
+          : interruption === "timeout"
+            ? ""
+            : `process.kill(process.pid, ${JSON.stringify(interruption)});`;
+      const result = runModule(
+        `
+        console.log = (line) => {
+          process.stdout.write(line + "\\n");
+          ${interrupt}
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10_000);
+        };
+        await import(${JSON.stringify(module.href)});
+      `,
+        { ...fixture.controllerEnvironment, LIBTMUX_SOCKET_PATH: fixture.socketPath },
+        1_000,
+      );
+      const created = JSON.parse(result.stdout) as { id: string; socketPath: string };
+      expect(created.socketPath).toBe(fixture.socketPath);
+      expect(result.exitCode).not.toBe(0);
+      expect((await serverFor(fixture).snapshot()).sessions.exists({ id: created.id })).toBe(true);
+    });
+    expect(pid).toBeDefined();
+    await waitForProcessExit(pid!);
+    expect({ ...process.env }).toEqual(hostEnvironment);
+  }, 30_000);
+}
