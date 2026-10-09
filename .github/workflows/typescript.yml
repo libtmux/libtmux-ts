@@ -248,10 +248,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.8-rc3 is here for the layout format: 3.8 emits the v2 JSON
+        # 3.8 is here for the layout format: it emits the v2 JSON
         # window_layout and every earlier release the classic string, so the
         # version gate deciding between them has a real binary behind it.
-        # Replace with "3.8" once it ships.
         #
         # master reports `next-X.Y`, which the version ranking treats as a
         # build that has not shipped the release it names — the one branch of
@@ -272,7 +271,7 @@ jobs:
             "3.7a",
             "3.7b",
             "3.7c",
-            "3.8-rc3",
+            "3.8",
             "master",
           ]
     steps:
