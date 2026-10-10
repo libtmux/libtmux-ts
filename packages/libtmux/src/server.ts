@@ -154,8 +154,8 @@ export interface ServerOptions {
    *
    * ```ts
    * const traced = new Server({
-   *   onInvocation: (report) => {
-   *     console.log(report.commands[0]?.[0], report.durationMs, report.delivery);
+   *   onInvocation: ({ commands, durationMs, delivery }) => {
+   *     console.log(commands[0]?.[0], durationMs, delivery);
    *   },
    * });
    * ```
@@ -243,13 +243,13 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
  * import { join } from "node:path";
  * import { Server } from "libtmux";
  *
- * const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+ * const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
  * const server = new Server({
- *   socketPath: join(directory, "tmux.sock"),
+ *   socketPath: join(dir, "tmux.sock"),
  *   configFile: "/dev/null",
  *   timeoutMs: 5_000,
  * });
- * const failures: unknown[] = [];
+ * const errors: unknown[] = [];
  * try {
  *   assert.equal(await server.hasSession("work"), false);
  *   const session = await server.newSession({
@@ -264,16 +264,16 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
  *   assert.equal(snapshot.panes.count(), 1);
  *   console.log("work: 1 session, 1 window, 1 pane");
  * } catch (error) {
- *   failures.push(error);
+ *   errors.push(error);
  * } finally {
  *   try {
- *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
- *     await rm(directory, { recursive: true });
+ *     if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+ *     await rm(dir, { recursive: true });
  *   } catch (error) {
- *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+ *     errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
  *   }
  * }
- * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+ * if (errors.length > 0) throw new AggregateError(errors, "Example failed");
  * ```
  *
  * @throws TypeError if both `socketName` and `socketPath` are given.
@@ -325,7 +325,7 @@ export class Server {
    * ```ts
    * const opened = await server.withConnection(async (live) => {
    *   await session.newWindow({ name: "build" });
-   *   return live.waitFor((current) => current.windows.exists({ name: "build" }));
+   *   return live.waitFor((state) => state.windows.exists({ name: "build" }));
    * });
    * opened.windows.count({ name: "build" }); // 1
    * ```
@@ -468,7 +468,8 @@ export class Server {
    * ```ts
    * await using live = await server.connect();
    * for await (const event of live.subscribe()) {
-   *   if (event.kind === "window-add") console.log((await live.snapshot()).windows.count());
+   *   if (event.kind === "window-add")
+   *     console.log((await live.snapshot()).windows.count());
    * }
    * ```
    *
@@ -555,13 +556,13 @@ export class Server {
    * import { join } from "node:path";
    * import { Server, NoMatchError } from "libtmux";
    *
-   * const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+   * const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
    * const server = new Server({
-   *   socketPath: join(directory, "tmux.sock"),
+   *   socketPath: join(dir, "tmux.sock"),
    *   configFile: "/dev/null",
    *   timeoutMs: 5_000,
    * });
-   * const failures: unknown[] = [];
+   * const errors: unknown[] = [];
    * try {
    *   await server.newSession({ name: "prod-api", shellCommand: "cat" });
    *   await server.newSession({ name: "dev-api", shellCommand: "cat" });
@@ -574,9 +575,9 @@ export class Server {
    *       .sort()
    *       .join(", "),
    *   );
-   *   const production = sessions.where({ name: { startsWith: "prod-" } }).one();
-   *   assert.equal(production.name, "prod-api");
-   *   console.log("production:", production.name);
+   *   const prod = sessions.where({ name: { startsWith: "prod-" } }).one();
+   *   assert.equal(prod.name, "prod-api");
+   *   console.log("production:", prod.name);
    *   assert.equal(sessions.oneOrUndefined({ name: "missing" }), undefined);
    *   try {
    *     sessions.one({ name: "missing" });
@@ -586,16 +587,16 @@ export class Server {
    *     console.log("missing:", error.code);
    *   }
    * } catch (error) {
-   *   failures.push(error);
+   *   errors.push(error);
    * } finally {
    *   try {
-   *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-   *     await rm(directory, { recursive: true });
+   *     if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+   *     await rm(dir, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
    *   }
    * }
-   * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+   * if (errors.length > 0) throw new AggregateError(errors, "Example failed");
    * ```
    */
   async sessions(): Promise<Selection<Session>> {
@@ -617,13 +618,13 @@ export class Server {
    * import { join } from "node:path";
    * import { Server, MultipleMatchesError } from "libtmux";
    *
-   * const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+   * const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
    * const server = new Server({
-   *   socketPath: join(directory, "tmux.sock"),
+   *   socketPath: join(dir, "tmux.sock"),
    *   configFile: "/dev/null",
    *   timeoutMs: 5_000,
    * });
-   * const failures: unknown[] = [];
+   * const errors: unknown[] = [];
    * try {
    *   const session = await server.newSession({
    *     name: "home",
@@ -635,7 +636,10 @@ export class Server {
    *     windowName: "shell",
    *     shellCommand: "cat",
    *   });
-   *   const window = await session.newWindow({ name: "logs", shellCommand: "cat" });
+   *   const window = await session.newWindow({
+   *     name: "logs",
+   *     shellCommand: "cat",
+   *   });
    *   await window.link({ session: guest });
    *   const windows = await server.windows();
    *   const logs = windows.where({ name: "logs" });
@@ -659,16 +663,16 @@ export class Server {
    *       .join(", "),
    *   );
    * } catch (error) {
-   *   failures.push(error);
+   *   errors.push(error);
    * } finally {
    *   try {
-   *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-   *     await rm(directory, { recursive: true });
+   *     if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+   *     await rm(dir, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
    *   }
    * }
-   * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+   * if (errors.length > 0) throw new AggregateError(errors, "Example failed");
    * ```
    */
   async windows(): Promise<Selection<Window>> {
@@ -690,13 +694,13 @@ export class Server {
    * import { join } from "node:path";
    * import { Server, PaneDirection } from "libtmux";
    *
-   * const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+   * const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
    * const server = new Server({
-   *   socketPath: join(directory, "tmux.sock"),
+   *   socketPath: join(dir, "tmux.sock"),
    *   configFile: "/dev/null",
    *   timeoutMs: 5_000,
    * });
-   * const failures: unknown[] = [];
+   * const errors: unknown[] = [];
    * try {
    *   const session = await server.newSession({
    *     name: "work",
@@ -704,7 +708,10 @@ export class Server {
    *     shellCommand: "cat",
    *   });
    *   const pane = session.panes.one();
-   *   await pane.split({ direction: PaneDirection.Below, shellCommand: "cat" });
+   *   await pane.split({
+   *     direction: PaneDirection.Below,
+   *     shellCommand: "cat",
+   *   });
    *   const panes = await server.panes();
    *   assert.equal(panes.count(), 2);
    *   const active = panes.where({ active: true });
@@ -716,16 +723,16 @@ export class Server {
    *     console.log("location:", item.session?.name, item.window?.name);
    *   }
    * } catch (error) {
-   *   failures.push(error);
+   *   errors.push(error);
    * } finally {
    *   try {
-   *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-   *     await rm(directory, { recursive: true });
+   *     if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+   *     await rm(dir, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
    *   }
    * }
-   * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+   * if (errors.length > 0) throw new AggregateError(errors, "Example failed");
    * ```
    */
   async panes(): Promise<Selection<Pane>> {
@@ -910,7 +917,9 @@ export class Server {
    *
    * ```ts
    * await server.setHook("session-created", "display-message 'hello'");
-   * await server.setHook("session-created", "display-message 'and this'", { append: true });
+   * await server.setHook("session-created", "display-message 'and this'", {
+   *   append: true,
+   * });
    * ```
    */
   setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
@@ -1065,24 +1074,24 @@ export class Server {
    * import { join } from "node:path";
    * import { Server } from "libtmux";
    *
-   * const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+   * const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
    * const server = new Server({
-   *   socketPath: join(directory, "tmux.sock"),
+   *   socketPath: join(dir, "tmux.sock"),
    *   configFile: "/dev/null",
    *   timeoutMs: 5_000,
    * });
-   * const failures: unknown[] = [];
+   * const errors: unknown[] = [];
    * try {
    *   const session = await server.newSession({
    *     name: "work",
    *     windowName: "editor",
    *     shellCommand: "cat",
-   *     startDirectory: directory,
+   *     startDirectory: dir,
    *     environment: { LIBTMUX_EXAMPLE: "ready" },
    *   });
    *   assert.equal(session.name, "work");
    *   assert.equal(session.windows.one().name, "editor");
-   *   assert.equal(session.panes.one().currentPath, directory);
+   *   assert.equal(session.panes.one().currentPath, dir);
    *   console.log("created:", session.name, session.windows.one().name);
    *
    *   await server.newSession({ name: "review", groupWith: session.id });
@@ -1099,16 +1108,16 @@ export class Server {
    *       .join(", "),
    *   );
    * } catch (error) {
-   *   failures.push(error);
+   *   errors.push(error);
    * } finally {
    *   try {
-   *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-   *     await rm(directory, { recursive: true });
+   *     if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+   *     await rm(dir, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
    *   }
    * }
-   * if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+   * if (errors.length > 0) throw new AggregateError(errors, "Example failed");
    * ```
    */
   newSession(options?: NewSessionOptions): Promise<Session> {

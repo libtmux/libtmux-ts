@@ -813,7 +813,9 @@ seeing anything at the moment backpressure began.
 
 Before:
 
-    if (event.kind === "output" || event.kind === "extended-output") read(event.data);
+    if (event.kind === "output" || event.kind === "extended-output") {
+      read(event.data);
+    }
 
 After:
 

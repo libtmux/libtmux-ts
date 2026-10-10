@@ -13,7 +13,11 @@ describe("agent", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      const seen = await runAndWait(server, "printf 'agent-done\\n'", "agent-done");
+      const seen = await runAndWait(
+        server,
+        "printf 'agent-done\\n'",
+        "agent-done",
+      );
 
       expect(seen).toContain("agent-done");
     });

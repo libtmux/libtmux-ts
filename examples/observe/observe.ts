@@ -10,7 +10,7 @@ export interface ObservedRun {
    * formats this tmux understands; the other is the snapshot.
    */
   readonly firstCallCalls: number;
-  /** Invocations every snapshot after that costs. One, whatever it describes. */
+  /** Invocations each later snapshot costs. One, whatever it describes. */
   readonly snapshotCalls: number;
   /** Invocations a hundred queries against that snapshot cost. None. */
   readonly queryCalls: number;
@@ -41,9 +41,12 @@ export interface ObservedRun {
  * call waited for its slot. Set to 1 below to make the wait visible in a
  * handful of calls rather than a hundred.
  */
-export async function whatTheLibraryIsDoing(reference: Server): Promise<ObservedRun> {
+export async function whatTheLibraryIsDoing(
+  reference: Server,
+): Promise<ObservedRun> {
   const socketPath = reference.socketPath;
-  if (socketPath === undefined) throw new Error("this example needs a socket-path server");
+  if (socketPath === undefined)
+    throw new Error("this example needs a socket-path server");
 
   const reports: TmuxInvocationReport[] = [];
   const server = new Server({
@@ -81,7 +84,9 @@ export async function whatTheLibraryIsDoing(reference: Server): Promise<Observed
   // exist for work whose order matters.
   const beforeBurst = reports.length;
   await Promise.all(Array.from({ length: 4 }, () => server.snapshot()));
-  const queued = reports.slice(beforeBurst).filter((report) => report.queuedMs > 0).length;
+  const queued = reports
+    .slice(beforeBurst)
+    .filter((report) => report.queuedMs > 0).length;
 
   return { firstCallCalls, queryCalls, queued, reports, snapshotCalls };
 }

@@ -327,6 +327,93 @@ Bad:
 $ git log --max-count=10 --graph --oneline
 ```
 
+## Examples
+
+<!-- shared:examples -->
+
+An example is code written for a reader: a program under `examples/`, code in
+a doc comment or docstring, and every fenced block in a README or docs page.
+Shell blocks also follow [Code blocks](#code-blocks).
+
+The text between the shared markers is the same in every libtmux port.
+Change it in all of them together.
+
+### Width
+
+- **Examples stay within 80 columns.** They render in fixed-width boxes that
+  scroll sideways, and 80 columns fits a libtmux.org code block in a
+  laptop-width window. Comments inside examples wrap at 80 too.
+- **The width check enforces it.** It reads the tracked files that
+  `.github/example-width.toml` names and fails on a wider line. It measures
+  the whole source line, so code in a doc comment counts its indent and
+  comment marker. It skips output (a fence tagged `text`, and what a
+  `console` block prints), hidden setup lines, and a line that is only a URL;
+  an untagged fence counts as code.
+- **A line that must stay wider is listed there with its reason.** An entry
+  that no longer matches a line fails the check, so no stale entry stays.
+- **The formatter's width is the hard limit for all other source.** Example
+  directories set their formatter to 80 where the formatter takes a width.
+
+### Reaching 80
+
+- **Change the code, not the line breaks.** A formatter rejoins any line that
+  fits its width. Name a sub-expression, use a short example name, hide setup
+  the reader does not need, or print less.
+- **Break at the outermost level when a break is still needed:** after an
+  opening parenthesis with one argument per line, one call per line in a
+  chain, one field per line in a literal.
+- **Put a comment on its own line above the code it explains.** Never trail
+  one after code in an example, unless the repository's example runner reads
+  it there, as with an assertion marker.
+- **Break a long string at a word boundary,** never inside a tmux format
+  (`#{...}`) or an escape sequence; the joined text stays the same.
+- **Continue a long command in a `console` block the way its shell does:**
+  `\` after a `$ ` prompt, a backtick after `PS> `, one flag per continuation
+  line.
+
+### What never breaks
+
+- **Output a test compares.** Wrapping it changes what the test expects.
+- **A block copied from a source file.** Fix the width in the source and run
+  the sync command; never edit the copy.
+- **Marker lines and URLs,** which tools and readers take whole.
+
+<!-- /shared:examples -->
+
+### In this repository
+
+- **Hard limit:** oxfmt, through `.oxfmtrc.json`: its `overrides` entry sets
+  `printWidth` to 80 for `examples/**`, README files, and
+  `packages/*/docs/**`; `package.json` pins the version. The width check is
+  `bun run docs:width`, which runs
+  `python3 scripts/check_example_width.py --self-test` and then
+  `python3 scripts/check_example_width.py`; `.github/example-width.toml`
+  names the files it reads.
+- **Not formatted:** comments and the TSDoc fences in `packages/*/src`;
+  oxfmt leaves them alone, so hold them to 80 by hand.
+- **Runs, compiles, exempt:** an unmarked `ts` fence runs.
+  `<!-- runs: examples/x.ts -->` ties a block to an executed example file,
+  `<!-- static: reason -->` makes it compile only, and a `typescript` fence
+  is prose that is neither compiled nor run.
+- **Compared output and copied blocks:** output a test compares never wraps.
+  A `runs:` block matches its example file line for line, so edit the file,
+  then run `bun run format` and `bun run docs:runnable`; never edit the
+  copy. `packages/libtmux/docs/api.md` is generated from the TSDoc fences,
+  so edit the doc comment and run `bun run --cwd packages/libtmux docs:api`.
+
+Bad, over 80:
+
+```typescript
+await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`); // tmux does not expand `~`
+```
+
+Good, a comment above the code it explains:
+
+```typescript
+// tmux does not expand `~`.
+await server.sourceFile(`${process.env["HOME"] ?? "."}/.tmux.conf`);
+```
+
 ## Commits
 
 ```

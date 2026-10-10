@@ -191,6 +191,33 @@ export function fencedBlocks(text: string, origin: (line: number) => string): re
 }
 
 /**
+ * Join an import the formatter wrapped back onto one line.
+ *
+ * The splitters below read imports a line at a time. A wrapped one would leave
+ * its specifiers in the body, and the errors that produces name the prose
+ * around the block rather than the import that caused them.
+ */
+function joinWrappedImports(code: string): string[] {
+  const lines: string[] = [];
+  let open: string | undefined;
+  for (const line of code.split("\n")) {
+    if (open !== undefined) {
+      open = `${open} ${line.trim()}`;
+      if (line.includes("}")) {
+        lines.push(open.replace(/,\s*\}/u, " }"));
+        open = undefined;
+      }
+    } else if (/^import\s/u.test(line) && line.includes("{") && !line.includes("}")) {
+      open = line.trimEnd();
+    } else {
+      lines.push(line);
+    }
+  }
+  if (open !== undefined) lines.push(open);
+  return lines;
+}
+
+/**
  * Separate an example's imports from its body, pointing them at this tree.
  *
  * Shared by every executor — README blocks and TSDoc symbol examples alike —
@@ -206,7 +233,7 @@ export function splitForExecution(
 ): { body: string; imports: string } {
   const imports: string[] = [];
   const body: string[] = [];
-  for (const line of code.split("\n")) {
+  for (const line of joinWrappedImports(code)) {
     if (!/^import\s/u.test(line)) {
       body.push(line);
       continue;
@@ -248,7 +275,7 @@ function split(
 ): { readonly body: string; readonly imports: string } {
   const imports: string[] = [];
   const body: string[] = [];
-  for (const line of code.split("\n")) {
+  for (const line of joinWrappedImports(code)) {
     if (/^import\s/u.test(line)) {
       // Resolved to source, not to `dist`. A README block imports the package
       // the way a reader does, and compiling that against the built output
@@ -258,12 +285,6 @@ function split(
       const rewritten = line
         .replace(/"libtmux"/u, '"../../src/index.js"')
         .replace(/"libtmux\/([\w-]+)"/u, '"../../src/$1.js"');
-      // One line per import. A wrapped one leaves its specifiers in the body,
-      // and the errors that produces name the prose around the block rather
-      // than the import that caused them.
-      if (rewritten.includes("{") && !rewritten.includes("}")) {
-        throw new Error(`an example import must fit on one line: ${line}`);
-      }
       const named = /^import \{([^}]*)\} from (.*)$/u.exec(rewritten);
       if (named === null) {
         imports.push(rewritten);

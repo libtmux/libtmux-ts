@@ -8,6 +8,8 @@ import {
   assertOwnedSocketPath,
 } from "../../packages/libtmux/src/_internal/test/testkit.js";
 
+export { runWithCleanup };
+
 /**
  * Hand a test an isolated, real tmux server and reap it afterwards.
  *
@@ -17,9 +19,14 @@ import {
  * already prepared and will reap itself; unset, this function owns the whole
  * lifecycle: prepare, reap, and remove the parent directory it made.
  */
-export async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
+export async function withServer(
+  body: (fixture: TestServer) => Promise<void>,
+): Promise<void> {
   return withOwnedRunRoot("ltx-examples-", async (runRoot) => {
-    const fixture = await TestServer.create({ runRoot, sessionName: "examples" });
+    const fixture = await TestServer.create({
+      runRoot,
+      sessionName: "examples",
+    });
     assertOwnedSocketPath(fixture.socketPath);
     await runWithCleanup(
       () => body(fixture),

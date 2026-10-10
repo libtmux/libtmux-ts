@@ -19,7 +19,8 @@ export async function quickstart(server: Server): Promise<ServerSnapshot> {
 
   // Relations are plain properties: no await, no tmux command.
   const paneCount = found.panes.length;
-  if (paneCount !== 2) throw new Error(`expected two panes, saw ${String(paneCount)}`);
+  if (paneCount !== 2)
+    throw new Error(`expected two panes, saw ${String(paneCount)}`);
 
   // A criterion is spelled like the handle accessor it filters.
   if (snapshot.panes.count({ currentCommand: { contains: "" } }) === 0) {

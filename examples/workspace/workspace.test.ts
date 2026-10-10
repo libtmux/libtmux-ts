@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../packages/libtmux/src/server.js";
 import { withServer } from "../test-support/with-server.js";
-import { buildSimpleWorkspace, buildWorkspace, removeWorkspace } from "./workspace.js";
+import {
+  buildSimpleWorkspace,
+  buildWorkspace,
+  removeWorkspace,
+} from "./workspace.js";
 
 describe("workspace", () => {
   test("buildSimpleWorkspace builds the shape it promises", async () => {
@@ -17,7 +21,11 @@ describe("workspace", () => {
 
       const snapshot = await server.snapshot();
       const session = snapshot.sessions.one({ id: built.id });
-      expect(session.windows.map((window) => window.name)).toEqual(["editor", "logs", "shell"]);
+      expect(session.windows.map((window) => window.name)).toEqual([
+        "editor",
+        "logs",
+        "shell",
+      ]);
     });
   }, 60_000);
 
@@ -31,8 +39,14 @@ describe("workspace", () => {
 
       const session = await buildWorkspace(server);
 
-      const built = (await server.snapshot()).sessions.one({ name: "workspace-example" });
-      expect(built.windows.map((window) => window.name)).toEqual(["editor", "server", "logs"]);
+      const built = (await server.snapshot()).sessions.one({
+        name: "workspace-example",
+      });
+      expect(built.windows.map((window) => window.name)).toEqual([
+        "editor",
+        "server",
+        "logs",
+      ]);
       expect(built.windows.one({ name: "editor" }).panes.length).toBe(2);
       expect(session.id).toBe(built.id);
 

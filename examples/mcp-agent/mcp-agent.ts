@@ -53,7 +53,10 @@ export async function runAndCheck(
   paneId: string,
   command: string,
 ): Promise<CommandResult> {
-  return callTool<CommandResult>(client, "run_shell_command", { command, paneId });
+  return callTool<CommandResult>(client, "run_shell_command", {
+    command,
+    paneId,
+  });
 }
 
 export interface WaitResult {
@@ -100,7 +103,8 @@ export async function watch(
   client: Client,
   paneId: string,
 ): Promise<(waitMs: number) => Promise<Delta>> {
-  let cursor = (await callTool<Delta>(client, "capture_since", { paneId })).cursor;
+  let cursor = (await callTool<Delta>(client, "capture_since", { paneId }))
+    .cursor;
   return async (waitMs: number) => {
     const delta = await callTool<Delta>(client, "capture_since", {
       ...(cursor === null ? {} : { cursor }),
@@ -128,7 +132,7 @@ export async function buildWorkspace(
   });
   const paneIds = [created.paneId];
   for (const name of rest) {
-    // eslint-disable-next-line no-await-in-loop -- window creation follows session mutation order.
+    // eslint-disable-next-line no-await-in-loop -- creation order matters.
     const window = await callTool<{ paneId: string }>(client, "create_window", {
       name,
       session,

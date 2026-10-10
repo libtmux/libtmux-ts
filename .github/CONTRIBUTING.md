@@ -70,6 +70,15 @@ $ bun run format:check
 $ bun run lint
 ```
 
+Examples stay within 80 columns, which the formatter does not hold for
+comments or doc-comment code. `docs:width` reads
+[example-width.toml](example-width.toml) and proves the check can fail before it
+runs:
+
+```console
+$ bun run docs:width
+```
+
 The gates below are themselves TypeScript, and until this runs nothing has
 compiled them — a gate that crashes on its own type error reports no failures,
 which reads exactly like a clean tree:
@@ -335,7 +344,10 @@ runs the real Python library as an oracle and compares. Point
 `LIBTMUX_PYTHON_REPO` at a checkout of the pinned commit:
 
 ```console
-$ git clone --branch v0.62.0 --depth 1 https://github.com/tmux-python/libtmux.git
+$ git clone \
+    --branch v0.62.0 \
+    --depth 1 \
+    https://github.com/tmux-python/libtmux.git
 ```
 
 Without it those tests skip rather than fail, because a missing oracle is not

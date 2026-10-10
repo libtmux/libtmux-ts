@@ -222,7 +222,8 @@ export async function applyWorkspace(
  *
  * ```ts
  * const plan = await planWorkspace(server, workspace);
- * if (plan.removesWindows.length > 0) console.log("would remove", plan.removesWindows);
+ * if (plan.removesWindows.length > 0)
+ *   console.log("would remove", plan.removesWindows);
  * ```
  *
  * @throws ZodError when the workspace does not satisfy the strict config schema.
