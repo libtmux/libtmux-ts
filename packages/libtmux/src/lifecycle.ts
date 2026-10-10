@@ -25,6 +25,7 @@ import type {
 import { isColdEndpoint } from "./_internal/operations/command.js";
 import { planNewSession, planNewWindow, planSplitWindow } from "./_internal/operations/plans.js";
 import { adaptRawResult, prepareInvocationRequest } from "./_internal/operations/request.js";
+import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import {
   createRuntimeContext,
   createServerWithRuntime,
@@ -39,7 +40,9 @@ import { uniqueUnknownCommand } from "./_internal/transport/refusal.js";
 
 const generationOption = "@libtmux_owner_generation";
 const generationFormat = `#{${generationOption}}`;
-const identityFormat = `#{pid}\t#{start_time}\t${generationFormat}`;
+// These fields contain only IDs, decimal digits and hexadecimal tokens. As in the capability
+// probe, semicolons survive C-locale tmux output while literal tabs are sanitized.
+const identityFormat = `#{pid};#{start_time};${generationFormat}`;
 const validGeneration = `#{&&:#{==:#{n:${generationOption}},32},#{m/r:^[0-9a-fA-F]+$,${generationFormat}}}`;
 const cleanupDeadlineMs = 30_000;
 type ResourceKind = "server" | "session" | "window" | "pane";
@@ -116,13 +119,30 @@ export class TmuxAcquisitionError extends LibTmuxError {
   }
 }
 
+function cancellationError(signal: AbortLike): TmuxTransportError {
+  return new TmuxTransportError("ownership acquisition cancelled", {
+    cause: signal.reason,
+    delivery: "not_started",
+    kind: "cancelled",
+  });
+}
+
 function cancelled(signal: AbortLike | undefined): void {
-  if (signal?.aborted === true) {
-    throw new TmuxTransportError("ownership acquisition cancelled", {
-      cause: signal.reason,
-      delivery: "not_started",
-      kind: "cancelled",
-    });
+  if (signal?.aborted === true) throw cancellationError(signal);
+}
+
+async function waitForTurn(before: Promise<void>, signal?: AbortLike): Promise<void> {
+  if (signal === undefined) return before;
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(cancellationError(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+  try {
+    await Promise.race([before, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -209,9 +229,9 @@ function receiptFrom(
   path: string,
   marker: string,
 ): OwnershipReceipt | undefined {
-  const line = lines.find((value) => value.startsWith(`${marker}\t`));
+  const line = lines.find((value) => value.startsWith(`${marker};`));
   if (line === undefined) return undefined;
-  const parts = line.split("\t");
+  const parts = line.split(";");
   const [, id, pid, startTime, generation] = parts;
   const prefix = { server: "", session: "$", window: "@", pane: "%" }[kind];
   if (
@@ -399,7 +419,7 @@ async function createOwned<T>(
   const marker = `ltx-owned-${randomUUID()}`;
   const argv = [...plan.argv];
   const formatIndex = argv.indexOf("-F") + 1;
-  argv[formatIndex] = `${marker}\t#{${kind}_id}\t${identityFormat}`;
+  argv[formatIndex] = `${marker};#{${kind}_id};${identityFormat}`;
   const commands = [initGeneration(), checkedGeneration([argv])];
   if (kind === "session") commands.unshift(["start-server"]);
   let receipt: OwnershipReceipt | undefined;
@@ -520,7 +540,7 @@ async function adopt<T>(
   const runtime = runtimeForServer(server);
   const marker = `ltx-adopt-${randomUUID()}`;
   const target = kind === "server" ? [] : ["-t", id!];
-  const format = `${marker}\t${kind === "server" ? "server" : `#{${kind}_id}`}\t${identityFormat}`;
+  const format = `${marker};${kind === "server" ? "server" : `#{${kind}_id}`};${identityFormat}`;
   let receipt: OwnershipReceipt | undefined;
   try {
     const lines = await execute(
@@ -689,17 +709,22 @@ async function serialized<T>(
   cancelled(signal);
   const before = queues.get(parent) ?? Promise.resolve();
   let finish: () => void = () => {};
-  const after = new Promise<void>((resolve) => {
+  const done = new Promise<void>((resolve) => {
     finish = resolve;
   });
+  // A cancelled waiter settles immediately, but its place still follows its predecessor.
+  // Otherwise a third caller could overtake the request that is currently running.
+  const after = before.then(() => done);
   queues.set(parent, after);
+  void after.then(() => {
+    if (queues.get(parent) === after) queues.delete(parent);
+  });
   try {
-    await before;
+    await waitForTurn(before, signal);
     cancelled(signal);
     return await body();
   } finally {
     finish();
-    if (queues.get(parent) === after) queues.delete(parent);
   }
 }
 
@@ -738,7 +763,7 @@ export async function findOrCreateServer(
     const launchKey = `LIBTMUX_OWNER_START_${launchToken.toUpperCase()}`;
     const plan = planNewSession(options);
     const args = [...plan.argv];
-    args[args.indexOf("-F") + 1] = `${marker}-created\tserver\t${identityFormat}`;
+    args[args.indexOf("-F") + 1] = `${marker}-created;server;${identityFormat}`;
     const newBranch = [
       initGeneration(),
       checkedGeneration([args]),
@@ -746,7 +771,7 @@ export async function findOrCreateServer(
     ];
     const reuseBranch = [
       initGeneration(),
-      checkedGeneration([["display-message", "-p", `${marker}-reused\tserver\t${identityFormat}`]]),
+      checkedGeneration([["display-message", "-p", `${marker}-reused;server;${identityFormat}`]]),
     ];
     let receipt: OwnershipReceipt | undefined;
     let isCreated = false;
@@ -833,7 +858,10 @@ export async function findOrCreateSession(
       snapshot?.sessions.filter((session) => session.name === name).toArray() ?? [],
       `session name ${name}`,
     );
-    if (existing !== undefined) return reused(existing);
+    if (existing !== undefined) {
+      cancelled(options.signal);
+      return reused(existing);
+    }
     return created(await createOwned(server, runtimeForServer(server), "session", plan, options));
   });
 }
@@ -860,12 +888,16 @@ export async function findOrCreateWindow(
   const plan = planNewWindow(session.id, { ...options, name });
   return serialized(session, options.signal, async () => {
     const runtime = runtimeForHandle(session);
-    const current = await session.refreshed();
+    const current = await refreshedHandle(session, runtime, options.signal);
+    cancelled(options.signal);
     const existing = oneOrNone(
       current.windows.filter((window) => window.name === name).toArray(),
       `window name ${name}`,
     );
-    if (existing !== undefined) return reused(existing);
+    if (existing !== undefined) {
+      cancelled(options.signal);
+      return reused(existing);
+    }
     return created(await createOwned(session.server, runtime, "window", plan, options));
   });
 }
@@ -913,7 +945,8 @@ export async function findOrCreatePane(
   const plan = planSplitWindow(window.id, options);
   return serialized(window, options.signal, async () => {
     const runtime = runtimeForHandle(window);
-    const current = await window.refreshed();
+    const current = await refreshedHandle(window, runtime, options.signal);
+    cancelled(options.signal);
     const panes = current.panes.toArray();
     const matches: Pane[] = [];
     for (const pane of panes) {
@@ -927,7 +960,10 @@ export async function findOrCreatePane(
       if (lines.join("\n") === value) matches.push(pane);
     }
     const existing = oneOrNone(matches, `pane identity ${option}=${value}`);
-    if (existing !== undefined) return reused(existing);
+    if (existing !== undefined) {
+      cancelled(options.signal);
+      return reused(existing);
+    }
     const owner = await createOwned(
       window.server,
       runtime,

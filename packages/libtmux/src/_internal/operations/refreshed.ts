@@ -2,7 +2,7 @@ import type { Client } from "../../client.js";
 import { LibTmuxError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Session } from "../../session.js";
-import type { ServerSnapshot } from "../../types.js";
+import type { AbortLike, ServerSnapshot } from "../../types.js";
 import type { Window } from "../../window.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import {
@@ -91,8 +91,9 @@ function isSameSubject(left: Child, right: Child): boolean {
 export async function refreshedHandle<Handle extends Child>(
   handle: Handle,
   runtime: RuntimeContext,
+  signal?: AbortLike,
 ): Promise<Handle> {
-  const graph = await acquireServerGraph(runtime);
+  const graph = await acquireServerGraph(runtime, signal);
   const snapshot = await buildSnapshotFromGraph(handle.server, graph);
   const winlink = winlinkRefForHandle(handle);
   const candidates = candidatesFor(snapshot, handle);

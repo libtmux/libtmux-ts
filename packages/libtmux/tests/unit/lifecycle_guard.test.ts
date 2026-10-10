@@ -44,7 +44,7 @@ test("malformed creation receipts expose uncertainty across a bounded input corp
             exitCode: 0,
             signal: null,
             stderr: new Uint8Array(),
-            stdout: new TextEncoder().encode(`${marker}\t${valid.join("\t")}\n`),
+            stdout: new TextEncoder().encode(`${marker};${valid.join(";")}\n`),
           };
         },
       },
@@ -72,7 +72,7 @@ test("malformed startup and partial mutation replies retain uncertain acquisitio
             request.commands.flat().join(" "),
           )?.[0];
           const stdout = new TextEncoder().encode(
-            `${marker}${startup ? "-created" : ""}\t${startup ? "server" : "$1"}\t123\t456\tinvalid\n`,
+            `${marker}${startup ? "-created" : ""};${startup ? "server" : "$1"};123;456;invalid\n`,
           );
           if (!startup) {
             failure = new TmuxTransportError("lost partial reply", {

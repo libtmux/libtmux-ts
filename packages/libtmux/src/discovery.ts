@@ -188,7 +188,7 @@ export async function discoverServers(
               };
               const server = new Server(serverOptions);
               const runtime = runtimeForServer(server);
-              const args = ["display-message", "-p", "#{pid}\t#{start_time}"];
+              const args = ["display-message", "-p", "#{pid};#{start_time}"];
               const request = prepareCommandRequest(runtime.connection, args, {
                 signal: controller.signal,
                 timeoutMs: probeTimeoutMs,
@@ -208,7 +208,7 @@ export async function discoverServers(
                   stderr: result.stderr,
                   stdout: result.stdout,
                 });
-              const [pid, startTime, ...extra] = (result.stdout[0] ?? "").split("\t");
+              const [pid, startTime, ...extra] = (result.stdout[0] ?? "").split(";");
               if (
                 result.stdout.length !== 1 ||
                 extra.length > 0 ||
