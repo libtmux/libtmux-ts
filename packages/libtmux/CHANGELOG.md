@@ -37,6 +37,12 @@ remember.
 - `findOrCreateServer`, `findOrCreateSession`, `findOrCreateWindow`, and `findOrCreatePane` distinguish newly owned resources from borrowed reuse. Calls sharing the documented parent object serialize; independent clients retain tmux's native concurrency behavior.
 - `discoverServers` searches bounded local socket directories with per-candidate diagnostics and truncation. It retains filesystem traversal and uses no-start probes.
 
+### Fixed
+
+- Preserve lifecycle receipts and discovery identities when tmux clients use the C locale.
+- Cancel queued find-or-create calls promptly while keeping later calls behind their predecessor.
+- Forward cancellation through window and pane lifecycle lookups while preserving handle placement.
+
 ### Endpoint defaults
 
 `Server` captures one absolute endpoint at construction: explicit socket options,

@@ -173,3 +173,33 @@ test("root traversal retains missing components and symlink parent semantics", a
     }
   });
 }, 30_000);
+
+test("C-locale discovery preserves daemon identities and socket names", async () => {
+  await withDiscoveryFixtures(async ([first, second], directory) => {
+    const root = join(directory, "sockets; with space, comma");
+    await mkdir(root);
+    const firstPath = join(root, "first; socket, path");
+    const secondPath = join(root, "second; socket, path");
+    await link(first.socketPath, firstPath);
+    await link(second.socketPath, secondPath);
+    const result = await discoverServers({
+      roots: [root],
+      includeDefaultRoots: false,
+      tmuxBin: first.tmuxExecutable,
+      environment: { PATH: process.env.PATH, LC_ALL: "C", LANG: "C" },
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.truncated).toEqual([]);
+    expect(result.servers.map((found) => found.socketPath).toSorted()).toEqual(
+      [firstPath, secondPath].toSorted(),
+    );
+    expect(result.servers.map((found) => found.daemon.pid).toSorted()).toEqual(
+      [String(first.daemonIdentity.pid), String(second.daemonIdentity.pid)].toSorted(),
+    );
+    for (const found of result.servers) {
+      expect(found.server.socketPath).toBe(found.socketPath);
+      // eslint-disable-next-line no-await-in-loop -- Each endpoint is checked against its own probe receipt.
+      expect(await found.server.daemonIdentity()).toEqual(found.daemon);
+    }
+  });
+}, 30_000);
