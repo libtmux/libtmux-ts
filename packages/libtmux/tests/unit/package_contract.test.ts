@@ -56,6 +56,7 @@ const expectedScripts = {
   "test:differential": "bun scripts/run-differential-tests.ts",
   "test:integration": "bun scripts/run-integration-tests.ts",
   "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
+  "test:deno": "bun run build && bun scripts/test-node.ts --runtime deno",
   "test:compat": "bun scripts/check-tmux-compat.ts",
   "test:coverage": "bun run build && bun scripts/check-coverage.ts",
   "test:package":
@@ -195,6 +196,7 @@ describe("package contract", () => {
       "ResizeAdjustmentDirection",
       "Server",
       "Session",
+      "TmuxAcquisitionError",
       "TmuxCommandError",
       "TmuxServerRestarted",
       "TmuxServerRestartedError",
@@ -205,14 +207,27 @@ describe("package contract", () => {
       "WaitTimeoutError",
       "Window",
       "WindowDirection",
+      "adoptPane",
+      "adoptServer",
+      "adoptSession",
+      "adoptWindow",
       "compileBoundedRegex",
       "decodeWhereDocument",
+      "discoverServers",
       "encodeWhereDocument",
+      "findOrCreatePane",
+      "findOrCreateServer",
+      "findOrCreateSession",
+      "findOrCreateWindow",
       "isSafeInteger",
       "isSplitSize",
       "isTmuxName",
+      "ownPane",
+      "ownSession",
+      "ownWindow",
       "safeInteger",
       "splitSize",
+      "withOwned",
     ]);
     expect(packageManifest.name).toBe("libtmux");
     // Stable and prerelease manifests share the same coordinated release path.
@@ -259,6 +274,8 @@ describe("package contract", () => {
     expect(packageManifest.trustedDependencies).toEqual([]);
     expect(Object.keys(packageManifest.exports)).toEqual([
       ".",
+      "./lifecycle",
+      "./discovery",
       "./package.json",
       "./common",
       "./errors",
@@ -325,7 +342,17 @@ describe("package contract", () => {
       import: "./dist/field_types.js",
       default: "./dist/field_types.js",
     });
-    for (const model of ["server", "session", "window", "pane", "client", "selection", "engine"]) {
+    for (const model of [
+      "server",
+      "session",
+      "window",
+      "pane",
+      "client",
+      "selection",
+      "engine",
+      "lifecycle",
+      "discovery",
+    ]) {
       expect(packageManifest.exports[`./${model}`]).toEqual({
         types: `./dist/${model}.d.ts`,
         bun: `./src/${model}.ts`,
@@ -365,7 +392,7 @@ describe("package contract", () => {
     ]);
     const runtimeManifests = [rootManifest, packageManifest, mcpManifest, workspaceManifest];
     for (const manifest of runtimeManifests) {
-      expect(manifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14" });
+      expect(manifest.engines).toEqual({ node: ">=22", bun: ">=1.3.14", deno: ">=2.9.7" });
     }
     expect(mcpManifest.dependencies?.libtmux).toBe(packageManifest.version);
     expect(workspaceManifest.peerDependencies?.libtmux).toBe(packageManifest.version);

@@ -51,6 +51,12 @@ export function tmuxCommand(args: readonly string[]): TmuxCommand {
 
 /** Validate the string and whole-invocation invariants of an engine request. */
 export function validateInvocation(request: TmuxInvocationRequest): void {
+  if (
+    request.daemonGuard?.generation !== undefined &&
+    !/^[0-9a-fA-F]{32}$/u.test(request.daemonGuard.generation)
+  ) {
+    throw protocolError("daemon generation must contain exactly 32 ASCII hexadecimal characters");
+  }
   if (request.commands.length === 0) throw protocolError("tmux invocation has no commands");
   for (const command of request.commands) {
     if (command.length === 0 || command[0] === "") {

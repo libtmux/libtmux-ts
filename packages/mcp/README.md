@@ -76,7 +76,8 @@ Closing the subprocess's stdin cancels pending waits and joins its control
 connections before exit. Existing tmux sessions and panes keep running.
 Backend cleanup failures produce a nonzero exit status.
 
-Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
+Requires Node 22+, [Bun](https://bun.sh) 1.3.14+, or Deno 2.9.7+, and tmux 3.2a
+or newer.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
@@ -111,6 +112,25 @@ opt in.
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
     npx -y @libtmux/mcp@0.1.0-alpha.12
+```
+
+</details>
+
+<details>
+<summary>Deno</summary>
+
+`--allow-all` is the only permission set tested for the server:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "deno",
+      "args": ["run", "--allow-all", "npm:@libtmux/mcp@0.1.0-alpha.12"],
+      "env": { "LIBTMUX_SOCKET": "agent" }
+    }
+  }
+}
 ```
 
 </details>

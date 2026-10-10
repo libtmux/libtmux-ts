@@ -88,6 +88,19 @@ describe("generated API reference", () => {
     const rootEntries = [...api.matchAll(/^### (`[^`]+`(?: type)?)$/gmu)].map((match) => match[1]!);
 
     expect(rootEntries).toEqual([
+      "`ownSession`",
+      "`ownWindow`",
+      "`ownPane`",
+      "`adoptServer`",
+      "`adoptSession`",
+      "`adoptWindow`",
+      "`adoptPane`",
+      "`withOwned`",
+      "`findOrCreateServer`",
+      "`findOrCreateSession`",
+      "`findOrCreateWindow`",
+      "`findOrCreatePane`",
+      "`discoverServers`",
       "`encodeWhereDocument`",
       "`decodeWhereDocument`",
       "`isSafeInteger`",

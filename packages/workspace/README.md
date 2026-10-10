@@ -54,7 +54,8 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.12 libtmux@0.1.0-alpha.12
 </details>
 
 `libtmux` is a peer of this package in practice: you pass it the `Server`.
-Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
+Requires Node 22+, [Bun](https://bun.sh) 1.3.14+, or Deno 2.9.7+, and tmux 3.2a
+or newer.
 
 This package and [`@libtmux/workspace-cli`](../workspace-cli) are two
 implementations, not one product with two faces. They differ in what they do

@@ -41,6 +41,9 @@ export function snapshotInvocationRequest(request: CommandRequest): CommandReque
       ? {}
       : {
           daemonGuard: Object.freeze({
+            ...(request.daemonGuard.generation === undefined
+              ? {}
+              : { generation: request.daemonGuard.generation }),
             pid: request.daemonGuard.pid,
             startTime: request.daemonGuard.startTime,
           }),

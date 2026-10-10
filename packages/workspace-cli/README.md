@@ -11,9 +11,9 @@
 
 # Workspace CLI
 
-Manage tmux workspaces from YAML and JSON with Node.js 22.12+ or Bun 1.3.14+.
-`tmux-workspace` loads, captures, converts and imports tmuxp workspace files.
-This implementation is in development.
+Manage tmux workspaces from YAML and JSON with Node.js 22.12+, Bun 1.3.14+, or
+Deno 2.9.7+. `tmux-workspace` loads, captures, converts and imports tmuxp
+workspace files. This implementation is in development.
 
 </div>
 
@@ -30,6 +30,12 @@ when Node is installed; `--bun` runs it on Bun:
 
 ```console
 $ bunx --bun @libtmux/workspace-cli@0.1.0-alpha.12 --help
+```
+
+With Deno. `--allow-all` is the only permission set tested for this command:
+
+```console
+$ deno run --allow-all npm:@libtmux/workspace-cli@0.1.0-alpha.12 --help
 ```
 
 With pnpm:
@@ -381,7 +387,8 @@ Native discovery, conversion, imports, common searches, detached load, append,
 capture, editor invocation, diagnostics, and the Python shell have executable
 tests. The Linux installed-package check packs the CLI and core, installs both
 offline into an empty project, and exercises every command in JSON and NDJSON
-on Node 22 and Bun. It needs the optional Python runtime described above:
+on Node 22, Bun, and Deno 2.9.7. It needs the optional Python runtime described
+above:
 
 ```console
 $ bun run --cwd packages/workspace-cli test:install

@@ -41,6 +41,7 @@ export {
 export type { ReapReport } from "./reaper.js";
 export { TEST_HANDLE_PROTOTYPES } from "./handle_prototypes.js";
 export { resolveNode22 } from "./node22.js";
+export { DENO_FLOOR, resolveDeno } from "./deno.js";
 export {
   assertControllerCurrent,
   assertControllerIdentity,

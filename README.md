@@ -72,7 +72,8 @@ $ yarn add --exact libtmux@0.1.0-alpha.12
 
 </details>
 
-Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.2a or newer.
+Requires [Bun](https://bun.sh) 1.3.14+, Node 22+, or Deno 2.9.7+, and tmux 3.2a
+or newer.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
@@ -89,23 +90,26 @@ const editors = snapshot.panes.where({ currentCommand: "vim" });
 console.log(editors.count(), editors.at(0)?.session?.name);
 ```
 
-Building something rather than reading it looks like this — and this block is a
-literal excerpt of [`examples/quickstart/quickstart.ts`](examples/quickstart/quickstart.ts), which the
-integration suite runs against a real tmux server:
+Create a session with a scope that destroys it on normal or exceptional exit.
+The [external harness](packages/libtmux/tests/integration/environment.test.ts)
+runs this same file against a private endpoint through its child environment.
 
-<!-- runs: examples/quickstart/quickstart.ts -->
+<!-- runs: examples/quickstart/default-session.ts -->
 
 ```ts
-const session = await server.newSession({ name: "quickstart" });
-const editor = await session.newWindow({ name: "editor" });
-await editor.split();
+import { Server, ownSession } from "libtmux";
 
-const snapshot = await server.snapshot();
+const server = new Server();
+await using owned = await ownSession(server, { name: `example-${crypto.randomUUID()}` });
+const session = owned.value;
 
-const found = snapshot.windows.where({ name: "editor" }).one();
-
-const paneCount = found.panes.length;
+console.log(JSON.stringify({ id: session.id, name: session.name, socketPath: server.socketPath }));
 ```
+
+`new Server()` captures its endpoint from explicit options, `LIBTMUX_SOCKET_PATH`,
+`LIBTMUX_SOCKET_NAME`, `TMUX`, or the named default, in that order. See
+[endpoint defaults](packages/libtmux/README.md#endpoint-and-child-process-defaults)
+for empty values, validation, and the complete child-environment option.
 
 ## What querying looks like
 
@@ -155,7 +159,7 @@ The library, MCP server, workspace builder, and workspace CLI share one release 
 | **[libtmux](packages/libtmux)**                      | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837&label=)](https://www.npmjs.com/package/libtmux)                               |
 | **[@libtmux/mcp](packages/mcp)**                     | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/mcp)                     |
 | **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace)         |
-| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native `tmux-workspace` command for Node and Bun.                          | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
+| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native `tmux-workspace` command for Node, Bun, and Deno 2.9.7+.            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
 | [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                                       |
 
 ---

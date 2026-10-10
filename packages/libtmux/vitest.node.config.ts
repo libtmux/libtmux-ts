@@ -1,5 +1,5 @@
 /**
- * The unit and integration suites on Node 22, against `dist`.
+ * The unit and integration suites on Node 22 or Deno 2.9.7, against `dist`.
  *
  * Bun runs these files against `src`. This runs the same files against the
  * artifact a Node consumer loads, with `bun:test` answered by a vitest shim.
@@ -38,6 +38,15 @@ const REPOSITORY_TESTS: Readonly<Record<string, string>> = {
   "runs the shared corpus through Bun's native engine": "Bun's regex engine, by name",
   "writes exact relation metadata and only the delimited cyclic interfaces": "compiles with tsc",
 };
+
+// The lane names the runtime it meant to test. A launcher that quietly ran
+// another would otherwise pass as this one.
+const deno = (globalThis as { Deno?: { version: { deno: string } } }).Deno;
+const running = deno === undefined ? `node ${process.versions.node}` : `deno ${deno.version.deno}`;
+const expected = process.env.LTX_EXPECT_RUNTIME;
+if (expected !== undefined && expected !== running) {
+  throw new Error(`the lane expected ${expected}, but vitest is running on ${running}`);
+}
 
 const suite = process.env.LTX_NODE_SUITE ?? "unit";
 const escaped = Object.keys(REPOSITORY_TESTS).map((name) =>

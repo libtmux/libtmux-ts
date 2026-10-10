@@ -369,7 +369,7 @@ describe("server and runtime foundations", () => {
       colors: 256,
       configFile: "/tmp/handles.conf",
       socketName: "named",
-      socketPath: undefined,
+      socketPath: `/tmp/tmux-${String(process.getuid!())}/named`,
       tmuxBin: "missing-tmux-must-not-run",
     });
     expect(runtime.connection.environment).toEqual({
@@ -530,7 +530,7 @@ describe("logical reference binding", () => {
     expect(fixture.transport.requests).toHaveLength(1);
     expect(flattenInvocation(fixture.transport.requests[0]!)).toEqual([
       "-N",
-      "-Lhandles",
+      `-S/tmp/tmux-${String(process.getuid!())}/handles`,
       "display-message",
       "-p",
       "#{version};#{pid};#{start_time}",
@@ -1135,11 +1135,19 @@ describe("authenticated handle materialization", () => {
     ]);
 
     expect(fixture.transport.requests.map(flattenInvocation)).toEqual([
-      ["-Lhandles", "select-window", "-t", "$1:4"],
-      ["-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
-      ["-Lhandles", "unlink-window", "-t", "$1:4"],
+      [`-S/tmp/tmux-${String(process.getuid!())}/handles`, "select-window", "-t", "$1:4"],
       [
-        "-Lhandles",
+        `-S/tmp/tmux-${String(process.getuid!())}/handles`,
+        "move-window",
+        "-d",
+        "-s",
+        "$1:4",
+        "-t",
+        "$1:7",
+      ],
+      [`-S/tmp/tmux-${String(process.getuid!())}/handles`, "unlink-window", "-t", "$1:4"],
+      [
+        `-S/tmp/tmux-${String(process.getuid!())}/handles`,
         "if-shell",
         "-F",
         "-t",
@@ -1148,7 +1156,15 @@ describe("authenticated handle materialization", () => {
         "'unlink-window' '-k' '-t' '$1:4'",
         expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
       ],
-      ["-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
+      [
+        `-S/tmp/tmux-${String(process.getuid!())}/handles`,
+        "swap-window",
+        "-d",
+        "-s",
+        "$1:4",
+        "-t",
+        "$1:6",
+      ],
     ]);
   });
 
@@ -1253,7 +1269,7 @@ describe("Python-compatible handle equality", () => {
       ),
     ).toBe(true);
     expect(left.equals(new Server({ socketName: "other" }))).toBe(false);
-    expect(left.equals(new Server({ socketPath: "same" }))).toBe(false);
+    expect(left.equals(new Server({ socketPath: "/tmp/same" }))).toBe(false);
     expect(left.equals(Object.create(Server.prototype))).toBe(false);
     expect(left.equals({ socketName: "same", socket_path: undefined })).toBe(false);
     for (const nonServer of [null, undefined, false, 0, 1n, "same", Symbol("same")]) {

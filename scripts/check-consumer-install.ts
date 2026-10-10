@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveNode22 } from "../packages/libtmux/src/_internal/test/testkit.js";
+import { resolveDeno, resolveNode22 } from "../packages/libtmux/src/_internal/test/testkit.js";
 import { runBoundedCommand } from "./bounded_process.js";
 import { npmPack } from "./npm_pack.js";
 
@@ -84,7 +84,7 @@ async function run(
   return result.stdout;
 }
 
-async function probeMcpBinary(project: string, node: string): Promise<void> {
+async function probeMcpBinary(project: string, runtime: readonly string[]): Promise<void> {
   const binary = join(project, "node_modules", ".bin", "libtmux-mcp");
   const frames = [
     {
@@ -100,7 +100,7 @@ async function probeMcpBinary(project: string, node: string): Promise<void> {
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { id: 2, jsonrpc: "2.0", method: "tools/list", params: {} },
   ];
-  const result = await runBoundedCommand([node, binary], {
+  const result = await runBoundedCommand([...runtime, binary], {
     cwd: project,
     env: { ...process.env, LIBTMUX_TOOLSETS: "inspect", TMUX: "", TMUX_PANE: "" },
     maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
@@ -108,13 +108,17 @@ async function probeMcpBinary(project: string, node: string): Promise<void> {
     timeoutMilliseconds: MCP_PROBE_TIMEOUT_MILLISECONDS,
   });
   if (result.termination === "timed_out") {
-    fail(`installed ${binary} exceeded its handshake deadline\n${result.stderr}`);
+    fail(`installed ${binary} on ${runtime[0]} exceeded its handshake deadline\n${result.stderr}`);
   }
   if (result.termination === "output_limit_exceeded") {
-    fail(`installed ${binary} exceeded ${String(MAX_COMMAND_OUTPUT_BYTES)} output bytes`);
+    fail(
+      `installed ${binary} on ${runtime[0]} exceeded ${String(MAX_COMMAND_OUTPUT_BYTES)} output bytes`,
+    );
   }
   if (result.exitCode !== 0) {
-    fail(`installed ${binary} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`);
+    fail(
+      `installed ${binary} on ${runtime[0]} exited ${String(result.exitCode)}\n${result.stdout}${result.stderr}`,
+    );
   }
   const { stderr, stdout: output } = result;
 
@@ -127,16 +131,18 @@ async function probeMcpBinary(project: string, node: string): Promise<void> {
   const tools =
     listed?.result?.tools?.flatMap(({ name }) => (name === undefined ? [] : [name])) ?? [];
   if (tools.length === 0) {
-    fail(`installed ${binary} returned no tools\n${output}${stderr}`);
+    fail(`installed ${binary} on ${runtime[0]} returned no tools\n${output}${stderr}`);
   }
   if (tools.includes("wait_for_text_task")) {
-    fail(`installed ${binary} offered experimental task tool\n${output}${stderr}`);
+    fail(`installed ${binary} on ${runtime[0]} offered experimental task tool\n${output}${stderr}`);
   }
   if (!tools.includes("wait_for_text")) {
-    fail(`installed ${binary} omitted stable wait tool\n${output}${stderr}`);
+    fail(`installed ${binary} on ${runtime[0]} omitted stable wait tool\n${output}${stderr}`);
   }
   if (initialized?.result?.capabilities?.tasks !== undefined) {
-    fail(`installed ${binary} advertised experimental task support\n${output}${stderr}`);
+    fail(
+      `installed ${binary} on ${runtime[0]} advertised experimental task support\n${output}${stderr}`,
+    );
   }
 }
 
@@ -303,9 +309,15 @@ try {
   await writeFile(join(project, "node.mjs"), consumer.nodeProbe);
   await writeFile(join(project, "bun.mjs"), consumer.bunProbe);
   const node = await resolveNode22();
+  // Deno takes the emitted tree, as Node does, so the Node probe is its probe.
+  const deno = [await resolveDeno(), "run", "--allow-all"] as const;
   await run([node, "node.mjs"], project, RUNTIME_TIMEOUT_MILLISECONDS);
+  await run([...deno, "node.mjs"], project, RUNTIME_TIMEOUT_MILLISECONDS);
   await run(["bun", "bun.mjs"], project, RUNTIME_TIMEOUT_MILLISECONDS);
-  if (targetManifest.name === "@libtmux/mcp") await probeMcpBinary(project, node);
+  if (targetManifest.name === "@libtmux/mcp") {
+    await probeMcpBinary(project, [node]);
+    await probeMcpBinary(project, deno);
+  }
   process.stdout.write(
     `${JSON.stringify({
       installed: `${targetManifest.name}@${targetManifest.version}`,
