@@ -25,11 +25,11 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@types/bun": "1.4.2",
-    "@types/node": "22.20.4",
-    "oxfmt": "0.70.0",
-    "oxlint": "1.85.0",
-    "oxlint-tsgolint": "7.0.2002",
-    "publint": "0.3.24",
+    "@types/node": "22.20.5",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "publint": "0.3.25",
     "typescript": "7.0.2"
   },
   "overrides": {
