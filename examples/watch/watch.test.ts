@@ -25,7 +25,7 @@ describe("watch", () => {
     });
   }, 60_000);
 
-  test("the pane-output example follows a pane until its marker arrives", async () => {
+  test("follows a pane until its marker arrives", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,
@@ -82,7 +82,7 @@ describe("watch", () => {
     });
   }, 60_000);
 
-  test("the cancellation example separates giving up from breaking", async () => {
+  test("separates giving up from breaking", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,

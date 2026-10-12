@@ -182,7 +182,10 @@ that socket and the `inspect` toolset:
     "tmux": {
       "command": "npx",
       "args": ["-y", "@libtmux/mcp@0.1.0-alpha.12"],
-      "env": { "LIBTMUX_SOCKET": "workspace-cli-demo", "LIBTMUX_TOOLSETS": "inspect" }
+      "env": {
+        "LIBTMUX_SOCKET": "workspace-cli-demo",
+        "LIBTMUX_TOOLSETS": "inspect"
+      }
     }
   }
 }

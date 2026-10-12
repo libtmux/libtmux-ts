@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../packages/libtmux/src/server.js";
-import { runWithCleanup } from "../../packages/libtmux/src/_internal/test/testkit.js";
-import { withServer } from "../test-support/with-server.js";
+import { runWithCleanup, withServer } from "../test-support/with-server.js";
 import {
   buildWorkspace as buildMcpWorkspace,
   connectAgent,
@@ -12,7 +11,7 @@ import {
 } from "./mcp-agent.js";
 
 describe("mcp-agent", () => {
-  test("the mcp example reports a command's own output and its status", async () => {
+  test("reports a command's output and its status", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,
@@ -22,7 +21,9 @@ describe("mcp-agent", () => {
       const client = await connectAgent(server);
       await runWithCleanup(
         async () => {
-          const [paneId = ""] = await buildMcpWorkspace(client, "mcp-example", ["shell"]);
+          const [paneId = ""] = await buildMcpWorkspace(client, "mcp-example", [
+            "shell",
+          ]);
 
           // The echo trap: the text waited for is also in the command sent.
           const ran = await runAndCheck(client, paneId, "echo hello");
@@ -31,7 +32,12 @@ describe("mcp-agent", () => {
           expect(ran.output).toBe("hello");
 
           // A wait that misses is still an answer, not an empty hand.
-          const missed = await waitFor(client, paneId, "never-printed-here", 1_500);
+          const missed = await waitFor(
+            client,
+            paneId,
+            "never-printed-here",
+            1_500,
+          );
           expect(missed.outcome).toBe("timed_out");
           expect(missed.screen).toContain("hello");
 

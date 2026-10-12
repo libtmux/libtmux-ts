@@ -93,7 +93,10 @@ deduplicated into the fixed eight-client transaction order. `antigravity` is
 an alias for `agy`.
 
 ```console
-$ bun scripts/mcp_swap.ts use --cli cursor,pi --cli antigravity --env LIBTMUX_TOOLSETS=inspect,manage
+$ bun scripts/mcp_swap.ts use \
+    --cli cursor,pi \
+    --cli antigravity \
+    --env LIBTMUX_TOOLSETS=inspect,manage
 ```
 
 Existing entry environment is retained, and explicit `--env KEY=VALUE` values
@@ -220,7 +223,9 @@ Windows is rejected because this helper has no compatible record-lock backend.
 Run the focused swap and bounded-process tests:
 
 ```console
-$ bun test packages/libtmux/tests/unit/mcp_swap.test.ts packages/libtmux/tests/unit/bounded_process.test.ts
+$ bun test \
+    packages/libtmux/tests/unit/mcp_swap.test.ts \
+    packages/libtmux/tests/unit/bounded_process.test.ts
 ```
 
 Check the repository tooling types:

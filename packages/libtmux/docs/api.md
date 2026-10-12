@@ -233,13 +233,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server } from "libtmux";
 
-const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
 const server = new Server({
-  socketPath: join(directory, "tmux.sock"),
+  socketPath: join(dir, "tmux.sock"),
   configFile: "/dev/null",
   timeoutMs: 5_000,
 });
-const failures: unknown[] = [];
+const errors: unknown[] = [];
 try {
   assert.equal(await server.hasSession("work"), false);
   const session = await server.newSession({
@@ -254,16 +254,16 @@ try {
   assert.equal(snapshot.panes.count(), 1);
   console.log("work: 1 session, 1 window, 1 pane");
 } catch (error) {
-  failures.push(error);
+  errors.push(error);
 } finally {
   try {
-    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-    await rm(directory, { recursive: true });
+    if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+    await rm(dir, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
   }
 }
-if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+if (errors.length > 0) throw new AggregateError(errors, "Example failed");
 ```
 
 @throws TypeError if both `socketName` and `socketPath` are given.
@@ -353,7 +353,10 @@ new Server().tmuxBin; // "tmux"
 #### `Server.withConnection`
 
 ```ts
-async withConnection<T>( body: (live: ConnectedServer) => Promise<T>, options?: ConnectOptions, ): Promise<T>
+async withConnection<T>(
+  body: (live: ConnectedServer) => Promise<T>,
+  options?: ConnectOptions,
+): Promise<T>
 ```
 
 Run `body` against a connected server, closing it afterwards.
@@ -366,7 +369,7 @@ whether `body` returns or throws.
 ```ts
 const opened = await server.withConnection(async (live) => {
   await session.newWindow({ name: "build" });
-  return live.waitFor((current) => current.windows.exists({ name: "build" }));
+  return live.waitFor((state) => state.windows.exists({ name: "build" }));
 });
 opened.windows.count({ name: "build" }); // 1
 ```
@@ -423,7 +426,8 @@ snapshot also follows the observer authentication and version probes.
 ```ts
 await using live = await server.connect();
 for await (const event of live.subscribe()) {
-  if (event.kind === "window-add") console.log((await live.snapshot()).windows.count());
+  if (event.kind === "window-add")
+    console.log((await live.snapshot()).windows.count());
 }
 ```
 
@@ -473,13 +477,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server, NoMatchError } from "libtmux";
 
-const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
 const server = new Server({
-  socketPath: join(directory, "tmux.sock"),
+  socketPath: join(dir, "tmux.sock"),
   configFile: "/dev/null",
   timeoutMs: 5_000,
 });
-const failures: unknown[] = [];
+const errors: unknown[] = [];
 try {
   await server.newSession({ name: "prod-api", shellCommand: "cat" });
   await server.newSession({ name: "dev-api", shellCommand: "cat" });
@@ -492,9 +496,9 @@ try {
       .sort()
       .join(", "),
   );
-  const production = sessions.where({ name: { startsWith: "prod-" } }).one();
-  assert.equal(production.name, "prod-api");
-  console.log("production:", production.name);
+  const prod = sessions.where({ name: { startsWith: "prod-" } }).one();
+  assert.equal(prod.name, "prod-api");
+  console.log("production:", prod.name);
   assert.equal(sessions.oneOrUndefined({ name: "missing" }), undefined);
   try {
     sessions.one({ name: "missing" });
@@ -504,16 +508,16 @@ try {
     console.log("missing:", error.code);
   }
 } catch (error) {
-  failures.push(error);
+  errors.push(error);
 } finally {
   try {
-    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-    await rm(directory, { recursive: true });
+    if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+    await rm(dir, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
   }
 }
-if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+if (errors.length > 0) throw new AggregateError(errors, "Example failed");
 ```
 
 #### `Server.windows`
@@ -536,13 +540,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server, MultipleMatchesError } from "libtmux";
 
-const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
 const server = new Server({
-  socketPath: join(directory, "tmux.sock"),
+  socketPath: join(dir, "tmux.sock"),
   configFile: "/dev/null",
   timeoutMs: 5_000,
 });
-const failures: unknown[] = [];
+const errors: unknown[] = [];
 try {
   const session = await server.newSession({
     name: "home",
@@ -554,7 +558,10 @@ try {
     windowName: "shell",
     shellCommand: "cat",
   });
-  const window = await session.newWindow({ name: "logs", shellCommand: "cat" });
+  const window = await session.newWindow({
+    name: "logs",
+    shellCommand: "cat",
+  });
   await window.link({ session: guest });
   const windows = await server.windows();
   const logs = windows.where({ name: "logs" });
@@ -578,16 +585,16 @@ try {
       .join(", "),
   );
 } catch (error) {
-  failures.push(error);
+  errors.push(error);
 } finally {
   try {
-    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-    await rm(directory, { recursive: true });
+    if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+    await rm(dir, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
   }
 }
-if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+if (errors.length > 0) throw new AggregateError(errors, "Example failed");
 ```
 
 #### `Server.panes`
@@ -610,13 +617,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server, PaneDirection } from "libtmux";
 
-const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
 const server = new Server({
-  socketPath: join(directory, "tmux.sock"),
+  socketPath: join(dir, "tmux.sock"),
   configFile: "/dev/null",
   timeoutMs: 5_000,
 });
-const failures: unknown[] = [];
+const errors: unknown[] = [];
 try {
   const session = await server.newSession({
     name: "work",
@@ -624,7 +631,10 @@ try {
     shellCommand: "cat",
   });
   const pane = session.panes.one();
-  await pane.split({ direction: PaneDirection.Below, shellCommand: "cat" });
+  await pane.split({
+    direction: PaneDirection.Below,
+    shellCommand: "cat",
+  });
   const panes = await server.panes();
   assert.equal(panes.count(), 2);
   const active = panes.where({ active: true });
@@ -636,16 +646,16 @@ try {
     console.log("location:", item.session?.name, item.window?.name);
   }
 } catch (error) {
-  failures.push(error);
+  errors.push(error);
 } finally {
   try {
-    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-    await rm(directory, { recursive: true });
+    if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+    await rm(dir, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
   }
 }
-if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+if (errors.length > 0) throw new AggregateError(errors, "Example failed");
 ```
 
 #### `Server.daemonIdentity`
@@ -700,7 +710,9 @@ options.get("escape-time");
 #### `Server.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this server, own and inherited together.
@@ -716,7 +728,11 @@ answer wherever it was actually set.
 #### `Server.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set a server-scope option.
@@ -740,7 +756,11 @@ await server.unsetOption("escape-time");
 #### `Server.saveBuffer`
 
 ```ts
-saveBuffer(name: string, path: string, options?: SaveBufferOptions): Promise<void>
+saveBuffer(
+  name: string,
+  path: string,
+  options?: SaveBufferOptions,
+): Promise<void>
 ```
 
 Write a paste buffer to a file instead of reading it back.
@@ -756,7 +776,10 @@ await server.saveBuffer("captured", "/tmp/build.log");
 #### `Server.showGlobalOptions`
 
 ```ts
-showGlobalOptions( scope: "session" | "window", options?: CommandOptions, ): Promise<ReadonlyMap<string, string>>
+showGlobalOptions(
+  scope: "session" | "window",
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 Read the defaults every session or window inherits.
@@ -775,7 +798,12 @@ defaults.get("default-shell");
 #### `Server.setGlobalOption`
 
 ```ts
-setGlobalOption( scope: "session" | "window", name: string, value: string, options?: SetOptionOptions, ): Promise<void>
+setGlobalOption(
+  scope: "session" | "window",
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set a default every session or window inherits.
@@ -826,7 +854,9 @@ list, so it replaces whatever the hook already ran.
 
 ```ts
 await server.setHook("session-created", "display-message 'hello'");
-await server.setHook("session-created", "display-message 'and this'", { append: true });
+await server.setHook("session-created", "display-message 'and this'", {
+  append: true,
+});
 ```
 
 #### `Server.unsetHook`
@@ -844,7 +874,10 @@ await server.unsetHook("session-created");
 #### `Server.validateLayouts`
 
 ```ts
-validateLayouts( layouts: readonly { readonly layout: string; readonly panes: number }[], options?: CommandOptions, ): Promise<void>
+validateLayouts(
+  layouts: readonly { readonly layout: string; readonly panes: number }[],
+  options?: CommandOptions,
+): Promise<void>
 ```
 
 Check every planned window layout before setup scripts or mutations.
@@ -934,7 +967,11 @@ await server.getEnvironment("EDITOR"); // "vim", null, or undefined
 #### `Server.setEnvironment`
 
 ```ts
-setEnvironment(name: string, value: string, options?: SetEnvironmentOptions): Promise<void>
+setEnvironment(
+  name: string,
+  value: string,
+  options?: SetEnvironmentOptions,
+): Promise<void>
 ```
 
 Set a variable in the server's global environment.
@@ -988,24 +1025,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server } from "libtmux";
 
-const directory = await mkdtemp(join(tmpdir(), "ltx-example-"));
+const dir = await mkdtemp(join(tmpdir(), "ltx-example-"));
 const server = new Server({
-  socketPath: join(directory, "tmux.sock"),
+  socketPath: join(dir, "tmux.sock"),
   configFile: "/dev/null",
   timeoutMs: 5_000,
 });
-const failures: unknown[] = [];
+const errors: unknown[] = [];
 try {
   const session = await server.newSession({
     name: "work",
     windowName: "editor",
     shellCommand: "cat",
-    startDirectory: directory,
+    startDirectory: dir,
     environment: { LIBTMUX_EXAMPLE: "ready" },
   });
   assert.equal(session.name, "work");
   assert.equal(session.windows.one().name, "editor");
-  assert.equal(session.panes.one().currentPath, directory);
+  assert.equal(session.panes.one().currentPath, dir);
   console.log("created:", session.name, session.windows.one().name);
 
   await server.newSession({ name: "review", groupWith: session.id });
@@ -1022,16 +1059,16 @@ try {
       .join(", "),
   );
 } catch (error) {
-  failures.push(error);
+  errors.push(error);
 } finally {
   try {
-    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
-    await rm(directory, { recursive: true });
+    if ((await readdir(dir)).includes("tmux.sock")) await server.kill();
+    await rm(dir, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    errors.push(new Error(`Cleanup failed: ${dir}`, { cause: error }));
   }
 }
-if (failures.length > 0) throw new AggregateError(failures, "Example failed");
+if (errors.length > 0) throw new AggregateError(errors, "Example failed");
 ```
 
 #### `Server.kill`
@@ -1206,7 +1243,11 @@ lines[0]; // "hello"
 #### `Server.ifShell`
 
 ```ts
-ifShell(condition: string, command: string, options?: IfShellOptions): Promise<void>
+ifShell(
+  condition: string,
+  command: string,
+  options?: IfShellOptions,
+): Promise<void>
 ```
 
 Run one command or another depending on a condition.
@@ -1267,7 +1308,11 @@ await server.raiseIfDead(); // throws when no tmux server is listening
 #### `Server.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model.
@@ -1287,7 +1332,10 @@ await server.cmd("list-keys", ["-T", "copy-mode"]);
 #### `Server.pipeline`
 
 ```ts
-pipeline( commands: readonly (readonly string[])[], options?: CommandOptions, ): Promise<readonly (readonly string[])[]>
+pipeline(
+  commands: readonly (readonly string[])[],
+  options?: CommandOptions,
+): Promise<readonly (readonly string[])[]>
 ```
 
 Run several tmux commands in order.
@@ -1312,7 +1360,10 @@ const [[first], [second]] = await server.pipeline([
 #### `Server.batch`
 
 ```ts
-async batch<const T extends readonly PlannedOperation<unknown>[]>( operations: T, options?: CommandOptions, ): Promise<
+async batch<const T extends readonly PlannedOperation<unknown>[]>(
+  operations: T,
+  options?: CommandOptions,
+): Promise<
 ```
 
 Run planned mutations in order, resolving each to what it made.
@@ -1447,7 +1498,9 @@ options.get("status");
 #### `Session.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this session, own and inherited together.
@@ -1463,7 +1516,11 @@ answer wherever it was actually set.
 #### `Session.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set an option on this session.
@@ -1514,7 +1571,9 @@ list, so it replaces whatever the hook already ran.
 
 ```ts
 await session.setHook("window-linked", "display-message 'linked'");
-await session.setHook("window-linked", "display-message 'twice'", { append: true });
+await session.setHook("window-linked", "display-message 'twice'", {
+  append: true,
+});
 ```
 
 #### `Session.unsetHook`
@@ -1560,7 +1619,11 @@ await session.getEnvironment("EDITOR"); // "vim", null, or undefined
 #### `Session.setEnvironment`
 
 ```ts
-setEnvironment(name: string, value: string, options?: SetEnvironmentOptions): Promise<void>
+setEnvironment(
+  name: string,
+  value: string,
+  options?: SetEnvironmentOptions,
+): Promise<void>
 ```
 
 Set a variable in this session's environment.
@@ -1677,7 +1740,9 @@ await session.selectWindow("next");
 #### `Session.fromEnv`
 
 ```ts
-static async fromEnv( environment: Readonly<Record<string, string | undefined>> = process.env, ): Promise<Session>
+static async fromEnv(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<Session>
 ```
 
 Resolve the session this process is running inside.
@@ -1705,7 +1770,11 @@ await session.detach();
 #### `Session.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model, addressed at this session.
@@ -1881,7 +1950,9 @@ options.get("automatic-rename");
 #### `Window.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this window, own and inherited together.
@@ -1897,7 +1968,11 @@ answer wherever it was actually set.
 #### `Window.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set an option on this window.
@@ -2198,7 +2273,11 @@ later.panes.count();
 #### `Window.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model, addressed at this window.
@@ -2305,7 +2384,7 @@ setHook(name: string, command: string, options?: SetHookOptions): Promise<void>
 Bind a tmux command to a pane-scoped hook.
 
 ```ts
-await pane.setHook("pane-title-changed", "display-message 'title changed'");
+await pane.setHook("pane-title-changed", "display-message 'renamed'");
 ```
 
 #### `Pane.unsetHook`
@@ -2340,7 +2419,9 @@ options.get("remain-on-exit");
 #### `Pane.showResolvedOptions`
 
 ```ts
-showResolvedOptions(options?: CommandOptions): Promise<ReadonlyMap<string, string>>
+showResolvedOptions(
+  options?: CommandOptions,
+): Promise<ReadonlyMap<string, string>>
 ```
 
 The option values that govern this pane, own and inherited together.
@@ -2356,7 +2437,11 @@ answer wherever it was actually set.
 #### `Pane.setOption`
 
 ```ts
-setOption(name: string, value: string, options?: SetOptionOptions): Promise<void>
+setOption(
+  name: string,
+  value: string,
+  options?: SetOptionOptions,
+): Promise<void>
 ```
 
 Set an option on this pane.
@@ -2481,13 +2566,17 @@ try {
   failures.push(error);
 } finally {
   try {
-    if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+    const names = await readdir(directory);
+    if (names.includes("tmux.sock")) await server.kill();
     await rm(directory, { recursive: true });
   } catch (error) {
-    failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+    const message = `Cleanup failed; inspect ${directory}`;
+    failures.push(new Error(message, { cause: error }));
   }
 }
-if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
+if (failures.length > 0) {
+  throw new AggregateError(failures, "Capture failed");
+}
 ```
 
 #### `Pane.clearHistory`
@@ -2732,7 +2821,9 @@ displayMenu(title: string, items: readonly MenuItem[]): Promise<void>
 Show a menu over the client showing this pane.
 
 ```ts
-await pane.displayMenu("Actions", [{ command: "kill-pane", key: "k", name: "Kill" }]);
+await pane.displayMenu("Actions", [
+  { command: "kill-pane", key: "k", name: "Kill" },
+]);
 ```
 
 #### `Pane.chooseTree`
@@ -2829,7 +2920,11 @@ await pane.customizeMode();
 #### `Pane.cmd`
 
 ```ts
-cmd( command: string, args: readonly string[] = [], options?: CmdOptions, ): Promise<readonly string[]>
+cmd(
+  command: string,
+  args: readonly string[] = [],
+  options?: CmdOptions,
+): Promise<readonly string[]>
 ```
 
 Run a tmux command this package does not model, addressed at this pane.
@@ -3028,7 +3123,10 @@ ordered.slice(0, 2).map((entry) => entry.id);
 #### `Selection.map`
 
 ```ts
-map<Result>( transform: (value: Model, index: number, values: readonly Model[]) => Result, thisArg?: unknown, ): Result[]
+map<Result>(
+  transform: (value: Model, index: number, values: readonly Model[]) => Result,
+  thisArg?: unknown,
+): Result[]
 ```
 
 Apply `transform` to each member, in order.
@@ -3043,7 +3141,14 @@ snapshot.windows.map((entry) => entry.name); // string[]
 #### `Selection.filter`
 
 ```ts
-filter<Narrowed extends Model>( predicate: (value: Model, index: number, values: readonly Model[]) => value is Narrowed, thisArg?: unknown, ): Selection<Narrowed>
+filter<Narrowed extends Model>(
+  predicate: (
+    value: Model,
+    index: number,
+    values: readonly Model[],
+  ) => value is Narrowed,
+  thisArg?: unknown,
+): Selection<Narrowed>
 ```
 
 Keep the members `predicate` accepts.
@@ -3053,11 +3158,16 @@ criteria, `where` says the same thing as data — which can be logged, sent
 to another process, or stored.
 
 ```ts
-snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true);
+snapshot.panes.filter(
+  (entry) => entry.currentCommand?.startsWith("v") === true,
+);
 ```
 
 ```ts
-filter( predicate: (value: Model, index: number, values: readonly Model[]) => unknown, thisArg?: unknown, ): Selection<Model>
+filter(
+  predicate: (value: Model, index: number, values: readonly Model[]) => unknown,
+  thisArg?: unknown,
+): Selection<Model>
 ```
 
 Keep the members an ordinary predicate accepts without changing their type.

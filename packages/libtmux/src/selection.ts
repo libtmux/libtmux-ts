@@ -477,7 +477,9 @@ export interface Selection<Model> extends Iterable<Model> {
    * to another process, or stored.
    *
    * ```ts
-   * snapshot.panes.filter((entry) => entry.currentCommand?.startsWith("v") === true);
+   * snapshot.panes.filter(
+   *   (entry) => entry.currentCommand?.startsWith("v") === true,
+   * );
    * ```
    */
   filter<Narrowed extends Model>(

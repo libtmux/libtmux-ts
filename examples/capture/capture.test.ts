@@ -13,7 +13,10 @@ describe("capture", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      const { named, roundTripped } = await moveTextThroughABuffer(server, "one\ntwo");
+      const { named, roundTripped } = await moveTextThroughABuffer(
+        server,
+        "one\ntwo",
+      );
 
       expect(roundTripped).toEqual(["one", "two"]);
       expect(named.join(" ")).toContain("report");
@@ -21,7 +24,7 @@ describe("capture", () => {
     });
   }, 60_000);
 
-  test("refuses empty text rather than naming a buffer tmux did not make", async () => {
+  test("refuses empty text instead of naming a missing buffer", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,
@@ -29,14 +32,16 @@ describe("capture", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
 
-      await expect(moveTextThroughABuffer(server, "")).rejects.toThrow(/empty buffer/u);
+      await expect(moveTextThroughABuffer(server, "")).rejects.toThrow(
+        /empty buffer/u,
+      );
       // The behaviour that makes the check necessary: tmux reports success.
       await server.setBuffer("silent", "");
       expect((await server.listBuffers()).join(" ")).not.toContain("silent");
     });
   }, 60_000);
 
-  test("reads a pane, answering nothing for a pane that has printed nothing", async () => {
+  test("reads a pane, empty when the pane printed nothing", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,

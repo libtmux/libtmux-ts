@@ -147,7 +147,7 @@ export class Pane {
    * Bind a tmux command to a pane-scoped hook.
    *
    * ```ts
-   * await pane.setHook("pane-title-changed", "display-message 'title changed'");
+   * await pane.setHook("pane-title-changed", "display-message 'renamed'");
    * ```
    */
   setHook(name: string, command: string, options?: SetHookOptions): Promise<void> {
@@ -332,13 +332,17 @@ export class Pane {
    *   failures.push(error);
    * } finally {
    *   try {
-   *     if ((await readdir(directory)).includes("tmux.sock")) await server.kill();
+   *     const names = await readdir(directory);
+   *     if (names.includes("tmux.sock")) await server.kill();
    *     await rm(directory, { recursive: true });
    *   } catch (error) {
-   *     failures.push(new Error(`Cleanup failed; inspect ${directory}`, { cause: error }));
+   *     const message = `Cleanup failed; inspect ${directory}`;
+   *     failures.push(new Error(message, { cause: error }));
    *   }
    * }
-   * if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
+   * if (failures.length > 0) {
+   *   throw new AggregateError(failures, "Capture failed");
+   * }
    * ```
    */
   capture(options?: CaptureOptions): Promise<readonly string[]> {
@@ -566,7 +570,9 @@ export class Pane {
    * Show a menu over the client showing this pane.
    *
    * ```ts
-   * await pane.displayMenu("Actions", [{ command: "kill-pane", key: "k", name: "Kill" }]);
+   * await pane.displayMenu("Actions", [
+   *   { command: "kill-pane", key: "k", name: "Kill" },
+   * ]);
    * ```
    */
   displayMenu(title: string, items: readonly MenuItem[]): Promise<void> {
