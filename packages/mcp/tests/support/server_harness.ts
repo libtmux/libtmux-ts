@@ -45,7 +45,7 @@ export async function withClient(
     ...callerEnvironment,
     HOME: clientHome,
     LIBTMUX_SOCKET_PATH: fixture.socketPath,
-    LIBTMUX_TMUX_BIN: fixture.tmuxExecutable,
+    LIBTMUX_TMUX_BIN: callerEnvironment.LIBTMUX_TMUX_BIN ?? fixture.tmuxExecutable,
     LIBTMUX_TOOLSETS: "inspect,manage,execute,teardown",
     XDG_CACHE_HOME: join(clientHome, "cache"),
     XDG_CONFIG_HOME: join(clientHome, "config"),
@@ -74,4 +74,19 @@ export async function withClient(
 
 export function structured<T>(result: unknown): T {
   return (result as { structuredContent: T }).structuredContent;
+}
+
+/** Poll until `ready` holds; the bound only guards a change that never comes. */
+export async function waitUntil(
+  ready: () => Promise<boolean> | boolean,
+  what: string,
+  boundMs = 15_000,
+): Promise<void> {
+  const deadline = Date.now() + boundMs;
+  // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+  while (!(await ready())) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }

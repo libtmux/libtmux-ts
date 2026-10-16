@@ -17,7 +17,8 @@
  * than the ones this was tuned on.
  */
 
-const DEFAULT_SCALE = 1;
+/** The hosted macOS runner starts processes more slowly than Linux, so its default is wider. */
+const DEFAULT_SCALE = process.platform === "darwin" ? 3 : 1;
 const MAX_SCALE = 100;
 
 function scale(): number {
@@ -31,6 +32,16 @@ function scale(): number {
   }
   return parsed;
 }
+
+/**
+ * The bound for any step that starts a process and is expected to finish.
+ *
+ * A hang guard, not an expectation: a step returns the moment its event
+ * happens, and this only decides how long a step that never finishes is
+ * allowed to hold the suite. It is sized well above the slowest hosted
+ * runner so that a slow start is never reported as a defect.
+ */
+export const HANG_GUARD_MS: number = 15_000;
 
 /**
  * How long to leave between readiness polls.
@@ -73,9 +84,6 @@ export const DAEMON_EXIT_DEADLINE_MS = 750;
  */
 export const PIDFD_HELPER_DEADLINE_MS = 5_000;
 
-/** Confirm a daemon is gone once cleanup has already escalated to reaping it. */
-export const DAEMON_REAPED_DEADLINE_MS = 2_000;
-
 /**
  * Wait for a control-mode client to appear in `list-clients`.
  *
@@ -84,24 +92,6 @@ export const DAEMON_REAPED_DEADLINE_MS = 2_000;
  * waiting to observe the failure it is about.
  */
 export const CONTROL_REGISTRATION_DEADLINE_MS = 2_000;
-
-/**
- * Wait for one tmux command the reaper or a launch probe runs to answer.
- *
- * Deliberately the shorter of the two: these sit on the cleanup path, where
- * every millisecond is one the fixture holds its reservation while a later test
- * waits for it to go. Scaled rather than lengthened — a busy machine needs
- * proportionally longer, and an idle one should not wait longer than it did.
- */
-export const FIXTURE_PROBE_DEADLINE_MS = 1_000;
-
-/**
- * Wait for one tmux command that brings a fixture server up.
- *
- * Bootstrapping starts a daemon and waits for its first pane, so it is the
- * slower of the two and is not on the path a later test is blocked behind.
- */
-export const FIXTURE_BOOTSTRAP_DEADLINE_MS = 3_000;
 
 /**
  * Wait for a fixture's reservation directory to disappear after cleanup.

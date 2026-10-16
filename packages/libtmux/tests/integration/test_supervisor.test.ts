@@ -23,6 +23,8 @@ import {
   reapStaleRunRoot,
   runSupervisor,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -175,7 +177,7 @@ describe("supervisor status and signal semantics", () => {
       const state = await readJsonMarker<{ daemonPid: number; workerPid: number }>(marker);
       workerPid = state.workerPid;
       supervisor.kill("SIGKILL");
-      await exitChildWithin(supervisor, 2_000);
+      await exitChildWithin(supervisor, deadlineMs(HANG_GUARD_MS));
       expect(processExists(state.daemonPid)).toBe(true);
       const reaper = spawn("bun", [reaperPath, "--run-root", root], {
         cwd: tsRoot,
@@ -224,7 +226,7 @@ describe("supervisor status and signal semantics", () => {
       await waitForPathPresent(marker);
       holderPid = (await readJsonMarker<{ holderPid: number }>(marker)).holderPid;
       supervisor.kill("SIGTERM");
-      const result = await exitChildWithin(supervisor, 2_000);
+      const result = await exitChildWithin(supervisor, deadlineMs(HANG_GUARD_MS));
       expect(result.signal === "SIGTERM" || result.code === 143).toBe(true);
       await expect(stat(root)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {

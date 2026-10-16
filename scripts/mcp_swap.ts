@@ -942,7 +942,16 @@ async function inspectLockDirectory(path: string): Promise<LockDirectoryState | 
   return { identity: fileIdentity(after), logicalPath: path, mode, physicalPath };
 }
 
-async function inspectSwapLockAt(logicalPath: string): Promise<SwapLockState> {
+/**
+ * `resolveFile: false` skips resolving the lock file itself, for the worker that
+ * holds the record lock: POSIX record locks are released when any descriptor to
+ * the file closes, and outside Linux Bun's `realpath` opens and closes the file.
+ * The directory is still resolved, and `lstat` has already refused a symlink.
+ */
+async function inspectSwapLockAt(
+  logicalPath: string,
+  resolveFile: boolean = true,
+): Promise<SwapLockState> {
   const directory = await inspectLockDirectory(dirname(logicalPath));
   const physicalPath =
     directory === undefined
@@ -967,7 +976,7 @@ async function inspectSwapLockAt(logicalPath: string): Promise<SwapLockState> {
   if (before.isSymbolicLink() || !before.isFile()) {
     throw new TypeError(`swap lock is not a regular file: ${logicalPath}`);
   }
-  const resolved = await realpath(logicalPath);
+  const resolved = resolveFile ? await realpath(logicalPath) : physicalPath;
   const after = await lstat(logicalPath, { bigint: true });
   const mode = Number(after.mode & 0o7777n);
   if (resolved !== physicalPath || !sameFileMetadata(before, after)) {
@@ -1048,14 +1057,14 @@ async function runLockWorker(directoryPath: string, lockName: string): Promise<n
     if (library.symbols.lockf(lockDescriptor, F_LOCK, 0n) !== 0) {
       throw new Error("could not acquire the persistent swap lock");
     }
-    const state = await inspectSwapLockAt(join(directoryPath, lockName));
+    const state = await inspectSwapLockAt(join(directoryPath, lockName), false);
     const openedLock = fstatSync(lockDescriptor, { bigint: true });
     if (!lockMatchesMetadata(state, openedLock)) {
       throw new Error("swap lock descriptor does not match its public path");
     }
     send({ kind: "acquired", state });
     await Bun.stdin.text();
-    const current = await inspectSwapLockAt(join(directoryPath, lockName));
+    const current = await inspectSwapLockAt(join(directoryPath, lockName), false);
     const openedAgain = fstatSync(lockDescriptor, { bigint: true });
     if (!sameSwapLock(state, current) || !lockMatchesMetadata(state, openedAgain)) {
       throw new Error("swap lock changed before release");

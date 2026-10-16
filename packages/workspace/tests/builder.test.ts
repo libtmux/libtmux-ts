@@ -1,6 +1,6 @@
 // The library's real-tmux fixture harness reaches into its internals, so it is
 // unpublished and an in-repo consumer reaches across packages for it by path.
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -147,7 +147,9 @@ describe("workspace builder", () => {
   });
 
   test("gives each initial pane directory precedence over its parents", async () => {
-    const root = await makeTestDirectory("ltx-workspace-cwd-");
+    // tmux reads a pane's directory from the kernel, which names the physical
+    // path: /private/var/... where the temporary directory is /var/....
+    const root = await realpath(await makeTestDirectory("ltx-workspace-cwd-"));
     const workspaceDirectory = join(root, "workspace");
     const windowDirectory = join(root, "window");
     const paneDirectory = join(root, "pane");

@@ -1,4 +1,4 @@
-import { CONTROL_REGISTRATION_DEADLINE_MS, deadlineMs } from "./deadlines.js";
+import { CONTROL_REGISTRATION_DEADLINE_MS, deadlineMs, HANG_GUARD_MS } from "./deadlines.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 
@@ -212,7 +212,7 @@ export class ControlMode {
         timer: setTimeout(() => {
           this.#waiters.delete(waiter);
           reject(new Error("control-mode response timed out"));
-        }, 3_000),
+        }, deadlineMs(HANG_GUARD_MS)),
       };
       this.#waiters.add(waiter);
     });
@@ -242,7 +242,7 @@ export class ControlMode {
           this.#child.kill("SIGKILL");
           const killed = await waitForClose(
             this.#child,
-            500,
+            deadlineMs(HANG_GUARD_MS),
             () => this.#child.exitCode !== null || this.#child.signalCode !== null,
           );
           if (!killed) {

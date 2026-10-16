@@ -278,7 +278,7 @@ describe("command framing", () => {
       expect(functionResult.stdout, `${shell} function`).toContain("function:command-call\\n\n");
       expect(functionResult.stdout, `${shell} function`).toContain(`${id}_E 0 ${id}_D\n`);
 
-      const framed = frame("printf command-alias", id, false);
+      const framed = frame("printf", id, false);
       const aliasResult = run(
         shell,
         `shopt -s expand_aliases 2>/dev/null || :\n` +
@@ -473,7 +473,9 @@ describe("command framing", () => {
     const dispatched = sent[0] ?? "";
     expect(dispatched).not.toContain("__ltx_");
     expect(dispatched).not.toContain("printf '%b");
-    expect(dispatched.length).toBeLessThan(150);
+    // Short against the script it replaces; the path it names is the
+    // temporary directory's, whose length is the host's.
+    expect(dispatched.length).toBeLessThan(150 + tmpdir().length);
     const { id, source } = dispatchedFrame(buffers.source());
     const dispatchedPath = /\. '([^']+)'/u.exec(dispatched)?.[1];
     if (dispatchedPath === undefined) throw new Error("expected a sourcing line");

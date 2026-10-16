@@ -1,17 +1,18 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { expect, test } from "bun:test";
-import { link, mkdtemp, readdir, rm, stat, symlink, unlink } from "node:fs/promises";
+import { link, mkdtemp, readdir, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
+import { deadlineMs, HANG_GUARD_MS } from "../../libtmux/src/_internal/test/testkit.js";
 import { Server } from "libtmux/server";
 
 import { readCallerEnvironment } from "../src/caller.js";
 import { isPaneInputConflict, reserveFramedCommand } from "../src/command.js";
 import { createContext } from "../src/context.js";
 import { resolvePolicy } from "../src/policy.js";
-import { structured, withClient, withServer } from "./support/server_harness.js";
+import { structured, waitUntil, withClient, withServer } from "./support/server_harness.js";
 
 interface PanePair {
   readonly peerPaneId: string;
@@ -65,16 +66,18 @@ async function waitForPaneFormat(
   fixture: TestServer,
   paneId: string,
   format: string,
-  expected: string,
+  expected: string | readonly string[],
 ): Promise<void> {
-  for (let attempt = 0; attempt < 300; attempt += 1) {
+  const accepted = typeof expected === "string" ? [expected] : expected;
+  const deadline = Date.now() + deadlineMs(HANG_GUARD_MS);
+  while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- state changes asynchronously in tmux.
     const value = await fixture.executeText(["display-message", "-p", "-t", paneId, format]);
-    if (value.stdout[0] === expected) return;
+    if (accepted.includes(value.stdout[0] ?? "")) return;
     // eslint-disable-next-line no-await-in-loop -- each poll follows the previous observation.
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  throw new Error(`${paneId} did not reach ${format}=${expected}`);
+  throw new Error(`${paneId} did not reach ${format}=${accepted.join("|")}`);
 }
 
 test("live socket aliases share caller and pane ownership", async () => {
@@ -179,7 +182,10 @@ test("paste_text keeps its Enter and payload target-only", async () => {
         name: "paste_text",
       });
       expect(pasted.isError, JSON.stringify(pasted.content)).not.toBe(true);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitUntil(
+        async () => (await capture(client, pair.sourcePaneId)).includes(marker),
+        "the pasted text on the source pane",
+      );
 
       expect(await capture(client, pair.sourcePaneId)).toContain(marker);
       expect(await capture(client, pair.peerPaneId)).not.toContain(marker);
@@ -242,7 +248,10 @@ test("pane-scoped synchronization keeps input cohorts exact", async () => {
         completed: 1,
         targets: [{ resolvedPaneIds: [pair.sourcePaneId] }],
       });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitUntil(
+        async () => (await capture(client, pair.sourcePaneId)).includes(batchMarker),
+        "the batch text on the source pane",
+      );
 
       expect(await capture(client, pair.sourcePaneId)).toContain(batchMarker);
       const peer = await capture(client, pair.peerPaneId);
@@ -324,7 +333,11 @@ test("a modal, dead, or caller cohort peer blocks input", async () => {
       expect(resultText(active)).toContain(pair.peerPaneId);
       expect(resultText(active)).toContain("run_shell_command");
       await setPairSync(fixture, pair, false, false);
-      await waitForPaneFormat(fixture, pair.peerPaneId, "#{pane_current_command}", "sh");
+      await waitForPaneFormat(fixture, pair.peerPaneId, "#{pane_current_command}", [
+        "sh",
+        // /bin/sh is bash on macOS, and tmux reports the binary's own name.
+        "bash",
+      ]);
       await setPairSync(fixture, pair, true, true);
     });
 
@@ -433,9 +446,17 @@ test("run_shell_command's framed script lives in a directory private to this use
             arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
             name: "run_shell_command",
           });
-          await new Promise((resolve) => setTimeout(resolve, 400));
+          const scriptDirsNow = async () =>
+            (await readdir(scratchTmp)).filter((name) => name.startsWith("ltx-"));
+          // The directory exists before the script is saved into it.
+          await waitUntil(async () => {
+            const [directory] = await scriptDirsNow();
+            return (
+              directory !== undefined && (await readdir(join(scratchTmp, directory))).length > 0
+            );
+          }, "the framed script");
 
-          const scriptDirs = (await readdir(scratchTmp)).filter((name) => name.startsWith("ltx-"));
+          const scriptDirs = await scriptDirsNow();
           expect(scriptDirs).toHaveLength(1);
           const directory = join(scratchTmp, scriptDirs[0] as string);
 
@@ -468,6 +489,16 @@ test("run_shell_command's framed script honours a non-default TMPDIR", async () 
   const customTmpDir = await mkdtemp(join(tmpdir(), "ltxscratch-"));
   try {
     await withServer(async (fixture) => {
+      // A tmux that is slow to answer one-shot commands, as a loaded runner's
+      // is: the framed script's directory appears only after several of them,
+      // so a test that reads the directory after a fixed pause misses it and
+      // one that waits for it does not.
+      const slow = join(customTmpDir, "slow-tmux");
+      await writeFile(
+        slow,
+        `#!/bin/sh\ncase " $* " in *" -C "*) ;; *) sleep 0.25;; esac\nexec '${fixture.tmuxExecutable}' "$@"\n`,
+        { mode: 0o700 },
+      );
       await withClient(
         fixture,
         async (client) => {
@@ -476,21 +507,27 @@ test("run_shell_command's framed script honours a non-default TMPDIR", async () 
           );
 
           const before = new Set(await readdir(customTmpDir));
+          const framed = () =>
+            readdir(customTmpDir).then((names) =>
+              names.filter((name) => !before.has(name) && name.startsWith("ltx-")),
+            );
           const run = client.callTool({
-            arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
+            arguments: { command: "sleep 2", paneId: created.paneId, timeoutMs: 20_000 },
             name: "run_shell_command",
           });
-          await new Promise((resolve) => setTimeout(resolve, 400));
-
-          const created_ = (await readdir(customTmpDir)).filter((name) => !before.has(name));
-          expect(created_.filter((name) => name.startsWith("ltx-"))).toHaveLength(1);
-
-          await run;
+          try {
+            await waitUntil(async () => (await framed()).length > 0, "the framed script");
+            expect(await framed()).toHaveLength(1);
+          } finally {
+            // Settle the call before the client closes, or the close rejects it
+            // and that rejection replaces the assertion's failure.
+            await run.catch(() => undefined);
+          }
         },
-        { TMPDIR: customTmpDir },
+        { LIBTMUX_TMUX_BIN: slow, TMPDIR: customTmpDir },
       );
     });
   } finally {
     await rm(customTmpDir, { force: true, recursive: true }).catch(() => undefined);
   }
-}, 15_000);
+}, 40_000);

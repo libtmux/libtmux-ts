@@ -8,6 +8,7 @@ import {
   sweepStaleRunRoots,
   runWithCleanup,
   makeTestDirectory,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import {
@@ -104,7 +105,7 @@ const EXCUSED = new Map<string, string>([
 const DESTRUCTIVE = /\b(?:kill|detach)\s*\(/u;
 
 /** Generous, and short-lived: most examples finish in well under this. */
-const DEADLINE_MS = 5_000;
+const DEADLINE_MS = HANG_GUARD_MS;
 
 /**
  * An example and the symbol it documents.

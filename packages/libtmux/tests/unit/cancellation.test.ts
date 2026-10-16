@@ -8,6 +8,8 @@ import {
   readProcessIdentity,
   type ProcessIdentity,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import { TmuxTransportError } from "../../src/_internal/transport/types.js";
@@ -39,9 +41,10 @@ async function waitForMarker(
   isComplete: (content: string) => boolean = (content) => content.length > 0,
   // A marker that is coming arrives in a few polls; the cap is here to fail one
   // that is never coming, so it has to outlast a loaded machine's node startup.
-  attempts = 400,
+  boundMs: number = deadlineMs(HANG_GUARD_MS),
 ): Promise<string> {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  const deadline = performance.now() + boundMs;
+  while (performance.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- one poll at a time, by design.
     const content = await readFile(path, "utf8").catch(() => undefined);
     if (content !== undefined && isComplete(content)) return content;
@@ -63,7 +66,8 @@ function sameIdentity(left: ProcessIdentity | undefined, right: ProcessIdentity)
 }
 
 async function waitForHolderExit(identity: ProcessIdentity): Promise<boolean> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
+  while (performance.now() < deadline) {
     // Holder cleanup is identity-checked and bounded independently of transport settlement.
     // eslint-disable-next-line no-await-in-loop -- each read must follow the preceding signal.
     const current = await readProcessIdentity(identity.pid);

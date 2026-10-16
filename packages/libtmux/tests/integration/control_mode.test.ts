@@ -3,11 +3,12 @@ import {
   deadlineMs,
   ControlMode,
   readFixtureRecord,
+  readProcessLaunch,
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 import { ChildProcess, spawn } from "node:child_process";
-import { access, readFile, rm, writeFile } from "node:fs/promises";
+import { access, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -124,7 +125,10 @@ describe("ControlMode", () => {
       if (record.phase !== "running") throw new Error("fixture did not publish running authority");
       const control = await ControlMode.open({ server, targetSession: server.sessionId });
       try {
-        const frames = parseNullFrames(await readFile(`/proc/${String(control.pid)}/environ`));
+        const launch = await readProcessLaunch(control.pid);
+        if (launch === undefined)
+          throw new Error("control client exited before its environment was read");
+        const frames = parseNullFrames(launch.environment);
         expect(frames.filter((frame) => frame.startsWith("LIBTMUX_CONTROL_BASE="))).toEqual([
           "LIBTMUX_CONTROL_BASE=entry",
         ]);

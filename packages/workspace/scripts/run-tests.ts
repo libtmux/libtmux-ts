@@ -23,6 +23,10 @@ process.exitCode = await runSupervisor({
     "test",
     `--parallel=${String(testParallelism())}`,
     "--no-orphans",
+    // Bun's default of a few seconds is a unit-test bound; these tests start a
+    // tmux server, so a hang guard replaces it.
+    "--timeout",
+    "60000",
     ...(selectsFiles ? forwarded : ["tests", ...forwarded]),
   ],
   cwd: new URL("..", import.meta.url).pathname,

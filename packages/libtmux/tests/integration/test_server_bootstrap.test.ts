@@ -17,6 +17,7 @@ import {
 import {
   prepareRunRoot,
   readFixtureRecord,
+  readProcessLaunch,
   reapOwnedRunRoot,
   resolveControllerIdentity,
   TestServer,
@@ -293,13 +294,13 @@ describe("TestServer bootstrap", () => {
       expect(record.bootstrapArgv.some((argument) => argument.startsWith("new-session "))).toBe(
         true,
       );
-      expect(parseNullFrames(await readFile(`/proc/${String(record.daemon.pid)}/cmdline`))).toEqual(
-        record.bootstrapArgv,
-      );
+      const launch = await readProcessLaunch(record.daemon.pid);
+      if (launch === undefined) throw new Error("daemon exited before its launch was read");
+      expect(parseNullFrames(launch.commandLine)).toEqual(record.bootstrapArgv);
 
-      const processGeneration = parseNullFrames(
-        await readFile(`/proc/${String(record.daemon.pid)}/environ`),
-      ).filter((entry) => entry.startsWith(`${record.generation.name}=`));
+      const processGeneration = parseNullFrames(launch.environment).filter((entry) =>
+        entry.startsWith(`${record.generation.name}=`),
+      );
       expect(processGeneration).toEqual([`${record.generation.name}=${record.generation.value}`]);
       const globalGeneration = await server.executeRaw([
         "show-environment",
@@ -512,7 +513,7 @@ describe("TestServer bootstrap", () => {
       await created?.dispose().catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
   test("rejects a bootstrap branch with an appended second tmux command", async () => {
     await withTemporaryRunRoot("compound-bootstrap-grammar", async (runRoot) => {
       const server = await TestServer.create({ runRoot });

@@ -30,7 +30,7 @@ export async function openTerminal(
     env: options.env,
     signal: AbortSignal.any([
       ...(options.signal ? [options.signal] : []),
-      AbortSignal.timeout(1000),
+      AbortSignal.timeout(10_000),
     ]),
   });
   const name = query.stdout.trim();
@@ -110,7 +110,12 @@ export async function processRun(argv: string[], options: ProcessOptions): Promi
       }
       return child.kill(signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ESRCH") return false;
+      // macOS answers EPERM, not ESRCH, for a group whose members have all
+      // exited without being reaped; a group this process just spawned and
+      // owns can only fail that way when nothing in it is live.
+      if (code === "EPERM" && grouped && !terminal) return false;
       failure ??= error;
       return true;
     }

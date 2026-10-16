@@ -28,7 +28,7 @@
     "notices": "bun scripts/third_party_notices.ts",
     "notices:check": "bun scripts/third_party_notices.ts --check",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test tests",
+    "test": "bun test tests --timeout 60000",
     "test:package": "bun run build && bun scripts/check-install.ts --package-only",
     "test:install": "bun run build && bun scripts/check-install.ts"
   },

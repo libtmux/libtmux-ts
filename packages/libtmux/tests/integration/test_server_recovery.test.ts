@@ -10,6 +10,7 @@ import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_roo
 import { reapRedLaunch } from "../support/tmux_cleanup.js";
 
 import {
+  deadlineMs,
   prepareRunRoot,
   readFixtureRecord,
   reapOwnedRunRoot,
@@ -141,9 +142,13 @@ describe("TestServer launch recovery", () => {
     await prepareRunRoot(runRoot);
     const wrapper = await writeLaunchWrapper(parent, "hold-after-launch", marker);
     try {
-      await expect(TestServer.create({ launchExecutable: wrapper, runRoot })).rejects.toThrow(
-        /timed out|timeout/u,
-      );
+      await expect(
+        TestServer.create({
+          bootstrapTimeoutMs: deadlineMs(3_000),
+          launchExecutable: wrapper,
+          runRoot,
+        }),
+      ).rejects.toThrow(/timed out|timeout/u);
       const [socketPath, rawPid] = (await readFile(marker, "utf8")).trim().split("\t");
       await waitForProcessExit(Number(rawPid));
       await waitForPathAbsent(socketPath!);
@@ -161,7 +166,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("preserves pre-authority evidence when the launch socket disappears", async () => {
     const parent = await makeTestDirectory("ltx4-launch-socket-loss-");
@@ -212,7 +217,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("preserves an indeterminate launch whose socket moved before authority", async () => {
     const parent = await makeTestDirectory("ltx4-launch-partial-timeout-");
@@ -227,9 +232,13 @@ describe("TestServer launch recovery", () => {
       recoverySocket,
     );
     try {
-      await expect(TestServer.create({ launchExecutable: wrapper, runRoot })).rejects.toThrow(
-        /timed out/u,
-      );
+      await expect(
+        TestServer.create({
+          bootstrapTimeoutMs: deadlineMs(3_000),
+          launchExecutable: wrapper,
+          runRoot,
+        }),
+      ).rejects.toThrow(/timed out/u);
       const [socketPath, rawPid] = (await readFile(marker, "utf8")).trim().split("\t");
       expect(processExists(Number(rawPid))).toBe(true);
       await waitForPathAbsent(socketPath!);
@@ -242,7 +251,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("authenticates a valid launch frame from a nonzero result before cleanup", async () => {
     const parent = await makeTestDirectory("ltx4-nonzero-launch-frame-");
@@ -276,7 +285,7 @@ describe("TestServer launch recovery", () => {
       await reapOwnedRunRoot(runRoot).catch(() => undefined);
       await rm(parent, { force: true, recursive: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test("removes a partial atomic identity temp and recovers from the original launching record", async () => {
     await withTemporaryRunRoot("partial-record-write", async (runRoot) => {
@@ -373,7 +382,7 @@ describe("TestServer launch recovery", () => {
 
       await waitForOwnReservations(runRoot);
     });
-  }, 20_000);
+  }, 60_000);
 
   test("enters an observed stable local pane hold before create resolves", async () => {
     await withTemporaryRunRoot("observed-readiness", async (runRoot) => {

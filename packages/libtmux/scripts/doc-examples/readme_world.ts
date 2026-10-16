@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { TestServer } from "../../src/_internal/test/testkit.js";
+import { TestServer, HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 import type { Server as ServerHandle } from "../../src/server.js";
 import { Server } from "../../src/server.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
@@ -121,7 +121,8 @@ async function settleShell(pane: {
   capture: () => Promise<readonly string[]>;
   sendKeys: (keys: string) => Promise<void>;
 }): Promise<void> {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  const deadline = Date.now() + HANG_GUARD_MS;
+  while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- each attempt observes whether the last one landed.
     await pane.sendKeys(`echo RE""ADY`);
     const until = Date.now() + 1_000;
@@ -133,6 +134,7 @@ async function settleShell(pane: {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
+  throw new Error("the pane's shell never became ready for keys");
 }
 
 /** `Session.fromEnv()` reads `$TMUX_PANE`, so the process has to look attached. */

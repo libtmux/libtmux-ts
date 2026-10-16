@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   deadlineMs,
+  HANG_GUARD_MS,
   makeTestDirectory,
   readProcessIdentity,
   resolveNode22,
@@ -106,7 +107,7 @@ async function boundedExit(
   try {
     return await Promise.race([
       exited,
-      delay(deadlineMs(1_000), "timed out" as const, { signal: abort.signal }),
+      delay(deadlineMs(HANG_GUARD_MS), "timed out" as const, { signal: abort.signal }),
     ]);
   } finally {
     abort.abort();

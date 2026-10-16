@@ -34,7 +34,14 @@ describe("watch", () => {
       });
 
       const collected = collectPaneOutput(server, "example-marker");
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      // The change has to wait for the stream's control client to attach.
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- polling is sequential by nature.
+        const listed = await fixture.executeText(["list-clients", "-F", "#{client_name}"]);
+        if (listed.stdout.length > 0) break;
+        // eslint-disable-next-line no-await-in-loop -- each poll follows the one before it.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       await fixture.executeText([
         "new-window",
         "-d",

@@ -6,7 +6,14 @@ import { fileURLToPath } from "node:url";
 
 import { describeStartupFailure } from "../src/server.js";
 import { describeStartup } from "../src/startup.js";
-import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
+import { deadlineMs, HANG_GUARD_MS } from "../../libtmux/src/_internal/test/testkit.js";
+import {
+  serverFor,
+  structured,
+  waitUntil,
+  withClient,
+  withServer,
+} from "./support/server_harness.js";
 
 test("the stdio server executes the retained capability surface end to end", async () => {
   await withServer(async (fixture) => {
@@ -95,7 +102,7 @@ test("the stdio server executes the retained capability surface end to end", asy
           paneId: created.paneId,
           patterns: ["wait-[0-9][0-9]"],
           regex: true,
-          timeoutMs: 2_000,
+          timeoutMs: 15_000,
         },
         name: "wait_for_text",
       });
@@ -202,7 +209,7 @@ test("the stdio server executes the retained capability surface end to end", asy
 
       const channelWait = call("wait_for_channel", {
         channel: "mcp-contract-ready",
-        timeoutMs: 2_000,
+        timeoutMs: 15_000,
       });
       await new Promise((resolve) => setTimeout(resolve, 50));
       await call("signal_channel", { channel: "mcp-contract-ready" });
@@ -214,7 +221,7 @@ test("the stdio server executes the retained capability surface end to end", asy
       // `-U`): without the guard tmux's parser would refuse it outright as
       // an unknown option before any wait was even registered, and either
       // call below would reject instead of resolving.
-      const dashChannelWait = call("wait_for_channel", { channel: "-e", timeoutMs: 2_000 });
+      const dashChannelWait = call("wait_for_channel", { channel: "-e", timeoutMs: 15_000 });
       await new Promise((resolve) => setTimeout(resolve, 50));
       await call("signal_channel", { channel: "-e" });
       await dashChannelWait;
@@ -304,7 +311,7 @@ test("wait_for_text does not match its own unsubmitted type-ahead", async () => 
       "set-option",
       "-g",
       "default-command",
-      "stty raw -echo; sleep 0.4; exec cat",
+      "stty raw -echo; sleep 1; exec cat",
     ]);
     await withClient(fixture, async (client) => {
       const created = structured<{ paneId: string }>(
@@ -314,16 +321,28 @@ test("wait_for_text does not match its own unsubmitted type-ahead", async () => 
         }),
       );
       const marker = `QAMARK-${String(Date.now())}`;
-
-      const sent = await client.callTool({
+      // The pane's command changes as it starts, and send_keys refuses a pane
+      // that changes under it, telling the caller to retry once it is stable.
+      let sent = await client.callTool({
         arguments: { enter: false, keys: marker, literal: true, paneId: created.paneId },
         name: "send_keys",
       });
+      const settleDeadline = Date.now() + deadlineMs(HANG_GUARD_MS);
+      while (sent.isError === true && Date.now() < settleDeadline) {
+        if (!JSON.stringify(sent).includes("changed during send_keys setup")) break;
+        // eslint-disable-next-line no-await-in-loop -- each retry follows the refusal before it.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        // eslint-disable-next-line no-await-in-loop -- each retry follows the refusal before it.
+        sent = await client.callTool({
+          arguments: { enter: false, keys: marker, literal: true, paneId: created.paneId },
+          name: "send_keys",
+        });
+      }
       expect(sent.isError, JSON.stringify(sent)).not.toBe(true);
 
       const waited = structured<{ alreadyOnScreen: boolean; outcome: string }>(
         await client.callTool({
-          arguments: { paneId: created.paneId, patterns: [marker], timeoutMs: 1_200 },
+          arguments: { paneId: created.paneId, patterns: [marker], timeoutMs: 3_000 },
           name: "wait_for_text",
         }),
       );
@@ -379,7 +398,7 @@ test("wait_for_text matches new output on a cursor continued from a timed-out wa
             cursor: first.cursor,
             paneId: created.paneId,
             patterns: [marker],
-            timeoutMs: 1_000,
+            timeoutMs: 10_000,
           },
           name: "wait_for_text",
         }),
@@ -412,7 +431,12 @@ test("list_sessions separates a raw attached count from a human-only one", async
         name: "wait_for_text",
       });
       // Let the control connection actually attach before reading its effect.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitUntil(async () => {
+        const listed = structured<{
+          sessions: readonly { attachedClients: number; id: string }[];
+        }>(await client.callTool({ arguments: {}, name: "list_sessions" }));
+        return listed.sessions.find((s) => s.id === created.session.id)?.attachedClients === 1;
+      }, "the control connection to attach");
 
       const during = structured<{
         sessions: readonly { attachedClients: number; humanAttachedClients: number; id: string }[];
@@ -447,7 +471,12 @@ test("a private directory is left behind when the pane is killed mid-run", async
             arguments: { command: "sleep 4", paneId: created.paneId, timeoutMs: 6_000 },
             name: "run_shell_command",
           });
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          // Kill the pane once the framed command has started: before that the
+          // script may still be on its way, and the call would fail instead.
+          await waitUntil(async () => {
+            const shown = await fixture.executeText(["capture-pane", "-p", "-t", created.paneId]);
+            return /ltx[0-9a-f]+_S/u.test(shown.stdout.join("\n"));
+          }, "the command to start");
           await fixture.executeText(["kill-pane", "-t", created.paneId]);
 
           const result = structured<{ outcome: string }>(await running);

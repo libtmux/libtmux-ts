@@ -25,7 +25,7 @@ import {
   validateWhereSchemaHistory,
 } from "../../src/_internal/codec/format_registry.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory, HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 import { builtModuleUrl, runModule } from "../support/runtime_build.js";
 
 interface PythonFormatFixture {
@@ -70,8 +70,8 @@ async function runBoundedCommand(
   const terminate = setTimeout(() => {
     deadlineReached = true;
     child.kill("SIGTERM");
-  }, 5_000);
-  const kill = setTimeout(() => child.kill("SIGKILL"), 5_500);
+  }, HANG_GUARD_MS);
+  const kill = setTimeout(() => child.kill("SIGKILL"), HANG_GUARD_MS + 500);
   try {
     const [exitCode, stdout, stderr] = await Promise.all([
       child.exited,

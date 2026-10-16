@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { HANG_GUARD_MS } from "../../src/_internal/test/testkit.js";
 
 /**
  * Whether Bun runs this suite, testing `src`, rather than Node, testing the
@@ -28,7 +29,7 @@ export function runModule(
   const result = spawnSync(
     process.execPath,
     ON_BUN ? ["--eval", source] : ["--input-type=module", "--eval", source],
-    { cwd: fileURLToPath(packageRoot), encoding: "utf8", env, timeout: 5_000 },
+    { cwd: fileURLToPath(packageRoot), encoding: "utf8", env, timeout: HANG_GUARD_MS },
   );
   return { exitCode: result.status, stderr: result.stderr, stdout: result.stdout };
 }

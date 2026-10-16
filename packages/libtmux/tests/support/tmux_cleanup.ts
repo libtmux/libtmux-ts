@@ -1,9 +1,15 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { link, lstat, readFile, unlink } from "node:fs/promises";
+import { link, lstat, unlink } from "node:fs/promises";
 
-import { readDaemonIdentity, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
+import {
+  readDaemonIdentity,
+  readProcessLaunch,
+  resolveControllerIdentity,
+  deadlineMs,
+  HANG_GUARD_MS,
+} from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
 import { closeChild } from "./owned_child.js";
 
@@ -21,7 +27,9 @@ async function captureTmuxCleanup(
 ): Promise<CapturedTmuxCleanup> {
   const daemon = await readDaemonIdentity(pid);
   if (daemon === undefined) throw new Error("test-owned tmux daemon disappeared before capture");
-  const commandLine = await readFile(`/proc/${String(pid)}/cmdline`);
+  const launch = await readProcessLaunch(pid);
+  if (launch === undefined) throw new Error("test-owned tmux daemon disappeared before capture");
+  const commandLine = launch.commandLine;
   const socket = await lstat(socketPath, { bigint: true });
   if (!socket.isSocket()) throw new Error("test-owned tmux path is not a socket");
   await link(socketPath, recoverySocket);
@@ -44,7 +52,7 @@ async function terminateCapturedTmux(captured: CapturedTmuxCleanup): Promise<voi
   if (observed === undefined) return;
   deepStrictEqual(observed, captured.daemon);
   strictEqual(
-    (await readFile(`/proc/${String(captured.daemon.pid)}/cmdline`)).toString("hex"),
+    (await readProcessLaunch(captured.daemon.pid))?.commandLine.toString("hex"),
     captured.commandLine.toString("hex"),
   );
   const mismatch = `test-cleanup-mismatch-${randomUUID()}`;
@@ -66,7 +74,7 @@ async function terminateCapturedTmux(captured: CapturedTmuxCleanup): Promise<voi
   const stderr: Buffer[] = [];
   child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
   child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-  const closed = await closeChildWithin(child, 2_000);
+  const closed = await closeChildWithin(child, deadlineMs(HANG_GUARD_MS));
   const stdoutText = Buffer.concat(stdout).toString("utf8");
   const stderrText = Buffer.concat(stderr).toString("utf8");
   if (closed.code !== 0 || stdoutText === `${mismatch}\n`) {
@@ -118,7 +126,7 @@ async function launchExactTmux(
 }
 
 async function killExactTmux(socketPath: string, pid: number): Promise<void> {
-  const recoverySocket = `${socketPath}.test-cleanup-${randomUUID()}`;
+  const recoverySocket = `${socketPath}.tc-${randomUUID().slice(0, 8)}`;
   const captured = await captureTmuxCleanup(pid, socketPath, recoverySocket);
   await terminateCapturedTmux(captured);
   const original = await lstat(socketPath, { bigint: true }).catch(

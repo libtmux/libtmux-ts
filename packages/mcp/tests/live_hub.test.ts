@@ -85,7 +85,7 @@ describe("live hub", () => {
       const result = await Promise.race([
         hub.listen("$1", () => undefined).then(() => "settled" as const),
         new Promise<"deadline">((resolve) => {
-          deadline = setTimeout(() => resolve("deadline"), 250);
+          deadline = setTimeout(() => resolve("deadline"), 10_000);
         }),
       ]);
 
@@ -122,7 +122,7 @@ describe("live hub", () => {
       const outcome = await Promise.race([
         first.then(() => "settled" as const),
         new Promise<"deadline">((resolve) => {
-          deadline = setTimeout(() => resolve("deadline"), 250);
+          deadline = setTimeout(() => resolve("deadline"), 10_000);
         }),
       ]);
 
@@ -167,7 +167,7 @@ describe("live hub", () => {
       const outcome = await Promise.race([
         first.then(() => "settled" as const),
         new Promise<"deadline">((resolve) => {
-          deadline = setTimeout(() => resolve("deadline"), 250);
+          deadline = setTimeout(() => resolve("deadline"), 10_000);
         }),
       ]);
 
@@ -214,7 +214,7 @@ describe("live hub", () => {
       const outcome = await Promise.race([
         tailing.then(() => "settled" as const),
         new Promise<"deadline">((resolve) => {
-          deadline = setTimeout(() => resolve("deadline"), 250);
+          deadline = setTimeout(() => resolve("deadline"), 10_000);
         }),
       ]);
       expect(outcome).toBe("settled");
@@ -304,7 +304,7 @@ describe("live hub", () => {
       const outcome = await Promise.race([
         first.then(() => "settled" as const),
         new Promise<"deadline">((resolve) => {
-          deadline = setTimeout(() => resolve("deadline"), 250);
+          deadline = setTimeout(() => resolve("deadline"), 10_000);
         }),
       ]);
 
@@ -446,7 +446,7 @@ describe("live hub", () => {
       const reason = await Promise.race([
         listener?.ended,
         new Promise<"deadline">((resolve) => {
-          deadline = setTimeout(() => resolve("deadline"), 250);
+          deadline = setTimeout(() => resolve("deadline"), 10_000);
         }),
       ]);
 

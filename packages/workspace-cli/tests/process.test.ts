@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { Writable } from "node:stream";
 import { processRun, tokenize } from "../src/process.ts";
 import { write } from "../src/output.ts";
@@ -115,6 +115,13 @@ test("stream writes observe asynchronous errors and closure before the callback"
   await expect(write(closed, "record\n")).rejects.toThrow(/closed/);
 });
 
+/** Whether a process is gone or a zombie, from `ps`, which Linux and macOS both answer. */
+function hasEnded(pid: number): boolean {
+  const state = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" });
+  const text = state.stdout.trim();
+  return text === "" || text.startsWith("Z");
+}
+
 function parentWithDescendant(mode: "cancel" | "exit"): string {
   const descendant = 'process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)';
   const stdio = mode === "cancel" ? "ignore" : "inherit";
@@ -132,7 +139,7 @@ test("Node preserves status when inherited capture pipes require forced closure"
   const child = await processRun([await resolveNode22(), "--input-type=module", "-e", script], {
     cwd: process.cwd(),
     env: process.env,
-    signal: AbortSignal.timeout(3000),
+    signal: AbortSignal.timeout(15_000),
   });
   expect(child.code, child.stderr).toBe(0);
   const result = JSON.parse(child.stdout);
@@ -141,7 +148,7 @@ test("Node preserves status when inherited capture pipes require forced closure"
   expect(result.truncated.stdout).toBe(true);
 });
 
-test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
+test.skipIf(process.platform === "win32").each(["cancel", "exit"] as const)(
   "owned descendants terminate when the parent ends through %s",
   async (mode) => {
     const controller = new AbortController();
@@ -152,7 +159,7 @@ test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
         const result = await processRun([process.execPath, "-e", parent], {
           cwd: process.cwd(),
           env: process.env,
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
           output: async (_stream, text) => {
             pid = Number(text);
             if (mode === "cancel") controller.abort();
@@ -160,24 +167,14 @@ test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
         });
         expect(result.code).toBe(mode === "cancel" ? 130 : 0);
         expect(pid).toBeGreaterThan(0);
-        const stateOfChild = () =>
-          readFile(`/proc/${pid}/stat`, "utf8").catch((error) => {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
-            throw error;
-          });
-        let state = await stateOfChild();
-        const deadline = Date.now() + 500;
-        while (
-          state !== "" &&
-          !state.slice(state.lastIndexOf(")") + 2).startsWith("Z ") &&
-          Date.now() < deadline
-        ) {
-          // eslint-disable-next-line no-await-in-loop -- Signal delivery precedes the process exit transition.
-          await Bun.sleep(10);
+        // Signal delivery precedes the process exit transition, so the child is
+        // observed until it is gone or a zombie; the bound only guards a hang.
+        const deadline = Date.now() + 10_000;
+        while (!hasEnded(pid!) && Date.now() < deadline) {
           // eslint-disable-next-line no-await-in-loop -- Observe that same owned process after signal delivery.
-          state = await stateOfChild();
+          await Bun.sleep(10);
         }
-        expect(state === "" || state.slice(state.lastIndexOf(")") + 2).startsWith("Z ")).toBe(true);
+        expect(hasEnded(pid!)).toBe(true);
         pid = undefined;
       },
       async () => {

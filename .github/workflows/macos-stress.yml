@@ -1,0 +1,137 @@
+name: macos stress
+
+# Repeats the real-tmux suites on macOS, with an Ubuntu control, and reports each
+# test's failure count over the repetitions. A macOS lane is gated on pull
+# requests only while this stays clean: one green pass says little about a test
+# that fails occasionally.
+on:
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: Repetitions of every selected suite
+        default: "10"
+      scope:
+        description: full runs every suite; targeted runs the suites that had a macOS failure
+        type: choice
+        options: [full, targeted]
+        default: full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    env:
+      REPEAT: ${{ inputs.repeat || '10' }}
+      SCOPE: ${{ inputs.scope || 'full' }}
+      # macOS's own temporary directory is too long for a socket path.
+      # /tmp is a symlink there, and the fixture refuses a root with a symlink component.
+      TMPDIR: ${{ matrix.os == 'macos-latest' && '/private/tmp' || '/tmp' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install tmux and test shells
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install tmux fish bash
+          else
+            sudo apt-get update
+            sudo apt-get install -y tmux fish zsh
+          fi
+          tmux -V
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      - name: Point the emitted-Node lane at the provisioned Node 22
+        run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Install the optional workspace Python test runtime
+        run: |
+          python3 -m venv "$RUNNER_TEMP/workspace-python"
+          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
+          echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+          echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
+      - name: Build what the suites import
+        run: |
+          bun run --cwd packages/libtmux build
+          bun run --cwd packages/mcp build
+          bun run --cwd packages/workspace build
+          bun run --cwd packages/workspace-cli build
+
+      # Every suite runs every repetition even after one fails: the point is the
+      # count, and a first failure that stopped the loop would report one.
+      - name: Repeat the real-tmux suites
+        run: |
+          platform="${RUNNER_OS}"
+          for rep in $(seq 1 "$REPEAT"); do
+            dir="$RUNNER_TEMP/junit/$platform/$rep"
+            mkdir -p "$dir"
+            export LIBTMUX_TEST_JUNIT_DIR="$dir"
+            echo "::group::repetition $rep"
+            if [ "$SCOPE" = targeted ]; then
+              (cd packages/libtmux && bun scripts/run-integration-tests.ts tests/integration/watch.test.ts tests/integration/test_server_recovery.test.ts) || echo "libtmux failed in $rep"
+              (cd packages/mcp && bun scripts/run-tests.ts tests/command_framing.test.ts tests/input_contract.test.ts tests/server_contract.test.ts tests/live_hub.test.ts) || echo "mcp failed in $rep"
+            else
+              (cd packages/libtmux && bun scripts/run-unit-tests.ts --reporter=junit --reporter-outfile="$dir/libtmux-unit.xml") || echo "libtmux unit failed in $rep"
+              (cd packages/libtmux && bun scripts/run-integration-tests.ts) || echo "libtmux failed in $rep"
+              (cd packages/mcp && bun scripts/run-tests.ts) || echo "mcp failed in $rep"
+              (cd packages/workspace && bun scripts/run-tests.ts) || echo "workspace failed in $rep"
+              (cd packages/workspace-cli && bun test --timeout 60000 tests --reporter=junit --reporter-outfile="$dir/workspace-cli.xml") || echo "workspace-cli failed in $rep"
+              (cd examples && bun scripts/run-tests.ts) || echo "examples failed in $rep"
+            fi
+            echo "::endgroup::"
+          done
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: junit-${{ matrix.os }}
+          path: ${{ runner.temp }}/junit
+
+  report:
+    name: failure counts
+    needs: stress
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: junit
+          pattern: junit-*
+          merge-multiple: true
+
+      - name: Count failures per test
+        run: bun scripts/stress-summary.ts junit failure-counts.csv | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: failure-counts
+          path: failure-counts.csv

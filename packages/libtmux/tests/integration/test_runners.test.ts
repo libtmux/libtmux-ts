@@ -9,10 +9,12 @@ import { waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
 import { closeChild } from "../support/owned_child.js";
 
 import {
+  deadlineMs,
   resolveNode22,
   OWNER_RECORD_NAME,
   reapStaleRunRoot,
   makeTestDirectory,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -25,7 +27,8 @@ async function observePathWhileRunning(
   candidatePath: string,
   child: ReturnType<typeof spawn>,
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
+  while (performance.now() < deadline) {
     try {
       // eslint-disable-next-line no-await-in-loop -- observation is bounded by process lifetime.
       await access(candidatePath);
@@ -43,7 +46,8 @@ async function observeReservationWhileRunning(
   runRoot: string,
   child: ReturnType<typeof spawn>,
 ): Promise<{ distinctOwners: boolean; observed: boolean }> {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
+  const deadline = performance.now() + deadlineMs(HANG_GUARD_MS);
+  while (performance.now() < deadline) {
     try {
       // eslint-disable-next-line no-await-in-loop -- this observes worker-owned state while the runner is live.
       const entries = await readdir(runRoot, { withFileTypes: true });
@@ -77,6 +81,9 @@ async function observeReservationWhileRunning(
   }
   return { distinctOwners: false, observed: false };
 }
+
+/** The injected hang runs to the child's own scaled budget, so the test outlasts it. */
+const nodeFailureBoundMs = deadlineMs(90_000);
 
 describe("outer test controllers", () => {
   test.skipIf(process.env.LIBTMUX_PYTHON_REPO === undefined)(
@@ -112,47 +119,53 @@ describe("outer test controllers", () => {
   );
 
   for (const mode of ["after-create", "timeout-after-create"] as const) {
-    test(`emitted Node ${mode} failure performs exact cleanup before parent removal`, async () => {
-      const parent = await makeTestDirectory("ltx4-node-failure-");
-      const root = join(parent, "published-node-root");
-      const marker = join(parent, "failure.json");
-      const node22 = await resolveNode22();
-      const child = spawn("bun", [nodeRunnerPath, "--node", node22, "--expect-major", "22"], {
-        cwd: tsRoot,
-        env: {
-          ...process.env,
-          LIBTMUX_NODE_FAILURE_MARKER: marker,
-          LIBTMUX_NODE_INJECT_FAILURE: mode,
-          // The hang this mode injects is ended by the child's own budget, so
-          // the budget has to outlast every scenario ahead of it. The runner
-          // scales what it reads, so this is the idle-machine figure; racing
-          // those scenarios instead kills the child before it creates the
-          // fixture whose cleanup is the thing under test.
-          ...(mode === "timeout-after-create" ? { LIBTMUX_NODE_SCENARIO_TIMEOUT_MS: "45000" } : {}),
-          LIBTMUX_TEST_RUN_ROOT: root,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      try {
-        const result = await closeChild(child);
-        expect(result.code).not.toBe(0);
-        // The marker is written by the injected failure itself, so its absence
-        // means the child never reached the injection point. What it did
-        // instead is already captured; reporting it turns a bare ENOENT into
-        // the reason.
-        const recorded = await readFile(marker, "utf8").catch(() => undefined);
-        if (recorded === undefined) {
-          throw new Error(
-            `the emitted Node run never reached its injected ${mode} failure:\n${result.stderr || result.stdout}`,
-          );
+    test(
+      `emitted Node ${mode} failure performs exact cleanup before parent removal`,
+      async () => {
+        const parent = await makeTestDirectory("ltx4-node-failure-");
+        const root = join(parent, "published-node-root");
+        const marker = join(parent, "failure.json");
+        const node22 = await resolveNode22();
+        const child = spawn("bun", [nodeRunnerPath, "--node", node22, "--expect-major", "22"], {
+          cwd: tsRoot,
+          env: {
+            ...process.env,
+            LIBTMUX_NODE_FAILURE_MARKER: marker,
+            LIBTMUX_NODE_INJECT_FAILURE: mode,
+            // The hang this mode injects is ended by the child's own budget, so
+            // the budget has to outlast every scenario ahead of it. The runner
+            // scales what it reads, so this is the idle-machine figure; racing
+            // those scenarios instead kills the child before it creates the
+            // fixture whose cleanup is the thing under test.
+            ...(mode === "timeout-after-create"
+              ? { LIBTMUX_NODE_SCENARIO_TIMEOUT_MS: "45000" }
+              : {}),
+            LIBTMUX_TEST_RUN_ROOT: root,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        try {
+          const result = await closeChild(child);
+          expect(result.code).not.toBe(0);
+          // The marker is written by the injected failure itself, so its absence
+          // means the child never reached the injection point. What it did
+          // instead is already captured; reporting it turns a bare ENOENT into
+          // the reason.
+          const recorded = await readFile(marker, "utf8").catch(() => undefined);
+          if (recorded === undefined) {
+            throw new Error(
+              `the emitted Node run never reached its injected ${mode} failure:\n${result.stderr || result.stdout}`,
+            );
+          }
+          const state = JSON.parse(recorded) as { daemonPid: number };
+          await waitForProcessExit(state.daemonPid);
+          await waitForPathAbsent(root);
+        } finally {
+          await reapStaleRunRoot(root).catch(() => undefined);
+          await rm(parent, { force: true, recursive: true });
         }
-        const state = JSON.parse(recorded) as { daemonPid: number };
-        await waitForProcessExit(state.daemonPid);
-        await waitForPathAbsent(root);
-      } finally {
-        await reapStaleRunRoot(root).catch(() => undefined);
-        await rm(parent, { force: true, recursive: true });
-      }
-    }, 90_000);
+      },
+      nodeFailureBoundMs,
+    );
   }
 });

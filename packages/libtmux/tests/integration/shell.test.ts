@@ -10,6 +10,8 @@ import {
   runWithCleanup,
   TestServer,
   makeTestDirectory,
+  deadlineMs,
+  HANG_GUARD_MS,
 } from "../../src/_internal/test/testkit.js";
 
 import { safeInteger } from "../../src/common.js";
@@ -127,7 +129,11 @@ describe("shell execution and pane movement", () => {
       // The call already threw; the server's own child keeps running and
       // finishes on its own schedule, well after this call gave up on it.
       expect(existsSync(marker)).toBe(false);
-      for (let waited = 0; !existsSync(marker) && waited < 5_000; waited += 50) {
+      for (
+        let waited = 0;
+        !existsSync(marker) && waited < deadlineMs(HANG_GUARD_MS);
+        waited += 50
+      ) {
         // eslint-disable-next-line no-await-in-loop -- polling for the marker is sequential by nature.
         await new Promise((resolve) => setTimeout(resolve, 50));
       }

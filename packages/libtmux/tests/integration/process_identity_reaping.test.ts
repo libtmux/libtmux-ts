@@ -18,13 +18,18 @@ import {
 } from "../support/tmux_cleanup.js";
 
 import {
+  parseProcArgs2,
   parseProcStatStartTime,
+  parsePsStartSeconds,
   readDaemonIdentity,
   reapOwnedRunRoot,
   validateOwnedRecordMetadata,
   type FixtureRecord,
   TestServer,
 } from "../../src/_internal/test/testkit.js";
+
+// macOS reaps by signal and runs no pidfd helper.
+const pidfdOnly = test.skipIf(process.platform === "darwin");
 
 describe("process identity", () => {
   test("parses field 22 after the final parenthesis without numeric coercion", () => {
@@ -33,6 +38,23 @@ describe("process identity", () => {
       Array.from({ length: 18 }, (_, i) => `${i + 1}`).join(" ") +
       " 18446744073709551614 99";
     expect(parseProcStatStartTime(line)).toBe("18446744073709551614");
+  });
+
+  test("reads a ps start time as UTC seconds, whatever the padding of the day", () => {
+    expect(parsePsStartSeconds("Sun Oct  4 12:00:00 2026\n")).toBe("1791115200");
+    expect(parsePsStartSeconds("Sun Oct 14 12:00:00 2026")).toBe("1791979200");
+    expect(() => parsePsStartSeconds("not a time")).toThrow("invalid ps start time");
+  });
+
+  test("splits a KERN_PROCARGS2 answer into the executable, arguments and environment", () => {
+    const argc = Buffer.alloc(4);
+    argc.writeInt32LE(2);
+    const raw = Buffer.concat([argc, Buffer.from("/opt/tmux\0\0\0tmux\0-S\0A=1\0B=two words\0\0")]);
+    const launch = parseProcArgs2(raw);
+    expect(launch.executablePath).toBe("/opt/tmux");
+    expect(launch.commandLine.toString()).toBe("tmux\0-S\0");
+    expect(launch.environment.toString()).toBe("A=1\0B=two words\0");
+    expect(() => parseProcArgs2(raw.subarray(0, 14))).toThrow("truncated");
   });
 
   test("rejects record metadata owned by a different uid", () => {
@@ -164,51 +186,56 @@ describe("identity-safe inaccessible-socket fallback", () => {
     });
   }
 
-  test("bounds and reaps a pidfd helper that ignores TERM and keeps pipes open", async () => {
-    const { parent, root } = await createIsolatedRunRoot("hanging-pidfd-helper");
-    const helper = join(parent, "hanging-python");
-    const helperMarker = join(parent, "helper.pid");
-    await writeFile(
-      helper,
-      `#!/usr/bin/env node\nconst fs=require("node:fs");fs.writeFileSync(process.env.LIBTMUX_HELPER_MARKER,String(process.pid));process.on("SIGTERM",()=>{});setInterval(()=>{},1000);\n`,
-      { mode: 0o700 },
-    );
-    const server = await TestServer.create({
-      environment: {
-        ...process.env,
-        LIBTMUX_HELPER_MARKER: helperMarker,
-        LIBTMUX_TEST_PYTHON: helper,
-      },
-      runRoot: root,
-    });
-    let cleanup: Promise<void> | undefined;
-    try {
-      await unlink(server.socketPath);
-      cleanup = server.dispose();
-      const outcome = await Promise.race([
-        cleanup.then(
-          () => ({ kind: "done" as const }),
-          (error: unknown) => ({ error, kind: "error" as const }),
-        ),
-        // Bounded for liveness: what is asserted is that disposal returns at
-        // all when a helper ignores TERM and holds the pipes, and a disposal
-        // that never returns fails this at any size.
-        new Promise<{ kind: "deadline" }>((resolve) =>
-          setTimeout(() => resolve({ kind: "deadline" }), 30_000),
-        ),
-      ]);
-      expect(outcome.kind).not.toBe("deadline");
-      expect(outcome.kind).toBe("error");
-    } finally {
+  // The helper is the Linux pidfd path; macOS reaps by signal and runs none.
+  pidfdOnly(
+    "bounds and reaps a pidfd helper that ignores TERM and keeps pipes open",
+    async () => {
+      const { parent, root } = await createIsolatedRunRoot("hanging-pidfd-helper");
+      const helper = join(parent, "hanging-python");
+      const helperMarker = join(parent, "helper.pid");
+      await writeFile(
+        helper,
+        `#!/usr/bin/env node\nconst fs=require("node:fs");fs.writeFileSync(process.env.LIBTMUX_HELPER_MARKER,String(process.pid));process.on("SIGTERM",()=>{});setInterval(()=>{},1000);\n`,
+        { mode: 0o700 },
+      );
+      const server = await TestServer.create({
+        environment: {
+          ...process.env,
+          LIBTMUX_HELPER_MARKER: helperMarker,
+          LIBTMUX_TEST_PYTHON: helper,
+        },
+        runRoot: root,
+      });
+      let cleanup: Promise<void> | undefined;
       try {
-        const helperPid = Number.parseInt(await readFile(helperMarker, "utf8"), 10);
-        killIfRunning(helperPid);
-      } catch {
-        // A helper that never spawned has nothing to reap.
+        await unlink(server.socketPath);
+        cleanup = server.dispose();
+        const outcome = await Promise.race([
+          cleanup.then(
+            () => ({ kind: "done" as const }),
+            (error: unknown) => ({ error, kind: "error" as const }),
+          ),
+          // Bounded for liveness: what is asserted is that disposal returns at
+          // all when a helper ignores TERM and holds the pipes, and a disposal
+          // that never returns fails this at any size.
+          new Promise<{ kind: "deadline" }>((resolve) =>
+            setTimeout(() => resolve({ kind: "deadline" }), 30_000),
+          ),
+        ]);
+        expect(outcome.kind).not.toBe("deadline");
+        expect(outcome.kind).toBe("error");
+      } finally {
+        try {
+          const helperPid = Number.parseInt(await readFile(helperMarker, "utf8"), 10);
+          killIfRunning(helperPid);
+        } catch {
+          // A helper that never spawned has nothing to reap.
+        }
+        await cleanup?.catch(() => undefined);
+        await reapOwnedRunRoot(root).catch(() => undefined);
+        await removeIsolatedRunRoot(parent, root);
       }
-      await cleanup?.catch(() => undefined);
-      await reapOwnedRunRoot(root).catch(() => undefined);
-      await removeIsolatedRunRoot(parent, root);
-    }
-  }, 60_000);
+    },
+    60_000,
+  );
 });

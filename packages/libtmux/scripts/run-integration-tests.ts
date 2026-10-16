@@ -8,7 +8,7 @@ import {
   testParallelism,
 } from "../src/_internal/test/testkit.js";
 
-import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
+import { NODE22, PROCESS_HARNESS, preflight, SHORT_TMPDIR } from "./preflight.js";
 
 /**
  * The suites this runner is responsible for, checked before it starts.
@@ -63,6 +63,9 @@ const ELSEWHERE: ReadonlySet<string> = new Set([
 ]);
 
 const listed: ReadonlySet<string> = new Set(SUITES);
+// Files named on the command line replace the list, so a repetition can cover
+// the suites it is about without running the rest.
+const selected = Bun.argv.slice(2).filter((argument) => !argument.startsWith("-"));
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const missing = SUITES.filter((suite) => !existsSync(new URL(suite, `file://${packageRoot}`)));
 if (missing.length > 0) {
@@ -81,7 +84,7 @@ if (unlisted.length > 0) {
   process.exit(1);
 }
 
-await preflight([LINUX_HARNESS, NODE22]);
+await preflight([PROCESS_HARNESS, SHORT_TMPDIR, NODE22]);
 
 // Only a top-level runner owns the namespace sweep. A nested runner inherits
 // its parent's exact root and must not race that owner or an explicit reaper.
@@ -101,7 +104,7 @@ process.exitCode = await runSupervisor({
     "60000",
     "--preload",
     "./tests/support/bun_hooks.ts",
-    ...SUITES,
+    ...(selected.length > 0 ? selected : SUITES),
   ],
   ...(process.env[RUN_ROOT_ENV] === undefined ? {} : { runRoot: process.env[RUN_ROOT_ENV] }),
 });

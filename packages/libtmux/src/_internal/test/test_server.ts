@@ -1,5 +1,5 @@
 import {
-  FIXTURE_BOOTSTRAP_DEADLINE_MS,
+  HANG_GUARD_MS,
   READINESS_DEADLINE_MS,
   READINESS_POLL_INTERVAL_MS,
   deadlineMs,
@@ -53,6 +53,11 @@ export interface TestServerOptions {
     | "before-readiness"
     | "identity-record-write"
     | "partial-identity-record-write";
+  /**
+   * Bound on the command that starts the server, for a test that drives it to
+   * expiry. Defaults to the scaled hang guard.
+   */
+  readonly bootstrapTimeoutMs?: number;
   readonly launchExecutable?: string;
   readonly requestObserver?: (request: TestServerRequestSnapshot) => void;
   readonly runRoot: string;
@@ -61,6 +66,7 @@ export interface TestServerOptions {
 }
 
 interface EntrySnapshot {
+  readonly bootstrapTimeoutMs: number | undefined;
   readonly environment: Readonly<Record<string, string>>;
   readonly faultInjection: TestServerOptions["faultInjection"];
   readonly launchExecutable: string | undefined;
@@ -84,6 +90,7 @@ function snapshotEnvironment(
 
 function snapshotEntry(options: TestServerOptions): EntrySnapshot {
   return Object.freeze({
+    bootstrapTimeoutMs: options.bootstrapTimeoutMs,
     environment: snapshotEnvironment(options.environment ?? process.env),
     faultInjection: options.faultInjection,
     launchExecutable: options.launchExecutable,
@@ -244,7 +251,7 @@ async function launchFixtureGeneration(options: {
   const executeController = async (
     args: readonly string[],
     purpose: "ordinary" | "readiness",
-    timeoutMs = deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
+    timeoutMs = deadlineMs(HANG_GUARD_MS),
   ): Promise<RawCommandResult> => {
     const request = observeRequest(entry.requestObserver, {
       args: ["-N", "-S", record.socketPath, ...args],
@@ -290,7 +297,7 @@ async function launchFixtureGeneration(options: {
       environment: bootstrapRequest.environment,
       executable: bootstrapRequest.executable,
       globalArgs: bootstrapGlobalArgs,
-      timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
+      timeoutMs: entry.bootstrapTimeoutMs ?? deadlineMs(HANG_GUARD_MS),
     });
   } catch (error) {
     if (error instanceof TmuxTransportError && error.delivery === "not_started") {
@@ -346,7 +353,7 @@ async function launchFixtureGeneration(options: {
     const pane = await executeController(
       ["display-message", "-p", "-t", sessionId, "#{pane_current_command}"],
       "readiness",
-      Math.min(250, remainingMs),
+      Math.min(deadlineMs(HANG_GUARD_MS), remainingMs),
     ).catch((error: unknown) => {
       if (error instanceof TmuxTransportError && error.kind === "timeout") return undefined;
       throw error;
@@ -523,6 +530,7 @@ export class TestServer {
       const launched = await launchFixtureGeneration({
         capability: this.#reservationCapability,
         entry: Object.freeze({
+          bootstrapTimeoutMs: undefined,
           environment: this.controllerEnvironment,
           faultInjection: undefined,
           launchExecutable: this.#launchExecutable,
@@ -563,7 +571,7 @@ export class TestServer {
       environment: request.environment,
       executable: request.executable,
       globalArgs: ["-N", "-S", this.socketPath],
-      timeoutMs: deadlineMs(FIXTURE_BOOTSTRAP_DEADLINE_MS),
+      timeoutMs: deadlineMs(HANG_GUARD_MS),
     });
   }
 
