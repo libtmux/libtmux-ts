@@ -38,9 +38,10 @@ remember.
 `libtmux` now requires tmux 3.3a or newer, judged by the running daemon's version
 rather than the client's. A daemon of an earlier release, including 3.3, and a
 client executable that would start one are refused with `VersionTooLowError`
-before the command has any effect. `next-3.9` and release candidates of later
-releases are admitted; `3.3a-rc`, `next-3.3a`, bare `master` and unreadable
-reports are not.
+before the command has any effect. Release candidates and `next-X.Y` builds
+of later releases (`3.8-rc2`, `next-3.9`) are admitted. `3.3-rc`, `next-3.3`,
+bare `master`, `openbsd-*` and the forms tmux never prints (`3.3a-master`,
+`next-3.3a`) are refused.
 
 Before:
 
