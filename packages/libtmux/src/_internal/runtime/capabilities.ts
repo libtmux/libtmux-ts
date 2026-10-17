@@ -4,9 +4,13 @@ import type { ConnectionAlias, DaemonEpoch } from "../../common.js";
 import type { DaemonGuard } from "../../engine.js";
 import { LibTmuxError, TmuxTransportError } from "../../errors.js";
 import type { AbortLike } from "../../types.js";
-import { decodeBackslashReplace } from "../codec/backslash_replace.js";
-import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
-import { snapshotInvocationRequest } from "../transport/types.js";
+import {
+  daemonProbe,
+  interpretProbe,
+  probeFailure,
+  requireCoreVersion,
+} from "../support/versions.js";
+import type { CommandTransport, RawCommandResult } from "../transport/types.js";
 import type { TmuxConnection } from "./connection.js";
 import { parseTmuxVersion, tmuxVersionIsExact, type TmuxVersion } from "./tmux_version.js";
 
@@ -121,7 +125,7 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     return new TmuxTransportError("capability binding cancelled", {
       delivery,
       kind: "cancelled",
-      subcommand: "display-message",
+      subcommand: "run-shell",
     });
   }
 
@@ -168,22 +172,13 @@ export class LazyCapabilityBinding implements CapabilityBinding {
     }
   }
 
-  #request(signal: AbortLike): CommandRequest {
-    const args = ["-N"];
+  async #probe(daemonEpoch: DaemonEpoch, signal: AbortLike): Promise<TmuxCapabilities> {
+    const args = [];
     if (this.#connection.colors === 256) args.push("-2");
     if (this.#connection.configFile !== undefined) args.push(`-f${this.#connection.configFile}`);
     if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
     if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);
-    return snapshotInvocationRequest({
-      // `;` rather than a tab: tmux sanitizes a literal tab out of
-      // `display-message` output when the client's locale is not a UTF-8 one,
-      // substituting `_` and running the three fields together. A stripped
-      // environment is ordinary — a systemd unit, a container, cron, an MCP
-      // client that curates its env — and this probe runs before every other
-      // command, so the whole library failed there. Measured on 3.2a, 3.7c,
-      // 3.8-rc and master; `;` survives all four. Every other format this
-      // package reads is already `;`-separated.
-      commands: [["display-message", "-p", "#{version};#{pid};#{start_time}"]],
+    const { marker, request } = daemonProbe({
       environment: this.#connection.environment,
       executable: this.#connection.executable,
       globalArgs: args,
@@ -192,74 +187,42 @@ export class LazyCapabilityBinding implements CapabilityBinding {
       // hangs every caller before any of their own deadlines apply.
       ...(this.#timeoutMs === undefined ? {} : { timeoutMs: this.#timeoutMs }),
     });
-  }
-
-  async #probe(daemonEpoch: DaemonEpoch, signal: AbortLike): Promise<TmuxCapabilities> {
     let result: RawCommandResult;
     try {
-      result = await this.#transport.execute(this.#request(signal));
+      result = await this.#transport.execute(request);
     } catch (error) {
       if (error instanceof TmuxTransportError && error.kind === "cancelled") throw error;
       const detail = error instanceof Error && error.message !== "" ? `: ${error.message}` : "";
-      throw new LibTmuxError(`cannot reach tmux${detail}`, {
+      throw probeFailure(detail.replace(/^: /u, ""), {
         cause: error,
-        subcommand: "display-message",
+        ...(error instanceof TmuxTransportError ? { kind: error.kind } : {}),
       });
     }
 
-    if (result.exitCode !== 0) {
-      const stderr = decodeBackslashReplace(result.stderr).trimEnd();
-      throw new LibTmuxError(
-        stderr === ""
-          ? `cannot reach tmux: it exited with status ${result.exitCode}`
-          : `cannot reach tmux: ${stderr}`,
-        { subcommand: "display-message" },
-      );
+    const outcome = interpretProbe(result, marker);
+    if (outcome.kind === "absent") {
+      throw probeFailure(outcome.reason);
     }
-
-    const replies = decodeBackslashReplace(result.stdout).split("\n");
-    while (replies.at(-1) === "") replies.pop();
-    if (replies.length === 0) {
-      throw new LibTmuxError("tmux version probe returned no version", {
-        subcommand: "display-message",
-      });
-    }
-    if (replies.length !== 1) {
-      throw new LibTmuxError("tmux version probe returned multiple versions", {
-        subcommand: "display-message",
-      });
-    }
-    const [rawVersion, pid, startTime, extra] = replies[0]!.split(";");
-    if (
-      rawVersion === undefined ||
-      pid === undefined ||
-      startTime === undefined ||
-      extra !== undefined ||
-      !/^[1-9]\d*$/u.test(pid) ||
-      !/^[1-9]\d*$/u.test(startTime)
-    ) {
-      throw new LibTmuxError("tmux capability probe returned an invalid daemon identity", {
-        subcommand: "display-message",
-      });
-    }
+    const { daemon, rawVersion } = outcome.reading;
+    requireCoreVersion(rawVersion);
 
     let capabilities: TmuxCapabilities;
     try {
       capabilities = deriveTmuxCapabilities({
         connectionAlias: this.#connectionAlias,
-        daemon: { pid, startTime },
+        daemon,
         daemonEpoch,
         rawVersion,
       });
     } catch (error) {
       throw new LibTmuxError(error instanceof Error ? error.message : "invalid tmux version", {
         cause: error,
-        subcommand: "display-message",
+        subcommand: "run-shell",
       });
     }
     if (this.#getDaemonEpoch() !== daemonEpoch) {
       throw new LibTmuxError("daemon epoch changed while binding capabilities", {
-        subcommand: "display-message",
+        subcommand: "run-shell",
       });
     }
     return capabilities;

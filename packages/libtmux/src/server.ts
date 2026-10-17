@@ -34,7 +34,7 @@ import { acquireServerGraph } from "./_internal/operations/acquire.js";
 import { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch, TmuxInvocationObserver } from "./common.js";
 import type { DaemonGuard, TmuxEngine } from "./engine.js";
-import { LibTmuxError } from "./errors.js";
+import { LibTmuxError, VersionTooLowError } from "./errors.js";
 import { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import { Session } from "./session.js";
@@ -82,6 +82,8 @@ import {
   DEFAULT_MAX_IN_FLIGHT,
 } from "./_internal/transport/bounded_transport.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
+import { connectionArguments } from "./_internal/operations/request.js";
+import { checkDaemonVersion, VersionCheckTransport } from "./_internal/support/versions.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
 
 /**
@@ -219,6 +221,16 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
   );
 }
 
+/** Judge the daemon a control client is about to join, whatever an earlier answer said. */
+function checkServerVersion(runtime: RuntimeContext): Promise<unknown> {
+  return checkDaemonVersion(runtime.transport, {
+    environment: runtime.connection.environment,
+    executable: runtime.connection.executable,
+    globalArgs: connectionArguments(runtime.connection),
+    ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
+  });
+}
+
 /**
  * One tmux server, addressed by the socket it listens on.
  *
@@ -227,12 +239,19 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
  * used rather than replaced, so two `Server` values built from the same
  * options address the same tmux.
  *
+ * Every command runs only on a daemon of tmux 3.3a or newer, judged by the
+ * daemon's own version rather than the client's. A daemon of an earlier
+ * release, or an executable that would start one, is refused with
+ * {@link VersionTooLowError} before the command has any effect, and a daemon
+ * that is replaced after the version check is refused with
+ * {@link TmuxServerRestartedError}.
+ *
  * Sessions, windows and panes are reached from here and carry the server with
  * them. Handles taken from one daemon do not survive its restart: the
  * replacement numbers panes from `%0` again — see {@link DaemonIdentity}.
  *
  * Save this complete program as `server.ts`. With Bun 1.4.2 or newer,
- * tmux 3.2a or newer, and `libtmux` installed, run `bun run server.ts`.
+ * tmux 3.3a or newer, and `libtmux` installed, run `bun run server.ts`.
  * It creates and stops a private tmux server. A failed operation or cleanup
  * exits with an error; a cleanup error names the retained socket directory.
  *
@@ -306,7 +325,7 @@ export class Server {
         ? {}
         : { timeoutMs: options?.timeoutMs ?? DEFAULT_TIMEOUT_MS }),
       transport: new BoundedTransport(
-        options?.engine ?? new NodeSpawnTransport(),
+        new VersionCheckTransport(options?.engine ?? new NodeSpawnTransport()),
         options?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT,
         options?.onInvocation,
       ),
@@ -452,7 +471,9 @@ export class Server {
   watch(options?: WatchOptions): TmuxEventStream {
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "watch");
-    return watchServer(runtime.connection, options, runtime.transport);
+    return watchServer(runtime.connection, options, runtime.transport, () =>
+      checkServerVersion(runtime),
+    );
   }
 
   /**
@@ -490,11 +511,19 @@ export class Server {
     const runtime = runtimeForServer(this);
     refuseWithoutLocalTmux(runtime, "connect");
     const commands = runtime.transport;
-    const connection = new ControlConnection(runtime.connection, options, false, commands);
+    const connection = new ControlConnection(
+      runtime.connection,
+      options,
+      false,
+      commands,
+      undefined,
+      () => checkServerVersion(runtime),
+    );
     try {
       await connection.ready();
     } catch (error) {
       await connection.close();
+      if (error instanceof VersionTooLowError) throw error;
       throw new LibTmuxError(
         error instanceof Error ? error.message : "tmux control mode could not attach",
         { cause: error },
@@ -544,7 +573,7 @@ export class Server {
    * off it, which is both cheaper and consistent.
    *
    * Save this complete program as `sessions.ts`. With Bun 1.4.2 or newer,
-   * tmux 3.2a or newer, and `libtmux` installed, run `bun run sessions.ts`.
+   * tmux 3.3a or newer, and `libtmux` installed, run `bun run sessions.ts`.
    * It creates and stops a private tmux server. A failed operation or cleanup
    * exits with an error; a cleanup error names the retained socket directory.
    *
@@ -606,7 +635,7 @@ export class Server {
    * Every window on the server, including each placement of a linked window.
    *
    * Save this complete program as `windows.ts`. With Bun 1.4.2 or newer,
-   * tmux 3.2a or newer, and `libtmux` installed, run `bun run windows.ts`.
+   * tmux 3.3a or newer, and `libtmux` installed, run `bun run windows.ts`.
    * It creates and stops a private tmux server. A failed operation or cleanup
    * exits with an error; a cleanup error names the retained socket directory.
    *
@@ -679,7 +708,7 @@ export class Server {
    * Every pane on the server.
    *
    * Save this complete program as `panes.ts`. With Bun 1.4.2 or newer,
-   * tmux 3.2a or newer, and `libtmux` installed, run `bun run panes.ts`.
+   * tmux 3.3a or newer, and `libtmux` installed, run `bun run panes.ts`.
    * It creates and stops a private tmux server. A failed operation or cleanup
    * exits with an error; a cleanup error names the retained socket directory.
    *
@@ -976,9 +1005,9 @@ export class Server {
    * This is how a caller gates on a feature that arrived in a known release
    * without parsing `#{version}` themselves. A named development build such
    * as `next-3.9` has not shipped the release it names: it is at least
-   * `3.8`, but not at least `3.9`. An untargeted development build (bare
-   * `master`, or `<tag>-master`) names no release it is heading toward, so
-   * nothing bounds it — it is at least anything.
+   * `3.8`, but not at least `3.9`. A candidate such as `3.8-rc2` ranks the
+   * same way, below `3.8` and above `3.7a`. `minimum` must be a form tmux
+   * prints, such as `3.7a`, or the call throws a `TypeError`.
    *
    * ```ts
    * if (await server.versionAtLeast("3.3")) {
@@ -1054,7 +1083,7 @@ export class Server {
    * Create a detached session and resolve it as a handle.
    *
    * Save this complete program as `new-session.ts`. With Bun 1.4.2 or newer,
-   * tmux 3.2a or newer, and `libtmux` installed, run `bun run new-session.ts`.
+   * tmux 3.3a or newer, and `libtmux` installed, run `bun run new-session.ts`.
    * It creates and stops a private tmux server. A failed operation or cleanup
    * exits with an error; a cleanup error names the retained socket directory.
    *

@@ -49,6 +49,17 @@ export function tmuxCommand(args: readonly string[]): TmuxCommand {
   return Object.freeze([name, ...rest]);
 }
 
+/** Whether a command is the version fence that the version check puts ahead of a request. */
+export function isVersionFence(command: TmuxCommand | undefined): boolean {
+  return (
+    command?.length === 5 &&
+    command[0] === "if-shell" &&
+    command[1] === "-F" &&
+    command[3] === "" &&
+    /^libtmux-version-[0-9a-f]{32}$/u.test(command[4]!)
+  );
+}
+
 /** Validate the string and whole-invocation invariants of an engine request. */
 export function validateInvocation(request: TmuxInvocationRequest): void {
   if (request.commands.length === 0) throw protocolError("tmux invocation has no commands");
@@ -57,7 +68,10 @@ export function validateInvocation(request: TmuxInvocationRequest): void {
       throw protocolError("tmux invocation contains an empty command");
     }
   }
-  if (request.stdin !== undefined && request.commands.length !== 1) {
+  const carried =
+    request.commands.length === 1 ||
+    (request.commands.length === 2 && isVersionFence(request.commands[0]));
+  if (request.stdin !== undefined && !carried) {
     throw protocolError("a tmux command list cannot carry stdin");
   }
   if (request.stdin !== undefined && request.daemonGuard !== undefined) {

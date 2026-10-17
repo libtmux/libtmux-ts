@@ -3,8 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { Server } from "../../src/server.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
-import { TmuxTransportError } from "../../src/errors.js";
-import { singleCommandTransport } from "../support/transport_double.js";
+import { TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
+import { checkedEngine, answerVersionProbe } from "../support/version_probe.js";
 
 function success(request: TmuxInvocationRequest): TmuxCommandResult {
   return {
@@ -19,7 +19,7 @@ function success(request: TmuxInvocationRequest): TmuxCommandResult {
 describe("server utility requests", () => {
   test("rejects invalid server deadlines before invoking the engine", () => {
     let executions = 0;
-    const engine = singleCommandTransport((request) => {
+    const engine = checkedEngine((request) => {
       executions += 1;
       return Promise.resolve(success(request));
     });
@@ -32,7 +32,7 @@ describe("server utility requests", () => {
 
   test("inherits the server deadline and targets a session name exactly", async () => {
     const requests: TmuxInvocationRequest[] = [];
-    const engine = singleCommandTransport((request) => {
+    const engine = checkedEngine((request) => {
       requests.push(request);
       const isNameQuery = request.commands[0]?.includes("#{session_name}") === true;
       return Promise.resolve(
@@ -46,16 +46,19 @@ describe("server utility requests", () => {
     expect(await server.hasSession("work")).toBe(true);
     expect(await server.isAlive()).toBe(true);
 
-    expect(
-      requests.map((request) => ({ commands: request.commands, timeoutMs: request.timeoutMs })),
-    ).toEqual([
-      { commands: [["list-sessions", "-F", "#{session_name}"]], timeoutMs: 37 },
-      { commands: [["list-sessions"]], timeoutMs: 37 },
+    expect(requests.map((request) => request.commands)).toEqual([
+      [["list-sessions", "-F", "#{session_name}"]],
+      [["list-sessions"]],
     ]);
+    // The deadline covers the version check too, so what reaches the engine is what is left of it.
+    for (const request of requests) {
+      expect(request.timeoutMs).toBeGreaterThan(0);
+      expect(request.timeoutMs).toBeLessThanOrEqual(37);
+    }
   });
 
   test("does not answer yes for a name that is only a prefix of a real session", async () => {
-    const engine = singleCommandTransport((request) =>
+    const engine = checkedEngine((request) =>
       Promise.resolve({ ...success(request), stdout: new TextEncoder().encode("alphabet\n") }),
     );
     const server = new Server({ engine, timeoutMs: 37 });
@@ -68,7 +71,7 @@ describe("server utility requests", () => {
     "no server running on /tmp/ltx-absent/socket\n",
     "error connecting to /tmp/ltx-absent/socket (No such file or directory)\n",
   ])("hasSession reads a cold socket as no session: %s", async (reason) => {
-    const engine = singleCommandTransport((request) =>
+    const engine = checkedEngine((request) =>
       Promise.resolve({
         ...success(request),
         exitCode: 1,
@@ -83,7 +86,7 @@ describe("server utility requests", () => {
     "error connecting to /tmp/ltx-private/socket (Permission denied)",
     "no current target",
   ])("hasSession raises a non-cold failure to list sessions: %s", async (reason) => {
-    const engine = singleCommandTransport((request) =>
+    const engine = checkedEngine((request) =>
       Promise.resolve({
         ...success(request),
         exitCode: 1,
@@ -96,13 +99,15 @@ describe("server utility requests", () => {
 
   test("forwards setHook command controls to the engine", async () => {
     const requests: TmuxInvocationRequest[] = [];
-    const engine = singleCommandTransport((request) => {
+    const engine = checkedEngine((request) => {
       requests.push(request);
       return Promise.resolve(success(request));
     });
     const controller = new AbortController();
     const server = new Server({ engine, timeoutMs: 91 });
 
+    // The version check spends part of a deadline, so it happens before the one under test.
+    await server.version();
     await server.setHook("after-new-window", "display-message hooked", {
       signal: controller.signal,
       timeoutMs: 37,
@@ -114,7 +119,7 @@ describe("server utility requests", () => {
   });
 
   test("rejects on a timeout rather than answering that nothing is there", async () => {
-    const engine = singleCommandTransport(() =>
+    const engine = checkedEngine(() =>
       Promise.reject(
         new TmuxTransportError("tmux did not answer", {
           delivery: "indeterminate",
@@ -133,7 +138,7 @@ describe("server utility requests", () => {
 
   test("validates all layout syntax before metadata probes", async () => {
     let executions = 0;
-    const engine = singleCommandTransport((request) => {
+    const engine = checkedEngine((request) => {
       executions++;
       return Promise.resolve(success(request));
     });
@@ -155,10 +160,12 @@ describe("server utility requests", () => {
   });
 
   test("layout version probes honor the daemon, engine and command controls", async () => {
-    const requests: TmuxInvocationRequest[] = [];
-    const engine = singleCommandTransport((request) => {
-      requests.push(request);
-      return Promise.resolve({ ...success(request), stdout: new TextEncoder().encode("3.4\n") });
+    const probes: TmuxInvocationRequest[] = [];
+    const engine = checkedEngine((request) => Promise.resolve(success(request)), {
+      probe: (request) => {
+        probes.push(request);
+        return answerVersionProbe(request, "3.4");
+      },
     });
     const server = new Server({ engine, timeoutMs: 91 });
     const controller = new AbortController();
@@ -169,10 +176,9 @@ describe("server utility requests", () => {
       ],
       { signal: controller.signal, timeoutMs: 37 },
     );
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.commands).toEqual([["display-message", "-p", "#{version}"]]);
-    expect(requests[0]?.signal).toBe(controller.signal);
-    expect(requests[0]?.timeoutMs).toBe(37);
+    expect(probes).toHaveLength(1);
+    expect(probes[0]?.signal).toBe(controller.signal);
+    expect(probes[0]?.timeoutMs).toBe(37);
     await expect(
       server.validateLayouts([{ layout: "main-horizontal-mirrored", panes: 1 }]),
     ).rejects.toThrow("invalid tmux layout for 3.4");
@@ -182,18 +188,24 @@ describe("server utility requests", () => {
     "no server running on /tmp/ltx-absent/socket\n",
     "error connecting to /tmp/ltx-absent/socket (No such file or directory)\n",
   ])("layout cold fallback retains the selected engine: %s", async (reason) => {
-    const commands: string[] = [];
-    const engine = singleCommandTransport((request) => {
-      const command = request.commands[0]![0];
-      commands.push(command);
-      return Promise.resolve(
-        command === "-V"
-          ? { ...success(request), stdout: new TextEncoder().encode("tmux 3.7c\n") }
-          : { ...success(request), exitCode: 1, stderr: new TextEncoder().encode(reason) },
-      );
-    });
+    const seen: string[] = [];
+    const engine = checkedEngine(
+      (request) => {
+        seen.push(request.globalArgs.includes("-V") ? "-V" : request.commands[0]![0]);
+        return Promise.resolve({
+          ...success(request),
+          stdout: new TextEncoder().encode("tmux 3.7c\n"),
+        });
+      },
+      {
+        probe: (request) => {
+          seen.push("probe");
+          return { ...success(request), exitCode: 1, stderr: new TextEncoder().encode(reason) };
+        },
+      },
+    );
     await new Server({ engine }).validateLayouts([{ layout: "main-horizontal-m", panes: 1 }]);
-    expect(commands).toEqual(["display-message", "-V"]);
+    expect(seen).toEqual(["probe", "-V"]);
   });
 
   test.each([
@@ -202,44 +214,36 @@ describe("server utility requests", () => {
     "server exited unexpectedly",
     "no current target",
   ])("layout probing preserves non-cold failures: %s", async (reason) => {
-    const commands: string[] = [];
-    const engine = singleCommandTransport((request) => {
-      commands.push(request.commands[0]![0]);
-      return Promise.resolve({
-        ...success(request),
-        exitCode: 1,
-        stderr: new TextEncoder().encode(reason),
-      });
+    const seen: string[] = [];
+    const engine = checkedEngine((request) => Promise.resolve(success(request)), {
+      probe: (request) => {
+        seen.push("probe");
+        return { ...success(request), exitCode: 1, stderr: new TextEncoder().encode(reason) };
+      },
     });
     await expect(
       new Server({ engine }).validateLayouts([{ layout: "main-horizontal-mirrored", panes: 1 }]),
     ).rejects.toThrow(reason);
-    expect(commands).toEqual(["display-message"]);
+    expect(seen).toEqual(["probe"]);
   });
 
-  test.each(["", "unknown", "3.4\n3.7c"])(
-    "layout probing preserves malformed version replies: %s",
-    async (reply) => {
-      const commands: string[] = [];
-      const engine = singleCommandTransport((request) => {
-        commands.push(request.commands[0]![0]);
-        return Promise.resolve({ ...success(request), stdout: new TextEncoder().encode(reply) });
-      });
-      await expect(
-        new Server({ engine }).validateLayouts([{ layout: "main-horizontal-mirrored", panes: 1 }]),
-      ).rejects.toThrow("invalid tmux version");
-      expect(commands).toEqual(["display-message"]);
-    },
-  );
+  test("layout probing refuses a daemon below the floor", async () => {
+    const engine = checkedEngine((request) => Promise.resolve(success(request)), {
+      version: "3.3",
+    });
+    await expect(
+      new Server({ engine }).validateLayouts([{ layout: "main-horizontal-mirrored", panes: 1 }]),
+    ).rejects.toBeInstanceOf(VersionTooLowError);
+  });
 
   test("does not hide an engine programming error as a dead server", async () => {
-    const engine = singleCommandTransport(() => Promise.reject(new TypeError("broken engine")));
+    const engine = checkedEngine(() => Promise.reject(new TypeError("broken engine")));
 
     await expect(new Server({ engine }).isAlive()).rejects.toThrow("broken engine");
   });
 
   test("does not report a live server as dead when the engine still returns returncode", async () => {
-    const engine = singleCommandTransport((request) =>
+    const engine = checkedEngine((request) =>
       Promise.resolve({
         cmd: [request.executable, ...flattenInvocation(request)],
         returncode: 0,

@@ -4,7 +4,7 @@ import { Server } from "../../src/server.js";
 import type { TmuxInvocationReport } from "../../src/common.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
-import { singleCommandTransport } from "../support/transport_double.js";
+import { checkedEngine } from "../support/version_probe.js";
 
 function result(request: TmuxInvocationRequest, exitCode = 0): TmuxCommandResult {
   return {
@@ -28,7 +28,7 @@ describe("invocation observer", () => {
   test("reports every command, with what it cost and how it ended", async () => {
     const reports: TmuxInvocationReport[] = [];
     const server = new Server({
-      engine: singleCommandTransport((request) => Promise.resolve(result(request))),
+      engine: checkedEngine((request) => Promise.resolve(result(request))),
       onInvocation: (report) => reports.push(report),
     });
 
@@ -48,7 +48,7 @@ describe("invocation observer", () => {
   test("reports a command tmux refused, which is an answer rather than a fault", async () => {
     const reports: TmuxInvocationReport[] = [];
     const server = new Server({
-      engine: singleCommandTransport((request) => Promise.resolve(result(request, 1))),
+      engine: checkedEngine((request) => Promise.resolve(result(request, 1))),
       onInvocation: (report) => reports.push(report),
     });
 
@@ -62,7 +62,7 @@ describe("invocation observer", () => {
     const reports: TmuxInvocationReport[] = [];
     const controller = new AbortController();
     const server = new Server({
-      engine: singleCommandTransport(
+      engine: checkedEngine(
         (request) =>
           new Promise((_resolve, reject) => {
             request.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
@@ -88,7 +88,7 @@ describe("invocation observer", () => {
    */
   test("does not let a throwing observer fail the command", async () => {
     const server = new Server({
-      engine: singleCommandTransport((request) => Promise.resolve(result(request))),
+      engine: checkedEngine((request) => Promise.resolve(result(request))),
       onInvocation: () => {
         throw new Error("observer is broken");
       },
@@ -119,7 +119,7 @@ describe("invocation observer", () => {
     rejections.on("unhandledRejection", watch);
     try {
       const server = new Server({
-        engine: singleCommandTransport((request) => Promise.resolve(result(request))),
+        engine: checkedEngine((request) => Promise.resolve(result(request))),
         onInvocation: () => Promise.reject(new Error("observer is broken")),
       });
 
@@ -144,7 +144,7 @@ describe("invocation observer", () => {
     const reports: TmuxInvocationReport[] = [];
     const release: (() => void)[] = [];
     const server = new Server({
-      engine: singleCommandTransport(
+      engine: checkedEngine(
         (request) =>
           new Promise((resolve) => {
             release.push(() => resolve(result(request)));
@@ -181,7 +181,7 @@ describe("invocation observer", () => {
   test("carries the abort reason when refusing a queued command", async () => {
     const release: (() => void)[] = [];
     const server = new Server({
-      engine: singleCommandTransport(
+      engine: checkedEngine(
         (request) =>
           new Promise((resolve) => {
             release.push(() => resolve(result(request)));
@@ -212,7 +212,7 @@ describe("invocation observer", () => {
   test("calls a command that threw without saying how far it got indeterminate", async () => {
     const reports: TmuxInvocationReport[] = [];
     const server = new Server({
-      engine: singleCommandTransport(() => Promise.reject(new Error("engine is broken"))),
+      engine: checkedEngine(() => Promise.reject(new Error("engine is broken"))),
       onInvocation: (report) => reports.push(report),
     });
 
@@ -221,11 +221,51 @@ describe("invocation observer", () => {
     expect(reports[0]?.delivery).toBe("indeterminate");
   });
 
+  test("reports a failed version read as not started, and a refused one with its remedy", async () => {
+    const unreadable: TmuxInvocationReport[] = [];
+    const broken = new Server({
+      engine: {
+        execute: (request) =>
+          Promise.resolve({
+            ...result(request, 1),
+            stderr: new TextEncoder().encode("something unexpected\n"),
+          }),
+      },
+      onInvocation: (report) => unreadable.push(report),
+    });
+    await expect(broken.runShell("true")).rejects.toMatchObject({
+      delivery: "not_started",
+      kind: "protocol",
+    });
+    expect(unreadable.length).toBeGreaterThan(0);
+    expect(unreadable.map((report) => report.delivery)).not.toContain("indeterminate");
+
+    const old: TmuxInvocationReport[] = [];
+    const refused = new Server({
+      engine: {
+        execute: (request) =>
+          Promise.resolve({
+            ...result(request, 1),
+            stderr: new TextEncoder().encode(
+              "usage: run-shell [-b] [-t target-pane] shell-command\n",
+            ),
+          }),
+      },
+      onInvocation: (report) => old.push(report),
+    });
+    await expect(refused.runShell("true")).rejects.toMatchObject({
+      delivery: "not_started",
+      remedy: expect.stringContaining("pin the previous libtmux release"),
+    });
+    expect(old.length).toBeGreaterThan(0);
+    expect(old.map((report) => report.delivery)).not.toContain("indeterminate");
+  });
+
   test("charges the wait for a slot to queuedMs rather than to the command", async () => {
     const reports: TmuxInvocationReport[] = [];
     const release: (() => void)[] = [];
     const server = new Server({
-      engine: singleCommandTransport(
+      engine: checkedEngine(
         (request) =>
           new Promise((resolve) => {
             release.push(() => resolve(result(request)));
@@ -235,9 +275,10 @@ describe("invocation observer", () => {
       onInvocation: (report) => reports.push(report),
     });
 
+    await server.version();
     const first = server.runShell("one");
     const second = server.runShell("two");
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     // The second is queued behind the first, so only the first has started.
     expect(release).toHaveLength(1);
 
@@ -247,9 +288,10 @@ describe("invocation observer", () => {
     release[1]?.();
     await second;
 
-    expect(reports).toHaveLength(2);
-    expect(reports[0]?.queuedMs).toBe(0);
-    expect(reports[1]?.queuedMs).toBeGreaterThan(0);
+    const [, ...commands] = reports;
+    expect(commands).toHaveLength(2);
+    expect(commands[0]?.queuedMs).toBe(0);
+    expect(commands[1]?.queuedMs).toBeGreaterThan(0);
   });
 
   /**
@@ -264,7 +306,7 @@ describe("invocation observer", () => {
     let peak = 0;
     const deliveries: string[] = [];
     const server = new Server({
-      engine: singleCommandTransport(async (request) => {
+      engine: checkedEngine(async (request) => {
         live += 1;
         peak = Math.max(peak, live);
         const refuses = request.commands[0].at(-1) === "boom";
