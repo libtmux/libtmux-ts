@@ -33,6 +33,41 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`libtmux` now requires tmux 3.3a or newer, judged by the running daemon's version
+rather than the client's. A daemon of an earlier release, including 3.3, and a
+client executable that would start one are refused with `VersionTooLowError`
+before the command has any effect. `next-3.9` and release candidates of later
+releases are admitted; `3.3a-rc`, `next-3.3a`, bare `master` and unreadable
+reports are not.
+
+Before:
+
+    // tmux 3.2a: ordinary commands ran.
+
+After:
+
+    // tmux 3.2a: VersionTooLowError, nothing sent.
+
+The refusal covers `Server` methods, `cmd`, batches, plans, `watch` and
+`connect`, and so the workspace builder, `tmux-workspace` and the MCP server.
+
+Every command list now starts with an `if-shell -F` fence on the admitted
+version. A daemon that replaced the admitted one raises
+`TmuxServerRestartedError` and nothing runs. Live endpoints are addressed with
+`-N`, so a vanished daemon is not restarted by an older client.
+
+The daemon's version is read with `run-shell -C` instead of `display-message`,
+which fired `after-display-message` hooks. Engines receive that read as a
+request of its own before the first command. Recordings made with
+`recordInvocations` before this change lack it and need recording again;
+`recordInvocations` and `replayInvocations` leave the fence out and match its
+marker and the read's like the format guards.
+
+`VersionTooLowError.delivery` is `not_started` for a refusal at admission, and
+`onInvocation` reports it that way.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`
