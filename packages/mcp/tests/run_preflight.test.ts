@@ -52,6 +52,7 @@ function frameId(source: string): string {
 function fakeBuffers(): {
   readonly source: () => string;
   readonly tmux: {
+    versionAtLeast: (minimum: string) => Promise<boolean>;
     deleteBuffer: (name: string) => Promise<void>;
     loadBuffer: (name: string, data: string | Uint8Array) => Promise<void>;
     runShell: (command: string) => Promise<readonly string[]>;
@@ -62,6 +63,7 @@ function fakeBuffers(): {
   return {
     source: () => captured,
     tmux: {
+      versionAtLeast: async () => true,
       deleteBuffer: async () => undefined,
       loadBuffer: async (_name, data) => {
         captured = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
