@@ -78,8 +78,8 @@ Backend cleanup failures produce a nonzero exit status.
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 Live streaming (`LIBTMUX_MCP_LIVE`) needs tmux 3.7 and `paste_text` needs 3.4.
-On an older tmux, `wait_for_text` and `paste_text` refuse with the version they
-need, captures read the pane, and `run_shell_command` reads the pane and types
+On an older tmux, `paste_text` refuses with the version it needs,
+`wait_for_text` and captures read the pane, and `run_shell_command` reads the pane and types
 its script instead of staging it.
 
 Linux is the only supported host for real tmux control. The macOS CI lane

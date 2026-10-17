@@ -1643,9 +1643,9 @@ sends anything, and the rest of the package keeps working there.
 | `break-pane -n` and names containing `:` or `.`, as literal argv        | not exactly 3.7 | refused on 3.7 only                    |
 | `split-window -p`, as literal argv                                      | not exactly 3.4 | refused on 3.4 only                    |
 
-On an older tmux the MCP server answers a capture by reading the pane and
-types `run_shell_command`'s script instead of staging it; `wait_for_text` and
-`paste_text` refuse with the version they need.
+On an older tmux the MCP server answers a wait or a capture by reading the pane
+and types `run_shell_command`'s script instead of staging it; `paste_text`
+refuses with the version it needs.
 
 Each refusal is tested against a daemon of the release it covers, with the
 sentinel session or buffer it must leave untouched, and against a release that
