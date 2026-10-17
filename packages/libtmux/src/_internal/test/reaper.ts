@@ -176,7 +176,7 @@ async function collectChild(
   });
 }
 
-const pidfdHelper = String.raw`
+export const pidfdHelper: string = String.raw`
 import json, os, select, signal, sys
 
 def identity(pid):
@@ -252,6 +252,15 @@ try:
         escalated = not bool(poller.poll(500))
         if escalated:
             if not matches(pid, expected, expected_comm, expected_executable, expected_argv, generation_name, generation_value):
+                # Exit can race the identity read after the TERM wait.
+                if any(
+                    fd == descriptor
+                    and events & select.POLLIN
+                    and not events & (select.POLLERR | select.POLLNVAL)
+                    for fd, events in poller.poll(0)
+                ):
+                    print(json.dumps({"status": "gone"}))
+                    raise SystemExit(0)
                 print(json.dumps({"status": "identity-mismatch"}))
                 raise SystemExit(3)
             signal.pidfd_send_signal(descriptor, signal.SIGKILL)
