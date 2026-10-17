@@ -221,14 +221,26 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
   );
 }
 
+const CONTROL_SINCE = parseTmuxVersion("3.7");
+
 /** Judge the daemon a control client is about to join, whatever an earlier answer said. */
-function checkServerVersion(runtime: RuntimeContext): Promise<unknown> {
-  return checkDaemonVersion(runtime.transport, {
+async function checkServerVersion(runtime: RuntimeContext): Promise<void> {
+  const { rawVersion } = await checkDaemonVersion(runtime.transport, {
     environment: runtime.connection.environment,
     executable: runtime.connection.executable,
     globalArgs: connectionArguments(runtime.connection),
     ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
   });
+  // Earlier servers can crash or hang while a control client attaches, so the
+  // decision is made before any client does.
+  if (!tmuxVersionAtLeast(parseTmuxVersion(rawVersion), CONTROL_SINCE)) {
+    throw new VersionTooLowError({
+      criteriaName: "control mode",
+      delivery: "not_started",
+      serverVersion: rawVersion,
+      since: CONTROL_SINCE.raw,
+    });
+  }
 }
 
 /**
@@ -561,6 +573,11 @@ export class Server {
    * }
    * ```
    *
+   * Requires a daemon of tmux 3.7 or newer: earlier servers can crash or hang
+   * while a control client attaches. On an earlier daemon iterating the stream
+   * raises {@link VersionTooLowError} and no client attaches; poll
+   * {@link snapshot} there.
+   *
    * The daemon's version is checked just before the client attaches, and an
    * attach cannot carry the version fence, so a daemon replaced in that window
    * is attached to; `-N` keeps the client from starting one.
@@ -598,6 +615,9 @@ export class Server {
    *   if (event.kind === "window-add") console.log((await live.snapshot()).windows.count());
    * }
    * ```
+   *
+   * Requires a daemon of tmux 3.7 or newer, and rejects with
+   * {@link VersionTooLowError} on an earlier one before any client attaches.
    *
    * The version check and the attach are two steps, as for {@link watch}.
    *
@@ -1386,6 +1406,10 @@ export class Server {
   /**
    * Discard a named paste buffer.
    *
+   * Requires tmux 3.4 or newer. Earlier releases can discard an unrelated
+   * buffer when the named one is missing, so they raise
+   * {@link VersionTooLowError} and discard nothing.
+   *
    * ```ts
    * await server.deleteBuffer("greeting");
    * ```
@@ -1400,6 +1424,11 @@ export class Server {
    * `signal` and `timeoutMs` bound this call's own wait; the tmux server owns
    * and runs `run-shell` itself, decoupled from this client, so neither one
    * stops the command - only this call's own promise settling early.
+   *
+   * Requires tmux 3.5 or newer. tmux 3.3a and 3.4 print a clientless
+   * `run-shell`'s output to a view-mode pane, so they raise
+   * {@link VersionTooLowError}; `cmd("run-shell", …)` runs the command there
+   * without its output.
    *
    * ```ts
    * const lines = await server.runShell("echo hello");

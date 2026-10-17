@@ -10,6 +10,7 @@
 import { expect, test } from "bun:test";
 
 import { structured, withClient, withServer } from "./support/server_harness.js";
+import { testControl } from "../../libtmux/tests/support/tmux_release.js";
 import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
@@ -176,78 +177,86 @@ test("S3: unsubmitted text times out rather than matching its own echo", async (
   });
 }, 10_000);
 
-test("S4: edits are applied before a line is submitted, and key names never join the tracked text", async () => {
-  await withServer(async (fixture) => {
-    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
-    await withClient(fixture, async (client) => {
-      const paneId = await shSession(client, "s4");
-      const waitPromise = client.callTool({
-        arguments: { paneId, patterns: ["MARKER"], timeoutMs: 4_000 },
-        name: "wait_for_text",
-      });
+testControl(
+  "S4: edits are applied before a line is submitted, and key names never join the tracked text",
+  async () => {
+    await withServer(async (fixture) => {
+      await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+      await withClient(fixture, async (client) => {
+        const paneId = await shSession(client, "s4");
+        const waitPromise = client.callTool({
+          arguments: { paneId, patterns: ["MARKER"], timeoutMs: 4_000 },
+          name: "wait_for_text",
+        });
 
-      await client.callTool({
-        arguments: { enter: false, keys: "xMARKER", literal: true, paneId },
-        name: "send_keys",
-      });
-      for (let i = 0; i < 7; i += 1) {
-        // eslint-disable-next-line no-await-in-loop -- each backspace is its own call, as the scenario requires.
         await client.callTool({
-          arguments: { enter: false, keys: "BSpace", literal: false, paneId },
+          arguments: { enter: false, keys: "xMARKER", literal: true, paneId },
           name: "send_keys",
         });
-      }
-      await client.callTool({
-        arguments: { enter: true, keys: "echo MARKER", literal: true, paneId },
-        name: "send_keys",
-      });
+        for (let i = 0; i < 7; i += 1) {
+          // eslint-disable-next-line no-await-in-loop -- each backspace is its own call, as the scenario requires.
+          await client.callTool({
+            arguments: { enter: false, keys: "BSpace", literal: false, paneId },
+            name: "send_keys",
+          });
+        }
+        await client.callTool({
+          arguments: { enter: true, keys: "echo MARKER", literal: true, paneId },
+          name: "send_keys",
+        });
 
-      const waited = structured<Waited>(await waitPromise);
-      expect(waited.outcome).toBe("matched");
-      expect(waited.matched).toBe("MARKER");
-      // The match is the real output row, not the leftover "xMARKER" typing
-      // or the submitted command's own echo: the captured stream must have
-      // run all the way through both before reaching the real line.
-      const lines = waited.output.trim().split("\n");
-      const echoIndex = lines.indexOf("echo MARKER");
-      const outputIndex = lines.indexOf("MARKER");
-      expect(echoIndex).toBeGreaterThanOrEqual(0);
-      expect(outputIndex).toBeGreaterThan(echoIndex);
+        const waited = structured<Waited>(await waitPromise);
+        expect(waited.outcome).toBe("matched");
+        expect(waited.matched).toBe("MARKER");
+        // The match is the real output row, not the leftover "xMARKER" typing
+        // or the submitted command's own echo: the captured stream must have
+        // run all the way through both before reaching the real line.
+        const lines = waited.output.trim().split("\n");
+        const echoIndex = lines.indexOf("echo MARKER");
+        const outputIndex = lines.indexOf("MARKER");
+        expect(echoIndex).toBeGreaterThanOrEqual(0);
+        expect(outputIndex).toBeGreaterThan(echoIndex);
+      });
     });
-  });
-}, 15_000);
+  },
+  15_000,
+);
 
-test("S6: an unmodelled key stops discounting the pane's current line", async () => {
-  await withServer(async (fixture) => {
-    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
-    await withClient(fixture, async (client) => {
-      const paneId = await shSession(client, "s6");
-      const split = structured<{ pane: { id: string } }>(
-        await client.callTool({ arguments: { paneId }, name: "split_window" }),
-      );
-      const writerPaneId = split.pane.id;
+testControl(
+  "S6: an unmodelled key stops discounting the pane's current line",
+  async () => {
+    await withServer(async (fixture) => {
+      await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+      await withClient(fixture, async (client) => {
+        const paneId = await shSession(client, "s6");
+        const split = structured<{ pane: { id: string } }>(
+          await client.callTool({ arguments: { paneId }, name: "split_window" }),
+        );
+        const writerPaneId = split.pane.id;
 
-      await client.callTool({
-        arguments: { enter: false, keys: "xMARKER", literal: true, paneId },
-        name: "send_keys",
+        await client.callTool({
+          arguments: { enter: false, keys: "xMARKER", literal: true, paneId },
+          name: "send_keys",
+        });
+        // Left is a key send_keys cannot apply to the tracked line at all.
+        await client.callTool({
+          arguments: { enter: false, keys: "Left", literal: false, paneId },
+          name: "send_keys",
+        });
+
+        const waitPromise = client.callTool({
+          arguments: { paneId, patterns: ["xMARKER"], timeoutMs: 3_000 },
+          name: "wait_for_text",
+        });
+        await injectForeignOutput(client, fixture, writerPaneId, paneId, "xMARKER", 0.3);
+        const waited = structured<Waited>(await waitPromise);
+
+        // The abandoned typing must not still be masking a later, genuine line
+        // that happens to repeat it.
+        expect(waited.outcome).toBe("matched");
+        expect(waited.matched).toBe("xMARKER");
       });
-      // Left is a key send_keys cannot apply to the tracked line at all.
-      await client.callTool({
-        arguments: { enter: false, keys: "Left", literal: false, paneId },
-        name: "send_keys",
-      });
-
-      const waitPromise = client.callTool({
-        arguments: { paneId, patterns: ["xMARKER"], timeoutMs: 3_000 },
-        name: "wait_for_text",
-      });
-      await injectForeignOutput(client, fixture, writerPaneId, paneId, "xMARKER", 0.3);
-      const waited = structured<Waited>(await waitPromise);
-
-      // The abandoned typing must not still be masking a later, genuine line
-      // that happens to repeat it.
-      expect(waited.outcome).toBe("matched");
-      expect(waited.matched).toBe("xMARKER");
     });
-  });
-}, 20_000);
+  },
+  20_000,
+);

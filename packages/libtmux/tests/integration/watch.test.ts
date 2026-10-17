@@ -3,7 +3,8 @@ import type { EventEmitter } from "node:events";
 import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { describeControl } from "../support/tmux_release.js";
 
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
@@ -147,7 +148,7 @@ async function waitUntil(
   }
 }
 
-describe("Server.watch", () => {
+describeControl("Server.watch", () => {
   test("reports a window opening on the server it is attached to", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

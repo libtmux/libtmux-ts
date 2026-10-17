@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { VersionTooLowError } from "../../src/errors.js";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 import { Server } from "../../src/server.js";
+import { testControl } from "../support/tmux_release.js";
 
 /**
  * The supported client is `tmux` on PATH. A daemon below the floor is started
@@ -248,7 +249,7 @@ describe("version check", () => {
     live();
   });
 
-  test("the control attach's read fires neither hook", async () => {
+  testControl("the control attach's read fires neither hook", async () => {
     const { live, quiet, server } = await hooked();
     // A failed attach fails the test: the read ran only if the attach did.
     await (await server.connect()).close();

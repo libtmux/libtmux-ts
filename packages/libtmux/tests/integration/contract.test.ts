@@ -2,6 +2,7 @@ import { rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+import { testControl } from "../support/tmux_release.js";
 
 import {
   prepareRunRoot,
@@ -285,47 +286,50 @@ describe("handle identity", () => {
     }
   });
 
-  test("a connected observer adopts a restarted daemon and retires predecessor handles", async () => {
-    const directory = await makeTestDirectory("ltx-control-gen-");
-    const socketPath = join(directory, "s");
-    assertOwnedSocketPath(socketPath);
-    const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
-    try {
-      await server.newSession({ name: "attached" });
-      await using live = await server.connect({ reconnect: { attempts: 100, delayMs: 25 } });
-      const stale = (await live.snapshot()).panes.one();
-      expect(stale.id).toBe(parsePaneId("%0"));
-      await using events = live.subscribe();
-      const reconnected = events.find((event) => event.kind === "reconnected", {
-        timeoutMs: 5_000,
-      });
+  testControl(
+    "a connected observer adopts a restarted daemon and retires predecessor handles",
+    async () => {
+      const directory = await makeTestDirectory("ltx-control-gen-");
+      const socketPath = join(directory, "s");
+      assertOwnedSocketPath(socketPath);
+      const server = new Server({ socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" });
+      try {
+        await server.newSession({ name: "attached" });
+        await using live = await server.connect({ reconnect: { attempts: 100, delayMs: 25 } });
+        const stale = (await live.snapshot()).panes.one();
+        expect(stale.id).toBe(parsePaneId("%0"));
+        await using events = live.subscribe();
+        const reconnected = events.find((event) => event.kind === "reconnected", {
+          timeoutMs: 5_000,
+        });
 
-      // Each spawned command is bound to the daemon carrying the observer.
-      // A reconnect may find the same daemon or a successor, so identity — not
-      // the mere drop — decides whether these handles remain current.
-      await server.cmd("kill-server").catch(() => undefined);
+        // Each spawned command is bound to the daemon carrying the observer.
+        // A reconnect may find the same daemon or a successor, so identity — not
+        // the mere drop — decides whether these handles remain current.
+        await server.cmd("kill-server").catch(() => undefined);
 
-      // `kill-server` answers before the daemon has finished leaving, and the
-      // attached control client is meanwhile trying to reconnect to the same
-      // socket. Starting the successor into that window reaches a server on its
-      // way out — "server exited unexpectedly" — so wait for the socket to go
-      // quiet first. Bounded: a daemon that never leaves is a different failure.
-      await waitForServerExit(server);
-      await server.cmd("new-session", ["-d", "-s", "successor"], { target: null });
+        // `kill-server` answers before the daemon has finished leaving, and the
+        // attached control client is meanwhile trying to reconnect to the same
+        // socket. Starting the successor into that window reaches a server on its
+        // way out — "server exited unexpectedly" — so wait for the socket to go
+        // quiet first. Bounded: a daemon that never leaves is a different failure.
+        await waitForServerExit(server);
+        await server.cmd("new-session", ["-d", "-s", "successor"], { target: null });
 
-      expect(await reconnected).toMatchObject({ kind: "reconnected" });
-      const successor = await live.snapshot();
-      const current = successor.panes.one();
-      expect(successor.sessions.one().name).toBe("successor");
-      expect((await current.refreshed()).id).toBe(current.id);
-      expect(() => stale.refreshed()).toThrow(TmuxServerRestartedError);
-    } finally {
-      await server.cmd("kill-server").catch(() => undefined);
-      await rm(directory, { force: true, recursive: true });
-    }
-  });
+        expect(await reconnected).toMatchObject({ kind: "reconnected" });
+        const successor = await live.snapshot();
+        const current = successor.panes.one();
+        expect(successor.sessions.one().name).toBe("successor");
+        expect((await current.refreshed()).id).toBe(current.id);
+        expect(() => stale.refreshed()).toThrow(TmuxServerRestartedError);
+      } finally {
+        await server.cmd("kill-server").catch(() => undefined);
+        await rm(directory, { force: true, recursive: true });
+      }
+    },
+  );
 
-  test("a same-daemon control reconnect preserves its handles", async () => {
+  testControl("a same-daemon control reconnect preserves its handles", async () => {
     await withServers(1, async ([fixture]) => {
       const server = serverFor(fixture!);
       await using live = await server.connect({ reconnect: { attempts: 3, delayMs: 25 } });
@@ -342,38 +346,41 @@ describe("handle identity", () => {
     });
   });
 
-  test("a connected server refuses a socket successor its observer never joined", async () => {
-    const directory = await makeTestDirectory("ltx-control-swap-");
-    const socketPath = join(directory, "s");
-    const observerSocket = join(directory, "observer");
-    assertOwnedSocketPath(socketPath);
-    assertOwnedSocketPath(observerSocket);
-    const options = { socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" };
-    const server = new Server(options);
-    let live: Awaited<ReturnType<Server["connect"]>> | undefined;
-    try {
-      await server.newSession({ name: "observer" });
-      live = await server.connect();
-      expect((await live.snapshot()).sessions.one().name).toBe("observer");
+  testControl(
+    "a connected server refuses a socket successor its observer never joined",
+    async () => {
+      const directory = await makeTestDirectory("ltx-control-swap-");
+      const socketPath = join(directory, "s");
+      const observerSocket = join(directory, "observer");
+      assertOwnedSocketPath(socketPath);
+      assertOwnedSocketPath(observerSocket);
+      const options = { socketPath, tmuxBin: process.env.LIBTMUX_TMUX_BIN ?? "tmux" };
+      const server = new Server(options);
+      let live: Awaited<ReturnType<Server["connect"]>> | undefined;
+      try {
+        await server.newSession({ name: "observer" });
+        live = await server.connect();
+        expect((await live.snapshot()).sessions.one().name).toBe("observer");
 
-      await rename(socketPath, observerSocket);
-      const successor = new Server(options);
-      await successor.newSession({ name: "successor" });
+        await rename(socketPath, observerSocket);
+        const successor = new Server(options);
+        await successor.newSession({ name: "successor" });
 
-      await expect(live.snapshot()).rejects.toThrow(TmuxServerRestartedError);
-      await expect(
-        live.cmd("rename-session", ["-t", "successor", "misbound"], { target: null }),
-      ).rejects.toThrow(TmuxServerRestartedError);
-      expect((await successor.snapshot()).sessions.one().name).toBe("successor");
-    } finally {
-      await live?.close().catch(() => undefined);
-      await server.cmd("kill-server").catch(() => undefined);
-      await new Server({ ...options, socketPath: observerSocket })
-        .cmd("kill-server")
-        .catch(() => undefined);
-      await rm(directory, { force: true, recursive: true });
-    }
-  });
+        await expect(live.snapshot()).rejects.toThrow(TmuxServerRestartedError);
+        await expect(
+          live.cmd("rename-session", ["-t", "successor", "misbound"], { target: null }),
+        ).rejects.toThrow(TmuxServerRestartedError);
+        expect((await successor.snapshot()).sessions.one().name).toBe("successor");
+      } finally {
+        await live?.close().catch(() => undefined);
+        await server.cmd("kill-server").catch(() => undefined);
+        await new Server({ ...options, socketPath: observerSocket })
+          .cmd("kill-server")
+          .catch(() => undefined);
+        await rm(directory, { force: true, recursive: true });
+      }
+    },
+  );
 
   test("sameTmuxIdAs answers the raw-id question equals no longer answers", async () => {
     await withServers(2, async (fixtures) => {
@@ -388,7 +395,7 @@ describe("handle identity", () => {
 });
 
 describe("client criteria", () => {
-  test("filters clients declaratively, and reaches what they are looking at", async () => {
+  testControl("filters clients declaratively, and reaches what they are looking at", async () => {
     await withServers(1, async ([fixture]) => {
       const server = serverFor(fixture!);
       // A control connection is a client, which is the cheapest way to have one

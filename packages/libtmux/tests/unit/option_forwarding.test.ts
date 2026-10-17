@@ -196,6 +196,8 @@ describe("command option forwarding", () => {
     });
     const server = new Server({ engine });
 
+    // The version check spends part of a deadline, so it happens before the one under test.
+    await server.version();
     await server.cmd("list-sessions");
     await server.cmd("list-sessions", [], { timeoutMs: null });
     await server.cmd("wait-for", ["ltx-channel"]);

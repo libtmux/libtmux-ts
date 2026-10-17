@@ -494,6 +494,11 @@ events without polling and without a command per read.
 That process is a tmux-visible attached client until the stream closes; it
 affects client listings, attachment state, hooks, and related policy.
 
+Requires a daemon of tmux 3.7 or newer: earlier servers can crash or hang
+while a control client attaches. On an earlier daemon iterating the stream
+raises `VersionTooLowError` and no client attaches; poll
+[`snapshot`](#serversnapshot) there.
+
 The daemon's version is checked just before the client attaches, and an
 attach cannot carry the version fence, so a daemon replaced in that window
 is attached to; `-N` keeps the client from starting one.
@@ -528,6 +533,9 @@ control mode cannot frame arbitrary command output truthfully when aliases
 and waiting commands are allowed.
 The connection has the attached-client lifecycle described by
 [`watch`](#serverwatch) until it closes.
+
+Requires a daemon of tmux 3.7 or newer, and rejects with
+`VersionTooLowError` on an earlier one before any client attaches.
 
 The version check and the attach are two steps, as for [`watch`](#serverwatch).
 
@@ -1297,6 +1305,10 @@ deleteBuffer(name: string): Promise<void>
 
 Discard a named paste buffer.
 
+Requires tmux 3.4 or newer. Earlier releases can discard an unrelated
+buffer when the named one is missing, so they raise
+`VersionTooLowError` and discard nothing.
+
 ```ts
 await server.deleteBuffer("greeting");
 ```
@@ -1312,6 +1324,11 @@ Run a shell command through tmux and return whatever it printed.
 `signal` and `timeoutMs` bound this call's own wait; the tmux server owns
 and runs `run-shell` itself, decoupled from this client, so neither one
 stops the command - only this call's own promise settling early.
+
+Requires tmux 3.5 or newer. tmux 3.3a and 3.4 print a clientless
+`run-shell`'s output to a view-mode pane, so they raise
+`VersionTooLowError`; `cmd("run-shell", …)` runs the command there
+without its output.
 
 ```ts
 const lines = await server.runShell("echo hello");
@@ -2784,6 +2801,9 @@ Move this pane out into a window of its own, in the session it is in.
 
 tmux places a break with no destination in whichever session is current,
 which is the attached one rather than this pane's.
+
+On tmux 3.7 exactly, a break with no name crashes the server, so a
+`breakOut()` without a `windowName` is refused there before anything is sent.
 
 ```ts
 await pane.breakOut("extracted");
