@@ -281,7 +281,10 @@ async function renderWait(
   if (report.outcome === "no_stream") {
     return fail({
       hint: "Unset LIBTMUX_MCP_LIVE, or use capture_pane if this server cannot open a control connection.",
-      reason: `Cannot watch ${paneId}: no control-mode connection is available.`,
+      reason:
+        context.hub.controlRefusal === undefined
+          ? `Cannot watch ${paneId}: no control-mode connection is available.`
+          : `Cannot watch ${paneId}: ${context.hub.controlRefusal}.`,
     });
   }
   const limit = effectiveResultLines(context.policy, maxLines);

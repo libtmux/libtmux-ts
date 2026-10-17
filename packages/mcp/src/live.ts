@@ -12,7 +12,7 @@
  * here sends; without it the connection is invisible to window sizing.
  */
 
-import type { ConnectedServer, TmuxEvent } from "libtmux";
+import { VersionTooLowError, type ConnectedServer, type TmuxEvent } from "libtmux";
 import type { Server } from "libtmux/server";
 
 import { requireActive, waitForAbort } from "./abort.js";
@@ -74,6 +74,12 @@ export class LiveHub {
   readonly #links = new Map<string, SessionLink>();
   readonly #opening = new Map<string, OpeningLink>();
   readonly #tmux: Server;
+
+  /** Why the daemon cannot be watched, once a connection has been refused for its version. */
+  get controlRefusal(): string | undefined {
+    return this.#controlRefusal;
+  }
+  #controlRefusal: string | undefined;
 
   /** Whether this hub has begun its terminal close. */
   get closed(): boolean {
@@ -168,6 +174,9 @@ export class LiveHub {
       connecting = this.#tmux.connect({ signal: opening.signal, target: sessionId });
       connected = await waitForAbort(connecting, opening.signal);
     } catch (error) {
+      if (error instanceof VersionTooLowError && error.criteriaName === "control mode") {
+        this.#controlRefusal = `control mode needs tmux ${error.since ?? "3.7"} or newer; this server is ${error.serverVersion ?? "older"}`;
+      }
       if (connecting !== undefined) {
         void connecting.then(
           async (late) => {
