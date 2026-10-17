@@ -85,6 +85,7 @@ describe("command framing", () => {
     readonly ranShell: string[];
     readonly source: () => string;
     readonly tmux: {
+      versionAtLeast: (minimum: string) => Promise<boolean>;
       deleteBuffer: (name: string) => Promise<void>;
       loadBuffer: (name: string, data: string | Uint8Array) => Promise<void>;
       runShell: (command: string) => Promise<readonly string[]>;
@@ -97,6 +98,7 @@ describe("command framing", () => {
       ranShell,
       source: () => captured,
       tmux: {
+        versionAtLeast: async () => true,
         deleteBuffer: async () => undefined,
         loadBuffer: async (_name, data) => {
           captured = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
@@ -604,6 +606,7 @@ describe("command framing", () => {
       hub: { closed: false, tail: async () => tail },
       policy: resolvePolicy({}),
       tmux: {
+        versionAtLeast: async () => true,
         deleteBuffer: async () => undefined,
         loadBuffer: async (_name: string, data: string | Uint8Array) => {
           bufferContent = typeof data === "string" ? data : Buffer.from(data).toString("utf8");

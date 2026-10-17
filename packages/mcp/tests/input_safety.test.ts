@@ -212,7 +212,7 @@ test.each([
       events.push("snapshot");
       throw new Error("post-mutation snapshot");
     },
-    tmux: {},
+    tmux: { versionAtLeast: async () => true },
   } as unknown as ToolContext;
   const handler = collectLifecycleHandlers(context).get(name);
   if (handler === undefined) throw new Error(`${name} was not registered`);
@@ -361,7 +361,7 @@ test("send_keys applies attention policy to every configured member", async () =
       }),
     policy: resolvePolicy({}),
     snapshot: async () => ({ panes: { toArray: () => panes } }),
-    tmux: {},
+    tmux: { versionAtLeast: async () => true },
   } as unknown as ToolContext;
   const handler = collectInputHandlers(context).get("send_keys");
   if (handler === undefined) throw new Error("send_keys was not registered");
@@ -398,6 +398,7 @@ test.each(["send_keys", "paste_text"] as const)(
       policy: {},
       snapshot: async () => observed,
       tmux: {
+        versionAtLeast: async () => true,
         deleteBuffer: async () => {
           events.push("delete");
         },
@@ -442,7 +443,7 @@ test("send_keys_batch never lets force override an active run lease", async () =
     observeInput: async () => observation(observed),
     policy: resolvePolicy({}),
     snapshot: async () => observed,
-    tmux: {},
+    tmux: { versionAtLeast: async () => true },
   } as unknown as ToolContext;
   const reservation = reserveFramedCommand(authority, "%1", "sleep 30");
   if (isPaneInputConflict(reservation)) throw new Error("run reservation conflicted");
@@ -489,7 +490,7 @@ test.each(["paste_text", "send_keys_batch"] as const)(
         return observation(observed);
       },
       policy: resolvePolicy({}),
-      tmux: { cmd: async () => {} },
+      tmux: { cmd: async () => {}, versionAtLeast: async () => true },
     } as unknown as ToolContext;
     const handler =
       name === "paste_text"
@@ -525,6 +526,7 @@ test("paste_text rechecks state after buffer setup and always cleans up", async 
     snapshot: async () =>
       snapshots[Math.min(snapshotIndex, snapshots.length - 1)] as ServerSnapshot,
     tmux: {
+      versionAtLeast: async () => true,
       cmd: async (command: string) => {
         events.push(command === "load-buffer" ? "load" : "delete");
       },
@@ -559,6 +561,7 @@ test("paste_text attempts cleanup when buffer setup fails", async () => {
     policy: resolvePolicy({}),
     snapshot: async () => snapshot({}),
     tmux: {
+      versionAtLeast: async () => true,
       cmd: async (command: string) => {
         events.push(command === "load-buffer" ? "load" : "delete");
         if (command === "load-buffer") throw new Error("load failed");
@@ -583,6 +586,7 @@ test("paste_text reports cleanup failure after an indeterminate load", async () 
     observeInput: async () => observation(snapshot({})),
     policy: resolvePolicy({}),
     tmux: {
+      versionAtLeast: async () => true,
       cmd: async (command: string) => {
         if (command === "load-buffer") throw loadFailure;
         throw cleanupFailure;
@@ -610,6 +614,7 @@ test("paste_text preserves a transition refusal when cleanup also fails", async 
     observeInput: async () => observation(snapshots[snapshotIndex++] as ServerSnapshot),
     policy: resolvePolicy({}),
     tmux: {
+      versionAtLeast: async () => true,
       cmd: async (command: string) => {
         if (command === "delete-buffer") throw cleanupFailure;
       },
@@ -649,6 +654,7 @@ test("paste_text bounds private buffer commands independently", async () => {
     observeInput: async () => observation(observed),
     policy: resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "1234" }),
     tmux: {
+      versionAtLeast: async () => true,
       cmd: async (
         command: string,
         args: readonly string[],
@@ -681,6 +687,7 @@ test("an empty paste without Enter stays guarded and buffer-free", async () => {
     },
     policy: resolvePolicy({}),
     tmux: {
+      versionAtLeast: async () => true,
       cmd: async () => {
         commands += 1;
       },
