@@ -78,6 +78,10 @@ Backend cleanup failures produce a nonzero exit status.
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 
+A tmux server older than 3.3a is refused with a result that names the fix:
+upgrade tmux and restart the server, or pin the previous release.
+`get_server_info` reports the running `version` and the `minimumVersion`.
+
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
 unproven. WSL is untested.

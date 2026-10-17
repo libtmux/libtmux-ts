@@ -473,8 +473,11 @@ test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
           expect(result.isError, JSON.stringify(result)).not.toBe(true);
           return result;
         };
-        const server = structured<{ pid: string; version: string }>(await call("get_server_info"));
+        const server = structured<{ minimumVersion: string; pid: string; version: string }>(
+          await call("get_server_info"),
+        );
         expect(server.pid).toMatch(/^\d+$/u);
+        expect(server.minimumVersion).toBe("3.3a");
         const hasMirroredLayouts = await serverFor(fixture).versionAtLeast("3.5");
         const created = structured<{ paneId: string; windowId: string }>(
           await call("create_session", {

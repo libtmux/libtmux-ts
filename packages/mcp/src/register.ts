@@ -14,6 +14,7 @@ import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-sc
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { Policy, Toolset } from "./policy.js";
+import { versionFailure } from "./results.js";
 import {
   TMUX_FORMAT_LITERALIZATION,
   TMUX_FORMAT_SCHEMA_KEY,
@@ -51,6 +52,22 @@ export const CONSERVATIVE_ANNOTATIONS: ExplicitAnnotations = Object.freeze({
   openWorldHint: true,
   readOnlyHint: false,
 });
+
+/** Answer a refused tmux version as a failure result rather than a thrown error. */
+function refusalToResult<InputArgs extends undefined | ZodRawShapeCompat | AnySchema>(
+  handler: ToolCallback<InputArgs>,
+): ToolCallback<InputArgs> {
+  const call = handler as (...args: unknown[]) => CallToolResult | Promise<CallToolResult>;
+  return (async (...args: unknown[]) => {
+    try {
+      return await call(...args);
+    } catch (error) {
+      const refused = versionFailure(error);
+      if (refused === undefined) throw error;
+      return refused;
+    }
+  }) as unknown as ToolCallback<InputArgs>;
+}
 
 export const CAPABILITY_META_KEY = "com.git-pull.libtmux-mcp/capability";
 
@@ -482,8 +499,9 @@ export class ToolRegistry {
       readonly outputSchema?: OutputArgs;
       readonly _meta?: Record<string, unknown>;
     },
-    handler: ToolCallback<InputArgs>,
+    unguarded: ToolCallback<InputArgs>,
   ): RegisteredTool {
+    const handler = refusalToResult(unguarded);
     if (!(name in CAPABILITY_SEEDS)) throw new TypeError(`unknown manifest tool ${name}`);
     const publicName = name as PublicToolName;
     if (this.#definitions.has(publicName)) throw new TypeError(`duplicate tool ${name}`);

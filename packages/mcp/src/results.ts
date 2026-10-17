@@ -8,6 +8,7 @@
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { VersionTooLowError } from "libtmux";
 
 import { MAX_RESULT_BYTES } from "./policy.js";
 
@@ -50,6 +51,22 @@ export function fail(failure: ToolFailure): CallToolResult {
     content: [{ text: resultText(text), type: "text" }],
     isError: true,
   };
+}
+
+/**
+ * Turn a refused tmux version into a result that names the fix.
+ *
+ * The model cannot change the tmux that is running, so the hint says whose
+ * action it is and that a retry cannot succeed.
+ */
+export function versionFailure(error: unknown): CallToolResult | undefined {
+  if (!(error instanceof VersionTooLowError)) return undefined;
+  const { reason, remedy } = error;
+  if (remedy === undefined) return fail({ reason });
+  return fail({
+    hint: `${remedy}. That is done by whoever runs this MCP server, so report it; retrying cannot succeed.`,
+    reason,
+  });
 }
 
 export interface Trimmed {
