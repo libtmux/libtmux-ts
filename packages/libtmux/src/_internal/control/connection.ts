@@ -14,6 +14,7 @@ import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { isSessionId } from "../runtime/ids.js";
 import type { CommandTransport } from "../transport/types.js";
+import type { DaemonGuard } from "../../engine.js";
 import { LibTmuxError, VersionTooLowError } from "../../errors.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
@@ -105,6 +106,8 @@ type AttachmentState =
 /** One successfully attached control client generation. */
 export interface ControlObserverBinding {
   readonly clientPid: number;
+  /** The daemon admitted just before this client attached, which spawned commands are fenced to. */
+  readonly daemon?: DaemonGuard;
 }
 
 /**
@@ -193,7 +196,8 @@ export class ControlConnection {
   readonly #observerCommands: CommandTransport | undefined;
 
   /** Run before every attach, so the daemon is judged before a client joins it. */
-  readonly #admit: (() => Promise<unknown>) | undefined;
+  readonly #admit: (() => Promise<DaemonGuard | undefined>) | undefined;
+  #admittedDaemon: DaemonGuard | undefined;
 
   /**
    * @param streamEndsConnection
@@ -208,7 +212,7 @@ export class ControlConnection {
     streamEndsConnection = true,
     observerCommands?: CommandTransport,
     spawnChild?: ControlChildSpawner,
-    admit?: () => Promise<unknown>,
+    admit?: () => Promise<DaemonGuard | undefined>,
   ) {
     this.#observerCommands = observerCommands;
     this.#admit = admit;
@@ -301,8 +305,9 @@ export class ControlConnection {
       return;
     }
     admit().then(
-      () => {
+      (daemon) => {
         if (this.#closed) return;
+        this.#admittedDaemon = daemon;
         try {
           this.#openChild();
         } catch (error) {
@@ -550,7 +555,10 @@ export class ControlConnection {
 
     // A reconnect is usable only after tmux accepts the attach and restores
     // the observer's flow-control flag on the replacement client.
-    this.#observerBinding = Object.freeze({ clientPid: child.pid });
+    this.#observerBinding = Object.freeze({
+      clientPid: child.pid,
+      ...(this.#admittedDaemon === undefined ? {} : { daemon: this.#admittedDaemon }),
+    });
     const attachment = this.#attachment;
     if (attachment.kind === "pending") {
       this.#attachment = { kind: "attached" };
@@ -983,7 +991,7 @@ export function watchServer(
   connection: TmuxConnection,
   options: WatchOptions | undefined,
   commands: CommandTransport,
-  admit?: () => Promise<unknown>,
+  admit?: () => Promise<DaemonGuard | undefined>,
 ): TmuxEventStream {
   return new ControlConnection(connection, options, true, commands, undefined, admit).subscribe();
 }

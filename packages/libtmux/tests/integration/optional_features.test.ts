@@ -73,6 +73,22 @@ describe("optional features on this tmux", () => {
     expect((await server.snapshot()).sessions.count()).toBe(1);
   });
 
+  test("a command beside a control connection asks tmux for no client listing", async () => {
+    const { env, server, socket } = await fixture();
+    if (!controlSupported) return;
+    expect(
+      tmux(socket, env, "set-hook", "-g", "after-list-clients", "set -g @listed yes").code,
+    ).toBe(0);
+    await using live = await server.connect();
+    await live.cmd("set-option", ["-g", "@beside", "1"], { target: null });
+    // The attach and the command may not list clients to find the observer.
+    expect(tmux(socket, env, "show-options", "-gqv", "@listed").out).toBe("");
+    expect(tmux(socket, env, "show-options", "-gqv", "@beside").out.trim()).toBe("1");
+    // The hook is live: a listing does fire it.
+    tmux(socket, env, "list-clients");
+    expect(tmux(socket, env, "show-options", "-gqv", "@listed").out.trim()).toBe("yes");
+  });
+
   test("named buffers are deleted and renamed from 3.4, never by guesswork below it", async () => {
     const { env, server, socket } = await fixture();
     await server.setBuffer("keep", "kept");

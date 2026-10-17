@@ -6,10 +6,7 @@ import type { DeliveryStatus } from "../../common.js";
 import type { DaemonGuard, TmuxCommand } from "../../engine.js";
 import { TmuxServerRestartedError, TmuxTransportError } from "../../errors.js";
 import type { AbortLike } from "../../types.js";
-import { executeGuardedList, type GuardCodecCapabilityBinding } from "../codec/guarded_listing.js";
-import type { GuardCodecCapabilities } from "../codec/guard_codec.js";
 import type { TmuxConnection } from "../runtime/connection.js";
-import { parseTmuxVersion } from "../runtime/tmux_version.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 import type { ControlConnection, ControlObserverBinding } from "./connection.js";
 
@@ -123,62 +120,6 @@ function sameDaemon(left: DaemonGuard, right: DaemonGuard): boolean {
 
 function restarted(message: string, subcommand?: string): TmuxServerRestartedError {
   return new TmuxServerRestartedError(message, subcommand === undefined ? {} : { subcommand });
-}
-
-async function authenticateObserver(
-  options: ObserverTransportOptions,
-  observer: ControlObserverBinding,
-  capabilities: GuardCodecCapabilityBinding,
-  budget: RequestBudget,
-): Promise<AuthenticatedObserver> {
-  const timeoutMs = budget.remainingTimeout();
-  const rows = await executeGuardedList({
-    capabilities,
-    connection: options.connection,
-    listCommand: "list-clients",
-    signal: budget.signal,
-    ...(timeoutMs === undefined ? {} : { timeoutMs }),
-    transport: options.commands,
-  });
-  budget.throwIfStopped();
-  if (options.observer.observerBinding() !== observer) {
-    throw restarted("tmux control connection changed while its daemon was authenticated");
-  }
-  const matches = rows.filter((row) => row.client_pid === String(observer.clientPid));
-  if (matches.length !== 1) {
-    throw restarted("spawned commands no longer reach the control connection's daemon");
-  }
-  const { pid, start_time: startTime } = matches[0]!;
-  if (pid === null || startTime === null) {
-    throw restarted("the control connection's daemon identity is incomplete");
-  }
-  const daemon = Object.freeze({ pid, startTime });
-  for (const row of rows) {
-    if (row.pid !== daemon.pid || row.start_time !== daemon.startTime) {
-      throw restarted("the control connection's client listing crossed daemon identities");
-    }
-  }
-  return Object.freeze({ daemon, observer });
-}
-
-function authenticationFailure(error: unknown, budget: RequestBudget): unknown {
-  const interrupted = budget.translate(error, "not_started");
-  if (interrupted !== error || error instanceof TmuxServerRestartedError) return interrupted;
-  if (error instanceof TmuxTransportError) {
-    return new TmuxTransportError(`tmux observer authentication failed: ${error.message}`, {
-      cause: error,
-      delivery: "not_started",
-      kind: error.kind,
-      ...(error.signal === undefined ? {} : { signal: error.signal }),
-      stderr: error.stderr,
-      stdout: error.stdout,
-    });
-  }
-  return new TmuxTransportError("tmux observer authentication returned invalid data", {
-    cause: error,
-    delivery: "not_started",
-    kind: "protocol",
-  });
 }
 
 function boundRequest(
@@ -310,33 +251,18 @@ async function withMaterializedStdin(
 
 /** Bind spawned commands to the daemon carrying one control observer. */
 export function observerBoundTransport(options: ObserverTransportOptions): CommandTransport {
-  // Authentication needs only the fields present at the supported tmux floor,
-  // so it must not run a separate version probe before proving the daemon.
-  const minimum: GuardCodecCapabilities = Object.freeze({
-    fingerprint: "connected-observer-bootstrap:tmux-3.3a",
-    rawVersion: "3.3a",
-    tmuxVersion: parseTmuxVersion("3.3a"),
-  });
-  const capabilities: GuardCodecCapabilityBinding = Object.freeze({
-    bind: () => Promise.resolve(minimum),
-  });
   const staging = options.staging ?? nodeInputStaging;
-  let authenticated: AuthenticatedObserver | undefined;
 
-  const binding = async (budget: RequestBudget): Promise<AuthenticatedObserver> => {
+  // The daemon was read, hook-free, just before this client attached, and every
+  // spawned command is fenced to it, so a command that reaches another daemon
+  // is refused there rather than authenticated here.
+  const binding = (budget: RequestBudget): AuthenticatedObserver => {
     budget.throwIfStopped();
     const observer = options.observer.observerBinding();
-    if (authenticated?.observer === observer) return authenticated;
-    try {
-      const result = await authenticateObserver(options, observer, capabilities, budget);
-      if (options.observer.observerBinding() !== observer) {
-        throw restarted("tmux control connection changed while its daemon was authenticated");
-      }
-      authenticated = result;
-      return result;
-    } catch (error) {
-      throw authenticationFailure(error, budget);
+    if (observer.daemon === undefined) {
+      throw restarted("the control connection was not attached to an admitted daemon");
     }
+    return Object.freeze({ daemon: observer.daemon, observer });
   };
 
   return Object.freeze({
@@ -344,7 +270,7 @@ export function observerBoundTransport(options: ObserverTransportOptions): Comma
     async execute(request): Promise<RawCommandResult> {
       const budget = new RequestBudget(request);
       try {
-        const { daemon } = await binding(budget);
+        const { daemon } = binding(budget);
         if (request.daemonGuard !== undefined && !sameDaemon(request.daemonGuard, daemon)) {
           throw restarted("the command's ids belong to another daemon", request.commands[0][0]);
         }

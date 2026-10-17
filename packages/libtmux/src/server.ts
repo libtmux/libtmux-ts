@@ -83,7 +83,8 @@ import {
 } from "./_internal/transport/bounded_transport.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import { connectionArguments } from "./_internal/operations/request.js";
-import { admitDaemon, AdmissionTransport, releaseAtLeast } from "./_internal/transport/support.js";
+import { releaseAtLeast } from "./_internal/runtime/tmux_version.js";
+import { admitDaemon, AdmissionTransport } from "./_internal/transport/support.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
 
 /**
@@ -224,8 +225,8 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
 const CONTROL_SINCE = "3.7";
 
 /** Judge the daemon a control client is about to join, whatever an earlier answer said. */
-async function admitServer(runtime: RuntimeContext): Promise<void> {
-  const { rawVersion } = await admitDaemon(runtime.transport, {
+async function admitServer(runtime: RuntimeContext): Promise<DaemonGuard> {
+  const { daemon, rawVersion } = await admitDaemon(runtime.transport, {
     environment: runtime.connection.environment,
     executable: runtime.connection.executable,
     globalArgs: connectionArguments(runtime.connection),
@@ -241,6 +242,7 @@ async function admitServer(runtime: RuntimeContext): Promise<void> {
       since: CONTROL_SINCE,
     });
   }
+  return daemon;
 }
 
 /**

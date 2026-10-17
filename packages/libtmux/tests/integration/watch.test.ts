@@ -1040,9 +1040,8 @@ describeControl("Server.watch", () => {
         (await live.snapshot()).sessions.count(),
       );
       expect(counted).toBeGreaterThan(0);
-      // The attach admission, one observer authentication, one version probe,
-      // and one acquisition.
-      expect(transport.spawned - before).toBe(4);
+      // The attach admission, one version probe, and one acquisition.
+      expect(transport.spawned - before).toBe(3);
 
       let captured: unknown;
       await server
@@ -1075,8 +1074,8 @@ describeControl("Server.watch", () => {
           ["display-message", "-p", "three"],
         ]);
 
-        // Authentication is shared; each user command keeps its own process.
-        expect(transport.spawned - before).toBe(4);
+        // Each user command keeps its own process; nothing else is spawned.
+        expect(transport.spawned - before).toBe(3);
       } finally {
         await live.close();
       }
