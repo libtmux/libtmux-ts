@@ -1,5 +1,5 @@
-import type { TmuxInvocationObserver } from "../../common.js";
-import { TmuxTransportError } from "../../errors.js";
+import type { DeliveryStatus, TmuxInvocationObserver } from "../../common.js";
+import { LibTmuxError, TmuxTransportError } from "../../errors.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "./types.js";
 
 /** How many invocations one server runs at once when nothing says otherwise. */
@@ -76,6 +76,12 @@ export function reachesUnboundedCommand(name: string): boolean {
     found = candidate;
   }
   return found !== undefined;
+}
+
+function deliveryOf(error: unknown): DeliveryStatus {
+  if (error instanceof TmuxTransportError) return error.delivery;
+  const delivery = (error as { readonly delivery?: unknown } | null)?.delivery;
+  return error instanceof LibTmuxError && delivery === "not_started" ? delivery : "indeterminate";
 }
 
 function waitsOnSomethingElse(request: CommandRequest): boolean {
@@ -196,12 +202,7 @@ export class BoundedTransport implements CommandTransport {
         // A `TmuxTransportError` knows how far it got. Anything else threw
         // without saying, and a command that did not finish must not read as
         // one that did — `replied` is for an answer, either way.
-        delivery:
-          outcome.error === undefined
-            ? "replied"
-            : outcome.error instanceof TmuxTransportError
-              ? outcome.error.delivery
-              : "indeterminate",
+        delivery: outcome.error === undefined ? "replied" : deliveryOf(outcome.error),
         durationMs: performance.now() - startedAt,
         ...(outcome.error === undefined ? {} : { error: outcome.error }),
         ...(outcome.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),

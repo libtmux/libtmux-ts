@@ -374,9 +374,12 @@ export class VersionTooLowError extends LibTmuxError {
   readonly serverVersion?: string;
   /** The first tmux that has the field, when this came from a query. */
   readonly since?: string;
+  /** `not_started` when tmux was refused before the operation could run. */
+  readonly delivery?: DeliveryStatus;
 
   constructor(options?: {
     readonly criteriaName: string;
+    readonly delivery?: DeliveryStatus;
     readonly serverVersion: string;
     readonly since: string;
   }) {
@@ -389,6 +392,7 @@ export class VersionTooLowError extends LibTmuxError {
     this.criteriaName = options.criteriaName;
     this.serverVersion = options.serverVersion;
     this.since = options.since;
+    if (options.delivery !== undefined) this.delivery = options.delivery;
   }
 }
 

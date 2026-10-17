@@ -16,6 +16,11 @@
  * a caller testing their own cancellation deserves an answer rather than a
  * recording that never looked.
  *
+ * The first command a `Server` sends is a read of the daemon's version, so a
+ * recording holds that read ahead of the commands it admitted, and one made
+ * before that read existed has to be recorded again. The version fence that
+ * heads each command list is not recorded.
+ *
  * A recording holds what a run did, which includes what it failed to do: an
  * invocation that raised is written down and raises again at its own
  * position. That is what keeps the queue aligned — an omitted failure would
@@ -28,7 +33,8 @@
  */
 
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
-import type { TmuxCommandResult, TmuxEngine } from "./engine.js";
+import { isAdmissionFence } from "./_internal/transport/invocation.js";
+import type { TmuxCommand, TmuxCommandResult, TmuxEngine } from "./engine.js";
 import { flattenInvocation } from "./engine.js";
 import type { DeliveryStatus } from "./common.js";
 import type { LibTmuxErrorCode, TmuxTransportErrorKind } from "./errors.js";
@@ -118,8 +124,14 @@ export interface TmuxRecording {
  * command from ever matching again — so a key normalizes them away, and a
  * replayed answer has the recorded guards rewritten to the ones the caller
  * just asked for. Both are fixed width, so the rewrite preserves every offset.
+ * The markers on the version probe and the version fence are random the same
+ * way, and are rewritten the same way.
  */
-const GUARD = /ltx[SE][0-9a-f]{24}/gu;
+const GUARD = /ltx[SE][0-9a-f]{24}|libtmux-version-[0-9a-f]{32}/gu;
+
+/** The commands the caller asked for, without the version fence ahead of them. */
+const unfenced = (commands: readonly (readonly string[])[]): readonly (readonly string[])[] =>
+  isAdmissionFence(commands[0] as TmuxCommand | undefined) ? commands.slice(1) : commands;
 
 const guardsIn = (commands: readonly (readonly string[])[]): string[] => [
   ...new Set(commands.flat().join("\u0000").match(GUARD) ?? []),
@@ -226,7 +238,7 @@ export function recordInvocations(inner: TmuxEngine = new NodeSpawnTransport()):
       ...(inner.endpoint === undefined ? {} : { endpoint: inner.endpoint }),
       async execute(request) {
         const call: RecordedCall = {
-          commands: request.commands.map((command) => [...command]),
+          commands: unfenced(request.commands).map((command) => [...command]),
           ...(request.stdin === undefined ? {} : { stdin: [...request.stdin] }),
         };
         let result: TmuxCommandResult;
@@ -297,16 +309,18 @@ export function replayInvocations(recording: TmuxRecording): TmuxEngine {
         });
       }
       const stdin = request.stdin === undefined ? undefined : [...request.stdin];
-      const next = remaining.get(keyOf(request.commands, stdin))?.shift();
+      const next = remaining.get(keyOf(unfenced(request.commands), stdin))?.shift();
       if (next === undefined) {
-        const shown = request.commands.map((command) => command.join(" ")).join("; ");
+        const shown = unfenced(request.commands)
+          .map((command) => command.join(" "))
+          .join("; ");
         const withInput = stdin === undefined ? "" : " with these bytes on stdin";
         throw new TypeError(
           `no recorded answer for ${shown}${withInput}; record this invocation or widen the fixture`,
         );
       }
       const from = guardsIn(next.commands);
-      const to = guardsIn(request.commands);
+      const to = guardsIn(unfenced(request.commands));
       // A run that failed here fails here again. The caller's own signal does
       // not decide it: a recording is a run rather than a database, so a
       // cancellation recorded at this position replays at this position.
