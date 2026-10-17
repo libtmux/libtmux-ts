@@ -1,14 +1,19 @@
 export const ResizeAdjustmentDirection = {
+  /** Move a pane boundary upward; decrease a window's height. */
   Up: "UP",
+  /** Move a pane boundary downward; increase a window's height. */
   Down: "DOWN",
+  /** Move a pane boundary leftward; decrease a window's width. */
   Left: "LEFT",
+  /** Move a pane boundary rightward; increase a window's width. */
   Right: "RIGHT",
 } as const;
 /**
  * Which edge a resize moves, in tmux's own terms.
  *
- * The direction is where the boundary travels, not which pane grows: `Up` on
- * a pane with a neighbour above it takes space from that neighbour.
+ * The direction is where the boundary travels, not which pane grows. For the
+ * bottom pane of a vertical split, `Up` takes space from the pane above when
+ * the layout permits.
  */
 export type ResizeAdjustmentDirection =
   (typeof ResizeAdjustmentDirection)[keyof typeof ResizeAdjustmentDirection];
@@ -23,7 +28,9 @@ export const RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP: Readonly<
 } as const;
 
 export const WindowDirection = {
+  /** Insert before the target window, shifting occupied indices if needed. */
   Before: "BEFORE",
+  /** Insert after the target window, shifting occupied indices if needed. */
   After: "AFTER",
 } as const;
 /**
@@ -41,9 +48,13 @@ export const WINDOW_DIRECTION_FLAG_MAP: Readonly<Record<WindowDirection, string>
 } as const;
 
 export const PaneDirection = {
+  /** Split top/bottom, placing the new pane above the target. */
   Above: "ABOVE",
+  /** Split top/bottom, placing the new pane below the target. */
   Below: "BELOW",
+  /** Split left/right, placing the new pane right of the target. */
   Right: "RIGHT",
+  /** Split left/right, placing the new pane left of the target. */
   Left: "LEFT",
 } as const;
 /**
@@ -73,9 +84,13 @@ export type DefaultOptionScope = { readonly [defaultOptionScopeBrand]: "default-
 export const DEFAULT_OPTION_SCOPE: DefaultOptionScope = {} as DefaultOptionScope;
 
 export const OptionScope = {
+  /** Server-wide options, independent of session, window and pane options. */
   Server: "server",
+  /** Session options, with inherited global defaults for unset values. */
   Session: "session",
+  /** Window options, with inherited global defaults for unset values. */
   Window: "window",
+  /** Pane options, inheriting unset values from the window's option table. */
   Pane: "pane",
 } as const;
 /**
