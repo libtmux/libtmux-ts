@@ -320,7 +320,16 @@ async function deliverFramedScript(
   source: string,
   id: string,
   authority: InputAuthority | undefined,
-): Promise<string> {
+): Promise<string | undefined> {
+  // Staging uses a named buffer that has to be deleted, which tmux before 3.4
+  // cannot do safely, so those servers are given the script as typed input.
+  if (!(await context.tmux.versionAtLeast("3.4"))) {
+    await dispatchPaneKeys(pane, source, {
+      ...(authority === undefined ? {} : { identity: authority }),
+      literal: true,
+    });
+    return undefined;
+  }
   const directory = await mkdtemp(join(tmpdir(), "ltx-"));
   const path = join(directory, framedScriptName(id));
   try {
@@ -397,6 +406,10 @@ export async function runFramedCommand(
   try {
     scriptDirectory = await deliverFramedScript(context, dispatchPane, source, id, authority);
     commandStarted = true;
+    if (scriptDirectory === undefined) {
+      retypedInline = true;
+      usedFallback = true;
+    }
   } catch (error) {
     if (!(error instanceof TmuxTransportError) || error.delivery === "not_started") {
       throw error;

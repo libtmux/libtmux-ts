@@ -659,6 +659,39 @@ test("tmux-format-bearing input is literalized exactly once", async () => {
   );
 });
 
+test.each(["3.3a"])(
+  "paste_text names its tmux 3.4 requirement on %s and sends nothing",
+  async (version) => {
+    const commands: (readonly string[])[] = [];
+    const engine: TmuxEngine = admittedEngine((request) => {
+      commands.push(request.commands[0]);
+      return Promise.resolve({
+        cmd: [],
+        exitCode: 0,
+        signal: null,
+        stderr: new Uint8Array(),
+        stdout: new Uint8Array(),
+      });
+    }, version);
+
+    await withClient(
+      { LIBTMUX_MCP_LIVE: "0", LIBTMUX_TOOLSETS: "execute" },
+      async (client) => {
+        const result = await client.callTool({
+          arguments: { paneId: "%1", text: "hello" },
+          name: "paste_text",
+        });
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("paste_text needs tmux 3.4 or newer");
+        expect(JSON.stringify(result.content)).toContain(version);
+      },
+      new Server({ engine }),
+    );
+    expect(commands.map(([name]) => name)).not.toContain("load-buffer");
+    expect(commands.map(([name]) => name)).not.toContain("delete-buffer");
+  },
+);
+
 test("startup env uses the shared socket name, socket path, and config contract", () => {
   const named = serverFromEnvironment({ LIBTMUX_SOCKET: "literal-name" });
   expect(named.socketName).toBe("literal-name");
