@@ -280,7 +280,10 @@ async function renderWait(
   const paneId = pane.id;
   if (report.outcome === "no_stream") {
     return fail({
-      hint: "Unset LIBTMUX_MCP_LIVE, or use capture_pane if this server cannot open a control connection.",
+      hint:
+        context.hub.controlRefusal === undefined
+          ? "Use capture_pane, or start the server without LIBTMUX_MCP_LIVE=0."
+          : "Use capture_pane to read the pane on this tmux.",
       reason:
         context.hub.controlRefusal === undefined
           ? `Cannot watch ${paneId}: no control-mode connection is available.`
