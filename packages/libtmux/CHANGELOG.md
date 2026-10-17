@@ -41,6 +41,48 @@ CI no longer runs macOS. The `macOS package canary` job is removed from
 supported on a best-effort basis and that CI coverage for it is highly
 limited. (#88)
 
+### `libtmux`
+
+Features above the floor refuse on an older daemon with `VersionTooLowError`
+before sending anything, and the rest of the package keeps working. (#73)
+
+- `Server.watch`, `Server.connect` and `Server.withConnection` need tmux 3.7.
+  Earlier servers can crash or hang while a control client attaches, so the
+  daemon is read before every attach and reconnect. A `3.7-rc2` or `next-3.7`
+  daemon is refused too. (#73)
+- `Server.deleteBuffer` and `set-buffer -n` need tmux 3.4. Earlier releases can
+  delete an unrelated buffer when the named one is missing. (#73)
+- `Server.runShell` needs tmux 3.5. tmux 3.3a and 3.4 print a clientless
+  `run-shell`'s output to a view-mode pane. `cmd("run-shell", …)` still runs and
+  returns no output there. (#73)
+
+Literal argv, alone or in a list, is checked the same way and fails with a
+`protocol` `TmuxTransportError`: `select-layout` with a value that is neither a
+preset nor a checksummed layout on 3.3a, `split-window -p` on 3.4, and on 3.7
+`break-pane` without `-n`, which crashes the server, `break-pane -n` without
+`-P`, and names containing `:` or `.`. `Pane.breakOut()` with no name is refused
+there too. (#73)
+
+Commands spawned beside a `Server.connect` connection no longer fire
+`after-list-clients` hooks. (#73)
+
+The releases each gate refuses are recorded in one registry, and the root
+`capabilities.json` is that registry serialized, for the capability pages of the
+documentation site. (#73)
+
+### `@libtmux/mcp`
+
+`paste_text` needs tmux 3.4 and names that requirement when the server is older,
+before staging anything. `run_shell_command` types its script on tmux before 3.4
+instead of staging it in a buffer. (#73)
+
+`wait_for_text` polls the pane with `capture-pane` below tmux 3.7, or when
+`LIBTMUX_MCP_LIVE=0`, and attaches no control client there. The returned cursor
+is `null`. A match across a wrapped row is found as on the stream. A pane that
+dies mid-wait, or a server killed under it, ends the wait as `pane_died` with
+the output so far, on the stream and on the poll alike; `stream_lost` now means
+the stream ended while its pane lives. (#73)
+
 ## 0.1.0-alpha.13 (2026-10-18)
 
 ### `libtmux`
