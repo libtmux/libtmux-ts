@@ -1716,9 +1716,11 @@ sends anything, and the rest of the package keeps working there.
 | `break-pane` without `-n`, or `-n` without `-P`, and names containing `:` or `.` | not exactly 3.7 | refused on 3.7 only                    |
 | `split-window -p`, as literal argv                                               | not exactly 3.4 | refused on 3.4 only                    |
 
-On an older tmux the MCP server answers a capture by reading the pane and
-types `run_shell_command`'s script instead of staging it; `wait_for_text` and
-`paste_text` refuse with the version they need.
+On an older tmux the MCP server answers a wait or a capture by reading the pane
+and types `run_shell_command`'s script instead of staging it; `paste_text`
+refuses with the version it needs.
+A polling wait runs `capture-pane` on every poll, so an `after-capture-pane`
+hook fires each time, and it joins wrapped rows as the stream does.
 
 Each refusal is tested against a daemon of the release it covers, with the
 sentinel session or buffer it must leave untouched, and against a release that
@@ -1729,7 +1731,8 @@ allows it. Behaviour of a release that no CI lane builds is unverified.
 Three working consumers live in this repository:
 
 - [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
-  Its waits stream tmux's notifications rather than polling, and its
+  Its waits stream tmux's notifications on tmux 3.7 and later and poll the
+  pane on earlier releases, and its
   [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) frames what it sends so a pane's echo cannot be read as
   output.
 - [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
