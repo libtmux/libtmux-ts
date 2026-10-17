@@ -39,7 +39,7 @@ test("run_shell_command stages its script in a buffer only where one can be dele
   });
 }, 60_000);
 
-test("wait_for_text names the control-mode requirement where the daemon cannot be watched", async () => {
+test("wait_for_text polls the pane where the daemon cannot be watched", async () => {
   await withServer(async (fixture) => {
     const version = (await fixture.executeText(["display-message", "-p", "#{version}"])).stdout
       .join("")
@@ -48,18 +48,26 @@ test("wait_for_text names the control-mode requirement where the daemon cannot b
       const created = structured<{ paneId: string }>(
         await client.callTool({ arguments: { name: "older-wait" }, name: "create_session" }),
       );
-      const waited = await client.callTool({
-        arguments: { paneId: created.paneId, patterns: ["never-printed"], timeoutMs: 300 },
+      const waiting = client.callTool({
+        arguments: { paneId: created.paneId, patterns: ["ltx-polled-ok"], timeoutMs: 5000 },
         name: "wait_for_text",
       });
-      const text = JSON.stringify(waited.content);
-      if (atLeast(version, 3, 7)) {
-        expect(text).not.toContain("control mode needs tmux 3.7");
-      } else {
-        expect(waited.isError).toBe(true);
-        expect(text).toContain("control mode needs tmux 3.7 or newer");
-        expect(text).toContain("capture_pane");
-      }
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await fixture.executeText([
+        "send-keys",
+        "-t",
+        created.paneId,
+        "printf 'ltx-polled-%s\\n' ok",
+        "Enter",
+      ]);
+      const waited = await waiting;
+      expect(waited.isError).not.toBe(true);
+      expect(JSON.stringify(waited.content)).toContain("ltx-polled-ok");
     });
+    // Below 3.7 nothing attached to watch it.
+    if (!atLeast(version, 3, 7)) {
+      const clients = (await fixture.executeText(["list-clients"])).stdout.join("");
+      expect(clients).toBe("");
+    }
   });
 }, 60_000);
