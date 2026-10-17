@@ -233,7 +233,7 @@ jobs:
         run: bun run test:package
 
   # Every tmux release the package claims to support, not a sample of them.
-  # "3.3a or newer" is a claim about 3.3a, 3.5 and 3.6 too, and a matrix of the
+  # "3.3a or newer" is a claim about 3.5 and 3.6 as much as about the ends, and a matrix of the
   # ends and two favourites proves it for none of them — 3.7 already turned out
   # to be the one release that accepts `break-pane -n` and ignores it.
   #
