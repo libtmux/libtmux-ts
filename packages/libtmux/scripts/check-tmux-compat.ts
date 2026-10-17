@@ -8,7 +8,7 @@
  * only shows up when both are present. Running against 3.3a is what turned up
  * that tmux suppresses run-shell output for a clientless invocation.
  *
- * Point LIBTMUX_TMUX_BUILDS at a directory of prefixes (`3.2a/bin/tmux`,
+ * Point LIBTMUX_TMUX_BUILDS at a directory of prefixes (`3.3a/bin/tmux`,
  * `3.4/bin/tmux`, …). Without it, the tmux on PATH is the only one checked,
  * and this reports that rather than pretending to have covered a range.
  */

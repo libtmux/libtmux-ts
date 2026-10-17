@@ -131,7 +131,7 @@ const baselineCodec = new GuardCodec({
     connectionAlias: "node-baseline-scenario",
     daemon: codecDaemon,
     daemonEpoch: 1,
-    rawVersion: "3.2a",
+    rawVersion: "3.3a",
   }),
   listCommand: "list-sessions",
 });
