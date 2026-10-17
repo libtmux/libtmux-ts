@@ -459,6 +459,10 @@ export class Server {
    * }
    * ```
    *
+   * The daemon is admitted just before the client attaches, and an attach cannot
+   * carry the version fence, so a daemon replaced in that window is attached to;
+   * `-N` keeps the client from starting one.
+   *
    * tmux sends a control client no pane output until it attaches, so this
    * attaches to a session; a server with no sessions has nothing to watch.
    *
@@ -490,6 +494,8 @@ export class Server {
    *   if (event.kind === "window-add") console.log((await live.snapshot()).windows.count());
    * }
    * ```
+   *
+   * Admission and the attach are two steps, as for {@link watch}.
    *
    * Each snapshot acquisition remains one atomic tmux invocation containing
    * its daemon identity read and all four listings. The first connected

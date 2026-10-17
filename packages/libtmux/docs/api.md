@@ -392,6 +392,10 @@ events without polling and without a command per read.
 That process is a tmux-visible attached client until the stream closes; it
 affects client listings, attachment state, hooks, and related policy.
 
+The daemon is admitted just before the client attaches, and an attach cannot
+carry the version fence, so a daemon replaced in that window is attached to;
+`-N` keeps the client from starting one.
+
 tmux sends a control client no pane output until it attaches, so this
 attaches to a session; a server with no sessions has nothing to watch.
 
@@ -422,6 +426,8 @@ control mode cannot frame arbitrary command output truthfully when aliases
 and waiting commands are allowed.
 The connection has the attached-client lifecycle described by
 [`watch`](#serverwatch) until it closes.
+
+Admission and the attach are two steps, as for [`watch`](#serverwatch).
 
 Each snapshot acquisition remains one atomic tmux invocation containing
 its daemon identity read and all four listings. The first connected
