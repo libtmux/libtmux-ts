@@ -195,6 +195,8 @@ export class LiveHub {
       clearTimeout(deadline);
       this.#abort.signal.removeEventListener("abort", abort);
     }
+    // A daemon that was replaced by one new enough no longer holds the refusal.
+    this.#controlRefusal = undefined;
     const stillOwned = this.#opening.get(sessionId)?.abort === opening;
     if (this.#closed || opening.signal.aborted || !stillOwned) {
       await connected.close().catch(() => undefined);
