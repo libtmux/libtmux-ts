@@ -324,8 +324,8 @@ describe("server utilities", () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
 
-      // 3.2a is this package's floor, so every supported build clears it.
-      expect(await server.versionAtLeast("3.2a")).toBe(true);
+      // 3.3a is this package's floor, so every supported build clears it.
+      expect(await server.versionAtLeast("3.3a")).toBe(true);
       expect(await server.versionAtLeast("99.0")).toBe(false);
     });
   }, 30_000);

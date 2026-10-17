@@ -1039,8 +1039,9 @@ describe("Server.watch", () => {
         (await live.snapshot()).sessions.count(),
       );
       expect(counted).toBeGreaterThan(0);
-      // One observer authentication, one version probe, and one acquisition.
-      expect(transport.spawned - before).toBe(3);
+      // The attach admission, one observer authentication, one version probe,
+      // and one acquisition.
+      expect(transport.spawned - before).toBe(4);
 
       let captured: unknown;
       await server

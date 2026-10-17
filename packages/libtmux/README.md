@@ -16,7 +16,7 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -25,7 +25,7 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
-Requires tmux 3.2a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
+Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
 5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
@@ -1076,7 +1076,8 @@ const traced = new Server({
 });
 await traced.snapshot();
 
-reports[0]?.commands[0]?.[0]; // "display-message", the identity read
+reports[0]?.commands[0]?.[0]; // "run-shell", the version read
+reports[1]?.commands[0]?.[0]; // "display-message", the identity read
 reports[0]?.durationMs;
 ```
 
@@ -1622,7 +1623,9 @@ if (await server.versionAtLeast("3.4")) {
 ```
 
 `raw` is tmux's own string, so a development form such as `next-3.8` survives
-the parsed fields. Development builds compare above every tagged release.
+the parsed fields. Versions rank `next-X.Y` below `X.Y-rc`, below `X.Y`, below
+`X.Ya`, so a development build or candidate has not yet reached the release it
+names, and a form tmux does not print is refused.
 
 One behaviour differs across the range rather than being gated: tmux 3.3a
 suppressed `run-shell` output for an invocation with no attached client, which

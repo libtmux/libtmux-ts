@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
+import { LibTmuxError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   deriveTmuxCapabilities,
@@ -14,6 +14,7 @@ import type {
 } from "../../src/_internal/transport/types.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { singleCommandTransport } from "../support/transport_double.js";
+import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
 
 const encoder = new TextEncoder();
 
@@ -26,13 +27,7 @@ function epoch(value: number): DaemonEpoch {
 }
 
 function resultFor(request: CommandRequest, version: string): RawCommandResult {
-  return {
-    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    exitCode: 0,
-    signal: null,
-    stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version};101;202\n`),
-  };
+  return answerVersionProbe(request, version);
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -145,11 +140,11 @@ describe("tmux capabilities", () => {
     expect(first.rawVersion).toBe("3.6a");
     expect(requests).toHaveLength(1);
     expect(flattenInvocation(requests[0]!)).toEqual([
-      "-N",
       "-S/tmp/capability.sock",
-      "display-message",
-      "-p",
-      "#{version};#{pid};#{start_time}",
+      "-N",
+      "run-shell",
+      "-C",
+      `${probeMarker(requests[0]!)}#{version}/#{pid}/#{start_time}`,
     ]);
 
     currentEpoch = epoch(10);
@@ -294,43 +289,42 @@ describe("tmux capabilities", () => {
     expect(calls).toBe(2);
   });
 
-  test("maps malformed, ambiguous, and failed connected-daemon capability replies", async () => {
+  test.each(["3.2a", "3.3", "next-3.3a"])(
+    "refuses to bind a %s daemon, whatever the client reports",
+    async (version) => {
+      const binding = new LazyCapabilityBinding({
+        connection: new TmuxConnection({ executable: "/usr/bin/tmux" }),
+        connectionAlias: alias("connected-daemon"),
+        getDaemonEpoch: () => epoch(1),
+        transport: singleCommandTransport(async (request) => resultFor(request, version)),
+      });
+
+      await expect(binding.bind()).rejects.toBeInstanceOf(VersionTooLowError);
+      expect(binding.bound()).toBeUndefined();
+    },
+  );
+
+  test("maps unreadable and failed connected-daemon capability replies", async () => {
     const replies = [
       {
-        diagnostic: "tmux version probe returned no version",
+        diagnostic: "cannot reach tmux: it exited with status 0",
         exitCode: 0,
         stderr: "",
-        stdout: "",
       },
       {
-        diagnostic: "tmux version probe returned multiple versions",
-        exitCode: 0,
-        stderr: "",
-        stdout: "3.7b\n3.7a\n",
-      },
-      {
-        diagnostic: "invalid tmux version",
-        exitCode: 0,
-        stderr: "",
-        stdout: "#{version};101;202\n",
-      },
-      {
-        diagnostic: "tmux capability probe returned an invalid daemon identity",
-        exitCode: 0,
-        stderr: "",
-        stdout: "3.7b;101\n",
-      },
-      {
-        diagnostic: "tmux capability probe returned an invalid daemon identity",
-        exitCode: 0,
-        stderr: "",
-        stdout: "3.7b;one;202\n",
+        diagnostic: "cannot reach tmux: unknown command: something-else",
+        exitCode: 1,
+        stderr: "unknown command: something-else\n",
       },
       {
         diagnostic: "cannot reach tmux: no server running",
         exitCode: 1,
         stderr: "no server running\n",
-        stdout: "",
+      },
+      {
+        diagnostic: "cannot reach tmux: no server running on /tmp/capability.sock",
+        exitCode: 1,
+        stderr: "no server running on /tmp/capability.sock\n",
       },
     ];
 
@@ -343,7 +337,7 @@ describe("tmux capabilities", () => {
           exitCode: reply.exitCode,
           signal: null,
           stderr: encoder.encode(reply.stderr),
-          stdout: encoder.encode(reply.stdout),
+          stdout: new Uint8Array(),
         };
       });
       const binding = new LazyCapabilityBinding({
@@ -361,12 +355,7 @@ describe("tmux capabilities", () => {
         probeError = error;
       }
       expect(requests).toHaveLength(1);
-      expect(flattenInvocation(requests[0]!)).toEqual([
-        "-N",
-        "display-message",
-        "-p",
-        "#{version};#{pid};#{start_time}",
-      ]);
+      expect(probeMarker(requests[0]!)).toBeDefined();
       expect(probeError).toBeInstanceOf(LibTmuxError);
       expect((probeError as Error).message).toContain(reply.diagnostic);
     }

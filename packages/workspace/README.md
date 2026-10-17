@@ -17,7 +17,7 @@ than duplicating.**
 [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -54,7 +54,7 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.12 libtmux@0.1.0-alpha.12
 </details>
 
 `libtmux` is a peer of this package in practice: you pass it the `Server`.
-Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.2a or newer.
+Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 
 This package and [`@libtmux/workspace-cli`](../workspace-cli) are two
 implementations, not one product with two faces. They differ in what they do

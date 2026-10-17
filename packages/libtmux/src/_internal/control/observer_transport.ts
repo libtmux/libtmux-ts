@@ -313,9 +313,9 @@ export function observerBoundTransport(options: ObserverTransportOptions): Comma
   // Authentication needs only the fields present at the supported tmux floor,
   // so it must not run a separate version probe before proving the daemon.
   const minimum: GuardCodecCapabilities = Object.freeze({
-    fingerprint: "connected-observer-bootstrap:tmux-3.2a",
-    rawVersion: "3.2a",
-    tmuxVersion: parseTmuxVersion("3.2a"),
+    fingerprint: "connected-observer-bootstrap:tmux-3.3a",
+    rawVersion: "3.3a",
+    tmuxVersion: parseTmuxVersion("3.3a"),
   });
   const capabilities: GuardCodecCapabilityBinding = Object.freeze({
     bind: () => Promise.resolve(minimum),

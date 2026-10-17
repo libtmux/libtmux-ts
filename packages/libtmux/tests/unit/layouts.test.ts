@@ -63,7 +63,9 @@ test("JSON layout preflight checks the version, pane count and native structure"
   const encoded = JSON.stringify(layout);
   for (const raw of ["3.2a", "3.7c", "next-3.8"])
     expect(layoutIsValid(encoded, 2, parseTmuxVersion(raw)), raw).toBe(false);
-  const version = parseTmuxVersion("3.8-rc");
+  // A candidate ranks below the release whose layout format it may not yet speak.
+  expect(layoutIsValid(encoded, 2, parseTmuxVersion("3.8-rc"))).toBe(false);
+  const version = parseTmuxVersion("3.8");
   expect(layoutIsValid(encoded, 2, version)).toBe(true);
   expect(layoutIsValid(encoded, 1, version)).toBe(true);
   expect(layoutIsValid(encoded, 3, version)).toBe(false);

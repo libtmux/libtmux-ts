@@ -27,15 +27,14 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import { answerVersionProbe } from "./version_probe.js";
 import { singleCommandTransport } from "./transport_double.js";
-import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Pane } from "../../src/pane.js";
 import { Session } from "../../src/session.js";
 import { Window } from "../../src/window.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "./graph_rows.js";
 
-const encoder = new TextEncoder();
 let runtimeOrdinal = 0;
 interface RecordingTransport extends CommandTransport {
   readonly requests: CommandRequest[];
@@ -70,13 +69,7 @@ export interface SessionProvenanceHarness {
 }
 
 function resultFor(request: CommandRequest): RawCommandResult {
-  return {
-    cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-    exitCode: 0,
-    signal: null,
-    stderr: new Uint8Array(),
-    stdout: encoder.encode("3.7b;101;202\n"),
-  };
+  return answerVersionProbe(request, "3.7b");
 }
 
 function recordingTransport(): RecordingTransport {

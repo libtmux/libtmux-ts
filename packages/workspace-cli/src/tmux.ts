@@ -1019,6 +1019,8 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     if (attached && last?.session_id) {
       last.stage = client?.mode === "switch" ? "switching-client" : "attaching";
       const args = terminalArguments(server);
+      // The load just ran on this daemon; if it is gone, an older client must not start another.
+      args.push("-N");
       if (request.values.colors === 256) args.push("-2");
       args.push(
         ...(client?.mode === "switch"

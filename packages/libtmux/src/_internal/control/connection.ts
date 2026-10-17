@@ -14,6 +14,7 @@ import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { isSessionId } from "../runtime/ids.js";
 import type { CommandTransport } from "../transport/types.js";
+import { LibTmuxError, VersionTooLowError } from "../../errors.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
 import { ControlChildLifecycle, type ControlChild } from "./child.js";
@@ -191,6 +192,9 @@ export class ControlConnection {
    */
   readonly #observerCommands: CommandTransport | undefined;
 
+  /** Run before every attach, so the daemon is judged before a client joins it. */
+  readonly #admit: (() => Promise<unknown>) | undefined;
+
   /**
    * @param streamEndsConnection
    *   Whether draining the event stream ends the process. A stream opened by
@@ -204,8 +208,10 @@ export class ControlConnection {
     streamEndsConnection = true,
     observerCommands?: CommandTransport,
     spawnChild?: ControlChildSpawner,
+    admit?: () => Promise<unknown>,
   ) {
     this.#observerCommands = observerCommands;
+    this.#admit = admit;
     const bufferSize = options.bufferSize ?? DEFAULT_BUFFER_SIZE;
     // Validated before the spawn, so a rejected size cannot leak a process.
     if (!Number.isInteger(bufferSize) || bufferSize < 1) {
@@ -284,7 +290,33 @@ export class ControlConnection {
       if (this.#signal.aborted) this.#onAbort();
       else this.#signal.addEventListener("abort", this.#onAbort, { once: true });
     }
-    if (!this.#closed) this.#openChild();
+    if (!this.#closed) this.#attach();
+  }
+
+  /** Attach once the daemon is admitted. */
+  #attach(): void {
+    const admit = this.#admit;
+    if (admit === undefined) {
+      this.#openChild();
+      return;
+    }
+    admit().then(
+      () => {
+        if (this.#closed) return;
+        try {
+          this.#openChild();
+        } catch (error) {
+          this.#fail(error instanceof Error ? error : new Error("tmux control mode did not start"));
+        }
+      },
+      (error: unknown) => {
+        // A refusal is final; an endpoint that is not there yet is what reconnecting waits for.
+        this.#fail(
+          error instanceof Error ? error : new Error("tmux control mode was refused"),
+          !(error instanceof VersionTooLowError),
+        );
+      },
+    );
   }
 
   /**
@@ -562,22 +594,19 @@ export class ControlConnection {
         this.#stderr.length = 0;
         this.#stderrBytes = 0;
         this.#paused.clear();
-        try {
-          this.#openChild();
-        } catch (error) {
-          this.#fail(error instanceof Error ? error : new Error("tmux control mode did not start"));
-        }
+        this.#attach();
       },
       (policy.delayMs ?? 50) * attempt,
     );
     return true;
   }
 
-  #fail(raw: Error | undefined): void {
-    const failure = raw === undefined ? undefined : transportFailure(raw);
+  #fail(raw: Error | undefined, retry = true): void {
+    const failure =
+      raw === undefined ? undefined : raw instanceof LibTmuxError ? raw : transportFailure(raw);
     this.#observerBinding = undefined;
     this.#children.retire();
-    if (this.#tryReconnect()) {
+    if (retry && this.#tryReconnect()) {
       this.#reopening = true;
       return;
     }
@@ -954,6 +983,7 @@ export function watchServer(
   connection: TmuxConnection,
   options: WatchOptions | undefined,
   commands: CommandTransport,
+  admit?: () => Promise<unknown>,
 ): TmuxEventStream {
-  return new ControlConnection(connection, options, true, commands).subscribe();
+  return new ControlConnection(connection, options, true, commands, undefined, admit).subscribe();
 }
