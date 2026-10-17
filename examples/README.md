@@ -36,7 +36,7 @@ const snapshot = await server.snapshot();
 console.log(snapshot.sessions.count());
 ```
 
-Requires tmux 3.2a or newer.
+Requires tmux 3.3a or newer.
 
 ### They cannot touch your tmux
 

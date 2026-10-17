@@ -18,7 +18,7 @@ $ bun test examples/agent
 ```
 
 The test drives both functions against a real tmux server the suite starts on a
-socket of its own. Requires tmux 3.2a or newer.
+socket of its own. Requires tmux 3.3a or newer.
 
 ## What it shows
 

@@ -19,7 +19,7 @@ $ bun test examples/capture
 ```
 
 The test drives both functions against a real tmux server the suite starts on
-a socket of its own. Requires tmux 3.2a or newer.
+a socket of its own. Requires tmux 3.3a or newer.
 
 ## What it shows
 
