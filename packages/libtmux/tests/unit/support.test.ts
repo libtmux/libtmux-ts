@@ -10,9 +10,9 @@ import {
   AdmissionTransport,
   daemonProbe,
   interpretProbe,
-  releaseAtLeast,
   requireCoreVersion,
 } from "../../src/_internal/transport/support.js";
+import { releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
 import type {
   CommandRequest,
   CommandTransport,

@@ -8,7 +8,7 @@ import {
   VersionTooLowError,
 } from "../../errors.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
-import { parseTmuxVersion, type TmuxVersion } from "../runtime/tmux_version.js";
+import { parseTmuxVersion, releaseAtLeast, type TmuxVersion } from "../runtime/tmux_version.js";
 import { flattenInvocation } from "./invocation.js";
 import { refusedUnknownCommand, uniqueUnknownCommand } from "./refusal.js";
 import { snapshotInvocationRequest } from "./types.js";
@@ -16,35 +16,6 @@ import type { CommandRequest, CommandTransport, RawCommandResult } from "./types
 
 /** The oldest tmux whose daemon this package drives for ordinary operations. */
 const MINIMUM_TMUX = "3.3a";
-
-/**
- * Where a report sits among the forms tmux has ever printed, or `undefined`.
- *
- * `next-X.Y` precedes `X.Y-rc`, `X.Y-rcN`, `X.Y` and `X.Ya`, minors compare as
- * numbers, and nothing else parses: not bare `master`, `openbsd-*`, a patch
- * letter on a development build, or a `-master` or `-dev` suffix.
- */
-function releaseRank(raw: string): readonly number[] | undefined {
-  const next = /^next-(\d+)\.(\d+)$/u.exec(raw);
-  if (next !== null) return [Number(next[1]), Number(next[2]), 0, 0];
-  const release = /^(\d+)\.(\d+)(?:([a-z])|-rc(\d*))?$/u.exec(raw);
-  if (release === null) return undefined;
-  const [, major, minor, letter, candidate] = release;
-  if (letter !== undefined) return [Number(major), Number(minor), 2, letter.charCodeAt(0) - 96];
-  if (candidate !== undefined) return [Number(major), Number(minor), 1, Number(candidate || 0)];
-  return [Number(major), Number(minor), 2, 0];
-}
-
-/** Whether a report ranks at or above `minimum`; an unparseable report never does. */
-export function releaseAtLeast(raw: string, minimum: string): boolean {
-  const have = releaseRank(raw);
-  const want = releaseRank(minimum);
-  if (have === undefined || want === undefined) return false;
-  for (const [index, wanted] of want.entries()) {
-    if (have[index]! !== wanted) return have[index]! > wanted;
-  }
-  return true;
-}
 
 /**
  * Admit a version report for ordinary operations, or refuse it.
