@@ -202,6 +202,7 @@ server.
 - [tmux versions](#tmux-versions)
   - [`Server.version` and `versionAtLeast`: gate your own code](#serverversion-and-versionatleast-gate-your-own-code)
   - [`VersionTooLowError`: tmux older than 3.3a is refused](#versiontoolowerror-tmux-older-than-33a-is-refused)
+  - [Features above the floor](#features-above-the-floor)
 - [Consumers](#consumers)
 - [Packages](#packages)
   - [`@libtmux/mcp`: a tmux server for agents](#libtmuxmcp-a-tmux-server-for-agents)
@@ -1700,10 +1701,28 @@ MINIMUM_TMUX; // "3.3a"
 assertSupportedTmux("3.4"); // returns; throws VersionTooLowError below the floor
 ```
 
-One behaviour differs across the range rather than being gated: tmux 3.3a
-suppressed `run-shell` output for an invocation with no attached client, which
-later versions restored. [`runShell`][ref-server-runshell] returns an empty
-result there rather than failing.
+### Features above the floor
+
+Ordinary operations need tmux 3.3a on the running daemon. A feature that
+needs more refuses on an older daemon with `VersionTooLowError` before it
+sends anything, and the rest of the package keeps working there.
+
+| Feature                                                                          | Needs           | Below that                             |
+| -------------------------------------------------------------------------------- | --------------- | -------------------------------------- |
+| `watch`, `connect`, `withConnection`; the MCP server's live streams              | 3.7             | refused before any client attaches     |
+| `deleteBuffer`, a buffer rename, MCP `paste_text`                                | 3.4             | refused, no buffer touched             |
+| [`runShell`][ref-server-runshell] returning the command's output                 | 3.5             | refused; `cmd("run-shell", …)` runs it |
+| a layout string for `select-layout` that is not a preset or checksummed          | 3.4             | refused before it can crash tmux       |
+| `break-pane` without `-n`, or `-n` without `-P`, and names containing `:` or `.` | not exactly 3.7 | refused on 3.7 only                    |
+| `split-window -p`, as literal argv                                               | not exactly 3.4 | refused on 3.4 only                    |
+
+The MCP server answers a wait or a capture without a control connection by
+reading the pane, and says so; `run_shell_command` types its script instead of
+staging it in a buffer below 3.4.
+
+Each refusal is tested against a daemon of the release it covers, with the
+sentinel session or buffer it must leave untouched, and against a release that
+allows it. Behaviour of a release that no CI lane builds is unverified.
 
 ## Consumers
 

@@ -780,6 +780,10 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   newer.
 - **Older tmux.** A server older than 3.3a is refused with a result that names
   the fix: upgrade tmux and restart the server, or pin the previous release.
+- **Features above the floor.** Live streaming (`LIBTMUX_MCP_LIVE`) needs tmux
+  3.7 and `paste_text` needs 3.4. On an older tmux, `wait_for_text` and
+  `paste_text` refuse with the version they need, captures read the pane, and
+  `run_shell_command` reads the pane and types its script instead of staging it.
 - **Version check.** [`get_server_info`][tool-get_server_info] reports the
   running `version` and the `minimumVersion`.
 - **Platforms.** Runs on Linux, including WSL. macOS is supported on a best-effort
