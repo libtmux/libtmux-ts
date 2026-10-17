@@ -93,8 +93,8 @@ a value that is neither a preset nor a checksummed layout on 3.3a, `split-window
 
 `paste_text` needs tmux 3.4 and names that requirement when the server is
 older, before staging anything. `run_shell_command` types its script on tmux
-before 3.4 instead of staging it in a buffer. `wait_for_text` names the tmux 3.7
-requirement when a control connection is refused for the daemon's version.
+before 3.4 instead of staging it in a buffer. `wait_for_text` polls the pane with `capture-pane` below tmux 3.7, or when live
+observation is off, and attaches no control client there.
 
 ## 0.1.0-alpha.12 (2026-09-27)
 
