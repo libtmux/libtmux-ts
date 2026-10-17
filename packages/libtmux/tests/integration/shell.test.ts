@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+import { testControl, tmuxAtLeast } from "../support/tmux_release.js";
 
 import {
   prepareRunRoot,
@@ -13,7 +14,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { safeInteger } from "../../src/common.js";
-import { TmuxCommandError, TmuxTransportError } from "../../src/errors.js";
+import { TmuxCommandError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import { Session } from "../../src/session.js";
 
@@ -50,92 +51,102 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
+/** `runShell` returns output from tmux 3.5; earlier releases refuse it, which the first test below checks. */
+const testCaptured = tmuxAtLeast("3.5") ? test : test.skip;
+
 describe("shell execution and pane movement", () => {
   test("runs a shell command, returning its output where tmux reports it", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const output = await server.runShell("echo libtmux-run");
-
-      // tmux 3.3a suppressed run-shell output for an invocation with no client
-      // — a script's, for instance — and later versions restored it. Probing
-      // beats encoding a version range: the same command decides, so a tmux
-      // that reports output is still held to reporting the right output.
-      const reportsOutput = (await server.runShell("echo libtmux-probe")).join("").length > 0;
-      if (reportsOutput) expect(output.join("\n")).toContain("libtmux-run");
-      else expect(output).toEqual([]);
+      if (!tmuxAtLeast("3.5")) {
+        // tmux 3.3a and 3.4 print a clientless run-shell's output to a pane.
+        await expect(server.runShell("echo libtmux-run")).rejects.toBeInstanceOf(
+          VersionTooLowError,
+        );
+        return;
+      }
+      expect((await server.runShell("echo libtmux-run")).join("\n")).toContain("libtmux-run");
     });
   }, 40_000);
 
   // `runShell` forwards `options.signal` and `options.timeoutMs` to
   // `runCommand`. `server.cmd("run-shell", ...)` with the identical
   // `timeoutMs` is the control proving 300ms is reachable on this machine.
-  test("runShell honours its own timeoutMs and signal", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
+  testCaptured(
+    "runShell honours its own timeoutMs and signal",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
 
-      const control = await server
-        .cmd("run-shell", ["sleep 5"], { timeoutMs: 300 })
-        .then(() => undefined)
-        .catch((thrown: unknown) => thrown);
-      expect(control).toBeInstanceOf(TmuxTransportError);
-      expect((control as TmuxTransportError).kind).toBe("timeout");
+        const control = await server
+          .cmd("run-shell", ["sleep 5"], { timeoutMs: 300 })
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(control).toBeInstanceOf(TmuxTransportError);
+        expect((control as TmuxTransportError).kind).toBe("timeout");
 
-      const timedOut = await server
-        .runShell("sleep 5", { timeoutMs: 300 })
-        .then(() => undefined)
-        .catch((thrown: unknown) => thrown);
-      expect(timedOut).toBeInstanceOf(TmuxTransportError);
-      expect((timedOut as TmuxTransportError).kind).toBe("timeout");
+        const timedOut = await server
+          .runShell("sleep 5", { timeoutMs: 300 })
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(timedOut).toBeInstanceOf(TmuxTransportError);
+        expect((timedOut as TmuxTransportError).kind).toBe("timeout");
 
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(), 300);
-      const aborted = await server
-        .runShell("sleep 5", { signal: controller.signal })
-        .then(() => undefined)
-        .catch((thrown: unknown) => thrown);
-      expect(aborted).toBeInstanceOf(TmuxTransportError);
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 300);
+        const aborted = await server
+          .runShell("sleep 5", { signal: controller.signal })
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(aborted).toBeInstanceOf(TmuxTransportError);
 
-      // `abort(reason)` is how a caller says why. A refusal that replaced it
-      // with a generic message put their own error out of reach, and the
-      // README's cancellation example catches the rejection expecting it.
-      const mine = new Error("caller gave up");
-      const explained = new AbortController();
-      setTimeout(() => explained.abort(mine), 300);
-      const reasoned = await server
-        .runShell("sleep 5", { signal: explained.signal })
-        .then(() => undefined)
-        .catch((thrown: unknown) => thrown);
-      expect((reasoned as TmuxTransportError).kind).toBe("cancelled");
-      expect((reasoned as { cause?: unknown }).cause).toBe(mine);
-    });
-  }, 15_000);
+        // `abort(reason)` is how a caller says why. A refusal that replaced it
+        // with a generic message put their own error out of reach, and the
+        // README's cancellation example catches the rejection expecting it.
+        const mine = new Error("caller gave up");
+        const explained = new AbortController();
+        setTimeout(() => explained.abort(mine), 300);
+        const reasoned = await server
+          .runShell("sleep 5", { signal: explained.signal })
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect((reasoned as TmuxTransportError).kind).toBe("cancelled");
+        expect((reasoned as { cause?: unknown }).cause).toBe(mine);
+      });
+    },
+    15_000,
+  );
 
   // The tmux server owns and runs `run-shell` itself, so a client-side
   // timeout ends this call's own wait, not the command tmux dispatched.
-  test("a timed-out runShell leaves the server-side command running", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      const directory = await makeTestDirectory("ltx-shell-marker-");
-      const marker = join(directory, "done");
+  testCaptured(
+    "a timed-out runShell leaves the server-side command running",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const directory = await makeTestDirectory("ltx-shell-marker-");
+        const marker = join(directory, "done");
 
-      const timedOut = await server
-        .runShell(`sleep 1; touch ${marker}`, { timeoutMs: 100 })
-        .then(() => undefined)
-        .catch((thrown: unknown) => thrown);
-      expect(timedOut).toBeInstanceOf(TmuxTransportError);
+        const timedOut = await server
+          .runShell(`sleep 1; touch ${marker}`, { timeoutMs: 100 })
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(timedOut).toBeInstanceOf(TmuxTransportError);
 
-      // The call already threw; the server's own child keeps running and
-      // finishes on its own schedule, well after this call gave up on it.
-      expect(existsSync(marker)).toBe(false);
-      for (let waited = 0; !existsSync(marker) && waited < 5_000; waited += 50) {
-        // eslint-disable-next-line no-await-in-loop -- polling for the marker is sequential by nature.
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      expect(existsSync(marker)).toBe(true);
+        // The call already threw; the server's own child keeps running and
+        // finishes on its own schedule, well after this call gave up on it.
+        expect(existsSync(marker)).toBe(false);
+        for (let waited = 0; !existsSync(marker) && waited < 5_000; waited += 50) {
+          // eslint-disable-next-line no-await-in-loop -- polling for the marker is sequential by nature.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(existsSync(marker)).toBe(true);
 
-      await rm(directory, { force: true, recursive: true });
-    });
-  }, 15_000);
+        await rm(directory, { force: true, recursive: true });
+      });
+    },
+    15_000,
+  );
 
   test("expands a tmux format through display-message", async () => {
     await withServer(async (fixture) => {
@@ -187,28 +198,32 @@ describe("shell execution and pane movement", () => {
     });
   }, 40_000);
 
-  test("guards a run-shell command starting with a dash", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
+  testCaptured(
+    "guards a run-shell command starting with a dash",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
 
-      // `-e` is none of run-shell's own flags (`-b`, `-t`, `-C`, `-d`).
-      // `-e` is not a program either, so the job itself still fails either
-      // way — what the guard changes is whether a job runs at all. Without
-      // it, tmux's own parser refuses the whole argument before any job
-      // exists, reporting an "unknown option" (libc getopt, 3.2a) or
-      // "unknown flag" (`args_parse`, 3.3+) error of its own; with it, tmux
-      // launches the job and reports only the job's own exit, on its own
-      // stdout — some releases suppress that report with no client attached,
-      // so this checks for the absence of a parser refusal rather than for
-      // the report's presence.
-      const failure = await server
-        .runShell("-e")
-        .then(() => undefined)
-        .catch((thrown: unknown) => thrown);
-      expect(failure).toBeInstanceOf(TmuxCommandError);
-      expect((failure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
-    });
-  }, 15_000);
+        // `-e` is none of run-shell's own flags (`-b`, `-t`, `-C`, `-d`).
+        // `-e` is not a program either, so the job itself still fails either
+        // way — what the guard changes is whether a job runs at all. Without
+        // it, tmux's own parser refuses the whole argument before any job
+        // exists, reporting an "unknown option" (libc getopt, 3.2a) or
+        // "unknown flag" (`args_parse`, 3.3+) error of its own; with it, tmux
+        // launches the job and reports only the job's own exit, on its own
+        // stdout — some releases suppress that report with no client attached,
+        // so this checks for the absence of a parser refusal rather than for
+        // the report's presence.
+        const failure = await server
+          .runShell("-e")
+          .then(() => undefined)
+          .catch((thrown: unknown) => thrown);
+        expect(failure).toBeInstanceOf(TmuxCommandError);
+        expect((failure as TmuxCommandError).stderrIncludes("unknown")).toBe(false);
+      });
+    },
+    15_000,
+  );
 
   test("breaks a pane out into its own window", async () => {
     await withServer(async (fixture) => {
@@ -315,23 +330,27 @@ describe("shell execution and pane movement", () => {
     });
   }, 40_000);
 
-  test("detaches every client attached to a session, which tmux spells with -s", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      const live = await server.connect();
-      try {
-        expect((await server.snapshot()).clients.count()).toBeGreaterThan(0);
+  testControl(
+    "detaches every client attached to a session, which tmux spells with -s",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const live = await server.connect();
+        try {
+          expect((await server.snapshot()).clients.count()).toBeGreaterThan(0);
 
-        // tmux reads `-t` as a client name and `-s` as a session, so a session
-        // id passed as `-t` is not a subtly wrong target — it is no target at
-        // all, and tmux answers `can't find client: $0`.
-        const session = (await server.snapshot()).sessions.one({ name: "shell" });
-        await session.detach();
+          // tmux reads `-t` as a client name and `-s` as a session, so a session
+          // id passed as `-t` is not a subtly wrong target — it is no target at
+          // all, and tmux answers `can't find client: $0`.
+          const session = (await server.snapshot()).sessions.one({ name: "shell" });
+          await session.detach();
 
-        expect((await server.snapshot()).clients.count()).toBe(0);
-      } finally {
-        await live.close().catch(() => undefined);
-      }
-    });
-  }, 40_000);
+          expect((await server.snapshot()).clients.count()).toBe(0);
+        } finally {
+          await live.close().catch(() => undefined);
+        }
+      });
+    },
+    40_000,
+  );
 });

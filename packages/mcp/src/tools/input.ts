@@ -214,13 +214,21 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       title: "Paste text",
     },
     async ({ enter, force, paneId, text }) => {
+      // A private buffer is created and must be deleted by name, and tmux
+      // before 3.4 can delete a different buffer when the name is missing.
+      if (!(await context.tmux.versionAtLeast("3.4"))) {
+        return fail({
+          hint: "send_keys with literal text types it without a buffer, or run this server against tmux 3.4 or newer.",
+          reason: `paste_text needs tmux 3.4 or newer; this server is ${(await context.tmux.version()).raw}.`,
+        });
+      }
+
       const initial = planPaneInput(await context.observeInput(), paneId, force, "paste into");
       if (isFailure(initial)) return initial;
 
       if (text === "" && enter !== true) {
         return ok({ bytes: 0, paneId }, `Pasted 0 bytes into ${paneId}.`);
       }
-
       const reserved = reservePaneInput(
         initial.observation.authority,
         initial.resolvedPaneIds,

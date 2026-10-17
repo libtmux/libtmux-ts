@@ -637,7 +637,7 @@ test("a run-shell key binding, with no controlling terminal, still switches the 
         // A run-shell binding sets TMUX but never TMUX_PANE, and gives the
         // command no controlling terminal.
         const command = `env -u TMUX_PANE ${[runtime, entry, "load", source, "-S", server.socketPath!, "--yes"].map(quote).join(" ")} >${quote(out)} 2>&1; printf '%s' "$?" >${quote(rc)}`;
-        await server.runShell(command, { target: pane.id });
+        await server.cmd("run-shell", ["--", command], { target: pane.id });
         expect(await readFile(rc, "utf8")).toBe("0");
         const client = (await server.snapshot()).clients.at(0)!;
         expect(client.session?.name).toBe("keybound");

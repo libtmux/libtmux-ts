@@ -226,12 +226,12 @@ describe("published test doubles", () => {
     };
     const recorder = recordInvocations(inner);
     const live = new Server({ engine: recorder.engine });
-    await expect(live.runShell("x")).rejects.toMatchObject({
+    await expect(live.cmd("run-shell", ["x"], { target: null })).rejects.toMatchObject({
       code: "TmuxServerRestartedError",
     });
 
     const replayed = new Server({ engine: replayInvocations(recorder.recording()) });
-    const failure = await replayed.runShell("x").then(
+    const failure = await replayed.cmd("run-shell", ["x"], { target: null }).then(
       () => undefined,
       (error: unknown) => error,
     );

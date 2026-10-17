@@ -8,6 +8,7 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { compileBoundedRegex } from "libtmux";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 
 import { readServerAuthority } from "../caller.js";
@@ -84,14 +85,69 @@ function withoutPendingEcho(
 
 /** What the pane already showed before this wait subscribed. */
 async function screenAtEntry(context: ToolContext, pane: ReadablePane): Promise<string> {
-  // A wait with no live connection available reports `no_stream` before this
-  // matters, so there is nothing here worth a capture-pane round trip for.
-  if (!context.policy.liveEnabled) return "";
   const capture = await captureGridBounded(pane, {
     byteLimit: MAX_RESULT_BYTES,
     lineLimit: effectiveResultLines(context.policy, undefined),
   }).catch(() => undefined);
   return capture === undefined ? "" : capture.lines.join("\n");
+}
+
+const POLL_MS = 100;
+
+/**
+ * Wait by reading the screen, for a daemon that cannot be watched.
+ *
+ * A match counts only when it is not text the screen already showed on entry,
+ * and the cursor is null because a screen read has no stream position to resume.
+ */
+async function pollForOutput(
+  context: ToolContext,
+  pane: ReadablePane,
+  entryScreen: string,
+  options: {
+    readonly matches: (text: string) => string | undefined;
+    readonly signal?: AbortSignal;
+    readonly timeoutMs: number;
+  },
+): Promise<WaitReport> {
+  const identity = await readServerAuthority(context.tmux, options.signal);
+  const recentSoFar = new Set<string>();
+  const deadline = Date.now() + options.timeoutMs;
+  let output = "";
+  const report = (outcome: WaitReport["outcome"], matched: string | null): WaitReport => ({
+    cursor: null,
+    effectiveTimeoutMs: options.timeoutMs,
+    matched,
+    missedBytes: 0,
+    outcome,
+    output,
+    streamFailure: null,
+  });
+  for (;;) {
+    if (isCancelled(options.signal)) return report("cancelled", null);
+    // eslint-disable-next-line no-await-in-loop -- each read follows the last.
+    const capture = await captureGridBounded(pane, {
+      byteLimit: MAX_RESULT_BYTES,
+      lineLimit: effectiveResultLines(context.policy, undefined),
+    });
+    output = capture.lines.join("\n");
+    const hit = options.matches(withoutPendingEcho(output, pane.id, identity, recentSoFar));
+    if (hit !== undefined && !entryScreen.includes(hit)) return report("matched", hit);
+    if (Date.now() >= deadline) {
+      // eslint-disable-next-line no-await-in-loop -- reached once, on the way out.
+      const current = (await context.snapshot()).panes.first({ id: pane.id });
+      return report(
+        current !== undefined && current.dead !== true ? "timed_out" : "pane_died",
+        null,
+      );
+    }
+    // eslint-disable-next-line no-await-in-loop -- the poll follows its read.
+    await delay(
+      Math.min(POLL_MS, Math.max(1, deadline - Date.now())),
+      undefined,
+      options.signal === undefined ? undefined : { signal: options.signal },
+    ).catch(() => undefined);
+  }
 }
 
 /**
@@ -123,7 +179,10 @@ async function waitForOutput(
 ): Promise<WaitReport> {
   const sessionId = pane.format.session_id;
   const entryScreen = options.cursor === undefined ? await screenAtEntry(context, pane) : "";
-  const tail = context.policy.liveEnabled
+  // Control is chosen before it is attempted: below 3.7 no client attaches and
+  // the wait polls the pane, as it does when live observation is switched off.
+  const controlAllowed = context.policy.liveEnabled && (await context.tmux.versionAtLeast("3.7"));
+  const tail = controlAllowed
     ? await context.hub.tail(sessionId, pane.id, options.signal)
     : undefined;
   if (isCancelled(options.signal)) {
@@ -137,17 +196,7 @@ async function waitForOutput(
       streamFailure: null,
     };
   }
-  if (tail === undefined) {
-    return {
-      cursor: null,
-      effectiveTimeoutMs: options.timeoutMs,
-      matched: null,
-      missedBytes: 0,
-      outcome: "no_stream",
-      output: "",
-      streamFailure: null,
-    };
-  }
+  if (tail === undefined) return pollForOutput(context, pane, entryScreen, options);
 
   // Fetched once, not per loop iteration: the pane-input paths that record an
   // echo already have their own authenticated authority on hand, and a wait
@@ -280,8 +329,14 @@ async function renderWait(
   const paneId = pane.id;
   if (report.outcome === "no_stream") {
     return fail({
-      hint: "Unset LIBTMUX_MCP_LIVE, or use capture_pane if this server cannot open a control connection.",
-      reason: `Cannot watch ${paneId}: no control-mode connection is available.`,
+      hint:
+        context.hub.controlRefusal === undefined
+          ? "Use capture_pane, or start the server without LIBTMUX_MCP_LIVE=0."
+          : "Use capture_pane to read the pane on this tmux.",
+      reason:
+        context.hub.controlRefusal === undefined
+          ? `Cannot watch ${paneId}: no control-mode connection is available.`
+          : `Cannot watch ${paneId}: ${context.hub.controlRefusal}.`,
     });
   }
   const limit = effectiveResultLines(context.policy, maxLines);

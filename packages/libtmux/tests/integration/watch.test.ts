@@ -3,7 +3,8 @@ import type { EventEmitter } from "node:events";
 import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { describeControl } from "../support/tmux_release.js";
 
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
@@ -147,7 +148,7 @@ async function waitUntil(
   }
 }
 
-describe("Server.watch", () => {
+describeControl("Server.watch", () => {
   test("reports a window opening on the server it is attached to", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -1039,9 +1040,8 @@ describe("Server.watch", () => {
         (await live.snapshot()).sessions.count(),
       );
       expect(counted).toBeGreaterThan(0);
-      // The attach admission, one observer authentication, one version probe,
-      // and one acquisition.
-      expect(transport.spawned - before).toBe(4);
+      // The attach admission, one version probe, and one acquisition.
+      expect(transport.spawned - before).toBe(3);
 
       let captured: unknown;
       await server
@@ -1074,8 +1074,8 @@ describe("Server.watch", () => {
           ["display-message", "-p", "three"],
         ]);
 
-        // Authentication is shared; each user command keeps its own process.
-        expect(transport.spawned - before).toBe(4);
+        // Each user command keeps its own process; nothing else is spawned.
+        expect(transport.spawned - before).toBe(3);
       } finally {
         await live.close();
       }

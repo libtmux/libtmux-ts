@@ -9,6 +9,7 @@ import {
 } from "../../errors.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
 import { parseTmuxVersion, releaseAtLeast, type TmuxVersion } from "../runtime/tmux_version.js";
+import { guardFeatures } from "./features.js";
 import { flattenInvocation } from "./invocation.js";
 import { refusedUnknownCommand, uniqueUnknownCommand } from "./refusal.js";
 import { snapshotInvocationRequest } from "./types.js";
@@ -308,6 +309,8 @@ export class AdmissionTransport implements CommandTransport {
         requireCoreVersion(version);
       }
     }
+
+    guardFeatures(parseTmuxVersion(version), request.commands);
 
     const refusal = uniqueUnknownCommand("version");
     const condition = `#{==:#{version},${version}}`;

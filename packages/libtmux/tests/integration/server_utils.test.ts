@@ -2,6 +2,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+import { testControl, tmuxAtLeast } from "../support/tmux_release.js";
 
 import { waitForProcessExit } from "../support/converge.js";
 
@@ -13,7 +14,7 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
-import { TmuxCommandError } from "../../src/errors.js";
+import { TmuxCommandError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {
@@ -84,8 +85,14 @@ describe("server utilities", () => {
       expect(await server.showBuffer("greeting")).toEqual(["hello buffer"]);
       expect(await server.listBuffers()).toContain("greeting");
 
-      await server.deleteBuffer("greeting");
-      expect(await server.listBuffers()).not.toContain("greeting");
+      if (tmuxAtLeast("3.4")) {
+        await server.deleteBuffer("greeting");
+        expect(await server.listBuffers()).not.toContain("greeting");
+      } else {
+        // Earlier releases can delete an unrelated buffer; see optional_features.
+        await expect(server.deleteBuffer("greeting")).rejects.toBeInstanceOf(VersionTooLowError);
+        expect(await server.listBuffers()).toContain("greeting");
+      }
     });
   }, 40_000);
 
@@ -358,14 +365,18 @@ describe("server utilities", () => {
     });
   }, 30_000);
 
-  test("keeps a paste buffer's final blank line", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await server.loadBuffer("trailing-lines", "one\n\n");
+  testControl(
+    "keeps a paste buffer's final blank line",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        await server.loadBuffer("trailing-lines", "one\n\n");
 
-      expect(await server.showBuffer("trailing-lines")).toEqual(["one", ""]);
-    });
-  }, 30_000);
+        expect(await server.showBuffer("trailing-lines")).toEqual(["one", ""]);
+      });
+    },
+    30_000,
+  );
 
   const exactBufferCases: readonly {
     readonly name: string;
@@ -379,17 +390,21 @@ describe("server utilities", () => {
   ];
 
   for (const { data, name } of exactBufferCases) {
-    test(`reads exact paste-buffer bytes with ${name}`, async () => {
-      await withServer(async (fixture) => {
-        const server = serverFor(fixture);
-        const buffer = `exact-${name.replaceAll(" ", "-")}`;
-        await server.loadBuffer(buffer, data);
-        await using live = await server.connect();
+    testControl(
+      `reads exact paste-buffer bytes with ${name}`,
+      async () => {
+        await withServer(async (fixture) => {
+          const server = serverFor(fixture);
+          const buffer = `exact-${name.replaceAll(" ", "-")}`;
+          await server.loadBuffer(buffer, data);
+          await using live = await server.connect();
 
-        await expect(
-          Promise.all([server.showBufferBytes(buffer), live.showBufferBytes(buffer)]),
-        ).resolves.toEqual([data, data]);
-      });
-    }, 40_000);
+          await expect(
+            Promise.all([server.showBufferBytes(buffer), live.showBufferBytes(buffer)]),
+          ).resolves.toEqual([data, data]);
+        });
+      },
+      40_000,
+    );
   }
 });

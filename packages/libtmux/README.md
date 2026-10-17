@@ -128,6 +128,7 @@ real server.
 - [Examples](#examples)
 - [Entrypoints](#entrypoints)
 - [tmux versions](#tmux-versions)
+  - [Features above the floor](#features-above-the-floor)
 - [Parity with the Python library](#parity-with-the-python-library)
 - [License](#license)
 
@@ -1627,10 +1628,28 @@ the parsed fields. Versions rank `next-X.Y` below `X.Y-rc`, below `X.Y`, below
 `X.Ya`, so a development build or candidate has not yet reached the release it
 names, and a form tmux does not print is refused.
 
-One behaviour differs across the range rather than being gated: tmux 3.3a
-suppressed `run-shell` output for an invocation with no attached client, which
-later versions restored. `runShell` returns an empty result there rather than
-failing.
+### Features above the floor
+
+Ordinary operations need tmux 3.3a on the running daemon. A feature that
+needs more refuses on an older daemon with `VersionTooLowError` before it
+sends anything, and the rest of the package keeps working there.
+
+| Feature                                                                 | Needs           | Below that                             |
+| ----------------------------------------------------------------------- | --------------- | -------------------------------------- |
+| `watch`, `connect`, `withConnection`; the MCP server's live streams     | 3.7             | refused before any client attaches     |
+| `deleteBuffer`, a buffer rename, MCP `paste_text`                       | 3.4             | refused, no buffer touched             |
+| `runShell` returning the command's output                               | 3.5             | refused; `cmd("run-shell", …)` runs it |
+| a layout string for `select-layout` that is not a preset or checksummed | 3.4             | refused before it can crash tmux       |
+| `break-pane -n` and names containing `:` or `.`, as literal argv        | not exactly 3.7 | refused on 3.7 only                    |
+| `split-window -p`, as literal argv                                      | not exactly 3.4 | refused on 3.4 only                    |
+
+On an older tmux the MCP server answers a wait or a capture by reading the pane
+and types `run_shell_command`'s script instead of staging it; `paste_text`
+refuses with the version it needs.
+
+Each refusal is tested against a daemon of the release it covers, with the
+sentinel session or buffer it must leave untouched, and against a release that
+allows it. Behaviour of a release that no CI lane builds is unverified.
 
 ## Parity with the Python library
 
