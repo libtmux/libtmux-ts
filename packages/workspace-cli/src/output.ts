@@ -13,6 +13,7 @@ export type MachineCode =
   | "session_not_found"
   | "session_mismatch"
   | "tmux_unavailable"
+  | "tmux_unsupported"
   | "tmux_failed"
   | "script_failed"
   | "destination_exists"

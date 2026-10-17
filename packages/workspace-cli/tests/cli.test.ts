@@ -1,10 +1,13 @@
 /* eslint-disable no-await-in-loop -- Command cases share one isolated fixture. */
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
+import { Server } from "libtmux";
 import { run as runCli } from "../src/app.ts";
+import { clientQueryArguments, handoffArguments } from "../src/tmux.ts";
 import manifest from "../package.json" with { type: "json" };
 
 let root: string;
@@ -467,4 +470,97 @@ test("load logging records preflight errors and honors the selected severity", a
       .split("\n")
       .every((line) => JSON.parse(line).schema_version === 1),
   ).toBe(true);
+});
+
+async function oldTmuxRig() {
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  const tmux = join(bin, "tmux");
+  await writeFile(
+    tmux,
+    '#!/bin/sh\nfor a in "$@"; do [ "$a" = -V ] && { echo "tmux 3.2a"; exit 0; }; [ "$a" = run-shell ] && { echo "no server running on /tmp/none" >&2; exit 1; }; done\nprintf "%s\\n" "$*" >> "$WORKSPACE_TEST_LOG"\necho "no server running on /tmp/none" >&2\nexit 1\n',
+    { mode: 0o700 },
+  );
+  const python = join(bin, "python");
+  await writeFile(
+    python,
+    '#!/bin/sh\ncase "$*" in *importlib.metadata*) echo 1.74.0; exit 0;; esac\ntouch "$WORKSPACE_TEST_MARKER"\nexit 0\n',
+    { mode: 0o700 },
+  );
+  return {
+    bin,
+    env: {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      TMUX_BIN: tmux,
+      TMUX_WORKSPACE_PYTHON: python,
+      WORKSPACE_TEST_LOG: join(root, "tmux.log"),
+      WORKSPACE_TEST_MARKER: join(root, "python-ran"),
+    },
+  };
+}
+
+test("an extension load refuses a tmux below 3.3a before Python starts it", async () => {
+  const rig = await oldTmuxRig();
+  await writeFile(
+    join(root, "ext.json"),
+    JSON.stringify({ session_name: "ext", windows: [{}], plugins: ["demo.Plugin"] }),
+  );
+  const result = await run(["load", "ext.json", "-d", "--json"], rig.env);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toContain("3.3a");
+  expect(JSON.parse(result.stdout).errors[0]).toMatchObject({ code: "tmux_unsupported" });
+  expect(await Bun.file(rig.env.WORKSPACE_TEST_MARKER).exists()).toBe(false);
+  expect(await Bun.file(rig.env.WORKSPACE_TEST_LOG).exists()).toBe(false);
+});
+
+test("shell refuses a tmux below 3.3a before tmuxp starts it", async () => {
+  const rig = await oldTmuxRig();
+  const result = await run(
+    ["shell", "-c", "print(1)", "-S", join(root, "none.sock"), "--json"],
+    rig.env,
+  );
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toContain("3.3a");
+  expect(JSON.parse(result.stderr.trim().split("\n").at(-1)!)).toMatchObject({
+    code: "tmux_unsupported",
+  });
+  expect(await Bun.file(rig.env.WORKSPACE_TEST_MARKER).exists()).toBe(false);
+  expect(await Bun.file(rig.env.WORKSPACE_TEST_LOG).exists()).toBe(false);
+});
+
+test("shell at a cold endpoint judges the executable and starts no daemon", async () => {
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  const python = join(bin, "python");
+  await writeFile(
+    python,
+    '#!/bin/sh\ncase "$*" in *importlib.metadata*) echo 1.74.0; exit 0;; esac\nexit 0\n',
+    { mode: 0o700 },
+  );
+  // A configuration that would keep a daemon alive if tmux were started to read it.
+  await writeFile(join(root, ".tmux.conf"), "new-session -d -s leftover\nset -g exit-empty off\n");
+  const socket = join(root, "cold.sock");
+  const result = await run(["shell", "-c", "print(1)", "-S", socket], {
+    TMUX_TMPDIR: root,
+    TMUX_WORKSPACE_PYTHON: python,
+  });
+  expect(result.code).toBe(0);
+  expect(existsSync(socket)).toBe(false);
+});
+
+test("terminal handoff and client query carry -N", () => {
+  const server = new Server({ socketPath: "/tmp/handoff.sock", tmuxBin: "tmux" });
+  const subcommands = [
+    ["attach-session", { mode: "attach" }],
+    ["switch-client", { mode: "switch" }],
+    ["switch-client", { mode: "switch", client: "/dev/pts/9" }],
+  ] as const;
+  for (const [subcommand, client] of subcommands) {
+    const args = handoffArguments(server, "$1", client);
+    expect(args.indexOf("-N")).toBeGreaterThan(-1);
+    expect(args.indexOf("-N")).toBeLessThan(args.indexOf(subcommand));
+  }
+  const query = clientQueryArguments(server);
+  expect(query.indexOf("-N")).toBeGreaterThan(-1);
+  expect(query.indexOf("-N")).toBeLessThan(query.indexOf("display-message"));
 });

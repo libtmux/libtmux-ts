@@ -3,6 +3,7 @@ import {
   isTmuxName,
   LibTmuxError,
   Server,
+  VersionTooLowError,
   type Pane,
   type ServerSnapshot,
   type Session,
@@ -136,6 +137,40 @@ function terminalArguments(server: Server): string[] {
         : []),
   ];
 }
+/**
+ * The argv that asks the daemon for the client behind the invoking pane.
+ *
+ * `-N` keeps an older client from starting a daemon when the checked one has
+ * gone away.
+ */
+export function clientQueryArguments(server: Server): string[] {
+  return [...terminalArguments(server), "-N", "display-message", "-p", "#{client_name}"];
+}
+/**
+ * The argv that hands the terminal to the loaded session.
+ *
+ * `-N` keeps an older client from starting a daemon when the one the load
+ * just ran on has gone away.
+ */
+export function handoffArguments(
+  server: Server,
+  sessionId: string,
+  client: AttachTarget | undefined,
+  colors?: unknown,
+): string[] {
+  const args = [...terminalArguments(server), "-N"];
+  if (colors === 256) args.push("-2");
+  args.push(
+    ...(client?.mode === "switch"
+      ? client.client
+        ? ["switch-client", "-c", client.client]
+        : ["switch-client"]
+      : ["attach-session"]),
+    "-t",
+    sessionId,
+  );
+  return args;
+}
 function targetMismatch(): CliError {
   return new CliError("usage", "This operation must target the current pane's tmux server", 2);
 }
@@ -220,15 +255,12 @@ async function attachmentClient(server: Server, context: CLIContext): Promise<At
     return { mode: "switch" };
   }
   const { session } = await currentSession(server, context);
-  const query = await processRun(
-    [...terminalArguments(server), "display-message", "-p", "#{client_name}"],
-    {
-      cwd: context.cwd,
-      env: context.env,
-      terminal: "input",
-      ...(context.signal ? { signal: context.signal } : {}),
-    },
-  );
+  const query = await processRun(clientQueryArguments(server), {
+    cwd: context.cwd,
+    env: context.env,
+    terminal: "input",
+    ...(context.signal ? { signal: context.signal } : {}),
+  });
   const name = query.stdout.trim();
   const clients = (await server.snapshot(context.signal ? { signal: context.signal } : {})).clients;
   if (
@@ -1018,17 +1050,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
     const last = results.at(-1);
     if (attached && last?.session_id) {
       last.stage = client?.mode === "switch" ? "switching-client" : "attaching";
-      const args = terminalArguments(server);
-      if (request.values.colors === 256) args.push("-2");
-      args.push(
-        ...(client?.mode === "switch"
-          ? client.client
-            ? ["switch-client", "-c", client.client]
-            : ["switch-client"]
-          : ["attach-session"]),
-        "-t",
-        last.session_id,
-      );
+      const args = handoffArguments(server, last.session_id, client, request.values.colors);
       const child = await processRun(args, {
         cwd: context.cwd,
         env: context.env,
@@ -1065,9 +1087,11 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
       ? "interrupted"
       : error instanceof CliError
         ? error.code
-        : unreachable
-          ? "tmux_unavailable"
-          : "tmux_failed";
+        : error instanceof VersionTooLowError
+          ? "tmux_unsupported"
+          : unreachable
+            ? "tmux_unavailable"
+            : "tmux_failed";
     const kept = results.flatMap((result) =>
       result.session_id && !result.session_removed ? (result.created_window_names ?? []) : [],
     );
@@ -1172,6 +1196,7 @@ export async function freeze(request: Request, context: CLIContext): Promise<num
     return await capture(server, request, context);
   } catch (error) {
     if (error instanceof CliError || context.signal?.aborted) throw error;
+    if (error instanceof VersionTooLowError) throw new CliError("tmux_unsupported", error.message);
     if (isTmuxUnavailable(error))
       throw new CliError("tmux_unavailable", unreachableMessage(server, error));
     throw new CliError("tmux_failed", error instanceof Error ? error.message : String(error));
