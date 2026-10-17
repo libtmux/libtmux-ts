@@ -1076,7 +1076,8 @@ const traced = new Server({
 });
 await traced.snapshot();
 
-reports[0]?.commands[0]?.[0]; // "display-message", the identity read
+reports[0]?.commands[0]?.[0]; // "run-shell", the version read
+reports[1]?.commands[0]?.[0]; // "display-message", the identity read
 reports[0]?.durationMs;
 ```
 
