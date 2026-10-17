@@ -66,6 +66,11 @@ request of its own before the first command. Recordings made with
 `recordInvocations` and `replayInvocations` leave the fence out and match its
 marker and the read's like the format guards.
 
+`Server.versionAtLeast` and every feature gate rank versions the way admission
+does: `next-X.Y` below `X.Y-rc`, below `X.Y`, below `X.Ya`. A candidate such as
+`3.8-rc2` is no longer at least `3.8`, and `versionAtLeast` throws a `TypeError`
+for a minimum in a form tmux does not print, such as `master`.
+
 `VersionTooLowError.delivery` is `not_started` for a refusal at admission, and
 `onInvocation` reports it that way.
 
