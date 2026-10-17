@@ -69,12 +69,16 @@ const transport = {
   requests,
   async execute(request) {
     requests.push(request);
+    // The version read is refused by name, as a live tmux refuses it.
+    const marker = /^(libtmux-version-[0-9a-f]{32}-)#\{version\}/u.exec(
+      request.commands[0][2] ?? "",
+    );
     return {
       cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
-      exitCode: 0,
+      exitCode: 1,
       signal: null,
-      stderr: new Uint8Array(),
-      stdout: new TextEncoder().encode("3.7b;101;202\n"),
+      stderr: new TextEncoder().encode(`unknown command: ${marker?.[1]}3.7b/101/202\n`),
+      stdout: new Uint8Array(),
     };
   },
 };

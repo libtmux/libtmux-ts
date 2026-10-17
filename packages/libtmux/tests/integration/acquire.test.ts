@@ -322,7 +322,8 @@ describe("server graph acquisition", () => {
       expect(snapshot.daemonIdentity.pid).toBe(String(fixture.daemonIdentity.pid));
       expect(snapshot.daemonIdentity.startTime).toMatch(/^\d+$/u);
       expect(Object.isFrozen(snapshot.daemonIdentity)).toBe(true);
-      expect(requests.map(({ commands }) => commands.length)).toEqual([1, 5]);
+      // The version probe, then the version fence, the identity read and four listings.
+      expect(requests.map(({ commands }) => commands.length)).toEqual([1, 6]);
       expect(requests.every(({ globalArgs }) => globalArgs?.includes("-2"))).toBe(true);
       expect(requests[0]?.signal).toBeDefined();
       expect(requests[0]?.signal).not.toBe(controller.signal);

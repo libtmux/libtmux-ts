@@ -64,8 +64,8 @@ import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Window } from "../../src/window.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "../support/graph_rows.js";
 import { singleCommandTransport } from "../support/transport_double.js";
+import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
 
-const encoder = new TextEncoder();
 interface RecordingTransport extends CommandTransport {
   readonly requests: CommandRequest[];
 }
@@ -85,12 +85,13 @@ function epoch(value: number): DaemonEpoch {
 }
 
 function resultFor(request: CommandRequest, version = "3.7b"): RawCommandResult {
+  if (probeMarker(request) !== undefined) return answerVersionProbe(request, version);
   return {
     cmd: Object.freeze([request.executable, ...flattenInvocation(request)]),
     exitCode: 0,
     signal: null,
     stderr: new Uint8Array(),
-    stdout: encoder.encode(`${version};101;202\n`),
+    stdout: new Uint8Array(),
   };
 }
 
@@ -529,11 +530,11 @@ describe("logical reference binding", () => {
     expect(Object.isFrozen(bound)).toBe(true);
     expect(fixture.transport.requests).toHaveLength(1);
     expect(flattenInvocation(fixture.transport.requests[0]!)).toEqual([
-      "-N",
       "-Lhandles",
-      "display-message",
-      "-p",
-      "#{version};#{pid};#{start_time}",
+      "-N",
+      "run-shell",
+      "-C",
+      `${probeMarker(fixture.transport.requests[0]!)}#{version}/#{pid}/#{start_time}`,
     ]);
   });
 

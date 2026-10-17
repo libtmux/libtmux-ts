@@ -15,7 +15,27 @@ import type { TmuxEngine } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
 import { TmuxServerRestartedError, TmuxTransportError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
-import { recordInvocations, replayInvocations, type TmuxRecording } from "../../src/testing.js";
+import {
+  recordInvocations,
+  replayInvocations,
+  type RecordedAnswer,
+  type TmuxRecording,
+} from "../../src/testing.js";
+import { admittedEngine } from "../support/version_probe.js";
+
+/**
+ * The answer a live daemon gives the version probe, written the way a recording
+ * holds it. The marker is random per request; replay matches any marker.
+ */
+function recordedProbe(version: string): RecordedAnswer {
+  const marker = `libtmux-version-${"0".repeat(32)}-`;
+  return {
+    commands: [["run-shell", "-C", `${marker}#{version}/#{pid}/#{start_time}`]],
+    exitCode: 1,
+    stderr: [...new TextEncoder().encode(`unknown command: ${marker}${version}/101/202\n`)],
+    stdout: [],
+  };
+}
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {
   const parent = await makeTestDirectory("ltx-doubles-");
@@ -130,6 +150,7 @@ describe("published test doubles", () => {
     const replayed = new Server({
       engine: replayInvocations({
         invocations: [
+          recordedProbe("3.7d"),
           { commands: [["run-shell", "--", "true"]], exitCode: 0, stderr: [], stdout: [] },
         ],
         version: 1,
@@ -154,24 +175,22 @@ describe("published test doubles", () => {
   test("writes a failure down, so a replay fails where the run failed", async () => {
     const answers = ["first\n", "third\n"];
     let calls = 0;
-    const inner: TmuxEngine = {
-      execute(request) {
-        calls += 1;
-        if (calls === 2) {
-          throw new TmuxTransportError("command timed out", {
-            delivery: "indeterminate",
-            kind: "timeout",
-          });
-        }
-        return Promise.resolve({
-          cmd: [request.executable, ...flattenInvocation(request)],
-          exitCode: 0,
-          signal: null,
-          stderr: new Uint8Array(),
-          stdout: new TextEncoder().encode(answers.shift() ?? ""),
+    const inner: TmuxEngine = admittedEngine((request) => {
+      calls += 1;
+      if (calls === 2) {
+        throw new TmuxTransportError("command timed out", {
+          delivery: "indeterminate",
+          kind: "timeout",
         });
-      },
-    };
+      }
+      return Promise.resolve({
+        cmd: [request.executable, ...flattenInvocation(request)],
+        exitCode: 0,
+        signal: null,
+        stderr: new Uint8Array(),
+        stdout: new TextEncoder().encode(answers.shift() ?? ""),
+      });
+    });
 
     const recorder = recordInvocations(inner);
     const live = new Server({ engine: recorder.engine });

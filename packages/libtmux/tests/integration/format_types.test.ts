@@ -240,7 +240,7 @@ describe("declared format value types", () => {
         // snapshot cannot reach, or withheld by the registry because this tmux
         // is older than the field. Nothing is quietly unverified — and the
         // third case is why this has to run on the floor and not only on the
-        // newest release: on 3.2a ten fields fall into it.
+        // newest release.
         const withheld = new Set<string>(
           GENERATED_FORMAT_FIELDS.filter(
             (field) =>
