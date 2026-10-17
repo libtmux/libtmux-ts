@@ -736,11 +736,7 @@ test("layout corpus preserves an independent keeper", async () => {
   await fixture(async (server, root, run) => {
     const before = await server.snapshot();
     const keeper = before.sessions.one({ name: "fixture" });
-    const version = (await server.versionAtLeast("3.5"))
-      ? "3.7c"
-      : (await server.versionAtLeast("3.3"))
-        ? "3.3a"
-        : "3.2a";
+    const version = (await server.versionAtLeast("3.5")) ? "3.7c" : "3.3a";
     const config = join(root, "layouts.json");
     for (const item of corpus) {
       // eslint-disable-next-line no-await-in-loop -- Each case reuses the same owned endpoint and file.

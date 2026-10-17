@@ -195,8 +195,8 @@ describe("shell execution and pane movement", () => {
       // `-e` is not a program either, so the job itself still fails either
       // way — what the guard changes is whether a job runs at all. Without
       // it, tmux's own parser refuses the whole argument before any job
-      // exists, reporting an "unknown option" (libc getopt, 3.2a) or
-      // "unknown flag" (`args_parse`, 3.3+) error of its own; with it, tmux
+      // exists, reporting an "unknown flag" (`args_parse`) error of its own;
+      // with it, tmux
       // launches the job and reports only the job's own exit, on its own
       // stdout — some releases suppress that report with no client attached,
       // so this checks for the absence of a parser refusal rather than for

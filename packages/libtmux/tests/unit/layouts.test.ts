@@ -14,7 +14,7 @@ const corpus = JSON.parse(
 ) as LayoutCase[];
 const geometryErrors = new Set(["bad-inner-size", "nested-invalid-width", "nested-short-parent"]);
 
-test.each(["3.2a", "3.3a", "3.7c"])("layout syntax corpus on tmux %s", (raw) => {
+test.each(["3.3a", "3.7c"])("layout syntax corpus on tmux %s", (raw) => {
   const version = parseTmuxVersion(raw);
   for (const item of corpus) {
     const expected =

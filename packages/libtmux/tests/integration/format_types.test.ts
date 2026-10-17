@@ -185,8 +185,7 @@ describe("declared format value types", () => {
         const observed = new Set<string>();
 
         // The questions the library asks, from the same table. Not every token
-        // of every command: `#{client_activity}` through `list-panes` takes
-        // tmux 3.2a's server down.
+        // of every command.
         const version = (
           await server.cmd("display-message", ["-p", "#{version}"], {
             target: null,
