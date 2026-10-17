@@ -30,6 +30,7 @@ export type {
   ReservationCapability,
 } from "./fixture_launch.js";
 export {
+  pidfdHelper,
   prepareRunRoot,
   reapFixture,
   reapOwnedRunRoot,
