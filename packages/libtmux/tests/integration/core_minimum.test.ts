@@ -158,7 +158,15 @@ describe("a daemon below the core floor", () => {
 });
 
 describe("version admission", () => {
-  test("fires neither after-display-message nor command-error", async () => {
+  /**
+   * A daemon with both hooks set and a server that has read nothing from it.
+   *
+   * Each admission path reads the version in its own place: the capability
+   * binding, an ordinary command with a cold cache, the layout check, and the
+   * control attach. A server per test keeps one path's answer from filling the
+   * cache the next path would have used.
+   */
+  async function hooked() {
     const { env, socket } = await endpoint();
     start("tmux", socket, env);
     const run = (...args: string[]) => tmux("tmux", socket, env, ...args);
@@ -168,22 +176,58 @@ describe("version admission", () => {
     // `command-error` arrived in 3.5; older releases refuse the hook name.
     const hasCommandError =
       run("set-hook", "-g", "command-error", "set -g @probe-error fired").code === 0;
-
     const server = new Server({ environment: env, socketPath: socket, configFile: "/dev/null" });
+    const quiet = (): void => {
+      expect(run("show-options", "-gqv", "@probe-display").out).toBe("");
+      expect(run("show-options", "-gqv", "@probe-error").out).toBe("");
+    };
+    // The hooks are live: ordinary commands do fire them.
+    const live = (): void => {
+      run("display-message", "-p", "x");
+      expect(run("show-options", "-gqv", "@probe-display").out.trim()).toBe("fired");
+      if (hasCommandError) {
+        run("has-session", "-t", "=missing");
+        expect(run("show-options", "-gqv", "@probe-error").out.trim()).toBe("fired");
+      }
+    };
+    return { live, quiet, server };
+  }
+
+  test("the capability read fires neither after-display-message nor command-error", async () => {
+    const { live, quiet, server } = await hooked();
     await server.version();
+    quiet();
+    live();
+  });
+
+  test("an ordinary command with a cold cache fires neither hook", async () => {
+    const { live, quiet, server } = await hooked();
     await server.cmd("list-sessions");
     await server.hasSession("sentinel");
+    quiet();
+    live();
+  });
 
-    expect(run("show-options", "-gqv", "@probe-display").out).toBe("");
-    expect(run("show-options", "-gqv", "@probe-error").out).toBe("");
+  test("the layout check's read fires neither hook", async () => {
+    const { live, quiet, server } = await hooked();
+    // A mirrored preset is valid or not by release, so the daemon is asked.
+    await server
+      .validateLayouts([{ layout: "main-horizontal-mirrored", panes: 1 }])
+      .catch(() => undefined);
+    quiet();
+    live();
+  });
 
-    // The hooks are live: ordinary commands do fire them.
-    run("display-message", "-p", "x");
-    expect(run("show-options", "-gqv", "@probe-display").out.trim()).toBe("fired");
-    if (hasCommandError) {
-      run("has-session", "-t", "=missing");
-      expect(run("show-options", "-gqv", "@probe-error").out.trim()).toBe("fired");
-    }
+  test("the control attach's read fires neither hook", async () => {
+    const { live, quiet, server } = await hooked();
+    // Refused below 3.7 after the read, attached from there; either way the read ran.
+    const connected = await server.connect().then(
+      (live) => live,
+      () => undefined,
+    );
+    await connected?.close();
+    quiet();
+    live();
   });
 
   test("serves the supported daemon with a sentinel intact", async () => {
