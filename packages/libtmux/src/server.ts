@@ -83,6 +83,7 @@ import {
 } from "./_internal/transport/bounded_transport.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import { connectionArguments } from "./_internal/operations/request.js";
+import { releaseAtLeast } from "./_internal/runtime/tmux_version.js";
 import { checkDaemonVersion, VersionCheckTransport } from "./_internal/support/versions.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
 
@@ -221,7 +222,7 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
   );
 }
 
-const CONTROL_SINCE = parseTmuxVersion("3.7");
+const CONTROL_SINCE = "3.7";
 
 /** Judge the daemon a control client is about to join, whatever an earlier answer said. */
 async function checkServerVersion(runtime: RuntimeContext): Promise<void> {
@@ -233,12 +234,12 @@ async function checkServerVersion(runtime: RuntimeContext): Promise<void> {
   });
   // Earlier servers can crash or hang while a control client attaches, so the
   // decision is made before any client does.
-  if (!tmuxVersionAtLeast(parseTmuxVersion(rawVersion), CONTROL_SINCE)) {
+  if (!releaseAtLeast(rawVersion, CONTROL_SINCE)) {
     throw new VersionTooLowError({
       criteriaName: "control mode",
       delivery: "not_started",
       serverVersion: rawVersion,
-      since: CONTROL_SINCE.raw,
+      since: CONTROL_SINCE,
     });
   }
 }
