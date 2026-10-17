@@ -16,6 +16,15 @@ function result(request: TmuxInvocationRequest, exitCode = 0): TmuxCommandResult
   };
 }
 
+/** A run-shell that asks nothing of the version, so the reports hold only the command under test. */
+function run(
+  server: Server,
+  command: string,
+  options: { readonly signal?: AbortSignal; readonly timeoutMs?: number } = {},
+): Promise<readonly string[]> {
+  return server.cmd("run-shell", [command], { ...options, target: null });
+}
+
 const names = (reports: readonly TmuxInvocationReport[]): string[] =>
   reports.map((report) => report.commands[0]?.[0] ?? "");
 
@@ -32,7 +41,7 @@ describe("invocation observer", () => {
       onInvocation: (report) => reports.push(report),
     });
 
-    await server.runShell("true");
+    await run(server, "true");
     await server.setOption("status", "off");
 
     expect(names(reports)).toEqual(["run-shell", "set-option"]);
@@ -73,7 +82,7 @@ describe("invocation observer", () => {
       onInvocation: (report) => reports.push(report),
     });
 
-    const pending = server.runShell("sleep 10", { signal: controller.signal });
+    const pending = run(server, "sleep 10", { signal: controller.signal });
     controller.abort();
     await expect(pending).rejects.toThrow();
 
@@ -94,7 +103,7 @@ describe("invocation observer", () => {
       },
     });
 
-    expect(await server.runShell("true")).toEqual([]);
+    expect(await run(server, "true")).toEqual([]);
   });
 
   /**
@@ -123,7 +132,7 @@ describe("invocation observer", () => {
         onInvocation: () => Promise.reject(new Error("observer is broken")),
       });
 
-      expect(await server.runShell("true")).toEqual([]);
+      expect(await run(server, "true")).toEqual([]);
       // Rejections are reported once the microtask queue has drained, so give
       // the loop a turn rather than a timer.
       await new Promise((resolve) => setImmediate(resolve));
@@ -154,9 +163,9 @@ describe("invocation observer", () => {
       onInvocation: (report) => reports.push(report),
     });
 
-    const holding = server.runShell("holds the slot");
+    const holding = run(server, "holds the slot");
     await Promise.resolve();
-    const refused = server.runShell("never gets one", { timeoutMs: 10 });
+    const refused = run(server, "never gets one", { timeoutMs: 10 });
     await expect(refused).rejects.toMatchObject({ delivery: "not_started" });
 
     const queued = reports.find((report) => report.delivery === "not_started");
@@ -192,9 +201,9 @@ describe("invocation observer", () => {
     const mine = new Error("caller stopped waiting");
     const controller = new AbortController();
 
-    const holding = server.runShell("holds the slot");
+    const holding = run(server, "holds the slot");
     await Promise.resolve();
-    const queued = server.runShell("never gets one", { signal: controller.signal });
+    const queued = run(server, "never gets one", { signal: controller.signal });
     await Promise.resolve();
     controller.abort(mine);
 
@@ -216,7 +225,7 @@ describe("invocation observer", () => {
       onInvocation: (report) => reports.push(report),
     });
 
-    await expect(server.runShell("true")).rejects.toThrow();
+    await expect(run(server, "true")).rejects.toThrow();
     // `replied` means an answer, either way. This never answered.
     expect(reports[0]?.delivery).toBe("indeterminate");
   });
@@ -236,8 +245,8 @@ describe("invocation observer", () => {
     });
 
     await server.version();
-    const first = server.runShell("one");
-    const second = server.runShell("two");
+    const first = run(server, "one");
+    const second = run(server, "two");
     await new Promise((resolve) => setTimeout(resolve, 0));
     // The second is queued behind the first, so only the first has started.
     expect(release).toHaveLength(1);
@@ -281,19 +290,17 @@ describe("invocation observer", () => {
 
     const settled = await Promise.all(
       Array.from({ length: 40 }, (_, index) =>
-        server
-          .runShell(index % 5 === 0 ? "boom" : "ok", index % 7 === 0 ? { timeoutMs: 1 } : {})
-          .then(
-            () => "answered",
-            () => "refused",
-          ),
+        run(server, index % 5 === 0 ? "boom" : "ok", index % 7 === 0 ? { timeoutMs: 1 } : {}).then(
+          () => "answered",
+          () => "refused",
+        ),
       ),
     );
 
     expect(settled).toHaveLength(40);
     expect(peak, "the ceiling holds").toBe(2);
     // Only reachable if no permit leaked.
-    expect(await server.runShell("after")).toEqual([]);
+    expect(await run(server, "after")).toEqual([]);
     expect([...new Set(deliveries)].sort()).toEqual(["indeterminate", "not_started", "replied"]);
   }, 20_000);
 });

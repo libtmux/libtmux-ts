@@ -1,10 +1,13 @@
 import type { JoinOptions } from "../../types.js";
 import type { IfShellOptions, RespawnOptions, RunShellOptions } from "../../types.js";
 import { PANE_DIRECTION_FLAG_MAP } from "../../constants.js";
-import { TmuxCommandError } from "../../errors.js";
+import { TmuxCommandError, VersionTooLowError } from "../../errors.js";
+import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { assertName } from "./names.js";
+
+const CAPTURED_OUTPUT_SINCE = parseTmuxVersion("3.5");
 
 /** Run a shell command through tmux and return whatever it printed. */
 export async function runShell(
@@ -12,6 +15,17 @@ export async function runShell(
   command: string,
   options: RunShellOptions = {},
 ): Promise<readonly string[]> {
+  // tmux 3.3 through 3.4 send a clientless run-shell's output to a view-mode
+  // pane instead of the caller, so there is nothing to return.
+  const { tmuxVersion } = await runtime.capabilities.bind(options.signal);
+  if (!tmuxVersionAtLeast(tmuxVersion, CAPTURED_OUTPUT_SINCE)) {
+    throw new VersionTooLowError({
+      criteriaName: "captured run-shell output",
+      delivery: "not_started",
+      serverVersion: tmuxVersion.raw,
+      since: CAPTURED_OUTPUT_SINCE.raw,
+    });
+  }
   return runCommand(
     runtime,
     // `--` keeps a command starting with `-` from being read as one of
