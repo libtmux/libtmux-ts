@@ -16,7 +16,7 @@ import {
   type GuardCodecCapabilities,
 } from "./guard_codec.js";
 
-export interface GuardCodecCapabilityBinding {
+interface GuardCodecCapabilityBinding {
   bind(signal?: AbortLike): Promise<GuardCodecCapabilities>;
 }
 

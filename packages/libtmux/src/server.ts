@@ -225,8 +225,8 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
 const CONTROL_SINCE = "3.7";
 
 /** Judge the daemon a control client is about to join, whatever an earlier answer said. */
-async function checkServerVersion(runtime: RuntimeContext): Promise<void> {
-  const { rawVersion } = await checkDaemonVersion(runtime.transport, {
+async function checkServerVersion(runtime: RuntimeContext): Promise<DaemonGuard> {
+  const { daemon, rawVersion } = await checkDaemonVersion(runtime.transport, {
     environment: runtime.connection.environment,
     executable: runtime.connection.executable,
     globalArgs: connectionArguments(runtime.connection),
@@ -242,6 +242,7 @@ async function checkServerVersion(runtime: RuntimeContext): Promise<void> {
       since: CONTROL_SINCE,
     });
   }
+  return daemon;
 }
 
 /**
