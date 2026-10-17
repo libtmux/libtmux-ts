@@ -74,6 +74,28 @@ for a minimum in a form tmux does not print, such as `master`.
 `VersionTooLowError.delivery` is `not_started` for a refusal at admission, and
 `onInvocation` reports it that way.
 
+Features above the floor refuse on an older daemon with `VersionTooLowError`
+before sending anything, and the rest of the package keeps working:
+
+- `Server.watch`, `Server.connect` and `Server.withConnection` need tmux 3.7.
+  Earlier servers can crash or hang while a control client attaches, so the
+  decision is made before any client does.
+- `Server.deleteBuffer` and `set-buffer -n` need tmux 3.4. Earlier releases can
+  delete an unrelated buffer when the named one is missing.
+- `Server.runShell` needs tmux 3.5. tmux 3.3a and 3.4 print a clientless
+  `run-shell`'s output to a view-mode pane. `cmd("run-shell", …)` still runs.
+
+Literal argv, alone or in a list, is checked the same way: `select-layout` with
+a value that is neither a preset nor a checksummed layout on 3.3a, `split-window
+-p` on 3.4, and on 3.7 `break-pane -n` and names containing `:` or `.`.
+
+### `@libtmux/mcp`
+
+`paste_text` needs tmux 3.4 and names that requirement when the server is
+older, before staging anything. `run_shell_command` types its script on tmux
+before 3.4 instead of staging it in a buffer. `wait_for_text` names the tmux 3.7
+requirement when a control connection is refused for the daemon's version.
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`
