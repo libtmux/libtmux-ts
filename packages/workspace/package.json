@@ -59,7 +59,7 @@
     "test:install": "bun run build && bun ../../scripts/check-consumer-install.ts packages/workspace"
   },
   "dependencies": {
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "libtmux": "0.1.0-alpha.12"
