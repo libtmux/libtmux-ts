@@ -292,7 +292,7 @@ describe("lifecycle command arguments", () => {
   });
 
   test("refuses names the supported tmux range does not carry identically", () => {
-    // 3.2a through 3.6b rewrite a delimiter to `_`, 3.7 rejects the name, and
+    // 3.3a through 3.6b rewrite a delimiter to `_`, 3.7 rejects the name, and
     // 3.7a onward stores it literally, so one call means three things.
     expect(() => planNewSession({ name: "a:b" })).toThrow("session name");
     expect(() => planNewSession({ name: "a.b" })).toThrow("session name");

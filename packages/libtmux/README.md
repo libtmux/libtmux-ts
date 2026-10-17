@@ -16,7 +16,7 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -25,7 +25,7 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
-Requires tmux 3.2a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
+Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
 5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
@@ -1627,9 +1627,36 @@ the parsed fields. Versions rank `next-X.Y` below `X.Y-rc`, below `X.Y`, below
 `X.Ya`, so a development build or candidate has not yet reached the release it
 names, and a form tmux does not print is refused.
 
-`MINIMUM_TMUX` is the oldest release libtmux drives, and
-`assertSupportedTmux(version)` throws `VersionTooLowError` for a version report
-below it or one libtmux cannot place.
+A daemon, or an executable that would start one, older than tmux 3.3a is
+refused before anything is sent to it, with `VersionTooLowError` and a
+`delivery` of `not_started`. A version libtmux does not recognize, such as bare
+`master`, is refused the same way. To continue, upgrade tmux and restart the
+server, or pin the previous libtmux release:
+
+```ts
+import { VersionTooLowError } from "libtmux";
+
+try {
+  await server.newSession({ name: "work" });
+} catch (error) {
+  if (error instanceof VersionTooLowError) {
+    error.serverVersion; // what the daemon reported, such as "3.2a"
+    error.since; // "3.3a"
+    error.remedy; // the upgrade-or-pin advice
+    error.reason; // the refusal without the remedy
+  }
+}
+```
+
+`MINIMUM_TMUX` is that floor, and `assertSupportedTmux` applies the same ranking
+to a version report you already hold, such as the output of `tmux -V`:
+
+```ts
+import { assertSupportedTmux, MINIMUM_TMUX } from "libtmux";
+
+MINIMUM_TMUX; // "3.3a"
+assertSupportedTmux("3.4"); // returns; throws VersionTooLowError below the floor
+```
 
 One behaviour differs across the range rather than being gated: tmux 3.3a
 suppressed `run-shell` output for an invocation with no attached client, which

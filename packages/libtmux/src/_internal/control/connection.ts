@@ -265,8 +265,9 @@ export class ControlConnection {
       // flag on attach, rather than after, closes the window in which an
       // early notification could still arrive classic. `server_client_set_flags`
       // skips a token it does not recognise rather than failing the command,
-      // so this is a silent no-op on every tmux below 3.8 (verified on 3.2a:
-      // the attach still succeeds and `#{client_flags}` omits `new-layouts`).
+      // so this is a silent no-op on every tmux below 3.8-rc2 (verified on
+      // 3.3a: the attach still succeeds and `#{client_flags}` omits
+      // `new-layouts`).
       "-f",
       "new-layouts",
       ...(options.target === undefined ? [] : ["-t", attachTarget(options.target)]),

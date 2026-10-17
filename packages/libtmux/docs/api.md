@@ -905,8 +905,8 @@ same way, below `3.8` and above `3.7a`. `minimum` must be a form tmux
 prints, such as `3.7a`, or the call throws a `TypeError`.
 
 ```ts
-if (await server.versionAtLeast("3.3")) {
-  await server.setOption("extended-keys", "on");
+if (await server.versionAtLeast("3.5")) {
+  await server.setHook("command-error", "display-message 'a command failed'");
 }
 ```
 

@@ -23,7 +23,7 @@
 [![npm](https://img.shields.io/npm/v/libtmux?label=libtmux&color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.2a%E2%80%933.8-1bb91f)](.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](packages/libtmux/tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -72,7 +72,11 @@ $ yarn add --exact libtmux@0.1.0-alpha.12
 
 </details>
 
-Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.2a or newer.
+Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.3a or newer.
+The version that counts is the running daemon's: an older daemon, or an
+executable that would start one, is refused with `VersionTooLowError` before
+any command takes effect, and a client reporting a newer release does not
+change that.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is

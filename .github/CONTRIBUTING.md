@@ -13,8 +13,14 @@ every change is held to, and the map of what is where, are in
 
 ## Getting set up
 
-Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.2a
+Requires [Bun](https://bun.sh) 1.3.14 or newer, Node 22 or newer, and tmux 3.3a
 or newer.
+
+A daemon older than tmux 3.3a is refused before anything is sent to it.
+`tests/integration/core_minimum.test.ts` checks that against a daemon started
+from the tmux named by `LIBTMUX_REJECTED_TMUX`, driven by the tmux on `PATH`;
+CI supplies 3.0a, 3.1c, 3.2a and 3.3 there. Without the variable those tests
+skip, and `LIBTMUX_REQUIRE_REJECTED=1` makes a missing binary fail instead.
 
 `test:node` runs the emitted `dist` on Node 22, which is the artifact a Node
 consumer gets — the `bun` export condition serves `src` only to Bun. It runs

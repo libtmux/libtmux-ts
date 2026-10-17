@@ -19,7 +19,7 @@ $ bun test examples/mcp-agent
 
 The test connects a real MCP client to `@libtmux/mcp` over an in-memory
 transport, against a real tmux server the suite starts on a socket of its own.
-Requires tmux 3.2a or newer.
+Requires tmux 3.3a or newer.
 
 ## What it shows
 
