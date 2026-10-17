@@ -10,6 +10,7 @@ import {
   AdmissionTransport,
   daemonProbe,
   interpretProbe,
+  releaseAtLeast,
   requireCoreVersion,
 } from "../../src/_internal/transport/support.js";
 import type {
@@ -96,34 +97,42 @@ function request(overrides: Partial<CommandRequest> = {}): CommandRequest {
   };
 }
 
+/** Every form tmux has printed, and the forms it never has; the floor is 3.3a. */
+const ADMIT = [
+  "3.3a",
+  "3.4",
+  "3.7d",
+  "3.8",
+  "3.10",
+  "4.0",
+  "3.4-rc",
+  "3.8-rc",
+  "3.8-rc2",
+  "next-3.4",
+  "next-3.9",
+];
+const BELOW = ["3.3", "3.2a", "3.3-rc", "3.2-rc5", "next-3.3"];
+const UNPARSEABLE = [
+  "master",
+  "openbsd-7.6",
+  "",
+  "3",
+  "garbage",
+  "3.3a garbage",
+  "3.3a-master",
+  "3.3a-dev",
+  "next-3.3a",
+  "next-3.9-master",
+  "3.4a-rc",
+  "3.3a\n3.4",
+];
+
 describe("core version floor", () => {
-  test.each([
-    "3.3a",
-    "3.3b",
-    "3.4",
-    "3.7d",
-    "3.8",
-    "3.8-rc2",
-    "10.0",
-    "next-3.9",
-    "3.9-master",
-    "3.3a-master",
-  ])("admits %s", (raw) => {
+  test.each(ADMIT)("admits %s", (raw) => {
     expect(requireCoreVersion(raw).raw).toBe(raw);
   });
 
-  test.each([
-    "3.2a",
-    "3.3",
-    "2.9",
-    "3.3a-rc",
-    "3.3a-rc1",
-    "next-3.3a",
-    "master",
-    "",
-    "openbsd-7.4",
-    "3.4garbage",
-  ])("refuses %p", (raw) => {
+  test.each([...BELOW, ...UNPARSEABLE])("refuses %p", (raw) => {
     expect(() => requireCoreVersion(raw)).toThrow(VersionTooLowError);
   });
 
@@ -135,6 +144,26 @@ describe("core version floor", () => {
       expect(error).toBeInstanceOf(VersionTooLowError);
       expect(error).toMatchObject({ delivery: "not_started", serverVersion: "3.3", since: "3.3a" });
     }
+  });
+
+  test("ranks a development build below its candidates and its candidates below the release", () => {
+    const ascending = ["next-3.7", "3.7-rc", "3.7-rc3", "3.7", "3.7a"];
+    for (const [index, lower] of ascending.entries()) {
+      for (const higher of ascending.slice(index + 1)) {
+        expect(releaseAtLeast(higher, lower), `${higher} >= ${lower}`).toBe(true);
+        expect(releaseAtLeast(lower, higher), `${lower} >= ${higher}`).toBe(false);
+      }
+    }
+    expect(releaseAtLeast("next-3.4", "3.4-rc")).toBe(false);
+    expect(releaseAtLeast("3.4-rc", "3.4")).toBe(false);
+    expect(releaseAtLeast("3.10", "3.9")).toBe(true);
+  });
+
+  test("lets 3.8-rc2 and next-3.8 reach 3.7 and keeps next-3.7 and 3.7-rc2 below it", () => {
+    expect(releaseAtLeast("3.8-rc2", "3.7")).toBe(true);
+    expect(releaseAtLeast("next-3.8", "3.7")).toBe(true);
+    expect(releaseAtLeast("next-3.7", "3.7")).toBe(false);
+    expect(releaseAtLeast("3.7-rc2", "3.7")).toBe(false);
   });
 });
 
@@ -224,7 +253,7 @@ describe("admission", () => {
     expect(decoder.decode(result.stdout)).toBe("ran list-sessions\n");
   });
 
-  test.each(["3.2a", "3.3", "master", "next-3.3a"])(
+  test.each(["3.2a", "3.3", "master", "next-3.3a", "3.3a-master"])(
     "refuses a %s daemon before the command is sent",
     async (daemon) => {
       const tmux = new FakeTmux(daemon);

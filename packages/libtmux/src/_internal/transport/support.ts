@@ -8,11 +8,7 @@ import {
   VersionTooLowError,
 } from "../../errors.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
-import {
-  compareTmuxVersions,
-  parseTmuxVersion,
-  type TmuxVersion,
-} from "../runtime/tmux_version.js";
+import { parseTmuxVersion, type TmuxVersion } from "../runtime/tmux_version.js";
 import { flattenInvocation } from "./invocation.js";
 import { refusedUnknownCommand, uniqueUnknownCommand } from "./refusal.js";
 import { snapshotInvocationRequest } from "./types.js";
@@ -21,39 +17,52 @@ import type { CommandRequest, CommandTransport, RawCommandResult } from "./types
 /** The oldest tmux whose daemon this package drives for ordinary operations. */
 const MINIMUM_TMUX = "3.3a";
 
-const minimum = parseTmuxVersion(MINIMUM_TMUX);
-const stableRelease = /^(0|[1-9]\d*)\.(0|[1-9]\d*)[a-z]?$/u;
+/**
+ * Where a report sits among the forms tmux has ever printed, or `undefined`.
+ *
+ * `next-X.Y` precedes `X.Y-rc`, `X.Y-rcN`, `X.Y` and `X.Ya`, minors compare as
+ * numbers, and nothing else parses: not bare `master`, `openbsd-*`, a patch
+ * letter on a development build, or a `-master` or `-dev` suffix.
+ */
+function releaseRank(raw: string): readonly number[] | undefined {
+  const next = /^next-(\d+)\.(\d+)$/u.exec(raw);
+  if (next !== null) return [Number(next[1]), Number(next[2]), 0, 0];
+  const release = /^(\d+)\.(\d+)(?:([a-z])|-rc(\d*))?$/u.exec(raw);
+  if (release === null) return undefined;
+  const [, major, minor, letter, candidate] = release;
+  if (letter !== undefined) return [Number(major), Number(minor), 2, letter.charCodeAt(0) - 96];
+  if (candidate !== undefined) return [Number(major), Number(minor), 1, Number(candidate || 0)];
+  return [Number(major), Number(minor), 2, 0];
+}
+
+/** Whether a report ranks at or above `minimum`; an unparseable report never does. */
+export function releaseAtLeast(raw: string, minimum: string): boolean {
+  const have = releaseRank(raw);
+  const want = releaseRank(minimum);
+  if (have === undefined || want === undefined) return false;
+  for (const [index, wanted] of want.entries()) {
+    if (have[index]! !== wanted) return have[index]! > wanted;
+  }
+  return true;
+}
 
 /**
  * Admit a version report for ordinary operations, or refuse it.
  *
- * Patch letters count, so `3.3` is below `3.3a`. A build naming a later release
- * (`next-3.9`, `3.8-rc2`) is admitted; one naming the floor itself must be the
- * release or a build past it (`3.3a-master`). A report that names no release,
- * bare `master` among them, is refused.
+ * Patch letters count, so `3.3` is below `3.3a`, and a candidate or
+ * development build ranks below the release it names, so `3.3-rc` and
+ * `next-3.3` are refused while `3.4-rc` and `next-3.4` are admitted.
  */
 export function requireCoreVersion(raw: string): TmuxVersion {
-  const refuse = (): VersionTooLowError =>
-    new VersionTooLowError({
+  if (!releaseAtLeast(raw, MINIMUM_TMUX)) {
+    throw new VersionTooLowError({
       criteriaName: "core operations",
       delivery: "not_started",
       serverVersion: raw,
       since: MINIMUM_TMUX,
     });
-  let parsed: TmuxVersion;
-  try {
-    parsed = parseTmuxVersion(raw);
-  } catch {
-    throw refuse();
   }
-  // Feature ranking puts a candidate level with its release and a bare
-  // development build above everything; a floor needs neither.
-  const release = parseTmuxVersion(`${parsed.major}.${parsed.minor}${parsed.suffix}`);
-  const order = compareTmuxVersions(release, minimum);
-  if (order < 0 || (order === 0 && !stableRelease.test(raw) && !raw.endsWith("-master"))) {
-    throw refuse();
-  }
-  return parsed;
+  return parseTmuxVersion(raw);
 }
 
 /** The commands carrying `CMD_STARTSERVER`; a prefix counts, since tmux resolves one. */
