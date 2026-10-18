@@ -17,7 +17,7 @@
 [Querying](#what-querying-looks-like) •
 [Packages](#packages) •
 [API reference](packages/libtmux/docs/api.md) •
-[Hosted API reference](https://libtmux.org/en/ts/latest/reference/) •
+[Hosted API reference][ref-reference] •
 [Examples](examples) •
 [Changelog](packages/libtmux/CHANGELOG.md)
 
@@ -33,10 +33,10 @@
 ---
 
 > [!WARNING]
-> **Alpha.** Releases carry an `-alpha` prerelease tag. The API is not
-> settled, and any release may change or remove exported identifiers without a
-> deprecation period. Pin an exact version. Not recommended for production.
-> Read the [changelog](packages/libtmux/CHANGELOG.md) before you upgrade.
+> **Alpha.** Releases carry an `-alpha` tag, and any release may change or
+> remove exported identifiers without a deprecation period. Pin an exact
+> version and read the [changelog](packages/libtmux/CHANGELOG.md) before you
+> upgrade. Not recommended for production.
 
 ## Is this for you?
 
@@ -74,10 +74,11 @@ $ yarn add --exact libtmux@0.1.0-alpha.13
 </details>
 
 Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.3a or newer.
-The version that counts is the running daemon's: an older daemon, or an
-executable that would start one, is refused with [`VersionTooLowError`](https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/) before
-any command takes effect, and a client reporting a newer release does not
-change that.
+
+- The version that counts is the running daemon's.
+- An older daemon, or an executable that would start one, is refused with
+  [`VersionTooLowError`][ref-versiontoolowerror] before any command takes effect.
+- A client reporting a newer release does not change that.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
@@ -114,9 +115,9 @@ const paneCount = found.panes.length;
 
 ## What querying looks like
 
-This is the part worth judging the library on. [`.where()`](https://libtmux.org/en/ts/latest/reference/selection-selection-where/) takes declarative,
-serializable criteria; [`.filter()`](https://libtmux.org/en/ts/latest/reference/selection-selection-filter/) takes an ordinary predicate. They are
-[never overloaded into each other](packages/libtmux/README.md#querying).
+This is the part worth judging the library on. [`.where()`][ref-selection-where] takes declarative,
+serializable criteria; [`.filter()`][ref-selection-filter] takes an ordinary predicate. They are
+[never overloaded into each other](packages/libtmux/README.md#find-sessions-windows-and-panes).
 
 ```ts
 // Equality, string operators, AND/OR/NOT, and regular expressions as data.
@@ -134,7 +135,7 @@ snapshot.windows.where({ session: { is: { name: "work" } } });
 snapshot.sessions.where({ name: { contains: "API", mode: "insensitive" } });
 ```
 
-A [`Selection`](https://libtmux.org/en/ts/latest/reference/selection-selection/) is immutable, ordered, replayable, and `Iterable` — but it is
+A [`Selection`][ref-selection] is immutable, ordered, replayable, and `Iterable` — but it is
 deliberately **not** an `Array`:
 
 ```ts
@@ -148,8 +149,8 @@ selection.oneOrUndefined({ name: "work" });
 selection.exists({ name: "work" });
 ```
 
-Criteria are data. [`encodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-encodewheredocument/) writes a model-tagged query;
-[`decodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/) validates one read from a config file, MCP call, or CLI.
+Criteria are data. [`encodeWhereDocument`][ref-encodewheredocument] writes a model-tagged query;
+[`decodeWhereDocument`][ref-decodewheredocument] validates one read from a config file, MCP call, or CLI.
 
 ## Packages
 
@@ -160,17 +161,17 @@ The library, MCP server, workspace builder, and workspace CLI share one release 
 | **[libtmux](packages/libtmux)**                      | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837&label=)](https://www.npmjs.com/package/libtmux)                               |
 | **[@libtmux/mcp](packages/mcp)**                     | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/mcp)                     |
 | **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace)         |
-| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native `tmux-workspace` command for Node and Bun.                          | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
+| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native [`tmux-workspace`][cli-reference] command for Node and Bun.         | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
 | [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                                       |
 
 ---
 
 ### [libtmux](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux) — the library
 
-The library: [`Server`](https://libtmux.org/en/ts/latest/reference/server-server/), [`Session`](https://libtmux.org/en/ts/latest/reference/session-session/), [`Window`](https://libtmux.org/en/ts/latest/reference/window-window/), [`Pane`](https://libtmux.org/en/ts/latest/reference/pane-pane/) and [`Client`](https://libtmux.org/en/ts/latest/reference/client-client/) handles over an
+The library: [`Server`][ref-server], [`Session`][ref-session], [`Window`][ref-window], [`Pane`][ref-pane] and [`Client`][ref-client] handles over an
 immutable snapshot of tmux.
 
-[API reference](https://libtmux.org/en/ts/latest/reference/) ·
+[API reference][ref-reference] ·
 [npm](https://www.npmjs.com/package/libtmux)
 
 ```console
@@ -189,11 +190,11 @@ await editor.panes.at(0)?.sendKeys("echo hello");
 const lines = await editor.panes.at(0)?.capture();
 ```
 
-Read next: [Snapshots](packages/libtmux/README.md#snapshots) ·
-[Querying](packages/libtmux/README.md#querying) ·
-[Operations](packages/libtmux/README.md#operations) ·
-[Watching](packages/libtmux/README.md#watching) ·
-[Recipes](packages/libtmux/README.md#recipes) ·
+Read next: [Snapshots](packages/libtmux/README.md#read-what-tmux-holds) ·
+[Querying](packages/libtmux/README.md#find-sessions-windows-and-panes) ·
+[Operations](packages/libtmux/README.md#change-sessions-windows-and-panes) ·
+[Watching](packages/libtmux/README.md#watch-tmux-change) ·
+[Recipes](packages/libtmux/README.md#type-into-a-pane-and-wait) ·
 [Errors](packages/libtmux/README.md#errors) ·
 [API reference](packages/libtmux/docs/api.md)
 
@@ -202,8 +203,8 @@ Read next: [Snapshots](packages/libtmux/README.md#snapshots) ·
 A stdio MCP server. Point it at a socket and an agent can list sessions, read a
 pane, send keys, and **wait for output** rather than polling for it.
 
-[API reference](https://libtmux.org/en/ts/latest/mcp/reference/) ·
-[Tools](https://libtmux.org/en/ts/latest/mcp/tools/) ·
+[API reference][mcpref-reference] ·
+[Tools][mcp-tools] ·
 [npm](https://www.npmjs.com/package/@libtmux/mcp)
 
 With no configuration it starts its own tmux server on the `libtmux-mcp`
@@ -239,16 +240,16 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
 
 The tools an agent reaches for first:
 
-| Tool                                                                                 | What it does                                                       |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| [`list_sessions`](https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/)         | Lists stable session identities and metadata                       |
-| [`capture_since`](https://libtmux.org/en/ts/latest/mcp/tools/capture_since/)         | Returns only pane output after a cursor                            |
-| [`wait_for_text`](https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/)         | Waits for bounded literal or regular-expression matches            |
-| [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) | Runs a command through a pane and reports output and exit status   |
-| [`create_session`](https://libtmux.org/en/ts/latest/mcp/tools/create_session/)       | Creates a session without accepting a command or environment value |
+| Tool                                          | What it does                                                       |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| [`list_sessions`][tool-list_sessions]         | Lists stable session identities and metadata                       |
+| [`capture_since`][tool-capture_since]         | Returns only pane output after a cursor                            |
+| [`wait_for_text`][tool-wait_for_text]         | Waits for bounded literal or regular-expression matches            |
+| [`run_shell_command`][tool-run_shell_command] | Runs a command through a pane and reports output and exit status   |
+| [`create_session`][mcp-tools-create_session]  | Creates a session without accepting a command or environment value |
 
 The 45 tools are split into `inspect`, `manage`, `execute`, and `teardown`.
-[`tmux://capabilities`](https://libtmux.org/en/ts/latest/mcp/resources/capabilities/) is the only resource; the server exposes no prompts,
+[`tmux://capabilities`][mcp-resources-capabilities] is the only resource; the server exposes no prompts,
 resource templates, background jobs, or generic mutation tools.
 
 Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
@@ -260,7 +261,7 @@ Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
-[API reference](https://libtmux.org/en/ts/latest/workspace/reference/) ·
+[API reference][wsref-reference] ·
 [npm](https://www.npmjs.com/package/@libtmux/workspace)
 
 ```console
@@ -282,15 +283,15 @@ await applyWorkspace(server, {
 });
 ```
 
-Read next: [The config shape](packages/workspace/README.md#the-shape) ·
-[Converging](packages/workspace/README.md#converging-not-just-creating)
+Read next: [The config shape](packages/workspace/README.md#describe-a-session) ·
+[Converging](packages/workspace/README.md#apply-it)
 
 ### [@libtmux/workspace-cli](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli) — tmuxp workspaces from the shell
 
-[`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) loads, captures and converts tmuxp workspace files on Node or
+[`tmux-workspace`][cli-reference] loads, captures and converts tmuxp workspace files on Node or
 Bun. Ordinary loads start no Python.
 
-[Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) ·
+[Command reference][cli-reference] ·
 [npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
 
 Save this document as `workspace.yaml`:
@@ -332,21 +333,26 @@ $ bun test examples
 Observation, planning and concurrency compose around the same command engine —
 [the full table is here](packages/libtmux/README.md#choosing-how-work-is-arranged).
 
-| Mode       | Turn it on                                                                                       | When to use it                                      |
-| ---------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| connected  | [`await server.connect()`](https://libtmux.org/en/ts/latest/reference/server-server-connect/)    | Pairing commands with a persistent event observer   |
-| watching   | [`server.watch()`](https://libtmux.org/en/ts/latest/reference/server-server-watch/)              | Reacting to a change rather than polling to find it |
-| pipeline   | [`server.pipeline([…])`](https://libtmux.org/en/ts/latest/reference/server-server-pipeline/)     | Ordered commands when printed output is enough      |
-| planned    | `.plan` + [`server.batch([…])`](https://libtmux.org/en/ts/latest/reference/server-server-batch/) | Ordered mutations that must return typed handles    |
-| concurrent | `Promise.all`                                                                                    | Independent work that may safely overlap            |
+| Mode       | Turn it on                                        | When to use it                                      |
+| ---------- | ------------------------------------------------- | --------------------------------------------------- |
+| connected  | [`await server.connect()`][ref-server-connect]    | Pairing commands with a persistent event observer   |
+| watching   | [`server.watch()`][ref-server-watch]              | Reacting to a change rather than polling to find it |
+| pipeline   | [`server.pipeline([…])`][ref-server-pipeline]     | Ordered commands when printed output is enough      |
+| planned    | `.plan` + [`server.batch([…])`][ref-server-batch] | Ordered mutations that must return typed handles    |
+| concurrent | `Promise.all`                                     | Independent work that may safely overlap            |
 
-Creating twelve windows costs 25 tmux invocations one at a time, 13 through
-`pipeline`, and 14 through `batch` — each figure including the one query that
-reads the result back, and `batch`'s extra being the snapshot that turns printed
-ids into typed handles. A snapshot is one invocation whatever the server's size,
-and querying it is none. Those counts, the wall-clock beside them, and why
-`Promise.all` buys nothing over doing the same work in order are in [the
-benchmarks](packages/libtmux/docs/benchmarks.md).
+Creating twelve windows costs, each figure including the one query that reads
+the result back:
+
+- 25 tmux invocations one at a time, 13 through
+  [`pipeline`][ref-server-pipeline], and 14 through
+  [`batch`][ref-server-batch], whose extra is the snapshot that turns printed ids
+  into typed handles.
+- A snapshot is one invocation whatever the server's size, and querying it is
+  none.
+- The wall-clock beside those counts, and why `Promise.all` buys nothing over
+  doing the same work in order, are in
+  [the benchmarks](packages/libtmux/docs/benchmarks.md).
 
 ```console
 $ bun packages/libtmux/scripts/bench-modes.ts
@@ -392,3 +398,30 @@ Please use the following BibTeX template to cite libtmux-ts in scientific discou
 
 [MIT](LICENSE) — a port of
 [tmux-python/libtmux](https://github.com/tmux-python/libtmux).
+
+[cli-reference]: https://libtmux.org/en/ts/latest/workspace/cli/
+[mcp-resources-capabilities]: https://libtmux.org/en/ts/latest/mcp/resources/capabilities/
+[mcp-tools]: https://libtmux.org/en/ts/latest/mcp/tools/
+[mcp-tools-create_session]: https://libtmux.org/en/ts/latest/mcp/tools/create_session/
+[mcpref-reference]: https://libtmux.org/en/ts/latest/mcp/reference/
+[ref-client]: https://libtmux.org/en/ts/latest/reference/client-client/
+[ref-decodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/
+[ref-encodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-encodewheredocument/
+[ref-pane]: https://libtmux.org/en/ts/latest/reference/pane-pane/
+[ref-reference]: https://libtmux.org/en/ts/latest/reference/
+[ref-selection]: https://libtmux.org/en/ts/latest/reference/selection-selection/
+[ref-selection-filter]: https://libtmux.org/en/ts/latest/reference/selection-selection-filter/
+[ref-selection-where]: https://libtmux.org/en/ts/latest/reference/selection-selection-where/
+[ref-server]: https://libtmux.org/en/ts/latest/reference/server-server/
+[ref-server-batch]: https://libtmux.org/en/ts/latest/reference/server-server-batch/
+[ref-server-connect]: https://libtmux.org/en/ts/latest/reference/server-server-connect/
+[ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
+[ref-server-watch]: https://libtmux.org/en/ts/latest/reference/server-server-watch/
+[ref-session]: https://libtmux.org/en/ts/latest/reference/session-session/
+[ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
+[ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/
+[tool-capture_since]: https://libtmux.org/en/ts/latest/mcp/tools/capture_since/
+[tool-list_sessions]: https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/
+[tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/
+[tool-wait_for_text]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/
+[wsref-reference]: https://libtmux.org/en/ts/latest/workspace/reference/

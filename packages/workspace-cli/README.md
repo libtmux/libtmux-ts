@@ -24,6 +24,47 @@ This implementation is in development.
 Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
 Built on [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
+The [`tmux-workspace`][cli-index] and `npx` commands on this page are run by
+this repository's README tests (`packages/workspace-cli/tests/readme.test.ts`),
+each against a tmux directory of its own.
+
+## Quick start
+
+Install the command globally, which puts [`tmux-workspace`][cli-index] on
+`PATH`. [Install](#install) lists the other runners:
+
+```console
+$ npm install --global @libtmux/workspace-cli@0.1.0-alpha.13
+```
+
+Save this document as `workspace.yaml`:
+
+```yaml
+session_name: dev
+windows:
+  - window_name: editor
+    layout: main-vertical
+    panes:
+      - vim
+      - top
+```
+
+[`load`][cli-load] builds it detached, on a tmux socket of its own so the demo
+stays off the server you already use ([why sockets][topic-socket-and-servers]):
+
+```console
+$ tmux-workspace load ./workspace.yaml \
+    -L workspace-cli-demo \
+    -d \
+    --json
+```
+
+It creates the `dev` session and prints one [JSON result][wsref-output] that
+names the session and the windows and panes it made.
+
+Join the session with `tmux -L workspace-cli-demo attach`. Remove it and the
+demo server with `tmux -L workspace-cli-demo kill-server`.
+
 ## Install
 
 Run the command without installing it. With Node:
@@ -52,7 +93,8 @@ day by default:
 $ yarn dlx @libtmux/workspace-cli@0.1.0-alpha.13 --help
 ```
 
-Or install it globally, which puts `tmux-workspace` on `PATH`. With npm:
+Or install it globally, which puts [`tmux-workspace`][cli-index] on `PATH`.
+With npm:
 
 ```console
 $ npm install --global @libtmux/workspace-cli@0.1.0-alpha.13
@@ -70,59 +112,64 @@ With Bun:
 $ bun add --global @libtmux/workspace-cli@0.1.0-alpha.13
 ```
 
-The rest of this page runs the installed `tmux-workspace`. A runner passes
-the same arguments to the command when they follow the package name.
+The rest of this page runs the installed `tmux-workspace`. A runner passes the
+same arguments to the command when they follow the package name.
+
+The [installation walkthrough][guide-installation] builds a source revision and
+loads a session on a private socket.
 
 ## Commands
 
-Each command has a page in the
-[command reference](https://libtmux.org/en/ts/latest/workspace/cli/).
+Each [`tmux-workspace`][cli-index] command has a page in the command reference.
 
-- [`load`](https://libtmux.org/en/ts/latest/workspace/cli/load/) creates or
-  reuses a session from a workspace file.
-- [`freeze`](https://libtmux.org/en/ts/latest/workspace/cli/freeze/) captures a
-  live session as a workspace document.
-- [`convert`](https://libtmux.org/en/ts/latest/workspace/cli/convert/) converts a
-  workspace between YAML and JSON.
-- [`import`](https://libtmux.org/en/ts/latest/workspace/cli/import/) translates a
-  tmuxinator or Teamocil workspace.
-- [`ls`](https://libtmux.org/en/ts/latest/workspace/cli/ls/) lists project and
-  saved workspace files.
-- [`search`](https://libtmux.org/en/ts/latest/workspace/cli/search/) searches
-  workspace names, sessions, windows and pane commands.
-- [`edit`](https://libtmux.org/en/ts/latest/workspace/cli/edit/) opens a
-  workspace in your editor.
-- [`shell`](https://libtmux.org/en/ts/latest/workspace/cli/shell/) opens the
-  Python tmuxp shell with the selected tmux context.
-- [`debug-info`](https://libtmux.org/en/ts/latest/workspace/cli/debug-info/)
-  shows runtime, configuration and tmux diagnostics.
-- [`completion`](https://libtmux.org/en/ts/latest/workspace/cli/completion/)
-  prints a shell completion script.
+- [`load`][cli-load] creates or reuses a session from a workspace file.
+- [`freeze`][cli-freeze] captures a live session as a workspace document.
+- [`convert`][cli-convert] converts a workspace between YAML and JSON.
+- [`import`][cli-import] translates a tmuxinator or Teamocil workspace:
+  [`import tmuxinator`][cli-import-tmuxinator],
+  [`import teamocil`][cli-import-teamocil].
+- [`ls`][cli-ls] lists project and saved workspace files.
+- [`search`][cli-search] searches workspace names, sessions, windows and pane
+  commands.
+- [`edit`][cli-edit] opens a workspace in your editor.
+- [`shell`][cli-shell] opens the Python tmuxp shell with the selected tmux
+  context.
+- [`debug-info`][cli-debug-info] shows runtime, configuration and tmux
+  diagnostics.
+- [`completion`][cli-completion] prints a shell completion script.
 
 ## Load and capture
 
-Save this document as `workspace.yaml`:
+[`load`][cli-load] builds sessions from workspace files; [`freeze`][cli-freeze]
+writes a running session back to a file. Both take `-L` for a socket name or
+`-S` for a socket path.
 
-```yaml
-session_name: dev
-windows:
-  - window_name: editor
-    layout: main-vertical
-    panes:
-      - vim
-      - top
-```
+### [`tmux-workspace load`][cli-load]: build a session from a file
 
-Load on a separate tmux socket:
+`load` creates the session a file describes, reuses one of the same name, or
+appends windows to the current one. [`ls`][cli-ls] finds files by name and
+[`import`][cli-import] translates other tools' files for it.
+
+The Quick start loaded `dev`. Load the same file under another name with `-s`:
 
 ```console
 $ tmux-workspace load ./workspace.yaml \
     -L workspace-cli-demo \
     -d \
+    -s dev-copy \
     --json
 ```
 
-Capture its live topology:
+The result names `dev-copy` and sets `reused` to false. Run the Quick start
+command again and `load` reuses `dev` instead of building a second session.
+
+Without `-d`, `load` attaches your terminal to the session. [Reuse, append and
+attach](#reuse-append-and-attach) has the rules.
+
+### [`tmux-workspace freeze`][cli-freeze]: capture a running session
+
+`freeze` reads a live session and prints or saves it as a workspace document
+that `load` accepts. Print the `dev` session as JSON:
 
 ```console
 $ tmux-workspace freeze dev \
@@ -130,64 +177,79 @@ $ tmux-workspace freeze dev \
     --json
 ```
 
-All native input layouts are checked before scripts run or sessions change.
-Names accept unique abbreviations supported by the running daemon. Only
-version-sensitive names query it; a cold endpoint uses the selected client.
-Saved layouts require a valid checksum, a nonempty tree and enough pane cells.
-tmux still owns geometry correction and pruning, and may reject a layout when
-it is applied.
-The CLI limits custom layouts to 8192 characters and 256 nested groups;
-these are application limits, separate from tmux's parser.
+It prints the document: `session_name`, `windows` and `options`. Save it to a
+file instead with `--save-to`:
 
-One default differs from tmuxp on purpose: a window that names no `layout`
-tiles its panes, where tmuxp stacks them by halving the last one. Explicit
-`layout` and `focus` agree with tmuxp, and so does the pane left active when
-nothing sets `focus`: the last pane created in the focused window.
+```console
+$ tmux-workspace freeze dev \
+    -L workspace-cli-demo \
+    --save-to ./frozen.yaml
+```
 
-[`@libtmux/workspace`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace) is a separate implementation, not this
-command's engine: it converges a session that already exists, and its strict
-schema rejects `environment`, `before_script`, `window_index`,
-`suppress_history`, `x-` keys and the other fields below. A document written
-here is not necessarily one that package accepts.
+It writes `frozen.yaml` and prints `Saved` with the path. A `.json` destination
+saves JSON, and `-f` overrides the format.
 
-Loading reuses an existing session, and compares it against the document rather
-than rebuilding it: a window the document names that the session does not hold
-is reported, exit 1, and nothing is changed. Without `-d`, load attaches the
-final workspace or switches the current tmux client. Attachment uses the
-controlling terminal, including when standard streams are redirected; no
-terminal means failure before creating sessions. Inside tmux, attached load
-stays on the current server; use `-d` to load on another server. Explicit append
-adds windows to the current pane's session. A load that cannot finish a session
-it created removes it, so a rerun starts clean; an append keeps the windows it
-added and names them.
+Without a session name, `freeze` takes the current pane's session or the only
+session on the server
+([full contract](docs/contracts.md#output-modes-and-saving)).
+[Export and reload][guide-export-session] walks through capture and replay.
 
-When clients share a session, tmux selects its most recently active client before
-loading. The CLI captures that client and targets the switch explicitly.
+## Reuse, append and attach
 
-Two `load`s racing on the same session name are not coordinated: tmux offers no
-lock on a session that does not exist yet, so the loser's create can fail after
-the winner's session exists, or both can observe no session and each start one.
-Run concurrent loads against distinct session names.
+What [`load`][cli-load] does when the session already exists, and when it
+attaches:
 
-`load -2` forces 256-color terminal handling. Legacy `-8` is rejected before
-calling tmux because supported tmux versions do not implement that legacy flag.
+- **[Reuse](docs/contracts.md#reusing-comparing-and-attaching).** A session
+  with the document's name is compared with it, not rebuilt. A missing window
+  is reported with [exit 1][wsref-exit-codes] and nothing changes.
+- **[Attach](docs/contracts.md#reusing-comparing-and-attaching).** Without
+  `-d`, `load` attaches your terminal, or switches the current client inside
+  tmux. No terminal fails before any session exists.
+- **[Append](docs/contracts.md#reusing-comparing-and-attaching).** `--append`
+  adds windows to the current pane's session. Use `-d` to load on another
+  server.
+- **[Failure](docs/contracts.md#reusing-comparing-and-attaching).** A load that
+  cannot finish a session it created removes it. An append keeps the windows it
+  added and names them.
+- **[Races](docs/contracts.md#concurrent-loads).** Two loads of one session
+  name are not coordinated. Run concurrent loads against distinct names.
 
-Pane readiness waits apply before sending commands, whatever the pane's shell
-is. Empty panes skip the wait, including with
-`workspace_builder_options.pane_readiness: always`.
+## Layouts, window order and pane readiness
 
-Explicit `window_index` values reserve their slots before implicit windows are
-allocated from the effective `base-index`; `null` leaves the index unspecified.
-Append also reserves indexes from later input files. Removing the temporary bootstrap window preserves requested
-indexes and restores the prior local or inherited `renumber-windows` setting.
-A failed restoration appears as `renumber_restore_error` in the load result.
+How [`load`][cli-load] treats a window's [`layout`][wsconfig-layouts], its
+[`window_index`][wsconfig-windows] and the first command in a
+[pane][wsconfig-panes].
 
-Native `load` rejects unsupported fields before any input runs scripts or changes
-tmux. The diagnostic includes the field path. For example, `entter: false` in a
-command is an error; use `enter: false` to leave that command unsubmitted. A
-key starting with `x-`, at any scope, is the exception: it is accepted,
-ignored at load, and left alone by `convert`. The refusal for any other
-unknown key names that prefix as the way to keep it.
+- **[Layout checks](docs/contracts.md#layout-validation).** Layouts are checked
+  before any script runs: valid checksum, nonempty tree, enough pane cells.
+  Custom layouts stop at 8192 characters and 256 nested groups.
+- **[Default layout](docs/contracts.md#differences-from-tmuxp).** A window with
+  no `layout` tiles its panes. tmuxp halves the last pane instead.
+- **[Pane readiness](docs/contracts.md#pane-readiness).** `load` waits for the
+  pane before sending its commands, whatever the shell. Empty panes skip it.
+- **[Window index](docs/contracts.md#window-index-reservation).** Explicit
+  `window_index` values take their slots first. `null` leaves the index free.
+- **[Colors](docs/contracts.md#terminal-color-flags).** `load -2` forces
+  256-color handling. `-8` is rejected before tmux is called.
+
+## Write a workspace file
+
+A workspace arranges windows and panes for a task
+([concepts][concept-workspaces]). The files use tmuxp's fields, one page each:
+
+- [Session][wsconfig-session] sets the name, shared options and environment.
+- [Windows][wsconfig-windows] sets indexes, layouts and option timing.
+- [Panes][wsconfig-panes] defines commands, launch shells and focus.
+- [Commands][wsconfig-commands] controls ordering, Enter and delays.
+- [Environment][wsconfig-environment] separates loader settings from pane
+  variables.
+- [Directories][wsconfig-directories] explains discovery and working
+  directories.
+- [Layouts][wsconfig-layouts] arranges the panes.
+- [Hooks][wsconfig-hooks] runs checked bootstrap scripts.
+
+The [gallery][examples-gallery] has starter documents. [`load`][cli-load]
+accepts these fields:
 
 | Scope                       | Accepted fields                                                                                                                                                                                                                                              |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -197,52 +259,23 @@ unknown key names that prefix as the way to keep it.
 | Command object              | `cmd`, `enter`, `sleep_before`, `sleep_after`                                                                                                                                                                                                                |
 | `workspace_builder_options` | `pane_readiness`                                                                                                                                                                                                                                             |
 
-`description` is neutral metadata at workspace, window, and pane scope. Option
-and environment maps retain their native names. Conversion preserves arbitrary
-fields without applying the native execution contract. Documents delegated to
-Python plugins or custom builders retain their extension fields; empty plugin
-lists and blank builder names still use native validation.
+- **[Unknown fields fail](docs/contracts.md#unsupported-fields).** `load`
+  rejects an unsupported field before any input runs a script, and names its
+  path. `entter: false` is an error; `enter: false` leaves a command unsent.
+- **[`x-` keys](docs/contracts.md#unsupported-fields).** A key starting with
+  `x-`, at any scope, is accepted, ignored at load and left alone by
+  [`convert`][cli-convert].
+- **[`description`](docs/contracts.md#accepted-fields).** It is neutral
+  metadata at workspace, window and pane scope.
+- **[Not the library's schema](docs/contracts.md#relation-to-libtmuxworkspace).**
+  [`@libtmux/workspace`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace)
+  has a stricter schema, so a document written here may not pass it.
 
-## Inspect a workspace through MCP
+## Convert between YAML and JSON
 
-The separate [MCP server](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp) inspects loaded workspaces on the
-same tmux socket. After the detached load above, add it to your MCP client with
-that socket and the `inspect` toolset:
-
-```json
-{
-  "mcpServers": {
-    "tmux": {
-      "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.13"],
-      "env": { "LIBTMUX_SOCKET": "workspace-cli-demo", "LIBTMUX_TOOLSETS": "inspect" }
-    }
-  }
-}
-```
-
-The socket is selected when the MCP server starts.
-
-For a workspace loaded with `-S`, set `LIBTMUX_SOCKET_PATH` to the same absolute
-socket path instead of `LIBTMUX_SOCKET`. If the CLI uses `TMUX_BIN`, select that
-executable with the MCP server's `LIBTMUX_TMUX_BIN` too.
-
-Discover tools with `tools/list`, then call [`list_sessions`](https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/) and [`list_panes`](https://libtmux.org/en/ts/latest/mcp/tools/list_panes/).
-Call [`list_windows`](https://libtmux.org/en/ts/latest/mcp/tools/list_windows/) with `session` set to `dev`, the configuration's session
-name. Pass a returned pane ID as `paneId` to [`capture_pane`](https://libtmux.org/en/ts/latest/mcp/tools/capture_pane/) or [`wait_for_text`](https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/);
-bound output with `maxLines` and waits with `timeoutMs`. A pending text wait allows
-other inspection requests on the same connection. Read [`tmux://capabilities`](https://libtmux.org/en/ts/latest/mcp/resources/capabilities/)
-through `resources/read` to verify the selected socket and advertised tools.
-See the [capture guide](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp#read-what-panes-show) for incremental
-reads and cursors.
-
-Closing the MCP subprocess's stdin cancels pending waits and joins its control
-connections. The loaded workspace remains available in tmux.
-
-## Convert
-
-`convert` rewrites a workspace in the other format. Convert the document saved
-above to JSON:
+[`tmux-workspace convert`][cli-convert] rewrites a workspace in the other
+format. [`freeze`][cli-freeze] and [`import`][cli-import] write the same two
+formats. Convert the document saved in the Quick start to JSON:
 
 ```console
 $ tmux-workspace convert ./workspace.yaml \
@@ -250,12 +283,19 @@ $ tmux-workspace convert ./workspace.yaml \
     --save-to ./workspace.json
 ```
 
-## Imports
+It writes `workspace.json` and prints `Saved` with the path. Without
+`--save-to`, [`--json`][wsref-output] prints the converted document instead.
 
-[`import tmuxinator`](https://libtmux.org/en/ts/latest/workspace/cli/import-tmuxinator/) and [`import teamocil`](https://libtmux.org/en/ts/latest/workspace/cli/import-teamocil/) translate source documents and validate
-native configuration fields before previewing or saving. Unknown fields,
-conflicting non-null aliases and malformed command shapes fail without
-replacing a destination. Generic `convert` preserves arbitrary fields.
+Conversion keeps keys that native loading does not use and does not check that
+the result loads. `--force` replaces an existing file.
+
+## Import from tmuxinator or Teamocil
+
+[`import tmuxinator`][cli-import-tmuxinator] and
+[`import teamocil`][cli-import-teamocil] translate another tool's file into a
+native workspace. They need neither tmux nor Python and run no pane commands.
+
+### [`tmux-workspace import tmuxinator`][cli-import-tmuxinator]: translate a project
 
 Save this tmuxinator project as `blog.yml`:
 
@@ -274,6 +314,14 @@ $ tmux-workspace import tmuxinator ./blog.yml \
     --workspace-format yaml \
     --save-to ./blog-workspace.yaml
 ```
+
+It writes `blog-workspace.yaml`. A window's command list stays in one pane; list
+[`panes`][wsconfig-panes] explicitly for separate panes.
+
+Unexpanded `<%` ERB markup in the source fails the import
+([contract](docs/contracts.md#erb-templates)).
+
+### [`tmux-workspace import teamocil`][cli-import-teamocil]: translate a layout
 
 Save this Teamocil layout as `blog-teamocil.yml`:
 
@@ -297,133 +345,177 @@ $ tmux-workspace import teamocil ./blog-teamocil.yml \
     --save-to ./blog-teamocil-workspace.yaml
 ```
 
-Tmuxinator window command arrays stay in one pane. Explicit `panes` lists create
-separate panes. Project `pre_window` arrays form one `; `-joined command; window
-`pre` arrays form one `&&`-joined command before each explicit pane. Window
-`pre` requires nonempty explicit panes. `synchronize: true` and `before` apply
-before sequential pane creation and command delivery; `after` applies afterward.
+It writes `blog-teamocil-workspace.yaml`. Window order, pane order and layouts
+are kept, and a pane's `commands` array becomes one `; `-joined command.
 
-Teamocil `commands` arrays form one `; `-joined command. Legacy `cmd` and `splits`
-are accepted. Window options apply before pane commands. The first requested
-window and pane focus wins; absent focus selects the first item. Both formats
-retain window order, pane order and layouts.
+Before you load the result:
 
-Imports save an absolute project root relative to the invocation directory,
-including when the source omits it. Window roots resolve relative to that root, so
-moving the saved file preserves working directories. Import requires neither
-tmux nor Python and does not check directory existence. Layout compatibility
-is checked against the selected tmux during load. Commands use native load's
-environment expansion from the invoking process before shell delivery.
+- **[Refused, not dropped](docs/contracts.md#refused-source-features).**
+  Lifecycle hooks, runtime overrides, named pane titles, Teamocil `clear`,
+  filters and pane widths fail the import.
+- **[Directories](docs/contracts.md#import-paths-and-tmux).** Roots are saved
+  as absolute paths and are not checked for existence. Review them.
+- **[Destination](docs/contracts.md#import-validation).** Unknown fields and
+  conflicting aliases fail without replacing a file. `--force` replaces one.
 
-Project lifecycle hooks, endpoint/runtime overrides, named pane titles,
-Teamocil `clear`, filters and pane widths are refused. Use an explicit native
-workspace or the source tool for those behaviors.
+## Find and search workspaces
 
-Tmuxinator expands ERB through Ruby before parsing; unexpanded `<%` markup in a
-Tmuxinator key or value fails before output or overwrite. Teamocil evaluates no
-templates, so `<%` in a Teamocil source is ordinary text and is preserved.
+Saved workspaces load by name. [`ls`][cli-ls] lists them,
+[`search`][cli-search] looks inside them, and [`edit`][cli-edit] opens one.
 
-## Output
-
-Every command accepts [`--json`](https://libtmux.org/en/ts/latest/workspace/reference/output/) and `--ndjson` before or after the command name.
-NDJSON takes precedence when both are present. Machine load requires `-d` or
-`--append`. Machine commands never prompt. Human output honors `--color` and
-`NO_COLOR`; machine output contains encoded data without terminal styling.
-
-`convert`, import commands, and machine `freeze` return a document when no
-destination is given. `--save-to` writes a file; `--force` permits replacement.
-The file format is separate from the JSON/NDJSON output mode.
-`freeze` infers JSON from a `.json` destination and otherwise saves YAML;
-`-f` overrides the inferred format. `--quiet` suppresses its human save message
-and preserves machine results.
-Capture accepts an exact session name or ID. Without one, it uses the authenticated
-current pane's session or the sole session on the selected server. Several sessions
-outside tmux require an explicit target.
-Capture reads honor cancellation. Saves check for cancellation before publishing;
-publication already in progress may still complete.
-
-Human `load` shows progress on terminal stderr. `--progress-format` accepts
-`default`, `minimal`, `window`, `pane`, `verbose`, or a template with tokens such
-as `{session}`, `{window}`, and `{session_pane_progress}`. Pane counts advance
-after configured commands are sent; they do not wait for those commands to exit.
-`--progress-lines` controls the recent script-output panel: default 3, 0 forwards
-each stream directly, and -1 uses the available terminal height. Retention is
-bounded to 64 KiB of characters for completed lines and each partial stream.
-`TMUXP_PROGRESS_FORMAT` and `TMUXP_PROGRESS_LINES` set defaults; explicit flags
-take precedence. `--no-progress`, `TMUXP_PROGRESS=0`, a dumb terminal, or redirected
-stderr disables the display. Frames update from build events without timing
-sleeps, clip to terminal width, and clear before results or attachment.
-
-`--log-level` filters diagnostics on stderr: `debug`, `info`, `warning` (default),
-`error`, or `critical`. Machine diagnostics are NDJSON. `load --log-file` appends
-the selected diagnostics as NDJSON, including script output at `info` level.
-New log files use owner-only permissions. Nonregular destinations are rejected
-before session creation; existing log contents are preserved.
-If logging fails during execution, stderr reports `log_error` and the command
-keeps its result and exit status. Cancellation closes the owned log handle.
-Interrupting a blocked output write still joins owned children and exits 130.
-An interrupted load allows up to 100ms to emit its final machine result before
-exiting; an unread pipe cannot hold the process open. Cancelled output may be
-incomplete.
-
-Bootstrap and editor commands use quoted argv directly. Child output is UTF-8
-with replacement for invalid bytes. Captured results retain at most 64 KiB of
-source bytes per stream and report truncation; NDJSON forwards output as it
-arrives. A nonzero editor status becomes the CLI exit status.
-After a captured child exits, its streams have 100ms to drain before owned
-descendants are stopped. Remaining capture streams close after group cleanup.
-
-## Python compatibility
-
-Search uses native JavaScript regular expressions. `-F` treats patterns as
-literal text; `-w` applies whole-word matching to the complete expression.
-Python-specific regex syntax is outside the native search contract.
-
-`shell` uses an interpreter with tmuxp 1.74.0 installed. Set
-`TMUX_WORKSPACE_PYTHON` to choose its executable; otherwise it uses `python3`.
-Code passed with `-c` runs in tmuxp's Python context. An interactive shell needs
-a controlling terminal.
-
-`load` uses the same optional interpreter when a workspace selects Python
-`plugins` or a `workspace_builder`. Ordinary workspaces, empty plugin lists,
-and blank builder names use the native builder without starting Python.
-`workspace_builder_paths` adds existing import directories relative to the
-workspace file. These directories contain executable extension code.
-
-The adapter expands common configuration fields and supplies the tmuxp builder
-protocol. Explicit custom builders may omit `windows` and consume their own
-configuration. Append retains the authenticated current session across input
-files. Python extension append rejects `before_script`; run that script
-separately. Native append retains its bootstrap support.
-
-Extension output uses the bounded child streams described above. Human progress
-shows a workspace label and script output without native pane counters.
-Extension results report `effects_scope: "observed"`, `effects_unknown: true`,
-and newly observed window and pane IDs. These observations include concurrent
-changes and do not establish ownership; failures do not roll back opaque
-extension effects. Cancellation joins the owned Python process group, then
-allows up to one second to observe surviving topology. A changed daemon or
-failed observation is reported without comparing IDs across daemon lifetimes.
-
-## Reference and completion
-
-The [command reference](docs/command-reference.md) and
-[command metadata](docs/commands.json) come from the native parser. Regenerate
-them after changing command definitions:
+### [`tmux-workspace ls`][cli-ls]: list workspace files
 
 ```console
-$ bun run --cwd packages/workspace-cli docs:generate
+$ tmux-workspace ls --tree
 ```
 
-The build checks that the reference and packaged completion scripts are current.
-The scripts complete commands, options, enum values, and file paths without
-starting Node, Bun, or tmux. Saved workspace names and live sessions are outside
-their completion scope.
+It lists project files from the current directory up to your home directory,
+then the files in the first of `$TMUXP_CONFIGDIR`, `$XDG_CONFIG_HOME/tmuxp` and
+`~/.tmuxp` that exists.
 
-Completion is tested on Linux with Bash 5.2, Zsh 5.9, and fish 4.8. Bash 3.2 is
-a syntax target; older shells and filenames containing newlines remain unverified.
+A file there loads by name, as [`tmux-workspace load project`][cli-load]. Use
+[`--json`][wsref-output] in scripts; the tree is for people. The
+[discovery guide][guide-discovery] lists every location.
 
-With `tmux-workspace` on `PATH`, load the script for your shell. Bash:
+### [`tmux-workspace search`][cli-search]: find a workspace by what it holds
+
+```console
+$ tmux-workspace search --field window logs
+```
+
+It prints the name, path and matching fields of each workspace with a window
+matching `logs`. Without `--field`, a term matches every field.
+
+Terms combine with AND, and `--any` selects OR. Patterns are JavaScript regular
+expressions; `-F` matches literal text
+([contract](docs/contracts.md#search-patterns)).
+
+### [`tmux-workspace edit`][cli-edit]: open a workspace in your editor
+
+`edit` resolves a file or saved name and opens it in `$EDITOR`, or `vi` when
+that is unset. Run it as `EDITOR=vi tmux-workspace edit workspace.yaml`.
+
+It waits for the editor and exits with the editor's status.
+
+## Inspect a loaded workspace through MCP
+
+The separate [MCP server](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp)
+inspects loaded workspaces on the same tmux socket. After the Quick start's
+detached load, add it to your MCP client with that socket and the `inspect`
+[toolset][mcpref-policy-toolsets]:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "npx",
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.13"],
+      "env": { "LIBTMUX_SOCKET": "workspace-cli-demo", "LIBTMUX_TOOLSETS": "inspect" }
+    }
+  }
+}
+```
+
+The server picks its socket when it starts. For a workspace loaded with `-S`,
+set `LIBTMUX_SOCKET_PATH` to the same absolute path instead of
+`LIBTMUX_SOCKET`. If the CLI uses `TMUX_BIN`, set `LIBTMUX_TMUX_BIN` to match.
+
+### [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`list_panes`][tool-list_panes]: find what loaded
+
+Discover tools with `tools/list`, then call `list_sessions` and `list_panes`.
+Call `list_windows` with `session` set to `dev`, the configuration's session
+name.
+
+### [`capture_pane`][tool-capture_pane] and [`wait_for_text`][tool-wait_for_text]: read what panes show
+
+Pass a returned pane ID as `paneId`. Bound output with `maxLines` and waits with
+`timeoutMs`. A pending text wait allows other inspection requests on the same
+connection. [`capture_since`][tool-capture_since] reads incrementally, with
+cursors.
+
+### [`tmux://capabilities`][res-capabilities]: check the selected socket
+
+Read it through `resources/read` to verify the selected socket and the
+advertised tools.
+
+Closing the MCP subprocess's stdin cancels pending waits and joins its control
+connections. The loaded workspace stays in tmux. The
+[inspect guide][guide-inspect-with-mcp] walks through the whole path.
+
+## Use it in scripts and CI
+
+Every command accepts [`--json`][wsref-output] and `--ndjson`. What a script
+must know:
+
+- **[Machine output](docs/contracts.md#output-modes-and-saving).** The flags
+  work before or after the command name. NDJSON wins when both are present.
+- **[No prompts](docs/contracts.md#output-modes-and-saving).** Machine commands
+  never prompt. Machine [`load`][cli-load] needs `-d` or `--append`.
+- **[Results](docs/contracts.md#output-modes-and-saving).** Read stdout as
+  results and stderr as diagnostics. Check the exit status as well.
+- **[Saving](docs/contracts.md#output-modes-and-saving).**
+  [`convert`][cli-convert], import and machine [`freeze`][cli-freeze] return the
+  document without a destination. `--force` replaces a file.
+- **[Progress](docs/contracts.md#progress-display).** Human `load` draws
+  progress on stderr; `--no-progress` or a redirected stderr turns it off.
+- **[Logs](docs/contracts.md#logging-and-cancellation).** `--log-level` filters
+  stderr diagnostics (default `warning`). `load --log-file` appends them.
+- **[Interrupts](docs/contracts.md#logging-and-cancellation).** An interrupted
+  run exits 130 and its output can be incomplete. Handle EOF and parse errors.
+- **[Child output](docs/contracts.md#child-process-output).** Captured results
+  keep at most 64 KiB per stream and report truncation.
+
+| Exit | Meaning                                                      |
+| ---- | ------------------------------------------------------------ |
+| 0    | Completed; a declined prompt can also finish without changes |
+| 1    | Workspace validation or operation failure                    |
+| 2    | Invalid arguments or execution context                       |
+| 130  | Interrupted                                                  |
+
+A failed `load` can leave completed tmux operations in place. [Exit
+codes][wsref-exit-codes] lists the machine error codes, and the
+[automation guide][guide-automation] shows a detached load with streamed
+progress.
+
+## Use Python plugins, builders and the shell
+
+Most workspaces never start Python. [`shell`][cli-shell] and workspaces that
+select `plugins` or a `workspace_builder` ([hooks][wsconfig-hooks]) need an
+interpreter:
+
+- **[Interpreter](docs/contracts.md#python-shell).** It needs tmuxp 1.74.0.
+  `TMUX_WORKSPACE_PYTHON` picks the executable; otherwise `python3`.
+- **[Shell](docs/contracts.md#python-shell).** `shell -c` code runs in tmuxp's
+  Python context. An interactive shell needs a terminal.
+- **[Native by default](docs/contracts.md#python-plugins-and-custom-builders).**
+  Empty plugin lists and blank builder names use the native builder.
+- **[Extension code](docs/contracts.md#python-plugins-and-custom-builders).**
+  `workspace_builder_paths` adds import directories that hold executable code.
+- **[Append](docs/contracts.md#python-plugins-and-custom-builders).** Python
+  extension append rejects `before_script`; run that script separately.
+- **[Results](docs/contracts.md#extension-results-and-cancellation).**
+  Extension results report `effects_scope: "observed"`. Failures do not roll
+  back opaque extension effects.
+
+[Runtime and configuration support][wsref-compatibility] lists the requirements.
+
+## Check your setup
+
+[`tmux-workspace debug-info`][cli-debug-info] prints the CLI version, platform,
+runtime, tmux version and the configured paths:
+
+```console
+$ tmux-workspace debug-info --json
+```
+
+Review the report before sharing it: paths and session names can describe your
+environment. The [troubleshooting guide][guide-troubleshooting] lists common
+failures.
+
+## Shell completion
+
+[`tmux-workspace completion`][cli-completion] prints a script for Bash, Zsh or
+fish. With `tmux-workspace` on `PATH`, load the script for your shell. Bash:
 
 ```console
 $ source <(tmux-workspace completion bash)
@@ -443,6 +535,40 @@ $ tmux-workspace completion fish | source
 
 For automation, `--json` and `--ndjson` wrap the script in a structured result.
 
+- The scripts complete commands, options, enum values and file paths without
+  starting Node, Bun or tmux.
+- Saved workspace names and live sessions are outside their completion scope.
+- Completion is tested on Linux with Bash 5.2, Zsh 5.9 and fish 4.8. Bash 3.2 is
+  a syntax target; older shells and filenames containing newlines are
+  unverified.
+
+## What it leaves out
+
+- **Convergence.** This command creates, reuses or appends.
+  [`@libtmux/workspace`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace)
+  converges a session that already exists
+  ([contract](docs/contracts.md#relation-to-libtmuxworkspace)).
+- **Original commands.** [`freeze`][cli-freeze] reads live tmux state. It cannot
+  recover command arguments, scripts, comments or application state.
+- **Python.** Only plugins, custom builders and [`shell`][cli-shell] start it.
+- **Pane inspection.** Reading what panes show belongs to the
+  [MCP server](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp).
+
+## See also
+
+|                                                                                  |                                                                 |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [Command reference][cli-index]                                                   | One page per command                                            |
+| [Guides][guide-index]                                                            | Installation, automation, discovery, export and troubleshooting |
+| [Configuration][wsconfig-index]                                                  | Every workspace field, one page per topic                       |
+| [Output formats][wsref-output]                                                   | What machine commands print                                     |
+| [Exit codes][wsref-exit-codes]                                                   | Statuses and machine error codes                                |
+| [Runtime and configuration support][wsref-compatibility]                         | Node, Bun, tmux and Python requirements                         |
+| [`docs/contracts.md`](docs/contracts.md)                                         | The rules behind the sections above                             |
+| [`docs/command-reference.md`](docs/command-reference.md)                         | Every option, generated from the parser                         |
+| [`@libtmux/mcp`](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp) | Inspect a loaded workspace                                      |
+| [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux)  | The library this builds on                                      |
+
 ## Build from source
 
 Run from the repository root:
@@ -459,24 +585,83 @@ $ bun run --cwd packages/workspace-cli build
 $ node packages/workspace-cli/dist/main.js --help
 ```
 
+### Regenerate the command reference
+
+The [command reference](docs/command-reference.md) and
+[command metadata](docs/commands.json) come from the native parser. Regenerate
+them after changing command definitions:
+
+```console
+$ bun run --cwd packages/workspace-cli docs:generate
+```
+
+The build checks that the reference and packaged completion scripts are
+current.
+
 ## Development status
 
-Native discovery, conversion, imports, common searches, detached load, append,
-capture, editor invocation, diagnostics, and the Python shell have executable
-tests. The Linux installed-package check packs the CLI and core, installs both
-offline into an empty project, and exercises every command in JSON and NDJSON
-on Node 22 and Bun. It needs the optional Python runtime described above:
+- Native discovery, conversion, imports, common searches, detached load, append,
+  capture, editor invocation, diagnostics, and the Python shell have executable
+  tests.
+- The Linux installed-package check packs the CLI and core, installs both
+  offline into an empty project, and exercises every command in JSON and NDJSON
+  on Node 22 and Bun. It needs the optional Python runtime
+  ([setup](#use-python-plugins-builders-and-the-shell)):
 
 ```console
 $ bun run --cwd packages/workspace-cli test:install
 ```
 
-Plugin and custom-builder execution has output, cancellation and borrowed-state
-tests using the optional interpreter. Confirmation and destination choices use
-explicit command-line flags. Native process and terminal evidence covers Linux;
-macOS coverage is a package canary. Benchmark results cover isolated Linux
-fixtures.
+- Plugin and custom-builder execution has output, cancellation and
+  borrowed-state tests using the optional interpreter.
+- Confirmation and destination choices use explicit command-line flags.
+- Native process and terminal evidence covers Linux; macOS coverage is a package
+  canary. Benchmark results cover isolated Linux fixtures.
+- The core library keeps its zero-runtime-dependency contract. Commander, YAML,
+  and terminal text helpers are bundled into this CLI; `libtmux` remains a
+  separate package.
+- Machine commands skip loading the progress renderer.
 
-The core library keeps its zero-runtime-dependency contract. Commander, YAML,
-and terminal text helpers are bundled into this CLI; `libtmux` remains a separate
-package. Machine commands skip loading the progress renderer.
+[cli-completion]: https://libtmux.org/en/ts/latest/workspace/cli/completion/
+[cli-convert]: https://libtmux.org/en/ts/latest/workspace/cli/convert/
+[cli-debug-info]: https://libtmux.org/en/ts/latest/workspace/cli/debug-info/
+[cli-edit]: https://libtmux.org/en/ts/latest/workspace/cli/edit/
+[cli-freeze]: https://libtmux.org/en/ts/latest/workspace/cli/freeze/
+[cli-import]: https://libtmux.org/en/ts/latest/workspace/cli/import/
+[cli-import-teamocil]: https://libtmux.org/en/ts/latest/workspace/cli/import-teamocil/
+[cli-import-tmuxinator]: https://libtmux.org/en/ts/latest/workspace/cli/import-tmuxinator/
+[cli-index]: https://libtmux.org/en/ts/latest/workspace/cli/
+[cli-load]: https://libtmux.org/en/ts/latest/workspace/cli/load/
+[cli-ls]: https://libtmux.org/en/ts/latest/workspace/cli/ls/
+[cli-search]: https://libtmux.org/en/ts/latest/workspace/cli/search/
+[cli-shell]: https://libtmux.org/en/ts/latest/workspace/cli/shell/
+[concept-workspaces]: https://libtmux.org/en/ts/latest/concepts/workspaces/
+[examples-gallery]: https://libtmux.org/en/ts/latest/workspace/examples/gallery/
+[guide-automation]: https://libtmux.org/en/ts/latest/workspace/guides/automation/
+[guide-discovery]: https://libtmux.org/en/ts/latest/workspace/guides/discovery/
+[guide-export-session]: https://libtmux.org/en/ts/latest/workspace/guides/export-session/
+[guide-index]: https://libtmux.org/en/ts/latest/workspace/guides/
+[guide-inspect-with-mcp]: https://libtmux.org/en/ts/latest/workspace/guides/inspect-with-mcp/
+[guide-installation]: https://libtmux.org/en/ts/latest/workspace/guides/installation/
+[guide-troubleshooting]: https://libtmux.org/en/ts/latest/workspace/guides/troubleshooting/
+[mcpref-policy-toolsets]: https://libtmux.org/en/ts/latest/mcp/reference/mcp-policy-policy-toolsets/
+[res-capabilities]: https://libtmux.org/en/ts/latest/mcp/resources/capabilities/
+[tool-capture_pane]: https://libtmux.org/en/ts/latest/mcp/tools/capture_pane/
+[tool-capture_since]: https://libtmux.org/en/ts/latest/mcp/tools/capture_since/
+[tool-list_panes]: https://libtmux.org/en/ts/latest/mcp/tools/list_panes/
+[tool-list_sessions]: https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/
+[tool-list_windows]: https://libtmux.org/en/ts/latest/mcp/tools/list_windows/
+[tool-wait_for_text]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/
+[topic-socket-and-servers]: https://libtmux.org/en/ts/latest/topics/socket-and-servers/
+[wsconfig-commands]: https://libtmux.org/en/ts/latest/workspace/configuration/commands/
+[wsconfig-directories]: https://libtmux.org/en/ts/latest/workspace/configuration/directories/
+[wsconfig-environment]: https://libtmux.org/en/ts/latest/workspace/configuration/environment/
+[wsconfig-hooks]: https://libtmux.org/en/ts/latest/workspace/configuration/hooks/
+[wsconfig-index]: https://libtmux.org/en/ts/latest/workspace/configuration/
+[wsconfig-layouts]: https://libtmux.org/en/ts/latest/workspace/configuration/layouts/
+[wsconfig-panes]: https://libtmux.org/en/ts/latest/workspace/configuration/panes/
+[wsconfig-session]: https://libtmux.org/en/ts/latest/workspace/configuration/session/
+[wsconfig-windows]: https://libtmux.org/en/ts/latest/workspace/configuration/windows/
+[wsref-compatibility]: https://libtmux.org/en/ts/latest/workspace/reference/compatibility/
+[wsref-exit-codes]: https://libtmux.org/en/ts/latest/workspace/reference/exit-codes/
+[wsref-output]: https://libtmux.org/en/ts/latest/workspace/reference/output/
