@@ -13,6 +13,11 @@
 
 **A Model Context Protocol server that gives an AI agent a real tmux server.**
 
+[API reference](https://libtmux.org/en/ts/latest/mcp/reference/) •
+[Tools](https://libtmux.org/en/ts/latest/mcp/tools/) •
+[Guides](https://libtmux.org/en/ts/latest/mcp/guides/) •
+[npm](https://www.npmjs.com/package/@libtmux/mcp)
+
 [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
@@ -21,8 +26,8 @@
 
 </div>
 
-Part of [libtmux for Bun and TypeScript](../../README.md). Built on
-[`libtmux`](../libtmux).
+Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme). Built on
+[`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
 > **Alpha.** Prerelease software: tool names and arguments can change between
@@ -44,7 +49,7 @@ capture loop:
 
 **A command's output is never its echo.** A pane repeats what is typed into it,
 so waiting for text that appears in the command matches immediately and reports
-your own command back to you. `run_shell_command` frames what it sends so the
+your own command back to you. [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) frames what it sends so the
 marker it waits for cannot appear in what it typed or in the command's inherited
 shell state, and reports the real exit status.
 
@@ -55,7 +60,7 @@ that leaves an agent with nothing but "no". Cancel the request and the wait
 stops there and then, rather than holding its connection for the rest of a
 deadline nobody is waiting on.
 
-**Reading twice costs less than reading once.** `capture_since` hands back a
+**Reading twice costs less than reading once.** [`capture_since`](https://libtmux.org/en/ts/latest/mcp/tools/capture_since/) hands back a
 cursor; pass it next time and you are charged only for what arrived since, not
 for the whole screen again.
 
@@ -80,7 +85,7 @@ Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 
 A tmux server older than 3.3a is refused with a result that names the fix:
 upgrade tmux and restart the server, or pin the previous release.
-`get_server_info` reports the running `version` and the `minimumVersion`.
+[`get_server_info`](https://libtmux.org/en/ts/latest/mcp/tools/get_server_info/) reports the running `version` and the `minimumVersion`.
 
 Linux is the only supported host for real tmux control. The macOS CI lane
 checks package artifacts without exercising tmux; macOS runtime behavior is
@@ -104,8 +109,8 @@ This is the whole configuration:
 
 Naming a socket is choosing one, and an explicitly chosen server gets
 `inspect,manage,execute` — so this configuration ships without the `teardown`
-tools: no `kill_pane`, `kill_window`, `kill_session` or
-`clear_pane_scrollback`. That is the intended default for a socket the server
+tools: no [`kill_pane`](https://libtmux.org/en/ts/latest/mcp/tools/kill_pane/), [`kill_window`](https://libtmux.org/en/ts/latest/mcp/tools/kill_window/), [`kill_session`](https://libtmux.org/en/ts/latest/mcp/tools/kill_session/) or
+[`clear_pane_scrollback`](https://libtmux.org/en/ts/latest/mcp/tools/clear_pane_scrollback/). That is the intended default for a socket the server
 did not create itself. [Toolsets and trust](#toolsets-and-trust) says how to
 opt in.
 
@@ -169,6 +174,21 @@ behavior unless you explicitly name a file, and it is never reported as having
 the shipped minimal provenance. `LIBTMUX_TMUX_CONFIG` is passed to tmux as
 written and must be a nonempty absolute path.
 
+To drive a tmux server that is already running, start it on a socket of its own:
+
+```console
+$ tmux -L agent new-session -d -s work
+```
+
+Naming the socket attaches to that server instead of starting one. The startup
+line on stderr says `serving existing`, and the toolsets default to
+`inspect,manage,execute`:
+
+```console
+$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.0-alpha.13
+libtmux-mcp 0.1.0-alpha.13 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
+```
+
 ### Tune what it will do
 
 | Variable                         | Default               | Effect                                             |
@@ -181,7 +201,7 @@ written and must be a nonempty absolute path.
 | `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links |
 | `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections      |
 
-With live connections disabled, `wait_for_text` stays in the selected surface
+With live connections disabled, [`wait_for_text`](https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/) stays in the selected surface
 but returns a `no_stream` tool error; `capture_since` returns a bounded capture
 with `streaming: false`.
 
@@ -230,7 +250,7 @@ An empty toolset plus named inclusions makes a smaller purpose-built surface:
 $ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.0-alpha.13
 ```
 
-Exclusions always win, including inside `call_read_tools_batch`. A tool removed
+Exclusions always win, including inside [`call_read_tools_batch`](https://libtmux.org/en/ts/latest/mcp/tools/call_read_tools_batch/). A tool removed
 there is neither listed, directly callable, nor available as a nested batch
 operation. The selection is resolved once before the protocol starts and does
 not change with later environment or tmux state.
@@ -262,51 +282,51 @@ Grouped by what you are trying to do. Every tool returns typed
 `structuredContent` alongside its text, and carries the same deliberately
 conservative MCP annotations — so a host that auto-approves on annotations
 alone approves none of them. What distinguishes one tool from another is the
-capability row in `tmux://capabilities`, described under
+capability row in [`tmux://capabilities`](https://libtmux.org/en/ts/latest/mcp/resources/capabilities/), described under
 [Toolsets and trust](#toolsets-and-trust).
 
-These existing names are unchanged: `list_sessions`, `list_windows`,
-`list_panes`, `capture_pane`, `search_panes`, `send_keys`, `paste_text`,
-`wait_for_text`, `respawn_pane`, `rename_session`, `rename_window`,
-`resize_pane`, `resize_window`, `select_pane`, `select_window`,
-`select_layout`, `swap_pane`, `move_window`, `set_pane_title`, `show_hooks`,
-`show_environment`, `kill_pane`, `kill_window`, and `kill_session`.
+These existing names are unchanged: [`list_sessions`](https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/), [`list_windows`](https://libtmux.org/en/ts/latest/mcp/tools/list_windows/),
+[`list_panes`](https://libtmux.org/en/ts/latest/mcp/tools/list_panes/), [`capture_pane`](https://libtmux.org/en/ts/latest/mcp/tools/capture_pane/), [`search_panes`](https://libtmux.org/en/ts/latest/mcp/tools/search_panes/), [`send_keys`](https://libtmux.org/en/ts/latest/mcp/tools/send_keys/), [`paste_text`](https://libtmux.org/en/ts/latest/mcp/tools/paste_text/),
+`wait_for_text`, [`respawn_pane`](https://libtmux.org/en/ts/latest/mcp/tools/respawn_pane/), [`rename_session`](https://libtmux.org/en/ts/latest/mcp/tools/rename_session/), [`rename_window`](https://libtmux.org/en/ts/latest/mcp/tools/rename_window/),
+[`resize_pane`](https://libtmux.org/en/ts/latest/mcp/tools/resize_pane/), [`resize_window`](https://libtmux.org/en/ts/latest/mcp/tools/resize_window/), [`select_pane`](https://libtmux.org/en/ts/latest/mcp/tools/select_pane/), [`select_window`](https://libtmux.org/en/ts/latest/mcp/tools/select_window/),
+[`select_layout`](https://libtmux.org/en/ts/latest/mcp/tools/select_layout/), [`swap_pane`](https://libtmux.org/en/ts/latest/mcp/tools/swap_pane/), [`move_window`](https://libtmux.org/en/ts/latest/mcp/tools/move_window/), [`set_pane_title`](https://libtmux.org/en/ts/latest/mcp/tools/set_pane_title/), [`show_hooks`](https://libtmux.org/en/ts/latest/mcp/tools/show_hooks/),
+[`show_environment`](https://libtmux.org/en/ts/latest/mcp/tools/show_environment/), `kill_pane`, `kill_window`, and `kill_session`.
 
 Routes removed or renamed since the previous alpha migrate as follows:
 
-| Previous route                                                                               | Current route or replacement                                                                                  |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `get_pane`                                                                                   | `get_pane_info`                                                                                               |
-| `whoami`                                                                                     | `list_panes` exposes caller and watched panes; inspect one with `get_pane_info`                               |
-| `server_info`                                                                                | `get_server_info`                                                                                             |
-| `observe`                                                                                    | Use `snapshot_pane` once, or seed `capture_since` without a cursor and reuse the cursor it returns            |
-| `run_command`                                                                                | `run_shell_command`                                                                                           |
-| `build_workspace`                                                                            | Compose `create_session`, `create_window`, `split_window`, layout, title, and selection tools                 |
-| `new_session`                                                                                | `create_session`                                                                                              |
-| `new_window`                                                                                 | `create_window`                                                                                               |
-| `split_pane`                                                                                 | `split_window`                                                                                                |
-| `show_options`                                                                               | `show_option` with an explicit scope and option name                                                          |
-| `set_option`                                                                                 | Use `set_mouse_enabled`, `set_history_limit`, or `set_synchronize_panes` for the supported changes            |
-| `unset_option`                                                                               | No generic replacement; set the supported value explicitly outside MCP when inheritance is required           |
-| `display_message`                                                                            | No generic format evaluator; use `get_tmux_variables`, `show_option`, or another typed inspector              |
-| `pipe_pane`                                                                                  | No durable host-command pipe; use `run_shell_command` for a bounded pane command                              |
-| `move_pane`                                                                                  | No direct replacement; `swap_pane` preserves pane identity in a window and `move_window` moves a whole window |
-| `swap_window`                                                                                | No direct replacement; use `move_window` when moving between sessions is sufficient                           |
-| `set_environment`                                                                            | No MCP environment writer; configure the dedicated daemon outside the MCP process                             |
-| `list_buffers`, `show_buffer`, `load_buffer`, `save_buffer`, `paste_buffer`, `delete_buffer` | No public buffer CRUD; use `paste_text` for literal input and capture tools for pane output                   |
+| Previous route                                                                               | Current route or replacement                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_pane`                                                                                   | [`get_pane_info`](https://libtmux.org/en/ts/latest/mcp/tools/get_pane_info/)                                                                                                                                                                                                                              |
+| `whoami`                                                                                     | `list_panes` exposes caller and watched panes; inspect one with `get_pane_info`                                                                                                                                                                                                                           |
+| `server_info`                                                                                | `get_server_info`                                                                                                                                                                                                                                                                                         |
+| `observe`                                                                                    | Use [`snapshot_pane`](https://libtmux.org/en/ts/latest/mcp/tools/snapshot_pane/) once, or seed `capture_since` without a cursor and reuse the cursor it returns                                                                                                                                           |
+| `run_command`                                                                                | `run_shell_command`                                                                                                                                                                                                                                                                                       |
+| `build_workspace`                                                                            | Compose [`create_session`](https://libtmux.org/en/ts/latest/mcp/tools/create_session/), [`create_window`](https://libtmux.org/en/ts/latest/mcp/tools/create_window/), [`split_window`](https://libtmux.org/en/ts/latest/mcp/tools/split_window/), layout, title, and selection tools                      |
+| `new_session`                                                                                | `create_session`                                                                                                                                                                                                                                                                                          |
+| `new_window`                                                                                 | `create_window`                                                                                                                                                                                                                                                                                           |
+| `split_pane`                                                                                 | `split_window`                                                                                                                                                                                                                                                                                            |
+| `show_options`                                                                               | [`show_option`](https://libtmux.org/en/ts/latest/mcp/tools/show_option/) with an explicit scope and option name                                                                                                                                                                                           |
+| `set_option`                                                                                 | Use [`set_mouse_enabled`](https://libtmux.org/en/ts/latest/mcp/tools/set_mouse_enabled/), [`set_history_limit`](https://libtmux.org/en/ts/latest/mcp/tools/set_history_limit/), or [`set_synchronize_panes`](https://libtmux.org/en/ts/latest/mcp/tools/set_synchronize_panes/) for the supported changes |
+| `unset_option`                                                                               | No generic replacement; set the supported value explicitly outside MCP when inheritance is required                                                                                                                                                                                                       |
+| `display_message`                                                                            | No generic format evaluator; use [`get_tmux_variables`](https://libtmux.org/en/ts/latest/mcp/tools/get_tmux_variables/), `show_option`, or another typed inspector                                                                                                                                        |
+| `pipe_pane`                                                                                  | No durable host-command pipe; use `run_shell_command` for a bounded pane command                                                                                                                                                                                                                          |
+| `move_pane`                                                                                  | No direct replacement; `swap_pane` preserves pane identity in a window and `move_window` moves a whole window                                                                                                                                                                                             |
+| `swap_window`                                                                                | No direct replacement; use `move_window` when moving between sessions is sufficient                                                                                                                                                                                                                       |
+| `set_environment`                                                                            | No MCP environment writer; configure the dedicated daemon outside the MCP process                                                                                                                                                                                                                         |
+| `list_buffers`, `show_buffer`, `load_buffer`, `save_buffer`, `paste_buffer`, `delete_buffer` | No public buffer CRUD; use `paste_text` for literal input and capture tools for pane output                                                                                                                                                                                                               |
 
 ### Find your way around
 
-| Tool                    | Answers                                       |
-| ----------------------- | --------------------------------------------- |
-| `list_sessions`         | What sessions exist                           |
-| `list_windows`          | What windows exist, optionally in one session |
-| `list_panes`            | What panes exist and what each runs           |
-| `get_server_info`       | Socket, tmux version, daemon pid, and totals  |
-| `get_session_info`      | One session's metadata                        |
-| `get_window_info`       | One window's metadata                         |
-| `get_pane_info`         | One pane's metadata                           |
-| `find_pane_by_position` | The pane at a window coordinate               |
+| Tool                                                                                         | Answers                                       |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `list_sessions`                                                                              | What sessions exist                           |
+| `list_windows`                                                                               | What windows exist, optionally in one session |
+| `list_panes`                                                                                 | What panes exist and what each runs           |
+| `get_server_info`                                                                            | Socket, tmux version, daemon pid, and totals  |
+| [`get_session_info`](https://libtmux.org/en/ts/latest/mcp/tools/get_session_info/)           | One session's metadata                        |
+| [`get_window_info`](https://libtmux.org/en/ts/latest/mcp/tools/get_window_info/)             | One window's metadata                         |
+| `get_pane_info`                                                                              | One pane's metadata                           |
+| [`find_pane_by_position`](https://libtmux.org/en/ts/latest/mcp/tools/find_pane_by_position/) | The pane at a window coordinate               |
 
 Pane rows identify the active pane, the MCP caller's pane when that identity can
 be proven, and panes watched by attached clients. That context matters before a
@@ -355,12 +375,12 @@ invalid-request response before any tool runs.
 
 ### Do things
 
-| Tool                | Does                                                    |
-| ------------------- | ------------------------------------------------------- |
-| `run_shell_command` | Runs a shell command, waits for it, reports exit status |
-| `send_keys`         | Sends keystrokes: TUIs, `C-c`, partial lines            |
-| `send_keys_batch`   | Sends typed key operations in one bounded call          |
-| `paste_text`        | Sends text with nothing read as a key name              |
+| Tool                                                                             | Does                                                    |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `run_shell_command`                                                              | Runs a shell command, waits for it, reports exit status |
+| `send_keys`                                                                      | Sends keystrokes: TUIs, `C-c`, partial lines            |
+| [`send_keys_batch`](https://libtmux.org/en/ts/latest/mcp/tools/send_keys_batch/) | Sends typed key operations in one bounded call          |
+| `paste_text`                                                                     | Sends text with nothing read as a key name              |
 
 A pane keeps `history-limit` lines and `capture_since` keeps a bounded buffer,
 so output larger than either is gone before anything asks for it.
@@ -404,11 +424,11 @@ loaded configuration, and the supported foreground shell.
 
 ### Wait
 
-| Tool               | Does                                            |
-| ------------------ | ----------------------------------------------- |
-| `wait_for_text`    | Blocks until a pane prints something            |
-| `wait_for_channel` | Blocks until a tmux channel is signalled        |
-| `signal_channel`   | Signals a tmux channel for another waiting task |
+| Tool                                                                               | Does                                            |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `wait_for_text`                                                                    | Blocks until a pane prints something            |
+| [`wait_for_channel`](https://libtmux.org/en/ts/latest/mcp/tools/wait_for_channel/) | Blocks until a tmux channel is signalled        |
+| [`signal_channel`](https://libtmux.org/en/ts/latest/mcp/tools/signal_channel/)     | Signals a tmux channel for another waiting task |
 
 ### Build and arrange
 
@@ -589,7 +609,7 @@ accepting a free-form format expression.
 
 ## Embedding it
 
-The server is a library too, so a host that already has a `Server` can mount
+The server is a library too, so a host that already has a [`Server`](https://libtmux.org/en/ts/latest/reference/server-server/) can mount
 tmux tools on its own MCP surface:
 
 ```ts

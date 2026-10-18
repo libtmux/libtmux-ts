@@ -25,6 +25,10 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
+Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+An MCP server, a workspace builder and a workspace command build on this
+package: see [Packages](#packages).
+
 Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
 5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
@@ -65,16 +69,16 @@ await window.panes.at(0)?.sendKeys("echo hello");
 The API is small and the pieces stack in one order. Read them in this order and
 each one uses the last:
 
-1. **[Snapshots](#snapshots)** — `server.snapshot()` reads the whole server once.
+1. **[Snapshots](#snapshots)** — [`server.snapshot()`](https://libtmux.org/en/ts/latest/reference/server-server-snapshot/) reads the whole server once.
    Everything else resolves off it without talking to tmux again.
-2. **[Querying](#querying)** — `.where()` for declarative criteria, `.filter()`
+2. **[Querying](#querying)** — [`.where()`](https://libtmux.org/en/ts/latest/reference/selection-selection-where/) for declarative criteria, [`.filter()`](https://libtmux.org/en/ts/latest/reference/selection-selection-filter/)
    for a predicate. Both run against the snapshot you already hold.
-3. **[Operations](#operations)** — `newWindow`, `split`, `sendKeys`: the calls
+3. **[Operations](#operations)** — [`newWindow`](https://libtmux.org/en/ts/latest/reference/session-session-newwindow/), [`split`](https://libtmux.org/en/ts/latest/reference/window-window-split/), [`sendKeys`](https://libtmux.org/en/ts/latest/reference/pane-pane-sendkeys/): the calls
    that change something, each resolving to a handle.
 4. **[Running several at once](#running-several-commands-at-once)** — `plan` and
-   `batch`, once you are making more than a couple of changes.
-5. **[Watching](#watching)** — `server.watch()` for what changed rather than
-   what is true, and `server.connect()` to pair a server with that observer.
+   [`batch`](https://libtmux.org/en/ts/latest/reference/server-server-batch/), once you are making more than a couple of changes.
+5. **[Watching](#watching)** — [`server.watch()`](https://libtmux.org/en/ts/latest/reference/server-server-watch/) for what changed rather than
+   what is true, and [`server.connect()`](https://libtmux.org/en/ts/latest/reference/server-server-connect/) to pair a server with that observer.
 
 A snapshot answers _what is true now_; a watch answers _what changed_. Most
 programs need the first, and reach for the second when they have to react.
@@ -125,6 +129,10 @@ real server.
 - [Running inside tmux](#running-inside-tmux)
 - [Dependencies](#dependencies)
 - [Consumers](#consumers)
+- [Packages](#packages)
+  - [@libtmux/mcp](#libtmuxmcp)
+  - [@libtmux/workspace](#libtmuxworkspace)
+  - [@libtmux/workspace-cli](#libtmuxworkspace-cli)
 - [Examples](#examples)
 - [Entrypoints](#entrypoints)
 - [tmux versions](#tmux-versions)
@@ -134,6 +142,11 @@ real server.
 <!-- /toc -->
 
 Also: [API reference](docs/api.md) · [Benchmarks](docs/benchmarks.md)
+
+Hosted: [API reference](https://libtmux.org/en/ts/latest/reference/) ·
+[Guides](https://libtmux.org/en/ts/latest/guides/) ·
+[Topics](https://libtmux.org/en/ts/latest/topics/) ·
+[Concepts](https://libtmux.org/en/ts/latest/concepts/)
 
 </details>
 
@@ -164,7 +177,7 @@ before.sessions.length; // unchanged
 (await server.snapshot()).sessions.length; // includes "later"
 ```
 
-`server.sessions()`, `windows()`, `panes()`, and `clients()` each take a
+[`server.sessions()`](https://libtmux.org/en/ts/latest/reference/server-server-sessions/), [`windows()`](https://libtmux.org/en/ts/latest/reference/server-server-windows/), [`panes()`](https://libtmux.org/en/ts/latest/reference/server-server-panes/), and [`clients()`](https://libtmux.org/en/ts/latest/reference/server-server-clients/) each take a
 snapshot of their own — one invocation apiece, carrying an identity read and
 four listings — so reaching for several in a row costs several round trips and
 describes several different instants. In a
@@ -188,7 +201,7 @@ window.name; // "editor" — the instant this was read at
 
 ## Querying
 
-`.where()` takes declarative criteria. `encodeWhereDocument` serializes them in
+`.where()` takes declarative criteria. [`encodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-encodewheredocument/) serializes them in
 a model-tagged document. `.filter()` takes an ordinary predicate. They are never
 overloaded into each other.
 
@@ -206,7 +219,7 @@ of what a program that built the server itself wants.
 The operators below are for the other case — a caller exploring a server it did
 not build, or one holding a query it did not write: a saved filter, a `--where`
 flag, an argument from an agent. That is also what `encodeWhereDocument` and
-`decodeWhereDocument` are for, and why criteria are data rather than a
+[`decodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/) are for, and why criteria are data rather than a
 predicate. If you know the ids, you do not need any of this.
 
 Criteria support equality, string operators, `AND`/`OR`/`NOT`, regular
@@ -223,8 +236,8 @@ snapshot.sessions.where({
 snapshot.windows.where({ session: { is: { name: "work" } } });
 ```
 
-Clients are queryable on the same terms — `ClientWhere` alongside
-`SessionWhere`, `WindowWhere`, and `PaneWhere`. tmux gives a client no id of
+Clients are queryable on the same terms — [`ClientWhere`](https://libtmux.org/en/ts/latest/reference/selection-clientwhere/) alongside
+[`SessionWhere`](https://libtmux.org/en/ts/latest/reference/selection-sessionwhere/), [`WindowWhere`](https://libtmux.org/en/ts/latest/reference/selection-windowwhere/), and [`PaneWhere`](https://libtmux.org/en/ts/latest/reference/selection-panewhere/). tmux gives a client no id of
 its own, so it is identified by the terminal it occupies, and a control client
 occupies none:
 
@@ -242,7 +255,7 @@ Matching is case-sensitive unless you say otherwise:
 snapshot.sessions.where({ name: { contains: "API", mode: "insensitive" } });
 ```
 
-A `Selection` is immutable, ordered, and replayable. It is `Iterable`, but it is
+A [`Selection`](https://libtmux.org/en/ts/latest/reference/selection-selection/) is immutable, ordered, and replayable. It is `Iterable`, but it is
 not an `Array`:
 
 ```ts
@@ -280,7 +293,7 @@ pane.window;
 client.pane;
 ```
 
-`Server` accessors are the async ones, because they acquire:
+[`Server`](https://libtmux.org/en/ts/latest/reference/server-server/) accessors are the async ones, because they acquire:
 
 ```ts
 await server.sessions();
@@ -358,7 +371,7 @@ if (isSafeInteger(candidate)) snapshot.panes.where({ pid: candidate });
 
 A numeric criterion takes any `number`, and a value that is not an exact
 integer — `NaN`, an infinity, a fraction, an unsafe integer — raises
-`QueryValidationError` naming the field it was written under. That check is at
+[`QueryValidationError`](https://libtmux.org/en/ts/latest/reference/errors-queryvalidationerror/) naming the field it was written under. That check is at
 the boundary rather than in the type because the type cannot see a number that
 arrived at runtime, and making the literal case pay for the runtime one cost
 every correct query a `safeInteger` call.
@@ -441,7 +454,7 @@ const document = decodeWhereDocument(JSON.parse(encoded) as unknown);
 if (document.model === "pane") snapshot.panes.where(document.where);
 ```
 
-Use `compileBoundedRegex` when arbitrary input needs the same bounded regular-
+Use [`compileBoundedRegex`](https://libtmux.org/en/ts/latest/reference/selection-compileboundedregex/) when arbitrary input needs the same bounded regular-
 expression grammar as selection criteria:
 
 ```ts
@@ -512,7 +525,7 @@ await pane.setTitle("build output");
 await pane.kill();
 ```
 
-`zoom` and `unzoom` set a state rather than flipping one. tmux offers only
+[`zoom`](https://libtmux.org/en/ts/latest/reference/pane-pane-zoom/) and [`unzoom`](https://libtmux.org/en/ts/latest/reference/pane-pane-unzoom/) set a state rather than flipping one. tmux offers only
 `resize-pane -Z`, which toggles, so each call asks tmux to evaluate
 `#{window_zoomed_flag}` and toggle in the same command — idempotent, one
 invocation, and no window in which someone else's resize changes the answer
@@ -594,14 +607,14 @@ const placement = (await server.snapshot()).windows.one({
 await placement.unlink();
 ```
 
-`removePlacement` unlinks a linked placement or destroys the final ungrouped
+[`removePlacement`](https://libtmux.org/en/ts/latest/reference/window-window-removeplacement/) unlinks a linked placement or destroys the final ungrouped
 window. It refuses a grouped session, whose members share one window list:
 
 ```ts
 await window.removePlacement();
 ```
 
-`killIfWindowUnshared` kills a pane only while its window has one placement:
+[`killIfWindowUnshared`](https://libtmux.org/en/ts/latest/reference/pane-pane-killifwindowunshared/) kills a pane only while its window has one placement:
 
 ```ts
 await pane.killIfWindowUnshared();
@@ -699,12 +712,12 @@ as the tmux id, because `%1` is unique only within one running daemon — two
 servers both have one, and so does the pane that replaced it after a restart.
 `sameTmuxIdAs` is the raw-id comparison when that is genuinely what you want.
 Every handle also has `showOptions` / `setOption` / `unsetOption`, and `format`
-for tmux's own field names. `Pane.pipeTo` streams a pane to a command for as
-long as the pipe is open, and `Server.saveBuffer` writes a buffer to a file
+for tmux's own field names. [`Pane.pipeTo`](https://libtmux.org/en/ts/latest/reference/pane-pane-pipeto/) streams a pane to a command for as
+long as the pipe is open, and [`Server.saveBuffer`](https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/) writes a buffer to a file
 without bringing it back through this process. Those read one object's own view: a session that
 has set nothing reports nothing, while the values actually governing it are
-tmux's global defaults. `Server.showGlobalOptions`, `setGlobalOption` and
-`unsetGlobalOption` reach those, taking `"session"` or `"window"` for which
+tmux's global defaults. [`Server.showGlobalOptions`](https://libtmux.org/en/ts/latest/reference/server-server-showglobaloptions/), [`setGlobalOption`](https://libtmux.org/en/ts/latest/reference/server-server-setglobaloption/) and
+[`unsetGlobalOption`](https://libtmux.org/en/ts/latest/reference/server-server-unsetglobaloption/) reach those, taking `"session"` or `"window"` for which
 table — `history-limit` and `default-shell` live in the first, `remain-on-exit`
 in the second, and none of the three is readable any other way.
 `showResolvedOptions` answers the other question: what governs this object,
@@ -725,7 +738,7 @@ await server.cmd("display-message", ["-p", "#{version}"], { target: null });
 
 A handle sends its own id as the target, so `pane.cmd("clock-mode")` addresses
 that pane. Pass `target` to address something else, or `null` for a command that
-takes none. Failure raises `TmuxCommandError` carrying tmux's own stderr.
+takes none. Failure raises [`TmuxCommandError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxcommanderror/) carrying tmux's own stderr.
 
 ## Running several commands at once
 
@@ -756,8 +769,8 @@ const [first, second] = await server.batch([
 ]);
 ```
 
-`first` and `second` are `Window` handles, typed one by one — a batch mixing
-kinds keeps each element's own type, so a planned split comes back as a `Pane`
+`first` and `second` are [`Window`](https://libtmux.org/en/ts/latest/reference/window-window/) handles, typed one by one — a batch mixing
+kinds keeps each element's own type, so a planned split comes back as a [`Pane`](https://libtmux.org/en/ts/latest/reference/pane-pane/)
 with `Pane` methods on it:
 
 ```ts
@@ -766,7 +779,7 @@ const lines = await created.capture();
 ```
 
 For a command this package does not model, or one whose output you want raw,
-`pipeline` takes arguments and returns a result per command, in order — so a
+[`pipeline`](https://libtmux.org/en/ts/latest/reference/server-server-pipeline/) takes arguments and returns a result per command, in order — so a
 creating command's `-P -F` lands where you asked for it and a silent command
 stays empty rather than shifting the one behind it:
 
@@ -875,13 +888,13 @@ rather than a sample. The first evaluation always reports.
 the format expands once per session. A report names the object it expanded
 against, so a pane-scope one carries `paneId`, `windowId` and `windowIndex`.
 
-A connected server adds and drops them while it runs with `subscribeFormat` and
-`unsubscribeFormat`. A subscription belongs to the control client, so the
+A connected server adds and drops them while it runs with [`subscribeFormat`](https://libtmux.org/en/ts/latest/reference/types-connectedserver-subscribeformat/) and
+[`unsubscribeFormat`](https://libtmux.org/en/ts/latest/reference/types-connectedserver-unsubscribeformat/). A subscription belongs to the control client, so the
 connection re-issues its own after a reconnect.
 
 ### Waiting for something to happen
 
-Most work is "do this, then wait until that". `waitFor` is the join between a
+Most work is "do this, then wait until that". [`waitFor`](https://libtmux.org/en/ts/latest/reference/types-connectedserver-waitfor/) is the join between a
 snapshot and the stream, and it subscribes before it reads — so a change that
 lands in between is still seen, rather than leaving you waiting on a condition
 that already came true:
@@ -933,7 +946,7 @@ reconnecting; after the attach, it binds each new command to the daemon carrying
 that observer. It never replays a mutation.
 
 The API is the same `Server`. Connecting adds the observer and daemon binding;
-commands, including `loadBuffer`, still use the server's engine.
+commands, including [`loadBuffer`](https://libtmux.org/en/ts/latest/reference/server-server-loadbuffer/), still use the server's engine.
 
 ## Recipes
 
@@ -1029,7 +1042,7 @@ const lines = await pane.capture();
 const changed = lines.filter((line) => line.trim() !== "").length;
 ```
 
-`capture()` reads the visible pane; pass `start` to reach into the scrollback.
+[`capture()`](https://libtmux.org/en/ts/latest/reference/pane-pane-capture/) reads the visible pane; pass `start` to reach into the scrollback.
 `sendKeys` presses Enter unless you say otherwise, and takes keys literally with
 `{ literal: true }` when the text could be read as a tmux key name. The keys and
 the Enter travel as two commands in one tmux invocation, so nothing interleaves
@@ -1081,7 +1094,7 @@ reports[1]?.commands[0]?.[0]; // "display-message", the identity read
 reports[0]?.durationMs;
 ```
 
-`TmuxInvocationReport` is exported for a typed collector. Every command
+[`TmuxInvocationReport`](https://libtmux.org/en/ts/latest/reference/common-tmuxinvocationreport/) is exported for a typed collector. Every command
 reports, including the identity read and four listings behind `snapshot()`,
 the version probe, and commands a custom engine executed. The report carries
 the commands tmux received, `durationMs` for the invocation itself, `queuedMs`
@@ -1116,7 +1129,7 @@ controller.abort(new Error("the caller moved on"));
 await lines.catch(() => undefined);
 ```
 
-A cancelled or timed-out command always rejects with a `TmuxTransportError`
+A cancelled or timed-out command always rejects with a [`TmuxTransportError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxtransporterror/)
 rather than with the reason itself, because the error also says how far the
 command got — `delivery` distinguishes one tmux never started from one it may
 have run. What you passed to `abort()` is preserved as `cause`.
@@ -1256,14 +1269,14 @@ graph would make every implementer responsible for framing, capability gating
 and normalization; this one leaves them responsible only for execution. The
 request carries global flags and a nonempty command list separately, so an
 engine cannot accidentally split a snapshot into several clients. Honour its
-`daemonGuard` with `guardRequest`, or bind the engine to one daemon.
+[`daemonGuard`](https://libtmux.org/en/ts/latest/reference/engine-daemonguard/) with `guardRequest`, or bind the engine to one daemon.
 
 `watch()` and `connect()` are the two calls an engine does not carry. Both hold
 a local `tmux -C attach` process open, which is the thing an engine exists to
 avoid needing, so they refuse rather than attaching to whichever tmux this
 machine happens to be running.
 
-For a connection scoped to one block, `withConnection` closes it on the way out
+For a connection scoped to one block, [`withConnection`](https://libtmux.org/en/ts/latest/reference/server-server-withconnection/) closes it on the way out
 whether the body returns or throws — useful where `await using` is not
 available, since it needs `Symbol.asyncDispose` in the consumer's `lib`:
 
@@ -1318,14 +1331,14 @@ Typed option and hook methods treat names as literal data, including `#`. Use
 `cmd` when deliberately asking tmux to expand a computed name.
 
 Window and pane scopes report only what was set on them, never inherited
-values. `OptionScope` supplies the same lowercase scope values when a named
+values. [`OptionScope`](https://libtmux.org/en/ts/latest/reference/constants-optionscope/) supplies the same lowercase scope values when a named
 constant is clearer than a string literal.
 
 ## Environments
 
 A session's environment is what tmux hands to the processes it starts, so it is
 how you seed a variable for every pane a workspace creates. `Server` carries the
-global environment and `Session` its own:
+global environment and [`Session`](https://libtmux.org/en/ts/latest/reference/session-session/) its own:
 
 ```ts
 await session.setEnvironment("DATABASE_URL", "postgres://localhost/dev");
@@ -1337,20 +1350,20 @@ await server.setEnvironment("EDITOR", "vim");
 ```
 
 A variable is in one of three states, which is why the value type is
-`EnvironmentValue` — `string | null` — and lookups can also answer `undefined`:
+[`EnvironmentValue`](https://libtmux.org/en/ts/latest/reference/types-environmentvalue/) — `string | null` — and lookups can also answer `undefined`:
 
-| State                                   | `getEnvironment` | In `showEnvironment` |
-| --------------------------------------- | ---------------- | -------------------- |
-| Set to a value                          | the value        | present              |
-| Marked for removal from child processes | `null`           | present              |
-| Not carried at all                      | `undefined`      | absent               |
+| State                                   | [`getEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-getenvironment/) | In [`showEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-showenvironment/) |
+| --------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Set to a value                          | the value                                                                                    | present                                                                                           |
+| Marked for removal from child processes | `null`                                                                                       | present                                                                                           |
+| Not carried at all                      | `undefined`                                                                                  | absent                                                                                            |
 
-`removeEnvironment` is the middle row and `unsetEnvironment` is the last: the
+[`removeEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-removeenvironment/) is the middle row and [`unsetEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-unsetenvironment/) is the last: the
 first leaves an entry saying "unset this before spawning", which is how tmux
 keeps a stale `SSH_AUTH_SOCK` out of a new pane. Removal marks are routine
 rather than exotic — tmux's own `update-environment` puts several in every
-session. `SetEnvironmentOptions` covers tmux's `-F` and `-h` as `expandFormat`
-and `hidden`, and `EnvironmentScope` names the two scopes.
+session. [`SetEnvironmentOptions`](https://libtmux.org/en/ts/latest/reference/types-setenvironmentoptions/) covers tmux's `-F` and `-h` as `expandFormat`
+and `hidden`, and [`EnvironmentScope`](https://libtmux.org/en/ts/latest/reference/types-environmentscope/) names the two scopes.
 
 ## Errors
 
@@ -1396,7 +1409,7 @@ because tmux may well have created that window before the pipe went quiet. Every
 path reports the same type, so a timeout during `snapshot()` is not a different
 shape from a timeout during `kill()`.
 
-A handle that outlived its daemon raises `TmuxServerRestartedError`. tmux
+A handle that outlived its daemon raises [`TmuxServerRestartedError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxserverrestartederror/). tmux
 numbers a restarted daemon's objects from the start, so a `%1` read before the
 restart names a pane that exists and belongs to somebody else — and a socket
 path is a place, not a process:
@@ -1428,7 +1441,7 @@ await server.isAlive(); // false for a missing daemon, socket, or binary
 await server.checkAlive(); // the assertion form
 ```
 
-Library failures extend `LibTmuxError`; invalid arguments may throw native
+Library failures extend [`LibTmuxError`](https://libtmux.org/en/ts/latest/reference/errors-libtmuxerror/); invalid arguments may throw native
 `TypeError`. Every one carries `code`, a string naming its class that survives
 a bundler renaming identifiers — the check to write where `instanceof` cannot
 reach:
@@ -1443,27 +1456,27 @@ try {
 }
 ```
 
-A query that matches nothing raises `NoMatchError`, one that
-matches several where you asked for one raises `MultipleMatchesError`, and
+A query that matches nothing raises [`NoMatchError`](https://libtmux.org/en/ts/latest/reference/errors-nomatcherror/), one that
+matches several where you asked for one raises [`MultipleMatchesError`](https://libtmux.org/en/ts/latest/reference/errors-multiplematcheserror/), and
 criteria the schema rejects raise `QueryValidationError`. A `waitFor` that
 reaches its deadline with the condition still unmet raises
-`WaitTimeoutError`, which is worth catching by name: it says the state never
+[`WaitTimeoutError`](https://libtmux.org/en/ts/latest/reference/errors-waittimeouterror/), which is worth catching by name: it says the state never
 arrived, where a `LibTmuxError` from the same call says only that the
 connection ended and nothing about the condition. A criterion naming a field
-newer than the tmux that answered raises `VersionTooLowError` rather than
+newer than the tmux that answered raises [`VersionTooLowError`](https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/) rather than
 matching nothing — the error names the field, the release that has it, and
 the release running, because "no pane has this" and "your tmux has never
 heard of this" are different answers.
 
-Two bases sit above those. Catch `ObjectNotFoundError` for "not there, however
+Two bases sit above those. Catch [`ObjectNotFoundError`](https://libtmux.org/en/ts/latest/reference/errors-objectnotfounderror/) for "not there, however
 you asked": a query that matched nothing (`NoMatchError`) and tmux refusing a
-target that does not exist (`TmuxObjectNotFoundError`) both extend it.
-`MultipleObjectsError` is its counterpart and has one subclass today,
+target that does not exist ([`TmuxObjectNotFoundError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxobjectnotfounderror/)) both extend it.
+[`MultipleObjectsError`](https://libtmux.org/en/ts/latest/reference/errors-multipleobjectserror/) is its counterpart and has one subclass today,
 `MultipleMatchesError`; it stays so the pair reads the same, and so code ported
 from Python, which catches `ObjectDoesNotExist` and `MultipleObjectsReturned`,
 has a name to catch. Import library errors from `libtmux` or `libtmux/errors`.
 
-`libtmux/selection` carries `parseLegacyWhere`, which converts Python-style
+`libtmux/selection` carries [`parseLegacyWhere`](https://libtmux.org/en/ts/latest/reference/selection-parselegacywhere/), which converts Python-style
 `name__contains=` filter strings into criteria. It is for code being ported
 rather than written fresh, so it sits on the subpath rather than in the root
 export, as the engine and type inventories do.
@@ -1488,7 +1501,7 @@ use `libtmux/errors` for new imports.
 | `WaitTimeout`             | `WaitTimeoutError`         |
 | `TmuxServerRestarted`     | `TmuxServerRestartedError` |
 
-Completed command results, including custom `TmuxEngine` results, use
+Completed command results, including custom [`TmuxEngine`](https://libtmux.org/en/ts/latest/reference/engine-tmuxengine/) results, use
 `exitCode` instead of `returncode`. Update result construction and property
 reads together. `TmuxCommandError.exitCode` is unchanged. Transport failures
 retain their `kind`, `delivery`, partial output and optional signal; they
@@ -1496,7 +1509,7 @@ have no completed exit code. A `TmuxEngine` that resolves without a numeric
 `exitCode` raises `TmuxTransportError` with `kind: "contract"` rather than
 being read as a failed command.
 
-Use `server.checkAlive()` in place of the deprecated `server.raiseIfDead()`.
+Use [`server.checkAlive()`](https://libtmux.org/en/ts/latest/reference/server-server-checkalive/) in place of the deprecated [`server.raiseIfDead()`](https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/).
 Both reject when the server cannot be reached.
 
 The compatibility call:
@@ -1511,7 +1524,7 @@ The canonical call:
 await server.checkAlive();
 ```
 
-For `pane.split()`, `window.split()` and planned splits, replace
+For [`pane.split()`](https://libtmux.org/en/ts/latest/reference/pane-pane-split/), `window.split()` and planned splits, replace
 `vertical: true` with `direction: PaneDirection.Below`, and `vertical: false`
 with `direction: PaneDirection.Right`. Omitting both still splits below. The
 legacy `vertical` option is deprecated; passing it with `direction` throws
@@ -1539,15 +1552,85 @@ value that failed, which Zod reports only by type.
 
 ## Consumers
 
-Two working consumers live in this repository:
+Three working consumers live in this repository:
 
 - [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
   Its waits stream tmux's notifications rather than polling, and its
-  `run_shell_command` frames what it sends so a pane's echo cannot be read as
+  [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) frames what it sends so a pane's echo cannot be read as
   output.
 - [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
   Applying a workspace twice converges the running session rather than
   duplicating it.
+- [`packages/workspace-cli`](../workspace-cli) — the [`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) command.
+
+## Packages
+
+### [@libtmux/mcp](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp)
+
+A stdio MCP server: an agent lists sessions, reads a pane, sends keys, and
+waits for output instead of polling for it.
+
+[API reference](https://libtmux.org/en/ts/latest/mcp/reference/) ·
+[Tools](https://libtmux.org/en/ts/latest/mcp/tools/) ·
+[npm](https://www.npmjs.com/package/@libtmux/mcp)
+
+An MCP client launches it from this configuration:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "npx",
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.13"],
+      "env": { "LIBTMUX_SOCKET": "agent" }
+    }
+  }
+}
+```
+
+### [@libtmux/workspace](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace)
+
+Describes a session as tmuxp-shaped data and applies it.
+
+[API reference](https://libtmux.org/en/ts/latest/workspace/reference/) ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace)
+
+```console
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
+```
+
+A workspace is one call to
+[`applyWorkspace`](https://libtmux.org/en/ts/latest/workspace/reference/builder-applyworkspace/),
+shown in the
+[package README](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace#use-it).
+
+### [@libtmux/workspace-cli](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli)
+
+`tmux-workspace` loads, captures, converts and imports tmuxp workspace files on
+Node or Bun. Ordinary loads start no Python.
+
+[Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
+
+Save this document as `workspace.yaml`:
+
+```yaml
+session_name: dev
+windows:
+  - window_name: editor
+    layout: main-vertical
+    panes:
+      - vim
+      - top
+```
+
+Load it detached, on a socket of its own:
+
+```console
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml \
+    -L workspace-cli-demo \
+    -d
+```
 
 ## Examples
 
@@ -1648,7 +1731,7 @@ try {
 }
 ```
 
-`MINIMUM_TMUX` is that floor, and `assertSupportedTmux` applies the same ranking
+`MINIMUM_TMUX` is that floor, and [`assertSupportedTmux`](https://libtmux.org/en/ts/latest/reference/common-assertsupportedtmux/) applies the same ranking
 to a version report you already hold, such as the output of `tmux -V`:
 
 ```ts
@@ -1660,7 +1743,7 @@ assertSupportedTmux("3.4"); // returns; throws VersionTooLowError below the floo
 
 One behaviour differs across the range rather than being gated: tmux 3.3a
 suppressed `run-shell` output for an invocation with no attached client, which
-later versions restored. `runShell` returns an empty result there rather than
+later versions restored. [`runShell`](https://libtmux.org/en/ts/latest/reference/server-server-runshell/) returns an empty result there rather than
 failing.
 
 ## Parity with the Python library

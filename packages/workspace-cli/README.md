@@ -12,10 +12,17 @@
 # Workspace CLI
 
 Manage tmux workspaces from YAML and JSON with Node.js 22.12+ or Bun 1.3.14+.
-`tmux-workspace` loads, captures, converts and imports tmuxp workspace files.
+[`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) loads, captures, converts and imports tmuxp workspace files.
 This implementation is in development.
 
+[Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) •
+[Guides](https://libtmux.org/en/ts/latest/workspace/guides/) •
+[npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
+
 </div>
+
+Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+Built on [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 ## Install
 
@@ -66,6 +73,32 @@ $ bun add --global @libtmux/workspace-cli@0.1.0-alpha.13
 The rest of this page runs the installed `tmux-workspace`. A runner passes
 the same arguments to the command when they follow the package name.
 
+## Commands
+
+Each command has a page in the
+[command reference](https://libtmux.org/en/ts/latest/workspace/cli/).
+
+- [`load`](https://libtmux.org/en/ts/latest/workspace/cli/load/) creates or
+  reuses a session from a workspace file.
+- [`freeze`](https://libtmux.org/en/ts/latest/workspace/cli/freeze/) captures a
+  live session as a workspace document.
+- [`convert`](https://libtmux.org/en/ts/latest/workspace/cli/convert/) converts a
+  workspace between YAML and JSON.
+- [`import`](https://libtmux.org/en/ts/latest/workspace/cli/import/) translates a
+  tmuxinator or Teamocil workspace.
+- [`ls`](https://libtmux.org/en/ts/latest/workspace/cli/ls/) lists project and
+  saved workspace files.
+- [`search`](https://libtmux.org/en/ts/latest/workspace/cli/search/) searches
+  workspace names, sessions, windows and pane commands.
+- [`edit`](https://libtmux.org/en/ts/latest/workspace/cli/edit/) opens a
+  workspace in your editor.
+- [`shell`](https://libtmux.org/en/ts/latest/workspace/cli/shell/) opens the
+  Python tmuxp shell with the selected tmux context.
+- [`debug-info`](https://libtmux.org/en/ts/latest/workspace/cli/debug-info/)
+  shows runtime, configuration and tmux diagnostics.
+- [`completion`](https://libtmux.org/en/ts/latest/workspace/cli/completion/)
+  prints a shell completion script.
+
 ## Load and capture
 
 Save this document as `workspace.yaml`:
@@ -111,7 +144,7 @@ tiles its panes, where tmuxp stacks them by halving the last one. Explicit
 `layout` and `focus` agree with tmuxp, and so does the pane left active when
 nothing sets `focus`: the last pane created in the focused window.
 
-[`@libtmux/workspace`](../workspace) is a separate implementation, not this
+[`@libtmux/workspace`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace) is a separate implementation, not this
 command's engine: it converges a session that already exists, and its strict
 schema rejects `environment`, `before_script`, `window_index`,
 `suppress_history`, `x-` keys and the other fields below. A document written
@@ -172,7 +205,7 @@ lists and blank builder names still use native validation.
 
 ## Inspect a workspace through MCP
 
-The separate [MCP server](../mcp/README.md) inspects loaded workspaces on the
+The separate [MCP server](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp) inspects loaded workspaces on the
 same tmux socket. After the detached load above, add it to your MCP client with
 that socket and the `inspect` toolset:
 
@@ -194,24 +227,75 @@ For a workspace loaded with `-S`, set `LIBTMUX_SOCKET_PATH` to the same absolute
 socket path instead of `LIBTMUX_SOCKET`. If the CLI uses `TMUX_BIN`, select that
 executable with the MCP server's `LIBTMUX_TMUX_BIN` too.
 
-Discover tools with `tools/list`, then call `list_sessions` and `list_panes`.
-Call `list_windows` with `session` set to `dev`, the configuration's session
-name. Pass a returned pane ID as `paneId` to `capture_pane` or `wait_for_text`;
+Discover tools with `tools/list`, then call [`list_sessions`](https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/) and [`list_panes`](https://libtmux.org/en/ts/latest/mcp/tools/list_panes/).
+Call [`list_windows`](https://libtmux.org/en/ts/latest/mcp/tools/list_windows/) with `session` set to `dev`, the configuration's session
+name. Pass a returned pane ID as `paneId` to [`capture_pane`](https://libtmux.org/en/ts/latest/mcp/tools/capture_pane/) or [`wait_for_text`](https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/);
 bound output with `maxLines` and waits with `timeoutMs`. A pending text wait allows
-other inspection requests on the same connection. Read `tmux://capabilities`
+other inspection requests on the same connection. Read [`tmux://capabilities`](https://libtmux.org/en/ts/latest/mcp/resources/capabilities/)
 through `resources/read` to verify the selected socket and advertised tools.
-See the [capture guide](../mcp/README.md#read-what-panes-show) for incremental
+See the [capture guide](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp#read-what-panes-show) for incremental
 reads and cursors.
 
 Closing the MCP subprocess's stdin cancels pending waits and joins its control
 connections. The loaded workspace remains available in tmux.
 
+## Convert
+
+`convert` rewrites a workspace in the other format. Convert the document saved
+above to JSON:
+
+```console
+$ tmux-workspace convert ./workspace.yaml \
+    --workspace-format json \
+    --save-to ./workspace.json
+```
+
 ## Imports
 
-`import tmuxinator` and `import teamocil` translate source documents and validate
+[`import tmuxinator`](https://libtmux.org/en/ts/latest/workspace/cli/import-tmuxinator/) and [`import teamocil`](https://libtmux.org/en/ts/latest/workspace/cli/import-teamocil/) translate source documents and validate
 native configuration fields before previewing or saving. Unknown fields,
 conflicting non-null aliases and malformed command shapes fail without
 replacing a destination. Generic `convert` preserves arbitrary fields.
+
+Save this tmuxinator project as `blog.yml`:
+
+```yaml
+name: blog
+root: ~/code/blog
+windows:
+  - editor: vim
+  - server: bun dev
+```
+
+Import it as a tmuxp workspace:
+
+```console
+$ tmux-workspace import tmuxinator ./blog.yml \
+    --workspace-format yaml \
+    --save-to ./blog-workspace.yaml
+```
+
+Save this Teamocil layout as `blog-teamocil.yml`:
+
+```yaml
+windows:
+  - name: editor
+    root: ~/code/blog
+    layout: main-vertical
+    panes:
+      - commands:
+          - vim
+      - commands:
+          - bun dev
+```
+
+Import it the same way:
+
+```console
+$ tmux-workspace import teamocil ./blog-teamocil.yml \
+    --workspace-format yaml \
+    --save-to ./blog-teamocil-workspace.yaml
+```
 
 Tmuxinator window command arrays stay in one pane. Explicit `panes` lists create
 separate panes. Project `pre_window` arrays form one `; `-joined command; window
@@ -241,7 +325,7 @@ templates, so `<%` in a Teamocil source is ordinary text and is preserved.
 
 ## Output
 
-Every command accepts `--json` and `--ndjson` before or after the command name.
+Every command accepts [`--json`](https://libtmux.org/en/ts/latest/workspace/reference/output/) and `--ndjson` before or after the command name.
 NDJSON takes precedence when both are present. Machine load requires `-d` or
 `--append`. Machine commands never prompt. Human output honors `--color` and
 `NO_COLOR`; machine output contains encoded data without terminal styling.
