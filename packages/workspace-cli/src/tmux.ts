@@ -752,7 +752,7 @@ export async function load(request: Request, context: CLIContext): Promise<numbe
   if (request.values.colors === 88)
     throw new CliError(
       "usage",
-      "tmux 3.2a+ rejects the legacy 88-color flag (-8); remove it or use -2 for 256 colors",
+      "tmux rejects the legacy 88-color flag (-8); remove it or use -2 for 256 colors",
       2,
     );
   if (request.mode !== "human" && !request.values.detached && !request.values.append)
