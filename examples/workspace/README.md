@@ -61,7 +61,7 @@ initial window and pane and reconciles an existing owned session. See
 
 This page's first snippet is a literal excerpt of `workspace.ts`, which
 `workspace.test.ts` runs against a real tmux server, and which the
-[library README](../../packages/libtmux/README.md#recipes) quotes the same
+[library README](../../packages/libtmux/README.md#servernewsession-build-a-workspace) quotes the same
 way.
 
 ## Where to go next

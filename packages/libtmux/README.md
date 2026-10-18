@@ -22,31 +22,54 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 
 </div>
 
-Acquire an immutable snapshot of a tmux server, query it with declarative
-criteria, and drive sessions, windows, and panes with a fully typed API.
+Read a server once into an [immutable snapshot][ref-server-snapshot],
+[query it][ref-selection-where] with declarative criteria,
+[change it][ref-session-newwindow] with typed calls, and
+[hear about changes][ref-server-watch] as tmux makes them. It suits agents,
+launchers, test harnesses and dashboards.
 
 Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
 An MCP server, a workspace builder and a workspace command build on this
 package: see [Packages](#packages).
 
-Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
-5.6 and below ship no `ES2024` lib, which these declarations are built against.
-
-Linux is the only supported host for real tmux control. The macOS CI lane
-checks package artifacts without exercising tmux; macOS runtime behavior is
-unproven. WSL is untested. This is a proof boundary, not an OS rejection.
+Add it to your project:
 
 ```console
 $ bun add --exact libtmux@0.1.0-alpha.13
 ```
 
-> [!WARNING]
-> **Alpha.** Prerelease software: the API can change between alpha releases
-> without a deprecation cycle, and it is not covered by semantic versioning
-> until the `0.1.0` release itself — `0.1.0-alpha.N` comes before it. Pin an
-> exact version, and read the [changelog](CHANGELOG.md) before you upgrade.
+Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
+5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
-## Quickstart
+Runs on Linux, including WSL. On macOS, CI builds and installs the packages,
+but the real-tmux test suites run on Linux only.
+
+> [!WARNING]
+> **Alpha.** The API can change between alpha releases without a deprecation
+> cycle, and is not covered by semantic versioning until `0.1.0`. Pin an exact
+> version, and read the [changelog](CHANGELOG.md) before you upgrade.
+
+**Contents** — [Quick start](#quick-start) ·
+[Read what tmux holds](#read-what-tmux-holds) ·
+[Find sessions, windows, and panes](#find-sessions-windows-and-panes) ·
+[Change sessions, windows, and panes](#change-sessions-windows-and-panes) ·
+[Run several commands at once](#run-several-commands-at-once) ·
+[Type into a pane and wait](#type-into-a-pane-and-wait) ·
+[Watch tmux change](#watch-tmux-change) ·
+[Choosing how work is arranged](#choosing-how-work-is-arranged) ·
+[Options and hooks](#options-and-hooks) · [Environments](#environments) ·
+[Errors](#errors) · [Test your own code](#test-your-own-code) ·
+[Run inside tmux](#run-inside-tmux) · [tmux versions](#tmux-versions) ·
+[Consumers](#consumers) · [Packages](#packages) · [Entrypoints](#entrypoints) ·
+[Parity with the Python library](#parity-with-the-python-library) ·
+[What it leaves out](#what-it-leaves-out) ·
+[Support and status](#support-and-status) · [Documentation](#documentation) ·
+[License](#license)
+
+## Quick start
+
+Create a session, split a window, read the result back from a snapshot, and
+type into a pane. This is the whole program:
 
 ```ts
 import { Server } from "libtmux";
@@ -64,97 +87,155 @@ console.log(window.panes.length); // 2
 await window.panes.at(0)?.sendKeys("echo hello");
 ```
 
+`new Server()` drives the tmux server your own `tmux` command does. Pass
+`socketName` or `socketPath` to [`ServerOptions`][ref-serveroptions] for a
+private one. The program prints `2`: the `editor` window holds two panes after
+the split.
+
+Every TypeScript block here is type-checked by `bun run typecheck:readme` and,
+unless a comment says otherwise, run against a real tmux server by
+`bun run test:readme`. The programs in [`examples/`](../../examples) are run by
+the integration suite.
+
 ## Start here
 
 The API is small and the pieces stack in one order. Read them in this order and
 each one uses the last:
 
-1. **[Snapshots](#snapshots)** — [`server.snapshot()`](https://libtmux.org/en/ts/latest/reference/server-server-snapshot/) reads the whole server once.
+1. **[Snapshots](#read-what-tmux-holds)** — [`server.snapshot()`][ref-server-snapshot] reads the whole server once.
    Everything else resolves off it without talking to tmux again.
-2. **[Querying](#querying)** — [`.where()`](https://libtmux.org/en/ts/latest/reference/selection-selection-where/) for declarative criteria, [`.filter()`](https://libtmux.org/en/ts/latest/reference/selection-selection-filter/)
+2. **[Querying](#find-sessions-windows-and-panes)** — [`.where()`][ref-selection-where] for declarative criteria, [`.filter()`][ref-selection-filter]
    for a predicate. Both run against the snapshot you already hold.
-3. **[Operations](#operations)** — [`newWindow`](https://libtmux.org/en/ts/latest/reference/session-session-newwindow/), [`split`](https://libtmux.org/en/ts/latest/reference/window-window-split/), [`sendKeys`](https://libtmux.org/en/ts/latest/reference/pane-pane-sendkeys/): the calls
+3. **[Operations](#change-sessions-windows-and-panes)** — [`newWindow`][ref-session-newwindow], [`split`][ref-window-split], [`sendKeys`][ref-pane-sendkeys]: the calls
    that change something, each resolving to a handle.
-4. **[Running several at once](#running-several-commands-at-once)** — `plan` and
-   [`batch`](https://libtmux.org/en/ts/latest/reference/server-server-batch/), once you are making more than a couple of changes.
-5. **[Watching](#watching)** — [`server.watch()`](https://libtmux.org/en/ts/latest/reference/server-server-watch/) for what changed rather than
-   what is true, and [`server.connect()`](https://libtmux.org/en/ts/latest/reference/server-server-connect/) to pair a server with that observer.
+4. **[Running several at once](#run-several-commands-at-once)** — [`plan`][ref-session-plan] and
+   [`batch`][ref-server-batch], once you are making more than a couple of changes.
+5. **[Watching](#watch-tmux-change)** — [`server.watch()`][ref-server-watch] for what changed rather than
+   what is true, and [`server.connect()`][ref-server-connect] to pair a server with that observer.
 
 A snapshot answers _what is true now_; a watch answers _what changed_. Most
 programs need the first, and reach for the second when they have to react.
 
-Those five are the page, in the order it is written. What follows them —
-deadlines, engines, observation, options, environments, errors — is depth for
-when a program needs it, and nothing above depends on any of it.
+What follows those five — deadlines, engines, observation, options,
+environments, errors — is depth for when a program needs it.
 
-What this page claims a call costs is measured rather than asserted:
-[`examples/observe/`](../../examples/observe/README.md) counts the invocations
-a snapshot and a hundred queries actually make, and runs as a test against a
-real server.
+Call costs on this page are measured: [`examples/observe/`](../../examples/observe/README.md)
+counts the invocations a snapshot and a hundred queries make, against a real
+server.
 
 <details>
 <summary><b>Everything on this page</b></summary>
 
 <!-- toc -->
 
-- [Quickstart](#quickstart)
+- [Quick start](#quick-start)
 - [Start here](#start-here)
-- [Snapshots](#snapshots)
-- [Querying](#querying)
-- [Relations](#relations)
-- [Field names](#field-names)
-- [Field values](#field-values)
-- [Operations](#operations)
-- [Commands this package does not model](#commands-this-package-does-not-model)
-- [Running several commands at once](#running-several-commands-at-once)
-- [Watching](#watching)
+- [Read what tmux holds](#read-what-tmux-holds)
+  - [`Server.snapshot`: read the whole server once](#serversnapshot-read-the-whole-server-once)
+  - [`ServerSnapshot`: it never changes](#serversnapshot-it-never-changes)
+  - [`Server.sessions` and its siblings: one snapshot each](#serversessions-and-its-siblings-one-snapshot-each)
+  - [`Window.refreshed`: read one handle at a later instant](#windowrefreshed-read-one-handle-at-a-later-instant)
+- [Find sessions, windows, and panes](#find-sessions-windows-and-panes)
+  - [`Selection.where` and `Selection.filter`: criteria or a predicate](#selectionwhere-and-selectionfilter-criteria-or-a-predicate)
+  - [Operators: strings, AND/OR/NOT, regular expressions and relations](#operators-strings-andornot-regular-expressions-and-relations)
+  - [`ClientWhere`: clients are queryable too](#clientwhere-clients-are-queryable-too)
+  - [`Selection`: immutable, ordered, iterable](#selection-immutable-ordered-iterable)
+  - [Relations are properties](#relations-are-properties)
+  - [Handles read in TypeScript names](#handles-read-in-typescript-names)
+  - [Field values arrive decoded](#field-values-arrive-decoded)
+  - [Criteria take decoded values and wire text](#criteria-take-decoded-values-and-wire-text)
+  - [`QueryValidationError`: numbers must be exact](#queryvalidationerror-numbers-must-be-exact)
+  - [`encodeWhereDocument`: store a query](#encodewheredocument-store-a-query)
+- [Change sessions, windows, and panes](#change-sessions-windows-and-panes)
+  - [`Window.rename`: a change leaves the handle at its old instant](#windowrename-a-change-leaves-the-handle-at-its-old-instant)
+  - [`Session.newWindow` and `Window.split`: the everyday calls](#sessionnewwindow-and-windowsplit-the-everyday-calls)
+  - [`Pane.zoom` and `Pane.unzoom`: set a state](#panezoom-and-paneunzoom-set-a-state)
+  - [`PaneDirection`: which side a split lands on](#panedirection-which-side-a-split-lands-on)
+  - [`shellCommand`: run something other than the shell](#shellcommand-run-something-other-than-the-shell)
+  - [`Window.move` and `Window.link`: move and link windows](#windowmove-and-windowlink-move-and-link-windows)
+  - [Handles as targets](#handles-as-targets)
+  - [`Window.unlink` and `Window.removePlacement`](#windowunlink-and-windowremoveplacement)
+  - [`Pane.sendKeys` and `Pane.capture`: pane input and contents](#panesendkeys-and-panecapture-pane-input-and-contents)
+  - [`Pane.enterCopyMode`: copy mode needs no client](#paneentercopymode-copy-mode-needs-no-client)
+  - [`Pane.displayPopup` and the choosers need a client](#panedisplaypopup-and-the-choosers-need-a-client)
+  - [Server-wide commands and paste buffers](#server-wide-commands-and-paste-buffers)
+  - [`Client.switchTo`: clients, and re-reading a handle](#clientswitchto-clients-and-re-reading-a-handle)
+  - [Describing a handle](#describing-a-handle)
+  - [Comparing handles and reading options](#comparing-handles-and-reading-options)
+  - [`Server.cmd`: a command this package does not model](#servercmd-a-command-this-package-does-not-model)
+- [Run several commands at once](#run-several-commands-at-once)
+  - [`Server.batch`: plan, then run](#serverbatch-plan-then-run)
+  - [`Server.pipeline`: raw arguments, one result each](#serverpipeline-raw-arguments-one-result-each)
+  - [`Server.newSession`: build a workspace](#servernewsession-build-a-workspace)
+- [Type into a pane and wait](#type-into-a-pane-and-wait)
+  - [`Pane.sendKeys`: type, then read what it said](#panesendkeys-type-then-read-what-it-said)
+  - [`Server.watch`: wait for a pane to print something](#serverwatch-wait-for-a-pane-to-print-something)
+  - [`Server.connect`: act, then wait, with an observer](#serverconnect-act-then-wait-with-an-observer)
+- [Watch tmux change](#watch-tmux-change)
+  - [`Server.watch`: hear changes as they happen](#serverwatch-hear-changes-as-they-happen)
+  - [`pauseAfterSeconds`: pace a busy pane](#pauseafterseconds-pace-a-busy-pane)
+  - [`Server.connect`: pair commands with the observer](#serverconnect-pair-commands-with-the-observer)
   - [Subscribing to a format](#subscribing-to-a-format)
-  - [Waiting for something to happen](#waiting-for-something-to-happen)
-  - [Commands beside a connection](#commands-beside-a-connection)
-- [Recipes](#recipes)
-  - [Wait for a pane to print something](#wait-for-a-pane-to-print-something)
-  - [Act, then wait, with an observer](#act-then-wait-with-an-observer)
-  - [Build a workspace](#build-a-workspace)
-  - [Drive a pane and read what it said](#drive-a-pane-and-read-what-it-said)
-  - [Watch for a change and react to it](#watch-for-a-change-and-react-to-it)
-- [Seeing what it runs](#seeing-what-it-runs)
-- [Deadlines and cancellation](#deadlines-and-cancellation)
+  - [`waitFor`: wait for something to happen](#waitfor-wait-for-something-to-happen)
 - [Choosing how work is arranged](#choosing-how-work-is-arranged)
-  - [How many commands run at once](#how-many-commands-run-at-once)
-  - [Supplying an engine](#supplying-an-engine)
+  - [`maxInFlight`: how many commands run at once](#maxinflight-how-many-commands-run-at-once)
+  - [`TmuxEngine`: put tmux behind SSH, a container, or a daemon](#tmuxengine-put-tmux-behind-ssh-a-container-or-a-daemon)
+  - [`Server.withConnection`: a connection for one block](#serverwithconnection-a-connection-for-one-block)
+  - [`onInvocation`: see what it runs](#oninvocation-see-what-it-runs)
+  - [Deadlines and cancellation: `timeoutMs` and `signal`](#deadlines-and-cancellation-timeoutms-and-signal)
 - [Options and hooks](#options-and-hooks)
+  - [`Session.setOption`: read and write options and hooks](#sessionsetoption-read-and-write-options-and-hooks)
 - [Environments](#environments)
+  - [`Session.setEnvironment`: seed a variable for every pane](#sessionsetenvironment-seed-a-variable-for-every-pane)
 - [Errors](#errors)
+  - [`TmuxCommandError`: tmux said no](#tmuxcommanderror-tmux-said-no)
+  - [`TmuxTransportError`: no answer](#tmuxtransporterror-no-answer)
+  - [`TmuxServerRestartedError`: the daemon is gone](#tmuxserverrestartederror-the-daemon-is-gone)
+  - [`Server.isAlive`: ask without raising](#serverisalive-ask-without-raising)
+  - [`LibTmuxError`: the base class](#libtmuxerror-the-base-class)
+  - [Query errors: `NoMatchError` and its relatives](#query-errors-nomatcherror-and-its-relatives)
   - [Migrating from alpha.9](#migrating-from-alpha9)
-- [Running inside tmux](#running-inside-tmux)
-- [Dependencies](#dependencies)
+- [Test your own code](#test-your-own-code)
+  - [`recordInvocations` and `replayInvocations`: no tmux in unit tests](#recordinvocations-and-replayinvocations-no-tmux-in-unit-tests)
+- [Run inside tmux](#run-inside-tmux)
+  - [`Session.fromEnv`: find the session you are in](#sessionfromenv-find-the-session-you-are-in)
+- [tmux versions](#tmux-versions)
+  - [`Server.version` and `versionAtLeast`: gate your own code](#serverversion-and-versionatleast-gate-your-own-code)
+  - [`VersionTooLowError`: tmux older than 3.3a is refused](#versiontoolowerror-tmux-older-than-33a-is-refused)
 - [Consumers](#consumers)
 - [Packages](#packages)
-  - [@libtmux/mcp](#libtmuxmcp)
-  - [@libtmux/workspace](#libtmuxworkspace)
-  - [@libtmux/workspace-cli](#libtmuxworkspace-cli)
-- [Examples](#examples)
+  - [`@libtmux/mcp`: a tmux server for agents](#libtmuxmcp-a-tmux-server-for-agents)
+  - [`@libtmux/workspace`: tmuxp-style workspaces as data](#libtmuxworkspace-tmuxp-style-workspaces-as-data)
+  - [`@libtmux/workspace-cli`: `tmux-workspace` for the shell](#libtmuxworkspace-cli-tmux-workspace-for-the-shell)
 - [Entrypoints](#entrypoints)
-- [tmux versions](#tmux-versions)
 - [Parity with the Python library](#parity-with-the-python-library)
+- [What it leaves out](#what-it-leaves-out)
+- [Support and status](#support-and-status)
+- [Documentation](#documentation)
 - [License](#license)
 
 <!-- /toc -->
 
 Also: [API reference](docs/api.md) · [Benchmarks](docs/benchmarks.md)
 
-Hosted: [API reference](https://libtmux.org/en/ts/latest/reference/) ·
-[Guides](https://libtmux.org/en/ts/latest/guides/) ·
-[Topics](https://libtmux.org/en/ts/latest/topics/) ·
-[Concepts](https://libtmux.org/en/ts/latest/concepts/)
+Hosted: [API reference][ref-reference] ·
+[Guides][guides] ·
+[Topics][topics] ·
+[Concepts][concepts]
 
 </details>
 
-## Snapshots
+## Read what tmux holds
 
-`snapshot()` is the only call that talks to tmux. It acquires the whole server
-in one round of commands, and everything reachable from the result resolves
-locally.
+A snapshot is one read of the whole server. Everything reachable from it
+resolves locally, and it never changes.
+
+### [`Server.snapshot`][ref-server-snapshot]: read the whole server once
+
+`snapshot()` is the only call that talks to tmux. It acquires the server in one
+round of commands and returns a [`ServerSnapshot`][ref-serversnapshot] whose
+properties are [`Selection`][ref-selection]s of sessions, windows, panes and
+clients:
 
 ```ts
 const snapshot = await server.snapshot();
@@ -165,9 +246,12 @@ snapshot.panes; // Selection<Pane>
 snapshot.clients; // Selection<Client>
 ```
 
-A snapshot never changes. Acquire again to see later state, and the earlier
-snapshot keeps reporting its own instant, so a value you captured cannot shift
-underneath you.
+Reading a property issues no tmux command.
+
+### [`ServerSnapshot`][ref-serversnapshot]: it never changes
+
+Acquire again to see later state. The earlier snapshot keeps reporting its own
+instant, so a value you captured cannot shift underneath you:
 
 ```ts
 const before = await server.snapshot();
@@ -177,19 +261,21 @@ before.sessions.length; // unchanged
 (await server.snapshot()).sessions.length; // includes "later"
 ```
 
-[`server.sessions()`](https://libtmux.org/en/ts/latest/reference/server-server-sessions/), [`windows()`](https://libtmux.org/en/ts/latest/reference/server-server-windows/), [`panes()`](https://libtmux.org/en/ts/latest/reference/server-server-panes/), and [`clients()`](https://libtmux.org/en/ts/latest/reference/server-server-clients/) each take a
-snapshot of their own — one invocation apiece, carrying an identity read and
-four listings — so reaching for several in a row costs several round trips and
-describes several different instants. In a
-loop that is an N+1. Take one `snapshot()` and read the collections off it:
-they are cheaper together and they agree with each other.
+### [`Server.sessions`][ref-server-sessions] and its siblings: one snapshot each
 
-To read one handle at a later instant rather than re-acquiring everything, call
-`refreshed()`. It answers with a _new_ handle and leaves the receiver alone, so
-the snapshot you already hold keeps agreeing with itself — a handle that
-advanced in place would leave `where({ name: "old" })` matching an object whose
-`name` had become `"new"`. A window keeps its placement, so one linked into two
-sessions stays on the one you resolved.
+[`windows()`][ref-server-windows], [`panes()`][ref-server-panes] and
+[`clients()`][ref-server-clients] sit beside it, and each takes a snapshot of
+its own.
+
+- Several calls in a row cost several round trips and describe several instants.
+- Take one `snapshot()` and read the collections off it.
+- [Why](docs/contracts.md#snapshots-and-handles) the per-call accessors cost
+  an invocation each.
+
+### [`Window.refreshed`][ref-window-refreshed]: read one handle at a later instant
+
+`refreshed()` answers with a new handle and leaves the receiver alone, so the
+snapshot you hold keeps agreeing with itself:
 
 ```ts
 const window = snapshot.windows.one({ name: "editor" });
@@ -199,11 +285,23 @@ window.name; // "editor" — the instant this was read at
 (await window.refreshed()).name; // "build"
 ```
 
-## Querying
+A window keeps its placement, so one linked into two sessions stays on the one
+you resolved. [The contract](docs/contracts.md#snapshots-and-handles) covers
+why a handle never advances in place.
 
-`.where()` takes declarative criteria. [`encodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-encodewheredocument/) serializes them in
-a model-tagged document. `.filter()` takes an ordinary predicate. They are never
-overloaded into each other.
+## Find sessions, windows, and panes
+
+Ask a snapshot for what you want. [`.where()`][ref-selection-where] takes
+declarative criteria and [`.filter()`][ref-selection-filter] takes a predicate;
+they are never overloaded into each other. The hosted
+[querying guide][guide-querying] and [queries concept][concept-queries] cover
+the same ground.
+
+### [`Selection.where`][ref-selection-where] and [`Selection.filter`][ref-selection-filter]: criteria or a predicate
+
+`.where()` takes criteria as data, and [`encodeWhereDocument`][ref-encodewheredocument]
+serializes them in a model-tagged document. `.filter()` takes an ordinary
+predicate, and `.map()` returns an array:
 
 ```ts
 snapshot.panes.where({ currentCommand: "vim" });
@@ -211,16 +309,15 @@ snapshot.panes.filter((pane) => pane.currentCommand?.startsWith("v") === true);
 snapshot.panes.map((pane) => pane.id); // an array, not a Selection
 ```
 
-Most programs need equality and a relation: `one({ id })` to re-find something
-they already hold, `{ session: { is: { id } } }` to scope to it. Both consumers
-in this repository use those and nothing else, and `.filter()` covers the rest
-of what a program that built the server itself wants.
+- Most programs need only equality and a relation: [`one({ id })`][ref-selection-one]
+  re-finds something you hold, and `{ session: { is: { id } } }` scopes a query
+  to it.
+- The operators below are for a caller exploring a server it did not build, or
+  running a query it did not write: a saved filter, a `--where` flag, an
+  agent's argument.
+- If you know the ids, you do not need them.
 
-The operators below are for the other case — a caller exploring a server it did
-not build, or one holding a query it did not write: a saved filter, a `--where`
-flag, an argument from an agent. That is also what `encodeWhereDocument` and
-[`decodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/) are for, and why criteria are data rather than a
-predicate. If you know the ids, you do not need any of this.
+### Operators: strings, AND/OR/NOT, regular expressions and relations
 
 Criteria support equality, string operators, `AND`/`OR`/`NOT`, regular
 expressions as data, and relation quantifiers:
@@ -236,9 +333,22 @@ snapshot.sessions.where({
 snapshot.windows.where({ session: { is: { name: "work" } } });
 ```
 
-Clients are queryable on the same terms — [`ClientWhere`](https://libtmux.org/en/ts/latest/reference/selection-clientwhere/) alongside
-[`SessionWhere`](https://libtmux.org/en/ts/latest/reference/selection-sessionwhere/), [`WindowWhere`](https://libtmux.org/en/ts/latest/reference/selection-windowwhere/), and [`PaneWhere`](https://libtmux.org/en/ts/latest/reference/selection-panewhere/). tmux gives a client no id of
-its own, so it is identified by the terminal it occupies, and a control client
+Matching is case-sensitive unless you say otherwise:
+
+```ts
+snapshot.sessions.where({ name: { contains: "API", mode: "insensitive" } });
+```
+
+[`decodeWhereDocument`][ref-decodewheredocument] validates a document read back
+from a config file, an MCP call or a CLI. Every field and operator is in the
+[criteria reference](docs/criteria.md), generated from the table the compiler
+matches against.
+
+### [`ClientWhere`][ref-clientwhere]: clients are queryable too
+
+[`SessionWhere`][ref-sessionwhere], [`WindowWhere`][ref-windowwhere] and
+[`PaneWhere`][ref-panewhere] have a sibling for clients. tmux gives a client no
+id, so one is identified by the terminal it occupies, and a control client
 occupies none:
 
 <!-- static: names a terminal device that exists only on the reader's machine -->
@@ -249,13 +359,9 @@ snapshot.clients.where({ session: { is: { name: "work" } } });
 snapshot.clients.one({ tty: "/dev/pts/3" });
 ```
 
-Matching is case-sensitive unless you say otherwise:
+### [`Selection`][ref-selection]: immutable, ordered, iterable
 
-```ts
-snapshot.sessions.where({ name: { contains: "API", mode: "insensitive" } });
-```
-
-A [`Selection`](https://libtmux.org/en/ts/latest/reference/selection-selection/) is immutable, ordered, and replayable. It is `Iterable`, but it is
+A `Selection` is immutable, ordered and replayable. It is `Iterable`, but it is
 not an `Array`:
 
 ```ts
@@ -265,7 +371,9 @@ selection.toArray();
 [...selection];
 ```
 
-Cardinality helpers each accept optional criteria:
+The cardinality helpers [`first`][ref-selection-first], [`one`][ref-selection-one],
+[`oneOrUndefined`][ref-selection-oneorundefined], [`exists`][ref-selection-exists]
+and [`count`][ref-selection-count] each accept optional criteria:
 
 ```ts
 selection.first({ name: "work" });
@@ -275,14 +383,10 @@ selection.exists({ name: "work" });
 selection.count({ name: "work" });
 ```
 
-Every field each model accepts, and the operators that go with them, are in the
-[criteria reference](docs/criteria.md) — generated from the same table the
-compiler matches against, so it lists what `.where()` actually takes.
+### Relations are properties
 
-## Relations
-
-Relations are plain properties, because the data was already acquired. Reading
-one issues no tmux command.
+The data was already acquired, so reading a relation issues no tmux command.
+[`Server`][ref-server] accessors are the async ones, because they acquire:
 
 ```ts
 session.windows; // Selection<Window>
@@ -293,18 +397,15 @@ pane.window;
 client.pane;
 ```
 
-[`Server`](https://libtmux.org/en/ts/latest/reference/server-server/) accessors are the async ones, because they acquire:
-
 ```ts
 await server.sessions();
 await server.windows();
 ```
 
-## Field names
+### Handles read in TypeScript names
 
-Handles read in idiomatic TypeScript. tmux's own token names stay available
-under `format`, which is also where you reach fields the shortened names do not
-cover.
+tmux's own token names stay available under `format`, which is also where you
+reach fields the shortened names do not cover:
 
 ```ts
 pane.id; // pane_id
@@ -315,9 +416,9 @@ session.name; // session_name
 pane.format.pane_current_command;
 ```
 
-Object IDs are authenticated before a snapshot handle or event exposes them.
-Their brands stop an ID already read as one kind from being mixed with another,
-while the input types still accept configuration and other raw strings:
+Object ids are authenticated before a snapshot handle or event exposes them,
+and their brands stop an id already read as one kind from being mixed with
+another:
 
 ```ts
 import type { PaneId, PaneIdInput } from "libtmux";
@@ -326,11 +427,11 @@ const capturedPane: PaneId = pane.id;
 const configuredPane: PaneIdInput = "%0";
 ```
 
-## Field values
+### Field values arrive decoded
 
 tmux has one wire type, and everything on it is text. A field whose shape this
-port knows is decoded on the way out, so a pid is an authenticated safe integer,
-a flag is a boolean, and a timestamp is a `Date`:
+port knows is decoded on the way out, so a pid is an authenticated safe
+integer, a flag is a boolean, and a timestamp is a `Date`:
 
 ```ts
 pane.panePid; // SafeInteger | null
@@ -339,23 +440,22 @@ session.created; // Date | null
 window.index; // SafeInteger — an identity tmux always populates
 ```
 
-Which fields those are comes from tmux's own `format.c`, and an integration test
-holds every one of them to a live server on each version CI runs. Anything else
-is left exactly as tmux sent it, empty string included.
-
-The text is never lost. `format` is the row as it arrived:
+The text is never lost: `format` is the row as it arrived. Anything this port
+does not decode is left exactly as tmux sent it, empty string included.
 
 ```ts
 pane.format.pane_pid; // "2334787"
 pane.format.pane_active; // "1"
 ```
 
-Criteria take decoded values as well as wire text. A non-null decoded value
-lowers to its exact wire spelling. A `null` criterion instead matches every
-value that field's decoder treats as absent or invalid, including an empty
-typed field and a time reported as `0`. Serialized bytes use stable tmux field
-names and text values; a decoded `WhereDocumentV1` restores camelCase criteria
-names. The same type therefore covers what you write and what comes back.
+### Criteria take decoded values and wire text
+
+- A non-null decoded value lowers to its exact wire spelling.
+- A `null` criterion matches every value the field's decoder treats as absent
+  or invalid, including an empty typed field and a time reported as `0`.
+- Serialized bytes use stable tmux field names and text values; a decoded
+  `WhereDocumentV1` restores camelCase names, so one type covers what you write
+  and what comes back.
 
 ```ts
 import { isSafeInteger, safeInteger } from "libtmux";
@@ -369,17 +469,15 @@ const candidate = Number(process.env["BUILD_PID"]);
 if (isSafeInteger(candidate)) snapshot.panes.where({ pid: candidate });
 ```
 
-A numeric criterion takes any `number`, and a value that is not an exact
-integer — `NaN`, an infinity, a fraction, an unsafe integer — raises
-[`QueryValidationError`](https://libtmux.org/en/ts/latest/reference/errors-queryvalidationerror/) naming the field it was written under. That check is at
-the boundary rather than in the type because the type cannot see a number that
-arrived at runtime, and making the literal case pay for the runtime one cost
-every correct query a `safeInteger` call.
+### [`QueryValidationError`][ref-queryvalidationerror]: numbers must be exact
 
-`SafeInteger` is what decoded fields carry, so a value read off a handle is
-already proven exact. `safeInteger` authenticates one from elsewhere and throws
-when it is not, and `isSafeInteger` narrows without throwing — useful where you
-want the refusal at the point the value arrives rather than at the query.
+- A numeric criterion takes any `number`. One that is not an exact integer —
+  `NaN`, an infinity, a fraction, an unsafe integer — raises the error, naming
+  the field it was written under.
+- `SafeInteger` is what decoded fields carry, so a value read off a handle is
+  already proven exact.
+- `safeInteger` authenticates a number from elsewhere and throws when it is
+  not; [`isSafeInteger`][ref-issafeinteger] narrows without throwing.
 
 Invalid wire spellings remain type errors:
 
@@ -405,8 +503,8 @@ snapshot.windows.where({ index: { contains: fromConfig } });
 ```
 
 Together, on a server with two windows. This is a literal excerpt of
-[`examples/fields/fields.ts`](../../examples/fields/fields.ts), which the integration suite
-runs against a real tmux server:
+[`examples/fields/fields.ts`](../../examples/fields/fields.ts), which the
+integration suite runs against a real tmux server:
 
 <!-- runs: examples/fields/fields.ts -->
 
@@ -439,6 +537,8 @@ const raw = panes.one({ active: true, window: { is: { name: "second" } } }).form
 if (raw !== "1") throw new Error(`expected the raw row to hold "1", saw ${JSON.stringify(raw)}`);
 ```
 
+### [`encodeWhereDocument`][ref-encodewheredocument]: store a query
+
 Criteria are camelCase too. WHERE documents use tmux's stable spellings so a
 stored query stays readable by other tools:
 
@@ -454,8 +554,8 @@ const document = decodeWhereDocument(JSON.parse(encoded) as unknown);
 if (document.model === "pane") snapshot.panes.where(document.where);
 ```
 
-Use [`compileBoundedRegex`](https://libtmux.org/en/ts/latest/reference/selection-compileboundedregex/) when arbitrary input needs the same bounded regular-
-expression grammar as selection criteria:
+[`compileBoundedRegex`][ref-compileboundedregex] applies the same bounded
+regular-expression grammar when arbitrary input needs it:
 
 ```ts
 import { compileBoundedRegex } from "libtmux";
@@ -464,25 +564,22 @@ const matcher = compileBoundedRegex("^ready-[0-9]+$");
 if (!matcher.test("ready-12")) throw new Error("expected a match");
 ```
 
-A criterion is spelled like the handle accessor it filters, so a pane reads
-`pane.currentCommand` and filters on `currentCommand`. Only the serialized name
-is fixed by the schema. A field keeps its prefix in the rare case where dropping
-it would shadow a relation: `sessionWindows` is a window count, `windows` is the
-windows themselves.
+- A criterion is spelled like the accessor it filters: a pane reads
+  `pane.currentCommand` and filters on `currentCommand`.
+- A field keeps its prefix when dropping it would shadow a relation:
+  `sessionWindows` is a window count, `windows` the windows themselves.
+- Fields that hold one value for the whole server — `version`, `pid`,
+  `socketPath` — are readable on a handle but are not criteria.
 
-Fields that carry one value for the whole server — `version`, `pid`,
-`socketPath` — are readable on a handle but are not criteria, since filtering
-rows by one would match all of them or none.
+## Change sessions, windows, and panes
 
-## Operations
+Every handle exposes the tmux commands that apply to it. Each returns a promise,
+and those that create something return a handle to it.
 
-Every handle exposes the tmux commands that apply to it. Each returns a promise;
-those that create something return a handle to it.
+### [`Window.rename`][ref-window-rename]: a change leaves the handle at its old instant
 
-Everything else resolves to nothing, and leaves the handle reading the instant
-it was acquired at. That is deliberate — a handle that advanced in place would
-leave a snapshot disagreeing with itself — so a mutation you need the result of
-is two calls:
+A mutation resolves to nothing and leaves the handle reading the instant it was
+acquired at, so a mutation you need the result of is two calls:
 
 ```ts
 await window.rename("build");
@@ -490,7 +587,11 @@ window.name; // still "editor": the instant this handle was read at
 (await window.refreshed()).name; // "build"
 ```
 
-Sessions, windows, and panes:
+### [`Session.newWindow`][ref-session-newwindow] and [`Window.split`][ref-window-split]: the everyday calls
+
+[`Window.selectLayout`][ref-window-selectlayout], [`Pane.resize`][ref-pane-resize],
+[`Pane.sendKeys`][ref-pane-sendkeys] and the rest sit beside them. Sessions,
+windows, and panes:
 
 ```ts
 import { isSplitSize, isTmuxName, splitSize } from "libtmux";
@@ -525,16 +626,20 @@ await pane.setTitle("build output");
 await pane.kill();
 ```
 
-[`zoom`](https://libtmux.org/en/ts/latest/reference/pane-pane-zoom/) and [`unzoom`](https://libtmux.org/en/ts/latest/reference/pane-pane-unzoom/) set a state rather than flipping one. tmux offers only
-`resize-pane -Z`, which toggles, so each call asks tmux to evaluate
-`#{window_zoomed_flag}` and toggle in the same command — idempotent, one
-invocation, and no window in which someone else's resize changes the answer
-between the read and the write. Any ordinary `resize` unzooms first, so a size
-and a zoom cannot both hold.
+### [`Pane.zoom`][ref-pane-zoom] and [`Pane.unzoom`][ref-pane-unzoom]: set a state
 
-`direction` says which side a split lands on, which window a new one sits
-beside, and lets a resize adjust rather than set. tmux reaches "above" and
-"left" only by pairing an axis with `-b`, so a boolean cannot express them:
+- Each call sets a state rather than flipping one, so calling twice does
+  nothing the second time.
+- An ordinary resize unzooms first, so a size and a zoom cannot both hold.
+- [How](docs/contracts.md#operations) one invocation does it when tmux offers
+  only a toggle.
+
+### [`PaneDirection`][ref-panedirection]: which side a split lands on
+
+`direction` says which side a split lands on, where a new window sits
+([`WindowDirection`][ref-windowdirection]), and lets a resize adjust rather
+than set. tmux reaches "above" and "left" only by pairing an axis with `-b`, so
+a boolean cannot express them:
 
 ```ts
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "libtmux";
@@ -545,18 +650,20 @@ await session.newWindow({ direction: WindowDirection.Before, name: "logs" });
 await pane.resize({ amount: 5, direction: ResizeAdjustmentDirection.Down });
 ```
 
-A window's placement is measured from the session's selected window, since the
-command addresses the session. `shellCommand` runs something other than the
-default shell. tmux hands it to a
-shell, so a whole command line works, and it replaces the shell rather than
-running inside it — when it exits the window or pane closes, unless
-`remain-on-exit` says otherwise:
+### [`shellCommand`][ref-newwindowoptions]: run something other than the shell
+
+- tmux hands it to a shell, so a whole command line works.
+- It replaces the shell rather than running inside it: when it exits, the
+  window or pane closes, unless `remain-on-exit` says otherwise.
+- A new window's placement is measured from the session's selected window.
 
 ```ts
 await session.newWindow({ name: "server", shellCommand: "npm run dev" });
 await window.split({ shellCommand: "tail -f log/development.log" });
 await server.newSession({ name: "ci", shellCommand: "just watch" });
 ```
+
+### [`Window.move`][ref-window-move] and [`Window.link`][ref-window-link]: move and link windows
 
 Moving and linking windows between sessions:
 
@@ -568,6 +675,8 @@ await pane.breakOut();
 await pane.joinTo("other:1");
 await pane.swapWith(otherPane);
 ```
+
+### Handles as targets
 
 Each of those takes a handle as readily as a string, and a handle is checked
 against this object's server before the command runs:
@@ -585,15 +694,14 @@ const right = await owner.newWindow({ name: "right" });
 await right.panes.one().joinTo(left.panes.one());
 ```
 
-A tmux id is unique only within one running daemon, so `@1` exists on every
-server that has a window. Passing a handle from a different server raises
-`TypeError` rather than addressing whatever holds that id here — which is what
-a bare id cannot be checked for, since a string carries no server.
+- A handle from a different server raises `TypeError`, because a bare id
+  cannot be checked: `@1` exists on every server that has a window.
+- A handle names a placement, and one window can sit in two sessions. After a
+  move, read the window back from a fresh snapshot instead of reusing the
+  handle that moved it.
+- [The contract](docs/contracts.md#operations) covers both.
 
-A handle names a placement rather than a window, because one window can sit in
-two sessions at once. Moving a window leaves the handle pointing at a placement
-that no longer exists, so read the moved window back from a fresh snapshot
-instead of reusing the handle that moved it.
+### [`Window.unlink`][ref-window-unlink] and [`Window.removePlacement`][ref-window-removeplacement]
 
 Unlink the placement resolved in the session you intend to remove:
 
@@ -607,20 +715,21 @@ const placement = (await server.snapshot()).windows.one({
 await placement.unlink();
 ```
 
-[`removePlacement`](https://libtmux.org/en/ts/latest/reference/window-window-removeplacement/) unlinks a linked placement or destroys the final ungrouped
+`removePlacement` unlinks a linked placement or destroys the final ungrouped
 window. It refuses a grouped session, whose members share one window list:
 
 ```ts
 await window.removePlacement();
 ```
 
-[`killIfWindowUnshared`](https://libtmux.org/en/ts/latest/reference/pane-pane-killifwindowunshared/) kills a pane only while its window has one placement:
+[`killIfWindowUnshared`][ref-pane-killifwindowunshared] kills a pane only while
+its window has one placement:
 
 ```ts
 await pane.killIfWindowUnshared();
 ```
 
-Pane input and contents:
+### [`Pane.sendKeys`][ref-pane-sendkeys] and [`Pane.capture`][ref-pane-capture]: pane input and contents
 
 ```ts
 await pane.sendKeys("ls -la");
@@ -632,17 +741,19 @@ await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
-Copy mode needs no client, so a detached pane enters and leaves it like any
-other:
+### [`Pane.enterCopyMode`][ref-pane-entercopymode]: copy mode needs no client
+
+A detached pane enters and leaves copy mode like any other:
 
 ```ts
 await pane.enterCopyMode();
 await pane.exitCopyMode();
 ```
 
-The choosers and popups all need a client, and they divide on what awaiting
-one means. A popup and a menu stay open until someone dismisses them, and tmux
-answers only then, so the promise reports that it is over:
+### [`Pane.displayPopup`][ref-pane-displaypopup] and the choosers need a client
+
+A popup and a menu stay open until someone dismisses them, and tmux answers
+only then, so the promise reports that it is over:
 
 <!-- static: each stays on screen until a person dismisses it -->
 
@@ -651,10 +762,9 @@ await pane.displayPopup("less README.md");
 await pane.displayMenu("Pane", [{ command: "kill-pane", key: "k", name: "Kill" }]);
 ```
 
-The rest resolve as soon as the chooser is on screen. Awaiting one tells you it
-opened, never what was chosen — measured on tmux 3.7c, where `choose-tree`
-returns in milliseconds against the seconds a menu spends waiting to be
-dismissed. Bind a tmux command to the selection if you need to act on it:
+The choosers, such as [`chooseTree`][ref-pane-choosetree], resolve as soon as
+the chooser is on screen. Awaiting one tells you it opened, never what was
+chosen; bind a tmux command to the selection if you need to act on it:
 
 <!-- static: each opens a chooser that stays on screen until a person dismisses it -->
 
@@ -665,7 +775,7 @@ await pane.findWindow("editor");
 await pane.customizeMode();
 ```
 
-Server-wide commands and paste buffers:
+### Server-wide commands and paste buffers
 
 ```ts
 await server.hasSession("work");
@@ -683,7 +793,7 @@ await server.deleteBuffer("scratch");
 await server.kill();
 ```
 
-Clients, and re-reading a handle:
+### [`Client.switchTo`][ref-client-switchto]: clients, and re-reading a handle
 
 ```ts
 await client.switchTo(session);
@@ -695,9 +805,10 @@ pane.equals(later); // true — the same pane, read twice
 pane.sameTmuxIdAs(later); // same `%n`, wherever it came from
 ```
 
-Every handle describes itself when logged or interpolated, rather than rendering
-as `[object Object]`. `toString` and the runtime inspect hook give the same text,
-so `console.log` is useful without reaching for a field:
+### Describing a handle
+
+Every handle describes itself when logged or interpolated, rather than
+rendering as `[object Object]`:
 
 ```ts
 pane.toString(); // Pane(%1 Window(@1 0:editor, Session($0 work)))
@@ -706,24 +817,20 @@ server.toString(); // Server(/tmp/tmux-1000/default)
 console.log(`${pane} stopped responding`);
 ```
 
-`refreshed` answers with a new handle rather than advancing this one, so use
-what it returns. `equals` compares the connection and daemon generation as well
-as the tmux id, because `%1` is unique only within one running daemon — two
-servers both have one, and so does the pane that replaced it after a restart.
-`sameTmuxIdAs` is the raw-id comparison when that is genuinely what you want.
-Every handle also has `showOptions` / `setOption` / `unsetOption`, and `format`
-for tmux's own field names. [`Pane.pipeTo`](https://libtmux.org/en/ts/latest/reference/pane-pane-pipeto/) streams a pane to a command for as
-long as the pipe is open, and [`Server.saveBuffer`](https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/) writes a buffer to a file
-without bringing it back through this process. Those read one object's own view: a session that
-has set nothing reports nothing, while the values actually governing it are
-tmux's global defaults. [`Server.showGlobalOptions`](https://libtmux.org/en/ts/latest/reference/server-server-showglobaloptions/), [`setGlobalOption`](https://libtmux.org/en/ts/latest/reference/server-server-setglobaloption/) and
-[`unsetGlobalOption`](https://libtmux.org/en/ts/latest/reference/server-server-unsetglobaloption/) reach those, taking `"session"` or `"window"` for which
-table — `history-limit` and `default-shell` live in the first, `remain-on-exit`
-in the second, and none of the three is readable any other way.
-`showResolvedOptions` answers the other question: what governs this object,
-with its own values and everything it inherits resolved into one map.
+### Comparing handles and reading options
 
-## Commands this package does not model
+- `equals` compares the connection and daemon generation as well as the id,
+  because `%1` is unique only within one running daemon.
+- `sameTmuxIdAs` is the raw-id comparison; [`refreshed`][ref-window-refreshed] returns a new handle.
+- [`showOptions`][ref-session-showoptions], [`setOption`][ref-session-setoption] and [`unsetOption`][ref-session-unsetoption] read one object's own view; the
+  global defaults are [`Server.showGlobalOptions`][ref-server-showglobaloptions]
+  and its siblings.
+- [`Pane.pipeTo`][ref-pane-pipeto] streams a pane to a command, and
+  [`Server.saveBuffer`][ref-server-savebuffer] writes a buffer to a file.
+- [Details](docs/contracts.md#handles-and-options), including
+  [`showResolvedOptions`][ref-session-showresolvedoptions].
+
+### [`Server.cmd`][ref-server-cmd]: a command this package does not model
 
 tmux has far more commands than any wrapper types. `cmd` runs one through the
 same path as everything else — same socket, environment, deadline, and errors —
@@ -738,27 +845,14 @@ await server.cmd("display-message", ["-p", "#{version}"], { target: null });
 
 A handle sends its own id as the target, so `pane.cmd("clock-mode")` addresses
 that pane. Pass `target` to address something else, or `null` for a command that
-takes none. Failure raises [`TmuxCommandError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxcommanderror/) carrying tmux's own stderr.
+takes none. Failure raises [`TmuxCommandError`][ref-tmuxcommanderror] carrying
+tmux's own stderr.
 
-## Running several commands at once
+## Run several commands at once
 
-Creating things one at a time costs two tmux invocations per mutation: one runs
-its command and one captures the snapshot needed to find what it made. That
-second one is what makes the result a handle rather than an id — tmux prints the
-new id, but a handle is only meaningful inside a consistent graph, and acquiring
-one is the whole server. A batch shares a single final snapshot across all of
-its mutations, so twelve windows cost 14 invocations rather than 25 —
-twenty-four against thirteen for the creations themselves, plus in each case the
-one query that reads the result back. [The benchmarks](docs/benchmarks.md)
-measure both. The invocation counts hold anywhere; the snapshot's wall-clock
-grows with the server, at about 1.6 ms per pane on the machine that page
-reports.
+### [`Server.batch`][ref-server-batch]: plan, then run
 
-Reach for `cmd` where you want the id and not the handle — `server.cmd(
-"new-window", ["-d", "-P", "-F", "#{window_id}"])` is the one invocation, and
-its printed line is a target string every other method accepts.
-
-`plan` describes a mutation instead of running it. It takes what the direct call
+[`plan`][ref-session-plan] describes a mutation instead of running it. It takes what the direct call
 takes and resolves to what the direct call resolves to; `batch` runs the planned
 commands in order and resolves all of them from one final snapshot:
 
@@ -769,19 +863,29 @@ const [first, second] = await server.batch([
 ]);
 ```
 
-`first` and `second` are [`Window`](https://libtmux.org/en/ts/latest/reference/window-window/) handles, typed one by one — a batch mixing
-kinds keeps each element's own type, so a planned split comes back as a [`Pane`](https://libtmux.org/en/ts/latest/reference/pane-pane/)
-with `Pane` methods on it:
+[`first`][ref-selection-first] and `second` are [`Window`][ref-window] handles, typed one by one. A
+batch mixing kinds keeps each element's own type, so a planned split comes back
+as a [`Pane`][ref-pane] with `Pane` methods on it:
 
 ```ts
 const [created] = await server.batch([editor.plan.split()]);
 const lines = await created.capture();
 ```
 
+- One at a time, each mutation costs two tmux invocations: its command, then a
+  snapshot to find what it made.
+- A batch shares one final snapshot, so twelve windows cost 14 invocations
+  rather than 25. Each count includes the query that reads the result back.
+- The counts hold anywhere; the snapshot's wall-clock grows with the server.
+  [The benchmarks](docs/benchmarks.md) measure both.
+- Reach for [`cmd`][ref-server-cmd] where you want the id and not the handle:
+  `server.cmd("new-window", ["-d", "-P", "-F", "#{window_id}"])` is one
+  invocation, and its printed line is a target every other method accepts.
+
+### [`Server.pipeline`][ref-server-pipeline]: raw arguments, one result each
+
 For a command this package does not model, or one whose output you want raw,
-[`pipeline`](https://libtmux.org/en/ts/latest/reference/server-server-pipeline/) takes arguments and returns a result per command, in order — so a
-creating command's `-P -F` lands where you asked for it and a silent command
-stays empty rather than shifting the one behind it:
+`pipeline` returns a result per command, in order:
 
 ```ts
 const [[madeWindow], , [madeOther]] = await server.pipeline([
@@ -791,166 +895,54 @@ const [[madeWindow], , [madeOther]] = await server.pipeline([
 ]);
 ```
 
-It is not atomic. tmux runs the commands in order and stops at the first
-failure, leaving everything before it applied; the `TmuxCommandError` names the
-command that failed rather than the whole sequence. Take a `snapshot()`
-afterwards when you need to know what survived.
+- It is not atomic: tmux stops at the first failure and leaves everything
+  before it applied.
+- The [`TmuxCommandError`][ref-tmuxcommanderror] names the command that failed.
+- Take a [`snapshot()`][ref-server-snapshot] afterwards when you need to know what survived.
+- [Why](docs/contracts.md#batching) the results are positional and each command
+  is a separate invocation.
 
-Each command is a separate tmux invocation. Arbitrary command output has no
-delimiter that a command alias cannot replace or print, so one combined stream
-cannot promise positional results.
+### [`Server.newSession`][ref-server-newsession]: build a workspace
 
-## Watching
-
-A snapshot answers what is true now. `server.watch()` answers what changed, over
-one persistent `tmux -C` connection rather than a command per read.
-
-Each `watch()` or `connect()` owns a real attached tmux client until it closes.
-That client appears in snapshots, increments `session_attached`, and is visible
-to client hooks and attachment-sensitive policy such as `destroy-unattached`.
-Multiple watches or connections create multiple clients.
-
-<!-- static: reads every event until the process is interrupted -->
+One session, a window per concern, each pane already running its process. The
+first window is named as the session is created, so the workspace does not open
+with a stray shell nobody asked for:
 
 ```ts
-await using events = server.watch({ target: session.id });
-await events.ready(); // attached; changes from here on are announced
-
-for await (const event of events) {
-  if (event.kind === "window-add") console.log("opened", event.windowId);
-  if (event.kind === "output") process.stdout.write(event.data);
-}
-```
-
-Events are a discriminated union, so `event.kind` narrows the rest of the shape
-with no cast. Names are tmux's own, without the leading `%`, and a notification
-this version does not model arrives as `{ kind: "unknown", name, args }` rather
-than being dropped.
-
-The stream is an `AsyncDisposable`, so `await using` ends the tmux process when
-the scope exits, including on a thrown error. A consumer that falls behind gets
-its oldest events dropped rather than an unbounded buffer; `events.dropped`
-counts them and `bufferSize` sets the bound.
-
-That bound is this side's. tmux keeps its own, and its remedy for a client that
-lets a pane's output back up is to kill it — five minutes behind and the whole
-connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause
-the one pane instead:
-
-```ts
-await using paced = server.watch({ pauseAfterSeconds: 5 });
-```
-
-tmux then reports `pause` for the pane it stopped, the connection asks it back
-at once, and `continue` follows. The pair is a record of what was missed, not
-something to act on.
-
-`watch()` is the notification observer and owns this pacing policy. `connect()`
-adds the same event channel and daemon-lifetime tracking to a server; its
-commands still use ordinary tmux processes.
-
-A connection attaches, so it needs a session to attach to. Connecting to a
-server with none fails at `connect()` with tmux's own words rather than through
-whichever command runs first:
-
-```ts
-await server.connect(); // LibTmuxError: ... could not attach: no sessions
-```
-
-tmux sends a control client no pane output until it attaches, so watching
-attaches to a session. A server with no sessions has nothing to watch, and a
-client hears about the session it attached to — name the one you care about
-with `target` rather than relying on whichever tmux considers most recent.
-
-`await using` needs `Symbol.asyncDispose`, so a consumer's `lib` includes
-`ESNext.Disposable` alongside its ECMAScript target. `events.close()` is the
-same operation for a project that cannot add it.
-
-### Subscribing to a format
-
-A snapshot reads a format when you ask for it. A subscription reports it when it
-changes:
-
-```ts
-await using events = server.watch({
-  subscriptions: [{ format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }],
+const built = await server.newSession({
+  name: "work",
+  shellCommand: "nvim",
+  windowName: "editor",
 });
 
-const report = await events.find((event) => event.kind === "subscription-changed");
-if (report?.kind === "subscription-changed") console.log(report.name, report.value);
+const [logs, shell] = await server.batch([
+  built.plan.newWindow({ name: "logs", shellCommand: "journalctl -f" }),
+  built.plan.newWindow({ name: "shell" }),
+]);
+
+await logs.selectLayout("even-horizontal");
+shell.name; // "shell"
 ```
 
-tmux expands each subscription at most once per second and reports only when the
-value differs from the last report for that object, so a report is a change
-rather than a sample. The first evaluation always reports.
+## Type into a pane and wait
 
-`scope` takes a pane or window id, `"all-panes"`, or `"all-windows"`; omitted,
-the format expands once per session. A report names the object it expanded
-against, so a pane-scope one carries `paneId`, `windowId` and `windowIndex`.
-
-A connected server adds and drops them while it runs with [`subscribeFormat`](https://libtmux.org/en/ts/latest/reference/types-connectedserver-subscribeformat/) and
-[`unsubscribeFormat`](https://libtmux.org/en/ts/latest/reference/types-connectedserver-unsubscribeformat/). A subscription belongs to the control client, so the
-connection re-issues its own after a reconnect.
-
-### Waiting for something to happen
-
-Most work is "do this, then wait until that". [`waitFor`](https://libtmux.org/en/ts/latest/reference/types-connectedserver-waitfor/) is the join between a
-snapshot and the stream, and it subscribes before it reads — so a change that
-lands in between is still seen, rather than leaving you waiting on a condition
-that already came true:
+### [`Pane.sendKeys`][ref-pane-sendkeys]: type, then read what it said
 
 ```ts
-await using live = await server.connect();
+await pane.sendKeys("git status --short");
 
-await session.newWindow({ name: "build" });
-const settled = await live.waitFor((server) => server.windows.exists({ name: "build" }));
+const lines = await pane.capture();
+const changed = lines.filter((line) => line.trim() !== "").length;
 ```
 
-For a single event rather than a state, `find` takes the first one that matches
-and gives up on a deadline:
+- [`capture()`][ref-pane-capture] reads the visible pane; pass `start` to reach
+  into the scrollback.
+- `sendKeys` presses Enter unless you say otherwise, and takes keys literally
+  with `{ literal: true }` when the text could be read as a tmux key name.
+- The keys and the Enter travel as two commands in one invocation, so nothing
+  interleaves between them. [Details](docs/contracts.md#waiting-and-recipes).
 
-<!-- static: waits for a window the reader opens -->
-
-```ts
-const opened = await live.subscribe().find((event) => event.kind === "window-add");
-```
-
-Each `subscribe()` is an independent view with its own buffer, so a loop and a
-`waitFor` can run side by side without taking each other's events.
-
-### Commands beside a connection
-
-`watch()` opens a connection for notifications only. `connect()` returns a
-server paired with that observer. Commands remain process-boundary invocations
-because control mode cannot delimit arbitrary alias-expanded or waiting command
-output truthfully:
-
-<!-- static: reads every event until the process is interrupted -->
-
-```ts
-await using live = await server.connect();
-
-for await (const event of live.subscribe()) {
-  if (event.kind !== "window-add") continue;
-  const snapshot = await live.snapshot(); // one atomic identity-plus-four-listings invocation
-  console.log(snapshot.windows.count());
-}
-```
-
-A connection can reopen itself after a drop with
-`watch({ reconnect: { attempts: 3 } })`, which reports a `reconnected` event so
-the gap is visible. The count bounds one outage rather than the connection's
-whole life, so a watcher that recovers today still recovers next week. It is off
-by default. A connected server refuses to start commands while its observer is
-reconnecting; after the attach, it binds each new command to the daemon carrying
-that observer. It never replays a mutation.
-
-The API is the same `Server`. Connecting adds the observer and daemon binding;
-commands, including [`loadBuffer`](https://libtmux.org/en/ts/latest/reference/server-server-loadbuffer/), still use the server's engine.
-
-## Recipes
-
-### Wait for a pane to print something
+### [`Server.watch`][ref-server-watch]: wait for a pane to print something
 
 Polling a pane either misses output between reads or spends a command on each
 one. Subscribe first, then act, so a line printed while you were still
@@ -970,18 +962,14 @@ for await (const event of events) {
 }
 ```
 
-Name the session to watch when reading pane output. Structural notifications —
-a window opening, a session renaming — reach a control client wherever it is
-attached, but tmux sends pane output only for the session that client attached
-to, and an untargeted `watch()` lands on whichever session tmux considers
-current. On a server with one session that is the one you meant; on a server
-with two it is silence rather than an error.
+- Name the session with `target`: tmux sends pane output only for the session
+  the client attached to. An untargeted `watch()` lands on whichever session
+  tmux considers current. On a server with two sessions that gives silence and
+  no error.
+- A pane echoes what is typed, so waiting for text that also appears in the
+  keys you sent matches the echo. Wait for something the command prints.
 
-A pane echoes what is typed into it, so waiting for text that also appears in
-the keys you just sent matches the echo rather than the output. Wait for
-something the command prints.
-
-### Act, then wait, with an observer
+### [`Server.connect`][ref-server-connect]: act, then wait, with an observer
 
 The loop an agent runs. `connect()` pairs commands through the server engine
 with notifications from a persistent observer. Subscribe before sending so a
@@ -1011,48 +999,135 @@ await pane.sendKeys(command);
 const event = await printed;
 ```
 
-### Build a workspace
+## Watch tmux change
 
-One session, a window per concern, each pane already running its process. The
-first window is named as the session is created, so the workspace does not open
-with a stray shell nobody asked for:
+A snapshot answers what is true now. [`server.watch()`][ref-server-watch]
+answers what changed, over one persistent `tmux -C` connection with no command
+per read.
+
+### [`Server.watch`][ref-server-watch]: hear changes as they happen
+
+Each `watch()` or `connect()` owns a real attached tmux client until it closes:
+
+- The client appears in snapshots and increments `session_attached`.
+- Client hooks and policy such as `destroy-unattached` see it.
+- Several watches or connections create several clients.
+
+<!-- static: reads every event until the process is interrupted -->
 
 ```ts
-const built = await server.newSession({
-  name: "work",
-  shellCommand: "nvim",
-  windowName: "editor",
+await using events = server.watch({ target: session.id });
+await events.ready(); // attached; changes from here on are announced
+
+for await (const event of events) {
+  if (event.kind === "window-add") console.log("opened", event.windowId);
+  if (event.kind === "output") process.stdout.write(event.data);
+}
+```
+
+- Events are a discriminated union, so `event.kind` narrows the rest of the
+  shape with no cast. Names are tmux's own, without the leading `%`.
+- A notification this version does not model arrives as
+  `{ kind: "unknown", name, args }` rather than being dropped.
+- The stream is an `AsyncDisposable`, so `await using` ends the tmux process when
+  the scope exits, including on a thrown error. `events.close()` is the same
+  operation where `lib` lacks `ESNext.Disposable`.
+- A consumer that falls behind loses its oldest events; `events.dropped` counts
+  them and `bufferSize` sets the bound. [More](docs/contracts.md#watching).
+
+### [`pauseAfterSeconds`][ref-watchoptions]: pace a busy pane
+
+tmux kills a client that lets a pane's output back up, so five minutes behind
+ends the whole connection with `too far behind`. `pauseAfterSeconds` asks tmux to
+pause the one pane instead:
+
+```ts
+await using paced = server.watch({ pauseAfterSeconds: 5 });
+```
+
+tmux then reports `pause` for the pane it stopped, the connection asks it back
+at once, and `continue` follows. The pair records what was missed; there is
+nothing to act on.
+
+### [`Server.connect`][ref-server-connect]: pair commands with the observer
+
+`watch()` is the notification observer. `connect()` adds the same event channel
+and daemon-lifetime tracking to a server; its commands still use ordinary tmux
+processes, and the API is the same [`Server`][ref-server].
+
+- A connection attaches, so it needs a session. `connect()` on a server with
+  none fails with tmux's own words.
+- Name the session with `target`; a client hears about the session it attached
+  to.
+- A connection can reopen itself with `watch({ reconnect: { attempts: 3 } })`,
+  which reports a `reconnected` event. It is off by default.
+
+```ts
+await server.connect(); // LibTmuxError: ... could not attach: no sessions
+```
+
+Commands remain process-boundary invocations, because control mode cannot
+delimit arbitrary alias-expanded or waiting command output truthfully:
+
+<!-- static: reads every event until the process is interrupted -->
+
+```ts
+await using live = await server.connect();
+
+for await (const event of live.subscribe()) {
+  if (event.kind !== "window-add") continue;
+  const snapshot = await live.snapshot(); // one atomic identity-plus-four-listings invocation
+  console.log(snapshot.windows.count());
+}
+```
+
+### Subscribing to a format
+
+A snapshot reads a format when you ask for it. A subscription reports it when it
+changes:
+
+```ts
+await using events = server.watch({
+  subscriptions: [{ format: "#{pane_current_command}", name: "cmd", scope: "all-panes" }],
 });
 
-const [logs, shell] = await server.batch([
-  built.plan.newWindow({ name: "logs", shellCommand: "journalctl -f" }),
-  built.plan.newWindow({ name: "shell" }),
-]);
-
-await logs.selectLayout("even-horizontal");
-shell.name; // "shell"
+const report = await events.find((event) => event.kind === "subscription-changed");
+if (report?.kind === "subscription-changed") console.log(report.name, report.value);
 ```
 
-### Drive a pane and read what it said
+- tmux expands each subscription at most once per second and reports only when
+  the value differs, so each report marks a change. The first evaluation always
+  reports.
+- `scope` takes a pane or window id, `"all-panes"`, or `"all-windows"`.
+- A connected server adds and drops subscriptions while it runs with
+  [`subscribeFormat`][ref-connected-subscribeformat] and
+  [`unsubscribeFormat`][ref-connected-unsubscribeformat].
+
+### [`waitFor`][ref-connected-waitfor]: wait for something to happen
+
+Most work is "do this, then wait until that". `waitFor` is the join between a
+snapshot and the stream, and it subscribes before it reads, so a change that
+lands in between is still seen:
 
 ```ts
-await pane.sendKeys("git status --short");
+await using live = await server.connect();
 
-const lines = await pane.capture();
-const changed = lines.filter((line) => line.trim() !== "").length;
+await session.newWindow({ name: "build" });
+const settled = await live.waitFor((server) => server.windows.exists({ name: "build" }));
 ```
 
-[`capture()`](https://libtmux.org/en/ts/latest/reference/pane-pane-capture/) reads the visible pane; pass `start` to reach into the scrollback.
-`sendKeys` presses Enter unless you say otherwise, and takes keys literally with
-`{ literal: true }` when the text could be read as a tmux key name. The keys and
-the Enter travel as two commands in one tmux invocation, so nothing interleaves
-between them and tmux resolves each against the pane as it finds it — a key
-that leaves copy mode is followed by an Enter the pane itself receives.
+To wait for a single event, [`find`][ref-tmuxeventstream] takes the first one
+that matches and gives up on a deadline. Each [`subscribe()`][ref-connected-subscribe] is an
+independent view with its own buffer:
 
-### Watch for a change and react to it
+<!-- static: waits for a window the reader opens -->
 
-`waitFor` subscribes before it reads, so a change landing between the two is
-still seen rather than leaving you waiting on something that already happened:
+```ts
+const opened = await live.subscribe().find((event) => event.kind === "window-add");
+```
+
+The same wait, asserting what it returned, and `find` with a deadline that
+answers `undefined` when the thing does not happen:
 
 ```ts
 await using connected = await server.connect();
@@ -1063,103 +1138,28 @@ const settled = await connected.waitFor((current) => current.windows.exists({ na
 settled.windows.count({ name: "build" }); // 1
 ```
 
-For a single event rather than a state, `find` takes the first match and answers
-`undefined` on its deadline. It raises instead when the connection ends, so the
-`undefined` a caller reports on is only ever the thing not happening:
-
 ```ts
 const opened = await live.subscribe().find((event) => event.kind === "window-add", {
   timeoutMs: 5_000,
 });
 ```
 
-## Seeing what it runs
-
-`onInvocation` is called once per tmux invocation, after it answers or fails —
-the seam for logs, traces and metrics, so watching the library does not mean
-supplying a whole engine:
-
-```ts
-import type { TmuxInvocationReport } from "libtmux";
-
-const reports: TmuxInvocationReport[] = [];
-const traced = new Server({
-  socketPath: server.socketPath,
-  onInvocation: (report) => reports.push(report),
-});
-await traced.snapshot();
-
-reports[0]?.commands[0]?.[0]; // "run-shell", the version read
-reports[1]?.commands[0]?.[0]; // "display-message", the identity read
-reports[0]?.durationMs;
-```
-
-[`TmuxInvocationReport`](https://libtmux.org/en/ts/latest/reference/common-tmuxinvocationreport/) is exported for a typed collector. Every command
-reports, including the identity read and four listings behind `snapshot()`,
-the version probe, and commands a custom engine executed. The report carries
-the commands tmux received, `durationMs` for the invocation itself, `queuedMs`
-for any wait under `maxInFlight`, `exitCode` when tmux answered, and `error`
-with `delivery` when it did not.
-
-An observer cannot change what a command does. Anything it throws is
-swallowed: a command must not fail on account of the code watching it. An
-`async` observer is allowed and is never awaited — the invocation is already
-decided, so waiting would only delay it — and a rejection is swallowed on the
-same grounds rather than left to the host's unhandled rejection policy.
-
-[`examples/observe/`](../../examples/observe/README.md) runs this against a
-real server, and counts its own reports to check the two costs above rather
-than restate them.
-
-## Deadlines and cancellation
-
-Every command gets 30 seconds unless the server or the call says otherwise.
-Change it for the whole server, lift it with `null`, and override or cancel a
-single call:
-
-```ts
-const server = new Server({ timeoutMs: 10_000 });
-const patient = new Server({ timeoutMs: null }); // waits as long as tmux takes
-
-const controller = new AbortController();
-const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
-controller.abort(new Error("the caller moved on"));
-// Rejects with a TmuxTransportError carrying kind: "cancelled", and your own
-// reason as its `cause`.
-await lines.catch(() => undefined);
-```
-
-A cancelled or timed-out command always rejects with a [`TmuxTransportError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxtransporterror/)
-rather than with the reason itself, because the error also says how far the
-command got — `delivery` distinguishes one tmux never started from one it may
-have run. What you passed to `abort()` is preserved as `cause`.
-
-Every operation that takes options accepts both, so the rule you learn on one
-method holds on the next. The default applies to every command the server runs,
-including the version probe it makes first and the identity read plus four
-listings behind `snapshot()` — except a popup, a menu, a prompt, a confirmation,
-`display-panes` and `wait-for`. Those wait on a person or on another command,
-and a default would cut them off; a deadline passed on the call still binds
-them. `signal` is
-typed structurally, so a real `AbortSignal` satisfies it without the published
-types requiring a DOM or Node library.
-
 ## Choosing how work is arranged
 
 Commands travel through the server's engine. Three independent choices compose
 around that execution path:
 
-| Mode           | Turn it on                         | What changes                                          | When to use it                                                    |
-| -------------- | ---------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------- |
-| **connected**  | `await server.connect()`           | Adds notifications and connection-lifetime tracking.  | A server-shaped API in a loop that also reacts to events.         |
-| **watching**   | `server.watch()`                   | Yields tmux's notifications as they happen.           | Reacting to a change without issuing commands through that value. |
-| **planned**    | `.plan` instead of the direct call | Shares one final snapshot across `server.batch([…])`. | Creating or changing several things in order.                     |
-| **concurrent** | `Promise.all`                      | Independent commands overlap, up to `maxInFlight`.    | Slow work on independent targets — not ordering-sensitive setup.  |
+| Mode           | Turn it on                                     | What changes                                                              | When to use it                                                    |
+| -------------- | ---------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **connected**  | [`await server.connect()`][ref-server-connect] | Adds notifications and connection-lifetime tracking.                      | A server-shaped API in a loop that also reacts to events.         |
+| **watching**   | [`server.watch()`][ref-server-watch]           | Yields tmux's notifications as they happen.                               | Reacting to a change without issuing commands through that value. |
+| **planned**    | `.plan` instead of the direct call             | Shares one final snapshot across [`server.batch([…])`][ref-server-batch]. | Creating or changing several things in order.                     |
+| **concurrent** | `Promise.all`                                  | Independent commands overlap, up to `maxInFlight`.                        | Slow work on independent targets — not ordering-sensitive setup.  |
 
 `connect()` hands back the same handles as the base server and adds an event
 observer. Its commands still use the server engine and process boundaries.
 
-### How many commands run at once
+### [`maxInFlight`][ref-serveroptions]: how many commands run at once
 
 Every invocation is a tmux client process with its own pipes, so a
 `Promise.all` over a whole server starts that many processes. `maxInFlight`
@@ -1170,25 +1170,20 @@ const bounded = new Server({ maxInFlight: 4 });
 bounded.tmuxBin;
 ```
 
-The ceiling costs no throughput, because there was none to lose: tmux runs
-commands on one thread. [The benchmarks](docs/benchmarks.md) show `Promise.all`
-over twelve creations costing the same twenty-five processes as doing them in
-order, and arriving out of order in two or three of every three runs. Fanning
-out buys no work — `pipeline` does the same twelve in thirteen. Both totals
-count the query that reads the result back, which is why neither is a multiple
-of twelve.
+- The ceiling costs no throughput, because tmux runs commands on one thread.
+  [The benchmarks](docs/benchmarks.md) show twelve concurrent creations costing
+  the same processes as twelve in order.
+- Waiting for a slot spends the request's own deadline. A request that never
+  gets one raises [`TmuxTransportError`][ref-tmuxtransporterror] with `delivery`
+  of `"not_started"`, the one status a mutation may retry blindly.
+- `signal` cancels the wait as it cancels the command.
+  [More](docs/contracts.md#concurrency-and-engines).
 
-Waiting for a slot spends the request's own deadline rather than extending it.
-A request that never gets one raises `TmuxTransportError` with
-`delivery` of `"not_started"` — the one status a mutation may retry blindly —
-and `signal` cancels the wait as it cancels the command.
+### [`TmuxEngine`][ref-tmuxengine]: put tmux behind SSH, a container, or a daemon
 
-### Supplying an engine
-
-An engine can put tmux behind SSH, a container, or a daemon. It receives the
-complete invocation, including environment, stdin, cancellation, and deadline.
-This runnable example keeps execution local on the current server's socket; a
-remote runner has the same obligations:
+An engine receives the complete invocation, including environment, stdin,
+cancellation, and deadline. This runnable example keeps execution local on the
+current server's socket; a remote runner has the same obligations:
 
 ```ts
 import { Server, TmuxServerRestartedError } from "libtmux";
@@ -1264,21 +1259,19 @@ const throughEngine = new Server({
 (await throughEngine.snapshot()).sessions.count();
 ```
 
-The seam is one structured invocation in and bytes plus status out. One at the
-graph would make every implementer responsible for framing, capability gating
-and normalization; this one leaves them responsible only for execution. The
-request carries global flags and a nonempty command list separately, so an
-engine cannot accidentally split a snapshot into several clients. Honour its
-[`daemonGuard`](https://libtmux.org/en/ts/latest/reference/engine-daemonguard/) with `guardRequest`, or bind the engine to one daemon.
+- The seam is one structured invocation in and bytes plus status out, so an
+  engine is responsible only for execution.
+- Honour the request's [`daemonGuard`][ref-daemonguard] with `guardRequest`, or
+  bind the engine to one daemon.
+- `watch()` and `connect()` are not carried by an engine: both hold a local
+  `tmux -C attach` process, so they refuse rather than attach to whichever tmux
+  the machine happens to run.
 
-`watch()` and `connect()` are the two calls an engine does not carry. Both hold
-a local `tmux -C attach` process open, which is the thing an engine exists to
-avoid needing, so they refuse rather than attaching to whichever tmux this
-machine happens to be running.
+### [`Server.withConnection`][ref-server-withconnection]: a connection for one block
 
-For a connection scoped to one block, [`withConnection`](https://libtmux.org/en/ts/latest/reference/server-server-withconnection/) closes it on the way out
-whether the body returns or throws — useful where `await using` is not
-available, since it needs `Symbol.asyncDispose` in the consumer's `lib`:
+`withConnection` closes the connection on the way out whether the body returns
+or throws. Use it where `await using` is not available, since that needs
+`Symbol.asyncDispose` in the consumer's `lib`:
 
 ```ts
 const built = await server.withConnection(async (connected) => {
@@ -1287,14 +1280,81 @@ const built = await server.withConnection(async (connected) => {
 });
 ```
 
-`pipeline` and `batch` stay per-call-site choices because both stop at the first
-failure. `batch` adds one final snapshot that turns printed ids into handles;
-`pipeline` returns the printed lines directly.
+- [`pipeline`][ref-server-pipeline] and `batch` stay per-call-site choices, because both stop at the
+  first failure.
+- `batch` adds one final snapshot that turns printed ids into handles;
+  `pipeline` returns the printed lines directly.
+- Use either when command order matters. A connection does not make concurrent
+  mutations safe to reorder.
 
-Use `pipeline` or `batch` when command order matters; a connection does not make
-concurrent mutations safe to reorder.
+### [`onInvocation`][ref-serveroptions]: see what it runs
+
+`onInvocation` is called once per tmux invocation, after it answers or fails.
+It is the seam for logs, traces and metrics, so watching the library does not
+mean supplying a whole engine:
+
+```ts
+import type { TmuxInvocationReport } from "libtmux";
+
+const reports: TmuxInvocationReport[] = [];
+const traced = new Server({
+  socketPath: server.socketPath,
+  onInvocation: (report) => reports.push(report),
+});
+await traced.snapshot();
+
+reports[0]?.commands[0]?.[0]; // "run-shell", the version read
+reports[1]?.commands[0]?.[0]; // "display-message", the identity read
+reports[0]?.durationMs;
+```
+
+- [`TmuxInvocationReport`][ref-tmuxinvocationreport] is exported for a typed
+  collector. Every command reports, including the identity read and four
+  listings behind [`snapshot()`][ref-server-snapshot], and the version probe.
+- A report carries the commands tmux received, `durationMs`, `queuedMs` for any
+  wait under `maxInFlight`, `exitCode` when tmux answered, and `error` with
+  `delivery` when it did not.
+- An observer cannot change what a command does. Anything it throws is
+  swallowed, and an `async` observer is never awaited.
+
+[`examples/observe/`](../../examples/observe/README.md) runs this against a
+real server, and counts its own reports to check the two costs above.
+
+### Deadlines and cancellation: `timeoutMs` and `signal`
+
+Every command gets 30 seconds unless the server or the call says otherwise.
+Change it for the whole server, lift it with `null`, and override or cancel a
+single call:
+
+```ts
+const server = new Server({ timeoutMs: 10_000 });
+const patient = new Server({ timeoutMs: null }); // waits as long as tmux takes
+
+const controller = new AbortController();
+const lines = pane.capture({ signal: controller.signal, timeoutMs: 30_000 });
+controller.abort(new Error("the caller moved on"));
+// Rejects with a TmuxTransportError carrying kind: "cancelled", and your own
+// reason as its `cause`.
+await lines.catch(() => undefined);
+```
+
+- A cancelled or timed-out command rejects with a
+  [`TmuxTransportError`][ref-tmuxtransporterror], with what you passed to
+  `abort()` as its `cause`. `delivery` says how far the command got.
+- The default applies to every command, including the version probe and the
+  reads behind `snapshot()`.
+- It does not apply to a popup, a menu, a prompt, a confirmation,
+  `display-panes` or `wait-for`, which wait on a person or another command. A
+  deadline passed on the call still binds them.
+- `signal` is typed structurally, so a real `AbortSignal` satisfies it without
+  a DOM or Node library. [More](docs/contracts.md#deadlines-and-cancellation).
 
 ## Options and hooks
+
+### [`Session.setOption`][ref-session-setoption]: read and write options and hooks
+
+[`Server.setHook`][ref-server-sethook] takes tmux's hook names, and the
+[options and hooks topic][topic-options-and-hooks] has the rest:
 
 ```ts
 // A pane keeps history-limit lines and a stream reader keeps a bounded buffer,
@@ -1327,18 +1387,19 @@ await server.showHooks();
 await server.unsetHook("after-new-window");
 ```
 
-Typed option and hook methods treat names as literal data, including `#`. Use
-`cmd` when deliberately asking tmux to expand a computed name.
-
-Window and pane scopes report only what was set on them, never inherited
-values. [`OptionScope`](https://libtmux.org/en/ts/latest/reference/constants-optionscope/) supplies the same lowercase scope values when a named
-constant is clearer than a string literal.
+- Typed option and hook methods treat names as literal data, including `#`. Use
+  [`cmd`][ref-server-cmd] when you deliberately want tmux to expand a computed name.
+- Window and pane scopes report only what was set on them, never inherited
+  values.
+- [`OptionScope`][ref-optionscope] supplies the lowercase scope values when a
+  named constant is clearer than a string literal.
 
 ## Environments
 
-A session's environment is what tmux hands to the processes it starts, so it is
-how you seed a variable for every pane a workspace creates. `Server` carries the
-global environment and [`Session`](https://libtmux.org/en/ts/latest/reference/session-session/) its own:
+### [`Session.setEnvironment`][ref-session-setenvironment]: seed a variable for every pane
+
+A session's environment is what tmux hands to the processes it starts. [`Server`][ref-server]
+carries the global environment and [`Session`][ref-session] its own:
 
 ```ts
 await session.setEnvironment("DATABASE_URL", "postgres://localhost/dev");
@@ -1350,25 +1411,33 @@ await server.setEnvironment("EDITOR", "vim");
 ```
 
 A variable is in one of three states, which is why the value type is
-[`EnvironmentValue`](https://libtmux.org/en/ts/latest/reference/types-environmentvalue/) — `string | null` — and lookups can also answer `undefined`:
+[`EnvironmentValue`][ref-environmentvalue] — `string | null` — and lookups can
+also answer `undefined`:
 
-| State                                   | [`getEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-getenvironment/) | In [`showEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-showenvironment/) |
-| --------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Set to a value                          | the value                                                                                    | present                                                                                           |
-| Marked for removal from child processes | `null`                                                                                       | present                                                                                           |
-| Not carried at all                      | `undefined`                                                                                  | absent                                                                                            |
+| State                                   | [`getEnvironment`][ref-session-getenvironment] | In [`showEnvironment`][ref-session-showenvironment] |
+| --------------------------------------- | ---------------------------------------------- | --------------------------------------------------- |
+| Set to a value                          | the value                                      | present                                             |
+| Marked for removal from child processes | `null`                                         | present                                             |
+| Not carried at all                      | `undefined`                                    | absent                                              |
 
-[`removeEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-removeenvironment/) is the middle row and [`unsetEnvironment`](https://libtmux.org/en/ts/latest/reference/server-server-unsetenvironment/) is the last: the
-first leaves an entry saying "unset this before spawning", which is how tmux
-keeps a stale `SSH_AUTH_SOCK` out of a new pane. Removal marks are routine
-rather than exotic — tmux's own `update-environment` puts several in every
-session. [`SetEnvironmentOptions`](https://libtmux.org/en/ts/latest/reference/types-setenvironmentoptions/) covers tmux's `-F` and `-h` as `expandFormat`
-and `hidden`, and [`EnvironmentScope`](https://libtmux.org/en/ts/latest/reference/types-environmentscope/) names the two scopes.
+- [`removeEnvironment`][ref-session-removeenvironment] is the middle row and [`unsetEnvironment`][ref-session-unsetenvironment] is the last. The
+  first leaves an entry saying "unset this before spawning", which keeps a
+  stale `SSH_AUTH_SOCK` out of a new pane.
+- Removal marks are routine: tmux's own `update-environment` puts several in
+  every session.
+- [`SetEnvironmentOptions`][ref-setenvironmentoptions] covers tmux's `-F` and
+  `-h` as `expandFormat` and `hidden`, and
+  [`EnvironmentScope`][ref-environmentscope] names the two scopes.
+  [More][topic-environment].
 
 ## Errors
 
-A failing tmux command raises `TmuxCommandError`, which carries its parts so you
-can branch without parsing a message:
+A failing call raises a typed error you can branch on without parsing a
+message. The [errors topic][topic-errors] describes the whole family.
+
+### [`TmuxCommandError`][ref-tmuxcommanderror]: tmux said no
+
+A failing tmux command raises it with its parts:
 
 ```ts
 import { TmuxCommandError } from "libtmux";
@@ -1385,9 +1454,10 @@ try {
 }
 ```
 
-A command that never got an answer raises `TmuxTransportError` instead. It says
-what failed between this process and tmux, and — the part that matters for a
-mutation — how far the command got:
+### [`TmuxTransportError`][ref-tmuxtransporterror]: no answer
+
+A command that never got an answer raises it. It says what failed between this
+process and tmux, and how far the command got:
 
 ```ts
 import { TmuxTransportError } from "libtmux";
@@ -1403,16 +1473,18 @@ try {
 }
 ```
 
-`delivery` is the question a retry depends on. `not_started` is the only value
-that is safe to retry blindly; after a timeout the answer is `indeterminate`,
-because tmux may well have created that window before the pipe went quiet. Every
-path reports the same type, so a timeout during `snapshot()` is not a different
-shape from a timeout during `kill()`.
+- `delivery` is the question a retry depends on. `not_started` is the only
+  value that is safe to retry blindly.
+- After a timeout the answer is `indeterminate`: tmux may have created that
+  window before the pipe went quiet.
+- Every path reports the same type, so a timeout during [`snapshot()`][ref-server-snapshot] has the
+  same shape as one during `kill()`.
 
-A handle that outlived its daemon raises [`TmuxServerRestartedError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxserverrestartederror/). tmux
-numbers a restarted daemon's objects from the start, so a `%1` read before the
-restart names a pane that exists and belongs to somebody else — and a socket
-path is a place, not a process:
+### [`TmuxServerRestartedError`][ref-tmuxserverrestartederror]: the daemon is gone
+
+A handle that outlived its daemon raises it. tmux numbers a restarted daemon's
+objects from the start, so a `%1` read before the restart names a pane that
+exists and belongs to somebody else:
 
 ```ts
 import { TmuxServerRestartedError } from "libtmux";
@@ -1426,25 +1498,28 @@ try {
 }
 ```
 
-The refusal is tmux's, not a check this library made first and hoped would still
-hold: a command carrying a raw id goes as `if-shell -F` conditioned on the
-daemon's pid and start time, and tmux evaluates that inside the same command
-queue entry that would run it. The connected observer invalidates its runtime
-when that daemon disappears.
-Reading a stale handle's captured fields still works; only commands are refused.
+- Reading a stale handle's captured fields still works; only commands are
+  refused.
+- The refusal is tmux's: a command carrying a raw id goes as `if-shell -F`
+  conditioned on the daemon's pid and start time.
+  [More](docs/contracts.md#errors).
+
+### [`Server.isAlive`][ref-server-isalive]: ask without raising
 
 An unreachable server raises rather than reading as empty, so an empty result
-means exactly one thing. Ask without raising when you need to:
+means exactly one thing. [`checkAlive`][ref-server-checkalive] is the assertion
+form:
 
 ```ts
 await server.isAlive(); // false for a missing daemon, socket, or binary
 await server.checkAlive(); // the assertion form
 ```
 
-Library failures extend [`LibTmuxError`](https://libtmux.org/en/ts/latest/reference/errors-libtmuxerror/); invalid arguments may throw native
-`TypeError`. Every one carries `code`, a string naming its class that survives
-a bundler renaming identifiers — the check to write where `instanceof` cannot
-reach:
+### [`LibTmuxError`][ref-libtmuxerror]: the base class
+
+Library failures extend it; invalid arguments may throw native `TypeError`.
+Every one carries `code`, a string naming its class that survives a bundler
+renaming identifiers:
 
 ```ts
 try {
@@ -1456,61 +1531,52 @@ try {
 }
 ```
 
-A query that matches nothing raises [`NoMatchError`](https://libtmux.org/en/ts/latest/reference/errors-nomatcherror/), one that
-matches several where you asked for one raises [`MultipleMatchesError`](https://libtmux.org/en/ts/latest/reference/errors-multiplematcheserror/), and
-criteria the schema rejects raise `QueryValidationError`. A `waitFor` that
-reaches its deadline with the condition still unmet raises
-[`WaitTimeoutError`](https://libtmux.org/en/ts/latest/reference/errors-waittimeouterror/), which is worth catching by name: it says the state never
-arrived, where a `LibTmuxError` from the same call says only that the
-connection ended and nothing about the condition. A criterion naming a field
-newer than the tmux that answered raises [`VersionTooLowError`](https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/) rather than
-matching nothing — the error names the field, the release that has it, and
-the release running, because "no pane has this" and "your tmux has never
-heard of this" are different answers.
+### Query errors: [`NoMatchError`][ref-nomatcherror] and its relatives
 
-Two bases sit above those. Catch [`ObjectNotFoundError`](https://libtmux.org/en/ts/latest/reference/errors-objectnotfounderror/) for "not there, however
-you asked": a query that matched nothing (`NoMatchError`) and tmux refusing a
-target that does not exist ([`TmuxObjectNotFoundError`](https://libtmux.org/en/ts/latest/reference/errors-tmuxobjectnotfounderror/)) both extend it.
-[`MultipleObjectsError`](https://libtmux.org/en/ts/latest/reference/errors-multipleobjectserror/) is its counterpart and has one subclass today,
-`MultipleMatchesError`; it stays so the pair reads the same, and so code ported
-from Python, which catches `ObjectDoesNotExist` and `MultipleObjectsReturned`,
-has a name to catch. Import library errors from `libtmux` or `libtmux/errors`.
-
-`libtmux/selection` carries [`parseLegacyWhere`](https://libtmux.org/en/ts/latest/reference/selection-parselegacywhere/), which converts Python-style
-`name__contains=` filter strings into criteria. It is for code being ported
-rather than written fresh, so it sits on the subpath rather than in the root
-export, as the engine and type inventories do.
+- A query that matches nothing raises [`NoMatchError`][ref-nomatcherror]; one
+  that matches several where you asked for one raises
+  [`MultipleMatchesError`][ref-multiplematcheserror].
+- Criteria the schema rejects raise
+  [`QueryValidationError`][ref-queryvalidationerror].
+- A [`waitFor`][ref-connected-waitfor] that reaches its deadline raises
+  [`WaitTimeoutError`][ref-waittimeouterror]; catch it by name.
+- A criterion naming a field newer than the running tmux raises
+  [`VersionTooLowError`][ref-versiontoolowerror], naming the field and both
+  releases.
+- Catch [`ObjectNotFoundError`][ref-objectnotfounderror] for "not there, however
+  you asked", and [`MultipleObjectsError`][ref-multipleobjectserror] for its
+  counterpart. Import errors from `libtmux` or `libtmux/errors`.
+- [`parseLegacyWhere`][ref-parselegacywhere] on `libtmux/selection` converts
+  Python-style `name__contains=` filters, for code being ported.
 
 ### Migrating from alpha.9
 
-Use these error names. The old names remain deprecated aliases to the same
-constructors, so existing `instanceof` checks still work. `error.name` reports
-the canonical name. The `libtmux/exc` entrypoint remains a compatibility export;
-use `libtmux/errors` for new imports.
+Use the canonical names. The old ones remain deprecated aliases to the same
+constructors, so existing `instanceof` checks still work.
 
-`QueryValidationError.code` is now `reason`, because every error now carries a
-`code` naming its own class.
+- `error.name` reports the canonical name; use `libtmux/errors` for new imports
+  (`libtmux/exc` remains for compatibility).
+- `QueryValidationError.code` is now `reason`, because every error now carries
+  a `code` naming its own class.
 
-| Previous name             | Canonical name             |
-| ------------------------- | -------------------------- |
-| `LibTmuxException`        | `LibTmuxError`             |
-| `ObjectDoesNotExist`      | `ObjectNotFoundError`      |
-| `MultipleObjectsReturned` | `MultipleObjectsError`     |
-| `TmuxObjectDoesNotExist`  | `TmuxObjectNotFoundError`  |
-| `VersionTooLow`           | `VersionTooLowError`       |
-| `WaitTimeout`             | `WaitTimeoutError`         |
-| `TmuxServerRestarted`     | `TmuxServerRestartedError` |
+| Previous name             | Canonical name                                           |
+| ------------------------- | -------------------------------------------------------- |
+| `LibTmuxException`        | `LibTmuxError`                                           |
+| `ObjectDoesNotExist`      | `ObjectNotFoundError`                                    |
+| `MultipleObjectsReturned` | `MultipleObjectsError`                                   |
+| `TmuxObjectDoesNotExist`  | [`TmuxObjectNotFoundError`][ref-tmuxobjectnotfounderror] |
+| `VersionTooLow`           | `VersionTooLowError`                                     |
+| `WaitTimeout`             | `WaitTimeoutError`                                       |
+| `TmuxServerRestarted`     | `TmuxServerRestartedError`                               |
 
-Completed command results, including custom [`TmuxEngine`](https://libtmux.org/en/ts/latest/reference/engine-tmuxengine/) results, use
-`exitCode` instead of `returncode`. Update result construction and property
-reads together. `TmuxCommandError.exitCode` is unchanged. Transport failures
-retain their `kind`, `delivery`, partial output and optional signal; they
-have no completed exit code. A `TmuxEngine` that resolves without a numeric
-`exitCode` raises `TmuxTransportError` with `kind: "contract"` rather than
-being read as a failed command.
-
-Use [`server.checkAlive()`](https://libtmux.org/en/ts/latest/reference/server-server-checkalive/) in place of the deprecated [`server.raiseIfDead()`](https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/).
-Both reject when the server cannot be reached.
+- Completed command results, including custom [`TmuxEngine`][ref-tmuxengine]
+  results, use `exitCode` instead of `returncode`. `TmuxCommandError.exitCode`
+  is unchanged.
+- A `TmuxEngine` that resolves without a numeric `exitCode` raises
+  `TmuxTransportError` with `kind: "contract"`.
+- Use [`server.checkAlive()`][ref-server-checkalive] in place of the deprecated
+  [`server.raiseIfDead()`][ref-server-raiseifdead]; both reject when the server
+  cannot be reached.
 
 The compatibility call:
 
@@ -1524,136 +1590,21 @@ The canonical call:
 await server.checkAlive();
 ```
 
-For [`pane.split()`](https://libtmux.org/en/ts/latest/reference/pane-pane-split/), `window.split()` and planned splits, replace
-`vertical: true` with `direction: PaneDirection.Below`, and `vertical: false`
-with `direction: PaneDirection.Right`. Omitting both still splits below. The
-legacy `vertical` option is deprecated; passing it with `direction` throws
-`TypeError` before executing a command.
+For [`pane.split()`][ref-pane-split], `window.split()` and planned splits:
 
-## Running inside tmux
+- Replace `vertical: true` with `direction: PaneDirection.Below`, and
+  `vertical: false` with `direction: PaneDirection.Right`.
+- Omitting both still splits below.
+- Passing `vertical` with `direction` throws `TypeError` before executing a
+  command.
 
-```ts
-import { Session } from "libtmux";
+## Test your own code
 
-const session = await Session.fromEnv();
-```
-
-The pane is authoritative: `$TMUX` carries a session id that goes stale when a
-pane moves, so the session is resolved through `$TMUX_PANE`.
-
-## Dependencies
-
-None. The package installs a tmux client and nothing else — no third-party code
-to audit, pin, or deduplicate, and no transitive tree at all.
-
-Validation of tmux's own output is real work, so it did not go away: it lives in
-a small internal validator with a Zod-shaped surface. Its failures carry the
-value that failed, which Zod reports only by type.
-
-## Consumers
-
-Three working consumers live in this repository:
-
-- [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
-  Its waits stream tmux's notifications rather than polling, and its
-  [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) frames what it sends so a pane's echo cannot be read as
-  output.
-- [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
-  Applying a workspace twice converges the running session rather than
-  duplicating it.
-- [`packages/workspace-cli`](../workspace-cli) — the [`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) command.
-
-## Packages
-
-### [@libtmux/mcp](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp)
-
-A stdio MCP server: an agent lists sessions, reads a pane, sends keys, and
-waits for output instead of polling for it.
-
-[API reference](https://libtmux.org/en/ts/latest/mcp/reference/) ·
-[Tools](https://libtmux.org/en/ts/latest/mcp/tools/) ·
-[npm](https://www.npmjs.com/package/@libtmux/mcp)
-
-An MCP client launches it from this configuration:
-
-```json
-{
-  "mcpServers": {
-    "tmux": {
-      "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.13"],
-      "env": { "LIBTMUX_SOCKET": "agent" }
-    }
-  }
-}
-```
-
-### [@libtmux/workspace](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace)
-
-Describes a session as tmuxp-shaped data and applies it.
-
-[API reference](https://libtmux.org/en/ts/latest/workspace/reference/) ·
-[npm](https://www.npmjs.com/package/@libtmux/workspace)
-
-```console
-$ bun add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
-```
-
-A workspace is one call to
-[`applyWorkspace`](https://libtmux.org/en/ts/latest/workspace/reference/builder-applyworkspace/),
-shown in the
-[package README](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace#use-it).
-
-### [@libtmux/workspace-cli](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli)
-
-`tmux-workspace` loads, captures, converts and imports tmuxp workspace files on
-Node or Bun. Ordinary loads start no Python.
-
-[Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) ·
-[npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
-
-Save this document as `workspace.yaml`:
-
-```yaml
-session_name: dev
-windows:
-  - window_name: editor
-    layout: main-vertical
-    panes:
-      - vim
-      - top
-```
-
-Load it detached, on a socket of its own:
-
-```console
-$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml \
-    -L workspace-cli-demo \
-    -d
-```
-
-## Examples
-
-See `examples/`. Every example is executed by the integration suite.
-
-Every TypeScript block in this README is typechecked against the working tree by
-`bun run typecheck:readme`, each one on its own, so a snippet here cannot drift
-from the signature it documents.
-
-`bun run typecheck:ambient-free` compiles a consumer against the emitted
-declarations with no ambient types in scope — no `@types/node`, no DOM — so the
-published types cannot start requiring either without the gate saying so.
-
-## Entrypoints
-
-The root export carries the everyday handle, query, operation, error, and
-constant surface. Each model is also its own subpath: `libtmux/server`,
-`libtmux/session`, `libtmux/window`, `libtmux/pane`, `libtmux/client`, and
-`libtmux/selection`. Supporting subpaths are `libtmux/formats`,
-`libtmux/constants`, `libtmux/common`, and `libtmux/errors`.
+### [`recordInvocations`][ref-recordinvocations] and [`replayInvocations`][ref-replayinvocations]: no tmux in unit tests
 
 `libtmux/testing` records a real server's answers and replays them, so a
-consumer's own unit tests need no tmux:
+consumer's own unit tests need no tmux. The [testing guide][guide-testing]
+covers isolated servers for tests that do:
 
 <!-- static: the recording is written by a run against a real server -->
 
@@ -1670,16 +1621,24 @@ const replayed = new Server({ engine: replayInvocations(recorder.recording()) })
 (await replayed.snapshot()).sessions.count();
 ```
 
-A recording is JSON and replays a run rather than answering a query: the same
-calls in the same order get the same answers, and one the recording never saw
-raises rather than reporting an empty server. Record guards are rewritten to
-the ones each replayed call asks for, so a fixture is not tied to the run that
-made it.
+- A recording is JSON and replays a run rather than answering a query: the same
+  calls in the same order get the same answers.
+- A call the recording never saw raises rather than reporting an empty server.
+- Record guards are rewritten to the ones each replayed call asks for, so a
+  fixture is not tied to the run that made it.
 
-Four specialist subpaths keep their complete contracts out of the root:
-`libtmux/engine` for custom execution engines, `libtmux/types` for the full
-operation and event type inventory, and `libtmux/field-types` for generated
-format-field, decoded-value, and handle-alias types.
+## Run inside tmux
+
+### [`Session.fromEnv`][ref-session-fromenv]: find the session you are in
+
+```ts
+import { Session } from "libtmux";
+
+const session = await Session.fromEnv();
+```
+
+The pane is authoritative: `$TMUX` carries a session id that goes stale when a
+pane moves, so the session is resolved through `$TMUX_PANE`.
 
 ## tmux versions
 
@@ -1687,15 +1646,10 @@ The package targets the same range as the Python library, and the format
 registry withholds newer fields from an older server, so each version is asked
 only for the fields it has.
 
-`bun run test:compat` runs the real-tmux gates against every build in
-`LIBTMUX_TMUX_BUILDS` (a directory of prefixes) plus whatever is on PATH, and
-says so when it only found one. CI runs them against both ends of the range and
-a release in between, since a difference between two releases is only visible
-when both are present.
+### [`Server.version`][ref-server-version] and [`versionAtLeast`][ref-server-versionatleast]: gate your own code
 
-To gate your own code on a version, ask the server rather than parsing
-`#{version}` yourself. The version is probed once per connection and cached, so
-asking repeatedly costs nothing:
+Ask the server rather than parsing `#{version}` yourself. The version is probed
+once per connection and cached, so asking repeatedly costs nothing:
 
 ```ts
 const version = await server.version(); // { major, minor, suffix, raw }
@@ -1705,16 +1659,20 @@ if (await server.versionAtLeast("3.4")) {
 }
 ```
 
-`raw` is tmux's own string, so a development form such as `next-3.8` survives
-the parsed fields. Versions rank `next-X.Y` below `X.Y-rc`, below `X.Y`, below
-`X.Ya`, so a development build or candidate has not yet reached the release it
-names, and a form tmux does not print is refused.
+- `raw` is tmux's own string, so a development form such as `next-3.8` survives
+  the parsed fields.
+- Versions rank `next-X.Y` below `X.Y-rc`, below `X.Y`, below `X.Ya`, so a
+  development build has not yet reached the release it names.
+- A form tmux does not print is refused.
+  [More](docs/contracts.md#tmux-versions).
+
+### [`VersionTooLowError`][ref-versiontoolowerror]: tmux older than 3.3a is refused
 
 A daemon, or an executable that would start one, older than tmux 3.3a is
-refused before anything is sent to it, with `VersionTooLowError` and a
-`delivery` of `not_started`. A version libtmux does not recognize, such as bare
-`master`, is refused the same way. To continue, upgrade tmux and restart the
-server, or pin the previous libtmux release:
+refused before anything is sent to it, with a `delivery` of `not_started`.
+
+So is a version libtmux does not recognize, such as bare `master`. Upgrade tmux
+and restart the server, or pin the previous libtmux release:
 
 ```ts
 import { VersionTooLowError } from "libtmux";
@@ -1731,8 +1689,9 @@ try {
 }
 ```
 
-`MINIMUM_TMUX` is that floor, and [`assertSupportedTmux`](https://libtmux.org/en/ts/latest/reference/common-assertsupportedtmux/) applies the same ranking
-to a version report you already hold, such as the output of `tmux -V`:
+`MINIMUM_TMUX` is that floor, and
+[`assertSupportedTmux`][ref-assertsupportedtmux] applies the same ranking to a
+version report you already hold, such as the output of `tmux -V`:
 
 ```ts
 import { assertSupportedTmux, MINIMUM_TMUX } from "libtmux";
@@ -1743,29 +1702,280 @@ assertSupportedTmux("3.4"); // returns; throws VersionTooLowError below the floo
 
 One behaviour differs across the range rather than being gated: tmux 3.3a
 suppressed `run-shell` output for an invocation with no attached client, which
-later versions restored. [`runShell`](https://libtmux.org/en/ts/latest/reference/server-server-runshell/) returns an empty result there rather than
-failing.
+later versions restored. [`runShell`][ref-server-runshell] returns an empty
+result there rather than failing.
+
+## Consumers
+
+Three working consumers live in this repository:
+
+- [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
+  Its waits stream tmux's notifications rather than polling, and its
+  [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) frames what it sends so a pane's echo cannot be read as
+  output.
+- [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
+  Applying a workspace twice converges the running session rather than
+  duplicating it.
+- [`packages/workspace-cli`](../workspace-cli) — the [`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) command.
+
+## Packages
+
+### [`@libtmux/mcp`](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp): a tmux server for agents
+
+A stdio MCP server: an agent lists sessions, reads a pane, sends keys, and
+waits for output instead of polling for it. Reference:
+[API][mcpref-reference], [tools][mcp-tools] and
+[npm](https://www.npmjs.com/package/@libtmux/mcp).
+
+An MCP client launches it from this configuration:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "npx",
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.13"],
+      "env": { "LIBTMUX_SOCKET": "agent" }
+    }
+  }
+}
+```
+
+### [`@libtmux/workspace`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace): tmuxp-style workspaces as data
+
+Describes a session as tmuxp-shaped data and applies it. Reference:
+[API][wsref-reference] and
+[npm](https://www.npmjs.com/package/@libtmux/workspace).
+
+```console
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
+```
+
+A workspace is one call to [`applyWorkspace`][wsref-applyworkspace], shown in
+the [package README](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace#quick-start).
+
+### [`@libtmux/workspace-cli`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli): `tmux-workspace` for the shell
+
+[`tmux-workspace`][cli-reference] loads, captures, converts and imports tmuxp
+workspace files on Node or Bun. Ordinary loads start no Python. Reference:
+[commands][cli-reference] and
+[npm](https://www.npmjs.com/package/@libtmux/workspace-cli).
+
+Save this document as `workspace.yaml`:
+
+```yaml
+session_name: dev
+windows:
+  - window_name: editor
+    layout: main-vertical
+    panes:
+      - vim
+      - top
+```
+
+Load it detached, on a socket of its own with [`load`][cli-load]:
+
+```console
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml \
+    -L workspace-cli-demo \
+    -d
+```
+
+## Entrypoints
+
+The root export carries the everyday handle, query, operation, error, and
+constant surface. Each model is also its own subpath:
+
+- `libtmux/server`, `libtmux/session`, `libtmux/window`, `libtmux/pane`,
+  `libtmux/client` and `libtmux/selection`.
+- `libtmux/formats`, `libtmux/constants`, `libtmux/common` and
+  `libtmux/errors`, as supporting subpaths.
+- `libtmux/testing`, to [record and replay](#test-your-own-code) a server's
+  answers.
+- `libtmux/engine` for custom execution engines, `libtmux/types` for the full
+  operation and event type inventory, and `libtmux/field-types` for generated
+  format-field, decoded-value, and handle-alias types.
 
 ## Parity with the Python library
 
-`parity/python-0.62.0.json` is a ledger against libtmux 0.62.0. Every public
-symbol in that release carries a decision: ported directly, adapted to a shape
-that suits TypeScript better, or not ported for a recorded reason. A ported or
-adapted symbol also names the TypeScript that covers it and the test that proves
-it.
+[`parity/python-0.62.0.json`](parity/python-0.62.0.json) is a ledger against
+libtmux 0.62.0:
 
-What is not ported mostly falls into three groups: neo.py, whose
-responsibilities are split across the generated metadata, the codec, the graph,
-and the handles; the pytest helpers, which have an equivalent here that is
-internal and unpublished; and tmux's interactive commands, which resolve before
-the user acts and so cannot be reported by a promise.
+- Every public symbol in that release carries a decision: ported directly,
+  adapted to a shape that suits TypeScript better, or not ported for a recorded
+  reason.
+- A ported or adapted symbol names the TypeScript that covers it and the test
+  that proves it. A gate checks that every symbol the ledger names exists.
+- What is not ported falls into three groups: neo.py, the pytest helpers, and
+  tmux's interactive commands. The last is reachable through
+  [`cmd`][ref-server-cmd], so "not ported" means "no typed wrapper", not "out of
+  reach". [More](docs/contracts.md#parity-with-the-python-library).
 
-That last group is reachable through `cmd`, so "not ported" means "no typed
-wrapper", not "out of reach".
+## What it leaves out
 
-A gate checks that every symbol the ledger names exists in the package, which
-is what stops a recorded mapping from drifting away from the code.
+- **Live objects.** A [`Session`][ref-session] or a [`Pane`][ref-pane] is read
+  at one instant and does not change when tmux does. Read again with
+  [`refreshed()`][ref-window-refreshed], or [`watch()`][ref-server-watch], to
+  see a change.
+- **Every tmux command.** A command without a typed wrapper goes through
+  [`cmd`][ref-server-cmd]. Interactive ones resolve before the user acts, so a
+  promise cannot report them.
+- **Atomic batches.** [`batch`][ref-server-batch] and
+  [`pipeline`][ref-server-pipeline] stop at the first failure and leave the
+  commands before it applied.
+- **A configuration generator or a TUI.** This controls a running server. It
+  does not write your `.tmux.conf`.
+
+## Support and status
+
+Any alpha release can change or remove exported identifiers without a
+deprecation cycle, so pin an exact version and read the
+[changelog](CHANGELOG.md) before you upgrade.
+
+- **No runtime dependencies.** The package installs a tmux client and nothing
+  else. A small internal validator checks tmux's own output.
+- **tmux 3.3a or newer**, checked against the running daemon: see
+  [tmux versions](#tmux-versions).
+- **Node 22+ or Bun 1.3.14+**, and TypeScript 5.7+.
+- **Linux**, including WSL. CI runs the real-tmux test suites there only.
+
+## Documentation
+
+|                                                             |                                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| [API reference][ref-reference]                              | Every public symbol, one page each, on libtmux.org                 |
+| [Guides][guides], [topics][topics] and [concepts][concepts] | Walkthroughs, behaviour by subject, and how the pieces relate      |
+| [`docs/api.md`](docs/api.md)                                | The same reference, generated from the doc comments                |
+| [`docs/contracts.md`](docs/contracts.md)                    | The contract detail this page links to                             |
+| [`docs/criteria.md`](docs/criteria.md)                      | Every field and operator [`.where()`][ref-selection-where] accepts |
+| [`docs/benchmarks.md`](docs/benchmarks.md)                  | What each way of running commands costs                            |
+| [`examples/`](../../examples)                               | Runnable programs, each run by the integration suite               |
+| [`CHANGELOG.md`](CHANGELOG.md)                              | What each release changed                                          |
 
 ## License
 
 MIT
+
+[cli-load]: https://libtmux.org/en/ts/latest/workspace/cli/load/
+[cli-reference]: https://libtmux.org/en/ts/latest/workspace/cli/
+[concept-queries]: https://libtmux.org/en/ts/latest/concepts/queries/
+[concepts]: https://libtmux.org/en/ts/latest/concepts/
+[guide-querying]: https://libtmux.org/en/ts/latest/guides/querying-and-filtering/
+[guide-testing]: https://libtmux.org/en/ts/latest/guides/testing-with-libtmux/
+[guides]: https://libtmux.org/en/ts/latest/guides/
+[mcp-tools]: https://libtmux.org/en/ts/latest/mcp/tools/
+[mcpref-reference]: https://libtmux.org/en/ts/latest/mcp/reference/
+[ref-assertsupportedtmux]: https://libtmux.org/en/ts/latest/reference/common-assertsupportedtmux/
+[ref-client-switchto]: https://libtmux.org/en/ts/latest/reference/client-client-switchto/
+[ref-clientwhere]: https://libtmux.org/en/ts/latest/reference/selection-clientwhere/
+[ref-compileboundedregex]: https://libtmux.org/en/ts/latest/reference/selection-compileboundedregex/
+[ref-connected-subscribe]: https://libtmux.org/en/ts/latest/reference/types-connectedserver-subscribe/
+[ref-connected-subscribeformat]: https://libtmux.org/en/ts/latest/reference/types-connectedserver-subscribeformat/
+[ref-connected-unsubscribeformat]: https://libtmux.org/en/ts/latest/reference/types-connectedserver-unsubscribeformat/
+[ref-connected-waitfor]: https://libtmux.org/en/ts/latest/reference/types-connectedserver-waitfor/
+[ref-daemonguard]: https://libtmux.org/en/ts/latest/reference/engine-daemonguard/
+[ref-decodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/
+[ref-encodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-encodewheredocument/
+[ref-environmentscope]: https://libtmux.org/en/ts/latest/reference/types-environmentscope/
+[ref-environmentvalue]: https://libtmux.org/en/ts/latest/reference/types-environmentvalue/
+[ref-issafeinteger]: https://libtmux.org/en/ts/latest/reference/common-issafeinteger/
+[ref-libtmuxerror]: https://libtmux.org/en/ts/latest/reference/errors-libtmuxerror/
+[ref-multiplematcheserror]: https://libtmux.org/en/ts/latest/reference/errors-multiplematcheserror/
+[ref-multipleobjectserror]: https://libtmux.org/en/ts/latest/reference/errors-multipleobjectserror/
+[ref-newwindowoptions]: https://libtmux.org/en/ts/latest/reference/types-newwindowoptions/
+[ref-nomatcherror]: https://libtmux.org/en/ts/latest/reference/errors-nomatcherror/
+[ref-objectnotfounderror]: https://libtmux.org/en/ts/latest/reference/errors-objectnotfounderror/
+[ref-optionscope]: https://libtmux.org/en/ts/latest/reference/constants-optionscope/
+[ref-pane]: https://libtmux.org/en/ts/latest/reference/pane-pane/
+[ref-pane-capture]: https://libtmux.org/en/ts/latest/reference/pane-pane-capture/
+[ref-pane-choosetree]: https://libtmux.org/en/ts/latest/reference/pane-pane-choosetree/
+[ref-pane-displaypopup]: https://libtmux.org/en/ts/latest/reference/pane-pane-displaypopup/
+[ref-pane-entercopymode]: https://libtmux.org/en/ts/latest/reference/pane-pane-entercopymode/
+[ref-pane-killifwindowunshared]: https://libtmux.org/en/ts/latest/reference/pane-pane-killifwindowunshared/
+[ref-pane-pipeto]: https://libtmux.org/en/ts/latest/reference/pane-pane-pipeto/
+[ref-pane-resize]: https://libtmux.org/en/ts/latest/reference/pane-pane-resize/
+[ref-pane-sendkeys]: https://libtmux.org/en/ts/latest/reference/pane-pane-sendkeys/
+[ref-pane-split]: https://libtmux.org/en/ts/latest/reference/pane-pane-split/
+[ref-pane-unzoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-unzoom/
+[ref-pane-zoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-zoom/
+[ref-panedirection]: https://libtmux.org/en/ts/latest/reference/constants-panedirection/
+[ref-panewhere]: https://libtmux.org/en/ts/latest/reference/selection-panewhere/
+[ref-parselegacywhere]: https://libtmux.org/en/ts/latest/reference/selection-parselegacywhere/
+[ref-queryvalidationerror]: https://libtmux.org/en/ts/latest/reference/errors-queryvalidationerror/
+[ref-recordinvocations]: https://libtmux.org/en/ts/latest/reference/testing-recordinvocations/
+[ref-reference]: https://libtmux.org/en/ts/latest/reference/
+[ref-replayinvocations]: https://libtmux.org/en/ts/latest/reference/testing-replayinvocations/
+[ref-selection]: https://libtmux.org/en/ts/latest/reference/selection-selection/
+[ref-selection-count]: https://libtmux.org/en/ts/latest/reference/selection-selection-count/
+[ref-selection-exists]: https://libtmux.org/en/ts/latest/reference/selection-selection-exists/
+[ref-selection-filter]: https://libtmux.org/en/ts/latest/reference/selection-selection-filter/
+[ref-selection-first]: https://libtmux.org/en/ts/latest/reference/selection-selection-first/
+[ref-selection-one]: https://libtmux.org/en/ts/latest/reference/selection-selection-one/
+[ref-selection-oneorundefined]: https://libtmux.org/en/ts/latest/reference/selection-selection-oneorundefined/
+[ref-selection-where]: https://libtmux.org/en/ts/latest/reference/selection-selection-where/
+[ref-server]: https://libtmux.org/en/ts/latest/reference/server-server/
+[ref-server-batch]: https://libtmux.org/en/ts/latest/reference/server-server-batch/
+[ref-server-checkalive]: https://libtmux.org/en/ts/latest/reference/server-server-checkalive/
+[ref-server-clients]: https://libtmux.org/en/ts/latest/reference/server-server-clients/
+[ref-server-cmd]: https://libtmux.org/en/ts/latest/reference/server-server-cmd/
+[ref-server-connect]: https://libtmux.org/en/ts/latest/reference/server-server-connect/
+[ref-server-isalive]: https://libtmux.org/en/ts/latest/reference/server-server-isalive/
+[ref-server-newsession]: https://libtmux.org/en/ts/latest/reference/server-server-newsession/
+[ref-server-panes]: https://libtmux.org/en/ts/latest/reference/server-server-panes/
+[ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
+[ref-server-raiseifdead]: https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/
+[ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
+[ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/
+[ref-server-sessions]: https://libtmux.org/en/ts/latest/reference/server-server-sessions/
+[ref-server-sethook]: https://libtmux.org/en/ts/latest/reference/server-server-sethook/
+[ref-server-showglobaloptions]: https://libtmux.org/en/ts/latest/reference/server-server-showglobaloptions/
+[ref-server-snapshot]: https://libtmux.org/en/ts/latest/reference/server-server-snapshot/
+[ref-server-version]: https://libtmux.org/en/ts/latest/reference/server-server-version/
+[ref-server-versionatleast]: https://libtmux.org/en/ts/latest/reference/server-server-versionatleast/
+[ref-server-watch]: https://libtmux.org/en/ts/latest/reference/server-server-watch/
+[ref-server-windows]: https://libtmux.org/en/ts/latest/reference/server-server-windows/
+[ref-server-withconnection]: https://libtmux.org/en/ts/latest/reference/server-server-withconnection/
+[ref-serveroptions]: https://libtmux.org/en/ts/latest/reference/server-serveroptions/
+[ref-serversnapshot]: https://libtmux.org/en/ts/latest/reference/types-serversnapshot/
+[ref-session]: https://libtmux.org/en/ts/latest/reference/session-session/
+[ref-session-fromenv]: https://libtmux.org/en/ts/latest/reference/session-session-fromenv/
+[ref-session-getenvironment]: https://libtmux.org/en/ts/latest/reference/session-session-getenvironment/
+[ref-session-newwindow]: https://libtmux.org/en/ts/latest/reference/session-session-newwindow/
+[ref-session-plan]: https://libtmux.org/en/ts/latest/reference/session-session-plan/
+[ref-session-removeenvironment]: https://libtmux.org/en/ts/latest/reference/session-session-removeenvironment/
+[ref-session-setenvironment]: https://libtmux.org/en/ts/latest/reference/session-session-setenvironment/
+[ref-session-setoption]: https://libtmux.org/en/ts/latest/reference/session-session-setoption/
+[ref-session-showenvironment]: https://libtmux.org/en/ts/latest/reference/session-session-showenvironment/
+[ref-session-showoptions]: https://libtmux.org/en/ts/latest/reference/session-session-showoptions/
+[ref-session-showresolvedoptions]: https://libtmux.org/en/ts/latest/reference/session-session-showresolvedoptions/
+[ref-session-unsetenvironment]: https://libtmux.org/en/ts/latest/reference/session-session-unsetenvironment/
+[ref-session-unsetoption]: https://libtmux.org/en/ts/latest/reference/session-session-unsetoption/
+[ref-sessionwhere]: https://libtmux.org/en/ts/latest/reference/selection-sessionwhere/
+[ref-setenvironmentoptions]: https://libtmux.org/en/ts/latest/reference/types-setenvironmentoptions/
+[ref-tmuxcommanderror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxcommanderror/
+[ref-tmuxengine]: https://libtmux.org/en/ts/latest/reference/engine-tmuxengine/
+[ref-tmuxeventstream]: https://libtmux.org/en/ts/latest/reference/types-tmuxeventstream/
+[ref-tmuxinvocationreport]: https://libtmux.org/en/ts/latest/reference/common-tmuxinvocationreport/
+[ref-tmuxobjectnotfounderror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxobjectnotfounderror/
+[ref-tmuxserverrestartederror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxserverrestartederror/
+[ref-tmuxtransporterror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxtransporterror/
+[ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
+[ref-waittimeouterror]: https://libtmux.org/en/ts/latest/reference/errors-waittimeouterror/
+[ref-watchoptions]: https://libtmux.org/en/ts/latest/reference/types-watchoptions/
+[ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/
+[ref-window-link]: https://libtmux.org/en/ts/latest/reference/window-window-link/
+[ref-window-move]: https://libtmux.org/en/ts/latest/reference/window-window-move/
+[ref-window-refreshed]: https://libtmux.org/en/ts/latest/reference/window-window-refreshed/
+[ref-window-removeplacement]: https://libtmux.org/en/ts/latest/reference/window-window-removeplacement/
+[ref-window-rename]: https://libtmux.org/en/ts/latest/reference/window-window-rename/
+[ref-window-selectlayout]: https://libtmux.org/en/ts/latest/reference/window-window-selectlayout/
+[ref-window-split]: https://libtmux.org/en/ts/latest/reference/window-window-split/
+[ref-window-unlink]: https://libtmux.org/en/ts/latest/reference/window-window-unlink/
+[ref-windowdirection]: https://libtmux.org/en/ts/latest/reference/constants-windowdirection/
+[ref-windowwhere]: https://libtmux.org/en/ts/latest/reference/selection-windowwhere/
+[topic-environment]: https://libtmux.org/en/ts/latest/topics/environment/
+[topic-errors]: https://libtmux.org/en/ts/latest/topics/errors-and-exceptions/
+[topic-options-and-hooks]: https://libtmux.org/en/ts/latest/topics/options-and-hooks/
+[topics]: https://libtmux.org/en/ts/latest/topics/
+[wsref-applyworkspace]: https://libtmux.org/en/ts/latest/workspace/reference/builder-applyworkspace/
+[wsref-reference]: https://libtmux.org/en/ts/latest/workspace/reference/

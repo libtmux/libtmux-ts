@@ -84,7 +84,7 @@ which reads exactly like a clean tree:
 $ bun run typecheck:tooling
 ```
 
-Documentation is a gate, not a courtesy. Every public method, getter, and
+Documentation is a gate. Every public method, getter, and
 readonly field carries a compiled example; `docs/api.md` is generated from the
 doc comments that implement it, and `docs/criteria.md` from the table the query
 compiler matches against. Neither is edited by hand. The prose around
@@ -281,7 +281,7 @@ and start identity rather than by age, so a root a concurrent run still holds is
 refused. Set `LIBTMUX_TEST_DEADLINE_SCALE` on a machine slower or busier than
 the ones these bounds were tuned on.
 
-Ownership is a prefix rather than a parent directory, deliberately. Nesting
+Ownership is a name prefix. Nesting
 everything under `/tmp/libtmux-ts-test/` was tried: it cost fifteen bytes of
 the socket path budget, which put the longest fixture path at 104 and failed
 the suite with "File name too long". Keep the names short for the same reason.
@@ -363,10 +363,11 @@ process whose descendants hold the pipe.
 
 The supervisor in `src/_internal/test/run_root.ts` is the Linux part: process
 identity is `linux:<boot id>:<start time>`, read from `/proc`. The real-tmux,
-cancellation, and process-ownership suites therefore remain Linux-only. The
-macOS lane proves only the package boundary until that supervisor is ported.
-WSL is untested. `preflight.ts` says which requirement is missing instead of
-letting a checkout discover it as ENOENT from a file nobody mentioned.
+cancellation, and process-ownership suites therefore run on Linux only, and
+that includes WSL, where the whole suite runs. On macOS CI stops at the package
+checks until that supervisor is ported. `preflight.ts` says which requirement
+is missing instead of letting a checkout discover it as ENOENT from a file
+nobody mentioned.
 
 ## Releasing
 

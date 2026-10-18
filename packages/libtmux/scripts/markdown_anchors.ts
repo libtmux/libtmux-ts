@@ -21,6 +21,7 @@ export function slugify(heading: string): string {
     .trim()
     .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1")
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/gu, "$1")
     .toLowerCase()
     .replaceAll("`", "")
     .replace(/[^\w\- ]/gu, "")

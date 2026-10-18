@@ -29,8 +29,8 @@ the way out of the scope — including when the loop throws.
 
 Four situations, because they fail differently:
 
-- **Waiting for one event** — `find()` with a deadline, so a missed event is a
-  timeout rather than a hang.
+- **Waiting for one event** — `find()` with a deadline, so a missed event ends in
+  a timeout.
 - **Reading a pane's output** — subscribe first, then act, or a line printed
   while you were still connecting is lost.
 - **Falling behind** — a slow consumer is told it fell behind rather than

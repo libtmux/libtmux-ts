@@ -2,7 +2,7 @@
 
 `mcp_swap.ts` points selected agent clients at this repository's MCP server and
 then restores the exact configuration that preceded the swap. It is a private
-contributor tool, not an end-user configuration manager or a published package.
+contributor tool: it is not published, and it does not manage a user's configuration.
 The [MCP guide](../packages/mcp/README.md) documents the server itself; the
 [security policy](../SECURITY.md) defines its authority boundary.
 
@@ -202,8 +202,8 @@ TypeScript recovery is intentionally separate from every other port:
   SHA-256 content digests, file identities, and the expected current config.
 
 The first backup for a layer is retained across repeat swaps. Reverting
-therefore returns to the bytes and mode from before the first swap, not merely
-the preceding server command. A repeat swap of an older Claude layer rewrites
+therefore returns the file to the bytes and mode it had before the first swap,
+whatever later swaps wrote. A repeat swap of an older Claude layer rewrites
 the newer layer's recovery link in the chain so unscoped LIFO restoration still
 lands on the original file.
 

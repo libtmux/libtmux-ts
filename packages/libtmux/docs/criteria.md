@@ -35,8 +35,8 @@ case for the others rather than matching on its own, and `regex` takes
 
 `AND`, `OR` and `NOT` each take an array of criteria for the same model.
 
-A relation takes a quantifier rather than an operator: `some`, `every` or
-`none` where it holds many, and `is` or `isNot` where it holds one.
+A relation takes a quantifier: `some`, `every` or `none` where it holds many,
+and `is` or `isNot` where it holds one.
 
 A name that is not one of these is refused, and the refusal names the
 position, lists the vocabulary that was expected, and suggests the nearest

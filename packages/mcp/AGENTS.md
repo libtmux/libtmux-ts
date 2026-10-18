@@ -76,8 +76,7 @@ hygiene — the same residual gap libtmux-go accepts.
 
 Every wait takes the request's `AbortSignal` and stops on it. Without that a
 cancelled call keeps its loop and its connection for the rest of a deadline
-nobody is waiting on, which is why the gate for it is a unit test on
-`PaneTail.changed` rather than a tool call.
+nobody is waiting on, so its gate is a unit test on `PaneTail.changed`.
 
 ## Two ways to read a pane, and they differ
 
@@ -87,8 +86,8 @@ ways to read one thing, and the tool descriptions say so.
 
 ## Public surface boundary
 
-The MCP is a curated, semantic surface for detached-safe operations, not a
-one-to-one wrapper around libtmux. Library parity does not imply MCP parity;
+The MCP is a curated, semantic surface for detached-safe operations. It does
+not wrap libtmux one to one. Library parity does not imply MCP parity;
 retain useful core APIs even when they have no public MCP route.
 
 Keep modal, human-client UX out when a noninteractive equivalent exists. This
