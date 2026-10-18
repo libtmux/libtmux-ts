@@ -92,7 +92,7 @@
     },
     "packages/libtmux": {
       "name": "libtmux",
-      "version": "0.1.0-alpha.12",
+      "version": "0.1.0-alpha.13",
       "devDependencies": {
         "@types/bun": "1.4.2",
         "@types/node": "22.20.4",
@@ -108,7 +108,7 @@
     },
     "packages/mcp": {
       "name": "@libtmux/mcp",
-      "version": "0.1.0-alpha.12",
+      "version": "0.1.0-alpha.13",
       "bin": {
         "libtmux-mcp": "dist/server.js",
       },
@@ -120,7 +120,7 @@
     },
     "packages/workspace": {
       "name": "@libtmux/workspace",
-      "version": "0.1.0-alpha.12",
+      "version": "0.1.0-alpha.13",
       "dependencies": {
         "zod": "4.6.7",
       },
@@ -133,7 +133,7 @@
     },
     "packages/workspace-cli": {
       "name": "@libtmux/workspace-cli",
-      "version": "0.1.0-alpha.12",
+      "version": "0.1.0-alpha.13",
       "bin": {
         "tmux-workspace": "./dist/main.js",
       },
