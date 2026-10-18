@@ -306,7 +306,7 @@ function headingsUpTo(markdown: string, maxLevel: number): readonly DocHeading[]
     headings.push({
       level: match[1].length,
       line: index + 1,
-      text: (match[2] ?? "").replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1"),
+      text: (match[2] ?? "").replace(/\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/gu, "$1"),
     });
   }
   return headings;
