@@ -231,6 +231,108 @@ function refuseWithoutLocalTmux(runtime: RuntimeContext, method: string): void {
  * them. Handles taken from one daemon do not survive its restart: the
  * replacement numbers panes from `%0` again — see {@link DaemonIdentity}.
  *
+ * **What is on here.** A tmux server does a great many things, so this class
+ * has a great many members. They fall into a few groups:
+ *
+ * **Connecting.** `new Server()` takes tmux's default socket, and
+ * {@link ServerOptions} names another with `socketName` or `socketPath`.
+ * {@link Server.isAlive} answers `false` when nothing is listening, where
+ * {@link Server.checkAlive} rejects with tmux's reason. {@link Server.version}
+ * and {@link Server.versionAtLeast} say which tmux is running, and
+ * {@link Server.daemonIdentity} which daemon, since a restart on the same
+ * socket puts a different one there. {@link Server.socketName},
+ * {@link Server.socketPath}, {@link Server.configFile}, {@link Server.colors},
+ * and {@link Server.tmuxBin} read back how the server was built, and
+ * {@link Server.equals} compares two by the socket they resolve to.
+ * {@link Server.watch} streams control-mode notifications.
+ * {@link Server.connect} holds one control-mode connection open until it
+ * closes, and {@link Server.withConnection} closes it when its body returns or
+ * throws. While open, each shows up in tmux as an attached client, and each
+ * refuses a server built with an `engine`.
+ *
+ * **Finding one thing.** {@link Server.hasSession} answers by exact name, with
+ * `false` when no server is running. To get the object, read a
+ * {@link Selection} and ask it for one. {@link Selection.one} throws
+ * `NoMatchError` or `MultipleMatchesError` unless exactly one member matches,
+ * {@link Selection.oneOrUndefined} answers `undefined` when none does and
+ * still throws `MultipleMatchesError` for several, and
+ * {@link Selection.first} answers `undefined` for no match and takes the head
+ * of several.
+ *
+ * **Listing everything.** {@link Server.sessions}, {@link Server.windows},
+ * {@link Server.panes}, and {@link Server.clients} each resolve to a
+ * {@link Selection}. Each reads tmux afresh and rejects when the server cannot
+ * be reached, so an outage does not read as an empty server. Calling several in
+ * a row describes several different instants; {@link Server.snapshot} reads all
+ * of them at one instant, which is cheaper and consistent.
+ *
+ * **Querying things and getting around.** A {@link Selection} answers
+ * synchronously and issues no tmux command; it describes the instant it was
+ * read. {@link Selection.where} keeps the members matching declarative
+ * criteria, and throws `VersionTooLowError` when a criterion names a field the
+ * running tmux lacks. {@link Selection.filter} keeps those a predicate accepts.
+ * {@link Selection.exists} answers whether anything matches and
+ * {@link Selection.count} how many. {@link Selection.map} and
+ * {@link Selection.toArray} leave the selection for a plain array, and
+ * {@link Selection.at} answers the member at an index, or `undefined` past the
+ * end. To move between levels, go down with {@link Session.windows},
+ * {@link Session.panes}, and {@link Window.panes}; up with {@link Pane.window},
+ * {@link Pane.session}, and {@link Window.session}; and across to the focused
+ * child with {@link Session.activeWindow}, {@link Session.activePane}, and
+ * {@link Window.activePane}. None of it reads tmux again: each resolves against
+ * the snapshot its handle came from, and the way up and across answers
+ * `undefined` when nothing is there.
+ *
+ * **Changing things.** {@link Server.newSession} creates a detached session and
+ * resolves to its handle, and {@link Server.kill} terminates the server and
+ * every session on it. {@link Server.batch} runs mutations planned through a
+ * handle's `plan`, such as {@link Session.plan}, in order and resolves each to
+ * what it made, all from one final snapshot. It is not atomic: tmux stops at
+ * the first failure and leaves everything before it applied. A command tmux
+ * refuses rejects with {@link TmuxCommandError}, which carries tmux's own
+ * stderr.
+ *
+ * **Options and hooks.** {@link Server.showOptions} reads server-scope options,
+ * {@link Server.showResolvedOptions} adds the values the server inherits, and
+ * {@link Server.setOption} and {@link Server.unsetOption} write and remove
+ * them. The defaults that sessions and windows inherit are
+ * {@link Server.showGlobalOptions}, {@link Server.setGlobalOption}, and
+ * {@link Server.unsetGlobalOption}, each taking a `"session"` or `"window"`
+ * scope; unsetting falls back to tmux's built-in value.
+ * {@link Server.showHooks} reads the global hooks as a map from name to
+ * commands, {@link Server.setHook} replaces a hook's commands unless `append`
+ * is set, and {@link Server.unsetHook} removes the hook. The server environment
+ * is {@link Server.showEnvironment}, {@link Server.getEnvironment},
+ * {@link Server.setEnvironment}, and {@link Server.unsetEnvironment};
+ * `getEnvironment` answers `undefined` when tmux carries no entry. Where
+ * `unsetEnvironment` drops an entry, {@link Server.removeEnvironment} keeps it
+ * and marks it for removal from the processes tmux starts.
+ *
+ * **Everything else tmux keeps.** {@link Server.listBuffers} names the paste
+ * buffers. {@link Server.showBuffer} reads one as lines and
+ * {@link Server.showBufferBytes} as untouched bytes, {@link Server.setBuffer}
+ * stores a string and {@link Server.loadBuffer} feeds large or binary data
+ * through stdin, {@link Server.saveBuffer} has tmux write one to a file, and
+ * {@link Server.deleteBuffer} discards it. {@link Server.sourceFile} runs a
+ * configuration file, {@link Server.runShell} returns the lines a shell command
+ * printed, {@link Server.ifShell} runs a tmux command when a shell condition
+ * succeeds, {@link Server.listCommands} names the commands the running tmux
+ * understands, and {@link Server.validateLayouts} checks planned window layouts
+ * before anything is created.
+ *
+ * **Things that need a terminal.** Popups, menus, and choosers draw on an
+ * attached client, so they live on the pane they open over rather than on the
+ * server: {@link Pane.displayPopup}, {@link Pane.displayMenu},
+ * {@link Pane.chooseTree}, {@link Pane.chooseBuffer}, and
+ * {@link Pane.findWindow}. With no client attached, the popup and the menu
+ * reject because tmux has no current client, while the chooser and search modes
+ * do nothing and report success.
+ *
+ * Anything tmux can do that is not here is reachable through
+ * {@link Server.cmd}, which runs one command and resolves to the lines it
+ * printed, or {@link Server.pipeline}, which runs several in order and is not
+ * atomic.
+ *
  * Save this complete program as `server.ts`. With Bun 1.4.2 or newer,
  * tmux 3.2a or newer, and `libtmux` installed, run `bun run server.ts`.
  * It creates and stops a private tmux server. A failed operation or cleanup
