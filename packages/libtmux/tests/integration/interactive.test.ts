@@ -77,8 +77,8 @@ describe("interactive commands", () => {
       // command reports the popped-up job's failure varies by release (3.8
       // no longer does, with a client attached, where 3.7 still did) — what
       // never varies is that only the unguarded form is refused by tmux's
-      // own parser, an "unknown option" (libc getopt, 3.2a) or "unknown
-      // flag" (`args_parse`, 3.3+), before the popup ever opens.
+      // own parser, an "unknown flag" (`args_parse`), before the popup ever
+      // opens.
       const failure = await pane
         .displayPopup("-1")
         .then(() => undefined)

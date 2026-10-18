@@ -23,7 +23,9 @@ function readMatrix(): readonly string[] {
     matrix
       .split(",")
       .map((entry) => entry.trim().replaceAll('"', ""))
-      .filter((entry) => entry !== ""),
+      .filter((entry) => entry !== "")
+      // The master lane is a branch; the version it reports is a `next-X.Y` build.
+      .map((entry) => (entry === "master" ? "next-3.9" : entry)),
   );
 }
 

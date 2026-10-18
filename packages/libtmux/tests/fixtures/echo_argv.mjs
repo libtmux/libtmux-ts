@@ -15,9 +15,13 @@ if (args[0] === "--dual-streams") {
   const markerPath = args[1];
   if (markerPath === undefined) throw new Error("marker path is required");
   const holdMs = Number.parseInt(args[2] ?? "500", 10);
+  // The holder can print once the process that spawned it has exited.
+  const lateMs = Number.parseInt(args[3] ?? "-1", 10);
+  const late =
+    lateMs < 0 ? "" : `setTimeout(() => process.stdout.write("late output\\n"), ${lateMs});`;
   const grandchild = spawn(
     process.execPath,
-    ["--input-type=module", "--eval", `setTimeout(() => {}, ${holdMs})`],
+    ["--input-type=module", "--eval", `${late}setTimeout(() => {}, ${holdMs})`],
     {
       detached: true,
       stdio: ["ignore", "inherit", "inherit"],

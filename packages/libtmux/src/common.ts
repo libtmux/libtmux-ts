@@ -1,3 +1,4 @@
+import { MINIMUM_TMUX as MINIMUM, requireCoreVersion } from "./_internal/support/versions.js";
 import type { AbortLike } from "./types.js";
 
 declare const tmuxIdBrand: unique symbol;
@@ -236,3 +237,30 @@ export type PaneRef = LogicalRefBase<"pane", PaneId>;
  * nothing numbers it.
  */
 export type LogicalRef = SessionRef | WindowRef | PaneRef;
+
+/**
+ * The oldest tmux release whose daemon this package drives.
+ *
+ * ```ts
+ * MINIMUM_TMUX; // "3.3a"
+ * ```
+ */
+export const MINIMUM_TMUX: "3.3a" = MINIMUM;
+
+/**
+ * Refuse a version report below {@link MINIMUM_TMUX}.
+ *
+ * Reports rank as tmux ranks them: `3.3` is below `3.3a`, and a development
+ * build ranks below the release it names, so `next-3.4` passes and `3.3a-rc`
+ * does not. A report libtmux cannot place, such as `master`, is refused.
+ *
+ * ```ts
+ * assertSupportedTmux("3.3a");
+ * assertSupportedTmux("next-3.9");
+ * ```
+ *
+ * @throws VersionTooLowError when the report is below the minimum or unrecognized.
+ */
+export function assertSupportedTmux(version: string): void {
+  requireCoreVersion(version);
+}

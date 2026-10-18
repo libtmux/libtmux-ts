@@ -290,7 +290,7 @@ export class Pane {
    * Capture this pane's contents as lines.
    *
    * Save this complete program as `capture.ts`. With Bun 1.4.2 or newer,
-   * tmux 3.2a or newer, and `libtmux` installed, run `bun run capture.ts`.
+   * tmux 3.3a or newer, and `libtmux` installed, run `bun run capture.ts`.
    * It creates and stops a private tmux server. A failed operation or cleanup
    * exits with an error; a cleanup error names the retained socket directory.
    *

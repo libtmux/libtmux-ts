@@ -357,13 +357,17 @@ export class TmuxObjectNotFoundError extends ObjectNotFoundError {
 }
 
 /**
- * A field the server is too old to have.
+ * A tmux too old for the operation, or a version libtmux does not recognize.
  *
  * Constructed bare for parity with the Python library, which has this name and
  * throws it with no message. Constructed with its parts by this package, so a
  * caller filtering on a field their tmux predates is told which field, which
  * release has it, and which release answered — rather than being handed an
  * empty result that reads as "no object has this".
+ *
+ * Every command refused for the minimum tmux release carries `delivery` of
+ * `not_started` and a `remedy`: upgrade tmux and restart the server, or pin
+ * the previous libtmux release.
  */
 export class VersionTooLowError extends LibTmuxError {
   static override readonly code: LibTmuxErrorCode = "VersionTooLowError";
@@ -374,21 +378,42 @@ export class VersionTooLowError extends LibTmuxError {
   readonly serverVersion?: string;
   /** The first tmux that has the field, when this came from a query. */
   readonly since?: string;
+  /** `not_started` when tmux was refused before the operation could run. */
+  readonly delivery?: DeliveryStatus;
+  /** What to do about it, when the refusal has a fix the caller controls. */
+  readonly remedy?: string;
+  /** What was refused, without the remedy: the message up to where `remedy` begins. */
+  readonly reason: string;
+  /**
+   * `false` when the server's report names no release libtmux can place, such
+   * as `master`, rather than one below the minimum.
+   */
+  readonly recognized: boolean;
 
   constructor(options?: {
     readonly criteriaName: string;
+    readonly delivery?: DeliveryStatus;
+    /** `false` when `serverVersion` is a report libtmux cannot place, such as `master`. */
+    readonly recognized?: boolean;
+    readonly remedy?: string;
     readonly serverVersion: string;
     readonly since: string;
   }) {
-    super(
+    const reason =
       options === undefined
         ? ""
-        : `${options.criteriaName} needs tmux ${options.since}; this server is ${options.serverVersion}`,
-    );
+        : options.recognized === false
+          ? `${options.criteriaName} needs tmux ${options.since} or newer; this server reports "${options.serverVersion}", an unrecognized version, which is refused`
+          : `${options.criteriaName} needs tmux ${options.since}; this server is ${options.serverVersion}`;
+    super(options?.remedy === undefined ? reason : `${reason}. ${options.remedy}`);
+    this.reason = reason;
+    this.recognized = options?.recognized !== false;
     if (options === undefined) return;
     this.criteriaName = options.criteriaName;
     this.serverVersion = options.serverVersion;
     this.since = options.since;
+    if (options.delivery !== undefined) this.delivery = options.delivery;
+    if (options.remedy !== undefined) this.remedy = options.remedy;
   }
 }
 

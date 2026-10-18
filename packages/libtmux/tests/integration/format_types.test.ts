@@ -185,8 +185,7 @@ describe("declared format value types", () => {
         const observed = new Set<string>();
 
         // The questions the library asks, from the same table. Not every token
-        // of every command: `#{client_activity}` through `list-panes` takes
-        // tmux 3.2a's server down.
+        // of every command.
         const version = (
           await server.cmd("display-message", ["-p", "#{version}"], {
             target: null,
@@ -240,7 +239,7 @@ describe("declared format value types", () => {
         // snapshot cannot reach, or withheld by the registry because this tmux
         // is older than the field. Nothing is quietly unverified — and the
         // third case is why this has to run on the floor and not only on the
-        // newest release: on 3.2a ten fields fall into it.
+        // newest release.
         const withheld = new Set<string>(
           GENERATED_FORMAT_FIELDS.filter(
             (field) =>

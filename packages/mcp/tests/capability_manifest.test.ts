@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 
 import { Server } from "libtmux/server";
 import type { TmuxEngine } from "libtmux/engine";
+import { checkedEngine } from "./support/checked_engine.js";
 
 import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { createTmuxMcpServer, serverFromEnvironment } from "../src/server.js";
@@ -321,16 +322,15 @@ test("one manifest governs every toolset subset, selection, metadata, and report
       expect(JSON.stringify(structured)).not.toContain("outside the effective surface");
     },
     new Server({
-      engine: {
-        execute: (request) =>
-          Promise.resolve({
-            cmd: [...request.commands[0]],
-            exitCode: 1,
-            signal: null,
-            stderr: new TextEncoder().encode("stopped nested call"),
-            stdout: new Uint8Array(),
-          }),
-      },
+      engine: checkedEngine((request) =>
+        Promise.resolve({
+          cmd: [...request.commands[0]],
+          exitCode: 1,
+          signal: null,
+          stderr: new TextEncoder().encode("stopped nested call"),
+          stdout: new Uint8Array(),
+        }),
+      ),
     }),
   );
   // One test builds every toolset subset and drives the whole manifest, so its
@@ -625,18 +625,16 @@ test("search matching has one deterministic aggregate byte budget", () => {
 
 test("tmux-format-bearing input is literalized exactly once", async () => {
   const commands: (readonly string[])[] = [];
-  const engine: TmuxEngine = {
-    execute: (request) => {
-      commands.push(request.commands[0]);
-      return Promise.resolve({
-        cmd: [],
-        exitCode: 1,
-        signal: null,
-        stderr: new TextEncoder().encode("stop after recording arguments"),
-        stdout: new Uint8Array(),
-      });
-    },
-  };
+  const engine: TmuxEngine = checkedEngine((request) => {
+    commands.push(request.commands[0]);
+    return Promise.resolve({
+      cmd: [],
+      exitCode: 1,
+      signal: null,
+      stderr: new TextEncoder().encode("stop after recording arguments"),
+      stdout: new Uint8Array(),
+    });
+  });
 
   await withClient(
     { LIBTMUX_MCP_LIVE: "0", LIBTMUX_TOOLSETS: "execute" },
@@ -719,25 +717,23 @@ test("startup route rejects only ASCII controls and DEL", () => {
 test("minimal startup authenticates the daemon creator after start-server", async () => {
   const observedOwner = "01234567-89ab-cdef-0123-456789abcdef";
   const commands: (readonly string[])[] = [];
-  const engine: TmuxEngine = {
-    execute: (request) => {
-      const command = request.commands[0];
-      commands.push(command);
-      const stdout =
-        command[0] === "show-options"
-          ? `${observedOwner}\n`
-          : command[0] === "display-message"
-            ? "/tmp/libtmux-owned.sock\n"
-            : "";
-      return Promise.resolve({
-        cmd: [],
-        exitCode: 0,
-        signal: null,
-        stderr: new Uint8Array(),
-        stdout: new TextEncoder().encode(stdout),
-      });
-    },
-  };
+  const engine: TmuxEngine = checkedEngine((request) => {
+    const command = request.commands[0];
+    commands.push(command);
+    const stdout =
+      command[0] === "show-options"
+        ? `${observedOwner}\n`
+        : command[0] === "display-message"
+          ? "/tmp/libtmux-owned.sock\n"
+          : "";
+    return Promise.resolve({
+      cmd: [],
+      exitCode: 0,
+      signal: null,
+      stderr: new Uint8Array(),
+      stdout: new TextEncoder().encode(stdout),
+    });
+  });
   const environment = { LIBTMUX_MCP_LAUNCH_NONCE: observedOwner };
   const startup = await inspectServerStartup(
     new Server({ engine, environment, socketPath: "/tmp/libtmux-owned.sock" }),
@@ -756,18 +752,17 @@ test("minimal startup authenticates the daemon creator after start-server", asyn
     serverState: "created",
   });
 
-  const losingEngine: TmuxEngine = {
-    execute: (request) =>
-      Promise.resolve({
-        cmd: [],
-        exitCode: 0,
-        signal: null,
-        stderr: new Uint8Array(),
-        stdout: new TextEncoder().encode(
-          request.commands[0][0] === "show-options" ? "another-launch\n" : "",
-        ),
-      }),
-  };
+  const losingEngine: TmuxEngine = checkedEngine((request) =>
+    Promise.resolve({
+      cmd: [],
+      exitCode: 0,
+      signal: null,
+      stderr: new Uint8Array(),
+      stdout: new TextEncoder().encode(
+        request.commands[0][0] === "show-options" ? "another-launch\n" : "",
+      ),
+    }),
+  );
   const raced = await inspectServerStartup(
     new Server({ engine: losingEngine, environment, socketName: "libtmux-mcp" }),
     "minimal",
@@ -910,16 +905,15 @@ test("read batch preserves nested results within the shared result ceiling", asy
       );
     },
     new Server({
-      engine: {
-        execute: (request) =>
-          Promise.resolve({
-            cmd: [...request.commands[0]],
-            exitCode: 1,
-            signal: null,
-            stderr: new TextEncoder().encode("stopped nested call"),
-            stdout: new Uint8Array(),
-          }),
-      },
+      engine: checkedEngine((request) =>
+        Promise.resolve({
+          cmd: [...request.commands[0]],
+          exitCode: 1,
+          signal: null,
+          stderr: new TextEncoder().encode("stopped nested call"),
+          stdout: new Uint8Array(),
+        }),
+      ),
     }),
   );
 });

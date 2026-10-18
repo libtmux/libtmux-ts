@@ -3,7 +3,14 @@ import { TmuxTransportError } from "../../errors.js";
 import type { TmuxVersion } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
-import { isColdEndpoint, runCommand } from "./command.js";
+import {
+  checkDaemonVersion,
+  executableProbe,
+  executableVersion,
+  requireCoreVersion,
+} from "../support/versions.js";
+import { connectionArguments } from "./request.js";
+import { isColdEndpoint } from "./command.js";
 
 const classicNames = [
   "even-horizontal",
@@ -15,7 +22,7 @@ const classicNames = [
 const mirroredNames = [...classicNames, "main-horizontal-mirrored", "main-vertical-mirrored"];
 const beforeMirrors = parseTmuxVersion("3.4");
 const withMirrors = parseTmuxVersion("3.5");
-const withJsonLayouts = parseTmuxVersion("3.8");
+const withJsonLayouts = parseTmuxVersion("3.8-rc2");
 
 /** Geometry correction and pruning remain tmux's responsibility. */
 export function layoutIsValid(layout: string, panes: number, version: TmuxVersion): boolean {
@@ -41,6 +48,8 @@ export async function validateLayouts(
       kind: "cancelled",
       subcommand: "display-message",
     });
+  const timeoutMs =
+    options.timeoutMs === undefined ? runtime.timeoutMs : (options.timeoutMs ?? undefined);
   const needsVersion: { layout: string; panes: number }[] = [];
   for (const { layout, panes } of layouts) {
     const before = layoutIsValid(layout, panes, beforeMirrors);
@@ -56,17 +65,30 @@ export async function validateLayouts(
     assertLayouts(needsVersion, bound.tmuxVersion);
     return;
   }
+  const endpoint = {
+    environment: runtime.connection.environment,
+    executable: runtime.connection.executable,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
   let version: TmuxVersion;
   try {
     version = parseTmuxVersion(
-      (await runCommand(runtime, ["display-message", "-p", "#{version}"], options))
-        .join("\n")
-        .trim(),
+      (
+        await checkDaemonVersion(runtime.transport, {
+          ...endpoint,
+          globalArgs: connectionArguments(runtime.connection),
+        })
+      ).rawVersion,
     );
   } catch (error) {
     if (!isColdEndpoint(error)) throw error;
-    const client = (await runCommand(runtime, ["-V"], options)).join("\n").trim();
-    version = parseTmuxVersion(client.startsWith("tmux ") ? client.slice(5) : client);
+    const own = executableVersion(
+      await runtime.transport.execute(executableProbe({ ...endpoint, globalArgs: [] })),
+      runtime.connection.executable,
+    );
+    requireCoreVersion(own);
+    version = parseTmuxVersion(own);
   }
   assertLayouts(needsVersion, version);
 }

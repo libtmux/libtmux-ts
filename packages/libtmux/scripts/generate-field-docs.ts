@@ -40,7 +40,7 @@ function renderModel(model: WhereModel): readonly string[] {
   // stays scannable and the exception is the thing that catches the eye.
   const floor = WHERE_FIELDS_V1[model].reduce(
     (lowest, field) => (field.since < lowest ? field.since : lowest),
-    WHERE_FIELDS_V1[model][0]?.since ?? "3.2a",
+    WHERE_FIELDS_V1[model][0]?.since ?? "3.3a",
   );
   const fields = WHERE_FIELDS_V1[model]
     .map((field) =>

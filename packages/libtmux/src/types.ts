@@ -91,16 +91,13 @@ export interface NewSessionOptions extends CommandOptions {
    * 80x24 and every program in it formats to that. Nothing can widen it
    * afterwards except `Window.resize`, and a width-aware program has already
    * truncated its output by then rather than wrapped it.
-   *
-   * tmux 3.2 ignores both for a detached session and gives 80x24 anyway;
-   * 3.3 is the first release that honours them.
    */
   readonly height?: number;
   /**
    * The session's name, tmux's `-s`.
    *
    * Empty names, `:`, `.`, control characters and DEL are refused, because the
-   * supported servers do not agree on them: 3.2a through 3.6b rewrite a
+   * supported servers do not agree on them: 3.3a through 3.6b rewrite a
    * delimiter to `_` and hand back a session the caller did not name, 3.7
    * fails, and 3.7a onward stores it literally. What is accepted here reads
    * back unchanged from every supported server.
@@ -735,10 +732,10 @@ export interface TmuxSubscriptionEvent {
  * A window's layout changed.
  *
  * `layout` and `visibleLayout` carry whatever tmux hands this connection: on
- * 3.8+ that is JSON, the same wire form a snapshot's `window_layout` reports
- * (the connection requests it on attach); before 3.8 tmux has only the
- * classic layout string, on both sides. Either is an opaque token to compare
- * for equality, not a grammar to parse.
+ * 3.8-rc2 and later that is JSON, the same wire form a snapshot's
+ * `window_layout` reports (the connection requests it on attach); before
+ * 3.8-rc2 tmux has only the classic layout string, on both sides. Either is
+ * an opaque token to compare for equality, not a grammar to parse.
  */
 export interface TmuxLayoutChangeEvent {
   readonly flags: string;

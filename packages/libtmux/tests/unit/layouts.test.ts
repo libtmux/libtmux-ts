@@ -14,7 +14,7 @@ const corpus = JSON.parse(
 ) as LayoutCase[];
 const geometryErrors = new Set(["bad-inner-size", "nested-invalid-width", "nested-short-parent"]);
 
-test.each(["3.2a", "3.3a", "3.7c"])("layout syntax corpus on tmux %s", (raw) => {
+test.each(["3.3a", "3.7c"])("layout syntax corpus on tmux %s", (raw) => {
   const version = parseTmuxVersion(raw);
   for (const item of corpus) {
     const expected =
@@ -63,7 +63,11 @@ test("JSON layout preflight checks the version, pane count and native structure"
   const encoded = JSON.stringify(layout);
   for (const raw of ["3.2a", "3.7c", "next-3.8"])
     expect(layoutIsValid(encoded, 2, parseTmuxVersion(raw)), raw).toBe(false);
-  const version = parseTmuxVersion("3.8-rc");
+  // 3.8-rc2 is the earliest release measured to dump and accept JSON.
+  expect(layoutIsValid(encoded, 2, parseTmuxVersion("3.8-rc"))).toBe(false);
+  for (const raw of ["3.8-rc2", "3.8-rc3", "3.8"])
+    expect(layoutIsValid(encoded, 2, parseTmuxVersion(raw)), raw).toBe(true);
+  const version = parseTmuxVersion("3.8");
   expect(layoutIsValid(encoded, 2, version)).toBe(true);
   expect(layoutIsValid(encoded, 1, version)).toBe(true);
   expect(layoutIsValid(encoded, 3, version)).toBe(false);

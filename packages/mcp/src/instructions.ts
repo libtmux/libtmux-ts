@@ -1,3 +1,5 @@
+import { MINIMUM_TMUX } from "libtmux";
+
 import type { CallerEnvironment } from "./caller.js";
 import type { Policy } from "./policy.js";
 
@@ -9,7 +11,10 @@ Target panes by id (%1); ids survive renames and layout changes.
 Only tools advertised by tools/list are callable. Toolsets are unordered capability
 groups, not authorization levels. MCP annotations are conservative consent metadata,
 not enforcement. tmux://capabilities reports the frozen effective surface, direct
-process reach, tmux effects, output classes, input sinks, and selected socket.`;
+process reach, tmux effects, output classes, input sinks, and selected socket.
+
+Needs a tmux ${MINIMUM_TMUX} daemon or newer. An older one is refused before any command
+runs, and the failure names the fix, which is for whoever runs this server.`;
 
 export function buildInstructions(
   policy: Policy,

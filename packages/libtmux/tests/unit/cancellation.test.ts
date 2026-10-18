@@ -325,6 +325,64 @@ describe("transport cancellation", () => {
     }
   }, 20_000);
 
+  test("returns the exit result once the pipes go quiet after the process exits", async () => {
+    const temporaryRoot = await makeTestDirectory("ltx-exit-quiet-");
+    const markerPath = join(temporaryRoot, "exited");
+    const transport = new NodeSpawnTransport();
+    const startedAt = performance.now();
+    // No timeout: only the quiet pipes can end the wait before the holder does.
+    const execution = transport.execute({
+      commands: [[echoFixture, "--exit-with-inherited-pipe", markerPath, "6000"]],
+      environment: detachedHolderEnvironment,
+      executable: process.execPath,
+      globalArgs: [],
+    });
+    let holder: ProcessIdentity | undefined;
+    try {
+      holder = await readHolderIdentity(markerPath);
+      const result = await execution;
+
+      expect(result.exitCode).toBe(0);
+      expect(performance.now() - startedAt).toBeLessThan(4_500);
+    } finally {
+      await execution.catch(() => undefined);
+      if (holder !== undefined) await stopHolder(holder);
+      await rm(temporaryRoot, { force: true, recursive: true });
+    }
+  }, 20_000);
+
+  test("keeps output that a blocked event loop left unread when the quiet timer fires", async () => {
+    const temporaryRoot = await makeTestDirectory("ltx-exit-blocked-");
+    const markerPath = join(temporaryRoot, "exited");
+    const transport = new NodeSpawnTransport();
+    // The holder prints 600 ms after it starts, while the loop below is blocked.
+    const execution = transport.execute({
+      commands: [[echoFixture, "--exit-with-inherited-pipe", markerPath, "6000", "600"]],
+      environment: detachedHolderEnvironment,
+      executable: process.execPath,
+      globalArgs: [],
+    });
+    let holder: ProcessIdentity | undefined;
+    try {
+      holder = await readHolderIdentity(markerPath);
+      // Let the exit be observed, which arms the 1 s quiet timer, then hold
+      // the loop past it with the holder's output unread in the pipe.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The loop resumes at its next timers phase only if the block ends a
+      // check-phase callback; in a timer callback the poll phase runs first.
+      await new Promise((resolve) => setImmediate(resolve));
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_600);
+      const result = await execution;
+
+      expect(result.exitCode).toBe(0);
+      expect(new TextDecoder().decode(result.stdout)).toBe("late output\n");
+    } finally {
+      await execution.catch(() => undefined);
+      if (holder !== undefined) await stopHolder(holder);
+      await rm(temporaryRoot, { force: true, recursive: true });
+    }
+  }, 20_000);
+
   test("bounds post-exit drainage at the timeout while retaining the exit result", async () => {
     const temporaryRoot = await makeTestDirectory("ltx-exit-timeout-");
     const markerPath = join(temporaryRoot, "exited");

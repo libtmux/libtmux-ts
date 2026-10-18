@@ -217,6 +217,13 @@ command that needs one, and a daemon already listening on that socket is
 used rather than replaced, so two `Server` values built from the same
 options address the same tmux.
 
+Every command runs only on a daemon of tmux 3.3a or newer, judged by the
+daemon's own version rather than the client's. A daemon of an earlier
+release, or an executable that would start one, is refused with
+`VersionTooLowError` before the command has any effect, and a daemon
+that is replaced after the version check is refused with
+`TmuxServerRestartedError`.
+
 Sessions, windows and panes are reached from here and carry the server with
 them. Handles taken from one daemon do not survive its restart: the
 replacement numbers panes from `%0` again — see `DaemonIdentity`.
@@ -324,7 +331,7 @@ printed, or [`Server.pipeline`](#serverpipeline), which runs several in order an
 atomic.
 
 Save this complete program as `server.ts`. With Bun 1.4.2 or newer,
-tmux 3.2a or newer, and `libtmux` installed, run `bun run server.ts`.
+tmux 3.3a or newer, and `libtmux` installed, run `bun run server.ts`.
 It creates and stops a private tmux server. A failed operation or cleanup
 exits with an error; a cleanup error names the retained socket directory.
 
@@ -487,6 +494,10 @@ events without polling and without a command per read.
 That process is a tmux-visible attached client until the stream closes; it
 affects client listings, attachment state, hooks, and related policy.
 
+The daemon's version is checked just before the client attaches, and an
+attach cannot carry the version fence, so a daemon replaced in that window
+is attached to; `-N` keeps the client from starting one.
+
 tmux sends a control client no pane output until it attaches, so this
 attaches to a session; a server with no sessions has nothing to watch.
 
@@ -517,6 +528,8 @@ control mode cannot frame arbitrary command output truthfully when aliases
 and waiting commands are allowed.
 The connection has the attached-client lifecycle described by
 [`watch`](#serverwatch) until it closes.
+
+The version check and the attach are two steps, as for [`watch`](#serverwatch).
 
 Each snapshot acquisition remains one atomic tmux invocation containing
 its daemon identity read and all four listings. The first connected
@@ -564,7 +577,7 @@ is an N+1: prefer one
 off it, which is both cheaper and consistent.
 
 Save this complete program as `sessions.ts`. With Bun 1.4.2 or newer,
-tmux 3.2a or newer, and `libtmux` installed, run `bun run sessions.ts`.
+tmux 3.3a or newer, and `libtmux` installed, run `bun run sessions.ts`.
 It creates and stops a private tmux server. A failed operation or cleanup
 exits with an error; a cleanup error names the retained socket directory.
 
@@ -627,7 +640,7 @@ async windows(): Promise<Selection<Window>>
 Every window on the server, including each placement of a linked window.
 
 Save this complete program as `windows.ts`. With Bun 1.4.2 or newer,
-tmux 3.2a or newer, and `libtmux` installed, run `bun run windows.ts`.
+tmux 3.3a or newer, and `libtmux` installed, run `bun run windows.ts`.
 It creates and stops a private tmux server. A failed operation or cleanup
 exits with an error; a cleanup error names the retained socket directory.
 
@@ -701,7 +714,7 @@ async panes(): Promise<Selection<Pane>>
 Every pane on the server.
 
 Save this complete program as `panes.ts`. With Bun 1.4.2 or newer,
-tmux 3.2a or newer, and `libtmux` installed, run `bun run panes.ts`.
+tmux 3.3a or newer, and `libtmux` installed, run `bun run panes.ts`.
 It creates and stops a private tmux server. A failed operation or cleanup
 exits with an error; a cleanup error names the retained socket directory.
 
@@ -955,7 +968,7 @@ Names accept unique abbreviations. Only version-sensitive layouts query the
 daemon; a cold endpoint uses the selected client. Checksums, bounded tree
 structure and pane counts are checked locally; tmux owns geometry and pruning.
 Custom layouts are limited to 8192 characters and 256 classic groups.
-JSON layouts require tmux 3.8 and permit at most 200 nested objects.
+JSON layouts require tmux 3.8-rc2 and permit at most 200 nested objects.
 
 @throws TypeError when a layout, pane count or version reply is invalid.
 @throws TmuxCommandError when the daemon or client version cannot be read.
@@ -995,13 +1008,13 @@ Whether this server is at least `minimum`, written the way tmux writes it.
 This is how a caller gates on a feature that arrived in a known release
 without parsing `#{version}` themselves. A named development build such
 as `next-3.9` has not shipped the release it names: it is at least
-`3.8`, but not at least `3.9`. An untargeted development build (bare
-`master`, or `<tag>-master`) names no release it is heading toward, so
-nothing bounds it — it is at least anything.
+`3.8`, but not at least `3.9`. A candidate such as `3.8-rc2` ranks the
+same way, below `3.8` and above `3.7a`. `minimum` must be a form tmux
+prints, such as `3.7a`, or the call throws a `TypeError`.
 
 ```ts
-if (await server.versionAtLeast("3.3")) {
-  await server.setOption("extended-keys", "on");
+if (await server.versionAtLeast("3.5")) {
+  await server.setHook("command-error", "display-message 'a command failed'");
 }
 ```
 
@@ -1079,7 +1092,7 @@ newSession(options?: NewSessionOptions): Promise<Session>
 Create a detached session and resolve it as a handle.
 
 Save this complete program as `new-session.ts`. With Bun 1.4.2 or newer,
-tmux 3.2a or newer, and `libtmux` installed, run `bun run new-session.ts`.
+tmux 3.3a or newer, and `libtmux` installed, run `bun run new-session.ts`.
 It creates and stops a private tmux server. A failed operation or cleanup
 exits with an error; a cleanup error names the retained socket directory.
 
@@ -2244,14 +2257,14 @@ Applying any layout while a pane is zoomed unzooms the window first —
 tmux's own behavior, not this method's.
 
 A `window_layout` saved earlier and passed back here is not guaranteed
-to put every pane back where it was. Before tmux 3.8, the classic
+to put every pane back where it was. Before tmux 3.8-rc2, the classic
 layout string restores the arrangement's shape but can rotate which
-pane lands in which position; a JSON layout (3.8+, and only for a
+pane lands in which position; a JSON layout (3.8-rc2+, and only for a
 reader that actually receives JSON — see [`Server.connect`](#serverconnect)) restores
 exactly.
 
 Only a preset name, a layout string that parses here, or JSON on tmux
-3.8+ is accepted: anything else is refused rather than sent, because two
+3.8-rc2+ is accepted: anything else is refused rather than sent, because two
 ranges of tmux exit on a layout they cannot read and take every session
 on the socket with them. tmux 3.3 and 3.3a die on a value with no
 readable checksum, and 3.7 through 3.7d on one whose checksum is correct
@@ -2541,7 +2554,7 @@ capture(options?: CaptureOptions): Promise<readonly string[]>
 Capture this pane's contents as lines.
 
 Save this complete program as `capture.ts`. With Bun 1.4.2 or newer,
-tmux 3.2a or newer, and `libtmux` installed, run `bun run capture.ts`.
+tmux 3.3a or newer, and `libtmux` installed, run `bun run capture.ts`.
 It creates and stops a private tmux server. A failed operation or cleanup
 exits with an error; a cleanup error names the retained socket directory.
 

@@ -6,6 +6,7 @@
  * is the difference between one command and one per session.
  */
 
+import { MINIMUM_TMUX } from "libtmux";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
@@ -218,9 +219,11 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
     {
       description:
         "The tmux server this process drives: its socket, version, daemon pid, and " +
-        "totals. Check the version before using a feature that needs a recent tmux.",
+        "totals, and the oldest tmux release this server drives. Check the version " +
+        "before using a feature that needs a recent tmux.",
       inputSchema: {},
       outputSchema: {
+        minimumVersion: z.string(),
         panes: z.number().int(),
         pid: z.string().nullable(),
         sessions: z.number().int(),
@@ -245,6 +248,7 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
           .catch(() => ""),
       ]);
       const structured = {
+        minimumVersion: MINIMUM_TMUX,
         panes: paneEntities(snapshot.panes.toArray()).length,
         pid: identity.pid,
         sessions: snapshot.sessions.count(),
@@ -254,7 +258,7 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
       };
       return ok(
         structured,
-        `tmux ${structured.version} on ${structured.socketPath ?? "<default socket>"}, ` +
+        `tmux ${structured.version} (minimum ${MINIMUM_TMUX}) on ${structured.socketPath ?? "<default socket>"}, ` +
           `${String(structured.sessions)} sessions / ${String(structured.windows)} windows / ${String(structured.panes)} panes`,
       );
     },

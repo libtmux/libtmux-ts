@@ -33,6 +33,94 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+`libtmux` now requires tmux 3.3a or newer, judged by the running server's
+version rather than the `tmux` executable's. A server of an earlier release,
+including 3.3 and the 3.0 and 3.1 lines, and an executable that would start
+one are refused with `VersionTooLowError` before anything is sent. Release
+candidates and `next-X.Y` builds of later releases (`3.8-rc2`, `next-3.9`)
+pass; `3.3-rc`, `next-3.3`, bare `master`, `openbsd-*` and forms tmux never
+prints (`3.3a-master`, `next-3.3a`) are refused, and the error says the version
+is unrecognized rather than that the server is too old. (#72)
+
+Before:
+
+    libtmux 0.1.0-alpha.12 ran commands on tmux 3.2a.
+
+After:
+
+    VersionTooLowError, nothing sent.
+
+To keep a tmux older than 3.3a, pin `libtmux@0.1.0-alpha.12`. Otherwise
+upgrade tmux: upgrading the executable does not upgrade a server that is
+already running, so restart it after saving its sessions. The error message and
+`VersionTooLowError.remedy` say the same. (#72)
+
+The refusal covers `Server` methods, `cmd`, batches, plans, `watch` and
+`connect`, and so the workspace builder and the MCP server. (#72)
+
+Nothing runs on a server replaced after its version was checked. A
+replacement below the minimum raises `VersionTooLowError` with the remedy, a
+supported one raises `TmuxServerRestartedError`, and a server that vanished is
+not restarted by an older executable. (#72)
+
+Reading the server's version no longer runs `after-display-message` hooks.
+Custom engines receive that read as a request of its own before the first
+command, so recordings made with `recordInvocations` before this change need
+recording again; `recordInvocations` and `replayInvocations` leave the version
+fence out. (#72)
+
+`Server.versionAtLeast` and every feature gate rank versions as tmux orders
+them: `next-X.Y` below `X.Y-rc`, below `X.Y`, below `X.Ya`. A candidate such as
+`3.8-rc2` is no longer at least `3.8`, and `versionAtLeast` throws a
+`TypeError` for a minimum tmux does not print, such as `master`. (#72)
+
+A JSON layout string is accepted from `3.8-rc2`, the first release measured to
+dump and accept one, so `Window.selectLayout` and `Server.validateLayouts` no
+longer refuse it on a `3.8-rc2` or `3.8-rc3` server. (#72)
+
+`MINIMUM_TMUX` exports the supported floor and `assertSupportedTmux(version)`
+throws `VersionTooLowError` for a version report below it or one libtmux cannot
+place. `VersionTooLowError.reason` is the message without its remedy, and
+`VersionTooLowError.recognized` is `false` when the server's report names no
+release libtmux can place. (#72)
+
+The `since` of a format or criteria field that tmux had before 3.3a is `3.3a`,
+the floor, in the generated field tables and in `docs/criteria.md`; no query
+against a supported server can be refused for it. (#72)
+
+A command's result is returned once the `tmux` client has exited and its pipes
+have stayed silent for a second, with new output restarting the wait. A 3.0a or
+3.1c daemon holds the client's stdout open after refusing it, which made every
+refused call last the command timeout. (#72)
+
+A refused version, and a version read that tmux does not answer, report
+`delivery: "not_started"`: `VersionTooLowError.delivery` and
+`TmuxTransportError.delivery` on the thrown error, and `onInvocation` on the
+report. A failed read is a `TmuxTransportError` of kind `protocol`. (#72)
+
+### `@libtmux/mcp`
+
+A tmux below the minimum now returns a failure result that names the fix,
+`get_server_info` reports `minimumVersion` beside `version`, and the server
+instructions state the minimum. (#72)
+
+### `@libtmux/workspace-cli`
+
+`tmux-workspace load` no longer starts a new tmux server when the server it
+loaded into exits before the final attach; the attach fails instead. (#72)
+
+`tmux-workspace shell` and Python extension loads check the tmux they use
+before Python starts it. A live server is judged by its own version; with none
+listening, `tmux -V` is asked, so neither an unsupported executable nor a
+supported one creates a socket or reads the user's configuration. The
+client lookup and the final attach carry `-N` after a checked read of the
+server; they cannot carry the version fence. (#72)
+
+A tmux below the minimum fails with the `tmux_unsupported` code, in text and
+JSON output, with the remedy in the message. (#72)
+
 ## 0.1.0-alpha.12 (2026-09-27)
 
 ### `@libtmux/workspace-cli`

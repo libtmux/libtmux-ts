@@ -28,7 +28,7 @@ $ bun test examples/workspace
 
 The test builds each workspace against a real tmux server the suite starts on
 a socket of its own, asserts on the windows and panes it produced, and tears
-the server down afterwards. Requires tmux 3.2a or newer.
+the server down afterwards. Requires tmux 3.3a or newer.
 
 ## The quick way
 

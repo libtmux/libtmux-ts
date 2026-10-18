@@ -1,6 +1,7 @@
 /* eslint-disable no-await-in-loop -- Import roots are validated before any builder runs. */
 import {
   TmuxCommandError,
+  VersionTooLowError,
   type DaemonIdentity,
   type Server,
   type ServerSnapshot,
@@ -15,6 +16,7 @@ import { privatePath, type Document } from "./documents.ts";
 import { expand, normalize, workspaceName } from "./normalize.ts";
 import { CliError, type OperationOutput, write } from "./output.ts";
 import { processRun } from "./process.ts";
+import { requireSupportedTmux } from "./supported.ts";
 import type { LoadResult } from "./tmux.ts";
 
 export type ExtensionSpec = { data: Document; name: string };
@@ -193,7 +195,8 @@ function sameDaemon(left: DaemonIdentity, right: DaemonIdentity): boolean {
   return left.pid === right.pid && left.startTime === right.startTime;
 }
 
-async function baseline(server: Server, signal?: AbortSignal): Promise<ServerSnapshot | undefined> {
+async function baseline(server: Server, context: CLIContext): Promise<ServerSnapshot | undefined> {
+  const signal = context.signal;
   try {
     await server.cmd("list-sessions", [], signal ? { signal } : {});
   } catch (error) {
@@ -205,8 +208,10 @@ async function baseline(server: Server, signal?: AbortSignal): Promise<ServerSna
       /^(?:no server running on .+|error connecting to .+ \((?:No such file or directory|Connection refused)\))$/.test(
         error.stderr[0]!,
       )
-    )
+    ) {
+      await requireSupportedTmux(server, context);
       return undefined;
+    }
     throw error;
   }
   return server.snapshot(signal ? { signal } : {});
@@ -222,7 +227,7 @@ export async function buildExtension(
   result: LoadResult,
   borrowed?: BorrowedSession,
 ): Promise<Session> {
-  const before = await baseline(server, context.signal);
+  const before = await baseline(server, context);
   if (
     borrowed &&
     (!before ||
@@ -309,7 +314,10 @@ export async function buildExtension(
       result.session_name = session.name ?? spec.name;
     } catch (error) {
       result.observation_error = error instanceof Error ? error.message : String(error);
-      failed ??= new CliError("tmux_failed", result.observation_error);
+      failed ??= new CliError(
+        error instanceof VersionTooLowError ? "tmux_unsupported" : "tmux_failed",
+        result.observation_error,
+      );
     }
     if (failed !== undefined) throw failed;
     result.completed_stages.push("extension-built");

@@ -113,7 +113,7 @@ const LAYOUT_SET_NAMES: readonly string[] = [...LAYOUT_PRESETS, ...MIRRORED_LAYO
 // tmux CHANGES, 3.4 to 3.5: mirrored main-horizontal and main-vertical.
 const MIRRORED_LAYOUTS_SINCE = parseTmuxVersion("3.5");
 // tmux CHANGES, 3.7c to 3.8: layout strings use a JSON subset format.
-const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8");
+const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8-rc2");
 
 /** Why a value that opened like a dumped layout is not one. */
 const LAYOUT_REJECTIONS: Readonly<Record<LayoutRejection, string>> = Object.freeze({

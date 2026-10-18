@@ -24,6 +24,7 @@ import { splitSize } from "../../src/types.js";
 import { PANE_DIRECTION_FLAG_MAP, PaneDirection } from "../../src/constants.js";
 import { WindowDirection } from "../../src/constants.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
 
 /**
  * The tmux command line the lifecycle mutations build.
@@ -71,7 +72,9 @@ function versionedRecorder(version: string): Recorder {
     requests,
     execute(request: CommandRequest): Promise<RawCommandResult> {
       requests.push(request);
-      const isProbe = request.commands[0]?.[0] === "display-message";
+      if (probeMarker(request) !== undefined) {
+        return Promise.resolve(answerVersionProbe(request, version));
+      }
       return Promise.resolve({
         cmd: [request.executable, ...flattenInvocation(request)],
         exitCode: 0,
@@ -79,7 +82,7 @@ function versionedRecorder(version: string): Recorder {
         stderr: new Uint8Array(),
         // The probe reports a version; break-pane's own `-P -F` print is
         // answered with a window id for the rename follow-up to target.
-        stdout: new TextEncoder().encode(isProbe ? `${version};101;202\n` : "@9\n"),
+        stdout: new TextEncoder().encode("@9\n"),
       });
     },
   };
@@ -289,7 +292,7 @@ describe("lifecycle command arguments", () => {
   });
 
   test("refuses names the supported tmux range does not carry identically", () => {
-    // 3.2a through 3.6b rewrite a delimiter to `_`, 3.7 rejects the name, and
+    // 3.3a through 3.6b rewrite a delimiter to `_`, 3.7 rejects the name, and
     // 3.7a onward stores it literally, so one call means three things.
     expect(() => planNewSession({ name: "a:b" })).toThrow("session name");
     expect(() => planNewSession({ name: "a.b" })).toThrow("session name");

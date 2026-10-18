@@ -1,11 +1,13 @@
 /* eslint-disable no-await-in-loop -- Diagnostic fields render in order to the same stream. */
 import { platform, release } from "node:os";
+import { Server } from "libtmux";
 import manifest from "../package.json" with { type: "json" };
 import type { CLIContext } from "./app.ts";
 import { scalarText, privatePath, resolveWorkspace } from "./documents.ts";
 import { CliError, colorEnabled, emitJson, OperationOutput, styled, write } from "./output.ts";
 import type { Request } from "./parser.ts";
 import { processRun, tokenize } from "./process.ts";
+import { requireSupportedTmux } from "./supported.ts";
 
 function tty(context: CLIContext): boolean {
   return Boolean((context.stdin as { isTTY?: boolean }).isTTY);
@@ -127,6 +129,18 @@ export async function shell(request: Request, context: CLIContext): Promise<numb
       "The Python bridge requires tmuxp 1.74.0; set TMUX_WORKSPACE_PYTHON to its interpreter",
     );
   }
+  // tmuxp runs the `tmux` on PATH, so that is the executable to judge.
+  await requireSupportedTmux(
+    new Server({
+      environment: context.env,
+      ...(typeof request.values.socket_path === "string" && request.values.socket_path
+        ? { socketPath: request.values.socket_path }
+        : typeof request.values.socket_name === "string" && request.values.socket_name
+          ? { socketName: request.values.socket_name }
+          : {}),
+    }),
+    context,
+  );
   const args = [
     python,
     "-u",

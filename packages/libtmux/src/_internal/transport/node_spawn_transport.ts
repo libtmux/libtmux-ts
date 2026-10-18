@@ -25,6 +25,18 @@ export interface NodeSpawnTransportOptions {
 
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
+/**
+ * How long the pipes may stay silent after the process has exited.
+ *
+ * tmux before 3.2 keeps a client's stdout open after answering it with a
+ * usage error, so waiting for EOF would last until the command timeout.
+ *
+ * The timer only ends the wait when nothing arrived since it was armed: a
+ * timer that fires late, because the event loop was blocked, has not seen the
+ * bytes already sitting in the pipes.
+ */
+const DRAIN_IDLE_MS = 1_000;
+
 interface ClosedProcess {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
@@ -159,8 +171,10 @@ export class NodeSpawnTransport {
     let delivery: DeliveryStatus = "not_started";
     let escalationTimer: NodeJS.Timeout | undefined;
     let postKillTimer: NodeJS.Timeout | undefined;
+    let drainTimer: NodeJS.Timeout | undefined;
     let timeoutTimer: NodeJS.Timeout | undefined;
     let spawnError: unknown;
+    let outputEvents = 0;
     let stdinError: unknown;
     let forcedSettlement = false;
     const stderrChunks: Buffer[] = [];
@@ -174,6 +188,7 @@ export class NodeSpawnTransport {
     const clearLifecycleTimers = (): void => {
       if (escalationTimer !== undefined) clearTimeout(escalationTimer);
       if (postKillTimer !== undefined) clearTimeout(postKillTimer);
+      if (drainTimer !== undefined) clearTimeout(drainTimer);
       if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
     };
 
@@ -202,6 +217,25 @@ export class NodeSpawnTransport {
 
     const armHardSettlement = (): void => {
       postKillTimer ??= setTimeout(forceSettlement, this.#postKillGraceMs);
+    };
+
+    const awaitDrainIdle = (): void => {
+      if (observedExit === undefined || closed || forcedSettlement) return;
+      if (drainTimer !== undefined) clearTimeout(drainTimer);
+      const armedAt = outputEvents;
+      drainTimer = setTimeout(() => {
+        // The poll phase reads what is buffered before the check phase runs,
+        // so output that a blocked loop left unread is counted by then.
+        setImmediate(() => {
+          if (outputEvents === armedAt) forceSettlement();
+          else awaitDrainIdle();
+        });
+      }, DRAIN_IDLE_MS);
+      drainTimer.unref();
+    };
+    const onOutput = (): void => {
+      outputEvents += 1;
+      awaitDrainIdle();
     };
 
     const terminate = (): void => {
@@ -253,6 +287,7 @@ export class NodeSpawnTransport {
     child.once("exit", (code, signal) => {
       observedExit = { code, signal };
       if (escalationTimer !== undefined) clearTimeout(escalationTimer);
+      awaitDrainIdle();
       if (interruption !== undefined) {
         discardDrainage();
         armHardSettlement();
@@ -269,6 +304,8 @@ export class NodeSpawnTransport {
       outputBytes += chunk.byteLength;
       return true;
     };
+    child.stdout.on("data", onOutput);
+    child.stderr.on("data", onOutput);
     const stdoutPromise = collect(child.stdout, stdoutChunks, retainOutput);
     const stderrPromise = collect(child.stderr, stderrChunks, retainOutput);
     function onClose(code: number | null, signal: NodeJS.Signals | null): void {

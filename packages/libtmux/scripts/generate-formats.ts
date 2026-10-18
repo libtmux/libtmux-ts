@@ -12,7 +12,8 @@ import {
   criteriaFieldsForModel,
   renderGeneratedFormatSources,
 } from "../src/_internal/codec/format_registry.js";
-import { parseTmuxVersion } from "../src/_internal/runtime/tmux_version.js";
+import { parseTmuxVersion, releaseAtLeast } from "../src/_internal/runtime/tmux_version.js";
+import { MINIMUM_TMUX } from "../src/_internal/support/versions.js";
 
 export interface GenerateFormatsOptions {
   readonly mode: "check" | "write";
@@ -944,10 +945,17 @@ export async function generateFormats(options: GenerateFormatsOptions): Promise<
   // to prove it is 0.62.0; the tmux-only fields are unioned in afterwards, and
   // the parity manifest below is rendered from the oracle alone.
   const tmuxOnly = await readTmuxFields(fixture.fields);
+  // A field that predates the supported minimum is available on every daemon
+  // this library talks to, so its gate is the minimum itself: a `since` below
+  // it could never refuse a query.
   const vocabulary = Object.freeze(
-    [...fixture.fields, ...tmuxOnly].toSorted((left, right) =>
-      left.token < right.token ? -1 : left.token > right.token ? 1 : 0,
-    ),
+    [...fixture.fields, ...tmuxOnly]
+      .map((field) =>
+        releaseAtLeast(field.since, MINIMUM_TMUX) ? field : { ...field, since: MINIMUM_TMUX },
+      )
+      .toSorted((left, right) =>
+        left.token < right.token ? -1 : left.token > right.token ? 1 : 0,
+      ),
   );
   const generated = renderGeneratedFormatSources(vocabulary);
   const valueTypes = await readValueTypes(new Set(vocabulary.map(({ token }) => token)));

@@ -159,8 +159,8 @@ describe("option reads", () => {
 
       // `-e` is not a real option name, so this fails either way; which
       // error tmux gives is what proves the guard. Refused outright, tmux
-      // reports an "unknown option" (libc getopt, 3.2a) or "unknown flag"
-      // (`args_parse`, 3.3+) and never looks the name up; reaching option
+      // reports an "unknown flag" (`args_parse`) and never looks the name
+      // up; reaching option
       // lookup, it reports "invalid option" instead, on every release.
       const setFailure = await session
         .setOption("-e", "value")

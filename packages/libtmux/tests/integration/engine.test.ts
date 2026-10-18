@@ -152,7 +152,10 @@ describe("a supplied engine", () => {
         .setOption("main-pane-width", "81");
       expect(guards.some((guard) => guard !== undefined)).toBe(true);
 
-      const wrapped = sent.filter((argv) => argv.includes("if-shell"));
+      // Every list also starts with the version fence, which is a different `if-shell`.
+      const wrapped = sent.filter((argv) =>
+        argv.some((argument) => argument.includes("libtmux-daemon-restarted")),
+      );
       expect(wrapped).not.toBeEmpty();
       for (const argv of wrapped) {
         expect(argv).toContain("-F");

@@ -27,9 +27,9 @@ describe("observe", () => {
       expect(run.queued).toBe(3);
 
       // The shape the README describes, asserted rather than restated: the
-      // probe is one command, and every snapshot after it is one invocation
+      // version read is one command, and every snapshot after it is one invocation
       // carrying an identity read and four listings.
-      expect(run.reports[0]?.commands.map((command) => command[0])).toEqual(["display-message"]);
+      expect(run.reports[0]?.commands.map((command) => command[0])).toEqual(["run-shell"]);
       for (const report of run.reports.slice(1)) {
         expect(report.commands.map((command) => command[0])).toEqual([
           "display-message",
@@ -42,9 +42,10 @@ describe("observe", () => {
 
       // Every report carries what the invocation cost and how it ended.
       expect(run.reports.length).toBeGreaterThan(0);
-      for (const report of run.reports) {
+      for (const [index, report] of run.reports.entries()) {
         expect(report.delivery).toBe("replied");
-        expect(report.exitCode).toBe(0);
+        // tmux answers the version read by refusing the command it expands to.
+        expect(report.exitCode).toBe(index === 0 ? 1 : 0);
         expect(report.error).toBeUndefined();
       }
     });

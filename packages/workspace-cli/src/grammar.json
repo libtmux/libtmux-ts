@@ -109,7 +109,7 @@
         "nargs": 0,
         "choices": null,
         "const": 88,
-        "help": "legacy 88-color mode; rejected because tmux 3.2a+ does not implement it.",
+        "help": "legacy 88-color mode; rejected because tmux does not implement it.",
         "flags": ["-8"]
       },
       {

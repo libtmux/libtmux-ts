@@ -6,7 +6,7 @@ import { TmuxTransportError } from "../../errors.js";
  *
  * The frame is 16384 bytes including a 16-byte header and the four-byte
  * argument count, which leaves this. Measured rather than derived: a packed
- * command of 16364 bytes is accepted by 3.2a and 3.7c alike, 16365 through
+ * command of 16364 bytes is accepted by 3.3a and 3.7c alike, 16365 through
  * 16380 report `failed to send command`, and more reports `command too long`.
  *
  * What counts is the command alone. tmux parses its own global flags and the
@@ -22,7 +22,7 @@ export const MAX_PACKED_ARGV_BYTES = 16_364;
  * arguments spelling short commands are about 6KB.
  *
  * Measured: tmux 3.7 and later parse 1000 packed arguments and refuse 1001 as
- * `command too long`. Releases 3.2a through 3.6 carry no such check and
+ * `command too long`. Releases 3.3a through 3.6b carry no such check and
  * accepted 1599. Enforced on every supported server regardless, because a
  * command the newest tmux refuses is not one this package should build — the
  * cost is refusing a large batch that an older server would have run.
@@ -49,6 +49,17 @@ export function tmuxCommand(args: readonly string[]): TmuxCommand {
   return Object.freeze([name, ...rest]);
 }
 
+/** Whether a command is the version fence that the version check puts ahead of a request. */
+export function isVersionFence(command: TmuxCommand | undefined): boolean {
+  return (
+    command?.length === 5 &&
+    command[0] === "if-shell" &&
+    command[1] === "-F" &&
+    command[3] === "" &&
+    /^libtmux-version-[0-9a-f]{32}$/u.test(command[4]!)
+  );
+}
+
 /** Validate the string and whole-invocation invariants of an engine request. */
 export function validateInvocation(request: TmuxInvocationRequest): void {
   if (request.commands.length === 0) throw protocolError("tmux invocation has no commands");
@@ -57,7 +68,10 @@ export function validateInvocation(request: TmuxInvocationRequest): void {
       throw protocolError("tmux invocation contains an empty command");
     }
   }
-  if (request.stdin !== undefined && request.commands.length !== 1) {
+  const carried =
+    request.commands.length === 1 ||
+    (request.commands.length === 2 && isVersionFence(request.commands[0]));
+  if (request.stdin !== undefined && !carried) {
     throw protocolError("a tmux command list cannot carry stdin");
   }
   if (request.stdin !== undefined && request.daemonGuard !== undefined) {

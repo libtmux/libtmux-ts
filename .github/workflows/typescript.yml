@@ -16,7 +16,7 @@ concurrency:
 jobs:
   # Everything that does not depend on which tmux is installed. Split out
   # because it used to run once per tmux release: a lint rule and a doc link do
-  # not become truer on 3.5 than on 3.2a, and paying for them per version is
+  # not become truer on 3.5 than on 3.3a, and paying for them per version is
   # what kept the version matrix down to a sample of the range it claims.
   gates:
     name: Gates (Bun ${{ matrix.bun-version }})
@@ -47,26 +47,26 @@ jobs:
       # One tmux, because the suites below start servers; which one they start
       # is the version job's question. The floor, so nothing here can depend on
       # something newer without the version job saying so.
-      - name: Setup tmux build cache for tmux 3.2a
+      - name: Setup tmux build cache for tmux 3.3a
         id: tmux-build-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: ~/tmux-builds/tmux-3.2a
-          key: tmux-3.2a
+          path: ~/tmux-builds/tmux-3.3a
+          key: tmux-3.3a
 
-      - name: Build tmux 3.2a
+      - name: Build tmux 3.3a
         if: steps.tmux-build-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y libevent-dev libncurses5-dev libtinfo-dev libutempter-dev bison
           mkdir -p ~/tmux-builds ~/tmux-src
-          git clone https://github.com/tmux/tmux.git ~/tmux-src/tmux-3.2a
-          cd ~/tmux-src/tmux-3.2a
-          git checkout 3.2a
+          git clone https://github.com/tmux/tmux.git ~/tmux-src/tmux-3.3a
+          cd ~/tmux-src/tmux-3.3a
+          git checkout 3.3a
           sh autogen.sh
-          ./configure --prefix=$HOME/tmux-builds/tmux-3.2a && make && make install
+          ./configure --prefix=$HOME/tmux-builds/tmux-3.3a && make && make install
 
-      - run: echo "$HOME/tmux-builds/tmux-3.2a/bin" >> "$GITHUB_PATH"
+      - run: echo "$HOME/tmux-builds/tmux-3.3a/bin" >> "$GITHUB_PATH"
       - run: tmux -V
 
       # fish proves non-POSIX-shell refusal; zsh exercises trap preservation.
@@ -233,7 +233,7 @@ jobs:
         run: bun run test:package
 
   # Every tmux release the package claims to support, not a sample of them.
-  # "3.2a or newer" is a claim about 3.3a, 3.5 and 3.6 too, and a matrix of the
+  # "3.3a or newer" is a claim about 3.5 and 3.6 as much as about the ends, and a matrix of the
   # ends and two favourites proves it for none of them — 3.7 already turned out
   # to be the one release that accepts `break-pane -n` and ignores it.
   #
@@ -258,8 +258,6 @@ jobs:
         # branch, so it reports without blocking; see `continue-on-error`.
         tmux-version:
           [
-            "3.2a",
-            "3.3",
             "3.3a",
             "3.4",
             "3.5",
@@ -386,3 +384,64 @@ jobs:
         run: |
           sudo apt-get install -y fish zsh
           bun run test
+
+  # The releases just below the floor, which the package must refuse before any
+  # effect. 3.3a is the client, so a refusal here is the daemon's version
+  # speaking, not the executable's.
+  tmux-rejected:
+    name: tmux ${{ matrix.rejected-version }} is refused
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        rejected-version: ["3.0a", "3.1c", "3.2a", "3.3"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Setup tmux build cache
+        id: tmux-build-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/tmux-version-check-builds
+          key: tmux-version-check-3.3a-${{ matrix.rejected-version }}
+
+      # A cached build still loads libevent and ncurses at run time.
+      - name: Install tmux build and runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libevent-dev libncurses5-dev libtinfo-dev libutempter-dev bison
+
+      - name: Build the supported and the rejected tmux
+        if: steps.tmux-build-cache.outputs.cache-hit != 'true'
+        env:
+          REJECTED_VERSION: ${{ matrix.rejected-version }}
+        run: |
+          for release in 3.3a "$REJECTED_VERSION"; do
+            git clone --depth 1 --branch "$release" \
+              https://github.com/tmux/tmux.git "$RUNNER_TEMP/tmux-$release"
+            (
+              cd "$RUNNER_TEMP/tmux-$release"
+              sh autogen.sh
+              ./configure --prefix="$HOME/tmux-version-check-builds/$release"
+              make && make install
+            )
+          done
+
+      - run: bun install --frozen-lockfile
+
+      - name: Refuse the daemon before any effect
+        working-directory: packages/libtmux
+        env:
+          REJECTED_VERSION: ${{ matrix.rejected-version }}
+        run: |
+          export PATH="$HOME/tmux-version-check-builds/3.3a/bin:$PATH"
+          export LIBTMUX_REJECTED_TMUX="$HOME/tmux-version-check-builds/$REJECTED_VERSION/bin/tmux"
+          export LIBTMUX_REQUIRE_REJECTED=1
+          test "$(tmux -V)" = 'tmux 3.3a'
+          test "$("$LIBTMUX_REJECTED_TMUX" -V)" = "tmux $REJECTED_VERSION"
+          bun test --timeout=60000 tests/integration/core_minimum.test.ts

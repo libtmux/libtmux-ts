@@ -73,7 +73,7 @@ describe("window and pane topology", () => {
       const before = await server.snapshot();
       const window = before.windows.one();
       const json = '{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}';
-      if (await server.versionAtLeast("3.8")) {
+      if (await server.versionAtLeast("3.8-rc2")) {
         await server.validateLayouts([{ layout: json, panes: 1 }]);
         await window.selectLayout(json);
         const captured = (await server.snapshot()).windows.one().layout!;
@@ -479,7 +479,7 @@ describe("window and pane topology", () => {
       await window.selectLayout("main-vertical");
       const beforeAttempt = (await server.snapshot()).windows.one({ id: window.id }).format
         .window_layout;
-      const jsonSupported = await server.versionAtLeast("3.8");
+      const jsonSupported = await server.versionAtLeast("3.8-rc2");
 
       const refusals: [string, abstract new (...args: never[]) => Error][] = [
         ["-o", TypeError],

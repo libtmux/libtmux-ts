@@ -138,6 +138,12 @@ export type TmuxCommandResult = {
  * snapshot into several clients or guessing where global flags end.
  * Environment, stdin, signal, and timeout apply once to the whole invocation.
  *
+ * The library reads the daemon's version through the engine before the first
+ * command, with a `run-shell -C` request whose stderr names the answer, and
+ * starts each list with an `if-shell -F` fence that stops the list on a daemon
+ * of another release. An engine runs both as it runs any command; a request's
+ * stdin belongs to the command after the fence.
+ *
  * `daemonGuard`, when a request carries one, must reach tmux — or the engine
  * must be bound to one daemon for its lifetime, the way a control connection
  * is. Ignoring it on a reconnecting engine means a handle read before a restart

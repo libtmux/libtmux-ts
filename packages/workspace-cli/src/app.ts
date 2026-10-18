@@ -2,6 +2,7 @@
 import type { Readable, Writable } from "node:stream";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { CommanderError } from "commander";
+import { VersionTooLowError } from "libtmux";
 import { createParser } from "./parser.ts";
 import {
   scalarText,
@@ -306,7 +307,9 @@ export async function run(argv: string[], context: CLIContext): Promise<number> 
       ? "usage"
       : error instanceof CliError
         ? error.code
-        : "tmux_failed";
+        : error instanceof VersionTooLowError
+          ? "tmux_unsupported"
+          : "tmux_failed";
     const message = usage
       ? parserError.trim() || error.message
       : error instanceof Error

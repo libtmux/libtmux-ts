@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { Server } from "../../src/server.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
-import { singleCommandTransport } from "../support/transport_double.js";
+import { checkedEngine } from "../support/version_probe.js";
 
 function success(request: TmuxInvocationRequest): TmuxCommandResult {
   return {
@@ -164,12 +164,14 @@ describe("command option forwarding", () => {
 
   test("carries a per-call deadline through to the invocation", async () => {
     const requests: TmuxInvocationRequest[] = [];
-    const engine = singleCommandTransport((request) => {
+    const engine = checkedEngine((request) => {
       requests.push(request);
       return Promise.resolve(success(request));
     });
     const server = new Server({ engine, timeoutMs: 5_000 });
 
+    // The version check spends part of a deadline, so it happens before the one under test.
+    await server.version();
     await server.runShell("true", { timeoutMs: 11 });
     await server.setOption("status", "off", { timeoutMs: 12 });
     await server.setHook("after-new-window", "display-message hi", { timeoutMs: 13 });
@@ -188,7 +190,7 @@ describe("command option forwarding", () => {
    */
   test("bounds a command by default, and lifts it for null and for a person", async () => {
     const requests: TmuxInvocationRequest[] = [];
-    const engine = singleCommandTransport((request) => {
+    const engine = checkedEngine((request) => {
       requests.push(request);
       return Promise.resolve(success(request));
     });
@@ -215,7 +217,7 @@ describe("command option forwarding", () => {
 
   test("lets a per-call signal cancel one command without the server's", async () => {
     const controller = new AbortController();
-    const engine = singleCommandTransport(
+    const engine = checkedEngine(
       (request) =>
         new Promise((resolve, reject) => {
           request.signal?.addEventListener("abort", () => reject(new Error("aborted")), {

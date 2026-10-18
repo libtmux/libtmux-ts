@@ -346,6 +346,38 @@ test("attached load creates the server when the socket has none yet", async () =
   });
 });
 
+test("attached load hands the terminal over with -N before attach-session", async () => {
+  await fixture(async (server, root, env) => {
+    const source = join(root, "handoff.json");
+    const log = join(root, "argv.log");
+    const wrapper = join(root, "tmux-logged");
+    await writeFile(source, JSON.stringify({ session_name: "handoff", windows: [{}] }));
+    // The real tmux behind a logger, so the argv load() builds is the evidence.
+    await writeFile(
+      wrapper,
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${server.tmuxBin}' "$@"\n`,
+      { mode: 0o700 },
+    );
+    await terminal(
+      [runtime, entry, "load", source, "-S", server.socketPath!],
+      root,
+      { ...env, TMUX_BIN: wrapper },
+      async (result) => {
+        await until(async () => (await server.snapshot()).clients.length === 1);
+        await (await server.snapshot()).clients.at(0)!.detach();
+        expect((await result).code).toBe(0);
+      },
+    );
+    const handoff = (await readFile(log, "utf8"))
+      .split("\n")
+      .filter((line) => line.split(" ").includes("attach-session"));
+    expect(handoff.length).toBe(1);
+    const words = handoff[0]!.split(" ");
+    expect(words.indexOf("-N")).toBeGreaterThan(-1);
+    expect(words.indexOf("-N")).toBeLessThan(words.indexOf("attach-session"));
+  });
+});
+
 test("human load inside tmux switches the invoking client and returns to its shell", async () => {
   await fixture(async (server, root, env) => {
     const source = join(root, "input.json");

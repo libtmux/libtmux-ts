@@ -21,7 +21,7 @@ $ bun test examples/quickstart
 
 The test drives `quickstart()` against a real tmux server the suite starts on
 a socket of its own, asserts on what it built, and tears the server down
-afterwards. Requires tmux 3.2a or newer.
+afterwards. Requires tmux 3.3a or newer.
 
 ## What it shows
 
