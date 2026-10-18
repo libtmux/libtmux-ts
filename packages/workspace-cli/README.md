@@ -12,7 +12,7 @@
 # Workspace CLI
 
 Manage tmux workspaces from YAML and JSON with Node.js 22.12+ or Bun 1.3.14+.
-`tmux-workspace` loads, captures, converts and imports tmuxp workspace files.
+[`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) loads, captures, converts and imports tmuxp workspace files.
 This implementation is in development.
 
 [Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) •
@@ -227,11 +227,11 @@ For a workspace loaded with `-S`, set `LIBTMUX_SOCKET_PATH` to the same absolute
 socket path instead of `LIBTMUX_SOCKET`. If the CLI uses `TMUX_BIN`, select that
 executable with the MCP server's `LIBTMUX_TMUX_BIN` too.
 
-Discover tools with `tools/list`, then call `list_sessions` and `list_panes`.
-Call `list_windows` with `session` set to `dev`, the configuration's session
-name. Pass a returned pane ID as `paneId` to `capture_pane` or `wait_for_text`;
+Discover tools with `tools/list`, then call [`list_sessions`](https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/) and [`list_panes`](https://libtmux.org/en/ts/latest/mcp/tools/list_panes/).
+Call [`list_windows`](https://libtmux.org/en/ts/latest/mcp/tools/list_windows/) with `session` set to `dev`, the configuration's session
+name. Pass a returned pane ID as `paneId` to [`capture_pane`](https://libtmux.org/en/ts/latest/mcp/tools/capture_pane/) or [`wait_for_text`](https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/);
 bound output with `maxLines` and waits with `timeoutMs`. A pending text wait allows
-other inspection requests on the same connection. Read `tmux://capabilities`
+other inspection requests on the same connection. Read [`tmux://capabilities`](https://libtmux.org/en/ts/latest/mcp/resources/capabilities/)
 through `resources/read` to verify the selected socket and advertised tools.
 See the [capture guide](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp#read-what-panes-show) for incremental
 reads and cursors.
@@ -252,7 +252,7 @@ $ tmux-workspace convert ./workspace.yaml \
 
 ## Imports
 
-`import tmuxinator` and `import teamocil` translate source documents and validate
+[`import tmuxinator`](https://libtmux.org/en/ts/latest/workspace/cli/import-tmuxinator/) and [`import teamocil`](https://libtmux.org/en/ts/latest/workspace/cli/import-teamocil/) translate source documents and validate
 native configuration fields before previewing or saving. Unknown fields,
 conflicting non-null aliases and malformed command shapes fail without
 replacing a destination. Generic `convert` preserves arbitrary fields.
@@ -325,7 +325,7 @@ templates, so `<%` in a Teamocil source is ordinary text and is preserved.
 
 ## Output
 
-Every command accepts `--json` and `--ndjson` before or after the command name.
+Every command accepts [`--json`](https://libtmux.org/en/ts/latest/workspace/reference/output/) and `--ndjson` before or after the command name.
 NDJSON takes precedence when both are present. Machine load requires `-d` or
 `--append`. Machine commands never prompt. Human output honors `--color` and
 `NO_COLOR`; machine output contains encoded data without terminal styling.

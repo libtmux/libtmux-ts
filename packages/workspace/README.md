@@ -26,8 +26,8 @@ than duplicating.**
 
 </div>
 
-Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
-Built on [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
+Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme). Built on
+[`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
 > **Alpha.** Prerelease software: the config shape and the exported functions
@@ -57,7 +57,7 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
 
 </details>
 
-`libtmux` is a peer of this package in practice: you pass it the `Server`.
+`libtmux` is a peer of this package in practice: you pass it the [`Server`](https://libtmux.org/en/ts/latest/reference/server-server/).
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 
 This package and [`@libtmux/workspace-cli`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli) are two
@@ -93,11 +93,11 @@ await applyWorkspace(server, {
 });
 ```
 
-`applyWorkspace` resolves to the `Session` it built or converged.
+[`applyWorkspace`](https://libtmux.org/en/ts/latest/workspace/reference/builder-applyworkspace/) resolves to the [`Session`](https://libtmux.org/en/ts/latest/reference/session-session/) it built or converged.
 
 Commands use `create-only` policy by default: `shell_command` and
 `shell_command_before` run only in panes this apply created. Pass
-`{ commands: "always" }` only for commands that are safe to repeat. This
+[`{ commands: "always" }`](https://libtmux.org/en/ts/latest/workspace/reference/operation_options-applyworkspaceoptions-commands/) only for commands that are safe to repeat. This
 package converges tmux topology; it does not monitor or restart processes.
 
 Options named in the workspace are set on every apply. Removing an option from
@@ -107,9 +107,9 @@ is rejected in workspace options. Option names are literal; tmux format syntax
 in a key is not expanded.
 
 If tmux rejects a later operation, `applyWorkspace` throws
-`WorkspaceApplyError`. Its frozen `completed` milestones name the high-level
-work that finished, `failed` names the stage that stopped, and `cause` retains
-the original error. `requiresReplan` is always true: callers must rediscover
+[`WorkspaceApplyError`](https://libtmux.org/en/ts/latest/workspace/reference/builder-workspaceapplyerror/). Its frozen [`completed`](https://libtmux.org/en/ts/latest/workspace/reference/builder-workspaceapplyerror-completed/) milestones name the high-level
+work that finished, [`failed`](https://libtmux.org/en/ts/latest/workspace/reference/builder-workspaceapplyerror-failed/) names the stage that stopped, and `cause` retains
+the original error. [`requiresReplan`](https://libtmux.org/en/ts/latest/workspace/reference/builder-workspaceapplyerror-requiresreplan/) is always true: callers must rediscover
 tmux structure before deciding what to do next. It does not report whether pane
 commands ran; mutations are not transactions, and transport failure may leave
 delivery indeterminate.
@@ -146,7 +146,7 @@ the ones people already know — `session_name`, `windows`, `panes`,
 | `focus`                | window, pane            | Selected last, so the final one wins            |
 
 Because the config is data, it can come from a YAML file, an HTTP request, or a
-literal. `parseWorkspace` validates one you already parsed; `parseWorkspaceYaml`
+literal. [`parseWorkspace`](https://libtmux.org/en/ts/latest/workspace/reference/config-parseworkspace/) validates one you already parsed; [`parseWorkspaceYaml`](https://libtmux.org/en/ts/latest/workspace/reference/config-parseworkspaceyaml/)
 is a convenience that needs Bun's YAML parser and says so when it is missing.
 
 `start_directory` resolves pane, then window, then workspace. The same order
@@ -154,7 +154,7 @@ applies to the first pane tmux creates with the session.
 
 ## From the shell
 
-A YAML file loads without code through `tmux-workspace`, the command in
+A YAML file loads without code through [`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/), the command in
 [`@libtmux/workspace-cli`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli).
 Save this document as `workspace.yaml`:
 
@@ -227,7 +227,7 @@ Plan entries are frozen data carrying tmux IDs, indexes, positions, and names.
 The plan covers session, window, and pane membership, not options, layouts,
 focus, or pane commands. It is advisory: acquire a fresh one after any delay or
 failed apply because tmux structure may have changed.
-Planning accepts `prune`; command policy is apply-only.
+Planning accepts [`prune`](https://libtmux.org/en/ts/latest/workspace/reference/operation_options-applyworkspaceoptions-prune/); command policy is apply-only.
 
 `prune` decides the rest. `"owned"` is the default above; `"never"` removes
 nothing; `"always"` authorizes this one plan or apply to remove surplus from a
@@ -255,8 +255,9 @@ that target the same name.
 [`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) calls
 `applyWorkspace` with a declared layout, inspects the resulting session, and
 tears it down while treating "already gone" as an answer. The integration suite
-runs it against a real tmux server, and so can you from a checkout of the
-repository:
+runs it against a real tmux server.
+
+To run it from a checkout of the repository:
 
 ```console
 $ bun test examples/workspace
