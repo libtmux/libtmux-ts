@@ -970,7 +970,7 @@ export class Server {
    * daemon; a cold endpoint uses the selected client. Checksums, bounded tree
    * structure and pane counts are checked locally; tmux owns geometry and pruning.
    * Custom layouts are limited to 8192 characters and 256 classic groups.
-   * JSON layouts require tmux 3.8 and permit at most 200 nested objects.
+   * JSON layouts require tmux 3.8-rc2 and permit at most 200 nested objects.
    *
    * @throws TypeError when a layout, pane count or version reply is invalid.
    * @throws TmuxCommandError when the daemon or client version cannot be read.

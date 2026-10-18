@@ -22,7 +22,7 @@ const classicNames = [
 const mirroredNames = [...classicNames, "main-horizontal-mirrored", "main-vertical-mirrored"];
 const beforeMirrors = parseTmuxVersion("3.4");
 const withMirrors = parseTmuxVersion("3.5");
-const withJsonLayouts = parseTmuxVersion("3.8");
+const withJsonLayouts = parseTmuxVersion("3.8-rc2");
 
 /** Geometry correction and pruning remain tmux's responsibility. */
 export function layoutIsValid(layout: string, panes: number, version: TmuxVersion): boolean {

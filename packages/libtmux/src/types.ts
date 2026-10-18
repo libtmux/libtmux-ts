@@ -732,10 +732,10 @@ export interface TmuxSubscriptionEvent {
  * A window's layout changed.
  *
  * `layout` and `visibleLayout` carry whatever tmux hands this connection: on
- * 3.8+ that is JSON, the same wire form a snapshot's `window_layout` reports
- * (the connection requests it on attach); before 3.8 tmux has only the
- * classic layout string, on both sides. Either is an opaque token to compare
- * for equality, not a grammar to parse.
+ * 3.8-rc2 and later that is JSON, the same wire form a snapshot's
+ * `window_layout` reports (the connection requests it on attach); before
+ * 3.8-rc2 tmux has only the classic layout string, on both sides. Either is
+ * an opaque token to compare for equality, not a grammar to parse.
  */
 export interface TmuxLayoutChangeEvent {
   readonly flags: string;

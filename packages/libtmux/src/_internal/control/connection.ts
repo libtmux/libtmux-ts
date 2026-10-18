@@ -257,7 +257,7 @@ export class ControlConnection {
       "-N",
       "-C",
       "attach-session",
-      // Without this, tmux 3.8+ hands a control client the pre-3.8 classic
+      // Without this, tmux 3.8-rc2 and later hand a control client the classic
       // `window_layout` string in both `%layout-change` and every format this
       // connection reads, while a plain (non-control) client on the same
       // socket already gets JSON — so a snapshot and an event describing the
