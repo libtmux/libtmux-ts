@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 
 import { generateFormats, renderTask5ParityManifest } from "../../scripts/generate-formats.js";
-import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
+import { parseTmuxVersion, releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
+import { MINIMUM_TMUX } from "../../src/_internal/support/versions.js";
 import {
   CLIENT_FORMATS,
   FORMAT_SEPARATOR,
@@ -268,14 +269,20 @@ describe("format registry", () => {
       since: since.raw,
       token,
     }));
+    // A floor below the supported minimum is the minimum: no daemon this
+    // package drives lacks the field.
+    const atFloor = <Field extends { since: string }>(field: Field): Field => ({
+      ...field,
+      since: releaseAtLeast(field.since, MINIMUM_TMUX) ? field.since : MINIMUM_TMUX,
+    });
     const tmuxOnly = await readTmuxOnlyFields();
     for (const field of fixture.fields) {
-      expect(registry, field.token).toContainEqual(field);
+      expect(registry, field.token).toContainEqual(atFloor(field));
     }
     expect(registry.toSorted((left, right) => (left.token < right.token ? -1 : 1))).toEqual(
-      [...fixture.fields, ...tmuxOnly].toSorted((left, right) =>
-        left.token < right.token ? -1 : 1,
-      ),
+      [...fixture.fields, ...tmuxOnly]
+        .map(atFloor)
+        .toSorted((left, right) => (left.token < right.token ? -1 : 1)),
     );
     expect(Object.isFrozen(FORMAT_REGISTRY)).toBe(true);
     expect(Object.isFrozen(FORMAT_FIELD_TOKENS)).toBe(true);
@@ -440,8 +447,7 @@ describe("format registry", () => {
     // now: 3.4, 3.5 and 3.6 each gain fields Python never had, so a run that
     // skipped them would prove the gating only where Python happened to grow.
     const expectedCounts = {
-      "3.2a": { clients: 150, panes: 125, sessions: 125, windows: 125 },
-      "3.3": { clients: 152, panes: 127, sessions: 127, windows: 127 },
+      "3.3a": { clients: 152, panes: 127, sessions: 127, windows: 127 },
       "3.4": { clients: 153, panes: 128, sessions: 128, windows: 128 },
       "3.5": { clients: 154, panes: 129, sessions: 129, windows: 129 },
       "3.6": { clients: 163, panes: 138, sessions: 138, windows: 138 },
@@ -490,16 +496,16 @@ describe("format registry", () => {
     expect(WHERE_FIELDS_V1.window).toHaveLength(34);
     expect(WHERE_FIELDS_V1.pane).toHaveLength(78);
     expect(createHash("sha256").update(JSON.stringify(WHERE_FIELDS_V1.session)).digest("hex")).toBe(
-      "7415bdfa8908b009fb7988938c6610ee271ecce14074158af4ced8f340108f52",
+      "c472f06a23d1c68f2982e144b9b575877a99ee4fd011254d9530f150d1c01e66",
     );
     expect(createHash("sha256").update(JSON.stringify(WHERE_FIELDS_V1.window)).digest("hex")).toBe(
-      "57d84450f814d2cc2b7569504b4a10d8f889e5751915129a110ddd695401b841",
+      "5eed55c1ae15fbba89155a160d48bfa34c1fd99294ad92f427bf57b2e9de753c",
     );
     expect(createHash("sha256").update(JSON.stringify(WHERE_FIELDS_V1.pane)).digest("hex")).toBe(
-      "3b924c619d18db0aa787c9afe1a8518c8c637c932a01ad3f8a9c53b0cd19c934",
+      "302ebeff8004fb53e81003381092e2d568f2bfa15d704607d15a78723f19c4bf",
     );
     expect(createHash("sha256").update(JSON.stringify(WHERE_FIELDS_V1.client)).digest("hex")).toBe(
-      "f3f54daaab017ee4eefffb1cb8dda288d0850369f9f6352de3c573af57269b23",
+      "723af8f38c53e30652960f6c35ebc807ec0a84c333a592a4018f5589357c33c2",
     );
     for (const [model, fields] of Object.entries(WHERE_FIELDS_V1)) {
       for (const field of fields) {

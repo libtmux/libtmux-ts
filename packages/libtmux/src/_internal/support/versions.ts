@@ -15,7 +15,7 @@ import { snapshotInvocationRequest } from "../transport/types.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
 
 /** The oldest tmux whose daemon this package drives for ordinary operations. */
-const MINIMUM_TMUX = "3.3a";
+export const MINIMUM_TMUX = "3.3a";
 
 /**
  * Accept a version report for ordinary operations, or refuse it.

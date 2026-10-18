@@ -320,7 +320,7 @@ describe("guarded format codec", () => {
   });
 
   test("preserves empty, legacy-separator, and embedded-newline values", () => {
-    const codec = codecFor("list-sessions", "3.2a");
+    const codec = codecFor("list-sessions", "3.3a");
     const request = codec.prepare();
     const bytes = encoder.encode(
       `${frame(request, {

@@ -1161,7 +1161,7 @@ describe("selection projection snapshots", () => {
     const nameField = {
       domain: "string",
       criteriaName: "name",
-      since: "3.2a",
+      since: "3.3a",
       token: "session_name",
       wireName: "name",
     } satisfies WhereField;
@@ -1180,7 +1180,7 @@ describe("selection projection snapshots", () => {
     fields.push({
       criteriaName: "later",
       domain: "string",
-      since: "3.2a",
+      since: "3.3a",
       token: "session_id",
       wireName: "later",
     });
@@ -1191,21 +1191,21 @@ describe("selection projection snapshots", () => {
     const canonicalNameField = {
       domain: "string",
       criteriaName: "name",
-      since: "3.2a",
+      since: "3.3a",
       token: "session_name",
       wireName: "name",
     } as const;
     const duplicateTokenField = {
       domain: "string",
       criteriaName: "otherName",
-      since: "3.2a",
+      since: "3.3a",
       token: "session_name",
       wireName: "otherName",
     } as const;
     const duplicateWireField = {
       domain: "string",
       criteriaName: "name",
-      since: "3.2a",
+      since: "3.3a",
       token: "session_id",
       wireName: "name",
     } as const;
