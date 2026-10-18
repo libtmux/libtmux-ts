@@ -13,6 +13,11 @@
 
 **A Model Context Protocol server that gives an AI agent a real tmux server.**
 
+[API reference](https://libtmux.org/en/ts/latest/mcp/reference/) •
+[Tools](https://libtmux.org/en/ts/latest/mcp/tools/) •
+[Guides](https://libtmux.org/en/ts/latest/mcp/guides/) •
+[npm](https://www.npmjs.com/package/@libtmux/mcp)
+
 [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/mcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
@@ -21,8 +26,8 @@
 
 </div>
 
-Part of [libtmux for Bun and TypeScript](../../README.md). Built on
-[`libtmux`](../libtmux).
+Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+Built on [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
 > **Alpha.** Prerelease software: tool names and arguments can change between
@@ -168,6 +173,21 @@ daemon was configured. A new daemon on that socket follows tmux's normal config
 behavior unless you explicitly name a file, and it is never reported as having
 the shipped minimal provenance. `LIBTMUX_TMUX_CONFIG` is passed to tmux as
 written and must be a nonempty absolute path.
+
+To drive a tmux server that is already running, start it on a socket of its own:
+
+```console
+$ tmux -L agent new-session -d -s work
+```
+
+Naming the socket attaches to that server instead of starting one. The startup
+line on stderr says `serving existing`, and the toolsets default to
+`inspect,manage,execute`:
+
+```console
+$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.0-alpha.13
+libtmux-mcp 0.1.0-alpha.13 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
+```
 
 ### Tune what it will do
 

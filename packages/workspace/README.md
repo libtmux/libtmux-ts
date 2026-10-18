@@ -14,6 +14,10 @@
 **Describe a tmux session as data; apply it. Applying twice converges rather
 than duplicating.**
 
+[API reference](https://libtmux.org/en/ts/latest/workspace/reference/) •
+[Guide](https://libtmux.org/en/ts/latest/workspace/internals/guides/) •
+[npm](https://www.npmjs.com/package/@libtmux/workspace)
+
 [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
 [![downloads](https://img.shields.io/npm/dm/@libtmux/workspace?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
@@ -22,8 +26,8 @@ than duplicating.**
 
 </div>
 
-Part of [libtmux for Bun and TypeScript](../../README.md). Built on
-[`libtmux`](../libtmux).
+Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+Built on [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
 > **Alpha.** Prerelease software: the config shape and the exported functions
@@ -56,7 +60,7 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
 `libtmux` is a peer of this package in practice: you pass it the `Server`.
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 
-This package and [`@libtmux/workspace-cli`](../workspace-cli) are two
+This package and [`@libtmux/workspace-cli`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli) are two
 implementations, not one product with two faces. They differ in what they do
 with a session that already exists — this one converges it, the CLI compares it
 against the document and refuses when they disagree — and in what a document may
@@ -148,6 +152,39 @@ is a convenience that needs Bun's YAML parser and says so when it is missing.
 `start_directory` resolves pane, then window, then workspace. The same order
 applies to the first pane tmux creates with the session.
 
+## From the shell
+
+A YAML file loads without code through `tmux-workspace`, the command in
+[`@libtmux/workspace-cli`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli).
+Save this document as `workspace.yaml`:
+
+```yaml
+session_name: api
+windows:
+  - window_name: editor
+    panes:
+      - vim
+      - git status
+  - window_name: server
+    layout: even-horizontal
+    panes:
+      - bun dev
+      - bun test --watch
+```
+
+Load it detached, on a socket of its own:
+
+```console
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml \
+    -L workspace-demo \
+    -d
+```
+
+The command compares a session that already exists against the document
+instead of converging it. Its
+[README](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli#readme)
+lists what else differs.
+
 ## Converging, not just creating
 
 Two details that are easy to get wrong and are handled here:
@@ -218,7 +255,12 @@ that target the same name.
 [`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts) calls
 `applyWorkspace` with a declared layout, inspects the resulting session, and
 tears it down while treating "already gone" as an answer. The integration suite
-runs it against a real tmux server.
+runs it against a real tmux server, and so can you from a checkout of the
+repository:
+
+```console
+$ bun test examples/workspace
+```
 
 ## License
 

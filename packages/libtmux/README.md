@@ -25,6 +25,10 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 Acquire an immutable snapshot of a tmux server, query it with declarative
 criteria, and drive sessions, windows, and panes with a fully typed API.
 
+Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+An MCP server, a workspace builder and a workspace command build on this
+package: see [Packages](#packages).
+
 Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
 5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
@@ -124,7 +128,10 @@ real server.
   - [Migrating from alpha.9](#migrating-from-alpha9)
 - [Running inside tmux](#running-inside-tmux)
 - [Dependencies](#dependencies)
-- [Consumers](#consumers)
+- [Packages](#packages)
+  - [@libtmux/mcp](#libtmuxmcp)
+  - [@libtmux/workspace](#libtmuxworkspace)
+  - [@libtmux/workspace-cli](#libtmuxworkspace-cli)
 - [Examples](#examples)
 - [Entrypoints](#entrypoints)
 - [tmux versions](#tmux-versions)
@@ -133,7 +140,7 @@ real server.
 
 <!-- /toc -->
 
-Also: [API reference](docs/api.md) · [Benchmarks](docs/benchmarks.md)
+Also: [API reference](https://libtmux.org/en/ts/latest/reference/) · [Benchmarks](docs/benchmarks.md)
 
 </details>
 
@@ -1537,17 +1544,81 @@ Validation of tmux's own output is real work, so it did not go away: it lives in
 a small internal validator with a Zod-shaped surface. Its failures carry the
 value that failed, which Zod reports only by type.
 
-## Consumers
+## Packages
 
-Two working consumers live in this repository:
+[`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux)
+is the core of four packages in [one repository](https://github.com/libtmux/libtmux-ts)
+that share a release version. The other three build on it, and each heading
+links to the package's directory.
 
-- [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
-  Its waits stream tmux's notifications rather than polling, and its
-  `run_shell_command` frames what it sends so a pane's echo cannot be read as
-  output.
-- [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
-  Applying a workspace twice converges the running session rather than
-  duplicating it.
+### [@libtmux/mcp](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp)
+
+A stdio MCP server that exposes tmux through this library. Its waits stream
+tmux's notifications rather than polling, and `run_shell_command` frames what it
+sends so a pane's echo cannot be read as output.
+
+[API reference](https://libtmux.org/en/ts/latest/mcp/reference/) ·
+[Tools](https://libtmux.org/en/ts/latest/mcp/tools/) ·
+[npm](https://www.npmjs.com/package/@libtmux/mcp)
+
+An MCP client launches it from this configuration:
+
+```json
+{
+  "mcpServers": {
+    "tmux": {
+      "command": "npx",
+      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.13"],
+      "env": { "LIBTMUX_SOCKET": "agent" }
+    }
+  }
+}
+```
+
+### [@libtmux/workspace](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace)
+
+A tmuxp-shaped workspace builder. Applying a workspace twice converges the
+running session rather than duplicating it.
+
+[API reference](https://libtmux.org/en/ts/latest/workspace/reference/) ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace)
+
+```console
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
+```
+
+A workspace is one call to
+[`applyWorkspace`](https://libtmux.org/en/ts/latest/workspace/reference/builder-applyworkspace/),
+shown in the
+[package README](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace#use-it).
+
+### [@libtmux/workspace-cli](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli)
+
+`tmux-workspace` loads, captures, converts and imports tmuxp workspace files on
+Node or Bun. Ordinary loads start no Python.
+
+[Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
+
+Save this document as `workspace.yaml`:
+
+```yaml
+session_name: dev
+windows:
+  - window_name: editor
+    layout: main-vertical
+    panes:
+      - vim
+      - top
+```
+
+Load it detached, on a socket of its own:
+
+```console
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml \
+    -L workspace-cli-demo \
+    -d
+```
 
 ## Examples
 

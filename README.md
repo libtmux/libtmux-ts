@@ -16,7 +16,7 @@
 [Quickstart](#quickstart) •
 [Querying](#what-querying-looks-like) •
 [Packages](#packages) •
-[API reference](packages/libtmux/docs/api.md) •
+[API reference](https://libtmux.org/en/ts/latest/reference/) •
 [Examples](examples) •
 [Changelog](packages/libtmux/CHANGELOG.md)
 
@@ -164,7 +164,13 @@ The library, MCP server, workspace builder, and workspace CLI share one release 
 
 ---
 
-### [libtmux](packages/libtmux) — the library
+### [libtmux](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux)
+
+The library: `Server`, `Session`, `Window`, `Pane` and `Client` handles over an
+immutable snapshot of tmux.
+
+[API reference](https://libtmux.org/en/ts/latest/reference/) ·
+[npm](https://www.npmjs.com/package/libtmux)
 
 ```console
 $ bun add --exact libtmux@0.1.0-alpha.13
@@ -187,13 +193,19 @@ Read next: [Snapshots](packages/libtmux/README.md#snapshots) ·
 [Operations](packages/libtmux/README.md#operations) ·
 [Watching](packages/libtmux/README.md#watching) ·
 [Recipes](packages/libtmux/README.md#recipes) ·
-[Errors](packages/libtmux/README.md#errors) ·
-[API reference](packages/libtmux/docs/api.md)
+[Errors](packages/libtmux/README.md#errors)
 
-### [@libtmux/mcp](packages/mcp) — tmux for an AI agent
+### [@libtmux/mcp](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp)
 
-A stdio MCP server. Point it at a socket and an agent can list sessions, read a
-pane, send keys, and **wait for output** rather than polling for it.
+A stdio MCP server: an agent lists sessions, reads a pane, sends keys, and
+**waits for output** instead of polling for it.
+
+[API reference](https://libtmux.org/en/ts/latest/mcp/reference/) ·
+[Tools](https://libtmux.org/en/ts/latest/mcp/tools/) ·
+[npm](https://www.npmjs.com/package/@libtmux/mcp)
+
+With no configuration it starts its own tmux server on the `libtmux-mcp`
+socket:
 
 ```console
 $ npx -y @libtmux/mcp@0.1.0-alpha.13
@@ -242,9 +254,13 @@ Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 [Toolsets and trust](packages/mcp/README.md#toolsets-and-trust) ·
 [Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool)
 
-### [@libtmux/workspace](packages/workspace) — declarative sessions
+### [@libtmux/workspace](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace)
 
-Describe a session; apply it. Applying twice converges rather than duplicating.
+Describes a session as tmuxp-shaped data and applies it. Applying twice
+converges rather than duplicating.
+
+[API reference](https://libtmux.org/en/ts/latest/workspace/reference/) ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace)
 
 ```console
 $ bun add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
@@ -268,13 +284,32 @@ await applyWorkspace(server, {
 Read next: [The config shape](packages/workspace/README.md#the-shape) ·
 [Converging](packages/workspace/README.md#converging-not-just-creating)
 
-### [@libtmux/workspace-cli](packages/workspace-cli) — tmuxp workspaces from the shell
+### [@libtmux/workspace-cli](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli)
 
 `tmux-workspace` loads, captures and converts tmuxp workspace files on Node or
 Bun. Ordinary loads start no Python.
 
+[Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
+
+Save this document as `workspace.yaml`:
+
+```yaml
+session_name: dev
+windows:
+  - window_name: editor
+    layout: main-vertical
+    panes:
+      - vim
+      - top
+```
+
+Load it detached, on a socket of its own:
+
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml \
+    -L workspace-cli-demo \
+    -d
 ```
 
 Read next: [Install](packages/workspace-cli/README.md#install) ·
@@ -326,11 +361,12 @@ $ bun packages/libtmux/scripts/bench-modes.ts
 ## Repository
 
 ```
-packages/libtmux     the library
-packages/mcp         the MCP server
-packages/workspace   the workspace builder
-examples             runnable examples, used as tests
-attic                reference notes
+packages/libtmux         the library
+packages/mcp             the MCP server
+packages/workspace       the workspace builder
+packages/workspace-cli   the tmux-workspace command
+examples                 runnable examples, used as tests
+attic                    reference notes
 ```
 
 Working here: [AGENTS.md](AGENTS.md) routes to the policy that governs a

@@ -287,7 +287,10 @@ interface DocHeading {
   readonly text: string;
 }
 
-/** Headings at level 2 up to `maxLevel`, skipping fenced code so a `#` in a shell block cannot count. */
+/**
+ * Headings from level 2 to `maxLevel`, outside fenced code. A link reads as its
+ * text, which is how a table of contents entry lists it.
+ */
 function headingsUpTo(markdown: string, maxLevel: number): readonly DocHeading[] {
   const headings: DocHeading[] = [];
   let fenced = false;
@@ -300,7 +303,11 @@ function headingsUpTo(markdown: string, maxLevel: number): readonly DocHeading[]
     const match = /^(#{1,6})\s+(.*)$/u.exec(line);
     if (match?.[1] === undefined) continue;
     if (match[1].length < 2 || match[1].length > maxLevel) continue;
-    headings.push({ level: match[1].length, line: index + 1, text: match[2] ?? "" });
+    headings.push({
+      level: match[1].length,
+      line: index + 1,
+      text: (match[2] ?? "").replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1"),
+    });
   }
   return headings;
 }
