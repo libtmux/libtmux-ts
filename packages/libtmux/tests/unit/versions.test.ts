@@ -172,8 +172,15 @@ describe("core version floor", () => {
       const message = (caught as Error).message;
       expect(message).toContain(`reports "${raw}", an unrecognized version, which is refused`);
       expect(message).not.toContain(`this server is ${raw}`);
+      expect(caught).toMatchObject({ recognized: false });
     },
   );
+
+  test("marks a release below the floor as recognized", () => {
+    expect(() => requireCoreVersion("3.2a")).toThrow(
+      expect.objectContaining({ recognized: true, serverVersion: "3.2a" }),
+    );
+  });
 
   test("ranks a development build below its candidates and its candidates below the release", () => {
     const ascending = ["next-3.7", "3.7-rc", "3.7-rc3", "3.7", "3.7a"];

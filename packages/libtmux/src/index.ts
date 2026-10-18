@@ -110,7 +110,7 @@ export type {
   WindowId,
   WindowIdInput,
 } from "./common.js";
-export { isSafeInteger, safeInteger } from "./common.js";
+export { assertSupportedTmux, isSafeInteger, MINIMUM_TMUX, safeInteger } from "./common.js";
 export {
   OptionScope,
   PaneDirection,

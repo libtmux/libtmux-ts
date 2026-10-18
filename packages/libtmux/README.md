@@ -1627,6 +1627,10 @@ the parsed fields. Versions rank `next-X.Y` below `X.Y-rc`, below `X.Y`, below
 `X.Ya`, so a development build or candidate has not yet reached the release it
 names, and a form tmux does not print is refused.
 
+`MINIMUM_TMUX` is the oldest release libtmux drives, and
+`assertSupportedTmux(version)` throws `VersionTooLowError` for a version report
+below it or one libtmux cannot place.
+
 One behaviour differs across the range rather than being gated: tmux 3.3a
 suppressed `run-shell` output for an invocation with no attached client, which
 later versions restored. `runShell` returns an empty result there rather than

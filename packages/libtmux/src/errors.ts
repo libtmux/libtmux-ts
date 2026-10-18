@@ -382,6 +382,13 @@ export class VersionTooLowError extends LibTmuxError {
   readonly delivery?: DeliveryStatus;
   /** What to do about it, when the refusal has a fix the caller controls. */
   readonly remedy?: string;
+  /** What was refused, without the remedy: the message up to where `remedy` begins. */
+  readonly reason: string;
+  /**
+   * `false` when the server's report names no release libtmux can place, such
+   * as `master`, rather than one below the minimum.
+   */
+  readonly recognized: boolean;
 
   constructor(options?: {
     readonly criteriaName: string;
@@ -392,16 +399,15 @@ export class VersionTooLowError extends LibTmuxError {
     readonly serverVersion: string;
     readonly since: string;
   }) {
-    super(
+    const reason =
       options === undefined
         ? ""
-        : [
-            options.recognized === false
-              ? `${options.criteriaName} needs tmux ${options.since} or newer; this server reports "${options.serverVersion}", an unrecognized version, which is refused`
-              : `${options.criteriaName} needs tmux ${options.since}; this server is ${options.serverVersion}`,
-            ...(options.remedy === undefined ? [] : [`. ${options.remedy}`]),
-          ].join(""),
-    );
+        : options.recognized === false
+          ? `${options.criteriaName} needs tmux ${options.since} or newer; this server reports "${options.serverVersion}", an unrecognized version, which is refused`
+          : `${options.criteriaName} needs tmux ${options.since}; this server is ${options.serverVersion}`;
+    super(options?.remedy === undefined ? reason : `${reason}. ${options.remedy}`);
+    this.reason = reason;
+    this.recognized = options?.recognized !== false;
     if (options === undefined) return;
     this.criteriaName = options.criteriaName;
     this.serverVersion = options.serverVersion;
