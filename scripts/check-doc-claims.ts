@@ -25,7 +25,8 @@ import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
  * - a package named in an install or run command is one this workspace publishes;
  * - a public install example pins prerelease packages to the manifest version;
  * - a tmux badge lists exactly the versions CI runs the suite against;
- * - every published package README states the tested host-platform boundary;
+ * - every published package README says which hosts it runs on and where the
+ *   real-tmux suites run;
  * - the Bun versions recorded in the CI matrix, the regex corpus, the
  *   `packageManager` pin, every manifest's `engines.bun` floor, and the
  *   CONTRIBUTING prose all agree;
@@ -65,9 +66,8 @@ const packageReadmes = [
 ] as const;
 
 const platformClaims = [
-  "Linux is the only supported host for real tmux control.",
-  "The macOS CI lane checks package artifacts without exercising tmux; macOS runtime behavior is unproven.",
-  "WSL is untested.",
+  "Runs on Linux, including WSL.",
+  "On macOS, CI builds and installs the packages, but the real-tmux test suites run on Linux only.",
 ] as const;
 
 /** Every package this workspace publishes, read from the manifests. */

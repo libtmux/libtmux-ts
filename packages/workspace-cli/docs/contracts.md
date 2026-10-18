@@ -29,8 +29,8 @@ when nothing sets `focus`: the last pane created in the focused window.
 ## Relation to @libtmux/workspace
 
 [`@libtmux/workspace`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace)
-is a separate implementation, not this command's engine: it converges a session
-that already exists.
+is a separate implementation that this command does not use: it converges a
+session that already exists.
 
 Its strict schema rejects `environment`, `before_script`, `window_index`,
 `suppress_history`, `x-` keys and the other fields in the

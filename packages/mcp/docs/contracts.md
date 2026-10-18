@@ -166,7 +166,7 @@ may perform an equivalent action.
 
 **Reading twice costs less than reading once.**
 [`capture_since`][tool-capture_since] hands back a cursor; pass it next time and
-you are charged only for what arrived since, not for the whole screen again.
+you are charged only for what arrived since.
 
 Use [`search_panes`][tool-search_panes] to discover which pane contains a value
 without capturing every pane. Once the pane is known,
@@ -260,8 +260,8 @@ A change in pane identity, daemon, placement, liveness, input state, mode,
 shell, or cohort refuses the command without sending the wrapper. The final
 check also reapplies caller, attended-pane, and competing-input policy.
 
-These are exactly two observational checks and one dispatch, not an atomic tmux
-transaction, so another process can still race the final check.
+These are exactly two observational checks and one dispatch. They are not
+atomic, so another process can still race the final check.
 
 The frame uses the shell's `command printf` primitive so an inherited `printf`
 alias or function cannot forge its bookkeeping.
@@ -270,8 +270,8 @@ The caller's command still sees inherited shell options and traps, and its
 subshell keeps command-defined functions, traps, directory changes, and exports
 out of the parent.
 
-This is a correctness protocol inside a trusted interactive shell, not a sandbox
-against a hostile shell. It trusts the selected tmux executable, the daemon and
+It is a correctness protocol for a trusted interactive shell and gives no
+protection against a hostile one. It trusts the selected tmux executable, the daemon and
 its loaded configuration, and the supported foreground shell.
 
 For `run-and-check`, a `timed_out` outcome means the command may still be

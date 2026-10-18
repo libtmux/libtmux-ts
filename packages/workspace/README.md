@@ -66,9 +66,8 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 
-Linux is the only supported host for real tmux control. The macOS CI lane
-checks package artifacts without exercising tmux; macOS runtime behavior is
-unproven. WSL is untested.
+Runs on Linux, including WSL. On macOS, CI builds and installs the packages,
+but the real-tmux test suites run on Linux only.
 
 This builds a session called `api` with two windows, or converges it when it
 already exists:
@@ -224,8 +223,8 @@ apply using the default `"owned"` policy leaves new surplus alone.
 
 ### [`ownedByWorkspace`][wsref-ownedbyworkspace]: what counts as built by this package
 
-- A session name is a lookup, not a claim: `dev` in this file and `dev` you
-  started by hand are the same name.
+- A name does not show ownership: `dev` in this file and `dev` you started by
+  hand are the same name.
 - A session this package creates is stamped with a tmux user option
   ([`claimSession`][wsref-claimsession]).
 - Surplus is removed only from a stamped session. Against one it merely found,

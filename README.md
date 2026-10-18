@@ -44,8 +44,8 @@
 what they printed, a workspace launcher, a test harness, a dashboard — and you
 want the terminal's state as typed data rather than as parsed strings.
 
-**Probably not, if** you want a `.tmux.conf` generator or a TUI. This is a
-library for controlling a running server, not for configuring one.
+**Probably not, if** you want a `.tmux.conf` generator or a TUI. This library
+controls a running server; it does not write your tmux configuration.
 
 **The idea in one line:** read the whole server once into an immutable snapshot,
 then query it like data.
@@ -80,9 +80,8 @@ Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.3a or newer.
   [`VersionTooLowError`][ref-versiontoolowerror] before any command takes effect.
 - A client reporting a newer release does not change that.
 
-Linux is the only supported host for real tmux control. The macOS CI lane
-checks package artifacts without exercising tmux; macOS runtime behavior is
-unproven. WSL is untested.
+Runs on Linux, including WSL. On macOS, CI builds and installs the packages,
+but the real-tmux test suites run on Linux only.
 
 ```ts
 import { Server } from "libtmux";
@@ -135,8 +134,8 @@ snapshot.windows.where({ session: { is: { name: "work" } } });
 snapshot.sessions.where({ name: { contains: "API", mode: "insensitive" } });
 ```
 
-A [`Selection`][ref-selection] is immutable, ordered, replayable, and `Iterable` — but it is
-deliberately **not** an `Array`:
+A [`Selection`][ref-selection] is immutable, ordered, replayable, and `Iterable`.
+It is not an `Array`:
 
 ```ts
 selection.length;
@@ -360,7 +359,7 @@ $ bun packages/libtmux/scripts/bench-modes.ts
 
 ## What this project promises
 
-- **The library ships zero runtime dependencies.** A property [under test](packages/libtmux/tests/unit/package_contract.test.ts), not an aspiration. `@libtmux/mcp` and `@libtmux/workspace` declare their own.
+- **The library ships zero runtime dependencies.** [A test](packages/libtmux/tests/unit/package_contract.test.ts) holds it. `@libtmux/mcp` and `@libtmux/workspace` declare their own.
 - **Real tmux, every commit.** CI runs the suite against every tmux release the badge above names — no mocks stand in for a server.
 - **Documentation is a gate.** Every public symbol carries a compiled example, [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it, and every link, install command and recipe on this page is checked on each run.
 - **Softly tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and shapes follow 0.62.0 where TypeScript agrees with them; each departure is a decision a gate holds to the code.

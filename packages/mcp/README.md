@@ -782,9 +782,8 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   the fix: upgrade tmux and restart the server, or pin the previous release.
 - **Version check.** [`get_server_info`][tool-get_server_info] reports the
   running `version` and the `minimumVersion`.
-- **Platforms.** Linux is the only supported host for real tmux control. The
-  macOS CI lane checks package artifacts without exercising tmux; macOS runtime
-  behavior is unproven. WSL is untested.
+- **Platforms.** Runs on Linux, including WSL. On macOS, CI builds and installs
+  the packages, but the real-tmux test suites run on Linux only.
 - **Alpha.** Tool names and arguments can change between alpha releases without
   a deprecation cycle. Pin an exact version.
 

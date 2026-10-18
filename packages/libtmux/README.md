@@ -41,9 +41,8 @@ $ bun add --exact libtmux@0.1.0-alpha.13
 Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
 5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
-Linux is the only supported host for real tmux control. The macOS CI lane
-checks package artifacts without exercising tmux; macOS runtime behavior is
-unproven. WSL is untested. This is a proof boundary, not an OS rejection.
+Runs on Linux, including WSL. On macOS, CI builds and installs the packages,
+but the real-tmux test suites run on Linux only.
 
 > [!WARNING]
 > **Alpha.** The API can change between alpha releases without a deprecation
@@ -697,8 +696,9 @@ await right.panes.one().joinTo(left.panes.one());
 
 - A handle from a different server raises `TypeError`, because a bare id
   cannot be checked: `@1` exists on every server that has a window.
-- A handle names a placement, not a window. After a move, read the window back
-  from a fresh snapshot instead of reusing the handle that moved it.
+- A handle names a placement, and one window can sit in two sessions. After a
+  move, read the window back from a fresh snapshot instead of reusing the
+  handle that moved it.
 - [The contract](docs/contracts.md#operations) covers both.
 
 ### [`Window.unlink`][ref-window-unlink] and [`Window.removePlacement`][ref-window-removeplacement]
@@ -897,7 +897,7 @@ const [[madeWindow], , [madeOther]] = await server.pipeline([
 
 - It is not atomic: tmux stops at the first failure and leaves everything
   before it applied.
-- The [`TmuxCommandError`][ref-tmuxcommanderror] names the command that failed, not the sequence.
+- The [`TmuxCommandError`][ref-tmuxcommanderror] names the command that failed.
 - Take a [`snapshot()`][ref-server-snapshot] afterwards when you need to know what survived.
 - [Why](docs/contracts.md#batching) the results are positional and each command
   is a separate invocation.
@@ -964,7 +964,8 @@ for await (const event of events) {
 
 - Name the session with `target`: tmux sends pane output only for the session
   the client attached to. An untargeted `watch()` lands on whichever session
-  tmux considers current, which on a server with two is silence, not an error.
+  tmux considers current. On a server with two sessions that gives silence and
+  no error.
 - A pane echoes what is typed, so waiting for text that also appears in the
   keys you sent matches the echo. Wait for something the command prints.
 
@@ -1001,8 +1002,8 @@ const event = await printed;
 ## Watch tmux change
 
 A snapshot answers what is true now. [`server.watch()`][ref-server-watch]
-answers what changed, over one persistent `tmux -C` connection rather than a
-command per read.
+answers what changed, over one persistent `tmux -C` connection with no command
+per read.
 
 ### [`Server.watch`][ref-server-watch]: hear changes as they happen
 
@@ -1045,8 +1046,8 @@ await using paced = server.watch({ pauseAfterSeconds: 5 });
 ```
 
 tmux then reports `pause` for the pane it stopped, the connection asks it back
-at once, and `continue` follows. The pair is a record of what was missed, not
-something to act on.
+at once, and `continue` follows. The pair records what was missed; there is
+nothing to act on.
 
 ### [`Server.connect`][ref-server-connect]: pair commands with the observer
 
@@ -1095,8 +1096,8 @@ if (report?.kind === "subscription-changed") console.log(report.name, report.val
 ```
 
 - tmux expands each subscription at most once per second and reports only when
-  the value differs, so a report is a change rather than a sample. The first
-  evaluation always reports.
+  the value differs, so each report marks a change. The first evaluation always
+  reports.
 - `scope` takes a pane or window id, `"all-panes"`, or `"all-windows"`.
 - A connected server adds and drops subscriptions while it runs with
   [`subscribeFormat`][ref-connected-subscribeformat] and
@@ -1115,8 +1116,8 @@ await session.newWindow({ name: "build" });
 const settled = await live.waitFor((server) => server.windows.exists({ name: "build" }));
 ```
 
-For a single event rather than a state, [`find`][ref-tmuxeventstream] takes
-the first one that matches and gives up on a deadline. Each [`subscribe()`][ref-connected-subscribe] is an
+To wait for a single event, [`find`][ref-tmuxeventstream] takes the first one
+that matches and gives up on a deadline. Each [`subscribe()`][ref-connected-subscribe] is an
 independent view with its own buffer:
 
 <!-- static: waits for a window the reader opens -->
@@ -1836,8 +1837,7 @@ deprecation cycle, so pin an exact version and read the
 - **tmux 3.3a or newer**, checked against the running daemon: see
   [tmux versions](#tmux-versions).
 - **Node 22+ or Bun 1.3.14+**, and TypeScript 5.7+.
-- **Linux** for real tmux control; the macOS CI lane checks package artifacts
-  only, and WSL is untested.
+- **Linux**, including WSL. CI runs the real-tmux test suites there only.
 
 ## Documentation
 

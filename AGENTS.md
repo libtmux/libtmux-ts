@@ -48,7 +48,7 @@ stated twice, the file listed above is the one that governs.
 - Add a file only for a durable boundary — a distinct responsibility,
   independent reuse, or splitting an oversized module — not for a single-use
   helper or a one-line re-export.
-- Zero runtime dependencies is a property under test, not an aspiration.
+- Zero runtime dependencies is a property under test.
   Anything new belongs in `devDependencies` or nowhere.
 - A passing gate is evidence only once it has been shown capable of failing.
   Pair a new test with a deliberate break that proves it bites.

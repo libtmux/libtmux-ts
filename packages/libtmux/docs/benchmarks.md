@@ -39,7 +39,7 @@ only free of round trips.
 Wall-clock rises with panes, roughly 1.6 ms per pane across this range, because
 tmux formats a row per object and this side decodes it. A 192-pane server costs
 about 32 times a 1-pane server for 88 times the rows — 264 against 3, counting
-every session, window and pane the four listings emit, not the panes alone.
+every session, window and pane the four listings emit.
 
 ## Creating things
 
@@ -135,8 +135,7 @@ replacement time, which move run to run like any other timing.
 | same-daemon reconnect | 5 detachments            | 185 ms        | 5 recovered                  |
 | daemon replacement    | 3 daemons                | 150 ms median | 3 stale handles refused      |
 
-This one is a correctness workload that reports timings, not a benchmark that
-checks a number: it throws if any value in the right-hand column is wrong, so
+This one is a correctness workload that also reports timings. It throws if any value in the right-hand column is wrong, so
 that column is the result and the wall-clock is context. The attempt counts the
 script also prints are not in it, because nothing throws on them — they are
 observations of how many tries recovery happened to need, and that count can

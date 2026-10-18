@@ -56,8 +56,7 @@ The check is [`Server.validateLayouts`][ref-server-validatelayouts].
 
 ## Pruning and ownership
 
-**It prunes what it built, not what it found.** A session name is a lookup, not
-a claim: `dev` in this file and `dev` you started by hand are the same name.
+**It prunes only what it built.** A session name is a lookup: `dev` in this file and `dev` you started by hand are the same name.
 
 So a session this package creates is stamped with a tmux user option
 ([`claimSession`][wsref-claimsession]), and surplus windows and panes are

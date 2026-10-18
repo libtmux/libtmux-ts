@@ -30,8 +30,8 @@ of what a program that built the server itself wants.
 The operators below are for the other case — a caller exploring a server it did
 not build, or one holding a query it did not write: a saved filter, a `--where`
 flag, an argument from an agent. That is also what `encodeWhereDocument` and
-[`decodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/) are for, and why criteria are data rather than a
-predicate. If you know the ids, you do not need any of this.
+[`decodeWhereDocument`](https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/) are for, and why criteria are
+data. If you know the ids, you do not need any of this.
 
 Which fields those are comes from tmux's own `format.c`, and an integration test
 holds every one of them to a live server on each version CI runs. Anything else
@@ -87,8 +87,8 @@ server that has a window. Passing a handle from a different server raises
 `TypeError` rather than addressing whatever holds that id here — which is what
 a bare id cannot be checked for, since a string carries no server.
 
-A handle names a placement rather than a window, because one window can sit in
-two sessions at once. Moving a window leaves the handle pointing at a placement
+A handle names a placement, because one window can sit in two sessions at
+once. Moving a window leaves the handle pointing at a placement
 that no longer exists, so read the moved window back from a fresh snapshot
 instead of reusing the handle that moved it.
 
@@ -131,7 +131,7 @@ with its own values and everything it inherits resolved into one map.
 
 Creating things one at a time costs two tmux invocations per mutation: one runs
 its command and one captures the snapshot needed to find what it made. That
-second one is what makes the result a handle rather than an id — tmux prints the
+second one is what turns the id into a handle — tmux prints the
 new id, but a handle is only meaningful inside a consistent graph, and acquiring
 one is the whole server. A batch shares a single final snapshot across all of
 its mutations, so twelve windows cost 14 invocations rather than 25 —
@@ -162,7 +162,7 @@ a window opening, a session renaming — reach a control client wherever it is
 attached, but tmux sends pane output only for the session that client attached
 to, and an untargeted `watch()` lands on whichever session tmux considers
 current. On a server with one session that is the one you meant; on a server
-with two it is silence rather than an error.
+with two it is silence and no error.
 
 A pane echoes what is typed into it, so waiting for text that also appears in
 the keys you just sent matches the echo rather than the output. Wait for
@@ -189,7 +189,7 @@ than being dropped.
 
 The stream is an `AsyncDisposable`, so `await using` ends the tmux process when
 the scope exits, including on a thrown error. A consumer that falls behind gets
-its oldest events dropped rather than an unbounded buffer; `events.dropped`
+its oldest events dropped and the buffer stays bounded; `events.dropped`
 counts them and `bufferSize` sets the bound.
 
 That bound is this side's. tmux keeps its own, and its remedy for a client that
@@ -198,8 +198,8 @@ connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause
 the one pane instead:
 
 tmux then reports `pause` for the pane it stopped, the connection asks it back
-at once, and `continue` follows. The pair is a record of what was missed, not
-something to act on.
+at once, and `continue` follows. The pair records what was missed; there is
+nothing to act on.
 
 `watch()` is the notification observer and owns this pacing policy. `connect()`
 adds the same event channel and daemon-lifetime tracking to a server; its
@@ -215,8 +215,8 @@ with `target` rather than relying on whichever tmux considers most recent.
 same operation for a project that cannot add it.
 
 tmux expands each subscription at most once per second and reports only when the
-value differs from the last report for that object, so a report is a change
-rather than a sample. The first evaluation always reports.
+value differs from the last report for that object, so each report marks a
+change. The first evaluation always reports.
 
 `scope` takes a pane or window id, `"all-panes"`, or `"all-windows"`; omitted,
 the format expands once per session. A report names the object it expanded
@@ -243,7 +243,7 @@ commands, including [`loadBuffer`](https://libtmux.org/en/ts/latest/reference/se
 `waitFor` subscribes before it reads, so a change landing between the two is
 still seen rather than leaving you waiting on something that already happened:
 
-For a single event rather than a state, `find` takes the first match and answers
+To wait for a single event, `find` takes the first match and answers
 `undefined` on its deadline. It raises instead when the connection ends, so the
 `undefined` a caller reports on is only ever the thing not happening:
 
@@ -346,8 +346,7 @@ because tmux may well have created that window before the pipe went quiet. Every
 path reports the same type, so a timeout during `snapshot()` is not a different
 shape from a timeout during `kill()`.
 
-The refusal is tmux's, not a check this library made first and hoped would still
-hold: a command carrying a raw id goes as `if-shell -F` conditioned on the
+The refusal comes from tmux: a command carrying a raw id goes as `if-shell -F` conditioned on the
 daemon's pid and start time, and tmux evaluates that inside the same command
 queue entry that would run it. The connected observer invalidates its runtime
 when that daemon disappears.

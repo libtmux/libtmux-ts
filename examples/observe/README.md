@@ -54,9 +54,9 @@ once and decides which formats this tmux understands.
 batch concurrently buys queueing rather than throughput; the ceiling keeps a
 burst from becoming a pile of processes, and `queuedMs` says how long each call
 waited for its slot. The example sets it to 1 and fires four snapshots at once,
-so three of them wait — and the order they finish in is tmux's, not the order
-they were asked for, which is why `pipeline` and `batch` exist for work whose
-order matters.
+so three of them wait. They finish in tmux's order, which can differ from the
+order they were asked for, so use `pipeline` and `batch` for work whose order
+matters.
 
 ## Where to go next
 
