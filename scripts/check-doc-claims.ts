@@ -67,7 +67,7 @@ const packageReadmes = [
 
 const platformClaims = [
   "Runs on Linux, including WSL.",
-  "On macOS, CI builds and installs the packages, but the real-tmux test suites run on Linux only.",
+  "macOS is supported on a best-effort basis, and CI coverage for it is highly limited.",
 ] as const;
 
 /** Every package this workspace publishes, read from the manifests. */

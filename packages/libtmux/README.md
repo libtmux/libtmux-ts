@@ -41,8 +41,8 @@ $ bun add --exact libtmux@0.1.0-alpha.13
 Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
 5.6 and below ship no `ES2024` lib, which these declarations are built against.
 
-Runs on Linux, including WSL. On macOS, CI builds and installs the packages,
-but the real-tmux test suites run on Linux only.
+Runs on Linux, including WSL. macOS is supported on a best-effort basis,
+and CI coverage for it is highly limited.
 
 > [!WARNING]
 > **Alpha.** The API can change between alpha releases without a deprecation
