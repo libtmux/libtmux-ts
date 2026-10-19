@@ -1,10 +1,13 @@
 import { TmuxTransportError, VersionTooLowError } from "../../errors.js";
 import type { TmuxCommand } from "../../engine.js";
+import { type TmuxVersion } from "../runtime/tmux_version.js";
 import {
-  compareTmuxVersions,
-  parseTmuxVersion,
-  type TmuxVersion,
-} from "../runtime/tmux_version.js";
+  capabilitySince,
+  hasCapability,
+  workaroundApplies,
+  type CapabilityId,
+  type WorkaroundId,
+} from "../support/capabilities.js";
 
 /** Every command name and its alias, so an abbreviation resolves the way tmux resolves it. */
 const COMMANDS: readonly (readonly [canonical: string, alias?: string])[] = [
@@ -142,20 +145,18 @@ function parse(args: readonly string[], valued: string): Parsed {
   return { flags, positionals };
 }
 
-const version34 = parseTmuxVersion("3.4");
-
 const PRESETS = ["even-horizontal", "even-vertical", "main-horizontal", "main-vertical", "tiled"];
 
 function refuse(subcommand: string, message: string): TmuxTransportError {
   return new TmuxTransportError(message, { delivery: "not_started", kind: "protocol", subcommand });
 }
 
-function requires(feature: string, since: string, running: TmuxVersion): VersionTooLowError {
+function requires(feature: string, id: CapabilityId, running: TmuxVersion): VersionTooLowError {
   return new VersionTooLowError({
     criteriaName: feature,
     delivery: "not_started",
     serverVersion: running.raw,
-    since,
+    since: capabilitySince(id).raw,
   });
 }
 
@@ -171,17 +172,21 @@ function badName(value: string | true | undefined): boolean {
  * as structured words, so nothing is parsed out of a script.
  */
 export function guardFeatures(running: TmuxVersion, commands: readonly TmuxCommand[]): void {
-  const below34 = compareTmuxVersions(running, version34) < 0;
-  const exact = (raw: string): boolean => running.raw === raw;
+  const lacks = (id: CapabilityId): boolean => !hasCapability(id, running);
+  const has = (id: WorkaroundId): boolean => workaroundApplies(id, running);
   for (const [word, ...args] of commands) {
     const name = resolve(word);
-    if (name === "delete-buffer" && below34 && parse(args, "b").flags.has("b")) {
-      throw requires("deleting a named buffer", "3.4", running);
+    if (
+      name === "delete-buffer" &&
+      lacks("buffer-delete-named") &&
+      parse(args, "b").flags.has("b")
+    ) {
+      throw requires("deleting a named buffer", "buffer-delete-named", running);
     }
-    if (name === "set-buffer" && below34 && parse(args, "bnt").flags.has("n")) {
-      throw requires("renaming a buffer", "3.4", running);
+    if (name === "set-buffer" && lacks("buffer-rename") && parse(args, "bnt").flags.has("n")) {
+      throw requires("renaming a buffer", "buffer-rename", running);
     }
-    if (name === "select-layout" && below34) {
+    if (name === "select-layout" && lacks("layout-without-checksum")) {
       const { flags, positionals } = parse(args, "t");
       const layout = positionals[0];
       const reads = !["n", "o", "p", "E"].some((flag) => flags.has(flag));
@@ -198,26 +203,31 @@ export function guardFeatures(running: TmuxVersion, commands: readonly TmuxComma
         );
       }
     }
-    if (name === "split-window" && exact("3.4") && parse(args, "cetFlp").flags.has("p")) {
+    if (
+      name === "split-window" &&
+      has("split-window-percent-size") &&
+      parse(args, "cetFlp").flags.has("p")
+    ) {
       throw refuse(word, "tmux 3.4 splits wrongly with -p; write the size as -l N%");
     }
-    if (exact("3.7")) {
-      if (name === "break-pane") {
-        const { flags } = parse(args, "Fnst");
-        if (!flags.has("n")) {
-          throw refuse(
-            word,
-            "tmux 3.7 crashes the server on a break-pane without -n; pass a window name",
-          );
-        }
-        if (flags.has("n") && !flags.has("P")) {
-          throw refuse(
-            word,
-            "tmux 3.7 accepts break-pane -n and ignores it; name the window afterwards, or print its id with -P",
-          );
-        }
-        if (badName(flags.get("n")))
-          throw refuse(word, "tmux 3.7 rejects window names containing ':' or '.'");
+    if (name === "break-pane" && has("break-pane-misnames-windows")) {
+      const { flags } = parse(args, "Fnst");
+      if (!flags.has("n")) {
+        throw refuse(
+          word,
+          "tmux 3.7 crashes the server on a break-pane without -n; pass a window name",
+        );
+      }
+      if (flags.has("n") && !flags.has("P")) {
+        throw refuse(
+          word,
+          "tmux 3.7 accepts break-pane -n and ignores it; name the window afterwards, or print its id with -P",
+        );
+      }
+    }
+    if (has("name-separators-rejected")) {
+      if (name === "break-pane" && badName(parse(args, "Fnst").flags.get("n"))) {
+        throw refuse(word, "tmux 3.7 rejects window names containing ':' or '.'");
       }
       if (name === "new-session") {
         const { flags } = parse(args, "cefFnstxy");

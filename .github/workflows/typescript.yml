@@ -127,6 +127,7 @@ jobs:
           bun run docs:api:check
           bun run docs:criteria:check
           bun run generate:check
+          bun run capabilities:check
           bun run parity
           bun run build
 

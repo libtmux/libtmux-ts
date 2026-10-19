@@ -12,16 +12,13 @@ import {
 } from "../support/versions.js";
 import type { CommandTransport, RawCommandResult } from "../transport/types.js";
 import type { TmuxConnection } from "./connection.js";
-import { parseTmuxVersion, tmuxVersionIsExact, type TmuxVersion } from "./tmux_version.js";
+import { parseTmuxVersion, type TmuxVersion } from "./tmux_version.js";
 
 export interface TmuxCapabilities {
   readonly connectionAlias: ConnectionAlias;
   readonly daemon: DaemonGuard;
   readonly daemonEpoch: DaemonEpoch;
   readonly fingerprint: string;
-  readonly quirks: Readonly<{
-    breakPane37: boolean;
-  }>;
   readonly rawVersion: string;
   readonly tmuxVersion: TmuxVersion;
 }
@@ -70,15 +67,11 @@ function capabilityFingerprint(options: DeriveTmuxCapabilitiesOptions): string {
 
 export function deriveTmuxCapabilities(options: DeriveTmuxCapabilitiesOptions): TmuxCapabilities {
   const tmuxVersion = parseTmuxVersion(options.rawVersion);
-  const quirks = Object.freeze({
-    breakPane37: tmuxVersionIsExact(tmuxVersion, parseTmuxVersion("3.7")),
-  });
   return Object.freeze({
     connectionAlias: options.connectionAlias,
     daemon: Object.freeze({ pid: options.daemon.pid, startTime: options.daemon.startTime }),
     daemonEpoch: options.daemonEpoch,
     fingerprint: capabilityFingerprint(options),
-    quirks,
     rawVersion: options.rawVersion,
     tmuxVersion,
   });

@@ -3,7 +3,8 @@ import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
 import { VersionTooLowError } from "../../errors.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
+import { tmuxVersionAtLeast } from "../runtime/tmux_version.js";
+import { capabilitySince } from "../support/capabilities.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { runCommand, runCommands } from "./command.js";
 import { parseClassicLayout, type ClassicLayoutParse, type LayoutRejection } from "./layout.js";
@@ -111,9 +112,9 @@ const MIRRORED_LAYOUT_PRESETS = new Set(["main-horizontal-mirrored", "main-verti
 // unambiguous prefix.
 const LAYOUT_SET_NAMES: readonly string[] = [...LAYOUT_PRESETS, ...MIRRORED_LAYOUT_PRESETS];
 // tmux CHANGES, 3.4 to 3.5: mirrored main-horizontal and main-vertical.
-const MIRRORED_LAYOUTS_SINCE = parseTmuxVersion("3.5");
+const MIRRORED_LAYOUTS_SINCE = capabilitySince("layout-mirrored-main");
 // tmux CHANGES, 3.7c to 3.8: layout strings use a JSON subset format.
-const JSON_LAYOUTS_SINCE = parseTmuxVersion("3.8-rc2");
+const JSON_LAYOUTS_SINCE = capabilitySince("layout-json");
 
 /** Why a value that opened like a dumped layout is not one. */
 const LAYOUT_REJECTIONS: Readonly<Record<LayoutRejection, string>> = Object.freeze({

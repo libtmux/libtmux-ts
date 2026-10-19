@@ -14,9 +14,9 @@ import { flattenInvocation } from "../transport/invocation.js";
 import { refusedUnknownCommand, uniqueUnknownCommand } from "../transport/refusal.js";
 import { snapshotInvocationRequest } from "../transport/types.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
+import { MINIMUM_TMUX } from "./minimum.js";
 
-/** The oldest tmux whose daemon this package drives for ordinary operations. */
-export const MINIMUM_TMUX = "3.3a";
+export { MINIMUM_TMUX };
 
 /**
  * Accept a version report for ordinary operations, or refuse it.
