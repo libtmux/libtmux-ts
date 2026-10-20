@@ -44,22 +44,22 @@ Install the package with `libtmux`, which supplies the [`Server`][ref-server]
 you pass to every call:
 
 ```console
-$ bun add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
+$ bun add --exact @libtmux/workspace@0.1.0-alpha.14 libtmux@0.1.0-alpha.14
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i --save-exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
+$ npm i --save-exact @libtmux/workspace@0.1.0-alpha.14 libtmux@0.1.0-alpha.14
 ```
 
 ```console
-$ pnpm add --save-exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
+$ pnpm add --save-exact @libtmux/workspace@0.1.0-alpha.14 libtmux@0.1.0-alpha.14
 ```
 
 ```console
-$ yarn add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
+$ yarn add --exact @libtmux/workspace@0.1.0-alpha.14 libtmux@0.1.0-alpha.14
 ```
 
 </details>
@@ -355,7 +355,7 @@ windows:
 Load it detached, on a socket of its own:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0-alpha.13 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.0-alpha.14 load ./workspace.yaml \
     -L workspace-demo \
     -d
 ```
