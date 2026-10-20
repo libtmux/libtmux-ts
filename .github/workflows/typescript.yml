@@ -45,28 +45,29 @@ jobs:
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 
       # One tmux, because the suites below start servers; which one they start
-      # is the version job's question. The floor, so nothing here can depend on
-      # something newer without the version job saying so.
-      - name: Setup tmux build cache for tmux 3.3a
+      # is the version job's question. 3.8, because the documented examples
+      # drive control mode and `runShell` output, which need 3.7 and 3.5; the
+      # floor and each release between are the version job's.
+      - name: Setup tmux build cache for tmux 3.8
         id: tmux-build-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: ~/tmux-builds/tmux-3.3a
-          key: tmux-3.3a
+          path: ~/tmux-builds/tmux-3.8
+          key: tmux-3.8
 
-      - name: Build tmux 3.3a
+      - name: Build tmux 3.8
         if: steps.tmux-build-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y libevent-dev libncurses5-dev libtinfo-dev libutempter-dev bison
           mkdir -p ~/tmux-builds ~/tmux-src
-          git clone https://github.com/tmux/tmux.git ~/tmux-src/tmux-3.3a
-          cd ~/tmux-src/tmux-3.3a
-          git checkout 3.3a
+          git clone https://github.com/tmux/tmux.git ~/tmux-src/tmux-3.8
+          cd ~/tmux-src/tmux-3.8
+          git checkout 3.8
           sh autogen.sh
-          ./configure --prefix=$HOME/tmux-builds/tmux-3.3a && make && make install
+          ./configure --prefix=$HOME/tmux-builds/tmux-3.8 && make && make install
 
-      - run: echo "$HOME/tmux-builds/tmux-3.3a/bin" >> "$GITHUB_PATH"
+      - run: echo "$HOME/tmux-builds/tmux-3.8/bin" >> "$GITHUB_PATH"
       - run: tmux -V
 
       # fish proves non-POSIX-shell refusal; zsh exercises trap preservation.
@@ -126,6 +127,7 @@ jobs:
           bun run docs:api:check
           bun run docs:criteria:check
           bun run generate:check
+          bun run capabilities:check
           bun run parity
           bun run build
 

@@ -12,7 +12,8 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { describeControl } from "../support/tmux_release.js";
 
 import {
   prepareRunRoot,
@@ -75,7 +76,7 @@ const FORGERIES: readonly string[] = [
   "%continue %1",
 ];
 
-describe("a command's output cannot reframe the connection", () => {
+describeControl("a command's output cannot reframe the connection", () => {
   test("reads a buffer of forged guards the same way over both transports", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
@@ -110,7 +111,7 @@ describe("a command's output cannot reframe the connection", () => {
   }, 60_000);
 });
 
-describe("an argument cannot become a command", () => {
+describeControl("an argument cannot become a command", () => {
   test("carries a newline in a value, and injects nothing", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);

@@ -138,6 +138,8 @@
     "build": "bun run generate:check && rm -rf dist && tsc -p tsconfig.build.json",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
+    "capabilities": "bun scripts/emit-capabilities.ts --write",
+    "capabilities:check": "bun scripts/emit-capabilities.ts --check",
     "generate": "bun scripts/generate-formats.ts --write",
     "generate:check": "bun scripts/generate-formats.ts --check",
     "lint": "oxlint . --ignore-pattern tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun scripts/check-type-aware-lint.ts",

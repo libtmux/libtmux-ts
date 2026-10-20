@@ -8,7 +8,8 @@ import { TmuxServerRestartedError, TmuxTransportError } from "../../src/errors.j
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const observerBinding: ControlObserverBinding = Object.freeze({ clientPid: 123 });
+const daemon = Object.freeze({ pid: "4242", startTime: "1700" });
+const observerBinding: ControlObserverBinding = Object.freeze({ clientPid: 123, daemon });
 const observer = { observerBinding: () => observerBinding };
 const connection = new TmuxConnection({ executable: "tmux", socketPath: "/tmp/test.sock" });
 type TransportOptions = Parameters<typeof observerBoundTransport>[0];
@@ -22,35 +23,6 @@ function staging(overrides: Partial<Staging> = {}): Staging {
     write: () => Promise.resolve(),
     ...overrides,
   };
-}
-
-function quoteAsTmuxDoes(value: string): string {
-  return value.replaceAll(/[|&;<>()$`\\"'*?[# =%]/gu, (character) => `\\${character}`);
-}
-
-function authenticationValue(token: string, clientPid: number): string {
-  const identities: Readonly<Record<string, string>> = {
-    client_name: "/dev/pts/42",
-    client_pid: String(clientPid),
-    next_session_id: "$10",
-    pane_id: "%9",
-    pid: "4242",
-    session_id: "$7",
-    start_time: "1700",
-    window_id: "@8",
-  };
-  return identities[token] ?? `value:${token}`;
-}
-
-function authenticationFrame(
-  request: CommandRequest,
-  clientPid = observerBinding.clientPid,
-): string {
-  const format = request.commands[0].find((argument) => argument.startsWith("-F"))?.slice(2);
-  if (format === undefined) throw new Error("authentication format is absent");
-  return format.replaceAll(/#\{q:([^}]+)\}/gu, (_match, token: string) =>
-    quoteAsTmuxDoes(authenticationValue(token, clientPid)),
-  );
 }
 
 function rawResult(
@@ -87,19 +59,15 @@ function stdinInvocation(
 
 function harness(
   options: {
-    readonly authenticate?: (request: CommandRequest) => Promise<RawCommandResult>;
     readonly execute?: (request: CommandRequest) => Promise<RawCommandResult>;
     readonly staging?: Staging;
   } = {},
 ) {
   let userCommands = 0;
+  const requests: CommandRequest[] = [];
   const commands = {
     async execute(request: CommandRequest): Promise<RawCommandResult> {
-      if (request.commands[0][0] === "list-clients") {
-        return options.authenticate === undefined
-          ? rawResult(request, { stdout: `${authenticationFrame(request)}\n` })
-          : options.authenticate(request);
-      }
+      requests.push(request);
       userCommands += 1;
       return options.execute === undefined ? rawResult(request) : options.execute(request);
     },
@@ -110,7 +78,7 @@ function harness(
     observer,
     ...(options.staging === undefined ? {} : { staging: options.staging }),
   });
-  return { transport, userCommands: () => userCommands };
+  return { requests, transport, userCommands: () => userCommands };
 }
 
 async function rejected(execution: Promise<RawCommandResult>): Promise<unknown> {
@@ -148,27 +116,6 @@ function blockingPhase() {
 
 describe("connected observer transport", () => {
   for (const mode of ["timeout", "abort"] as const) {
-    test(`${mode} covers lazy observer authentication`, async () => {
-      const kind = mode === "abort" ? "cancelled" : "timeout";
-      const controller = new AbortController();
-      const blocked = blockingPhase();
-      const target = harness({
-        authenticate: async (request) => {
-          await blocked.wait(request.signal);
-          return rawResult(request, { stdout: `${authenticationFrame(request)}\n` });
-        },
-      });
-      const execution = target.transport.execute(
-        invocation(mode === "timeout" ? { timeoutMs: 10 } : { signal: controller.signal }),
-      );
-      await blocked.entered;
-      if (mode === "abort") controller.abort();
-
-      expect(await rejected(execution)).toMatchObject({ delivery: "not_started", kind });
-      expect(blocked.aborted()).toBe(true);
-      expect(target.userCommands()).toBe(0);
-    });
-
     test(`${mode} covers stdin staging`, async () => {
       const kind = mode === "abort" ? "cancelled" : "timeout";
       const controller = new AbortController();
@@ -288,44 +235,49 @@ describe("connected observer transport", () => {
     expect(target.userCommands()).toBe(0);
   });
 
-  test("rejects unframed command-alias output before the user command", async () => {
-    const target = harness({
-      authenticate: (request) => Promise.resolve(rawResult(request, { stdout: "forged alias\n" })),
-    });
+  test("fences spawned commands to the daemon the observer checked", async () => {
+    const target = harness();
 
-    expect(await rejected(target.transport.execute(invocation()))).toMatchObject({
-      delivery: "not_started",
-      kind: "protocol",
-    });
+    await target.transport.execute(invocation());
+
+    expect(target.requests).toHaveLength(1);
+    expect(target.requests[0]?.daemonGuard).toEqual(daemon);
+    expect(target.requests.every((request) => request.commands[0][0] !== "list-clients")).toBe(
+      true,
+    );
+  });
+
+  test("refuses a command whose ids belong to another daemon", async () => {
+    const target = harness();
+
+    expect(
+      await rejected(
+        target.transport.execute({
+          ...invocation(),
+          daemonGuard: { pid: "1", startTime: "2" },
+        }),
+      ),
+    ).toBeInstanceOf(TmuxServerRestartedError);
     expect(target.userCommands()).toBe(0);
   });
 
-  test("rejects a valid frame naming another observer client", async () => {
-    const target = harness({
-      authenticate: (request) =>
-        Promise.resolve(rawResult(request, { stdout: `${authenticationFrame(request, 999)}\n` })),
+  test("refuses to send anything for an observer that was never checked", async () => {
+    const unchecked = { observerBinding: () => Object.freeze({ clientPid: 123 }) };
+    let sent = 0;
+    const transport = observerBoundTransport({
+      commands: {
+        execute: (request) => {
+          sent += 1;
+          return Promise.resolve(rawResult(request));
+        },
+      },
+      connection,
+      observer: unchecked,
     });
 
-    expect(await rejected(target.transport.execute(invocation()))).toBeInstanceOf(
+    expect(await rejected(transport.execute(invocation()))).toBeInstanceOf(
       TmuxServerRestartedError,
     );
-    expect(target.userCommands()).toBe(0);
-  });
-
-  test("normalizes authentication transport delivery before the user command", async () => {
-    const underlying = new TmuxTransportError("authentication failed", {
-      delivery: "indeterminate",
-      kind: "pipe",
-      signal: "SIGTERM",
-      stderr: encoder.encode("auth stderr"),
-      stdout: encoder.encode("auth stdout"),
-    });
-    const target = harness({ authenticate: () => Promise.reject(underlying) });
-
-    const failure = (await rejected(target.transport.execute(invocation()))) as TmuxTransportError;
-    expect(failure).toMatchObject({ delivery: "not_started", kind: "pipe", signal: "SIGTERM" });
-    expect(decoder.decode(failure.stderr)).toBe("auth stderr");
-    expect(decoder.decode(failure.stdout)).toBe("auth stdout");
-    expect(target.userCommands()).toBe(0);
+    expect(sent).toBe(0);
   });
 });

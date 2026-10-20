@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+import { testControl } from "../support/tmux_release.js";
 
 import {
   prepareRunRoot,
@@ -351,29 +352,33 @@ describe("window and pane topology", () => {
     });
   }, 40_000);
 
-  test("keeps a moved window in its own session over a connection too", async () => {
-    await withServer(async (fixture) => {
-      const server = serverFor(fixture);
-      await server.newSession({ name: "newer" });
-      // The same guarantee through a control connection, the path a served
-      // client takes. tmux reads a destination of `:7` as index 7 of whichever
-      // session it considers current, so an index-only move lands elsewhere.
-      await using live = await server.connect();
-      const window = (await live.snapshot()).windows
-        .filter((candidate) => candidate.session?.name === fixture.sessionName)
-        .one();
-      const origin = window.session;
-      if (origin === undefined) throw new Error("expected the window to resolve its session");
+  testControl(
+    "keeps a moved window in its own session over a connection too",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        await server.newSession({ name: "newer" });
+        // The same guarantee through a control connection, the path a served
+        // client takes. tmux reads a destination of `:7` as index 7 of whichever
+        // session it considers current, so an index-only move lands elsewhere.
+        await using live = await server.connect();
+        const window = (await live.snapshot()).windows
+          .filter((candidate) => candidate.session?.name === fixture.sessionName)
+          .one();
+        const origin = window.session;
+        if (origin === undefined) throw new Error("expected the window to resolve its session");
 
-      await window.move({ index: 7 });
+        await window.move({ index: 7 });
 
-      const moved = (await server.snapshot()).windows
-        .filter((candidate) => candidate.id === window.id)
-        .one();
-      expect(moved.index).toBe(safeInteger(7));
-      expect(moved.session?.id).toBe(origin.id);
-    });
-  }, 40_000);
+        const moved = (await server.snapshot()).windows
+          .filter((candidate) => candidate.id === window.id)
+          .one();
+        expect(moved.index).toBe(safeInteger(7));
+        expect(moved.session?.id).toBe(origin.id);
+      });
+    },
+    40_000,
+  );
 
   test("breaks a pane out into its own session, not the current one", async () => {
     await withServer(async (fixture) => {

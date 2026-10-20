@@ -1,7 +1,8 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { describeControl } from "../support/tmux_release.js";
 
 import {
   prepareRunRoot,
@@ -48,7 +49,7 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
   }
 }
 
-describe("control-mode event bounds", () => {
+describeControl("control-mode event bounds", () => {
   test("names a connection that broke under a command in its own terms", async () => {
     const directory = await makeTestDirectory("ltx-broken-");
     const socketPath = join(directory, "s");

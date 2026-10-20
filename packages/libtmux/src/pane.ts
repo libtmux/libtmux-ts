@@ -509,6 +509,9 @@ export class Pane {
    * tmux places a break with no destination in whichever session is current,
    * which is the attached one rather than this pane's.
    *
+   * On tmux 3.7 exactly, a break with no name crashes the server, so a
+   * `breakOut()` without a `windowName` is refused there before anything is sent.
+   *
    * ```ts
    * await pane.breakOut("extracted");
    * ```

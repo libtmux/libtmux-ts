@@ -106,7 +106,9 @@ request and the wait stops there and then, rather than holding its connection
 for the rest of a deadline nobody is waiting on.
 
 For `watch-until`, carry the returned cursor into the next capture after a
-timeout. A `pane_died` outcome means retrying cannot produce more output.
+timeout. A `pane_died` outcome means retrying cannot produce more output; a
+pane that exits mid-wait ends it that way on the stream and on the poll below
+3.7 alike, and `stream_lost` means the stream ended while its pane lives.
 
 ## Tool route migration
 

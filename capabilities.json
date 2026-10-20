@@ -1,0 +1,178 @@
+{
+  "schema": "libtmux-capabilities/1",
+  "port": "ts",
+  "floor": {
+    "minimum": "3.3a"
+  },
+  "capabilities": [
+    {
+      "id": "control-mode",
+      "name": "Control mode",
+      "summary": "Attach a library-managed control client and stream events.",
+      "since": "3.7",
+      "handling": "refuse",
+      "error": "errors.VersionTooLowError",
+      "apis": ["server.Server.watch", "server.Server.connect"],
+      "commands": [
+        {
+          "command": "attach-session",
+          "flags": ["-C"]
+        }
+      ]
+    },
+    {
+      "id": "buffer-delete-named",
+      "name": "Named buffer deletion",
+      "summary": "Delete one paste buffer by name without risking another buffer.",
+      "since": "3.4",
+      "handling": "refuse",
+      "error": "errors.VersionTooLowError",
+      "apis": [
+        "server.Server.deleteBuffer",
+        "server.Server.cmd",
+        "server.Server.pipeline",
+        "server.Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "delete-buffer",
+          "flags": ["-b"]
+        }
+      ]
+    },
+    {
+      "id": "buffer-rename",
+      "name": "Buffer rename",
+      "summary": "Rename a paste buffer without risking another buffer.",
+      "since": "3.4",
+      "handling": "refuse",
+      "error": "errors.VersionTooLowError",
+      "apis": [
+        "server.Server.setBuffer",
+        "server.Server.cmd",
+        "server.Server.pipeline",
+        "server.Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "set-buffer",
+          "flags": ["-b", "-n"]
+        }
+      ]
+    },
+    {
+      "id": "layout-without-checksum",
+      "name": "Layouts without a checksum",
+      "summary": "Apply a layout string or a named layout that tmux validates before use.",
+      "since": "3.4",
+      "handling": "refuse",
+      "error": "errors.TmuxTransportError",
+      "apis": [
+        "window.Window.selectLayout",
+        "server.Server.cmd",
+        "server.Server.pipeline",
+        "server.Server.batch"
+      ],
+      "commands": [
+        {
+          "command": "select-layout"
+        }
+      ]
+    },
+    {
+      "id": "layout-mirrored-main",
+      "name": "Mirrored main layouts",
+      "summary": "Apply main-horizontal-mirrored and main-vertical-mirrored.",
+      "since": "3.5",
+      "handling": "refuse",
+      "error": "errors.VersionTooLowError",
+      "apis": ["window.Window.selectLayout", "server.Server.validateLayouts"],
+      "commands": [
+        {
+          "command": "select-layout"
+        }
+      ]
+    },
+    {
+      "id": "layout-json",
+      "name": "JSON layout strings",
+      "summary": "Apply a layout saved in the JSON form tmux reports.",
+      "since": "3.8-rc2",
+      "handling": "refuse",
+      "error": "errors.VersionTooLowError",
+      "apis": ["window.Window.selectLayout", "server.Server.validateLayouts"],
+      "commands": [
+        {
+          "command": "select-layout"
+        }
+      ]
+    }
+  ],
+  "workarounds": [
+    {
+      "id": "run-shell-output-in-copy-mode",
+      "name": "run-shell output capture",
+      "summary": "tmux 3.3 through 3.4 send run-shell output to a pane's copy-mode buffer and exit zero; runShell refuses it.",
+      "releases": ["3.3a", "3.4"],
+      "handling": "refuse",
+      "apis": ["server.Server.runShell"],
+      "commands": [
+        {
+          "command": "run-shell"
+        }
+      ]
+    },
+    {
+      "id": "break-pane-misnames-windows",
+      "name": "break-pane window naming",
+      "summary": "tmux 3.7 accepts break-pane -n and ignores it, and crashes the server on a break-pane without -n; breakOut names the window afterwards and is refused when no name is given, and a raw argv without -n, or with -n and without -P, is refused.",
+      "releases": ["3.7"],
+      "handling": "repair",
+      "apis": ["pane.Pane.breakOut"],
+      "commands": [
+        {
+          "command": "break-pane",
+          "flags": ["-n"]
+        }
+      ]
+    },
+    {
+      "id": "split-window-percent-size",
+      "name": "split-window -p",
+      "summary": "split-window -p is broken on tmux 3.4; a raw argv using it is refused, write -l N%.",
+      "releases": ["3.4"],
+      "handling": "refuse",
+      "apis": ["server.Server.cmd", "server.Server.pipeline", "server.Server.batch"],
+      "commands": [
+        {
+          "command": "split-window",
+          "flags": ["-p"]
+        }
+      ]
+    },
+    {
+      "id": "name-separators-rejected",
+      "name": "Colon and dot in names",
+      "summary": "tmux 3.7 rejects ':' and '.' in session and window names after partly running; a raw argv carrying one is refused.",
+      "releases": ["3.7"],
+      "handling": "refuse",
+      "apis": ["server.Server.cmd", "server.Server.pipeline", "server.Server.batch"],
+      "commands": [
+        {
+          "command": "new-session",
+          "flags": ["-s"]
+        },
+        {
+          "command": "new-window",
+          "flags": ["-n"]
+        },
+        {
+          "command": "rename-session"
+        },
+        {
+          "command": "rename-window"
+        }
+      ]
+    }
+  ]
+}

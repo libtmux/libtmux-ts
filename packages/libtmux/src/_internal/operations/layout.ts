@@ -3,6 +3,7 @@ import { TmuxTransportError } from "../../errors.js";
 import type { TmuxVersion } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
+import { capabilitySince } from "../support/capabilities.js";
 import {
   checkDaemonVersion,
   executableProbe,
@@ -21,8 +22,8 @@ const classicNames = [
 ];
 const mirroredNames = [...classicNames, "main-horizontal-mirrored", "main-vertical-mirrored"];
 const beforeMirrors = parseTmuxVersion("3.4");
-const withMirrors = parseTmuxVersion("3.5");
-const withJsonLayouts = parseTmuxVersion("3.8-rc2");
+const withMirrors = capabilitySince("layout-mirrored-main");
+const withJsonLayouts = capabilitySince("layout-json");
 
 /** Geometry correction and pruning remain tmux's responsibility. */
 export function layoutIsValid(layout: string, panes: number, version: TmuxVersion): boolean {

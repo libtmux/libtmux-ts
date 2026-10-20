@@ -9,13 +9,14 @@ import {
 } from "../../errors.js";
 import { decodeBackslashReplace } from "../codec/backslash_replace.js";
 import { parseTmuxVersion, releaseAtLeast, type TmuxVersion } from "../runtime/tmux_version.js";
+import { guardFeatures } from "../transport/features.js";
 import { flattenInvocation } from "../transport/invocation.js";
 import { refusedUnknownCommand, uniqueUnknownCommand } from "../transport/refusal.js";
 import { snapshotInvocationRequest } from "../transport/types.js";
 import type { CommandRequest, CommandTransport, RawCommandResult } from "../transport/types.js";
+import { MINIMUM_TMUX } from "./minimum.js";
 
-/** The oldest tmux whose daemon this package drives for ordinary operations. */
-export const MINIMUM_TMUX = "3.3a";
+export { MINIMUM_TMUX };
 
 /**
  * Accept a version report for ordinary operations, or refuse it.
@@ -358,6 +359,8 @@ export class VersionCheckTransport implements CommandTransport {
         requireCoreVersion(version);
       }
     }
+
+    guardFeatures(parseTmuxVersion(version), request.commands);
 
     const refusal = uniqueUnknownCommand("version");
     const condition = `#{==:#{version},${version}}`;

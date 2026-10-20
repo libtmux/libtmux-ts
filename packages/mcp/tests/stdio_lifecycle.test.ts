@@ -16,6 +16,7 @@ import {
   type TestServer,
 } from "../../libtmux/src/_internal/test/testkit.js";
 import { structured, withServer } from "./support/server_harness.js";
+import { testControl } from "../../libtmux/tests/support/tmux_release.js";
 
 type Runtime = "bun" | "node";
 
@@ -114,78 +115,80 @@ async function boundedExit(
 }
 
 for (const runtime of ["bun", "node"] as const) {
-  test.each(["active", "completed"] as const)(
-    `${runtime} stdin EOF closes the %s live wait and preserves the keeper`,
-    async (state) => {
-      await withServer(async (fixture) => {
-        const keeper = async (): Promise<string> =>
-          (
-            await fixture.executeText([
-              "display-message",
-              "-p",
-              "-t",
-              "mcp",
-              "#{pid}\t#{session_id}\t#{window_id}\t#{pane_id}",
-            ])
-          ).stdout.join("\n");
-        const clients = async (): Promise<string> =>
-          (await fixture.executeText(["list-clients", "-F", "#{client_pid}"])).stdout.join("\n");
-        const before = await keeper();
-        expect(before.trim()).toMatch(/^\d+\t\$\d+\t@\d+\t%\d+$/u);
-        expect((await clients()).trim()).toBe("");
-        await withProgram(fixture, runtime, async ({ client, endInput, exited, stderr }) => {
-          const panes = structured<{ panes: readonly { id: string }[] }>(
-            await client.callTool({ name: "list_panes", arguments: { session: "mcp" } }),
-          ).panes;
-          expect(panes).toHaveLength(1);
-          const paneId = panes[0]?.id;
-          expect(paneId).toMatch(/^%\d+$/u);
-          const seeded = structured<{ cursor: string }>(
-            await client.callTool({ name: "capture_since", arguments: { paneId } }),
-          );
-          expect(seeded.cursor).toBeString();
-          const controlPids = (await clients()).trim().split("\n").map(Number);
-          expect(controlPids).toHaveLength(1);
-          const identities = await Promise.all(controlPids.map(readProcessIdentity));
-          expect(identities.every((identity) => identity !== undefined)).toBe(true);
-          const waiting = client
-            .callTool({
-              name: "wait_for_text",
-              arguments: {
-                paneId,
-                cursor: seeded.cursor,
-                patterns: ["unprinted-eof-lifecycle-marker"],
-                timeoutMs: state === "active" ? 30_000 : 25,
-              },
-            })
-            .then(
-              (value) => ({ value }),
-              (error: unknown) => ({ error }),
-            );
-          if (state === "completed") {
-            const result = await waiting;
-            expect("value" in result).toBe(true);
-            if ("value" in result) {
-              expect(structured<{ outcome: string }>(result.value).outcome).toBe("timed_out");
-            }
-          } else {
-            expect(
-              (await client.callTool({ name: "get_server_info", arguments: {} })).isError,
-            ).not.toBe(true);
-          }
-          endInput();
-          expect(await boundedExit(exited), stderr()).toEqual({ code: 0, signal: null });
-          await waiting;
-          expect(await keeper()).toBe(before);
+  for (const state of ["active", "completed"] as const) {
+    testControl(
+      `${runtime} stdin EOF closes the ${state} live wait and preserves the keeper`,
+      async () => {
+        await withServer(async (fixture) => {
+          const keeper = async (): Promise<string> =>
+            (
+              await fixture.executeText([
+                "display-message",
+                "-p",
+                "-t",
+                "mcp",
+                "#{pid}\t#{session_id}\t#{window_id}\t#{pane_id}",
+              ])
+            ).stdout.join("\n");
+          const clients = async (): Promise<string> =>
+            (await fixture.executeText(["list-clients", "-F", "#{client_pid}"])).stdout.join("\n");
+          const before = await keeper();
+          expect(before.trim()).toMatch(/^\d+\t\$\d+\t@\d+\t%\d+$/u);
           expect((await clients()).trim()).toBe("");
-          expect(await Promise.all(controlPids.map(readProcessIdentity))).toEqual(
-            identities.map(() => undefined),
-          );
+          await withProgram(fixture, runtime, async ({ client, endInput, exited, stderr }) => {
+            const panes = structured<{ panes: readonly { id: string }[] }>(
+              await client.callTool({ name: "list_panes", arguments: { session: "mcp" } }),
+            ).panes;
+            expect(panes).toHaveLength(1);
+            const paneId = panes[0]?.id;
+            expect(paneId).toMatch(/^%\d+$/u);
+            const seeded = structured<{ cursor: string }>(
+              await client.callTool({ name: "capture_since", arguments: { paneId } }),
+            );
+            expect(seeded.cursor).toBeString();
+            const controlPids = (await clients()).trim().split("\n").map(Number);
+            expect(controlPids).toHaveLength(1);
+            const identities = await Promise.all(controlPids.map(readProcessIdentity));
+            expect(identities.every((identity) => identity !== undefined)).toBe(true);
+            const waiting = client
+              .callTool({
+                name: "wait_for_text",
+                arguments: {
+                  paneId,
+                  cursor: seeded.cursor,
+                  patterns: ["unprinted-eof-lifecycle-marker"],
+                  timeoutMs: state === "active" ? 30_000 : 25,
+                },
+              })
+              .then(
+                (value) => ({ value }),
+                (error: unknown) => ({ error }),
+              );
+            if (state === "completed") {
+              const result = await waiting;
+              expect("value" in result).toBe(true);
+              if ("value" in result) {
+                expect(structured<{ outcome: string }>(result.value).outcome).toBe("timed_out");
+              }
+            } else {
+              expect(
+                (await client.callTool({ name: "get_server_info", arguments: {} })).isError,
+              ).not.toBe(true);
+            }
+            endInput();
+            expect(await boundedExit(exited), stderr()).toEqual({ code: 0, signal: null });
+            await waiting;
+            expect(await keeper()).toBe(before);
+            expect((await clients()).trim()).toBe("");
+            expect(await Promise.all(controlPids.map(readProcessIdentity))).toEqual(
+              identities.map(() => undefined),
+            );
+          });
         });
-      });
-    },
-    15_000,
-  );
+      },
+      15_000,
+    );
+  }
 
   test.each([
     { name: "immediate EOF", script: "const { main } = await import(entry); await main();" },

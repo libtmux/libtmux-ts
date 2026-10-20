@@ -44,21 +44,16 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 describe("tmux capabilities", () => {
-  test("marks the break-pane quirk on 3.7 exactly, not on the releases that fixed it", () => {
-    const base = {
+  test("derives frozen capabilities that carry no per-release flags", () => {
+    const capabilities = deriveTmuxCapabilities({
       connectionAlias: alias("daemon-a"),
       daemon: { pid: "101", startTime: "202" },
       daemonEpoch: epoch(1),
-    };
-    const v37 = deriveTmuxCapabilities({ ...base, rawVersion: "3.7" });
-    const v37a = deriveTmuxCapabilities({ ...base, rawVersion: "3.7a" });
-    const v37b = deriveTmuxCapabilities({ ...base, rawVersion: "3.7b" });
+      rawVersion: "3.7",
+    });
 
-    expect(v37.quirks.breakPane37).toBe(true);
-    expect(v37a.quirks.breakPane37).toBe(false);
-    expect(v37b.quirks.breakPane37).toBe(false);
-    expect(Object.isFrozen(v37)).toBe(true);
-    expect(Object.isFrozen(v37.quirks)).toBe(true);
+    expect(Object.isFrozen(capabilities)).toBe(true);
+    expect(capabilities).not.toHaveProperty("quirks");
   });
 
   test("fingerprints version, identity, connection alias, and daemon epoch", () => {

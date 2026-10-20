@@ -202,6 +202,7 @@ server.
 - [tmux versions](#tmux-versions)
   - [`Server.version` and `versionAtLeast`: gate your own code](#serverversion-and-versionatleast-gate-your-own-code)
   - [`VersionTooLowError`: tmux older than 3.3a is refused](#versiontoolowerror-tmux-older-than-33a-is-refused)
+  - [Features above the floor](#features-above-the-floor)
 - [Consumers](#consumers)
 - [Packages](#packages)
   - [`@libtmux/mcp`: a tmux server for agents](#libtmuxmcp-a-tmux-server-for-agents)
@@ -1700,17 +1701,38 @@ MINIMUM_TMUX; // "3.3a"
 assertSupportedTmux("3.4"); // returns; throws VersionTooLowError below the floor
 ```
 
-One behaviour differs across the range rather than being gated: tmux 3.3a
-suppressed `run-shell` output for an invocation with no attached client, which
-later versions restored. [`runShell`][ref-server-runshell] returns an empty
-result there rather than failing.
+### Features above the floor
+
+Ordinary operations need tmux 3.3a on the running daemon. A feature that
+needs more refuses on an older daemon with `VersionTooLowError` before it
+sends anything, and the rest of the package keeps working there.
+
+| Feature                                                                          | Needs           | Below that                             |
+| -------------------------------------------------------------------------------- | --------------- | -------------------------------------- |
+| `watch`, `connect`, `withConnection`; the MCP server's live streams              | 3.7             | refused before any client attaches     |
+| `deleteBuffer`, a buffer rename, MCP `paste_text`                                | 3.4             | refused, no buffer touched             |
+| [`runShell`][ref-server-runshell] returning the command's output                 | 3.5             | refused; `cmd("run-shell", …)` runs it |
+| a layout string for `select-layout` that is not a preset or checksummed          | 3.4             | refused before it can crash tmux       |
+| `break-pane` without `-n`, or `-n` without `-P`, and names containing `:` or `.` | not exactly 3.7 | refused on 3.7 only                    |
+| `split-window -p`, as literal argv                                               | not exactly 3.4 | refused on 3.4 only                    |
+
+On an older tmux the MCP server answers a wait or a capture by reading the pane
+and types `run_shell_command`'s script instead of staging it; `paste_text`
+refuses with the version it needs.
+A polling wait runs `capture-pane` on every poll, so an `after-capture-pane`
+hook fires each time, and it joins wrapped rows as the stream does.
+
+Each refusal is tested against a daemon of the release it covers, with the
+sentinel session or buffer it must leave untouched, and against a release that
+allows it. Behaviour of a release that no CI lane builds is unverified.
 
 ## Consumers
 
 Three working consumers live in this repository:
 
 - [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
-  Its waits stream tmux's notifications rather than polling, and its
+  Its waits stream tmux's notifications on tmux 3.7 and later and poll the
+  pane on earlier releases, and its
   [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) frames what it sends so a pane's echo cannot be read as
   output.
 - [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.

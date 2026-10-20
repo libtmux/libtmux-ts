@@ -510,7 +510,9 @@ wait_for_text  paneId=%1  patterns=['Listening on']  timeoutMs=20000
 - A wait reports why it ended (`matched`, `timed_out`, `pane_died`,
   `cancelled`), with what the pane printed and a cursor to carry on from.
 - After a timeout, carry the returned cursor into the next capture. A
-  `pane_died` outcome means retrying cannot produce more output.
+  `pane_died` outcome means retrying cannot produce more output. A pane that
+  exits mid-wait ends it as `pane_died` on the stream and on the poll below
+  3.7 alike; `stream_lost` is for a stream that ended while its pane lives.
 - It discounts your own typing only briefly; see
   [Choosing the right tool](#choosing-the-right-tool).
 
@@ -780,6 +782,10 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   newer.
 - **Older tmux.** A server older than 3.3a is refused with a result that names
   the fix: upgrade tmux and restart the server, or pin the previous release.
+- **Features above the floor.** Live streaming (`LIBTMUX_MCP_LIVE`) needs tmux
+  3.7 and `paste_text` needs 3.4. On an older tmux, `paste_text` refuses with
+  the version it needs, `wait_for_text` and captures read the pane, and
+  `run_shell_command` reads the pane and types its script instead of staging it.
 - **Version check.** [`get_server_info`][tool-get_server_info] reports the
   running `version` and the `minimumVersion`.
 - **Platforms.** Runs on Linux, including WSL. macOS is supported on a best-effort

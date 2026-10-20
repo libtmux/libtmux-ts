@@ -1,7 +1,8 @@
 import type { JoinOptions } from "../../types.js";
 import type { IfShellOptions, RespawnOptions, RunShellOptions } from "../../types.js";
 import { PANE_DIRECTION_FLAG_MAP } from "../../constants.js";
-import { TmuxCommandError } from "../../errors.js";
+import { TmuxCommandError, VersionTooLowError } from "../../errors.js";
+import { workaroundApplies, workaroundFixedIn } from "../support/capabilities.js";
 import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { assertName } from "./names.js";
@@ -12,6 +13,17 @@ export async function runShell(
   command: string,
   options: RunShellOptions = {},
 ): Promise<readonly string[]> {
+  // tmux 3.3 through 3.4 send a clientless run-shell's output to a view-mode
+  // pane instead of the caller, so there is nothing to return.
+  const { tmuxVersion } = await runtime.capabilities.bind(options.signal);
+  if (workaroundApplies("run-shell-output-in-copy-mode", tmuxVersion)) {
+    throw new VersionTooLowError({
+      criteriaName: "captured run-shell output",
+      delivery: "not_started",
+      serverVersion: tmuxVersion.raw,
+      since: workaroundFixedIn("run-shell-output-in-copy-mode"),
+    });
+  }
   return runCommand(
     runtime,
     // `--` keeps a command starting with `-` from being read as one of
@@ -138,7 +150,12 @@ export async function breakPane(
   // print the window it made is what gives the rename something to target,
   // whether or not the break named a source pane.
   const renames =
-    windowName === undefined ? false : (await runtime.capabilities.bind()).quirks.breakPane37;
+    windowName === undefined
+      ? false
+      : workaroundApplies(
+          "break-pane-misnames-windows",
+          (await runtime.capabilities.bind()).tmuxVersion,
+        );
   // tmux takes the destination session from `-t`, and resolves an absent one to
   // whichever session is current — so a break with no target lands in the
   // attached session rather than the pane's own. An empty index after the colon

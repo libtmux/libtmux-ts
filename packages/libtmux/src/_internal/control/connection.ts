@@ -14,6 +14,7 @@ import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { isSessionId } from "../runtime/ids.js";
 import type { CommandTransport } from "../transport/types.js";
+import type { DaemonGuard } from "../../engine.js";
 import { LibTmuxError, VersionTooLowError } from "../../errors.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
@@ -105,6 +106,8 @@ type AttachmentState =
 /** One successfully attached control client generation. */
 export interface ControlObserverBinding {
   readonly clientPid: number;
+  /** The daemon whose version was checked just before this client attached, which spawned commands are fenced to. */
+  readonly daemon?: DaemonGuard;
 }
 
 /**
@@ -193,7 +196,8 @@ export class ControlConnection {
   readonly #observerCommands: CommandTransport | undefined;
 
   /** Run before every attach, so the daemon is judged before a client joins it. */
-  readonly #checkVersion: (() => Promise<unknown>) | undefined;
+  readonly #checkVersion: (() => Promise<DaemonGuard | undefined>) | undefined;
+  #checkedDaemon: DaemonGuard | undefined;
 
   /**
    * @param streamEndsConnection
@@ -208,7 +212,7 @@ export class ControlConnection {
     streamEndsConnection = true,
     observerCommands?: CommandTransport,
     spawnChild?: ControlChildSpawner,
-    checkVersion?: () => Promise<unknown>,
+    checkVersion?: () => Promise<DaemonGuard | undefined>,
   ) {
     this.#observerCommands = observerCommands;
     this.#checkVersion = checkVersion;
@@ -302,8 +306,9 @@ export class ControlConnection {
       return;
     }
     checkVersion().then(
-      () => {
+      (daemon) => {
         if (this.#closed) return;
+        this.#checkedDaemon = daemon;
         try {
           this.#openChild();
         } catch (error) {
@@ -551,7 +556,10 @@ export class ControlConnection {
 
     // A reconnect is usable only after tmux accepts the attach and restores
     // the observer's flow-control flag on the replacement client.
-    this.#observerBinding = Object.freeze({ clientPid: child.pid });
+    this.#observerBinding = Object.freeze({
+      clientPid: child.pid,
+      ...(this.#checkedDaemon === undefined ? {} : { daemon: this.#checkedDaemon }),
+    });
     const attachment = this.#attachment;
     if (attachment.kind === "pending") {
       this.#attachment = { kind: "attached" };
@@ -984,7 +992,7 @@ export function watchServer(
   connection: TmuxConnection,
   options: WatchOptions | undefined,
   commands: CommandTransport,
-  checkVersion?: () => Promise<unknown>,
+  checkVersion?: () => Promise<DaemonGuard | undefined>,
 ): TmuxEventStream {
   return new ControlConnection(
     connection,

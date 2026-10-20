@@ -42,6 +42,8 @@ interface TypeScriptConfig {
 
 const expectedScripts = {
   build: "bun run generate:check && rm -rf dist && tsc -p tsconfig.build.json",
+  capabilities: "bun scripts/emit-capabilities.ts --write",
+  "capabilities:check": "bun scripts/emit-capabilities.ts --check",
   format: "oxfmt --write .",
   "format:check": "oxfmt --check .",
   generate: "bun scripts/generate-formats.ts --write",
