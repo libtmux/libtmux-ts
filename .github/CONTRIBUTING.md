@@ -211,9 +211,8 @@ in their one `typecheck`.
 
 `packages/mcp` and `packages/workspace` each run `typecheck`, `test` and
 `test:package`. `packages/workspace-cli` runs `typecheck`, `test`, and
-`test:install`. Its installed-package suite uses Node 22 and Bun; `test:package`
-runs the portable package checks on macOS. CLI completion tests require bash,
-fish, and zsh. CI provisions an isolated `tmuxp==1.74.0` runtime for optional
+`test:install`. Its installed-package suite uses Node 22 and Bun. CLI
+completion tests require bash, fish, and zsh. CI provisions an isolated `tmuxp==1.74.0` runtime for optional
 Python extension tests through `LIBTMUX_TEST_PYTHON` and `TMUX_WORKSPACE_PYTHON`.
 The native commands do not need Python. `examples` runs `typecheck` and `test`:
 every example is a
@@ -356,18 +355,17 @@ should look for a Node itself.
 
 ## Platforms
 
-CI builds, packs, installs, and evaluates every emitted package on macOS. The
-library transport itself uses neither `/proc` nor pidfd:
-`node_spawn_transport.ts` escalates SIGTERM to SIGKILL and force-settles a
-process whose descendants hold the pipe.
+macOS is supported on a best-effort basis, and CI coverage for it is highly
+limited: CI runs no macOS job. The library transport itself uses neither
+`/proc` nor pidfd: `node_spawn_transport.ts` escalates SIGTERM to SIGKILL and
+force-settles a process whose descendants hold the pipe.
 
 The supervisor in `src/_internal/test/run_root.ts` is the Linux part: process
 identity is `linux:<boot id>:<start time>`, read from `/proc`. The real-tmux,
 cancellation, and process-ownership suites therefore run on Linux only, and
-that includes WSL, where the whole suite runs. On macOS CI stops at the package
-checks until that supervisor is ported. `preflight.ts` says which requirement
-is missing instead of letting a checkout discover it as ENOENT from a file
-nobody mentioned.
+that includes WSL, where the whole suite runs. `preflight.ts` says which
+requirement is missing instead of letting a checkout discover it as ENOENT
+from a file nobody mentioned.
 
 ## Releasing
 

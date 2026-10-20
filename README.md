@@ -80,8 +80,8 @@ Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.3a or newer.
   [`VersionTooLowError`][ref-versiontoolowerror] before any command takes effect.
 - A client reporting a newer release does not change that.
 
-Runs on Linux, including WSL. On macOS, CI builds and installs the packages,
-but the real-tmux test suites run on Linux only.
+Runs on Linux, including WSL. macOS is supported on a best-effort basis,
+and CI coverage for it is highly limited.
 
 ```ts
 import { Server } from "libtmux";

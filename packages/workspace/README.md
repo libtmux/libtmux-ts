@@ -66,8 +66,8 @@ $ yarn add --exact @libtmux/workspace@0.1.0-alpha.13 libtmux@0.1.0-alpha.13
 
 Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
 
-Runs on Linux, including WSL. On macOS, CI builds and installs the packages,
-but the real-tmux test suites run on Linux only.
+Runs on Linux, including WSL. macOS is supported on a best-effort basis,
+and CI coverage for it is highly limited.
 
 This builds a session called `api` with two windows, or converges it when it
 already exists:

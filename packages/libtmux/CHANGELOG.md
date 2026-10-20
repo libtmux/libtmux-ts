@@ -34,6 +34,13 @@ remember.
 
 ## Unreleased
 
+### Development
+
+CI no longer runs macOS. The `macOS package canary` job is removed from
+`typescript.yml`, and the READMEs and `CONTRIBUTING.md` now say that macOS is
+supported on a best-effort basis and that CI coverage for it is highly
+limited. (#88)
+
 ## 0.1.0-alpha.13 (2026-10-18)
 
 ### `libtmux`
