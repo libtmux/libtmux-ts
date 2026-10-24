@@ -160,11 +160,12 @@ describe("optional features on this tmux", () => {
     await server.cmd("run-shell", ["true"], { target: null });
   });
 
-  // With an attached xterm-256color client, 3.3a stops on refresh-client -l; the
-  // refusal comes before dispatch, so the fixture needs no client.
+  // With an attached xterm-256color client, 3.3a stops on refresh-client -l, and
+  // 3.4 through 3.6 stop when that client leaves before its terminal answers;
+  // the refusal comes before dispatch, so the fixture needs no client.
   test("a clipboard query never reaches a tmux that stops on it", async () => {
     const { server } = await fixture();
-    if (tmuxAtLeast("3.4")) {
+    if (tmuxAtLeast("3.6a")) {
       // With no client attached tmux reports that there is no current client.
       expect(
         await failure(() => server.cmd("refresh-client", ["-l"], { target: null })),

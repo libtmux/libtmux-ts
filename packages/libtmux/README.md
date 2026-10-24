@@ -1715,7 +1715,7 @@ sends anything, and the rest of the package keeps working there.
 | a layout string for `select-layout` that is not a preset or checksummed          | 3.4             | refused before it can crash tmux       |
 | `break-pane` without `-n`, or `-n` without `-P`, and names containing `:` or `.` | not exactly 3.7 | refused on 3.7 only                    |
 | `split-window -p`, as literal argv                                               | not exactly 3.4 | refused on 3.4 only                    |
-| `refresh-client -l`, as literal argv                                             | 3.4             | refused before it can stop tmux        |
+| `refresh-client -l`, as literal argv                                             | 3.6a            | refused before it can stop tmux        |
 
 On an older tmux the MCP server answers a wait or a capture by reading the pane
 and types `run_shell_command`'s script instead of staging it; `paste_text`

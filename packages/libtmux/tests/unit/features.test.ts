@@ -104,7 +104,7 @@ describe("feature guards", () => {
     });
   });
 
-  test("refresh-client -l is refused below 3.4, spelled any way", () => {
+  test("refresh-client -l is refused below 3.6a, spelled any way", () => {
     for (const command of [
       ["refresh-client", "-l"],
       ["refresh", "-l"],
@@ -112,8 +112,10 @@ describe("feature guards", () => {
       ["refresh-client", "-Sl"],
       ["refresh-client", "-l%1"],
     ] as const) {
-      expect(() => guard("3.3a", command)).toThrow(VersionTooLowError);
-      for (const version of ["3.4", "3.5a", "3.7c", "3.8", "next-3.9"]) guard(version, command);
+      for (const version of ["3.3a", "3.4", "3.5", "3.5a", "3.6"]) {
+        expect(() => guard(version, command)).toThrow(VersionTooLowError);
+      }
+      for (const version of ["3.6a", "3.6b", "3.7c", "3.8", "next-3.9"]) guard(version, command);
     }
     guard("3.3a", ["refresh-client", "-S"]);
     guard("3.3a", ["refresh-client", "-t", "-l"]);

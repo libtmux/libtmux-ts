@@ -187,7 +187,8 @@ export function guardFeatures(running: TmuxVersion, commands: readonly TmuxComma
       throw requires("renaming a buffer", "buffer-rename", running);
     }
     // tmux 3.3a stops when it asks an attached xterm-256color or tmux-256color
-    // terminal for its clipboard.
+    // terminal for its clipboard, and 3.4 through 3.6 stop when that client
+    // leaves before its terminal answers.
     if (
       name === "refresh-client" &&
       lacks("clipboard-query") &&
