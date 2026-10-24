@@ -36,6 +36,15 @@ remember.
 
 ## Unreleased
 
+### Documentation
+
+- The features table in the package README states that the guard reads each
+  command's own argv, so a refused command nested in `if-shell`,
+  `run-shell -C`, a brace block, a hook or a key binding is sent as written. It
+  lists the affected commands and releases and advises naming every
+  `break-pane` on tmux 3.7 or upgrading to 3.7a. The `refresh-client -l` row
+  links tmux 3.6a's `CHANGES`. (#99)
+
 ## 0.1.0-alpha.15 (2026-10-24)
 
 ### `libtmux`

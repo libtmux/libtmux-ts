@@ -1715,13 +1715,38 @@ sends anything, and the rest of the package keeps working there.
 | a layout string for `select-layout` that is not a preset or checksummed          | 3.4             | refused before it can crash tmux       |
 | `break-pane` without `-n`, or `-n` without `-P`, and names containing `:` or `.` | not exactly 3.7 | refused on 3.7 only                    |
 | `split-window -p`, as literal argv                                               | not exactly 3.4 | refused on 3.4 only                    |
-| `refresh-client -l`, as literal argv                                             | 3.6a            | refused before it can stop tmux        |
+| `refresh-client -l`, as literal argv ([why 3.6a][tmux-3-6a-changes])             | 3.6a            | refused before it can stop tmux        |
 
 On an older tmux the MCP server answers a wait or a capture by reading the pane
 and types `run_shell_command`'s script instead of staging it; `paste_text`
 refuses with the version it needs.
 A polling wait runs `capture-pane` on every poll, so an `after-capture-pane`
 hook fires each time, and it joins wrapped rows as the stream does.
+
+The guard reads each command's own argv. A command carried inside a string that
+tmux parses itself is sent as written: the body of `if-shell`, the argument of
+`run-shell -C`, a brace block, a hook, a key binding or a sourced file. These
+are the refused commands, the releases they affect, and what happens there:
+
+- `break-pane` without `-n`: exact tmux 3.7 only. The server exits. tmux 3.7a
+  fixes it ([`CHANGES`](https://github.com/tmux/tmux/blob/3.7a/CHANGES#L3),
+  [the inverted name test in 3.7](https://github.com/tmux/tmux/blob/3.7/cmd-break-pane.c#L117-L124)).
+- `select-layout` with a string tmux cannot parse: tmux 3.3 and 3.3a. The server
+  exits. 3.4 answers "invalid layout".
+- `refresh-client -l`: below 3.6a, and only with an attached client. The server
+  exits on 3.3a when the client's terminal does not answer, and on 3.4 to 3.6
+  when the client leaves before it answers.
+- `delete-buffer -b NAME`, and `set-buffer -b NAME -n`: below 3.4. No crash; a
+  name that does not exist acts on the newest buffer instead, so the wrong
+  buffer is deleted or renamed.
+- `split-window -p`: exactly 3.4. tmux answers "size missing" and changes
+  nothing.
+- Names containing `:` or `.`: exactly 3.7. tmux answers "invalid window name"
+  and changes nothing.
+
+On exact tmux 3.7, name every `break-pane`, nested or not, and upgrade to 3.7a.
+The [default `prefix !` binding](https://github.com/tmux/tmux/blob/3.7/key-bindings.c#L358)
+is itself a nameless `break-pane`, which no library check can reach.
 
 Each refusal is tested against a daemon of the release it covers, with the
 sentinel session or buffer it must leave untouched, and against a release that
@@ -1948,6 +1973,7 @@ MIT
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
 [ref-server-raiseifdead]: https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/
 [ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
+[tmux-3-6a-changes]: https://github.com/tmux/tmux/blob/3.6a/CHANGES#L21
 [ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/
 [ref-server-sessions]: https://libtmux.org/en/ts/latest/reference/server-server-sessions/
 [ref-server-sethook]: https://libtmux.org/en/ts/latest/reference/server-server-sethook/

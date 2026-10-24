@@ -188,7 +188,9 @@ export function guardFeatures(running: TmuxVersion, commands: readonly TmuxComma
     }
     // tmux 3.3a stops when it asks an attached xterm-256color or tmux-256color
     // terminal for its clipboard, and 3.4 through 3.6 stop when that client
-    // leaves before its terminal answers.
+    // leaves before its terminal answers. tmux 3.6a's CHANGES lists "Newer
+    // libevents do not allow event_del on a zero'd event (issue 4706)":
+    // https://github.com/tmux/tmux/blob/3.6a/CHANGES#L21
     if (
       name === "refresh-client" &&
       lacks("clipboard-query") &&

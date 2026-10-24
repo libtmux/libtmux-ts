@@ -129,6 +129,15 @@ describe("feature guards", () => {
     guard("3.5", ["split-window", "-p", "40"]);
   });
 
+  test("a refused command nested in a string is sent as written", () => {
+    // The guard reads each command's own argv, so tmux parses these itself.
+    guard("3.7", ["if-shell", "-F", "1", "break-pane -d"]);
+    guard("3.5", ["run-shell", "-C", "refresh-client -l"]);
+    // Control: the same commands as their own argv are refused.
+    expect(() => guard("3.7", ["break-pane", "-d"])).toThrow(TmuxTransportError);
+    expect(() => guard("3.5", ["refresh-client", "-l"])).toThrow(VersionTooLowError);
+  });
+
   test("an abbreviation that is ambiguous is not mistaken for a guarded command", () => {
     guard("3.3a", ["d", "-b", "x"], ["set", "-b", "x", "-n", "y"]);
   });
