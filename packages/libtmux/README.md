@@ -1643,9 +1643,9 @@ pane moves, so the session is resolved through `$TMUX_PANE`.
 
 ## tmux versions
 
-The package targets the same range as the Python library, and the format
-registry withholds newer fields from an older server, so each version is asked
-only for the fields it has.
+The package supports tmux 3.3a and newer, and the format registry withholds
+newer fields from an older server, so each version is asked only for the fields
+it has.
 
 ### [`Server.version`][ref-server-version] and [`versionAtLeast`][ref-server-versionatleast]: gate your own code
 
