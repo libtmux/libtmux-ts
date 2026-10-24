@@ -7,7 +7,7 @@
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@types/bun": "1.4.2",
-        "@types/node": "22.20.4",
+        "@types/node": "22.20.5",
         "oxfmt": "0.74.0",
         "oxlint": "1.89.0",
         "oxlint-tsgolint": "7.0.2004",
@@ -95,7 +95,7 @@
       "version": "0.1.0-alpha.15",
       "devDependencies": {
         "@types/bun": "1.4.2",
-        "@types/node": "22.20.4",
+        "@types/node": "22.20.5",
         "knip": "6.42.1",
         "oxfmt": "0.74.0",
         "oxlint": "1.89.0",
@@ -114,7 +114,7 @@
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.32.1",
-        "libtmux": "0.1.0-alpha.12",
+        "libtmux": "0.1.0-alpha.15",
         "zod": "4.6.7",
       },
     },
@@ -150,7 +150,7 @@
     },
   },
   "overrides": {
-    "@types/node": "22.20.4",
+    "@types/node": "22.20.5",
   },
   "packages": {
     "@andrewbranch/untar.js": ["@andrewbranch/untar.js@1.0.4", "", {}, "sha512-pVXSwPsLuw8IGLo2Di0EaOfsk+ntVvpkk942J/sHYIkwvtKUakEcPh7HBgZ6tuimgzKSEHgCvO4XgQ05DEbwDw=="],
@@ -421,7 +421,7 @@
 
     "@types/estree": ["@types/estree@1.0.9", "", {}, "sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg=="],
 
-    "@types/node": ["@types/node@22.20.4", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-zJRE40jpHtKqE/C4fgHrAKQLJuSpzEnP9ff9Y7YtoR3Wd2pwqzlekDeEuUQXjRd+QCYnVnNwuJYmhdk9XV8gvA=="],
+    "@types/node": ["@types/node@22.20.5", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA=="],
 
     "@typescript/typescript-aix-ppc64": ["@typescript/typescript-aix-ppc64@7.0.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ=="],
 
