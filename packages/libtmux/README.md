@@ -1973,7 +1973,6 @@ MIT
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
 [ref-server-raiseifdead]: https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/
 [ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
-[tmux-3-6a-changes]: https://github.com/tmux/tmux/blob/3.6a/CHANGES#L21
 [ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/
 [ref-server-sessions]: https://libtmux.org/en/ts/latest/reference/server-server-sessions/
 [ref-server-sethook]: https://libtmux.org/en/ts/latest/reference/server-server-sethook/
@@ -2022,6 +2021,7 @@ MIT
 [ref-window-unlink]: https://libtmux.org/en/ts/latest/reference/window-window-unlink/
 [ref-windowdirection]: https://libtmux.org/en/ts/latest/reference/constants-windowdirection/
 [ref-windowwhere]: https://libtmux.org/en/ts/latest/reference/selection-windowwhere/
+[tmux-3-6a-changes]: https://github.com/tmux/tmux/blob/3.6a/CHANGES#L21
 [topic-environment]: https://libtmux.org/en/ts/latest/topics/environment/
 [topic-errors]: https://libtmux.org/en/ts/latest/topics/errors-and-exceptions/
 [topic-options-and-hooks]: https://libtmux.org/en/ts/latest/topics/options-and-hooks/
