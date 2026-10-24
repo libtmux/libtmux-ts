@@ -154,7 +154,7 @@ export const CAPABILITIES: readonly CapabilityRecord[] = [
     id: "clipboard-query",
     name: "Clipboard query",
     summary: "Ask an attached client's terminal for its clipboard with refresh-client -l.",
-    since: "3.4",
+    since: "3.6a",
     handling: "refuse",
     error: "errors.VersionTooLowError",
     apis: ["server.Server.cmd", "server.Server.pipeline", "server.Server.batch"],
