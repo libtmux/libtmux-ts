@@ -177,7 +177,7 @@
     "oxlint-tsgolint": "7.0.2004",
     "typescript": "7.0.2",
     "typescript-floor": "npm:typescript@5.7.3",
-    "vitest": "5.0.4",
+    "vitest": "5.0.5",
     "zod": "4.6.7"
   },
   "engines": {
