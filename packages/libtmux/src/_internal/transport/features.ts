@@ -186,6 +186,15 @@ export function guardFeatures(running: TmuxVersion, commands: readonly TmuxComma
     if (name === "set-buffer" && lacks("buffer-rename") && parse(args, "bnt").flags.has("n")) {
       throw requires("renaming a buffer", "buffer-rename", running);
     }
+    // tmux 3.3a stops when it asks an attached xterm-256color or tmux-256color
+    // terminal for its clipboard.
+    if (
+      name === "refresh-client" &&
+      lacks("clipboard-query") &&
+      parse(args, "ABCFft").flags.has("l")
+    ) {
+      throw requires("asking a terminal for its clipboard", "clipboard-query", running);
+    }
     if (name === "select-layout" && lacks("layout-without-checksum")) {
       const { flags, positionals } = parse(args, "t");
       const layout = positionals[0];

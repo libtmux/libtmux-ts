@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
+import { TmuxCommandError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 import { Server } from "../../src/server.js";
 import { controlSupported, tmuxAtLeast, tmuxRelease } from "../support/tmux_release.js";
@@ -158,6 +158,26 @@ describe("optional features on this tmux", () => {
     );
     // Running without the output stays available.
     await server.cmd("run-shell", ["true"], { target: null });
+  });
+
+  // With an attached xterm-256color client, 3.3a stops on refresh-client -l; the
+  // refusal comes before dispatch, so the fixture needs no client.
+  test("a clipboard query never reaches a tmux that stops on it", async () => {
+    const { server } = await fixture();
+    if (tmuxAtLeast("3.4")) {
+      // With no client attached tmux reports that there is no current client.
+      expect(
+        await failure(() => server.cmd("refresh-client", ["-l"], { target: null })),
+      ).toBeInstanceOf(TmuxCommandError);
+      return;
+    }
+    for (const name of ["refresh-client", "refresh", "refresh-c"]) {
+      // eslint-disable-next-line no-await-in-loop -- each refusal is checked against the same server.
+      expect(await failure(() => server.cmd(name, ["-l"], { target: null }))).toBeInstanceOf(
+        VersionTooLowError,
+      );
+    }
+    expect(await server.isAlive()).toBe(true);
   });
 
   test("an unreadable layout never reaches a tmux that crashes on it", async () => {

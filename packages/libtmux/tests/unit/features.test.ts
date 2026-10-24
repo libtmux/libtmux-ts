@@ -104,6 +104,21 @@ describe("feature guards", () => {
     });
   });
 
+  test("refresh-client -l is refused below 3.4, spelled any way", () => {
+    for (const command of [
+      ["refresh-client", "-l"],
+      ["refresh", "-l"],
+      ["refresh-c", "-t", "/dev/pts/1", "-l"],
+      ["refresh-client", "-Sl"],
+      ["refresh-client", "-l%1"],
+    ] as const) {
+      expect(() => guard("3.3a", command)).toThrow(VersionTooLowError);
+      for (const version of ["3.4", "3.5a", "3.7c", "3.8", "next-3.9"]) guard(version, command);
+    }
+    guard("3.3a", ["refresh-client", "-S"]);
+    guard("3.3a", ["refresh-client", "-t", "-l"]);
+  });
+
   test("split-window -p is refused on 3.4 only", () => {
     expect(() => guard("3.4", ["split-window", "-p", "40"])).toThrow(TmuxTransportError);
     expect(() => guard("3.4", ["splitw", "-hp40"])).toThrow(TmuxTransportError);
