@@ -156,8 +156,8 @@ both commands and notifications, so a wait costs nothing while nothing happens.
   marker cannot appear in what it typed, and it reports the real exit status.
 - **A wait that fails is still an answer.** A wait such as
   [`wait_for_text`][tool-wait_for_text] reports why it ended (`matched`,
-  `timed_out`, `pane_died`, `cancelled`), what the pane printed, and a cursor to
-  carry on from.
+  `timed_out`, `pane_died`, `cancelled`, `output_lost`, `stream_lost`), what the
+  pane printed, and a cursor to carry on from.
 - **Reading twice costs less than reading once.**
   [`capture_since`][tool-capture_since] returns a cursor; pass it back and you
   pay only for what arrived since.
@@ -508,7 +508,8 @@ wait_for_text  paneId=%1  patterns=['Listening on']  timeoutMs=20000
 ```
 
 - A wait reports why it ended (`matched`, `timed_out`, `pane_died`,
-  `cancelled`), with what the pane printed and a cursor to carry on from.
+  `cancelled`, `output_lost`, `stream_lost`), with what the pane printed and a
+  cursor to carry on from.
 - After a timeout, carry the returned cursor into the next capture. A
   `pane_died` outcome means retrying cannot produce more output. A pane that
   exits mid-wait ends it as `pane_died` on the stream and on the poll below

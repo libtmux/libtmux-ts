@@ -98,8 +98,10 @@ error: it is clamped, and every result reports the `effectiveTimeoutMs` it
 actually used. The command timeout is capped at JavaScript's timer range.
 
 **A wait that fails is still an answer.** Every wait reports why it ended —
-`matched`, `timed_out`, `pane_died`, `cancelled` — along with everything the
-pane printed, what it shows now, and a cursor to carry on from.
+`matched`, `timed_out`, `pane_died`, `cancelled`, `output_lost`,
+`stream_lost` — along with everything the pane printed, what it shows now, and
+a cursor to carry on from. A wait that cannot start, because the server has no
+live stream, is a tool error with a hint, not an outcome.
 
 There is no result that leaves an agent with nothing but "no". Cancel the
 request and the wait stops there and then, rather than holding its connection
