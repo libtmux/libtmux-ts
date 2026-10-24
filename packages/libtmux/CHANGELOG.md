@@ -35,6 +35,12 @@ remember.
 
 ## Unreleased
 
+### `libtmux`
+
+- A literal `refresh-client -l` needs tmux 3.4 and refuses with
+  `VersionTooLowError` on an older daemon. On 3.3a, asking an attached
+  terminal for its clipboard stops the server. (#92)
+
 ## 0.1.0-alpha.14 (2026-10-20)
 
 ### Development
