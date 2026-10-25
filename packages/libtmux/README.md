@@ -45,9 +45,10 @@ Runs on Linux, including WSL. macOS is supported on a best-effort basis,
 and CI coverage for it is highly limited.
 
 > [!WARNING]
-> **Alpha.** The API can change between alpha releases without a deprecation
-> cycle, and is not covered by semantic versioning until `0.1.0`. Pin an exact
-> version, and read the [changelog](CHANGELOG.md) before you upgrade.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+> settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
+> Read the [changelog](CHANGELOG.md) before you upgrade.
 
 **Contents** — [Quick start](#quick-start) ·
 [Read what tmux holds](#read-what-tmux-holds) ·
@@ -1882,9 +1883,10 @@ libtmux 0.62.0:
 
 ## Support and status
 
-Any alpha release can change or remove exported identifiers without a
-deprecation cycle, so pin an exact version and read the
-[changelog](CHANGELOG.md) before you upgrade.
+Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+settled: any release may change or remove exported identifiers, and the
+changelog marks each break. Pin an exact version to avoid one.
+Read the [changelog](CHANGELOG.md) before you upgrade.
 
 - **No runtime dependencies.** The package installs a tmux client and nothing
   else. A small internal validator checks tmux's own output.

@@ -30,9 +30,9 @@ Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#r
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
-> **Alpha.** Prerelease software: the config shape and the exported functions
-> can change between alpha releases without a deprecation cycle. Pin an exact
-> version.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+> settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 This repository's README checks compile each `ts` example on this page and run
 it against a real tmux server. The CLI package's README test runs the
@@ -410,9 +410,10 @@ $ bun test examples/workspace
   [`parseWorkspaceYaml`][wsref-parseworkspaceyaml] needs Bun's YAML parser.
 - **tmux.** 3.3a or newer. JSON layouts need 3.8 or newer.
 - **Dependencies.** `zod` at runtime. `libtmux` is a peer dependency pinned to
-  the same alpha release.
-- **Releases.** Alpha. Pin an exact version; the config shape and the exported
-  functions can change between alpha releases.
+  the same release.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+  settled: any release may change or remove exported identifiers, and the
+  changelog marks each break. Pin an exact version to avoid one.
 
 ## See also
 

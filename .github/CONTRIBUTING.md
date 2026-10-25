@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for looking. This is alpha software and the API is still moving, so the
+Thanks for looking. The API is still moving, so the
 most useful contributions right now are bug reports with a reproduction, and
 notes on where the documentation misled you.
 
@@ -90,8 +90,8 @@ doc comments that implement it, and `docs/criteria.md` from the table the query
 compiler matches against. Neither is edited by hand. The prose around
 the snippets is checked too — `docs:links` resolves every relative link and
 `#anchor` in every tracked Markdown file, `docs:claims` holds the ` ```console `
-blocks to paths and packages that exist, requires public install examples to
-pin prerelease packages exactly, and pins any tmux badge to the CI matrix.
+blocks to paths and packages that exist, requires public install examples that
+name a prerelease to pin it exactly, and pins any tmux badge to the CI matrix.
 `docs:runnable` requires a block marked
 
 ```
@@ -370,9 +370,12 @@ from a file nobody mentioned.
 ## Releasing
 
 A release is a tag, and the tag is refused unless every manifest agrees with
-it. A stable release uses `latest`. A prerelease uses `latest` until a stable
-version has held that tag; later prereleases use their first identifier, such
-as `alpha` in `1.1.0-alpha.1`. The credentialed workflow accepts only `v*` tag
+it. Releases are numbered `0.1.N`: `0.1.0`, then `0.1.1`, `0.1.2` and so on,
+each tagged `v0.1.N` and published to `latest`. No release carries an `-alpha`
+or other prerelease tag unless the maintainer asks for one. A prerelease
+requested that way uses `latest` until a stable version has held that tag;
+later prereleases use their first identifier, such as `rc` in
+`0.1.5-rc.1`. The credentialed workflow accepts only `v*` tag
 pushes and waits for that commit to pass the full Bun, Node, tmux, and package
 matrix. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
 locally to use its dry-run mode without an npm identity.
@@ -391,8 +394,8 @@ A package the registry does not hold yet carries `firstPublication` in
 Only a structured package-level 404 for a declared package is admitted; registry
 errors and missing established packages still stop the release. The first
 publication must use the coordinated `latest` channel: either a prerelease
-before the first stable release, or a stable version. Bootstrapping into `alpha`
-or another later prerelease channel is refused before any publication. Once the
+before the first stable release, or a stable version. Bootstrapping into a
+later prerelease channel is refused before any publication. Once the
 target exists, a retry requires the same tarball integrity and intended tag.
 
 Choose a new coordinated version and complete the package and install gates
@@ -418,19 +421,23 @@ publishing authenticates `npm publish`, not `npm dist-tag add`, so a matching
 artifact with the wrong tag also stops with a manual-repair diagnostic instead
 of adding a long-lived token to the workflow.
 
-### Stable release gate
+### Release policy
 
-`0.1.0` is a coordinated release of every release package. Cut it only when:
+Each release is a coordinated `0.1.N` release of every release package. The
+maintainer decides when to cut one, and no release-candidate soak precedes it.
+Before tagging, check that:
 
 - no known P0 or P1 correctness or security finding remains;
 - both Bun versions, Node 22 package consumers, every advertised tmux version,
   and the pinned Python differential suite pass from packed artifacts;
 - real-tmux cancellation and process ownership pass on each advertised host
-  platform, or the platform contract names the narrower set;
+  platform, or the platform contract names the narrower set; and
 - the published declaration graph, examples, and install canaries cover all
-  release packages; and
-- one release candidate has spent 30 days in production-like use without a new
-  P0 or P1 finding.
+  release packages.
+
+The API is not settled, so any release may change or remove exported
+identifiers. The changelog marks each break, and the README tells readers to
+pin an exact version.
 
 The packages keep one release number. A tag names the tested state of the
 library, MCP server, workspace builder, and workspace CLI together.

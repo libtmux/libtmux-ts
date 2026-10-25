@@ -287,7 +287,7 @@ Tables, badges, and links are fine everywhere.
 
 GitHub alert blocks — `> [!NOTE]`, `> [!WARNING]` — render as literal text
 outside GitHub, so reserve them for at most one load-bearing warning per
-document. The alpha warning in the root README is that one. Write the sentence
+document. The release warning in the root README is that one. Write the sentence
 so it carries the fact on its own, and a renderer that drops the marker loses
 nothing.
 
