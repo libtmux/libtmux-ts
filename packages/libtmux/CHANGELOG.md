@@ -41,9 +41,14 @@ remember.
 - The features table in the package README states that the guard reads each
   command's own argv, so a refused command nested in `if-shell`,
   `run-shell -C`, a brace block, a hook or a key binding is sent as written. It
-  lists the affected commands and releases and advises naming every
-  `break-pane` on tmux 3.7 or upgrading to 3.7a. The `refresh-client -l` row
-  links tmux 3.6a's `CHANGES`. (#99)
+  lists the affected commands and releases. The `refresh-client -l` row links
+  tmux 3.6a's `CHANGES`. (#99)
+- The nested-command list adds `break-pane -n NAME` without `-P` on tmux 3.7,
+  where tmux ignores the name. The advice for 3.7 now covers only a nested or
+  key-bound `break-pane`, since the guard refuses the direct forms: name it, or
+  upgrade to 3.7a. (#101)
+- The "tmux versions" section states the package's own range, tmux 3.3a and
+  newer, instead of pointing at the Python library's. (#101)
 
 ## 0.1.0-alpha.15 (2026-10-24)
 

@@ -1643,9 +1643,9 @@ pane moves, so the session is resolved through `$TMUX_PANE`.
 
 ## tmux versions
 
-The package targets the same range as the Python library, and the format
-registry withholds newer fields from an older server, so each version is asked
-only for the fields it has.
+The package supports tmux 3.3a and newer, and the format registry withholds
+newer fields from an older server, so each version is asked only for the fields
+it has.
 
 ### [`Server.version`][ref-server-version] and [`versionAtLeast`][ref-server-versionatleast]: gate your own code
 
@@ -1741,11 +1741,16 @@ are the refused commands, the releases they affect, and what happens there:
   buffer is deleted or renamed.
 - `split-window -p`: exactly 3.4. tmux answers "size missing" and changes
   nothing.
+- `break-pane -n NAME` without `-P`: exactly 3.7. No crash; tmux accepts the
+  command and ignores the name, so the window keeps its default name.
 - Names containing `:` or `.`: exactly 3.7. tmux answers "invalid window name"
   and changes nothing.
 
-On exact tmux 3.7, name every `break-pane`, nested or not, and upgrade to 3.7a.
-The [default `prefix !` binding](https://github.com/tmux/tmux/blob/3.7/key-bindings.c#L358)
+On exact tmux 3.7 the guard refuses a direct `break-pane` that has no `-n` and
+a direct `break-pane -n NAME` that has no `-P`. It accepts `break-pane -n NAME
+-P`, which is the supported spelling. Only a nested or key-bound `break-pane`
+reaches tmux without that check, so give each of those a name, or upgrade to
+3.7a. The [default `prefix !` binding](https://github.com/tmux/tmux/blob/3.7/key-bindings.c#L358)
 is itself a nameless `break-pane`, which no library check can reach.
 
 Each refusal is tested against a daemon of the release it covers, with the
@@ -1973,7 +1978,6 @@ MIT
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
 [ref-server-raiseifdead]: https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/
 [ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
-[tmux-3-6a-changes]: https://github.com/tmux/tmux/blob/3.6a/CHANGES#L21
 [ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/
 [ref-server-sessions]: https://libtmux.org/en/ts/latest/reference/server-server-sessions/
 [ref-server-sethook]: https://libtmux.org/en/ts/latest/reference/server-server-sethook/
@@ -2022,6 +2026,7 @@ MIT
 [ref-window-unlink]: https://libtmux.org/en/ts/latest/reference/window-window-unlink/
 [ref-windowdirection]: https://libtmux.org/en/ts/latest/reference/constants-windowdirection/
 [ref-windowwhere]: https://libtmux.org/en/ts/latest/reference/selection-windowwhere/
+[tmux-3-6a-changes]: https://github.com/tmux/tmux/blob/3.6a/CHANGES#L21
 [topic-environment]: https://libtmux.org/en/ts/latest/topics/environment/
 [topic-errors]: https://libtmux.org/en/ts/latest/topics/errors-and-exceptions/
 [topic-options-and-hooks]: https://libtmux.org/en/ts/latest/topics/options-and-hooks/
