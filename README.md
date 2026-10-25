@@ -53,22 +53,22 @@ then query it like data.
 ## Quickstart
 
 ```console
-$ bun add --exact libtmux@0.1.0-alpha.15
+$ bun add libtmux
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i --save-exact libtmux@0.1.0-alpha.15
+$ npm i libtmux
 ```
 
 ```console
-$ pnpm add --save-exact libtmux@0.1.0-alpha.15
+$ pnpm add libtmux
 ```
 
 ```console
-$ yarn add --exact libtmux@0.1.0-alpha.15
+$ yarn add libtmux
 ```
 
 </details>
@@ -174,7 +174,7 @@ immutable snapshot of tmux.
 [npm](https://www.npmjs.com/package/libtmux)
 
 ```console
-$ bun add --exact libtmux@0.1.0-alpha.15
+$ bun add libtmux
 ```
 
 ```ts
@@ -210,7 +210,7 @@ With no configuration it starts its own tmux server on the `libtmux-mcp`
 socket:
 
 ```console
-$ npx -y @libtmux/mcp@0.1.0-alpha.15
+$ npx -y @libtmux/mcp@0.1.0
 ```
 
 Add it to any MCP client — this is the whole configuration:
@@ -220,7 +220,7 @@ Add it to any MCP client — this is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.15"],
+      "args": ["-y", "@libtmux/mcp@0.1.0"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -232,7 +232,7 @@ Add it to any MCP client — this is the whole configuration:
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.0-alpha.15
+    npx -y @libtmux/mcp@0.1.0
 ```
 
 </details>
@@ -264,7 +264,7 @@ Describe a session; apply it. Applying twice converges rather than duplicating.
 [npm](https://www.npmjs.com/package/@libtmux/workspace)
 
 ```console
-$ bun add --exact @libtmux/workspace@0.1.0-alpha.15 libtmux@0.1.0-alpha.15
+$ bun add @libtmux/workspace libtmux
 ```
 
 ```ts
@@ -308,7 +308,7 @@ windows:
 Load it detached, on a socket of its own:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0-alpha.15 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.0 load ./workspace.yaml \
     -L workspace-cli-demo \
     -d
 ```

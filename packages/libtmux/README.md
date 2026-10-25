@@ -35,7 +35,7 @@ package: see [Packages](#packages).
 Add it to your project:
 
 ```console
-$ bun add --exact libtmux@0.1.0-alpha.15
+$ bun add libtmux
 ```
 
 Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
@@ -1789,7 +1789,7 @@ An MCP client launches it from this configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0-alpha.15"],
+      "args": ["-y", "@libtmux/mcp@0.1.0"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -1803,7 +1803,7 @@ Describes a session as tmuxp-shaped data and applies it. Reference:
 [npm](https://www.npmjs.com/package/@libtmux/workspace).
 
 ```console
-$ bun add --exact @libtmux/workspace@0.1.0-alpha.15 libtmux@0.1.0-alpha.15
+$ bun add @libtmux/workspace libtmux
 ```
 
 A workspace is one call to [`applyWorkspace`][wsref-applyworkspace], shown in
@@ -1831,7 +1831,7 @@ windows:
 Load it detached, on a socket of its own with [`load`][cli-load]:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0-alpha.15 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.0 load ./workspace.yaml \
     -L workspace-cli-demo \
     -d
 ```
