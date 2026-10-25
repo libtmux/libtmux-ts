@@ -32,8 +32,9 @@ Built on
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
-> **Alpha.** Prerelease software: tool names and arguments can change between
-> alpha releases without a deprecation cycle. Pin an exact version.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+> settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
 
 Every launch line and printed startup line on this page is started and compared
 by [`tests/readme_launch.test.ts`](tests/readme_launch.test.ts).
@@ -791,8 +792,9 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   running `version` and the `minimumVersion`.
 - **Platforms.** Runs on Linux, including WSL. macOS is supported on a best-effort
   basis, and CI coverage for it is highly limited.
-- **Alpha.** Tool names and arguments can change between alpha releases without
-  a deprecation cycle. Pin an exact version.
+- **Releases.** Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+  settled: any release may change or remove exported identifiers, and the
+  changelog marks each break. Pin an exact version to avoid one.
 
 ## See also
 

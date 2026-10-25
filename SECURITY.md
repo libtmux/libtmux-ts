@@ -9,9 +9,8 @@ version you saw it on.
 
 ## Supported versions
 
-Every published version is an alpha prerelease. Fixes land on the newest alpha;
-no earlier one is patched. Until `0.1.0` there is no supported release line to
-backport to.
+Releases are numbered `0.1.N`. Fixes land on the newest release; no earlier
+one is patched, because there is no supported release line to backport to.
 
 ## What this package can reach
 

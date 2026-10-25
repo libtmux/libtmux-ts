@@ -33,10 +33,10 @@
 ---
 
 > [!WARNING]
-> **Alpha.** Releases carry an `-alpha` tag, and any release may change or
-> remove exported identifiers without a deprecation period. Pin an exact
-> version and read the [changelog](packages/libtmux/CHANGELOG.md) before you
-> upgrade. Not recommended for production.
+> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+> settled: any release may change or remove exported identifiers, and the
+> changelog marks each break. Pin an exact version to avoid one.
+> Read the [changelog](packages/libtmux/CHANGELOG.md) before you upgrade.
 
 ## Is this for you?
 

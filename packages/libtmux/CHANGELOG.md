@@ -2,11 +2,11 @@
 
 Notable changes to `libtmux`.
 
-Every release so far is an **alpha**: a prerelease whose API can change between
-versions without a deprecation cycle. Semantic versioning starts applying at the
-`0.1.0` release itself, which the alphas leading to it precede. The newest one is
-always `latest`, so `npm i libtmux` fetches it — there is no second tag to
-remember.
+Releases are numbered `0.1.N`, and each release increments `N`. The API is not
+settled: any release may change or remove exported identifiers, and this
+changelog marks each break. Pin an exact version to avoid one. The newest
+release is always `latest`, so `npm i libtmux` fetches it. Releases before
+`0.1.0` were alphas, and their entries below keep that name.
 
 <!-- KEEP THIS PLACEHOLDER: new work lands under "Unreleased" until a release is cut. -->
 
@@ -38,6 +38,11 @@ remember.
 
 ### Documentation
 
+- Releases are now numbered `0.1.N`, starting with `0.1.0`, and none carries an
+  `-alpha` or other prerelease tag unless the maintainer asks for one. The
+  READMEs, `SECURITY.md` and `CONTRIBUTING.md` drop the alpha warning for one
+  that says any release may change or remove exported identifiers, and that an
+  exact version avoids the change.
 - The features table in the package README states that the guard reads each
   command's own argv, so a refused command nested in `if-shell`,
   `run-shell -C`, a brace block, a hook or a key binding is sent as written. It
