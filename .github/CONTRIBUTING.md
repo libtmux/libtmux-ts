@@ -373,8 +373,8 @@ A release is a tag, and the tag is refused unless every manifest agrees with
 it. Releases are numbered `0.1.N`: `0.1.0`, then `0.1.1`, `0.1.2` and so on,
 each tagged `v0.1.N` and published to `latest`. No release carries an `-alpha`
 or other prerelease tag unless the maintainer asks for one. A prerelease
-requested that way uses `latest` until a stable version has held that tag;
-later prereleases use their first identifier, such as `rc` in
+requested that way uses `latest` until a version without a prerelease
+identifier has held that tag; later prereleases use their first identifier, such as `rc` in
 `0.1.5-rc.1`. The credentialed workflow accepts only `v*` tag
 pushes and waits for that commit to pass the full Bun, Node, tmux, and package
 matrix. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
@@ -394,7 +394,7 @@ A package the registry does not hold yet carries `firstPublication` in
 Only a structured package-level 404 for a declared package is admitted; registry
 errors and missing established packages still stop the release. The first
 publication must use the coordinated `latest` channel: either a prerelease
-before the first stable release, or a stable version. Bootstrapping into a
+or a version without a prerelease identifier. Bootstrapping into a
 later prerelease channel is refused before any publication. Once the
 target exists, a retry requires the same tarball integrity and intended tag.
 

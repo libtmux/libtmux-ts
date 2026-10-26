@@ -284,7 +284,7 @@ describe("coordinated release", () => {
     }
   });
 
-  test("resumes a partially published first stable release", async () => {
+  test("resumes a partially published first final release", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
     const registry = makeRegistry();
     const publishedPrefix = registry.get("libtmux");
