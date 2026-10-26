@@ -178,13 +178,13 @@ export function selectDistTag(
     latestVersions.map((latest) =>
       latest === undefined || parseSemanticVersion(latest).prerelease !== undefined
         ? "prerelease"
-        : "stable",
+        : "release",
     ),
   );
   if (latestKinds.size > 1) {
-    throw new Error("registry latest tags disagree about whether a stable release exists");
+    throw new Error("registry latest tags disagree about whether a final release exists");
   }
-  if (!latestKinds.has("stable")) return "latest";
+  if (!latestKinds.has("release")) return "latest";
 
   const channel = release.prerelease[0];
   if (
