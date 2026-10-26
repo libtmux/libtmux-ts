@@ -21,15 +21,10 @@
 [Examples](examples) •
 [Changelog](packages/libtmux/CHANGELOG.md)
 
-[![npm](https://img.shields.io/npm/v/libtmux?label=libtmux&color=cb3837)](https://www.npmjs.com/package/libtmux)
-[![downloads](https://img.shields.io/npm/dm/libtmux?color=cb3837)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](.github/workflows/typescript.yml)
-[![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](packages/libtmux/tests/unit/package_contract.test.ts)
-[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![libtmux](https://img.shields.io/npm/v/libtmux?label=libtmux)](https://www.npmjs.com/package/libtmux)
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/ts/)
-[![npm @libtmux/mcp](https://img.shields.io/npm/v/%40libtmux%2Fmcp?color=cb3837)](https://www.npmjs.com/package/@libtmux/mcp)
-[![npm @libtmux/workspace-cli](https://img.shields.io/npm/v/%40libtmux%2Fworkspace-cli?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace-cli)
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/libtmux/libtmux-ts/blob/master/LICENSE)
 
 </div>
 
@@ -160,10 +155,10 @@ The library, MCP server, workspace builder, and workspace CLI share one release 
 
 | Package                                              | What it is                                                                     | npm                                                                                                                                     |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **[libtmux](packages/libtmux)**                      | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?color=cb3837&label=)](https://www.npmjs.com/package/libtmux)                               |
-| **[@libtmux/mcp](packages/mcp)**                     | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/mcp)                     |
-| **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace)         |
-| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native [`tmux-workspace`][cli-reference] command for Node and Bun.         | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?color=cb3837&label=)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
+| **[libtmux](packages/libtmux)**                      | The library. Server, session, window, pane and client handles over a snapshot. | [![npm](https://img.shields.io/npm/v/libtmux?label=libtmux)](https://www.npmjs.com/package/libtmux)                               |
+| **[@libtmux/mcp](packages/mcp)**                     | An MCP server exposing tmux to an AI agent.                                    | [![npm](https://img.shields.io/npm/v/@libtmux/mcp?label=%40libtmux%2Fmcp)](https://www.npmjs.com/package/@libtmux/mcp)                     |
+| **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?label=%40libtmux%2Fworkspace)](https://www.npmjs.com/package/@libtmux/workspace)         |
+| **[@libtmux/workspace-cli](packages/workspace-cli)** | The native [`tmux-workspace`][cli-reference] command for Node and Bun.         | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?label=%40libtmux%2Fworkspace-cli)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
 | [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                                       |
 
 ---
