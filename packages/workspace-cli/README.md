@@ -19,6 +19,9 @@ This implementation is in development.
 [Guides](https://libtmux.org/en/ts/latest/workspace/guides/) •
 [npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/ts/latest/workspace/)
+[![npm @libtmux/workspace-cli](https://img.shields.io/npm/v/%40libtmux%2Fworkspace-cli?color=cb3837)](https://www.npmjs.com/package/@libtmux/workspace-cli)
+
 </div>
 
 Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
