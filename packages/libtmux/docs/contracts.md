@@ -448,9 +448,6 @@ checks the same `FIONREAD` on all three
   writes to a file until it exits. `stream({ signal })` ends the stream, not
   the program.
 
-A `Program` is made from its prototype rather than by `new`, so its constructor
-is not public API.
-
 ## Pane waits
 
 `Pane.waitForExit` and `Pane.waitForCommand` wait on any pane, whoever started

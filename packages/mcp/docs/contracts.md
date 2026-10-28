@@ -281,7 +281,7 @@ starting anything.
 
 `input` goes to the program as its stdin from a private file the library
 writes; it is never typed. `keep` leaves the dead pane for a person and hands
-it to them: nothing removes it later. Neither is a default.
+it to them: nothing removes it later.
 
 `startDirectory` is taken literally: the program's own `sh` enters it, so no `#`
 is expanded, and one it cannot enter ends the run with exit status 126 before
