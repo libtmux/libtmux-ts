@@ -432,18 +432,18 @@ call_read_tools_batch  operations=[{tool: 'list_sessions'}, {tool: 'list_panes'}
 
 ## Run commands and wait
 
-Seven tools run programs or put input into panes:
+Eight tools run programs or put input into panes:
 
-| Tool                                          | Does                                                          |
-| --------------------------------------------- | ------------------------------------------------------------- |
-| [`run_program`][tool-run_program]             | Runs a program in a detached session, returns only its output |
-| [`start_program`][tool-start_program]         | Starts a program that outlives one call; returns at once      |
-| [`read_program`][tool-read_program]           | Reads a started program's new output and reports its exit     |
-| [`stop_program`][tool-stop_program]           | Ends a started program and removes its pane                   |
-| [`run_shell_command`][tool-run_shell_command] | Runs a shell command, waits for it, reports exit status       |
-| [`send_keys`][tool-send_keys]                 | Sends keystrokes: TUIs, `C-c`, partial lines                  |
-| [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call                |
-| [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name                    |
+| Tool                                          | Does                                                         |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| [`run_program`][tool-run_program]             | Runs a program in a pane of its own, returns only its output |
+| [`start_program`][tool-start_program]         | Starts a program that outlives one call; returns at once     |
+| [`read_program`][tool-read_program]           | Reads a started program's new output and reports its exit    |
+| [`stop_program`][tool-stop_program]           | Ends a started program and removes its pane                  |
+| [`run_shell_command`][tool-run_shell_command] | Runs a shell command, waits for it, reports exit status      |
+| [`send_keys`][tool-send_keys]                 | Sends keystrokes: TUIs, `C-c`, partial lines                 |
+| [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call               |
+| [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name                   |
 
 Four tools wait:
 
@@ -456,7 +456,7 @@ Four tools wait:
 
 ### [`run_program`][tool-run_program]: run a program and get only its output
 
-`run_program` starts `argv` in a fresh detached session, waits for it, and returns
+`run_program` starts `argv` in a pane of its own, a fresh detached session by default, waits for it, and returns
 `exitStatus`, `outcome`, and its output. Nothing is typed, so the output holds no
 command line and no echo.
 
@@ -515,17 +515,23 @@ interface Read {
   readonly text: string;
 }
 const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
-let read = await callTool<Read>(client, "read_program", { programId });
-let text = read.text;
-while (!read.exited) {
-  read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
-  text += read.text;
+let text = "";
+let exitStatus: number | null = null;
+try {
+  let read = await callTool<Read>(client, "read_program", { programId });
+  text = read.text;
+  while (!read.exited) {
+    read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
+    text += read.text;
+  }
+  exitStatus = read.exitStatus;
+} finally {
+  await callTool(client, "stop_program", { programId });
 }
-await callTool(client, "stop_program", { programId });
 ```
 
 - `start_program` returns a `programId` and the `paneId`, which `send_keys` and
-  `capture_pane` reach. It takes `fromPaneId`, `placement` and the other
+  `capture_pane` reach while the program runs; its pane is removed once it exits. It takes `fromPaneId`, `placement` and the other
   placement inputs `run_program` does.
 - Each `read_program` waits up to its `timeoutMs` for new output or the exit
   and returns a `cursor`. A read that times out returns no text; the next one
@@ -538,8 +544,8 @@ await callTool(client, "stop_program", { programId });
   default and at most an hour. When it runs out, this server ends the program
   and removes its pane whatever else was called. Should this server die, tmux
   does it within half a minute, through a lease only a live server renews.
-- Sixteen started programs can be live at once. `stop_program` ends one at
-  once and forgets its id.
+- Sixteen started programs can run at once, and the sixteen that ended last
+  stay readable. `stop_program` ends one at once and forgets its id.
 
 ### [`run_shell_command`][tool-run_shell_command]: run a command and get its exit status
 
@@ -782,7 +788,9 @@ its pane with the prompt, the echo, and anyone else typing there.
 [`run_program`][tool-run_program] starts it in a pane of its own and returns only
 what it printed; keep `run_shell_command` for a command that needs that pane's
 shell. Its timeout ends the program and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`,
-30 seconds unless raised, so a long build belongs in `run_shell_command`.
+30 seconds unless raised. A build longer than that goes to
+[`start_program`][tool-start_program] and is read with
+[`read_program`][tool-read_program] until it exits.
 
 ```text
 run_program  argv=["git","diff","--stat"]

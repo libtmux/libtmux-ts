@@ -334,7 +334,9 @@ No later call owns cleanup:
   seconds. Should this server die, tmux ends the program and removes its pane
   within half a minute.
 - Closing this server ends every program it started.
-- At most sixteen are live at once.
+- At most sixteen run at once. A program that exits loses its pane at once; its
+  text stays readable from this server's memory, for the sixteen that ended last,
+  until the lifetime or `stop_program`.
 
 `stop_program` ends one at once. The `paneId` it returns is an ordinary pane, so
 `send_keys` reaches the program with the usual pane-input checks.
