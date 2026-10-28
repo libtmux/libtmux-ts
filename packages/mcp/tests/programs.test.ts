@@ -158,6 +158,31 @@ testProgram(
 );
 
 testProgram(
+  "read_program and run_program say when the end may be missing",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        // USR1 ends the wrapper before its end mark, as a pane tmux removed early would.
+        const argv = ["sh", "-c", "echo hi; kill -USR1 $PPID; sleep 1"];
+        const started = structured<Started>(
+          await call({ arguments: { argv }, name: "start_program" }),
+        );
+        const reads = await readAll(call, started.programId, 10_000);
+        expect(reads.at(-1)).toMatchObject({ exited: true, outputComplete: false });
+        await call({ arguments: { programId: started.programId }, name: "stop_program" });
+        const ran = await call({ arguments: { argv }, name: "run_program" });
+        expect(structured<{ outputComplete: boolean }>(ran).outputComplete).toBe(false);
+        expect(JSON.stringify((ran as { content: unknown }).content)).toContain(
+          "its end may be missing",
+        );
+      });
+    });
+  },
+  60_000,
+);
+
+testProgram(
   "start_program refuses a seventeenth running program",
   async () => {
     await withServer(async (fixture) => {
@@ -208,11 +233,11 @@ testProgram(
         expect(await until(async () => (await programSessions(call)).length === 0, 8000)).toBe(
           true,
         );
-        const gone = await call({
-          arguments: { programId: short.programId },
-          name: "read_program",
-        });
-        expect((gone as { isError?: boolean }).isError).toBe(true);
+        // The lifetime ends it but keeps what it printed readable.
+        const ended = structured<Read>(
+          await call({ arguments: { programId: short.programId }, name: "read_program" }),
+        );
+        expect(ended).toMatchObject({ exited: true, outcome: "stopped" });
       });
     });
   },

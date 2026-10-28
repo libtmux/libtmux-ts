@@ -187,6 +187,7 @@ export function sourceableEnvironment(dump: string, names?: readonly string[]): 
   const wanted = names === undefined ? undefined : new Set(names);
   return dump
     .split("\0")
+    .filter((entry) => entry.indexOf("=") > 0)
     .map((entry) => [entry.slice(0, entry.indexOf("=")), entry.slice(entry.indexOf("=") + 1)])
     .filter(
       ([name = ""]) => SHELL_NAME.test(name) && name !== "TMUX_PANE" && (wanted?.has(name) ?? true),
@@ -537,7 +538,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           ),
       },
       outputSchema: {
-        effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        effectiveTimeoutMs: z.number().int().describe("The timeout enforced."),
         droppedLines: z
           .number()
           .int()
@@ -748,7 +749,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       },
       outputSchema: {
         droppedLines: z.number().int().describe("Lines of output withheld by maxLines."),
-        effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        effectiveTimeoutMs: z.number().int().describe("The timeout enforced."),
         exitStatus: z
           .number()
           .int()
@@ -872,7 +873,10 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         MAX_RESULT_BYTES,
       );
       const outputComplete =
-        !result.truncated && bounded.droppedLines === 0 && bounded.omittedBytes === 0;
+        !result.lostStart &&
+        !result.lostEnd &&
+        bounded.droppedLines === 0 &&
+        bounded.omittedBytes === 0;
       let headline: string;
       if (result.timedOut) headline = `ended at the ${String(effectiveTimeoutMs)}ms timeout`;
       else if (result.signalCode !== null) headline = `ended by ${result.signalCode}`;
@@ -893,9 +897,10 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           bounded,
           "raise maxLines within the server limit or pipe large output before running",
         )}\n\n[${headline}]${
-          result.truncated
-            ? "\n[some output is missing: its start scrolled past the scrollback limit, or tmux closed the pane before reading its end]"
-            : ""
+          (result.lostStart ? "\n[its start scrolled past the scrollback limit and is gone]" : "") +
+          (result.lostEnd
+            ? "\n[its end may be missing: tmux closed the pane before reading it]"
+            : "")
         }`,
       );
     },
