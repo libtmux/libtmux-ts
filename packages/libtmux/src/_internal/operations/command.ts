@@ -13,8 +13,8 @@ import { adaptRawResult, prepareCommandRequest, prepareInvocationRequest } from 
  * The call's own wins, `null` meaning none. Otherwise the server's applies,
  * unless a command in the invocation waits on a person: a default would cut
  * them off mid-prompt. One such command exempts the whole invocation, where
- * the `maxInFlight` rule needs every command to block — a deadline kills the
- * process, which ends every command in it.
+ * the `maxInFlight` rule needs the invocation to end in one — a deadline kills
+ * the process, which ends every command in it.
  */
 function deadlineFor(
   runtime: RuntimeContext,

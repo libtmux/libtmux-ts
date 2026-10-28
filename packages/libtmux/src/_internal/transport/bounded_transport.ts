@@ -84,8 +84,13 @@ function deliveryOf(error: unknown): DeliveryStatus {
   return "indeterminate";
 }
 
+/**
+ * Whether an invocation ends waiting on something outside it, as a program's
+ * start list does. Work after the wait still counts; work before it does not.
+ */
 function waitsOnSomethingElse(request: CommandRequest): boolean {
-  return request.commands.every((command) => reachesUnboundedCommand(command[0]));
+  const last = request.commands.at(-1);
+  return last !== undefined && reachesUnboundedCommand(last[0]);
 }
 
 function contractError(request: CommandRequest, message: string): TmuxTransportError {
