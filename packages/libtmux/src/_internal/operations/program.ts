@@ -16,7 +16,7 @@ import type { CommandOptions, DeliveryStatus } from "../../common.js";
 import type { Program } from "../../program.js";
 import type { AbortLike, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { runCommand, runCommands } from "./command.js";
+import { isColdEndpoint, runCommand, runCommands } from "./command.js";
 
 /** The pane's first process: it exits at once and stays, so the pane id exists before the program. */
 export const PLACEHOLDER: readonly ["true", "libtmux-program-placeholder"] = [
@@ -260,20 +260,23 @@ export async function readPane(
   formats: readonly string[],
   options: CommandOptions = {},
 ): Promise<string[]> {
-  const [line = ""] = await runCommand(
-    runtime,
-    ["display-message", "-p", "-t", paneId, ["#{pane_id}", ...formats].join("\t")],
-    options,
-  );
-  const [id, ...values] = line.split("\t");
-  if (id !== paneId) {
-    throw new TmuxObjectNotFoundError({
+  const missing = (): TmuxObjectNotFoundError =>
+    new TmuxObjectNotFoundError({
       list_cmd: "display-message",
       list_extra_args: ["-t", paneId],
       obj_id: paneId,
       obj_key: "pane_id",
     });
-  }
+  const [line = ""] = await runCommand(
+    runtime,
+    ["display-message", "-p", "-t", paneId, ["#{pane_id}", ...formats].join("\t")],
+    options,
+  ).catch((error: unknown) => {
+    // A server that exited with its last session took the pane with it.
+    throw isColdEndpoint(error) ? missing() : error;
+  });
+  const [id, ...values] = line.split("\t");
+  if (id !== paneId) throw missing();
   const last = formats.length - 1;
   return [...values.slice(0, last), values.slice(last).join("\t")];
 }

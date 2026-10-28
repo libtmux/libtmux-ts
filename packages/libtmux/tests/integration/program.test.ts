@@ -534,6 +534,39 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "a run whose pane takes its server with it rejects as not found",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        const cold = new Server({
+          configFile: "/dev/null",
+          environment: fixture.controllerEnvironment,
+          socketPath: join(directory, "lone"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          const running = cold.run(["sleep", "30"]);
+          // Killed once the program runs, not while setup still holds the placeholder.
+          const pane = await eventually(
+            async () =>
+              (await cold.isAlive())
+                ? cold.cmd("list-panes", ["-a", "-F", "#{pane_id} #{pane_current_command}"])
+                : [],
+            (panes) => panes.some((row) => row.endsWith(" sleep")),
+            5000,
+          );
+          await cold.cmd("kill-pane", ["-t", (pane[0] ?? "").split(" ")[0] ?? ""]);
+          expect(await running.catch((error: unknown) => error)).toBeInstanceOf(
+            ObjectNotFoundError,
+          );
+        } finally {
+          if (await cold.isAlive()) await cold.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a spawn aborted before it starts removes what it made",
     async () => {
       await withServer(async (server) => {
