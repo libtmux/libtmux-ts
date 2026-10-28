@@ -1068,7 +1068,11 @@ const result = await server.run(argv, { from: pane, keep: true, placement: "spli
 <!-- runs: examples/program/program.ts -->
 
 ```ts
-const service = await server.spawn(argv, { orphanAfterMs: 10_000, stream: true });
+const service = await server.spawn(argv, {
+  maxStreamBytes: 1_048_576,
+  orphanAfterMs: 10_000,
+  stream: true,
+});
 ```
 
 - This process renews a lease on the program every third of `orphanAfterMs`.

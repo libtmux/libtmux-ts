@@ -66,7 +66,8 @@ export async function sortLines(server: Server, input: string): Promise<readonly
  * Run a program whose stdout is data, and keep what it says on stderr apart.
  *
  * stderr goes to a private file rather than the terminal, so `output` holds
- * stdout alone, ready to parse.
+ * stdout alone, ready to parse. `output` is the terminal's rendering, with
+ * wrapped lines joined, so JSON that fits the scrollback reads back whole.
  */
 export async function readJson(server: Server, argv: readonly string[]): Promise<unknown> {
   const result = await server.run(argv, { separateStderr: true });
@@ -112,14 +113,19 @@ export async function runBeside(
  * Start a service that ends with this process, and return once it says it is ready.
  *
  * This process renews a lease on it. Should it exit or die without killing
- * the service, tmux ends it and removes its pane within ten seconds.
+ * the service, tmux ends it and removes its pane within ten seconds. The copy
+ * the stream reads stops at a mebibyte, while the service runs on.
  */
 export async function startService(
   server: Server,
   argv: readonly string[],
   ready: string,
 ): Promise<Program> {
-  const service = await server.spawn(argv, { orphanAfterMs: 10_000, stream: true });
+  const service = await server.spawn(argv, {
+    maxStreamBytes: 1_048_576,
+    orphanAfterMs: 10_000,
+    stream: true,
+  });
   try {
     let printed = "";
     for await (const chunk of service.stream()) {
