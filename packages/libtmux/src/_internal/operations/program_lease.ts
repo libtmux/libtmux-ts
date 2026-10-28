@@ -1,8 +1,12 @@
 // The lease a program run holds: tmux ends the program unless the caller keeps renewing it.
-import { TmuxCommandError, TmuxObjectNotFoundError } from "../../errors.js";
+import {
+  TmuxCommandError,
+  TmuxObjectNotFoundError,
+  TmuxServerRestartedError,
+} from "../../errors.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommands } from "./command.js";
-import { readPane, type Owned } from "./program.js";
+import { readPane, type DaemonPin, type Owned } from "./program.js";
 
 /** A lease tmux holds on the program; see {@link leaseTimer}. */
 export interface Lease {
@@ -42,6 +46,8 @@ export interface LeaseTarget {
   readonly keep: boolean;
   readonly owned: Owned;
   readonly paneId: string;
+  /** The program's daemon: a renewal elsewhere would lease another server's pane of that id. */
+  readonly pin: DaemonPin;
   readonly runtime: RuntimeContext;
   /** Stops the exit watch, which a pane removed from outside never ends. */
   readonly watcher: AbortController;
@@ -52,21 +58,24 @@ async function renew(target: LeaseTarget, lease: Lease): Promise<void> {
   if (lease.renewing) return;
   lease.renewing = true;
   lease.token += 1;
-  const { files, keep, owned, paneId, runtime } = target;
+  const { files, keep, owned, paneId, pin, runtime } = target;
   try {
     await runCommands(
       runtime,
       leaseTimer(paneId, owned, keep, files, lease.token, lease.ms / 1000),
+      { daemon: pin.daemon },
     );
   } catch (error) {
-    // A pane removed from outside has nothing left to lease. Anything else is retried, and
-    // should every retry fail, the lease runs out and tmux ends the program, as for a dead caller.
+    // A pane removed from outside, or gone with a server that restarted, has nothing left to
+    // lease. Anything else is retried, and should every retry fail, the lease runs out and tmux
+    // ends the program, as for a dead caller.
     const gone =
-      error instanceof TmuxCommandError &&
-      (await readPane(runtime, paneId, []).then(
-        () => false,
-        (failure: unknown) => failure instanceof TmuxObjectNotFoundError,
-      ));
+      error instanceof TmuxServerRestartedError ||
+      (error instanceof TmuxCommandError &&
+        (await readPane(runtime, paneId, [], { daemon: pin.daemon }).then(
+          () => false,
+          (failure: unknown) => failure instanceof TmuxObjectNotFoundError,
+        )));
     if (gone) {
       clearInterval(lease.timer);
       target.watcher.abort();

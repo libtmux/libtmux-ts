@@ -10,11 +10,12 @@ import {
   WaitTimeoutError,
   type ProgramStartFailure,
 } from "../../errors.js";
-import type { CommandOptions, DeliveryStatus } from "../../common.js";
+import type { DeliveryStatus } from "../../common.js";
+import type { DaemonGuard } from "../../engine.js";
 import type { Program } from "../../program.js";
 import type { AbortLike, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { isColdEndpoint, runCommand, runCommands } from "./command.js";
+import { isColdEndpoint, runCommand, runCommands, type PinnedCommandOptions } from "./command.js";
 import type { Lease } from "./program_lease.js";
 
 /** The pane's first process: it exits at once and stays, so the pane id exists before the program. */
@@ -69,8 +70,18 @@ export interface Owned {
   readonly target: string;
 }
 
+/**
+ * The daemon a program was started on. Its pane's `%N` names another pane on a
+ * restarted server, so every command for the program is refused anywhere else.
+ * Unset only until the first read of a server this spawn started.
+ */
+export interface DaemonPin {
+  daemon: DaemonGuard | undefined;
+}
+
 export interface ProgramState {
   readonly runtime: RuntimeContext;
+  readonly pin: DaemonPin;
   readonly paneId: string;
   /** What this program created, and removes when it ends. */
   readonly owned: Owned;
@@ -180,7 +191,7 @@ export async function readPane(
   runtime: RuntimeContext,
   paneId: string,
   formats: readonly string[],
-  options: CommandOptions = {},
+  options: PinnedCommandOptions = {},
 ): Promise<string[]> {
   const missing = (): TmuxObjectNotFoundError =>
     new TmuxObjectNotFoundError({
@@ -210,7 +221,7 @@ export async function readPane(
 async function readExit(
   runtime: RuntimeContext,
   paneId: string,
-  options: CommandOptions = {},
+  options: PinnedCommandOptions = {},
 ): Promise<(ProgramExit & { readonly path: string }) | undefined> {
   const [dead, status = "", signal = "", path = "", command] = await readPane(
     runtime,
@@ -258,7 +269,10 @@ export async function waitProgram(
   const deadline = timeoutMs === undefined ? Infinity : performance.now() + timeoutMs;
   const [aborted, stopListening] = onAbort(signal);
   // An abort also stops a read already in flight.
-  const read = options.signal === undefined ? {} : { signal: options.signal };
+  const read = {
+    daemon: state.pin.daemon,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  };
   // Once the watcher has settled, waking on it again would spin.
   const wake = new AbortController();
   state.wakes.add(wake);
@@ -312,13 +326,17 @@ export async function programStderr(program: Program): Promise<string | undefine
 export async function programOutput(
   program: Program,
 ): Promise<{ readonly lostEnd: boolean; readonly lostStart: boolean; readonly text: string }> {
-  const { mark, paneId, runtime } = stateOf(program);
-  const [read = "", ...lines] = await runCommands(runtime, [
-    ["display-message", "-p", "-t", paneId, "#{history_collected}\t#{pane_dead}\t#{pane_path}"],
-    ["capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", paneId],
-  ]).catch(async (error: unknown) => {
+  const { mark, paneId, pin, runtime } = stateOf(program);
+  const [read = "", ...lines] = await runCommands(
+    runtime,
+    [
+      ["display-message", "-p", "-t", paneId, "#{history_collected}\t#{pane_dead}\t#{pane_path}"],
+      ["capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", paneId],
+    ],
+    { daemon: pin.daemon },
+  ).catch(async (error: unknown) => {
     // Only the capture fails for a pane that is gone; say so as a missing pane.
-    await readPane(runtime, paneId, []);
+    await readPane(runtime, paneId, [], { daemon: pin.daemon });
     throw error;
   });
   let end = lines.length;
@@ -339,22 +357,27 @@ async function signalPane(
   runtime: RuntimeContext,
   paneId: string,
   signal: "KILL" | "TERM",
+  daemon: DaemonGuard | undefined,
 ): Promise<void> {
   // `-s NAME` is POSIX's form, and dash takes no other: it refuses `-NAME -- -PID`.
-  await runCommand(runtime, [
-    "run-shell",
-    "-t",
-    paneId,
-    `#{?pane_dead,:,kill -s ${signal} -- -#{pane_pid} 2>/dev/null}; :`,
-  ]).catch(() => undefined);
+  await runCommand(
+    runtime,
+    ["run-shell", "-t", paneId, `#{?pane_dead,:,kill -s ${signal} -- -#{pane_pid} 2>/dev/null}; :`],
+    { daemon },
+  ).catch(() => undefined);
 }
 
 /** Whether tmux records the pane's death within `ms`, which it does once it has reaped it. */
-async function reaped(runtime: RuntimeContext, paneId: string, ms: number): Promise<boolean> {
+async function reaped(
+  runtime: RuntimeContext,
+  paneId: string,
+  ms: number,
+  daemon: DaemonGuard | undefined,
+): Promise<boolean> {
   const deadline = performance.now() + ms;
   for (;;) {
     // eslint-disable-next-line no-await-in-loop -- read until it is gone; a vanished pane counts.
-    const ended = await readExit(runtime, paneId).then(
+    const ended = await readExit(runtime, paneId, { daemon }).then(
       (exit) => exit !== undefined,
       () => true,
     );
@@ -368,13 +391,18 @@ async function reaped(runtime: RuntimeContext, paneId: string, ms: number): Prom
  * End the program in a pane: SIGTERM, then SIGKILL after the grace, back once
  * tmux has reaped it. A program ignoring SIGHUP outlives its pane's removal.
  */
-export async function stopPane(runtime: RuntimeContext, paneId: string): Promise<void> {
-  const [dead] = (await readPane(runtime, paneId, ["#{pane_dead}"]).catch(() => undefined)) ?? [];
+export async function stopPane(
+  runtime: RuntimeContext,
+  paneId: string,
+  daemon: DaemonGuard | undefined,
+): Promise<void> {
+  const [dead] =
+    (await readPane(runtime, paneId, ["#{pane_dead}"], { daemon }).catch(() => undefined)) ?? [];
   if (dead !== "0") return;
-  await signalPane(runtime, paneId, "TERM");
-  if (await reaped(runtime, paneId, KILL_GRACE_MS)) return;
-  await signalPane(runtime, paneId, "KILL");
-  await reaped(runtime, paneId, KILL_GRACE_MS);
+  await signalPane(runtime, paneId, "TERM", daemon);
+  if (await reaped(runtime, paneId, KILL_GRACE_MS, daemon)) return;
+  await signalPane(runtime, paneId, "KILL", daemon);
+  await reaped(runtime, paneId, KILL_GRACE_MS, daemon);
 }
 
 async function endProgram(state: ProgramState): Promise<void> {
@@ -382,18 +410,16 @@ async function endProgram(state: ProgramState): Promise<void> {
   try {
     state.watcher.abort();
     await state.exited;
-    await stopPane(state.runtime, state.paneId);
-    if (!state.keep) await removeOwned(state.runtime, state.owned);
+    // A server that has restarted took the pane with it: each of these is refused there.
+    await stopPane(state.runtime, state.paneId, state.pin.daemon);
+    if (!state.keep) await removeOwned(state.runtime, state.owned, state.pin.daemon);
     // A kept pane outlives its lease: retire the token, so no queued timer acts on it.
     else if (state.lease !== undefined) {
-      await runCommand(state.runtime, [
-        "set-option",
-        "-p",
-        "-t",
-        state.paneId,
-        "@libtmux-lease",
-        "ended",
-      ]).catch(() => undefined);
+      await runCommand(
+        state.runtime,
+        ["set-option", "-p", "-t", state.paneId, "@libtmux-lease", "ended"],
+        { daemon: state.pin.daemon },
+      ).catch(() => undefined);
     }
   } finally {
     if (state.files !== undefined) {
@@ -403,15 +429,19 @@ async function endProgram(state: ProgramState): Promise<void> {
 }
 
 /** Remove what a program created; an error stands only while that still exists. */
-export async function removeOwned(runtime: RuntimeContext, owned: Owned): Promise<void> {
+export async function removeOwned(
+  runtime: RuntimeContext,
+  owned: Owned,
+  daemon: DaemonGuard | undefined,
+): Promise<void> {
   try {
-    await runCommand(runtime, [`kill-${owned.kind}`, "-t", owned.target]);
+    await runCommand(runtime, [`kill-${owned.kind}`, "-t", owned.target], { daemon });
   } catch (error) {
     const probe =
       owned.kind === "session"
         ? ["has-session", "-t", owned.target]
         : ["display-message", "-p", "-t", owned.target, `#{${owned.kind}_id}`];
-    const [still = ""] = await runCommand(runtime, probe).then(
+    const [still = ""] = await runCommand(runtime, probe, { daemon }).then(
       (lines) => (owned.kind === "session" ? ["yes"] : lines),
       () => [""],
     );

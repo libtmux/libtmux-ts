@@ -1,5 +1,6 @@
 import { LibTmuxError, TmuxCommandError, TmuxServerRestartedError } from "../../errors.js";
 import type { CommandOptions, CommandResult } from "../../common.js";
+import type { DaemonGuard } from "../../engine.js";
 import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { reachesUnboundedCommand } from "../transport/bounded_transport.js";
@@ -36,15 +37,34 @@ interface ExecutedCommand {
   readonly result: CommandResult;
 }
 
+/** Options for a command meant for one daemon, whichever this runtime last reached. */
+export interface PinnedCommandOptions extends CommandOptions {
+  /**
+   * The daemon the command's targets belong to: tmux refuses it on any other,
+   * whether or not it names them by id. Without it, a command naming a raw id
+   * is guarded by the daemon this runtime last observed.
+   */
+  readonly daemon?: DaemonGuard | undefined;
+}
+
+/** The daemon a command must run on, if any. */
+function guardFor(
+  runtime: RuntimeContext,
+  args: readonly string[],
+  pinned: DaemonGuard | undefined,
+): DaemonGuard | undefined {
+  return pinned ?? (carriesTmuxId(args) ? lastObservedDaemon(runtime) : undefined);
+}
+
 async function executeCommand(
   runtime: RuntimeContext,
   args: readonly string[],
-  options: CommandOptions,
+  options: PinnedCommandOptions,
   rawOutput = false,
 ): Promise<ExecutedCommand> {
   const { timeoutMs, ...rest } = options;
   const deadline = deadlineFor(runtime, [args], timeoutMs);
-  const daemon = carriesTmuxId(args) ? lastObservedDaemon(runtime) : undefined;
+  const daemon = guardFor(runtime, args, options.daemon);
   let raw: RawCommandResult;
   try {
     raw = await runtime.transport.execute(
@@ -92,7 +112,7 @@ async function executeCommand(
 export async function runCommand(
   runtime: RuntimeContext,
   args: readonly string[],
-  options: CommandOptions = {},
+  options: PinnedCommandOptions = {},
 ): Promise<readonly string[]> {
   return (await executeCommand(runtime, args, options)).result.stdout;
 }
@@ -116,12 +136,12 @@ export async function runCommandBytes(
 export async function runCommands(
   runtime: RuntimeContext,
   commands: readonly (readonly string[])[],
-  options: CommandOptions = {},
+  options: PinnedCommandOptions = {},
 ): Promise<readonly string[]> {
   const { timeoutMs, ...rest } = options;
   const deadline = deadlineFor(runtime, commands, timeoutMs);
   const flat = commands.flat();
-  const daemon = carriesTmuxId(flat) ? lastObservedDaemon(runtime) : undefined;
+  const daemon = guardFor(runtime, flat, options.daemon);
   let raw: RawCommandResult;
   try {
     raw = await runtime.transport.execute(

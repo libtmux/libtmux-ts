@@ -22,6 +22,7 @@ import {
   OutputLostError,
   ProgramStartError,
   ServerNotLocalError,
+  TmuxServerRestartedError,
   TmuxTransportError,
   VersionTooLowError,
   WaitTimeoutError,
@@ -1022,6 +1023,51 @@ setInterval(() => undefined, 1000);`,
           ).toBe(true);
         } finally {
           if (await lone.isAlive()) await lone.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a program from a restarted server leaves the new server's pane of its id alone",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        const options = {
+          configFile: "/dev/null",
+          environment: fixture.controllerEnvironment,
+          socketPath: join(directory, "restarted"),
+          tmuxBin: fixture.tmuxExecutable,
+        };
+        const server = new Server(options);
+        try {
+          const program = await server.spawn(["sleep", "300"], { orphanAfterMs: 1000 });
+          await server.kill();
+          const replacement = new Server(options);
+          await replacement.newSession({ name: "bystander", shellCommand: "sleep 300" });
+          const [bystander] = (await replacement.panes()).toArray();
+          expect(bystander?.id).toBe(program.pane.id);
+          // The first Server reads the new daemon, so a raw id guarded by what it last saw would pass.
+          await server.panes();
+          await expect(program.output()).rejects.toBeInstanceOf(TmuxServerRestartedError);
+          await expect(program.wait({ timeoutMs: 500 })).rejects.toBeInstanceOf(
+            TmuxServerRestartedError,
+          );
+          // Past a renewal: none may lease the bystander, whose timer would kill it.
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const [lease = ""] = await replacement.cmd("show-options", [
+            "-p",
+            "-q",
+            "-v",
+            "-t",
+            bystander?.id ?? "",
+            "@libtmux-lease",
+          ]);
+          expect(lease).toBe("");
+          await program.kill();
+          expect(await replacement.hasSession("bystander")).toBe(true);
+        } finally {
+          if (await server.isAlive()) await server.kill();
         }
       });
     },

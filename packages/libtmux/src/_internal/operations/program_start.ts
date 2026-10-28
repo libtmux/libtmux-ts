@@ -44,6 +44,7 @@ import {
   requireCount,
   stopPane,
   waitProgram,
+  type DaemonPin,
   type Owned,
   type RunFiles,
 } from "./program.js";
@@ -285,7 +286,9 @@ async function createBeside(
     ...arm(window, { kind: "window", target: window }),
   ]).catch(async (error: unknown) => {
     // The window can exist though a later command in its list failed.
-    await removeOwned(runtime, { kind: "window", target: window }).catch(() => undefined);
+    await removeOwned(runtime, { kind: "window", target: window }, undefined).catch(
+      () => undefined,
+    );
     throw error;
   });
   const [paneId = "", windowId = ""] = created.split("\t");
@@ -513,6 +516,9 @@ export async function spawnProgram(
   if (spawn.from !== undefined) requireOnServer(spawn.from, server, "from");
   if (isAborted(signal)) throw cancelled(signal, "the start was cancelled", "not_started");
   await requireProgramRun(runtime, spawn.from === undefined);
+  // Set once the pane is read: a version check's cached answer can name a server that has
+  // since exited, as one does when the last run removed its only session.
+  const pin: DaemonPin = { daemon: undefined };
   const watcher = new AbortController();
   let files: RunFiles | undefined;
   let lease: Lease | undefined;
@@ -556,7 +562,10 @@ export async function spawnProgram(
     if (files !== undefined) await requireShared(runtime, files.directory);
     // Renewed from the moment the pane exists, however long the rest of setup takes.
     if (lease !== undefined) {
-      startRenewal({ files: files !== undefined, keep, owned, paneId, runtime, watcher }, lease);
+      startRenewal(
+        { files: files !== undefined, keep, owned, paneId, pin, runtime, watcher },
+        lease,
+      );
     }
     let failure: unknown;
     const mark = `libtmux-ran-${randomUUID()}`;
@@ -565,6 +574,7 @@ export async function spawnProgram(
       runtime,
       startList(paneId, argv, spawn, files, mark, armed, started),
       {
+        daemon: pin.daemon,
         signal: watcher.signal,
         timeoutMs: null,
       },
@@ -577,6 +587,8 @@ export async function spawnProgram(
     await confirmStarted(runtime, paneId, () => failure, exited, signal, started, watcher);
     // Handles come from a whole-server snapshot, as `Pane.refreshed` reads them.
     const pane = (await server.panes()).toArray().find((candidate) => candidate.id === paneId);
+    // The read that found the pane names its daemon, which every later command must reach.
+    pin.daemon = lastObservedDaemon(runtime);
     if (pane === undefined) {
       throw new TmuxObjectNotFoundError({ obj_id: paneId, obj_key: "pane_id" });
     }
@@ -595,6 +607,7 @@ export async function spawnProgram(
       mark,
       owned,
       paneId,
+      pin,
       program: argv[0] ?? "",
       runtime,
       settled: false,
@@ -607,9 +620,9 @@ export async function spawnProgram(
     // Nothing else would end a program whose setup failed, or remove what it ran in.
     watcher.abort();
     clearInterval(lease?.timer);
-    if (paneId !== undefined) await stopPane(runtime, paneId).catch(() => undefined);
+    if (paneId !== undefined) await stopPane(runtime, paneId, pin.daemon).catch(() => undefined);
     if (owned !== undefined && spawn.keep !== true) {
-      await removeOwned(runtime, owned).catch(() => undefined);
+      await removeOwned(runtime, owned, pin.daemon).catch(() => undefined);
     }
     if (files !== undefined) {
       await rm(files.directory, { force: true, recursive: true }).catch(() => undefined);
