@@ -1,3 +1,4 @@
+import type { Pane } from "libtmux";
 import type { Server } from "libtmux/server";
 
 /**
@@ -55,4 +56,27 @@ export async function buildAndSettle(server: Server, windows: readonly string[])
   );
 
   return settled.windows.count({ session: { is: { id: session.id } } });
+}
+
+/**
+ * Run a command in a shell that marks its commands, and get its exit status.
+ *
+ * A shell that writes OSC 133 marks, as fish does and bash and zsh do from a
+ * prompt hook, tells tmux when each command ends and how; no marker has to be
+ * printed or read back. `send` types the command once the wait is listening.
+ */
+export async function runMarked(pane: Pane, command: string): Promise<number> {
+  const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
+  return status;
+}
+
+/**
+ * Wait for a pane's program to exit, whoever started it.
+ *
+ * A pane that closes on exit takes its status with it, and tmux reports that
+ * status in the same event, so it is not lost.
+ */
+export async function waitForExit(pane: Pane): Promise<number | null> {
+  const { exitCode } = await pane.waitForExit({ timeoutMs: 30_000 });
+  return exitCode;
 }
