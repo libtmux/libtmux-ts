@@ -613,6 +613,12 @@ export interface RunOptions extends Omit<SpawnOptions, "maxStreamBytes" | "strea
   readonly signal?: AbortLike;
 }
 
+/** Options for {@link Program.stream}. */
+export interface ProgramStreamOptions {
+  /** Ends the stream, not the program. */
+  readonly signal?: AbortLike;
+}
+
 /** Options for {@link Program.wait}. */
 export interface ProgramWaitOptions {
   /** Stops the wait, not the program. */

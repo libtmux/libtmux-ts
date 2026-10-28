@@ -1047,7 +1047,8 @@ const outcome = await server.run(argv, { signal }).catch((error: unknown) => {
   `indeterminate` when setup was cut short and the program may have begun, and
   `written` once it had started.
 - `spawn` takes `signal` too, for setup alone; once it returns, the program is
-  yours to end.
+  yours to end. A cancelled `wait()` or `stream()` leaves the program running,
+  with `delivery` `replied`.
 
 ### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
 

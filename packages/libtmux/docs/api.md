@@ -3191,7 +3191,7 @@ await program.output(); // "hello"
 #### `Program.stream`
 
 ```ts
-stream(): AsyncGenerator<string, void, undefined>
+stream(options?: ProgramStreamOptions): AsyncGenerator<string, void, undefined>
 ```
 
 Everything the program writes, as UTF-8 text in the order it was written,
@@ -3199,7 +3199,9 @@ until it exits and its last write has arrived.
 
 Needs `stream: true` at spawn. The text is the terminal's: line ends are
 `\r\n`, escape sequences are left in, and bytes that are not UTF-8 become
-U+FFFD. Each call reads from the start; leaving the loop early stops it.
+U+FFFD. Each call reads from the start; leaving the loop early stops it,
+and so does `signal`, with `TmuxTransportError` of kind `cancelled`.
+Either way the program runs on.
 
 ```ts
 await using program = await server.spawn(["seq", "1", "3"], { stream: true });

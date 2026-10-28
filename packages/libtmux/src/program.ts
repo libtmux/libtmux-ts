@@ -1,7 +1,7 @@
 import { killProgram, programOutput, waitProgram } from "./_internal/operations/program.js";
 import { streamProgram } from "./_internal/operations/program_stream.js";
 import type { Pane } from "./pane.js";
-import type { ProgramExit, ProgramWaitOptions } from "./types.js";
+import type { ProgramExit, ProgramStreamOptions, ProgramWaitOptions } from "./types.js";
 
 /**
  * A program started by {@link Server.spawn}, running in a pane of its own.
@@ -91,7 +91,9 @@ export class Program implements AsyncDisposable {
    *
    * Needs `stream: true` at spawn. The text is the terminal's: line ends are
    * `\r\n`, escape sequences are left in, and bytes that are not UTF-8 become
-   * U+FFFD. Each call reads from the start; leaving the loop early stops it.
+   * U+FFFD. Each call reads from the start; leaving the loop early stops it,
+   * and so does `signal`, with {@link TmuxTransportError} of kind `cancelled`.
+   * Either way the program runs on.
    *
    * ```ts
    * await using program = await server.spawn(["seq", "1", "3"], { stream: true });
@@ -100,8 +102,8 @@ export class Program implements AsyncDisposable {
    * text; // "1\r\n2\r\n3\r\n"
    * ```
    */
-  stream(): AsyncGenerator<string, void, undefined> {
-    return streamProgram(this);
+  stream(options?: ProgramStreamOptions): AsyncGenerator<string, void, undefined> {
+    return streamProgram(this, options?.signal);
   }
 
   /**

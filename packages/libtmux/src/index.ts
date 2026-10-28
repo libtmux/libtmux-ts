@@ -43,6 +43,7 @@ export type {
   ProgramExit,
   ProgramPlacement,
   ProgramResult,
+  ProgramStreamOptions,
   ProgramWaitOptions,
   RespawnOptions,
   ResizeOptions,

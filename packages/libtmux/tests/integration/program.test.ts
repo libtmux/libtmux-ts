@@ -622,6 +622,35 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "a signal ends a stream and leaves the program running",
+    async () => {
+      await withServer(async (server) => {
+        await using program = await server.spawn(["sh", "-c", "echo up; sleep 30"], {
+          stream: true,
+        });
+        const controller = new AbortController();
+        let text = "";
+        const reading = (async () => {
+          for await (const chunk of program.stream({ signal: controller.signal })) {
+            text += chunk;
+            if (text.includes("up")) controller.abort(new Error("enough"));
+          }
+        })();
+        expect(await reading.catch((error: unknown) => error)).toMatchObject({ kind: "cancelled" });
+        expect(text).toContain("up");
+        const [dead] = await server.cmd("display-message", [
+          "-p",
+          "-t",
+          program.pane.id,
+          "#{pane_dead}",
+        ]);
+        expect(dead).toBe("0");
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "stream() without stream: true throws at the call",
     async () => {
       await withServer(async (server) => {
