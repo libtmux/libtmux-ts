@@ -361,6 +361,19 @@ closes takes its status with it, and the event's payload carries that status.
 `kill-pane` fires no event; the pane is read every second and a removed one
 answers `gone`. It needs tmux 3.8 or newer.
 
+### How each tool reports an end
+
+| Tool            | `outcome`                                            | `exitStatus`                                            | `signal`                                         |
+| --------------- | ---------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------ |
+| `run_program`   | `completed`, `timed_out`                             | As `$?` reports it, 128 plus a signal's number too      | Set when the signal ended the program's `sh` too |
+| `read_program`  | `running`, `completed`, `expired`, `stopped`, `gone` | As in `run_program`, once `completed`                   | As in `run_program`                              |
+| `wait_for_exit` | `completed`, `timed_out`, `gone`, `cancelled`        | tmux's reading of the pane's process, null for a signal | The signal that ended the pane's process         |
+
+A cancelled `run_program` or `read_program` request ends with the request;
+`wait_for_exit` answers `cancelled`. `run_program` and `read_program` wrap the
+program in an `sh` of their own, which is why a signal shows there as `$?` does,
+and `wait_for_exit` reads a process no wrapper stands in front of.
+
 ## [`run_shell_command`][tool-run_shell_command] framing and checks
 
 **A command's output is never its echo.** A pane repeats what is typed into it,

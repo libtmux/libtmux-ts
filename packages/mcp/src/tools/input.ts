@@ -31,7 +31,12 @@ import {
   type PaneInputPlan,
 } from "../pane_input.js";
 import type { Policy } from "../policy.js";
-import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
+import {
+  DEFAULT_BLOCKING_WAIT_MS,
+  effectiveResultLines,
+  effectiveWaitMs,
+  MAX_RESULT_BYTES,
+} from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import {
@@ -744,7 +749,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .positive()
           .optional()
           .describe(
-            "How long to let it run; 30 s by default and clamped by the server ceiling. " +
+            `How long to let it run; ${String(DEFAULT_BLOCKING_WAIT_MS / 1000)} s by default ` +
+              "and clamped by the server ceiling. " +
               "The result says what was used.",
           ),
         width: z
@@ -788,8 +794,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .boolean()
           .describe(
             "True when the end may be missing: tmux closed the pane before reading it. " +
-              "Running it again repeats what it did; for one with effects, read it with " +
-              "start_program instead.",
+              "Running it again repeats what it did; for one with effects, have it write its " +
+              'output to a file with ["sh", "-c", "... > file"] and read the file.',
           ),
         lostStart: z
           .boolean()
