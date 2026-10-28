@@ -811,10 +811,10 @@ run_shell_command  paneId=%1  command='cargo build'
 That waits through tmux's notifications and comes back with `exitStatus`,
 `outcome`, and the output — one call.
 
-**Do not type a command when only its output matters.** A typed command shares
-its pane with the prompt, the echo, and anyone else typing there.
-[`run_program`][tool-run_program] starts it in a pane of its own and returns
-only what it printed; keep `run_shell_command` for a command that needs that
+**When only the output matters, use [`run_program`][tool-run_program].** It
+starts the command in a pane of its own and returns only what it printed,
+where a typed command shares its pane with the prompt, the echo, and anyone
+else typing there. Keep `run_shell_command` for a command that needs that
 pane's shell. Its timeout ends the program and is capped by
 `LIBTMUX_MCP_WAIT_MAX_MS`. A build longer than that goes to
 [`start_program`][tool-start_program] and is read with
