@@ -23,10 +23,11 @@ import type {
   RunOptions,
   SpawnOptions,
 } from "../../types.js";
-import type { RuntimeContext } from "../runtime/context.js";
+import { lastObservedDaemon, type RuntimeContext } from "../runtime/context.js";
 import { requireOnServer } from "../runtime/live_handle.js";
 import { capabilitySince, hasCapability } from "../support/capabilities.js";
-import { runCommand, runCommands } from "./command.js";
+import { acquireServerGraph } from "./acquire.js";
+import { executableTmuxVersion, isColdEndpoint, runCommand, runCommands } from "./command.js";
 import {
   cancelled,
   drainChannel,
@@ -166,13 +167,13 @@ async function createSession(
   arm: (target: string, owned: Owned) => string[][],
 ): Promise<string> {
   const target = `=${sessionName}:`;
-  const [paneId = ""] = await runCommands(runtime, [
+  const [line = ""] = await runCommands(runtime, [
     [
       "new-session",
       "-d",
       "-P",
       "-F",
-      "#{pane_id}",
+      "#{pane_id} #{pid} #{start_time}",
       "-s",
       sessionName,
       ...(spawn.width === undefined ? [] : ["-x", String(spawn.width)]),
@@ -193,6 +194,12 @@ async function createSession(
     ],
     ...arm(target, { kind: "session", target: `=${sessionName}` }),
   ]);
+  const [paneId = "", pid = "", startTime = ""] = line.split(" ");
+  const seen = lastObservedDaemon(runtime);
+  // new-session started a server where the last one exited; the ids sent next are its.
+  if (seen !== undefined && (seen.pid !== pid || seen.startTime !== startTime)) {
+    await acquireServerGraph(runtime);
+  }
   return paneId;
 }
 
@@ -417,7 +424,14 @@ export async function spawnProgram(
   const placement = requireSpawn(argv, spawn);
   if (spawn.from !== undefined) requireOnServer(spawn.from, server, "from");
   if (isAborted(signal)) throw cancelled(signal, "the start was cancelled", "not_started");
-  const { tmuxVersion } = await runtime.capabilities.bind();
+  // On a cold socket the session's own new-session starts the server, with this executable.
+  const tmuxVersion = await runtime.capabilities.bind().then(
+    ({ tmuxVersion: daemon }) => daemon,
+    async (error: unknown) => {
+      if (spawn.from !== undefined || !isColdEndpoint(error)) throw error;
+      return executableTmuxVersion(runtime);
+    },
+  );
   if (!hasCapability("program-run", tmuxVersion)) {
     throw new VersionTooLowError({
       criteriaName: "program run",
@@ -446,7 +460,6 @@ export async function spawnProgram(
             }
           : undefined;
       files = { directory, stream };
-      await requireShared(runtime, directory);
       if (stream !== undefined) await writeFile(stream.out, "", { mode: 0o600 });
       if (spawn.input !== undefined) {
         input = join(directory, "in");
@@ -478,6 +491,8 @@ export async function spawnProgram(
       ));
       if (placement === "split") armed = arm(paneId, owned);
     }
+    // Asked once the pane exists, since a cold socket has no server to ask before.
+    if (files !== undefined) await requireShared(runtime, files.directory);
     // Renewed from the moment the pane exists, however long the rest of setup takes.
     if (lease !== undefined)
       startRenewal({ files: files !== undefined, keep, owned, paneId, runtime, watcher }, lease);

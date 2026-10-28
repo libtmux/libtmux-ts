@@ -5,6 +5,9 @@ import type { RuntimeContext } from "../runtime/context.js";
 import { reachesUnboundedCommand } from "../transport/bounded_transport.js";
 import { carriesTmuxId } from "../transport/daemon_guard.js";
 import type { RawCommandResult } from "../transport/types.js";
+import type { TmuxVersion } from "../../types.js";
+import { parseTmuxVersion } from "../runtime/tmux_version.js";
+import { executableProbe, executableVersion, requireCoreVersion } from "../support/versions.js";
 import { adaptRawResult, prepareCommandRequest, prepareInvocationRequest } from "./request.js";
 
 /**
@@ -144,6 +147,29 @@ export async function runCommands(
     });
   }
   return result.stdout;
+}
+
+/** The configured executable's own version: the tmux a command on a cold socket starts. */
+export async function executableTmuxVersion(
+  runtime: RuntimeContext,
+  options: CommandOptions = {},
+): Promise<TmuxVersion> {
+  const timeoutMs =
+    options.timeoutMs === undefined ? runtime.timeoutMs : (options.timeoutMs ?? undefined);
+  const own = executableVersion(
+    await runtime.transport.execute(
+      executableProbe({
+        environment: runtime.connection.environment,
+        executable: runtime.connection.executable,
+        globalArgs: [],
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      }),
+    ),
+    runtime.connection.executable,
+  );
+  requireCoreVersion(own);
+  return parseTmuxVersion(own);
 }
 
 /**

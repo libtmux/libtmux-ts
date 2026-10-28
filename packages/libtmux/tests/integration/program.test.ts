@@ -486,6 +486,30 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "starts the server it runs on, and again once that one has exited",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        const cold = new Server({
+          configFile: "/dev/null",
+          environment: fixture.controllerEnvironment,
+          socketPath: join(directory, "cold"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          expect(await cold.isAlive()).toBe(false);
+          expect((await cold.run(["echo", "first"])).output).toBe("first");
+          // The run's session was the server's only one, so the server went with it.
+          expect(await cold.isAlive()).toBe(false);
+          expect((await cold.run(["sort"], { input: "b\na\n" })).output).toBe("a\nb");
+        } finally {
+          if (await cold.isAlive()) await cold.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a spawn aborted before it starts removes what it made",
     async () => {
       await withServer(async (server) => {
