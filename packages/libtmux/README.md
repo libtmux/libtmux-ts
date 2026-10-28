@@ -963,6 +963,8 @@ result.output.startsWith("git version"); // true
   the pane's directory and with the session's tmux environment. What the pane's
   shell exported stays in that shell: [`Pane.sendKeys`][ref-pane-sendkeys] is
   the way into it.
+- The program runs on the tmux server's machine, which need not be this one;
+  only `input` and `stream: true` need it here.
 - Needs tmux 3.8 or newer. [Details](docs/contracts.md#program-runs).
 
 ### [`Server.spawn`][ref-server-spawn]: drive it, then wait

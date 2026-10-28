@@ -199,17 +199,17 @@ typed, so the output holds no command line or echo. In short:
 
 What each outcome looks like to a caller:
 
-| What happened                                    | What the caller sees                                                            |
-| ------------------------------------------------ | ------------------------------------------------------------------------------- |
-| The program ended                                | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too |
-| Its output's start scrolled past `historyLimit`  | `lostStart`                                                                     |
-| tmux removed the pane before reading the end     | `lostEnd`; `stream()` ends with `OutputLostError`                               |
-| The stream copy reached `maxStreamBytes`         | `stream()` ends with `StreamLimitError`; the program runs on                    |
-| `run`'s `timeoutMs` passed                       | `timedOut`, with the output so far                                              |
-| `signal` fired                                   | `TmuxTransportError` of kind `cancelled`                                        |
-| The pane was killed from outside                 | `ObjectNotFoundError` from `wait()` and `output()`                              |
-| The caller died                                  | tmux ends the program within `orphanAfterMs`                                    |
-| `input` or `stream` with a tmux server elsewhere | `ServerNotLocalError`, before anything starts                                   |
+| What happened                                    | What the caller sees                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| The program ended                                | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too        |
+| Its output's start scrolled past `historyLimit`  | `lostStart`                                                                            |
+| tmux removed the pane before reading the end     | `lostEnd`; `stream()` ends with `OutputLostError`                                      |
+| The stream copy reached `maxStreamBytes`         | `stream()` ends with `StreamLimitError`; the program runs on                           |
+| `run`'s `timeoutMs` passed                       | `timedOut`, with the output so far                                                     |
+| `signal` fired                                   | `TmuxTransportError` of kind `cancelled`, whose `delivery` says whether it had started |
+| The pane was killed from outside                 | `ObjectNotFoundError` from `wait()` and `output()`                                     |
+| The caller died                                  | tmux ends the program within `orphanAfterMs`                                           |
+| `input` or `stream` with a tmux server elsewhere | `ServerNotLocalError`, before anything starts                                          |
 
 ### Starting the program
 
@@ -393,8 +393,9 @@ What each outcome looks like to a caller:
   with strftime.
 - A kill ends a stream in progress with `LibTmuxError`, and a pane removed from
   outside ends it with the wait's `ObjectNotFoundError`, after what arrived.
-- The reader polls the copy every 25 ms, which behaves the same on every
-  platform and filesystem.
+- The reader polls the copy every 25 ms for as long as it is read, one small
+  read a poll for each stream, which behaves the same on every platform and
+  filesystem.
 
 A `Program` is made from its prototype rather than by `new`, so its constructor
 is not public API.

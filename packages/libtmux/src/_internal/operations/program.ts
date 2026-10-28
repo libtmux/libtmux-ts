@@ -161,8 +161,8 @@ async function renew(target: LeaseTarget, lease: Lease): Promise<void> {
 }
 
 /**
- * Renew the lease every third of its length. Unreferenced: a process with
- * nothing else to do exits, and tmux then ends the program.
+ * Renew the lease every third of its length. Unreferenced, so the lease keeps
+ * no process alive; the exit watch does, until the program ends.
  */
 export function startRenewal(target: LeaseTarget, lease: Lease): void {
   lease.timer = setInterval(() => void renew(target, lease), lease.ms / 3);

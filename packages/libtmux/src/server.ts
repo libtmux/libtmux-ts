@@ -1452,8 +1452,7 @@ export class Server {
    * Start a program in a pane of its own and return it running.
    *
    * No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
-   * a pipe needs `["sh", "-c", …]`. Nothing is typed into a terminal, so the
-   * program's output holds no command line. The program gets a real terminal,
+   * a pipe needs `["sh", "-c", …]`. The program gets a real terminal,
    * which is what a full-screen program needs to be driven by keys; see
    * {@link SpawnOptions} for what that implies for pagers and prompts.
    *
@@ -1461,6 +1460,8 @@ export class Server {
    * unless `from` places it beside another pane: `await using` or
    * {@link Program.kill} ends the program and removes it, and tmux does once
    * this process stops renewing its lease, unless `orphanAfterMs` is `null`.
+   * Like a child process, a running program keeps this process alive until it
+   * ends.
    *
    * Requires tmux 3.8 or newer, and raises {@link VersionTooLowError}
    * below it. Earlier releases have no exit event to wait on, and through

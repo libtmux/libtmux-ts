@@ -1344,8 +1344,7 @@ spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program>
 Start a program in a pane of its own and return it running.
 
 No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
-a pipe needs `["sh", "-c", …]`. Nothing is typed into a terminal, so the
-program's output holds no command line. The program gets a real terminal,
+a pipe needs `["sh", "-c", …]`. The program gets a real terminal,
 which is what a full-screen program needs to be driven by keys; see
 `SpawnOptions` for what that implies for pagers and prompts.
 
@@ -1353,6 +1352,8 @@ The [`Program`](#program) owns its pane, in a detached session of its own
 unless `from` places it beside another pane: `await using` or
 [`Program.kill`](#programkill) ends the program and removes it, and tmux does once
 this process stops renewing its lease, unless `orphanAfterMs` is `null`.
+Like a child process, a running program keeps this process alive until it
+ends.
 
 Requires tmux 3.8 or newer, and raises `VersionTooLowError`
 below it. Earlier releases have no exit event to wait on, and through
@@ -3156,7 +3157,7 @@ Resolve with how the program ended, once it has.
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError`
 of kind `cancelled`. A program whose pane is killed from outside raises
-`ObjectNotFoundError` in about a second.
+`ObjectNotFoundError` within about a second.
 
 ```ts
 await using program = await server.spawn(["sh", "-c", "exit 3"]);
