@@ -1,5 +1,6 @@
 /**
- * Time `Server.run` of `true`: one run after another, then several side by side.
+ * Time `Server.run` of `true`: one run after another on a server with no session
+ * of its own, then with one, then several side by side.
  *
  *     bun scripts/bench-program.ts [runs] [side by side]
  *
@@ -22,11 +23,18 @@ if (!Number.isSafeInteger(runs) || runs < 1 || !Number.isSafeInteger(wide) || wi
 const directory = await mkdtemp(join(tmpdir(), "ltx-bench-"));
 const server = new Server({ socketPath: join(directory, "socket") });
 try {
+  // With no session of its own, each run starts the server and stops it on removing its own.
+  let started = performance.now();
+  for (let run = 0; run < runs; run += 1) {
+    // eslint-disable-next-line no-await-in-loop -- one after another is what this times.
+    await server.run(["true"]);
+  }
+  const cold = (performance.now() - started) / runs;
   // A session of its own keeps the server up between runs, as a caller's would.
   await server.newSession();
   await server.run(["true"]);
   const version = (await server.version()).raw;
-  let started = performance.now();
+  started = performance.now();
   for (let run = 0; run < runs; run += 1) {
     // eslint-disable-next-line no-await-in-loop -- one after another is what this times.
     await server.run(["true"]);
@@ -37,8 +45,8 @@ try {
   const sideBySide = performance.now() - started;
   console.log(
     `tmux ${version} on ${process.platform} ${release()}: ${oneByOne.toFixed(0)} ms a run ` +
-      `over ${String(runs)} one after another; ${String(wide)} side by side took ` +
-      `${sideBySide.toFixed(0)} ms in all`,
+      `over ${String(runs)} one after another, ${cold.toFixed(0)} ms with no session ` +
+      `keeping the server up; ${String(wide)} side by side took ${sideBySide.toFixed(0)} ms in all`,
   );
 } finally {
   await server.kill();
