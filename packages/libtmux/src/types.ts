@@ -649,7 +649,8 @@ export interface ProgramResult extends ProgramExit {
   readonly lostStart: boolean;
   /**
    * Whether `output` may lack its end: tmux removed the pane before reading it,
-   * or a SIGKILL to the process group left the end unproven.
+   * or a SIGKILL to the process group left the end unproven. A run that timed
+   * out is read before it ends, so this is false and `timedOut` says why.
    */
   readonly lostEnd: boolean;
 }

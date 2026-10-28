@@ -561,7 +561,15 @@ export async function runProgram(
     }
     const { lostEnd, lostStart, text } = await programOutput(program);
     failed = false;
-    return { ...exit, lostEnd, lostStart, output: text, success: exit.exitCode === 0, timedOut };
+    // A timed-out run is read before its end, so no mark is due yet.
+    return {
+      ...exit,
+      lostEnd: lostEnd && !timedOut,
+      lostStart,
+      output: text,
+      success: exit.exitCode === 0,
+      timedOut,
+    };
   } finally {
     // Ending it must not hide the error the run failed with, as `await using` would.
     await killProgram(program).catch((error: unknown) => {
