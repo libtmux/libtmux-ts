@@ -485,7 +485,8 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
 - `separateStderr: true` returns what the program writes to stderr as
   `stderr`, so `output` is stdout alone; stderr is then no terminal. It needs
   the tmux server on this machine, as `input` does.
-- The program finds commands on the tmux server's `PATH` and gets `PAGER=cat`
+- The program finds commands on this server's `PATH`, since tmux gives a pane
+  the `PATH` of the client that asked for it, and gets `PAGER=cat`
   and `GIT_PAGER=cat`. One not found or not executable, or a `startDirectory`
   it cannot enter, fails the call before anything runs, with the reason; a
   program's own exit 127 is its `exitStatus`.

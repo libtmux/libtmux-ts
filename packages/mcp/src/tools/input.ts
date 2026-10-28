@@ -676,7 +676,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         "holds no command line or echo. Check outcome and outputComplete before trusting " +
         "output. The pane is removed before this returns unless keep is set. A program " +
         "still running at the timeout, capped by the server's wait ceiling, is ended: run " +
-        "longer ones with start_program. Commands come from the tmux server's PATH, and one " +
+        "longer ones with start_program. Commands come from this MCP server's PATH, and one " +
         "not found or not executable fails the call before anything runs. stdin is input " +
         "when given, else the terminal. PAGER and GIT_PAGER are cat. Use startDirectory " +
         'in place of cd, ["sh", "-c", ...] for pipes, and run_shell_command for a command ' +
@@ -916,7 +916,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             hint:
               error.reason === "start-directory"
                 ? "Pass a startDirectory that exists on the tmux server's machine."
-                : "Name a program on the tmux server's PATH or an executable file's path; " +
+                : "Name a program on this MCP server's PATH or an executable file's path; " +
                   'run a shell builtin through ["sh", "-c", ...], and use startDirectory for cd.',
             reason: `${error.message}, so nothing ran (exit status ${String(error.exitCode)}).`,
           });
