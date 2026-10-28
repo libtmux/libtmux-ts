@@ -678,9 +678,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         "still running at the timeout, capped by the server's wait ceiling, is ended: run " +
         "longer ones with start_program. Commands come from the tmux server's PATH, and one " +
         "not found or not executable fails the call before anything runs. stdin is input " +
-        "when given, else the terminal. PAGER and GIT_PAGER " +
-        'are cat. Use ["sh", "-c", ...] for pipes, and run_shell_command for shell builtins ' +
-        "such as cd. Requires tmux 3.8 or newer.",
+        "when given, else the terminal. PAGER and GIT_PAGER are cat. Use startDirectory " +
+        'in place of cd, ["sh", "-c", ...] for pipes, and run_shell_command for a command ' +
+        "that needs an existing shell's state. Requires tmux 3.8 or newer.",
       inputSchema: {
         argv: programArgv,
         fromPaneId: paneIdSchema
@@ -917,7 +917,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
               error.reason === "start-directory"
                 ? "Pass a startDirectory that exists on the tmux server's machine."
                 : "Name a program on the tmux server's PATH or an executable file's path; " +
-                  "shell builtins such as cd need run_shell_command.",
+                  'run a shell builtin through ["sh", "-c", ...], and use startDirectory for cd.',
             reason: `${error.message}, so nothing ran (exit status ${String(error.exitCode)}).`,
           });
         }
