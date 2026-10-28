@@ -1,7 +1,7 @@
 // Waiting on any pane through tmux's own events: its program's exit, or a shell command's end.
 import { randomUUID } from "node:crypto";
 
-import { VersionTooLowError, WaitTimeoutError } from "../../errors.js";
+import { TmuxObjectNotFoundError, VersionTooLowError, WaitTimeoutError } from "../../errors.js";
 import type { CommandWaitOptions, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { capabilitySince, hasCapability } from "../support/capabilities.js";
@@ -21,6 +21,8 @@ import {
 const BACKSTOP_MS = 1000;
 /** How long arming waits for tmux to register the waiter. */
 const ARM_MS = 10_000;
+/** How long a pane found gone may take to deliver the event its closing fired. */
+const DELIVERY_MS = 1000;
 
 type Payload = ReadonlyMap<string, string>;
 
@@ -162,8 +164,18 @@ async function waitOnPane<T>(
     await act();
     for (;;) {
       if (found !== undefined) return found;
-      // eslint-disable-next-line no-await-in-loop -- each read follows the last wake.
-      const seen = await check();
+      let seen: T | undefined;
+      try {
+        // eslint-disable-next-line no-await-in-loop -- each read follows the last wake.
+        seen = await check();
+      } catch (error) {
+        if (!(error instanceof TmuxObjectNotFoundError)) throw error;
+        // A pane that closed fired its event as it went; the payload may still be on its way.
+        // eslint-disable-next-line no-await-in-loop -- once, on the way out.
+        await Promise.race([Promise.all(waiters.map(({ fired }) => fired)), sleep(DELIVERY_MS)]);
+        if (found !== undefined) return found;
+        throw error;
+      }
       if (seen !== undefined) return seen;
       if (found !== undefined) return found;
       if (isAborted(signal)) throw cancelled(signal);

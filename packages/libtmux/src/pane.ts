@@ -357,7 +357,7 @@ export class Pane {
    * Giving up leaves the program running: a timeout throws
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError} of
    * kind `cancelled`. A pane killed from outside, which fires no event, raises
-   * {@link ObjectNotFoundError} in about a second.
+   * {@link ObjectNotFoundError} within about two seconds.
    *
    * Requires tmux 3.8 or newer.
    *
@@ -376,7 +376,7 @@ export class Pane {
    * finishes.
    *
    * Needs a shell that marks each command's end with OSC 133 (`ESC ] 133 ; D ;
-   * status`), as fish and many prompt themes do; tmux turns the mark into a
+   * status`) from its prompt; tmux turns the mark into a
    * `pane-command-finished` event. `send` types a command line once the wait
    * is listening, so a command that ends at once is not missed. A shell
    * without the marks never resolves this: give it a `timeoutMs`.
