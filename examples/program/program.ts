@@ -4,8 +4,8 @@ import type { DeliveryStatus, Pane, Program, ProgramResult, Server } from "libtm
 /**
  * Run a program and keep only what it printed.
  *
- * `argv` reaches the program unexpanded. `timedOut` is a result rather than an
- * error: the program is ended and what it printed so far still comes back.
+ * `argv` reaches the program unexpanded. A run that times out returns with
+ * `timedOut` set: the program is ended and what it printed so far comes back.
  */
 export async function listFiles(server: Server, directory: string): Promise<readonly string[]> {
   const result = await server.run(["ls", "-1A", directory], { timeoutMs: 10_000 });
