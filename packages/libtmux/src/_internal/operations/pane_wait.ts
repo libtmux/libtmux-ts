@@ -183,12 +183,17 @@ async function waitOnPane<T>(
       } catch (error) {
         if (!(error instanceof TmuxObjectNotFoundError)) throw error;
         // A pane that closed fired its event as it went; the payload may still be on its way.
+        // An answer ends the grace at once, as does every waiter having had its say.
         const delivered = new AbortController();
+        const answered = (): void => delivered.abort();
+        wake.signal.addEventListener("abort", answered, { once: true });
+        if (wake.signal.aborted) answered();
         // eslint-disable-next-line no-await-in-loop -- once, on the way out.
         await Promise.race([
-          Promise.all(waiters.map(({ fired }) => fired)).finally(() => delivered.abort()),
+          Promise.all(waiters.map(({ fired }) => fired)).finally(answered),
           sleep(DELIVERY_MS, delivered.signal),
         ]);
+        wake.signal.removeEventListener("abort", answered);
         if (found !== undefined) return found;
         throw error;
       }
