@@ -20,6 +20,7 @@ import {
   LibTmuxError,
   ObjectNotFoundError,
   OutputLostError,
+  ProgramStartError,
   ServerNotLocalError,
   TmuxTransportError,
   VersionTooLowError,
@@ -170,12 +171,17 @@ describe("program runs", () => {
         // argv reaches the program untouched: no shell expands it, even as one word.
         expect((await server.run(["echo", "a;b", "$HOME", "*"])).output).toBe("a;b $HOME *");
         // A one-word argv is a program name, never a command line for default-shell.
-        expect((await server.run(["echo $HOME"])).exitCode).toBe(127);
+        expect(await server.run(["echo $HOME"]).catch((error: unknown) => error)).toMatchObject({
+          exitCode: 127,
+          reason: "not-found",
+        });
         expect((await server.run(["pwd"], { startDirectory: "/" })).output).toBe("/");
         // tmux's `-c` would fall back to $HOME; this ends the run before the program.
-        const missing = await server.run(["pwd"], { startDirectory: "/ltx-no-such-directory" });
-        expect(missing.exitCode).toBe(126);
-        expect(missing.output).toContain("/ltx-no-such-directory");
+        const missing = await server
+          .run(["pwd"], { startDirectory: "/ltx-no-such-directory" })
+          .catch((error: unknown) => error);
+        expect(missing).toBeInstanceOf(ProgramStartError);
+        expect(missing).toMatchObject({ exitCode: 126, reason: "start-directory" });
         // Without one, it starts where this process is, as a child process would.
         expect((await server.run(["pwd", "-P"])).output).toBe(await realpath(process.cwd()));
         expect(
@@ -400,10 +406,48 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "a program that never ran is an error, and one that exits 127 is not",
+    async () => {
+      await withServer(async (server, directory) => {
+        const missing = await server.run(["ltx-no-such-program"]).catch((error: unknown) => error);
+        expect(missing).toBeInstanceOf(ProgramStartError);
+        expect(missing).toMatchObject({ exitCode: 127, reason: "not-found" });
+        const plain = join(directory, "plain");
+        await writeFile(plain, "echo never\n");
+        for (const unrunnable of [plain, directory]) {
+          // eslint-disable-next-line no-await-in-loop -- one run at a time.
+          expect(await server.run([unrunnable]).catch((error: unknown) => error)).toMatchObject({
+            exitCode: 126,
+            reason: "not-executable",
+          });
+        }
+        // A program's own 127 is its status, and a builtin with a binary runs the binary.
+        expect((await server.run(["sh", "-c", "exit 127"])).exitCode).toBe(127);
+        expect((await server.run(["true"])).success).toBe(true);
+        // A spawn starts, then its wait and its stream end with the error, after the complaint.
+        await using unstarted = await server.spawn(["ltx-no-such-program"], { stream: true });
+        let streamed = "";
+        const ended = await (async () => {
+          for await (const chunk of unstarted.stream()) streamed += chunk;
+        })().catch((error: unknown) => error);
+        expect(ended).toBeInstanceOf(ProgramStartError);
+        expect(streamed).toContain("ltx-no-such-program: not found");
+        expect(streamed).not.toContain("libtmux-ran-");
+        await expect(unstarted.wait()).rejects.toBeInstanceOf(ProgramStartError);
+        await expect(unstarted.wait()).rejects.toMatchObject({ reason: "not-found" });
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "an argv[0] with = in it is a program name, not an assignment",
     async () => {
       await withServer(async (server) => {
-        expect((await server.run(["FOO=bar"])).exitCode).toBe(127);
+        expect(await server.run(["FOO=bar"]).catch((error: unknown) => error)).toMatchObject({
+          code: "ProgramStartError",
+          reason: "not-found",
+        });
       });
     },
     40_000,
@@ -549,15 +593,11 @@ describe("program runs", () => {
         const merged = await server.run(["sh", "-c", "echo out; echo err >&2"]);
         expect(merged.output).toBe("out\nerr");
         expect(merged.stderr).toBeUndefined();
-        // The sh's own complaint is stderr too.
-        const unentered = await server.run(["true"], {
-          separateStderr: true,
-          startDirectory: "/nonexistent-ltx-directory",
-        });
-        expect(unentered.exitCode).toBe(126);
-        expect(unentered.stderr).toContain("nonexistent-ltx-directory");
-        // It still ends through the mark, so its end is proven.
-        expect(unentered.lostEnd).toBe(false);
+        // A directory the sh cannot enter fails the run before the program starts.
+        const unentered = await server
+          .run(["true"], { separateStderr: true, startDirectory: "/nonexistent-ltx-directory" })
+          .catch((error: unknown) => error);
+        expect(unentered).toMatchObject({ exitCode: 126, reason: "start-directory" });
         // The wrapper's own variables leave the program's alone.
         const own = await server.run(["sh", "-c", "echo $m $s $e"], {
           environment: { e: "three", m: "one", s: "two" },

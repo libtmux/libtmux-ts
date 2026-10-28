@@ -969,6 +969,11 @@ result.output.startsWith("git version"); // true
   screen, each as wide as the pane, the newest kept. The default, 100000 rows
   of 80 columns, holds at most about 8 MB of ASCII; pass a lower one to bound a
   run's output.
+- A program that never ran, because `argv[0]` was not found or is not
+  executable, or `startDirectory` could not be entered, rejects with
+  [`ProgramStartError`][ref-programstarterror]. Its `reason` says which, and
+  its `exitCode` is the 127 or 126 a shell would report; a program's own exit
+  127 is still its `exitCode`.
 - `timeoutMs` ends the program and reports `timedOut` with what it printed so
   far; `signal` ends it and rejects.
 - `{ from: pane }` runs it in a background window of that pane's session, in
@@ -2234,6 +2239,7 @@ MIT
 [ref-tmuxtransporterror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxtransporterror/
 [ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
 [ref-streamlimiterror]: https://libtmux.org/en/ts/latest/reference/errors-streamlimiterror/
+[ref-programstarterror]: https://libtmux.org/en/ts/latest/reference/errors-programstarterror/
 [ref-waittimeouterror]: https://libtmux.org/en/ts/latest/reference/errors-waittimeouterror/
 [ref-watchoptions]: https://libtmux.org/en/ts/latest/reference/types-watchoptions/
 [ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/

@@ -101,6 +101,8 @@ export {
   TmuxTransportError,
   type TmuxTransportErrorKind,
   OutputLostError,
+  ProgramStartError,
+  type ProgramStartFailure,
   ServerNotLocalError,
   StreamLimitError,
   VersionTooLowError,

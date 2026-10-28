@@ -1385,6 +1385,9 @@ unless `keep` leaves it for a person to read. Without `from` its session
 goes too, and a server with no other session then exits, unless its
 `exit-empty` option is off; the next run starts it again.
 `input` gives the program a stdin; otherwise it has only the terminal.
+A program that never ran, because `argv[0]` was not found or is not
+executable, or `startDirectory` could not be entered, rejects with
+`ProgramStartError`, whose `exitCode` is a shell's 127 or 126.
 A program still running at `timeoutMs` is ended, SIGTERM and then
 SIGKILL, and the result has `timedOut` set, since the run owns the
 program; one aborted through `signal` is ended and the call rejects.
@@ -3164,7 +3167,10 @@ wait(options?: ProgramWaitOptions): Promise<ProgramExit>
 ```
 
 Resolve with how the program ended, once it has. The pane stays, for
-[`Program.output`](#programoutput), until [`Program.kill`](#programkill) or `await using`.
+[`Program.output`](#programoutput), until [`Program.kill`](#programkill) or `await using`. A
+program that never ran, because `argv[0]` was not found or is not
+executable, or `startDirectory` could not be entered, rejects every wait
+with `ProgramStartError`, and its stream ends with it.
 
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError`

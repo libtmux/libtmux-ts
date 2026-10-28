@@ -48,24 +48,40 @@ import {
   type RunFiles,
 } from "./program.js";
 import { leaseTimer, startRenewal, type Lease } from "./program_lease.js";
-import { markSequence } from "./program_stream.js";
+import { markSequences } from "./program_stream.js";
+
+/**
+ * Finds `$0` as `exec` would, and names why it cannot run. `exec` searches
+ * `PATH` past builtins, which `command -v` reports instead, so this walks it.
+ */
+const FIND =
+  '[ -n "$ltx_e" ] || case $0 in ' +
+  '*/*) if [ ! -e "$0" ]; then ltx_e=127 ltx_r=not-found; ' +
+  'elif [ -d "$0" ] || [ ! -x "$0" ]; then ltx_e=126 ltx_r=not-executable; fi ;; ' +
+  "*) ltx_e=127 ltx_r=not-found; ltx_i=$IFS; IFS=:; set -f; " +
+  'for ltx_d in $PATH; do if [ -f "${ltx_d:-.}/$0" ] && [ -x "${ltx_d:-.}/$0" ]; ' +
+  "then ltx_e= ltx_r=; break; fi; done; set +f; IFS=$ltx_i ;; esac; " +
+  "case $ltx_r in not-found) printf '%s: not found\\n' \"$0\" >&3 ;; " +
+  "not-executable) printf '%s: not executable\\n' \"$0\" >&3 ;; esac; ";
 
 /**
  * Runs argv unparsed, writes ST and the run's OSC 7 mark, lingers, and exits
- * with its status. Only a pane whose path is the mark was read to the end.
+ * with its status. Only a pane whose path is the mark was read to the end; a
+ * program that never ran adds `:` and the reason to it.
  */
 export const RUN: string =
   "trap : INT QUIT TERM; exec 3>&2 2>/dev/null; " +
+  FIND +
   '([ -z "$ltx_e" ] || exit "$ltx_e"; exec "$0" "$@" 2>&3 3>&-); ltx_s=$?; ' +
-  "printf '\\033\\\\\\033]7;%s\\007' \"$ltx_m\"; " +
+  "printf '\\033\\\\\\033]7;%s\\007' \"$ltx_m${ltx_r:+:$ltx_r}\"; " +
   'sleep 0.05 2>/dev/null || sleep 1; exit "$ltx_s"';
 /**
  * Steps before `RUN`, each shifting its argument off `$1`. tmux's `-c` falls
  * back to `$HOME` for a directory it cannot enter, where this exits 126.
  */
-export const MARK = "ltx_m=$1; ltx_e=; shift; ";
+export const MARK = "ltx_m=$1; ltx_e=; ltx_r=; shift; ";
 // A directory it cannot enter still ends through the mark and the linger.
-const ENTER = 'cd -- "$1" || ltx_e=126; shift; ';
+const ENTER = 'cd -- "$1" || { ltx_e=126 ltx_r=start-directory; }; shift; ';
 const READ = 'exec <"$1"; shift; ';
 const ERR = 'exec 2>"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */
@@ -332,9 +348,11 @@ function startList(
   started: string,
 ): string[][] {
   const stream = files?.stream;
-  // One byte past the limit and the mark, so a cut copy can be told from one that fit.
+  // One byte past the limit and the longest mark, so a cut copy can be told from one that fit.
   const room =
-    stream?.limit === undefined ? undefined : stream.limit + markSequence(mark).length + 1;
+    stream?.limit === undefined
+      ? undefined
+      : stream.limit + Math.max(...markSequences(mark).map((sequence) => sequence.length)) + 1;
   // GNU head holds its writes to a file until it exits; stdbuf, where there is one, lets
   // them through as they come.
   const copy =
@@ -577,8 +595,10 @@ export async function spawnProgram(
       mark,
       owned,
       paneId,
+      program: argv[0] ?? "",
       runtime,
       settled: false,
+      startError: undefined,
       wakes: new Set(),
       watcher,
     });

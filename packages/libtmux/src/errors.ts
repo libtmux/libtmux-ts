@@ -157,6 +157,7 @@ export type LibTmuxErrorCode =
   | "ObjectNotFoundError"
   | "QueryValidationError"
   | "OutputLostError"
+  | "ProgramStartError"
   | "ServerNotLocalError"
   | "StreamLimitError"
   | "TmuxCommandError"
@@ -445,6 +446,26 @@ export class StreamLimitError extends LibTmuxError {
  */
 export class OutputLostError extends LibTmuxError {
   static override readonly code: LibTmuxErrorCode = "OutputLostError";
+}
+
+/** Why a program never ran. */
+export type ProgramStartFailure = "not-found" | "not-executable" | "start-directory";
+
+/**
+ * A program never ran: `argv[0]` was not found on its `PATH` or is not an
+ * executable file, or its `startDirectory` could not be entered. `exitCode`
+ * is the status a shell reports for the same failure, 127 or 126.
+ */
+export class ProgramStartError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "ProgramStartError";
+  readonly reason: ProgramStartFailure;
+  readonly exitCode: 126 | 127;
+
+  constructor(message: string, reason: ProgramStartFailure) {
+    super(message);
+    this.reason = reason;
+    this.exitCode = reason === "not-found" ? 127 : 126;
+  }
 }
 
 /**

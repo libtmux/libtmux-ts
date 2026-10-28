@@ -549,7 +549,7 @@ export interface SpawnOptions {
   /**
    * Directory the program starts in, taken as a literal path. Defaults to this
    * process's current directory, or the `from` pane's. One that cannot be
-   * entered ends the run with exit code 126 before the program starts.
+   * entered means the program never runs: see {@link ProgramStartError}.
    */
   readonly startDirectory?: string;
   /**

@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { lastPayload } from "../../src/_internal/operations/pane_wait.js";
 import { signalName } from "../../src/_internal/operations/program.js";
-import { MarkFilter } from "../../src/_internal/operations/program_stream.js";
+import { MarkFilter, markSequences } from "../../src/_internal/operations/program_stream.js";
 
 const PROGRAM = fileURLToPath(
   new URL("../../src/_internal/operations/program.ts", import.meta.url),
@@ -80,20 +80,22 @@ describe("event payloads", () => {
 });
 
 describe("end marks", () => {
-  const mark = "\x1b\\\x1b]7;libtmux-ran-x\x07";
+  const marks = markSequences("libtmux-ran-x");
 
-  test("drop the mark wherever the pieces split it", () => {
-    const whole = `done\r\n${mark}`;
-    for (let at = 0; at <= whole.length; at += 1) {
-      const filter = new MarkFilter(mark);
-      const text = filter.push(whole.slice(0, at)) + filter.push(whole.slice(at)) + filter.end();
-      expect(text).toBe("done\r\n");
-      expect(filter.seen).toBe(true);
+  test("drop each mark wherever the pieces split it", () => {
+    for (const mark of marks) {
+      const whole = `done\r\n${mark}`;
+      for (let at = 0; at <= whole.length; at += 1) {
+        const filter = new MarkFilter(marks);
+        const text = filter.push(whole.slice(0, at)) + filter.push(whole.slice(at)) + filter.end();
+        expect(text).toBe("done\r\n");
+        expect(filter.seen).toBe(true);
+      }
     }
   });
 
-  test("hold back only what could start the mark", () => {
-    const filter = new MarkFilter(mark);
+  test("hold back only what could start a mark", () => {
+    const filter = new MarkFilter(marks);
     expect(filter.push("Password: ")).toBe("Password: ");
     expect(filter.push("\x1b")).toBe("");
     expect(filter.push("[0m")).toBe("\x1b[0m");

@@ -196,6 +196,7 @@ describe("package contract", () => {
       "Pane",
       "PaneDirection",
       "Program",
+      "ProgramStartError",
       "QueryValidationError",
       "ResizeAdjustmentDirection",
       "Server",

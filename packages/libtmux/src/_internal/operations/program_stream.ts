@@ -20,21 +20,30 @@ const COPY_DRAIN_MS = 5000;
 const STREAM_POLL_MS = 25;
 
 /** The bytes the wrapper's printf writes for `mark`: ST, then OSC 7 ending in BEL. */
-export function markSequence(mark: string): string {
+function markSequence(mark: string): string {
   return `\x1b\\\x1b]7;${mark}\x07`;
 }
 
+/** Each sequence the wrapper may end with: the mark, or the mark and why the program never ran. */
+export function markSequences(mark: string): readonly string[] {
+  return [mark, `${mark}:not-found`, `${mark}:not-executable`, `${mark}:start-directory`].map(
+    markSequence,
+  );
+}
+
 /**
- * Drops one exact `mark` from text that arrives in pieces, holding back only a
- * tail that could start it, so a prompt passes at once.
+ * Drops the first of `marks` from text that arrives in pieces, holding back
+ * only a tail that could start one, so a prompt passes at once.
  */
 export class MarkFilter {
   #held = "";
   #seen = false;
-  readonly #mark: string;
+  readonly #marks: readonly string[];
+  readonly #longest: number;
 
-  constructor(mark: string) {
-    this.#mark = mark;
+  constructor(marks: readonly string[]) {
+    this.#marks = marks;
+    this.#longest = Math.max(...marks.map((mark) => mark.length));
   }
 
   /** Whether the mark has gone by. */
@@ -46,20 +55,18 @@ export class MarkFilter {
     let pending = this.#held + text;
     this.#held = "";
     if (!this.#seen) {
-      const at = pending.indexOf(this.#mark);
-      if (at !== -1) {
-        this.#seen = true;
-        pending = pending.slice(0, at) + pending.slice(at + this.#mark.length);
-      } else {
-        for (
-          let length = Math.min(this.#mark.length - 1, pending.length);
-          length > 0;
-          length -= 1
-        ) {
-          if (this.#mark.startsWith(pending.slice(-length))) {
-            this.#held = pending.slice(-length);
-            return pending.slice(0, -length);
-          }
+      for (const mark of this.#marks) {
+        const at = pending.indexOf(mark);
+        if (at !== -1) {
+          this.#seen = true;
+          return pending.slice(0, at) + pending.slice(at + mark.length);
+        }
+      }
+      for (let length = Math.min(this.#longest - 1, pending.length); length > 0; length -= 1) {
+        const tail = pending.slice(-length);
+        if (this.#marks.some((mark) => mark.length > length && mark.startsWith(tail))) {
+          this.#held = tail;
+          return pending.slice(0, -length);
         }
       }
     }
@@ -122,10 +129,10 @@ async function* readStream(
     },
   );
   const decoder = new TextDecoder();
-  const sequence = markSequence(state.mark);
-  const marks = new MarkFilter(sequence);
-  // Past the limit the copy may hold only the mark; any other byte there is the cut.
-  const markBytes = new TextEncoder().encode(sequence);
+  const sequences = markSequences(state.mark);
+  const marks = new MarkFilter(sequences);
+  // Past the limit the copy may hold only a mark; any other byte there is the cut.
+  const markBytes = sequences.map((sequence) => new TextEncoder().encode(sequence));
   let past = 0;
   try {
     const buffer = new Uint8Array(64 * 1024);
@@ -151,9 +158,11 @@ async function* readStream(
           if (text !== "") yield text;
         }
         const beyond = buffer.subarray(kept, read);
-        const onlyMark =
-          past + beyond.length <= markBytes.length &&
-          beyond.every((byte, index) => byte === markBytes[past + index]);
+        const onlyMark = markBytes.some(
+          (bytes) =>
+            past + beyond.length <= bytes.length &&
+            beyond.every((byte, index) => byte === bytes[past + index]),
+        );
         past += beyond.length;
         if (!onlyMark) {
           const tail = marks.push(decoder.decode()) + marks.end();
@@ -176,7 +185,11 @@ async function* readStream(
     if (tail !== "") yield tail;
     // A pane removed from outside ends the copy too; say so after what arrived.
     if (lost !== undefined) throw lost;
-    if (!marks.seen && past !== markBytes.length && state.exit !== undefined) {
+    if (
+      !marks.seen &&
+      !markBytes.some((bytes) => bytes.length === past) &&
+      state.exit !== undefined
+    ) {
       throw new OutputLostError(
         "the output ended without the run's end mark: tmux removed the pane before reading its end, or its process group was killed",
       );

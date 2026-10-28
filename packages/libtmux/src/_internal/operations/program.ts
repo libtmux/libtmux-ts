@@ -3,7 +3,13 @@ import { access, readFile, rm } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { TmuxObjectNotFoundError, TmuxTransportError, WaitTimeoutError } from "../../errors.js";
+import {
+  ProgramStartError,
+  TmuxObjectNotFoundError,
+  TmuxTransportError,
+  WaitTimeoutError,
+  type ProgramStartFailure,
+} from "../../errors.js";
 import type { CommandOptions, DeliveryStatus } from "../../common.js";
 import type { Program } from "../../program.js";
 import type { AbortLike, ProgramExit, ProgramWaitOptions } from "../../types.js";
@@ -78,7 +84,11 @@ export interface ProgramState {
   readonly lease: Lease | undefined;
   /** The OSC 7 path the wrapper writes after the program: tmux read to the end iff it shows. */
   readonly mark: string;
+  /** `argv[0]`, for the error a program that never ran raises. */
+  readonly program: string;
   exit: ProgramExit | undefined;
+  /** Set with `exit` when the wrapper's mark said the program never ran. */
+  startError: ProgramStartError | undefined;
   killing: Promise<void> | undefined;
   /** Whether `exited` has settled; then each wait in `wakes` was woken once. */
   settled: boolean;
@@ -201,17 +211,38 @@ async function readExit(
   runtime: RuntimeContext,
   paneId: string,
   options: CommandOptions = {},
-): Promise<ProgramExit | undefined> {
-  const [dead, status = "", signal = "", command] = await readPane(
+): Promise<(ProgramExit & { readonly path: string }) | undefined> {
+  const [dead, status = "", signal = "", path = "", command] = await readPane(
     runtime,
     paneId,
-    ["#{pane_dead}", "#{pane_dead_status}", "#{pane_dead_signal}", "#{pane_start_command}"],
+    [
+      "#{pane_dead}",
+      "#{pane_dead_status}",
+      "#{pane_dead_signal}",
+      "#{pane_path}",
+      "#{pane_start_command}",
+    ],
     options,
   );
   if (dead !== "1" || command === PLACEHOLDER_COMMAND || (status === "" && signal === "")) {
     return undefined;
   }
-  return { exitCode: status === "" ? null : Number(status), signalCode: signalName(signal) };
+  return { exitCode: status === "" ? null : Number(status), path, signalCode: signalName(signal) };
+}
+
+const START_FAILURES: Readonly<Record<ProgramStartFailure, (program: string) => string>> = {
+  "not-executable": (program) => `${program} is not an executable file`,
+  "not-found": (program) => `${program} was not found on the program's PATH`,
+  "start-directory": () => "the program's startDirectory could not be entered",
+};
+
+/** The error for a program the wrapper's mark says never ran, if it did not. */
+function startError(state: ProgramState, path: string): ProgramStartError | undefined {
+  if (!path.startsWith(`${state.mark}:`)) return undefined;
+  const reason = path.slice(state.mark.length + 1);
+  if (!Object.hasOwn(START_FAILURES, reason)) return undefined;
+  const failure = reason as ProgramStartFailure;
+  return new ProgramStartError(START_FAILURES[failure](state.program), failure);
 }
 
 /** Resolve when the program exits. */
@@ -220,6 +251,7 @@ export async function waitProgram(
   options: ProgramWaitOptions = {},
 ): Promise<ProgramExit> {
   const state = stateOf(program);
+  if (state.startError !== undefined) throw state.startError;
   if (state.exit !== undefined) return state.exit;
   const { signal, timeoutMs } = options;
   requireCount("timeoutMs", timeoutMs, MAX_TIMER_MS);
@@ -244,8 +276,10 @@ export async function waitProgram(
         throw error;
       });
       if (exit !== undefined) {
-        state.exit = exit;
-        return exit;
+        state.exit = { exitCode: exit.exitCode, signalCode: exit.signalCode };
+        state.startError = startError(state, exit.path);
+        if (state.startError !== undefined) throw state.startError;
+        return state.exit;
       }
       if (performance.now() >= deadline) {
         throw new WaitTimeoutError(
@@ -291,7 +325,7 @@ export async function programOutput(
   while (end > 0 && lines[end - 1] === "") end -= 1;
   const [collected = "", dead = "", path = ""] = read.split("\t");
   return {
-    lostEnd: dead === "1" && path !== mark,
+    lostEnd: dead === "1" && path !== mark && !path.startsWith(`${mark}:`),
     lostStart: Number(collected) > 0,
     text: lines.slice(0, end).join("\n"),
   };

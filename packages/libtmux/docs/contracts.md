@@ -214,6 +214,7 @@ What each outcome looks like to a caller:
 | tmux removed the pane before reading the end                       | `lostEnd`; `stream()` ends with `OutputLostError`                                                                      |
 | The stream copy reached `maxStreamBytes`                           | `stream()` ends with `StreamLimitError`; the program runs on                                                           |
 | `run`'s `timeoutMs` passed                                         | `timedOut`, with the output so far                                                                                     |
+| `argv[0]` cannot run, or `startDirectory` cannot be entered        | `ProgramStartError` from `run`, `wait()` and `stream()`, with `reason` and a shell's `exitCode`, 127 or 126            |
 | `signal` fired                                                     | `TmuxTransportError` of kind `cancelled`, whose `delivery` says whether it had started                                 |
 | tmux had not started the program after ten seconds                 | `LibTmuxError`; the pane is removed unless `keep` is set                                                               |
 | The pane was killed from outside, its server with it or not        | `ObjectNotFoundError` from `wait()`, `output()` and `run`; the program is hung up, and one that ignores SIGHUP runs on |
@@ -270,9 +271,13 @@ What a run does not do:
   `exit 130` from a SIGINT death, so the library does not guess. `signalCode` is set
   only when a signal ended the `sh` itself.
 - A start directory is entered by that `sh`, not by tmux's `-c`, which falls
-  back to `$HOME` for one it cannot enter: a missing one ends the run with exit
-  code 126 and the shell's message, through the mark and the linger, and its
-  `#` is never expanded.
+  back to `$HOME` for one it cannot enter, and its `#` is never expanded.
+- Before `exec`, the `sh` finds `argv[0]` as `exec` would: a path is tested as
+  an executable file, and a name is looked for in each `PATH` directory, past
+  builtins, which `command -v` would report. When that fails, or the start
+  directory cannot be entered, it prints a complaint, skips the program, and
+  writes the mark with `:` and the reason after it, through the linger. A wait
+  then rejects with `ProgramStartError`, and a stream ends with it.
 
 ### The end race
 
