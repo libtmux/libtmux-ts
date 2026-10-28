@@ -103,12 +103,15 @@ library APIs remain available to explicit programmatic clients.
 `run_program` qualifies because its pairing never leaves the call: the pane it
 creates is removed before it returns, and after a crash of this server tmux
 ends the program and removes the pane once the lease this server renews runs
-out, so no later call owns cleanup. The one gap is a crash in the moment
-between creating the pane and starting the program. `keep` hands the pane to a
+out, so no later call owns cleanup. The one gap is a split, whose lease
+arrives with the program: a crash between making the split and starting the
+program leaves its dead placeholder. `keep` hands the pane to a
 person on purpose; it is an explicit opt-in, never a default.
 `start_program` pairs with `stop_program` and qualifies the same way: a
 lifetime this server enforces ends every program it starts whether or not the
-stop ever comes, and the lease ends it if this server dies.
+stop ever comes, and the lease ends it if this server dies. `stop_program` sits
+in `execute` with it, since it ends only what this server started; `teardown`
+is for what someone else made.
 
 Every public tool belongs to exactly one ADR toolset. The manifest owns its
 runtime registration, schemas, capability report, documentation, and tests.

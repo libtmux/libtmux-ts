@@ -550,7 +550,8 @@ try {
 - A program's lifetime is `lifetimeMs` on `start_program`, capped by the server
   and reported as `effectiveLifetimeMs`. When it runs out, this server ends the
   program and removes its pane, regardless of other calls; should this server
-  die, tmux does, through a lease only a live server renews.
+  die or restart, tmux does within 30 seconds, through a lease only a live
+  server renews.
 - The number of programs running at once is capped, and a start past it is
   refused. Ended programs stay readable, the most recently ended kept, until
   `stop_program` forgets one.
@@ -926,10 +927,11 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   newer.
 - **Older tmux.** A server older than 3.3a is refused with a result that names
   the fix: upgrade tmux and restart the server, or pin the previous release.
-- **Features above the floor.** `run_program` needs tmux 3.8, live streaming
-  (`LIBTMUX_MCP_LIVE`) 3.7, and `paste_text` 3.4. On an older tmux,
-  `run_program` refuses and points at `run_shell_command`, `paste_text` refuses
-  with the version it needs, `wait_for_text` and captures read the pane, and
+- **Features above the floor.** `run_program`, `start_program` and
+  `wait_for_exit` need tmux 3.8, live streaming (`LIBTMUX_MCP_LIVE`) 3.7, and
+  `paste_text` 3.4. On an older tmux, `run_program` and `start_program` refuse
+  and point at `run_shell_command`, `wait_for_exit` and `paste_text` refuse with
+  the version they need, `wait_for_text` and captures read the pane, and
   `run_shell_command` reads the pane and types its script instead of staging it.
 - **Version check.** [`get_server_info`][tool-get_server_info] reports the
   running `version` and the `minimumVersion`.

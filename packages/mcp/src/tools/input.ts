@@ -764,7 +764,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .enum(["completed", "timed_out"])
           .describe(
             "completed: it ended on its own, or by the signal reported. timed_out: it was " +
-              "ended at the timeout, so a retry starts a new run.",
+              "ended at the timeout, possibly part way through its work; running it again " +
+              "repeats what it did, so use start_program for one that needs longer.",
           ),
         output: z
           .string()
@@ -776,7 +777,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .boolean()
           .describe(
             "True when the end may be missing: tmux closed the pane before reading it. " +
-              "Rerunning reads it again.",
+              "Running it again repeats what it did; for one with effects, read it with " +
+              "start_program instead.",
           ),
         lostStart: z
           .boolean()
