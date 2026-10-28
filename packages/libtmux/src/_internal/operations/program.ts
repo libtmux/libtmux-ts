@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   LibTmuxError,
+  TmuxCommandError,
   TmuxObjectNotFoundError,
   TmuxTransportError,
   WaitTimeoutError,
@@ -129,8 +130,9 @@ async function renew(state: ProgramState, lease: Lease): Promise<void> {
         lease.ms / 1000,
       ),
     );
-  } catch {
-    // A pane gone from outside has nothing left to lease.
+  } catch (error) {
+    // tmux refusing it means the pane is gone from outside, with nothing left to lease.
+    if (error instanceof TmuxCommandError) clearInterval(lease.timer);
   } finally {
     lease.renewing = false;
   }

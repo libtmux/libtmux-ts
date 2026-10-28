@@ -709,6 +709,33 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a lease stops renewing once its pane is removed from outside",
+    async () => {
+      await withServer(async (_server, _directory, fixture) => {
+        let renewals = 0;
+        const observed = new Server({
+          environment: fixture.controllerEnvironment,
+          onInvocation: (report) => {
+            if (report.commands.some((command) => command.includes("@libtmux-lease")))
+              renewals += 1;
+          },
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        const program = await observed.spawn(["sleep", "30"], { orphanAfterMs: 1000 });
+        await observed.cmd("kill-pane", ["-t", program.pane.id]);
+        // One renewal finds the pane gone; none follow it.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const seen = renewals;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        expect(renewals).toBe(seen);
+        await program.kill().catch(() => undefined);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a split beside a pane leaves its window, its options and its focus as they were",
     async () => {
       await withServer(async (server) => {
