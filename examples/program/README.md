@@ -24,7 +24,7 @@ the library refuses.
 
 ## What it shows
 
-`server.run` is the one-call form: the program runs in a detached session of its
+`server.run` is the one-call form: by default the program runs in a detached session of its
 own, and the session is gone when the call returns. Its `output` is the
 terminal's rendering, so colors are applied rather than returned and a progress
 bar that redrew itself shows only its last frame. `timedOut` is part of the

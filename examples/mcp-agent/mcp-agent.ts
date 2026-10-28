@@ -160,15 +160,21 @@ export async function followProgram(client: Client, argv: readonly string[]): Pr
     readonly text: string;
   }
   const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
-  let read = await callTool<Read>(client, "read_program", { programId });
-  let text = read.text;
-  while (!read.exited) {
-    // eslint-disable-next-line no-await-in-loop -- each read carries on from the last cursor.
-    read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
-    text += read.text;
+  let text = "";
+  let exitStatus: number | null = null;
+  try {
+    let read = await callTool<Read>(client, "read_program", { programId });
+    text = read.text;
+    while (!read.exited) {
+      // eslint-disable-next-line no-await-in-loop -- each read carries on from the last cursor.
+      read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
+      text += read.text;
+    }
+    exitStatus = read.exitStatus;
+  } finally {
+    await callTool(client, "stop_program", { programId });
   }
-  await callTool(client, "stop_program", { programId });
-  return { exitStatus: read.exitStatus, text };
+  return { exitStatus, text };
 }
 
 /**

@@ -13,7 +13,7 @@ import {
   prependLine,
   runBeside,
   sortLines,
-  startWorker,
+  startService,
 } from "./program.js";
 
 /** Program runs need tmux 3.8; below it the first test checks the refusal and the rest return early. */
@@ -117,7 +117,7 @@ describe("program", () => {
     });
   }, 60_000);
 
-  test("starts a worker that ends when its caller kills it", async () => {
+  test("starts a service and returns once it is ready", async () => {
     await withServer(async (fixture) => {
       const server = new Server({
         environment: fixture.controllerEnvironment,
@@ -125,10 +125,17 @@ describe("program", () => {
         tmuxBin: fixture.tmuxExecutable,
       });
       if (!(await supported(server))) return;
-      const worker = await startWorker(server, ["sleep", "60"]);
-      expect(await server.hasSession(worker.sessionName)).toBe(true);
-      await worker.kill();
-      expect(await server.hasSession(worker.sessionName)).toBe(false);
+      const service = await startService(
+        server,
+        ["sh", "-c", "echo booting; sleep 0.3; echo listening; sleep 60"],
+        "listening",
+      );
+      expect(await server.hasSession(service.sessionName)).toBe(true);
+      await service.kill();
+      expect(await server.hasSession(service.sessionName)).toBe(false);
+      await expect(startService(server, ["echo", "nope"], "listening")).rejects.toThrow(
+        /before printing/u,
+      );
     });
   }, 60_000);
 });

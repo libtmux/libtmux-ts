@@ -20,7 +20,7 @@ export async function listFiles(server: Server, directory: string): Promise<read
  *
  * The program has a real terminal, which is what vim needs. Keys sent at once
  * reach it: `spawn` returns only after the program has started. `await using`
- * removes its session however the function leaves.
+ * removes its pane however the function leaves.
  */
 export async function prependLine(
   server: Server,
@@ -79,13 +79,22 @@ export async function runBeside(
 }
 
 /**
- * Start a program that ends with this process.
+ * Start a service that ends with this process, and return once it says it is ready.
  *
  * This process renews a lease on it. Should it exit or die without killing
- * the program, tmux ends the program and removes its session within ten
- * seconds.
+ * the service, tmux ends it and removes its pane within ten seconds.
  */
-export async function startWorker(server: Server, argv: readonly string[]): Promise<Program> {
-  const worker = await server.spawn(argv, { orphanAfterMs: 10_000 });
-  return worker;
+export async function startService(
+  server: Server,
+  argv: readonly string[],
+  ready: string,
+): Promise<Program> {
+  const service = await server.spawn(argv, { orphanAfterMs: 10_000, stream: true });
+  let printed = "";
+  for await (const chunk of service.stream()) {
+    printed += chunk;
+    if (printed.includes(ready)) return service;
+  }
+  await service.kill();
+  throw new Error(`${argv.join(" ")} exited before printing ${ready}`);
 }
