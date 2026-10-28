@@ -109,9 +109,9 @@ export class Program implements AsyncDisposable {
   /**
    * End the program and remove its pane, unless kept.
    *
-   * Every call waits for the same end. A running program gets SIGTERM and, two seconds later, SIGKILL, sent to
-   * its process group on the tmux server's machine, so one that ignores
-   * SIGHUP still ends.
+   * Every call waits for the same end. A running program gets SIGTERM and,
+   * two seconds later, SIGKILL, sent to its process group on the tmux
+   * server's machine, so one that ignores SIGHUP still ends.
    *
    * ```ts
    * const program = await server.spawn(["sleep", "30"]);

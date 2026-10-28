@@ -1475,7 +1475,11 @@ export class Server {
    * await vim.wait();
    * ```
    */
-  spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program> {
+  async spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program> {
+    // Typed for run alone: nothing would read a spawn's stderr file.
+    if (options !== undefined && "separateStderr" in options) {
+      throw new TypeError("separateStderr is a run option; a spawn's stderr stays on its terminal");
+    }
     return spawnProgram(this, runtimeForServer(this), argv, options, options?.signal);
   }
 

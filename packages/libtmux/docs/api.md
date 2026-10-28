@@ -1338,7 +1338,7 @@ lines[0]; // "hello"
 #### `Server.spawn`
 
 ```ts
-spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program>
+async spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program>
 ```
 
 Start a program in a pane of its own and return it running.
@@ -3218,9 +3218,9 @@ kill(): Promise<void>
 
 End the program and remove its pane, unless kept.
 
-Every call waits for the same end. A running program gets SIGTERM and, two seconds later, SIGKILL, sent to
-its process group on the tmux server's machine, so one that ignores
-SIGHUP still ends.
+Every call waits for the same end. A running program gets SIGTERM and,
+two seconds later, SIGKILL, sent to its process group on the tmux
+server's machine, so one that ignores SIGHUP still ends.
 
 ```ts
 const program = await server.spawn(["sleep", "30"]);

@@ -26,6 +26,7 @@ import {
   WaitTimeoutError,
 } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
+import type { SpawnOptions } from "../../src/types.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -414,6 +415,9 @@ describe("program runs", () => {
           TypeError,
         );
         await expect(server.run(["true"], { timeoutMs: -1 })).rejects.toBeInstanceOf(TypeError);
+        // A cast past the type: nothing would read a spawn's stderr file.
+        const runOnly = { separateStderr: true } as SpawnOptions;
+        await expect(server.spawn(["true"], runOnly)).rejects.toBeInstanceOf(TypeError);
         expect(await programSessions(server)).toBe(0);
       });
     },
