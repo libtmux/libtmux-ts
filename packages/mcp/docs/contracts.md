@@ -266,7 +266,7 @@ environment, and only its own window or split is removed. It types nothing into
 the pane, so the caller and attended-pane protections that guard pane input do
 not apply.
 
-`inheritShell` is the one route that types: it runs `env -0` into a file in a
+`inheritShell` types one line into the pane. It runs `env -0` into a file in a
 fresh 0700 directory through `run_shell_command`'s framing, with every one of
 its checks, then turns the dump into a file of `export NAME='value'` lines that
 the program's own `sh` sources and deletes before it starts; the dump is
@@ -292,8 +292,8 @@ It sets `PAGER` and `GIT_PAGER` to `cat` itself, because a pager waits for keys
 nobody presses.
 
 The respawn and a `wait-for -E pane-died` waiter go to tmux as one command list,
-which tmux runs without handling any other event in between, so the exit cannot
-be missed. The pane state is still read every second, because tmux fires no
+which tmux runs without handling any other event in between, so the waiter is
+registered before the program can exit. The pane state is still read every second, because tmux fires no
 event for a pane killed from outside.
 
 The output is `capture-pane` of the program's own pane, scrollback included and
@@ -304,13 +304,15 @@ The pane is removed before the call returns, on every path, unless `keep` is
 set. A program still running at the effective timeout gets SIGTERM and, two
 seconds later, SIGKILL, sent to its process group on the tmux server's machine,
 so one that ignores SIGHUP still ends; it is reported `timed_out`, with
-`outputComplete` false, and a retry
-starts a new run. Should this server die mid-run, tmux finishes the job: the
-run holds the library's default lease, which this server renews,
+`outputComplete` false, and a retry starts a new run. Should this server die
+mid-run, the run holds the library's default lease, which this server renews,
 and once renewals stop, a tmux timer SIGKILLs the program and removes its pane.
 
 It needs tmux 3.8 or newer: earlier releases have no `wait-for -E`, and
 through 3.7c a remain-on-exit pane keeps its pipe open after the program exits.
+The library's
+[program runs contract](../../libtmux/docs/contracts.md#program-runs) links
+the tmux source for both.
 
 ## [`start_program`][tool-start_program], [`read_program`][tool-read_program] and [`stop_program`][tool-stop_program]
 
@@ -358,7 +360,7 @@ with the usual pane-input checks.
 `wait_for_exit` waits on a pane this server did not start through the library's
 `Pane.waitForExit`: it registers tmux `wait-for -E` waiters for `pane-exited`
 and `pane-died`, the two exclusive exit events, before it reads the pane, so an
-exit is never missed and a pane already dead answers at once. A pane that
+exit between the two still wakes it, and a pane already dead answers at once. A pane that
 closes takes its status with it, and the event's payload carries that status.
 `kill-pane` fires no event; the pane is read every second, and a removed one
 answers `gone` within about two seconds: one to notice, and one for the event a
