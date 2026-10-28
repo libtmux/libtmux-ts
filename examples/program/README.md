@@ -43,7 +43,7 @@ and escape sequences included. `followOutput` caps the copy at a mebibyte, and
 `startService` reads the stream until the program says it is ready.
 
 Every program holds a lease: should this process die without ending it, tmux
-does. `startService` shortens it to ten seconds.
+does. `startService` shortens it with `orphanAfterMs`.
 
 `await using` removes the program's pane however the function leaves,
 including on a throw.

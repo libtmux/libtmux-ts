@@ -52,8 +52,8 @@ describe("agent", () => {
         });
         const pane = session.activePane;
         if (pane === undefined) throw new Error("a new session has a pane");
-        expect(await runMarked(pane, "(exit 4)")).toBe(4);
-        expect(await runMarked(pane, "true")).toBe(0);
+        expect(await runMarked(pane, "(exit 4)")).toBe(false);
+        expect(await runMarked(pane, "true")).toBe(true);
       });
     },
     60_000,

@@ -513,7 +513,7 @@ returns a result's `structuredContent`:
 interface Read {
   readonly cursor: number;
   readonly exitStatus: number | null;
-  readonly exited: boolean;
+  readonly ended: boolean;
   readonly text: string;
 }
 const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
@@ -522,7 +522,7 @@ let exitStatus: number | null = null;
 try {
   let read = await callTool<Read>(client, "read_program", { programId });
   text = read.text;
-  while (!read.exited) {
+  while (!read.ended) {
     read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
     text += read.text;
   }
@@ -540,17 +540,18 @@ try {
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
 - The text is the byte stream with escape sequences removed, as
-  `capture_since` gives it. `exited` turns true once the program ended and
-  every byte was read, with `exitStatus` or `signal`. `outputComplete` is
-  false once the copy stops at 4 MiB, while the program runs on, or when tmux
-  closed the pane before reading the end.
-- A program's lifetime is `timeoutMs` on `start_program`, ten minutes by
-  default and at most an hour. When it runs out, this server ends the program
-  and removes its pane whatever else was called. Should this server die, tmux
-  does it within half a minute, through a lease only a live server renews.
-- Sixteen started programs can run at once, and the sixteen that ended last,
-  by their exit or their lifetime, stay readable. `stop_program` ends one at
-  once and forgets its id.
+  `capture_since` gives it. `ended` turns true once the program ended and
+  every byte was read, and `outcome` says how: `completed` with `exitStatus`
+  or `signal`, `stopped`, or `gone`.
+- `outputCut` turns true once the copy reaches its limit, while the program
+  runs on, and `lostEnd` when tmux closed the pane before reading the end.
+- A program's lifetime is `timeoutMs` on `start_program`, capped by the server
+  and reported as `effectiveTimeoutMs`. When it runs out, this server ends the
+  program and removes its pane, regardless of other calls; should this server
+  die, tmux does, through a lease only a live server renews.
+- The number of programs running at once is capped, and a start past it is
+  refused. Ended programs stay readable, the most recent first, until
+  `stop_program` forgets one.
 - The program's process group is what ends; a process that daemonizes out of
   it is not followed.
 

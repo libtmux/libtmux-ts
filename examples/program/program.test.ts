@@ -97,6 +97,7 @@ describe("program", () => {
       });
       if (!(await supported(server))) return;
       expect(await sortLines(server, "pear\napple\n")).toEqual(["apple", "pear"]);
+      expect(await sortLines(server, "")).toEqual([]);
     });
   }, 60_000);
 

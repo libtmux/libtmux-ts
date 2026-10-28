@@ -59,15 +59,15 @@ export async function buildAndSettle(server: Server, windows: readonly string[])
 }
 
 /**
- * Run a command in a shell that marks its commands, and get its exit status.
+ * Run a command in a shell that marks its commands, and learn whether it worked.
  *
  * A shell whose prompt writes an OSC 133 `D` mark with the last status tells
  * tmux when each command ends and how; no marker has to be printed or read
  * back. `send` types the command once the wait is listening.
  */
-export async function runMarked(pane: Pane, command: string): Promise<number> {
+export async function runMarked(pane: Pane, command: string): Promise<boolean> {
   const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
-  return status;
+  return status === 0;
 }
 
 /**

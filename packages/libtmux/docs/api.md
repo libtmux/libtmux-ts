@@ -2714,7 +2714,8 @@ Needs a shell that marks each command's end with OSC 133 (`ESC ] 133 ; D ;
 status`) from its prompt; tmux turns the mark into a
 `pane-command-finished` event. `send` types a command line once the wait
 is listening, so a command that ends at once is not missed. A shell
-without the marks never resolves this: give it a `timeoutMs`.
+without the marks never resolves this: give it a `timeoutMs`. A pane
+whose program has exited rejects with `LibTmuxError`.
 
 Requires tmux 3.8 or newer.
 

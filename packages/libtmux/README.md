@@ -1006,8 +1006,7 @@ const result = await server.run(["sort"], { input });
   so it passes through no shell quoting and no tmux command.
 - The terminal stays the program's output, so `output` reads as before.
 - It needs the tmux server on this machine; one elsewhere is refused with
-  `ServerNotLocalError` before
-  anything starts.
+  `ServerNotLocalError` before anything starts.
 
 ### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
 

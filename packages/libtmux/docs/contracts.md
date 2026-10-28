@@ -216,11 +216,23 @@ typed, so the output holds no command line or echo. In short:
 - Before the linger, the `sh` writes ST and then an OSC 7 path naming the run,
   which tmux applies to `#{pane_path}` with no option gating it and renders as
   nothing. tmux reads a pane's bytes in order, so a pane whose path is the run's
-  mark was read to the end; without the linger, the runs whose end was lost were
-  exactly the ones missing it (3, 2 and 1 of 900 on 3.8, 3.8a and master).
-  `lostEnd` and `stream()` report a missing mark, as `OutputLostError` for a
-  stream. A SIGKILL to the process group ends the `sh` before its mark too,
-  which leaves the end unproven, so it counts as missing.
+  mark was read to the end. `lostEnd` and `stream()` report a missing mark, as
+  `OutputLostError` for a stream. A SIGKILL to the process group ends the `sh`
+  before its mark too, which leaves the end unproven, so it counts as missing.
+- [`scripts/measure-program-end.sh`](../scripts/measure-program-end.sh) measures
+  both, three probes in parallel. Run with 300 runs a probe on 3.8, 3.8a and
+  master at
+  [523ac69](https://github.com/tmux/tmux/commit/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4):
+
+  | tmux   | No wrapper, whole | Mark only: whole, marked, marked but cut | Linger and mark, whole |
+  | ------ | ----------------- | ---------------------------------------- | ---------------------- |
+  | 3.8    | 898 of 900        | 897, 896, 0                              | 900 of 900             |
+  | 3.8a   | 899 of 900        | 900, 900, 0                              | 900 of 900             |
+  | master | 894 of 900        | 898, 898, 0                              | 900 of 900             |
+
+  No run that lost its end showed the mark. One whole run on 3.8 lost only the
+  mark, which reads as a lost end: the check errs that way, never the other.
+
 - Its own signals are caught, not ignored, so the program keeps the default
   dispositions. The run exits with the status the `sh` saw, as `$?` reports
   it: POSIX `sh` cannot tell a program's `exit 130` from a SIGINT death, so the
@@ -239,20 +251,21 @@ typed, so the output holds no command line or echo. In short:
   `wait-for -E -F '#{==:#{pane},%N}' pane-died` waiter.
 - Setup waits on that channel rather than polling: a channel signalled before
   its waiter arrives stays woken.
-- A death counts only once tmux has the exit status: `pane_dead` turns 1 when the
-  pty closes, which can come first.
+- A death counts only once tmux has the exit status: `pane_dead` turns 1 when
+  the pty closes, which can come first.
 - The wait still reads the pane every second, because tmux fires no event for a
   pane killed from outside.
 - The list ends in that wait, so it holds no slot of `maxInFlight` for the
-  program's life; each live program costs one waiting tmux client instead,
-  a process far larger than what the tmux server adds.
+  program's life; each live program costs one waiting tmux client instead. With
+  50 programs on 3.8a, each client held about 4 MiB, while the tmux server grew
+  by about 3 MiB for all of them.
 
 ### Ending it
 
 - `kill()`, and the end of a run's timeout, send the program's process group
-  SIGTERM and, two seconds later, SIGKILL, then return once tmux has reaped it, or two seconds after the SIGKILL.
-  Removing the pane only closes the pty, which a program ignoring SIGHUP
-  outlives.
+  SIGTERM and, two seconds later, SIGKILL, then return once tmux has reaped it,
+  or two seconds after the SIGKILL. Removing the pane only closes the pty, which
+  a program ignoring SIGHUP outlives.
 - The signal goes through `run-shell` on the tmux server's own machine, where
   the pane's pid names that process. `kill -s NAME -- -PID` is the form every
   `/bin/sh` accepts: dash refuses `kill -NAME -- -PID`.
@@ -287,8 +300,8 @@ typed, so the output holds no command line or echo. In short:
 - The renewal timer is unreferenced: a process with nothing else to do exits,
   and tmux then ends what it left running within the lease.
 - Renewals run on this process's event loop. One that stalls for two thirds of
-  the lease misses two renewals, and tmux ends the program as though the
-  process had died; an `orphanAfterMs` above the longest stall expected keeps it.
+  the lease misses two renewals, and tmux ends the program as though the process
+  had died; an `orphanAfterMs` above the longest stall expected keeps it.
 - `orphanAfterMs: null` takes no lease: the program outlives its caller, and
   keeps its pane, its files and its waiting tmux client until something
   removes them.

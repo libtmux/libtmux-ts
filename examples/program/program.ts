@@ -61,7 +61,7 @@ export async function followOutput(
 export async function sortLines(server: Server, input: string): Promise<readonly string[]> {
   const result = await server.run(["sort"], { input });
   if (!result.success) throw new Error(`sort exited ${String(result.exitCode)}: ${result.output}`);
-  return result.output.split("\n");
+  return result.output === "" ? [] : result.output.split("\n");
 }
 
 /**

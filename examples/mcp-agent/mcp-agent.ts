@@ -156,7 +156,7 @@ export async function followProgram(client: Client, argv: readonly string[]): Pr
   interface Read {
     readonly cursor: number;
     readonly exitStatus: number | null;
-    readonly exited: boolean;
+    readonly ended: boolean;
     readonly text: string;
   }
   const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
@@ -165,7 +165,7 @@ export async function followProgram(client: Client, argv: readonly string[]): Pr
   try {
     let read = await callTool<Read>(client, "read_program", { programId });
     text = read.text;
-    while (!read.exited) {
+    while (!read.ended) {
       // eslint-disable-next-line no-await-in-loop -- each read carries on from the last cursor.
       read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
       text += read.text;

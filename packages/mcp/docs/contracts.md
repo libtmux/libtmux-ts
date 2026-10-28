@@ -307,7 +307,7 @@ set. A program still running at the effective timeout gets SIGTERM and, two
 seconds later, SIGKILL, sent to its process group on the tmux server's machine,
 so one that ignores SIGHUP still ends; it is reported `timed_out`, and a retry
 starts a new run. Should this server die mid-run, tmux finishes the job: the
-run holds a minute-long lease that this server renews every twenty seconds,
+run holds the library's default lease, which this server renews,
 and once renewals stop, a tmux timer SIGKILLs the program and removes its pane.
 
 It needs tmux 3.8 or newer: earlier releases have no `wait-for -E`, and
@@ -322,26 +322,27 @@ output into memory as it is written, through the same escape-sequence filter as
 for new output or the end, up to the wait ceiling, so a program of any length
 is read whole over several calls.
 
-`exited` is true only once the program has ended and every byte it wrote has
+`ended` is true only once the program has ended and every byte it wrote has
 been returned. tmux holds a dying pane until its pipe has drained, so what tmux
-read reaches the copy; an end tmux never read, which the library's end mark
-detects, makes `outputComplete` false. So does the copy stopping at 4 MiB,
-while the program runs on. The headline says which. `outcome` is `stopped` for
-a program `stop_program` or its lifetime ended.
+read reaches the copy. An end tmux never read, which the library's end mark
+detects, sets `lostEnd`; the copy reaching its limit, while the program runs
+on, sets `outputCut`; either makes `outputComplete` false. `outcome` is decided
+by how the program ended before its status is read: `stopped` for a program
+`stop_program` or its lifetime ended, whose SIGTERM can also leave a status.
 
 No later call owns cleanup:
 
-- Each program has a lifetime, `timeoutMs` on `start_program`, ten minutes by
-  default and at most an hour. When it runs out this server ends the program,
-  SIGTERM and then SIGKILL, removes its pane and forgets the id, whatever the
-  caller did.
-- The program holds a 30-second lease that this server renews every ten
-  seconds. Should this server die, tmux ends the program and removes its pane
-  within half a minute.
-- Closing this server ends every program it started.
-- At most sixteen run at once. A program that exits, or that its lifetime ends,
-  loses its pane at once; its text stays readable from this server's memory,
-  for the sixteen that ended last, until `stop_program`.
+- Each program has a lifetime, `timeoutMs` on `start_program`, capped by the
+  server and reported as `effectiveTimeoutMs`. When it runs out this server
+  ends the program, SIGTERM and then SIGKILL, and removes its pane, regardless
+  of other calls.
+- The program holds a lease that this server renews. Should this server die,
+  tmux ends the program and removes its pane once the lease runs out.
+- Closing this server refuses new starts, waits for those in flight, and ends
+  every program it started.
+- The number running at once is capped. A program that exits, or that its
+  lifetime ends, loses its pane at once; its text stays readable from this
+  server's memory, the most recently ended first, until `stop_program`.
 - The end, the lifetime and the lease signal the program's process group. A
   process that leaves it, through `setsid` or by daemonizing, is not followed,
   as in the library.
