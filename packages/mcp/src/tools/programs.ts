@@ -211,7 +211,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .optional()
           .describe(
             "Directory the program starts in, taken literally; one that cannot be entered " +
-              "ends it with exit status 126.",
+              "means the program never runs, and read_program reports not_started.",
           ),
         lifetimeMs: z
           .number()

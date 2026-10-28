@@ -749,7 +749,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .describe(
             "Directory the program starts in, taken literally. Defaults to the directory this " +
               "MCP server was started in, or the fromPaneId pane's. One that cannot be entered " +
-              "ends the run with exitStatus 126 before the program starts.",
+              "fails the call, with the reason, before the program starts.",
           ),
         timeoutMs: z
           .number()
