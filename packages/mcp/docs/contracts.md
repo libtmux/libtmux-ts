@@ -331,8 +331,8 @@ by how the program ended before its status is read: `stopped` for a program
 
 No later call owns cleanup:
 
-- Each program has a lifetime, `timeoutMs` on `start_program`, capped by the
-  server and reported as `effectiveTimeoutMs`. When it runs out this server
+- Each program has a lifetime, `lifetimeMs` on `start_program`, capped by the
+  server and reported as `effectiveLifetimeMs`. When it runs out this server
   ends the program, SIGTERM and then SIGKILL, and removes its pane, regardless
   of other calls.
 - The program holds a lease that this server renews. Should this server die,

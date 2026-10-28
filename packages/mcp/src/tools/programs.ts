@@ -177,8 +177,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         "that needs keys between reads; run_program is the one-call form. read_program " +
         "reads its output as it is written and reports its exit; send_keys reaches its " +
         "paneId; stop_program ends it. This server ends it and removes its pane when " +
-        "timeoutMs runs out, regardless of other calls, and tmux does if this server dies. " +
-        "No shell parses argv and nothing is typed. Requires tmux 3.8 or newer.",
+        "lifetimeMs runs out, regardless of other calls, and tmux does if this server dies. " +
+        "No shell parses argv, and PAGER and GIT_PAGER are cat. Requires tmux 3.8 or newer.",
       inputSchema: {
         argv: programArgv,
         fromPaneId: paneIdSchema
@@ -204,13 +204,13 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
             "Directory the program starts in, taken literally; one that cannot be entered " +
               "ends it with exit status 126.",
           ),
-        timeoutMs: z
+        lifetimeMs: z
           .number()
           .int()
           .positive()
           .optional()
           .describe(
-            "The program's lifetime: it is ended and its pane removed this long after the " +
+            "How long the program may run: it is ended and its pane removed this long after the " +
               `start. ${String(DEFAULT_LIFETIME_MS / 60_000)} minutes by default, at most ` +
               `${String(MAX_LIFETIME_MS / 60_000)}.`,
           ),
@@ -223,13 +223,13 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .describe("Columns of the program's terminal."),
       },
       outputSchema: {
-        effectiveTimeoutMs: z.number().int().describe("The lifetime enforced."),
+        effectiveLifetimeMs: z.number().int().describe("The lifetime enforced."),
         paneId: paneIdSchema.describe("The program's pane, for send_keys or capture_pane."),
         programId: z.string().describe("Pass to read_program and stop_program."),
       },
       title: "Start a program",
     },
-    async ({ argv, fromPaneId, height, placement, startDirectory, timeoutMs, width }) => {
+    async ({ argv, fromPaneId, height, lifetimeMs: asked, placement, startDirectory, width }) => {
       if (closing) return fail({ reason: "This server is closing; no program was started." });
       if (live() >= MAX_LIVE_PROGRAMS) {
         return fail({
@@ -240,7 +240,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       // Held from the check to the map, so concurrent starts cannot pass the cap together.
       starting += 1;
       let program: Program;
-      const lifetimeMs = Math.min(timeoutMs ?? DEFAULT_LIFETIME_MS, MAX_LIFETIME_MS);
+      const lifetimeMs = Math.min(asked ?? DEFAULT_LIFETIME_MS, MAX_LIFETIME_MS);
       try {
         const from = await besidePane(context, { fromPaneId, height, placement, width });
         if (isFailure(from)) return from;
@@ -300,7 +300,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       entries.set(id, entry);
       void pump(entry).then(trim);
       return ok(
-        { effectiveTimeoutMs: lifetimeMs, paneId: program.pane.id, programId: id },
+        { effectiveLifetimeMs: lifetimeMs, paneId: program.pane.id, programId: id },
         `[started ${id} in ${program.pane.id}; it is ended after ${String(lifetimeMs)}ms]`,
       );
     },

@@ -93,7 +93,10 @@ testProgram(
       await withClient(fixture, async (client) => {
         const call: Call = (request) => client.callTool(request);
         const started = structured<Started>(
-          await call({ arguments: { argv: FIVE_LINES, timeoutMs: 30_000 }, name: "start_program" }),
+          await call({
+            arguments: { argv: FIVE_LINES, lifetimeMs: 30_000 },
+            name: "start_program",
+          }),
         );
         const reads = await readAll(call, started.programId, 5000);
         const firstLine = reads.findIndex((read) => read.text.includes("line1"));
@@ -232,7 +235,7 @@ testProgram(
         // No later call: only the 2 s lifetime ends it.
         const short = structured<Started>(
           await call({
-            arguments: { argv: ["sleep", "30"], timeoutMs: 2000 },
+            arguments: { argv: ["sleep", "30"], lifetimeMs: 2000 },
             name: "start_program",
           }),
         );
@@ -268,7 +271,7 @@ testProgram(
             await call({
               arguments: {
                 argv: ["sh", "-c", "echo start; sleep 5; echo end; exit 4"],
-                timeoutMs: 30_000,
+                lifetimeMs: 30_000,
               },
               name: "start_program",
             }),
@@ -310,7 +313,7 @@ testProgram(
       await client.connect(transport);
       structured(
         await client.callTool({
-          arguments: { argv: ["sleep", "300"], timeoutMs: 300_000 },
+          arguments: { argv: ["sleep", "300"], lifetimeMs: 300_000 },
           name: "start_program",
         }),
       );

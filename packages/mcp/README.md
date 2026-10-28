@@ -545,8 +545,8 @@ try {
   or `signal`, `stopped`, or `gone`.
 - `outputCut` turns true once the copy reaches its limit, while the program
   runs on, and `lostEnd` when tmux closed the pane before reading the end.
-- A program's lifetime is `timeoutMs` on `start_program`, capped by the server
-  and reported as `effectiveTimeoutMs`. When it runs out, this server ends the
+- A program's lifetime is `lifetimeMs` on `start_program`, capped by the server
+  and reported as `effectiveLifetimeMs`. When it runs out, this server ends the
   program and removes its pane, regardless of other calls; should this server
   die, tmux does, through a lease only a live server renews.
 - The number of programs running at once is capped, and a start past it is
