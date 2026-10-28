@@ -1,22 +1,15 @@
-// Program runs: the program's state once started, and waiting on, reading, streaming and ending it.
-import { access, open, readFile, rm } from "node:fs/promises";
+// Program runs: the program's state once started, and waiting on, reading and ending it.
+import { access, readFile, rm } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 
-import {
-  LibTmuxError,
-  OutputLostError,
-  StreamLimitError,
-  TmuxCommandError,
-  TmuxObjectNotFoundError,
-  TmuxTransportError,
-  WaitTimeoutError,
-} from "../../errors.js";
+import { TmuxObjectNotFoundError, TmuxTransportError, WaitTimeoutError } from "../../errors.js";
 import type { CommandOptions, DeliveryStatus } from "../../common.js";
 import type { Program } from "../../program.js";
 import type { AbortLike, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { isColdEndpoint, runCommand, runCommands } from "./command.js";
+import type { Lease } from "./program_lease.js";
 
 /** The pane's first process: it exits at once and stays, so the pane id exists before the program. */
 export const PLACEHOLDER: readonly ["true", "libtmux-program-placeholder"] = [
@@ -33,11 +26,8 @@ export const BACKSTOP_MS = 1000;
 const SETTLED_POLL_MS = 50;
 /** How long a killed program gets between SIGTERM and SIGKILL. */
 const KILL_GRACE_MS = 2000;
-/** How long a stream waits, after the exit, for the copy to finish. */
-const COPY_DRAIN_MS = 5000;
 /** How long a cancelled waiter's channel is given to deliver the wake its list may still send. */
 const CHANNEL_DRAIN_MS = 1000;
-const STREAM_POLL_MS = 25;
 export const MAX_TIMER_MS: number = 2 ** 31 - 1;
 
 /** Consume the wake a list may still leave on `channel` after its waiter gave up. */
@@ -71,14 +61,6 @@ export interface Owned {
   readonly target: string;
 }
 
-/** A lease tmux holds on the program; see {@link leaseTimer}. */
-export interface Lease {
-  readonly ms: number;
-  token: number;
-  renewing: boolean;
-  timer: ReturnType<typeof setInterval> | undefined;
-}
-
 export interface ProgramState {
   readonly runtime: RuntimeContext;
   readonly paneId: string;
@@ -104,78 +86,6 @@ export interface ProgramState {
 // Kept off the object, so a `Program` carries no field a caller could read or set.
 const states = new WeakMap<object, ProgramState>();
 
-/**
- * tmux's side of a lease: in `seconds`, unless renewed past `token`, SIGKILL the
- * program and remove its pane and files. `##` defers each read to that moment.
- */
-export function leaseTimer(
-  paneId: string,
-  owned: Owned,
-  keep: boolean,
-  files: boolean,
-  token: number,
-  seconds: number,
-): string[][] {
-  const kill = "##{?pane_dead,:,kill -s KILL -- -##{pane_pid} 2>/dev/null}";
-  const clear = files ? "(sleep 1; rm -rf -- ##{q:@libtmux-files}) >/dev/null 2>&1 &" : ":";
-  // Targets are single-quoted: a window's `$N:=name` would otherwise read as a variable.
-  const remove = keep ? "" : ` ; kill-${owned.kind} -t '${owned.target}'`;
-  const expire = `if-shell -F -t '${paneId}' "##{==:##{@libtmux-lease},${String(token)}}" "run-shell -t '${paneId}' '${kill}; ${clear}'${remove}"`;
-  // The timer first: a renewal that stops between the two leaves the last token's timer standing.
-  return [
-    ["run-shell", "-b", "-d", seconds.toFixed(3), "-C", expire],
-    ["set-option", "-p", "-t", paneId, "@libtmux-lease", String(token)],
-  ];
-}
-
-/** What a lease covers: the pane, and what its expiry removes. */
-export interface LeaseTarget {
-  readonly files: boolean;
-  readonly keep: boolean;
-  readonly owned: Owned;
-  readonly paneId: string;
-  readonly runtime: RuntimeContext;
-  /** Stops the exit watch, which a pane removed from outside never ends. */
-  readonly watcher: AbortController;
-}
-
-/** Move the lease on; a renewal still in flight is not overtaken, so tokens arrive in order. */
-async function renew(target: LeaseTarget, lease: Lease): Promise<void> {
-  if (lease.renewing) return;
-  lease.renewing = true;
-  lease.token += 1;
-  const { files, keep, owned, paneId, runtime } = target;
-  try {
-    await runCommands(
-      runtime,
-      leaseTimer(paneId, owned, keep, files, lease.token, lease.ms / 1000),
-    );
-  } catch (error) {
-    // A pane removed from outside has nothing left to lease; anything else is retried.
-    const gone =
-      error instanceof TmuxCommandError &&
-      (await readPane(runtime, paneId, []).then(
-        () => false,
-        (failure: unknown) => failure instanceof TmuxObjectNotFoundError,
-      ));
-    if (gone) {
-      clearInterval(lease.timer);
-      target.watcher.abort();
-    }
-  } finally {
-    lease.renewing = false;
-  }
-}
-
-/**
- * Renew the lease every third of its length. Unreferenced, so the lease keeps
- * no process alive; the exit watch does, until the program ends.
- */
-export function startRenewal(target: LeaseTarget, lease: Lease): void {
-  lease.timer = setInterval(() => void renew(target, lease), lease.ms / 3);
-  lease.timer.unref();
-}
-
 /** Attach a started program's state to its handle; `program_start.ts` calls it once. */
 export function registerProgram(program: Program, state: ProgramState): void {
   states.set(program, state);
@@ -186,7 +96,7 @@ export function registerProgram(program: Program, state: ProgramState): void {
   });
 }
 
-function stateOf(program: Program): ProgramState {
+export function stateOf(program: Program): ProgramState {
   const state = states.get(program);
   if (state === undefined) throw new TypeError("not a Program returned by Server.spawn");
   return state;
@@ -381,165 +291,6 @@ export async function programOutput(
     lostStart: Number(collected) > 0,
     text: lines.slice(0, end).join("\n"),
   };
-}
-
-/** The bytes the wrapper's printf writes for `mark`: ST, then OSC 7 ending in BEL. */
-export function markSequence(mark: string): string {
-  return `\x1b\\\x1b]7;${mark}\x07`;
-}
-
-/**
- * Drops one exact `mark` from text that arrives in pieces, holding back only a
- * tail that could start it, so a prompt passes at once.
- */
-export class MarkFilter {
-  #held = "";
-  #seen = false;
-  readonly #mark: string;
-
-  constructor(mark: string) {
-    this.#mark = mark;
-  }
-
-  /** Whether the mark has gone by. */
-  get seen(): boolean {
-    return this.#seen;
-  }
-
-  push(text: string): string {
-    let pending = this.#held + text;
-    this.#held = "";
-    if (!this.#seen) {
-      const at = pending.indexOf(this.#mark);
-      if (at !== -1) {
-        this.#seen = true;
-        pending = pending.slice(0, at) + pending.slice(at + this.#mark.length);
-      } else {
-        for (
-          let length = Math.min(this.#mark.length - 1, pending.length);
-          length > 0;
-          length -= 1
-        ) {
-          if (this.#mark.startsWith(pending.slice(-length))) {
-            this.#held = pending.slice(-length);
-            return pending.slice(0, -length);
-          }
-        }
-      }
-    }
-    return pending;
-  }
-
-  /** What is still held once nothing more will arrive. */
-  end(): string {
-    const held = this.#held;
-    this.#held = "";
-    return held;
-  }
-}
-
-/** The program's output as UTF-8 text, as it is written, until it exits; misuse throws at once. */
-export function streamProgram(program: Program): AsyncGenerator<string, void, undefined> {
-  const state = stateOf(program);
-  const files = state.files?.stream;
-  if (files === undefined) {
-    throw new TypeError("spawn the program with { stream: true } to stream its output");
-  }
-  return readStream(program, state, files);
-}
-
-async function* readStream(
-  program: Program,
-  state: ProgramState,
-  files: StreamFiles,
-): AsyncGenerator<string, void, undefined> {
-  if (state.killing !== undefined) {
-    throw new LibTmuxError("the program was killed, and its copied output with it");
-  }
-  let handle: Awaited<ReturnType<typeof open>>;
-  try {
-    handle = await open(files.out, "r");
-  } catch (error) {
-    // A kill that landed between the check above and this open removed the copy.
-    if (state.killing !== undefined) {
-      throw new LibTmuxError("the program was killed, and its copied output with it");
-    }
-    throw error;
-  }
-  // Stopped when the consumer leaves early, so no wait outlives the loop.
-  const stop = new AbortController();
-  let ended = false;
-  let lost: unknown;
-  void waitProgram(program, { signal: stop.signal }).then(
-    () => {
-      ended = true;
-    },
-    (error: unknown) => {
-      ended = true;
-      lost = error;
-    },
-  );
-  const decoder = new TextDecoder();
-  const sequence = markSequence(state.mark);
-  const marks = new MarkFilter(sequence);
-  // Past the limit the copy may hold only the mark; any other byte there is the cut.
-  const markBytes = new TextEncoder().encode(sequence);
-  let past = 0;
-  try {
-    const buffer = new Uint8Array(64 * 1024);
-    let offset = 0;
-    let drainUntil = Infinity;
-    for (;;) {
-      // The copy is complete once the pane is dead and the `cat` writing it has
-      // exited; a copy that never finishes is given up on after COPY_DRAIN_MS.
-      // eslint-disable-next-line no-await-in-loop -- decided before the read that may be the last.
-      const complete = ended && ((await exists(files.done)) || performance.now() >= drainUntil);
-      let read: number;
-      do {
-        // eslint-disable-next-line no-await-in-loop -- read what has arrived, in order.
-        ({ bytesRead: read } = await handle.read(buffer, 0, buffer.length, offset));
-        const kept =
-          files.limit === undefined ? read : Math.max(0, Math.min(read, files.limit - offset));
-        offset += read;
-        if (kept > 0) {
-          const text = marks.push(decoder.decode(buffer.subarray(0, kept), { stream: true }));
-          if (text !== "") yield text;
-        }
-        const beyond = buffer.subarray(kept, read);
-        const onlyMark =
-          past + beyond.length <= markBytes.length &&
-          beyond.every((byte, index) => byte === markBytes[past + index]);
-        past += beyond.length;
-        if (!onlyMark) {
-          const tail = marks.push(decoder.decode()) + marks.end();
-          if (tail !== "") yield tail;
-          throw new StreamLimitError(
-            `the program wrote more than maxStreamBytes (${String(files.limit)}); the copy stopped there`,
-          );
-        }
-      } while (read > 0);
-      if (state.killing !== undefined) {
-        throw new LibTmuxError("the program was killed while its output streamed");
-      }
-      if (complete) break;
-      if (ended && drainUntil === Infinity) drainUntil = performance.now() + COPY_DRAIN_MS;
-      // Not raced with the exit wait, which would gain a reaction every poll.
-      // eslint-disable-next-line no-await-in-loop -- wait for more output or the exit.
-      await delay(ended ? 5 : STREAM_POLL_MS);
-    }
-    const tail = marks.push(decoder.decode()) + marks.end();
-    if (tail !== "") yield tail;
-    // A pane removed from outside ends the copy too; say so after what arrived.
-    if (lost !== undefined) throw lost;
-    if (!marks.seen && past !== markBytes.length && state.exit !== undefined) {
-      throw new OutputLostError(
-        "the output ended without the run's end mark: tmux removed the pane before reading its end, or its process group was killed",
-      );
-    }
-  } finally {
-    stop.abort();
-    await handle.close();
-  }
 }
 
 /**

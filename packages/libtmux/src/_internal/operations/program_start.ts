@@ -34,9 +34,6 @@ import {
   exists,
   isAborted,
   killProgram,
-  leaseTimer,
-  markSequence,
-  startRenewal,
   MAX_TIMER_MS,
   PLACEHOLDER,
   programOutput,
@@ -47,10 +44,11 @@ import {
   requireCount,
   stopPane,
   waitProgram,
-  type Lease,
   type Owned,
   type RunFiles,
 } from "./program.js";
+import { leaseTimer, startRenewal, type Lease } from "./program_lease.js";
+import { markSequence } from "./program_stream.js";
 
 /**
  * Runs argv unparsed, writes ST and the run's OSC 7 mark, lingers, and exits

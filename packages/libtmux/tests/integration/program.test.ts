@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 import { tmuxReaches } from "../support/tmux_release.js";
 
-import { leaseTimer } from "../../src/_internal/operations/program.js";
+import { leaseTimer } from "../../src/_internal/operations/program_lease.js";
 
 import {
   prepareRunRoot,

@@ -1,9 +1,5 @@
-import {
-  killProgram,
-  programOutput,
-  streamProgram,
-  waitProgram,
-} from "./_internal/operations/program.js";
+import { killProgram, programOutput, waitProgram } from "./_internal/operations/program.js";
+import { streamProgram } from "./_internal/operations/program_stream.js";
 import type { Pane } from "./pane.js";
 import type { ProgramExit, ProgramWaitOptions } from "./types.js";
 
