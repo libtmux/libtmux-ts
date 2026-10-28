@@ -246,8 +246,8 @@ check so an earlier row cannot authorize a later one.
 
 ## [`run_program`][tool-run_program] program runs
 
-**Nothing is typed, so nothing is echoed.** `run_program` creates a detached
-session whose only pane starts with a placeholder, then respawns that pane with
+`run_program` creates a detached session whose only pane starts with a
+placeholder, then respawns that pane with
 an `sh` given `argv` as positional parameters, which it does not parse, so
 `argv[0]` is always a program name: never shell text, and never an assignment
 the way `env` would read `A=b`. That `sh` runs the program and lingers 50 ms
@@ -258,8 +258,7 @@ ended reads 128 plus the signal's number. The library's
 detail.
 
 The session is an ordinary one named `libtmux-program-…`. `list_sessions` shows
-it, and another client can type into it or kill it; a kill fails the call. It
-is detached, not hidden.
+it, and another client can type into it or kill it; a kill fails the call.
 
 `fromPaneId` puts the program in a new background window of that pane's session
 instead, or with `placement: "split"` in a split of that pane made without
@@ -342,14 +341,14 @@ No later call owns cleanup:
   every program it started.
 - The number running at once is capped. A program that exits, or that its
   lifetime ends, loses its pane at once; its text stays readable from this
-  server's memory, the most recently ended first, until `stop_program`.
+  server's memory until `stop_program`, or until enough programs end after it.
 - The end, the lifetime and the lease signal the program's process group. A
   process that leaves it, through `setsid` or by daemonizing, is not followed,
   as in the library.
 
-`stop_program` ends one at once and forgets its id. The `paneId` it returns is
-an ordinary pane, so `send_keys` reaches the program with the usual pane-input
-checks.
+`stop_program` ends one at once and forgets its id. The `paneId`
+`start_program` returns is an ordinary pane, so `send_keys` reaches the program
+with the usual pane-input checks.
 
 ## [`wait_for_exit`][tool-wait_for_exit]
 

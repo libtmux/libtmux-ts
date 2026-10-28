@@ -96,7 +96,6 @@ async function pump(entry: Entry): Promise<void> {
       wake(entry);
     }
   } catch (error) {
-    // A stop, the lifetime or an outside removal ends the stream too, and is reported as such.
     if (error instanceof StreamLimitError) entry.missing = "cut";
     // A stop or the lifetime ends the copy with the program, so its last output may be unread.
     else if (error instanceof OutputLostError || entry.endedBy !== undefined)
@@ -158,8 +157,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
   /** End the program and remove its pane; a stop also forgets the id, a lifetime keeps it readable. */
   async function end(id: string, entry: Entry, by: EndedBy): Promise<void> {
     if (by === "stopped") entries.delete(id);
-    entry.endedAt ||= performance.now();
     clearTimeout(entry.timer);
+    entry.endedAt ||= performance.now();
     entry.endedBy ??= by;
     wake(entry);
     await entry.program.kill().catch(() => undefined);
@@ -311,7 +310,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         "first read and pass back the one returned; a read that times out returns no text, " +
         "and the next read with the same cursor carries on. The text is the byte stream " +
         "with escape sequences removed, in write order; capture_pane on its paneId shows " +
-        "the screen while it runs. Output stays readable after the end until stop_program.",
+        "the screen while it runs. Output stays readable after the end until stop_program, " +
+        "or until enough programs have ended after it.",
       inputSchema: {
         cursor: z
           .number()

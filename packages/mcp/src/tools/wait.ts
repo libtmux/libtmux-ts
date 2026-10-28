@@ -614,14 +614,14 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
     "wait_for_exit",
     {
       description:
-        "Wait until the program in a pane exits and return its exit status or signal. Use for " +
-        "a pane you did NOT start with run_program, such as a person's build or a server " +
-        "someone launched. It listens for tmux's own exit events, reading the pane once a " +
-        "second only for a kill that fires none, and a " +
-        "pane that closes on exit still reports its status. A pane killed from outside has " +
-        "none and answers pane_gone. A pane at a shell prompt exits only when the shell " +
-        "does: for a command typed into it, use run_shell_command or wait_for_text. " +
-        "Requires tmux 3.8 or newer.",
+        "Wait until the program in a pane exits and return its exit status or signal. Use " +
+        "it for a pane you did not start, such as a person's build or a server someone " +
+        "launched; for run_program and start_program, their own results report the exit. " +
+        "It listens for tmux's own exit events, and reads the pane once a second only to " +
+        "notice a kill, which fires none. A pane that closes on exit still reports its " +
+        "status; a pane killed from outside has none and answers pane_gone. A pane at a " +
+        "shell prompt exits only when the shell does: for a command typed into it, use " +
+        "run_shell_command or wait_for_text. Requires tmux 3.8 or newer.",
       inputSchema: {
         paneId: paneIdSchema,
         timeoutMs: z

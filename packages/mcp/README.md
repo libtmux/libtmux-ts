@@ -550,7 +550,7 @@ try {
   program and removes its pane, regardless of other calls; should this server
   die, tmux does, through a lease only a live server renews.
 - The number of programs running at once is capped, and a start past it is
-  refused. Ended programs stay readable, the most recent first, until
+  refused. Ended programs stay readable, the most recently ended kept, until
   `stop_program` forgets one.
 - The program's process group is what ends; a process that daemonizes out of
   it is not followed.
@@ -794,10 +794,10 @@ That waits through tmux's notifications and comes back with `exitStatus`,
 
 **Do not type a command when only its output matters.** A typed command shares
 its pane with the prompt, the echo, and anyone else typing there.
-[`run_program`][tool-run_program] starts it in a pane of its own and returns only
-what it printed; keep `run_shell_command` for a command that needs that pane's
-shell. Its timeout ends the program and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`,
-30 seconds unless raised. A build longer than that goes to
+[`run_program`][tool-run_program] starts it in a pane of its own and returns
+only what it printed; keep `run_shell_command` for a command that needs that
+pane's shell. Its timeout ends the program and is capped by
+`LIBTMUX_MCP_WAIT_MAX_MS`. A build longer than that goes to
 [`start_program`][tool-start_program] and is read with
 [`read_program`][tool-read_program] until it exits.
 
