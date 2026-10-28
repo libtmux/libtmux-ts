@@ -199,6 +199,12 @@ typed, so the output holds no command line or echo.
 | 3.7 to 3.7c   | `VersionTooLowError` | No `wait-for -E`; a remain-on-exit pane never closes its pipe      |
 | 3.3a to 3.6b  | `VersionTooLowError` | Also: `history-limit` does not reach an existing pane              |
 
+tmux 3.8 [added `wait-for -E`](https://github.com/tmux/tmux/blob/3.8/CHANGES#L82-L83),
+and its `server_destroy_pane`
+[closes the pipe](https://github.com/tmux/tmux/blob/3.8/server-fn.c#L375-L380)
+whatever `remain-on-exit` says. tmux 3.7
+[applies a changed `history-limit` to existing panes](https://github.com/tmux/tmux/blob/3.8/CHANGES#L491-L492).
+
 What each outcome looks like to a caller:
 
 | What happened                                                      | What the caller sees                                                                                                   |
