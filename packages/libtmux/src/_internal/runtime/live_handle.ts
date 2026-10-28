@@ -18,7 +18,7 @@ import {
   type NormalizedGraph,
 } from "../graph/model.js";
 import type { WinlinkRef } from "../graph/refs.js";
-import { runtimeForServer, type RuntimeContext } from "./context.js";
+import { lastObservedDaemon, runtimeForServer, type RuntimeContext } from "./context.js";
 
 type Child = Client | Pane | Session | Window;
 type LogicalHandle = Pane | Session | Window;
@@ -281,6 +281,32 @@ export function winlinkRefForHandle(handle: Child): WinlinkRef | null {
   return requireState(handle).winlink;
 }
 
+/** {@link requireSameServer} for a handle and the server an operation runs on. */
+export function requireOnServer(handle: Child, server: Server, operation: string): void {
+  const state = requireState(handle);
+  if (!state.server.equals(server)) throw differentServers(operation, state.server, server);
+  const current = lastObservedDaemon(runtimeForServer(server));
+  const captured = state.graph.capture.daemon;
+  const restarted =
+    current !== undefined &&
+    captured !== undefined &&
+    (current.pid !== captured.pid || current.startTime !== captured.startTime);
+  if (restarted) throw restartedServer(operation);
+  runtimeForHandle(handle);
+}
+
+function differentServers(operation: string, left: Server, right: Server): TypeError {
+  return new TypeError(
+    `${operation} needs both objects on one tmux server: ${left.toString()} and ${right.toString()} are different servers, and a tmux id means something else on each.`,
+  );
+}
+
+function restartedServer(operation: string): TmuxServerRestartedError {
+  return new TmuxServerRestartedError(
+    `${operation} was given an object read from a different run of this tmux server; tmux reissues ids from the start, so that id names whatever holds it now.`,
+  );
+}
+
 /**
  * Refuse an operation whose two objects came from different tmux servers.
  *
@@ -298,13 +324,9 @@ export function requireSameServer(left: Child, right: Child, operation: string):
     // capture recorded about the daemon that answered asks the handles instead
     // of the servers.
     if (sameCapturedDaemon(requireState(left).graph, requireState(right).graph)) return;
-    throw new TmuxServerRestartedError(
-      `${operation} was given an object read from a different run of this tmux server; tmux reissues ids from the start, so that id names whatever holds it now.`,
-    );
+    throw restartedServer(operation);
   }
-  throw new TypeError(
-    `${operation} needs both objects on one tmux server: ${left.server.toString()} and ${right.server.toString()} are different servers, and a tmux id means something else on each.`,
-  );
+  throw differentServers(operation, left.server, right.server);
 }
 
 /**
