@@ -215,6 +215,7 @@ async function inheritedEnvironment(
   let text: string;
   try {
     text = await readFile(dump, "utf8");
+    await rm(dump, { force: true });
   } catch {
     return fail({
       hint: "Run without inheritShell: the pane's shell is on another machine than this server.",
@@ -646,18 +647,14 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
     "run_program",
     {
       description:
-        "Run a program in a pane of its own and return its output and exit status. " +
-        "It runs in a fresh detached session with the tmux server's environment, or with " +
-        "fromPaneId beside that pane, in its session and directory. " +
-        "No shell parses argv and nothing is typed, so the output holds no command line or echo. " +
-        "The pane is removed before this returns, unless keep leaves it for a person. " +
-        "A program still running at the timeout is ended. " +
-        "Commands are found on the tmux server's PATH; exit 127 means not found. " +
-        "Its stdin is input when given, else the terminal, so one that prompts waits until the " +
-        "timeout. PAGER and GIT_PAGER are cat unless argv sets them with the env command. " +
-        'Use ["sh", "-c", ...] for pipes and redirections. ' +
-        "inheritShell adds the variables a fromPaneId shell exported; run_shell_command runs " +
-        "shell builtins such as cd. Requires tmux 3.8 or newer.",
+        "Run a program in a pane of its own and wait for it; returns its output and exit " +
+        "status. No shell parses argv and nothing is typed, so the output holds no command " +
+        "line or echo. The pane is removed before this returns unless keep is set. A program " +
+        "still running at the timeout, capped by the server's wait ceiling, is ended: run " +
+        "longer ones with start_program. Commands come from the tmux server's PATH; exit 127 " +
+        "means not found. stdin is input when given, else the terminal. PAGER and GIT_PAGER " +
+        'are cat. Use ["sh", "-c", ...] for pipes, and run_shell_command for shell builtins ' +
+        "such as cd. Requires tmux 3.8 or newer.",
       inputSchema: {
         argv: programArgv,
         fromPaneId: paneIdSchema
@@ -810,8 +807,15 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         if (directory !== undefined && fromPaneId !== undefined) {
           const sourced = await inheritedEnvironment(context, fromPaneId, directory, extra.signal);
           if (typeof sourced !== "string") return sourced;
-          // Sourced by the program's own sh, so no variable passes through a tmux command.
-          program = ["sh", "-c", '. "$0" && exec "$@"', sourced, ...argv];
+          // Sourced by the program's own sh, so no variable passes through a tmux command,
+          // and removed once read; the pagers are set again after the shell's own values.
+          program = [
+            "sh",
+            "-c",
+            '. "$0" && rm -f -- "$0" && export PAGER=cat GIT_PAGER=cat && exec "$@"',
+            sourced,
+            ...argv,
+          ];
         }
         result = await context.tmux.run(program, {
           // A pager waits for keys nobody will press.

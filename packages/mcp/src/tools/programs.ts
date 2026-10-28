@@ -11,7 +11,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import { LibTmuxError, VersionTooLowError, type Program, type ProgramExit } from "libtmux";
+import { StreamLimitError, VersionTooLowError, type Program, type ProgramExit } from "libtmux";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
@@ -27,6 +27,8 @@ import { besidePane, programArgv } from "./input.js";
 const DEFAULT_LIFETIME_MS = 600_000;
 const MAX_LIFETIME_MS = 3_600_000;
 const MAX_LIVE_PROGRAMS = 16;
+/** Ended programs whose text stays readable; the oldest is forgotten first. */
+const MAX_ENDED_PROGRAMS = 16;
 /** How soon tmux ends a program after this server stops renewing its lease: a renewal every 10 s. */
 const ORPHAN_AFTER_MS = 30_000;
 /** Each program's copy and readable text stop here; the program runs on. */
@@ -66,11 +68,11 @@ async function changed(entry: Entry, ms: number, signal: AbortSignal): Promise<v
   });
 }
 
-/** Bytes `[start, end)` of the entry's text. */
-function slice(entry: Entry, start: number, end: number): Buffer {
+/** Bytes `[start, end)` of text held as chunks. */
+function slice(chunks: readonly Buffer[], start: number, end: number): Buffer {
   const parts: Buffer[] = [];
   let offset = 0;
-  for (const chunk of entry.chunks) {
+  for (const chunk of chunks) {
     const next = offset + chunk.length;
     if (next > start && offset < end) {
       parts.push(chunk.subarray(Math.max(0, start - offset), Math.min(chunk.length, end - offset)));
@@ -91,8 +93,8 @@ async function pump(entry: Entry): Promise<void> {
       wake(entry);
     }
   } catch (error) {
-    // A stop or the lifetime ends the stream too; only the cap leaves the program running.
-    if (entry.endedBy === undefined && error instanceof LibTmuxError) entry.cut = true;
+    // A stop, the lifetime, or an outside removal ends the stream too; only the cap runs on.
+    if (error instanceof StreamLimitError) entry.cut = true;
   }
   try {
     entry.exit = await entry.program.wait();
@@ -102,18 +104,23 @@ async function pump(entry: Entry): Promise<void> {
     entry.endedBy ??= "gone";
   }
   wake(entry);
+  // Its text is held here, so the pane, its lease and its copy can go now.
+  await entry.program.kill().catch(() => undefined);
 }
 
-/** The text a reader sees, ending on a whole character. */
-function readable(entry: Entry, start: number): { readonly end: number; readonly text: string } {
-  let end = Math.min(entry.size, start + MAX_RESULT_BYTES);
-  const bytes = slice(entry, start, end);
-  let kept = bytes.length;
-  if (end < entry.size) {
-    while (kept > 0 && ((bytes[kept] ?? 0) & 0xc0) === 0x80) kept -= 1;
-    end = start + kept;
+/** The text a reader sees, ending on a whole character: a cut never splits one. */
+export function readable(
+  chunks: readonly Buffer[],
+  size: number,
+  start: number,
+  limit: number = MAX_RESULT_BYTES,
+): { readonly end: number; readonly text: string } {
+  let end = Math.min(size, start + limit);
+  // Step back while the byte the cut would start the next read on continues a character.
+  while (end > start && end < size && ((slice(chunks, end, end + 1)[0] ?? 0) & 0xc0) === 0x80) {
+    end -= 1;
   }
-  return { end, text: bytes.subarray(0, kept).toString("utf8") };
+  return { end, text: slice(chunks, start, end).toString("utf8") };
 }
 
 /** Ends every live started program; the server calls it as it closes. */
@@ -123,6 +130,19 @@ export interface StartedPrograms {
 
 export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): StartedPrograms {
   const entries = new Map<string, Entry>();
+  /** Starts past the capacity check whose program is not in `entries` yet. */
+  let starting = 0;
+  const live = (): number =>
+    [...entries.values()].filter((entry) => entry.endedBy === undefined).length + starting;
+
+  /** Forget the oldest ended programs past the ones kept readable. */
+  function trim(): void {
+    const ended = [...entries].filter(([, entry]) => entry.endedBy !== undefined);
+    for (const [id, entry] of ended.slice(0, Math.max(0, ended.length - MAX_ENDED_PROGRAMS))) {
+      entries.delete(id);
+      clearTimeout(entry.timer);
+    }
+  }
 
   /** End the program and remove its pane; the id is forgotten. */
   async function end(id: string, entry: Entry, by: EndedBy): Promise<void> {
@@ -195,17 +215,19 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       title: "Start a program",
     },
     async ({ argv, fromPaneId, height, placement, startDirectory, timeoutMs, width }) => {
-      if (entries.size >= MAX_LIVE_PROGRAMS) {
+      if (live() >= MAX_LIVE_PROGRAMS) {
         return fail({
           hint: "stop_program ends one you no longer need.",
-          reason: `${String(MAX_LIVE_PROGRAMS)} started programs are already live.`,
+          reason: `${String(MAX_LIVE_PROGRAMS)} started programs are already running.`,
         });
       }
-      const from = await besidePane(context, { fromPaneId, height, placement, width });
-      if (isFailure(from)) return from;
-      const lifetimeMs = Math.min(timeoutMs ?? DEFAULT_LIFETIME_MS, MAX_LIFETIME_MS);
+      // Held from the check to the map, so concurrent starts cannot pass the cap together.
+      starting += 1;
       let program: Program;
+      const lifetimeMs = Math.min(timeoutMs ?? DEFAULT_LIFETIME_MS, MAX_LIFETIME_MS);
       try {
+        const from = await besidePane(context, { fromPaneId, height, placement, width });
+        if (isFailure(from)) return from;
         program = await context.tmux.spawn(argv, {
           // A pager waits for keys nobody will press.
           environment: { GIT_PAGER: "cat", PAGER: "cat" },
@@ -224,6 +246,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           hint: "On this server, run the command with run_shell_command in an existing shell pane.",
           reason: error.message,
         });
+      } finally {
+        starting -= 1;
       }
       const id = `program-${randomUUID().slice(0, 8)}`;
       const entry: Entry = {
@@ -239,7 +263,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       entry.timer = setTimeout(() => void end(id, entry, "lifetime"), lifetimeMs);
       entry.timer.unref();
       entries.set(id, entry);
-      void pump(entry);
+      void pump(entry).then(trim);
       return ok(
         { effectiveTimeoutMs: lifetimeMs, paneId: program.pane.id, programId: id },
         `[started ${id} in ${program.pane.id}; it is ended after ${String(lifetimeMs)}ms]`,
@@ -319,7 +343,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         // eslint-disable-next-line no-await-in-loop -- each wait follows the last change.
         await changed(entry, left, extra.signal);
       }
-      const { end, text } = readable(entry, from);
+      const { end, text } = readable(entry.chunks, entry.size, from);
       // Ended only once every byte has been handed over.
       const finished = entry.endedBy !== undefined && end === entry.size;
       const exit = finished ? entry.exit : undefined;

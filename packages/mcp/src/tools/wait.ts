@@ -618,7 +618,9 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
         "a pane you did NOT start with run_program, such as a person's build or a server " +
         "someone launched. It listens for tmux's own exit events rather than polling, and a " +
         "pane that closes on exit still reports its status. A pane killed from outside has " +
-        "none and answers pane_gone. Requires tmux 3.8 or newer.",
+        "none and answers pane_gone. A pane at a shell prompt exits only when the shell " +
+        "does: for a command typed into it, use run_shell_command or wait_for_text. " +
+        "Requires tmux 3.8 or newer.",
       inputSchema: {
         paneId: paneIdSchema,
         timeoutMs: z

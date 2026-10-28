@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 
 import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
 import { tmuxReaches } from "../../libtmux/tests/support/tmux_release.js";
+import { readable } from "../src/tools/programs.js";
 
 interface Started {
   readonly effectiveTimeoutMs: number;
@@ -59,6 +60,23 @@ async function readAll(call: Call, programId: string, timeoutMs: number): Promis
   }
   throw new Error("program never reported its exit");
 }
+
+test("a read never splits a character, wherever the limit falls", () => {
+  // Three-byte characters, held in chunks split mid-character.
+  const whole = Buffer.from("€€€€", "utf8");
+  const chunks = [whole.subarray(0, 4), whole.subarray(4, 7), whole.subarray(7)];
+  for (let limit = 1; limit <= whole.length; limit += 1) {
+    let cursor = 0;
+    let text = "";
+    while (cursor < whole.length) {
+      const read = readable(chunks, whole.length, cursor, Math.max(limit, 3));
+      expect(read.text).not.toContain("\uFFFD");
+      text += read.text;
+      cursor = read.end;
+    }
+    expect(text).toBe("€€€€");
+  }
+});
 
 const FIVE_LINES = ["sh", "-c", "for i in 1 2 3 4 5; do echo line$i; sleep 1; done; exit 0"];
 
