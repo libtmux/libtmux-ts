@@ -247,13 +247,12 @@ check so an earlier row cannot authorize a later one.
 ## [`run_program`][tool-run_program] program runs
 
 `run_program` creates a detached session whose only pane starts with a
-placeholder, then respawns that pane with
-an `sh` given `argv` as positional parameters, which it does not parse, so
-`argv[0]` is always a program name: never shell text, and never an assignment
-the way `env` would read `A=b`. That `sh` runs the program and lingers 50 ms
-after it, because tmux can remove a pane before reading its last output, then
-exits with the status it saw, as `$?` reports it, so a program a signal
-ended reads 128 plus the signal's number. The library's
+placeholder, then respawns that pane with an `sh` given `argv` as positional
+parameters, which it does not parse, so `argv[0]` is always run as a program
+name, `A=b` included, which `env` would read as an assignment. That `sh` runs
+the program and lingers 50 ms after it, because tmux can remove a pane before
+reading its last output, then exits with the status it saw, as `$?` reports it,
+so a program a signal ended reads 128 plus the signal's number. The library's
 [program runs contract](../../libtmux/docs/contracts.md#program-runs) has the
 detail.
 
@@ -321,11 +320,12 @@ output into memory as it is written, through the same escape-sequence filter as
 for new output or the end, up to the wait ceiling, so a program of any length
 is read whole over several calls.
 
-`ended` is true only once the program has ended and every byte it wrote has
-been returned. tmux holds a dying pane until its pipe has drained, so what tmux
-read reaches the copy. An end tmux never read, which the library's end mark
-detects, sets `lostEnd`; the copy reaching its limit, while the program runs
-on, sets `outputCut`; either makes `outputComplete` false. `outcome` is decided
+`ended` is true only once the program has ended and every byte it wrote has been
+returned. tmux holds a dying pane until its pipe has drained, so what tmux read
+reaches the copy. An end tmux never read, which the library's end mark detects,
+sets `lostEnd`; the copy reaching its limit, while the program runs on, sets
+`outputCut`; either makes `outputComplete` false, as does a stop or the lifetime
+ending the program before its output was read to the end. `outcome` is decided
 by how the program ended before its status is read: `stopped` for a program
 `stop_program` or its lifetime ended, whose SIGTERM can also leave a status.
 
@@ -553,7 +553,7 @@ Process reach is one of `none`, `configured-process`, `pane-input`,
 `pane-command`, or `pane-program`; no public tool has `host-command` reach.
 `pane-program` runs a client-supplied program with the tmux user's full
 authority, the same authority `run_shell_command` has; what differs is that it
-takes argv rather than shell text, and creates the pane it runs in.
+takes argv, which no shell parses, and creates the pane it runs in.
 
 Output classes distinguish tmux metadata, terminal content, process environment,
 and configured commands.

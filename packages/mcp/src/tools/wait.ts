@@ -643,7 +643,7 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
           .describe(
             "exited: the program ended, as exitStatus or signal says. timed_out: it still " +
               "runs; call again to keep waiting. pane_gone: the pane was removed without an " +
-              "exit status.",
+              "exit status. cancelled: the request was cancelled.",
           ),
         signal: z
           .string()

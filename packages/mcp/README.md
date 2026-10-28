@@ -534,8 +534,10 @@ try {
 
 - `start_program` returns a `programId` and the `paneId`, which `send_keys` and
   `capture_pane` reach while the program runs; its pane is removed once it
-  exits. It takes `fromPaneId`, `placement` and the other placement inputs
-  `run_program` does.
+  exits. It takes `fromPaneId`, `placement`, `startDirectory`, `width` and
+  `height` as `run_program` does, but not `input`, `keep` or `inheritShell`;
+  `PAGER` and `GIT_PAGER` are `cat`. This server reads each running program's
+  copy as the library's `stream()` does, by polling a file.
 - Each `read_program` waits up to its `timeoutMs` for new output or the exit
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
