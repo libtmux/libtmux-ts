@@ -457,8 +457,8 @@ These tools wait:
 ### [`run_program`][tool-run_program]: run a program and get only its output
 
 `run_program` starts `argv` in a pane of its own, a fresh detached session by
-default, waits for it, and returns `exitStatus`, `outcome`, and its output.
-Nothing is typed, so the output holds no command line and no echo.
+default, waits for it, and returns `exitStatus`, `outcome`, and what the
+program wrote, with no command line or echo.
 
 ```text
 run_program  argv=["git","status","--short"]  timeoutMs=20000
@@ -479,7 +479,7 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
   `run_shell_command` requires.
 - `keep: true` leaves the pane, dead and showing the output, for a person to
   read and close. Set it only when a person asked to see the run.
-- `input` is the program's stdin, written to a private file rather than typed.
+- `input` is the program's stdin, read from a private file the pane never shows.
   Without it the program has only the terminal, and one that prompts waits
   until the timeout.
 - `separateStderr: true` returns what the program writes to stderr as

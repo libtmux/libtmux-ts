@@ -698,8 +698,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           })
           .optional()
           .describe(
-            "Text the program reads as its stdin, written to a private file rather than typed, " +
-              "so no shell quotes it. Needs the tmux server on this machine.",
+            "Text the program reads as its stdin, from a private file, so no shell quotes it " +
+              "and the pane never shows it. Needs the tmux server on this machine.",
           ),
         keep: z
           .boolean()
@@ -780,9 +780,10 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         outcome: z
           .enum(["completed", "timed_out"])
           .describe(
-            "completed: it ended on its own, or by the signal reported. timed_out: it was " +
-              "ended at the timeout, possibly part way through its work; running it again " +
-              "repeats what it did, so use start_program for one that needs longer.",
+            "completed: it ended on its own, or by the signal reported, whatever exitStatus " +
+              "says. timed_out: it was ended at the timeout, possibly part way through its " +
+              "work; running it again repeats what it did, so use start_program for one " +
+              "that needs longer.",
           ),
         output: z
           .string()
