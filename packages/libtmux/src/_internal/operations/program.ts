@@ -362,8 +362,9 @@ async function endProgram(state: ProgramState): Promise<void> {
       ]).catch(() => undefined);
     }
   } finally {
-    if (state.files !== undefined)
-      await rm(state.files.directory, { force: true, recursive: true });
+    if (state.files !== undefined) {
+      await rm(state.files.directory, { force: true, recursive: true }).catch(() => undefined);
+    }
   }
 }
 
