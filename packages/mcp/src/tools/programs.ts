@@ -466,7 +466,9 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         programId: z.string().min(1).max(64).describe("The id start_program returned."),
       },
       outputSchema: {
-        programId: z.string().describe("The program that was ended."),
+        programId: z
+          .string()
+          .describe("The program that was ended. Output read_program had not returned is gone."),
       },
       title: "Stop a started program",
     },
