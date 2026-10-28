@@ -69,7 +69,11 @@ describe("mcp-agent", () => {
               "-c",
               "echo building; sleep 1; echo built; exit 3",
             ]);
-            expect(followed).toEqual({ exitStatus: 3, text: "building\nbuilt\n" });
+            expect(followed).toEqual({
+              exitStatus: 3,
+              outcome: "completed",
+              text: "building\nbuilt\n",
+            });
 
             expect((await runWithInput(client, ["sort"], "pear\napple\n")).output).toBe(
               "apple\npear",

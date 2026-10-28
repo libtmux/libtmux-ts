@@ -517,19 +517,19 @@ interface Read {
   readonly cursor: number;
   readonly exitStatus: number | null;
   readonly ended: boolean;
+  readonly outcome: string;
   readonly text: string;
 }
 const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
 let text = "";
-let exitStatus: number | null = null;
+let read: Read;
 try {
-  let read = await callTool<Read>(client, "read_program", { programId });
+  read = await callTool<Read>(client, "read_program", { programId });
   text = read.text;
   while (!read.ended) {
     read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
     text += read.text;
   }
-  exitStatus = read.exitStatus;
 } finally {
   await callTool(client, "stop_program", { programId });
 }

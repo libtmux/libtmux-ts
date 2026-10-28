@@ -978,6 +978,9 @@ which the integration suite runs against a real tmux server:
 
 ```ts
 await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", file]);
+while (!(await vim.pane.capture()).some((row) => row.trim() !== "")) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
 await vim.pane.sendKeys(`ggO${line}`, { enter: false });
 await vim.pane.sendKeys("Escape", { enter: false });
 await vim.pane.sendKeys(":wq");
@@ -986,7 +989,7 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 
 - `spawn` returns a [`Program`][ref-program] once the program has started. A
   full-screen program may still be setting up its terminal then, and can
-  discard what was typed before, so the example waits for vim's first screen.
+  discard what was typed before, so the keys wait for vim's first screen.
 - `await using` ends the program and removes its pane however the scope
   leaves. A `wait` that gives up throws `WaitTimeoutError` and leaves the
   program running, where `run` ends it and reports `timedOut`.

@@ -147,6 +147,8 @@ export async function buildWorkspace(
 
 export interface ProgramRun {
   readonly exitStatus: number | null;
+  /** completed, expired or gone: only the first carries an exit status worth reading. */
+  readonly outcome: string;
   readonly text: string;
 }
 
@@ -164,24 +166,24 @@ export async function followProgram(client: Client, argv: readonly string[]): Pr
     readonly cursor: number;
     readonly exitStatus: number | null;
     readonly ended: boolean;
+    readonly outcome: string;
     readonly text: string;
   }
   const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
   let text = "";
-  let exitStatus: number | null = null;
+  let read: Read;
   try {
-    let read = await callTool<Read>(client, "read_program", { programId });
+    read = await callTool<Read>(client, "read_program", { programId });
     text = read.text;
     while (!read.ended) {
       // eslint-disable-next-line no-await-in-loop -- each read carries on from the last cursor.
       read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
       text += read.text;
     }
-    exitStatus = read.exitStatus;
   } finally {
     await callTool(client, "stop_program", { programId });
   }
-  return { exitStatus, text };
+  return { exitStatus: read.exitStatus, outcome: read.outcome, text };
 }
 
 /**
