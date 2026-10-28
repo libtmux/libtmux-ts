@@ -311,7 +311,7 @@ async function requireShared(runtime: RuntimeContext, directory: string): Promis
   ]).catch(() => undefined);
   if (!(await exists(probe))) {
     throw new ServerNotLocalError(
-      "stream, input and separateStderr need the tmux server on this machine: a file it wrote never reached this temporary directory",
+      "stream, input and separateStderr need a tmux server that shares this process's temporary directory: a file its shell wrote there never arrived",
     );
   }
 }
@@ -596,7 +596,8 @@ export async function runProgram(
   options: RunOptions = {},
 ): Promise<ProgramResult> {
   requireCount("timeoutMs", options.timeoutMs, MAX_TIMER_MS);
-  // Bun 1.3 stops an AbortSignal.timeout once its last listener goes, as setup's does.
+  // Bun 1.3.14 stops an AbortSignal.timeout once its last listener goes, as setup's does;
+  // 1.4 does not. The cancel example's test, which CI runs on 1.3.14, fails without this.
   const hold = (): void => undefined;
   options.signal?.addEventListener("abort", hold);
   try {

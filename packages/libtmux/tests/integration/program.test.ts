@@ -1164,8 +1164,12 @@ setInterval(() => undefined, 1000);`,
           socketPath: fixture.socketPath,
           tmuxBin: elsewhere,
         });
-        await expect(remote.run(["cat"], { input: "x" })).rejects.toThrow(/on this machine/u);
-        await expect(remote.spawn(["true"], { stream: true })).rejects.toThrow(/on this machine/u);
+        await expect(remote.run(["cat"], { input: "x" })).rejects.toBeInstanceOf(
+          ServerNotLocalError,
+        );
+        await expect(remote.spawn(["true"], { stream: true })).rejects.toBeInstanceOf(
+          ServerNotLocalError,
+        );
         await expect(remote.run(["true"], { separateStderr: true })).rejects.toBeInstanceOf(
           ServerNotLocalError,
         );

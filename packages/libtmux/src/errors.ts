@@ -448,8 +448,9 @@ export class OutputLostError extends LibTmuxError {
 }
 
 /**
- * An option needs the tmux server on this machine, and a file its shell wrote
- * never reached this process's temporary directory. The program was not
+ * An option needs a tmux server that shares this process's temporary
+ * directory, and a file its shell wrote there never arrived: the server is on
+ * another machine, in a container, or under another user. The program was not
  * started, and its pane was removed.
  */
 export class ServerNotLocalError extends LibTmuxError {
