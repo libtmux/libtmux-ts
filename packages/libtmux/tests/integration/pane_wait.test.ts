@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -24,23 +25,30 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   const runRoot = published ?? join(parent, "run-root");
   if (published === undefined) await prepareRunRoot(runRoot);
-  await runWithCleanup(
-    async () => {
-      const fixture = await TestServer.create({ runRoot, sessionName: "pane-wait" });
-      const server = new Server({
-        environment: fixture.controllerEnvironment,
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
-      });
-      await runWithCleanup(
-        () => body(server),
-        () => fixture.dispose(),
-      );
-    },
-    async () => {
-      if (published === undefined) await reapOwnedRunRoot(runRoot);
-    },
-  );
+  let done = false;
+  try {
+    await runWithCleanup(
+      async () => {
+        const fixture = await TestServer.create({ runRoot, sessionName: "pane-wait" });
+        const server = new Server({
+          environment: fixture.controllerEnvironment,
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        await runWithCleanup(
+          () => body(server),
+          () => fixture.dispose(),
+        );
+      },
+      async () => {
+        if (published === undefined) await reapOwnedRunRoot(runRoot);
+        done = true;
+      },
+    );
+  } finally {
+    // Kept when the reap failed, as the evidence of what it could not remove.
+    if (done) await rm(parent, { force: true, recursive: true });
+  }
 }
 
 async function paneRunning(server: Server, name: string, command: string): Promise<Pane> {
