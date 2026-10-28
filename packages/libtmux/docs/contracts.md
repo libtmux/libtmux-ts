@@ -185,7 +185,8 @@ typed, so the output holds no command line or echo. In short:
 - A small `sh` runs it and lingers 50 ms, so tmux reads the last output first.
 - `kill()` sends SIGTERM, then SIGKILL, to the process group, and returns once
   tmux has reaped it or two seconds after the SIGKILL.
-- Should the caller die, tmux removes the run and ends an overdue program.
+- A run, and a spawn with `orphanAfterMs`, hold a lease that the caller renews.
+  Should the caller die, tmux ends the program and removes its pane.
 
 Each step below is the one that held when measured; the version table says
 where.
@@ -248,36 +249,62 @@ where.
 
 ### When the caller dies
 
-- A run sets a `pane-died` hook on its pane that removes the session a minute
-  after the program exits. tmux runs a hook itself; a queued command would not
-  survive, because tmux drops a departed client's queue (`server_client_free`).
-- A run with `timeoutMs` also queues `run-shell -b -d`, a timer the tmux server
-  keeps after its client is gone. A minute past the deadline it SIGKILLs the
-  process group if the pane is still alive; the death fires the hook.
+- A run, and a spawn given `orphanAfterMs`, lease the program from tmux. The
+  start list sets the pane option `@libtmux-lease` to a token and queues
+  `run-shell -b -d`, a timer the tmux server keeps after its client is gone.
+  A run's lease is a minute long.
+- The caller renews the lease every third of its length: it moves the token on
+  and queues a new timer. A renewal still in flight is not overtaken, so the
+  tokens reach tmux in order.
+- A timer whose token still stands when it fires SIGKILLs the program's process
+  group if the pane is alive and removes its pane unless `keep` is set. A
+  renewed timer does nothing.
+- The run's files go a second later, from a background shell: the pane's end
+  also ends a stream's writer, whose last step would otherwise recreate a file
+  inside the directory being removed.
 - The timer reads the pane's state when it fires (`##` defers the format), so a
   pane already dead, whose pid may name another process by then, is never
-  signalled. It kills rather than removes, since a pane destroyed before its
-  death is seen fires no `pane-died` and leaves the run's own waiting client
-  blocked.
-- A run without `timeoutMs` keeps a program that never exits, and a spawn leaves
-  cleanup to its caller, including a `stream: true` copy in the temporary
-  directory.
-- The hook and the timer arrive with the program. A caller killed in the moment
-  between creating the session and starting the program leaves the dead
-  placeholder's session, which nothing removes.
-- Each run leaves its timers in the tmux server until they fire: the hook's a
-  minute after the exit, and the deadline's a minute past `timeoutMs`. Once the
-  session is gone, each does nothing.
+  signalled. The files' path is a pane option quoted with `#{q:}`, since a
+  temporary directory can hold any character.
+- The renewal timer is unreferenced: a process with nothing else to do exits,
+  and tmux then ends what it left running within the lease.
+- A spawn without `orphanAfterMs` outlives its caller, and keeps its pane, its
+  files and its waiting tmux client until something removes them.
+- The lease arrives with the program. A caller killed in the moment between
+  creating the pane and starting the program leaves the dead placeholder's
+  pane, which nothing removes.
+- Each renewal leaves a timer in the tmux server until it fires. A timer that
+  fires on a pane already removed fails to find it and does nothing; tmux never
+  reuses a pane id within a server's run.
 
 ### From another pane
 
-- With `from`, the placeholder is a new window of that pane's session, created
+- With `from`, the placeholder is a new pane in that pane's session, starting
+  in `#{pane_current_path}` with the session's tmux environment.
+- `placement: "window"`, the default, makes it a background window, created
   `-d` so no client's view moves, by a unique name that the same list sets
   remain-on-exit on, which keeps even an instant placeholder.
-- It starts in `#{pane_current_path}` and gets the session's tmux environment.
-- The program owns only that window: `kill()` and the after-exit hook remove the
-  window, never the session. Size and `historyLimit` belong to the session, so
-  `from` refuses them.
+- `placement: "split"` splits the pane with `split-window -d`, so focus stays
+  where it was. `-m ''` sets `remain-on-exit key` and an empty
+  `remain-on-exit-format` on the new pane alone, as tmux creates it, so the
+  window's own options are untouched. A dead split closes at the next key
+  pressed in it.
+- The program owns only its window or split: `kill()` and the lease remove that,
+  never the session. Size and `historyLimit` belong to the session, so `from`
+  refuses them.
+- `keep: true` leaves the pane, dead and showing the output, once the run
+  returns or the program is killed; a person closes it.
+
+### Input
+
+- `input` is written to a file in the run's own 0700 temporary directory, and
+  the lingering `sh` redirects it into the program's stdin before running it, so
+  the bytes pass through no shell parser and no tmux command.
+- stdout and stderr stay the pane's terminal, so `output()` and `stream()` read
+  as before, and a program that checks `isatty(1)` still sees a terminal.
+- Before the program starts, `run-shell` writes a file into that directory; if
+  it never appears here, the tmux server is on another machine and the call
+  refuses before creating anything. `stream: true` takes the same check.
 
 ### Output and streams
 
@@ -300,6 +327,10 @@ where.
   missed the last write, on every release measured from 3.3a to tmux master, when the
   program exited right after writing it.
 - The copy grows with the output until the program is killed or disposed.
+  `maxStreamBytes` caps it: the pipe runs `head -c` for one byte past the cap,
+  so a cut copy is told from one that fit, and `stream()` yields the cap's worth
+  and throws `LibTmuxError`. The program runs on; tmux drops what the closed
+  pipe no longer takes.
 - The file is written on the tmux server's machine, so `stream: true` refuses a
   server that cannot write to this process's temporary directory. Its path has
   its `#` and `%` doubled, since `pipe-pane` expands its command as a format and

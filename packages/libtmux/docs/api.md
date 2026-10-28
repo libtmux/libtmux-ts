@@ -1341,7 +1341,7 @@ lines[0]; // "hello"
 spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program>
 ```
 
-Start a program in a detached session of its own and return it running.
+Start a program in a pane of its own and return it running.
 
 No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
 a pipe needs `["sh", "-c", …]`. Nothing is typed into a terminal, so the
@@ -1349,8 +1349,10 @@ program's output holds no command line. The program gets a real terminal,
 which is what a full-screen program needs to be driven by keys; see
 `SpawnOptions` for what that implies for pagers and prompts.
 
-The [`Program`](#program) owns its session: `await using` or
-[`Program.kill`](#programkill) ends the program and removes the session.
+The [`Program`](#program) owns its pane, which is a detached session of its own
+unless `from` places it beside another pane: `await using` or
+[`Program.kill`](#programkill) ends the program and removes it. Without
+`orphanAfterMs`, a program left running outlives this process.
 
 Requires tmux 3.8 or newer, and raises `VersionTooLowError`
 below it. Earlier releases have no exit event to wait on, and through
@@ -1370,17 +1372,17 @@ await vim.wait();
 run(argv: readonly string[], options?: RunOptions): Promise<ProgramResult>
 ```
 
-Run a program to completion in a detached session and return what it printed.
+Run a program to completion in a pane of its own and return what it printed.
 
 The output is the terminal's, scrollback included, with nothing typed
-before it. The session, or with `from` the window, is removed before this
-returns, whatever happened. The program has a terminal but no input; pipe
-any through `["sh", "-c", "printf ... | program"]`.
+before it. The pane, its session without `from`, is removed before this
+returns, whatever happened, unless `keep` leaves it for a person to read.
+`input` gives the program a stdin; otherwise it has only the terminal.
 A program still running at `timeoutMs` is ended, SIGTERM and then
 SIGKILL, and reported with `timedOut`; one aborted through `signal` is
 ended and the call rejects. Should this process die first, tmux itself
-removes the session a minute after the program exits, and kills a
-program still running a minute past `timeoutMs`.
+ends the program and removes its pane within `orphanAfterMs`, a minute
+by default.
 
 Requires tmux 3.8 or newer, like [`Server.spawn`](#serverspawn).
 
@@ -3044,15 +3046,16 @@ pane.sameTmuxIdAs(await pane.refreshed()); // true
 
 ## Program
 
-A program started by [`Server.spawn`](#serverspawn), running in a session of its own.
+A program started by [`Server.spawn`](#serverspawn), running in a pane of its own.
 
 Nothing was typed to start it, so its pane holds only what it printed. The
 pane is a real terminal: drive a full-screen program with
 [`Pane.sendKeys`](#panesendkeys) and read its screen with [`Pane.capture`](#panecapture).
 
-It owns its session. [`Program.kill`](#programkill), or leaving an `await using`
-scope, ends the program and removes the session; a program left running
-keeps both, also after this process exits. A kill ends a stream in progress
+It owns its pane. [`Program.kill`](#programkill), or leaving an `await using` scope,
+ends the program and removes the pane, unless spawned with `keep`; a
+program left running keeps both, also after this process exits, unless
+spawned with `orphanAfterMs`. A kill ends a stream in progress
 with `LibTmuxError`, and a pane removed from outside with
 `ObjectNotFoundError`. After `kill`, `output` raises
 `ObjectNotFoundError`, `stream` raises `LibTmuxError`, and
@@ -3085,7 +3088,7 @@ declare readonly sessionName: string
 
 The session the program runs in: a detached one of its own, removed with
 it, or with `from` that pane's session, which loses only the program's
-window. `tmux attach -t` it to watch the program.
+window or split. `tmux attach -t` it to watch the program.
 
 ```ts
 await using program = await server.spawn(["sleep", "1"]);
@@ -3156,7 +3159,7 @@ text; // "1\r\n2\r\n3\r\n"
 kill(): Promise<void>
 ```
 
-End the program and remove its session; every call waits for the same end.
+End the program and remove its pane, unless kept; every call waits for the same end.
 
 A running program gets SIGTERM and, two seconds later, SIGKILL, sent to
 its process group on the tmux server's machine, so one that ignores

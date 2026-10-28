@@ -172,6 +172,9 @@ server.
 - [Run a program and read its output](#run-a-program-and-read-its-output)
   - [`Server.run`: one call, nothing typed](#serverrun-one-call-nothing-typed)
   - [`Server.spawn`: drive it, then wait](#serverspawn-drive-it-then-wait)
+  - [`input`: give it a stdin](#input-give-it-a-stdin)
+  - [`placement` and `keep`: run it where a person sees it](#placement-and-keep-run-it-where-a-person-sees-it)
+  - [`orphanAfterMs`: end it with this process](#orphanafterms-end-it-with-this-process)
 - [Type into a pane and wait](#type-into-a-pane-and-wait)
   - [`Pane.sendKeys`: type, then read what it said](#panesendkeys-type-then-read-what-it-said)
   - [`Server.watch`: wait for a pane to print something](#serverwatch-wait-for-a-pane-to-print-something)
@@ -945,7 +948,8 @@ result.output.startsWith("git version"); // true
 ```
 
 - The program runs in a detached session of its own, removed before the call
-  returns. Nothing is typed, so `output` holds no command line or echo, and
+  returns, and tmux removes it should this process die first. Nothing is
+  typed, so `output` holds no command line or echo, and
   `argv` reaches the program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
 - `output` is the terminal's rendering, scrollback included. `truncated` says
   when the start scrolled past `historyLimit`.
@@ -978,6 +982,54 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
   leaves. A `wait` that gives up leaves the program running.
 - With `{ stream: true }`, [`program.stream()`][ref-program-stream] yields what
   the program writes, as UTF-8 text, until it exits, the last write included.
+  `maxStreamBytes` caps the copy; the stream then throws after what it kept.
+
+### [`input`][ref-spawnoptions]: give it a stdin
+
+This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
+which the integration suite runs against a real tmux server:
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const result = await server.run(["sort"], { input });
+```
+
+- `input` is a string or bytes, written to a private file the program reads,
+  so it passes through no shell quoting and no tmux command.
+- The terminal stays the program's output, so `output` reads as before.
+- It needs the tmux server on this machine; one elsewhere is refused before
+  anything starts.
+
+### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const result = await server.run(argv, { from: pane, keep: true, placement: "split" });
+```
+
+- `placement: "split"` splits `pane` without moving focus, so a person sees
+  the program run. `"window"`, the default with `from`, is a background window
+  of that pane's session.
+- `keep: true` leaves the pane, dead and showing the output, once the program
+  ends. A kept split closes at the next key pressed in it.
+- Either way the program runs in the pane's directory with the session's tmux
+  environment; the pane's own shell is not involved.
+
+### [`orphanAfterMs`][ref-spawnoptions]: end it with this process
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const worker = await server.spawn(argv, { orphanAfterMs: 10_000 });
+```
+
+- This process renews a lease on the program every third of `orphanAfterMs`.
+  Should it exit or die without `kill()`, tmux ends the program and removes
+  its pane within that time.
+- `run` always holds one, a minute long. A `spawn` without it outlives this
+  process, which is what a program meant to keep running wants.
 
 ## Type into a pane and wait
 
@@ -2040,6 +2092,7 @@ MIT
 [ref-server-spawn]: https://libtmux.org/en/ts/latest/reference/server-server-spawn/
 [ref-program]: https://libtmux.org/en/ts/latest/reference/program-program/
 [ref-program-stream]: https://libtmux.org/en/ts/latest/reference/program-program-stream/
+[ref-spawnoptions]: https://libtmux.org/en/ts/latest/reference/types-spawnoptions/
 [ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
 [ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/
 [ref-server-sessions]: https://libtmux.org/en/ts/latest/reference/server-server-sessions/

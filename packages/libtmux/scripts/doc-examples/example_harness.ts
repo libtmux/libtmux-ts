@@ -39,6 +39,8 @@ const BINDINGS: readonly string[] = Object.freeze([
   "marker",
   "file",
   "line",
+  "input",
+  "argv",
 ]);
 
 /**
@@ -109,6 +111,8 @@ declare const command: string;
 declare const marker: string;
 declare const file: string;
 declare const line: string;
+declare const input: string;
+declare const argv: readonly string[];
 `;
 
 /**
