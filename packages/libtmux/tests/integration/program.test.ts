@@ -145,11 +145,15 @@ describe("program runs", () => {
         expect(
           (await server.run(["sh", "-c", "echo $LTX"], { environment: { LTX: "x y" } })).output,
         ).toBe("x y");
-        expect((await server.run(["sh", "-c", "kill -TERM $$"])).signalCode).toBe("SIGTERM");
-        // A status above 128 is the signal it encodes, as a shell reports one.
+        // The status is the one `$?` gives: a signal's death is 128 plus its number,
+        // and a program's own exit 130 stays 130.
+        expect(await server.run(["sh", "-c", "kill -TERM $$"])).toMatchObject({
+          exitCode: 143,
+          signalCode: null,
+        });
         expect(await server.run(["sh", "-c", "exit 130"])).toMatchObject({
-          exitCode: null,
-          signalCode: "SIGINT",
+          exitCode: 130,
+          signalCode: null,
         });
         expect((await server.run(["sh", "-c", "exit 200"])).exitCode).toBe(200);
         // The rendering keeps tabs and trailing spaces and drops colors.
@@ -712,15 +716,68 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
-    "a run whose end tmux did not read says truncated, and a group SIGKILL does not",
+    "a window beside a killed caller's pane goes, and the pane's session stays",
+    async () => {
+      await withServer(async (server, _directory, fixture) => {
+        const session = await server.newSession({ name: "person" });
+        const caller = Bun.spawn(
+          [
+            process.execPath,
+            "-e",
+            `import { Server } from ${JSON.stringify(SERVER_MODULE)};
+const server = new Server(JSON.parse(process.env.LTX_PROGRAM_SERVER));
+const from = (await server.panes()).toArray().find((pane) => pane.id === process.env.LTX_FROM);
+const program = await server.spawn(["sh", "-c", "trap '' HUP TERM; sleep 300"], { from, orphanAfterMs: 1000 });
+console.log(JSON.stringify({ pane: program.pane.id }));
+setInterval(() => undefined, 1000);`,
+          ],
+          {
+            env: {
+              ...process.env,
+              LTX_FROM: session.activePane?.id ?? "",
+              LTX_PROGRAM_SERVER: JSON.stringify({
+                environment: fixture.controllerEnvironment,
+                socketPath: fixture.socketPath,
+                tmuxBin: fixture.tmuxExecutable,
+              }),
+            },
+            stderr: "inherit",
+            stdout: "pipe",
+          },
+        );
+        const reader = caller.stdout.getReader();
+        let line = "";
+        while (!line.includes("\n")) {
+          // eslint-disable-next-line no-await-in-loop -- until the caller has started it.
+          const { done, value } = await reader.read();
+          if (done) break;
+          line += new TextDecoder().decode(value);
+        }
+        const { pane } = JSON.parse(line) as { pane: string };
+        const pid = await panePid(server, pane);
+        const windows = async (): Promise<number> =>
+          (await server.cmd("list-windows", ["-t", "=person", "-F", "#{window_id}"])).length;
+        expect(await windows()).toBe(2);
+        caller.kill("SIGKILL");
+        await caller.exited;
+        expect(await eventually(windows, (count) => count === 1, 5000)).toBe(1);
+        expect(running(pid)).toBe(false);
+        expect(await server.hasSession("person")).toBe(true);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a run that ends without its mark says truncated",
     async () => {
       await withServer(async (server) => {
         // USR1 ends the wrapper before its mark, as a pane tmux removed early would read.
         const cut = await server.run(["sh", "-c", "echo hi; kill -USR1 $PPID; sleep 1"]);
         expect(cut).toMatchObject({ output: "hi", signalCode: "SIGUSR1", truncated: true });
-        // A SIGKILL to the group stops the wrapper before its mark too, which says nothing.
+        // A SIGKILL to the group stops the wrapper before its mark too: the end is unproven.
         const killed = await server.run(["sh", "-c", "echo hi; kill -KILL 0"]);
-        expect(killed).toMatchObject({ output: "hi", signalCode: "SIGKILL", truncated: false });
+        expect(killed).toMatchObject({ output: "hi", signalCode: "SIGKILL", truncated: true });
         expect((await server.run(["echo", "whole"])).truncated).toBe(false);
       });
     },

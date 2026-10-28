@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import {
   LibTmuxError,
+  ServerNotLocalError,
   TmuxObjectNotFoundError,
   TmuxTransportError,
   VersionTooLowError,
@@ -33,6 +34,7 @@ import {
   killProgram,
   leaseTimer,
   markSequence,
+  startRenewal,
   MAX_TIMER_MS,
   PLACEHOLDER,
   programOutput,
@@ -48,16 +50,14 @@ import {
 } from "./program.js";
 
 /**
- * Runs argv unparsed, as positional parameters, then writes the run's mark as
- * an OSC 7 path, lingers 50 ms and exits or dies as the program did: tmux can
- * remove a pane before reading its last output, and only a pane whose path is
- * the mark was read to the end. The ST first closes any string left open.
+ * Runs argv unparsed, writes ST and the run's OSC 7 mark, lingers, and exits
+ * with the program's status: tmux can remove a pane before reading its last
+ * output, and only a pane whose path is the mark was read to the end.
  */
 const RUN =
   'trap : HUP INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
   "printf '\\033\\\\\\033]7;%s\\007' \"$m\"; " +
-  'sleep 0.05 2>/dev/null || sleep 1; if [ "$s" -gt 128 ] && n=$(kill -l "$s") && [ -n "$n" ]; then ' +
-  'trap - "$n"; kill -s "$n" "$$"; fi; exit "$s"';
+  'sleep 0.05 2>/dev/null || sleep 1; exit "$s"';
 /**
  * Steps before `RUN`, each taking its argument from `$1` and shifting it off:
  * tmux's own `-c` falls back to `$HOME` for a directory it cannot enter, where
@@ -213,6 +213,7 @@ async function createBeside(
   runtime: RuntimeContext,
   from: Pane,
   placement: "split" | "window",
+  arm: (target: string, owned: Owned) => string[][],
 ): Promise<Beside> {
   const [sessionId = "", sessionName = "", path = ""] = await readPane(runtime, from.id, [
     "#{session_id}",
@@ -257,6 +258,8 @@ async function createBeside(
     ],
     ["set-option", "-w", "-t", window, "remain-on-exit", "on"],
     ["set-option", "-w", "-t", window, "remain-on-exit-format", ""],
+    // -n turns automatic-rename off, so the name holds until a timer fires.
+    ...arm(window, { kind: "window", target: window }),
   ]).catch(async (error: unknown) => {
     // The window can exist though a later command in its list failed.
     await removeOwned(runtime, { kind: "window", target: window }).catch(() => undefined);
@@ -299,7 +302,7 @@ async function requireShared(runtime: RuntimeContext, directory: string): Promis
     literalDirectory(`: > ${shellQuote(probe)}`),
   ]).catch(() => undefined);
   if (!(await exists(probe))) {
-    throw new LibTmuxError(
+    throw new ServerNotLocalError(
       "stream and input need the tmux server on this machine: a file it wrote never reached this temporary directory",
     );
   }
@@ -420,6 +423,7 @@ export async function spawnProgram(
   }
   const watcher = new AbortController();
   let files: RunFiles | undefined;
+  let lease: Lease | undefined;
   let owned: Owned | undefined;
   let paneId: string | undefined;
   try {
@@ -445,7 +449,7 @@ export async function spawnProgram(
     }
     const orphanAfterMs =
       spawn.orphanAfterMs === undefined ? DEFAULT_ORPHAN_MS : spawn.orphanAfterMs;
-    const lease: Lease | undefined =
+    lease =
       orphanAfterMs === null
         ? undefined
         : { ms: orphanAfterMs, renewing: false, timer: undefined, token: 0 };
@@ -453,8 +457,7 @@ export async function spawnProgram(
     const arm = (target: string, armed: Owned): string[][] =>
       arming(target, armed, keep, files, lease);
     let sessionName: string;
-    // Beside a pane, the creating list can name the new pane only as `$N:=name`,
-    // and tmux reads `$N` as a variable when the timer's commands are parsed.
+    // A split is made by one command, so its files and lease wait for the start list.
     let armed: string[][] = [];
     if (spawn.from === undefined) {
       sessionName = `libtmux-program-${randomUUID().slice(0, 12)}`;
@@ -465,9 +468,13 @@ export async function spawnProgram(
         runtime,
         spawn.from,
         placement === "split" ? "split" : "window",
+        arm,
       ));
-      armed = arm(paneId, owned);
+      if (placement === "split") armed = arm(paneId, owned);
     }
+    // Renewed from the moment the pane exists, however long the rest of setup takes.
+    if (lease !== undefined)
+      startRenewal({ files: files !== undefined, keep, owned, paneId, runtime }, lease);
     let failure: unknown;
     const mark = `libtmux-ran-${randomUUID()}`;
     const started = `libtmux-program-started-${randomUUID()}`;
@@ -513,11 +520,14 @@ export async function spawnProgram(
   } catch (error) {
     // Nothing else would end a program whose setup failed, or remove what it ran in.
     watcher.abort();
+    clearInterval(lease?.timer);
     if (paneId !== undefined) await stopPane(runtime, paneId).catch(() => undefined);
     if (owned !== undefined && spawn.keep !== true) {
       await removeOwned(runtime, owned).catch(() => undefined);
     }
-    if (files !== undefined) await rm(files.directory, { force: true, recursive: true });
+    if (files !== undefined) {
+      await rm(files.directory, { force: true, recursive: true }).catch(() => undefined);
+    }
     throw error;
   }
 }

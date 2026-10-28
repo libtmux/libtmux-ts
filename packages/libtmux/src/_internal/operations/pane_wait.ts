@@ -27,10 +27,8 @@ const DELIVERY_MS = 1000;
 type Payload = ReadonlyMap<string, string>;
 
 /**
- * The payload of the event that ended a `wait-for -E -v` client. tmux prints
- * every event it checked, matching or not, each as its keys in sorted order
- * (`event_payload_first`), so a key that does not sort after the one before it
- * starts the next event, and the match is the last.
+ * The last of the payloads a `wait-for -E -v` client printed, one per event it
+ * checked, each with sorted keys: a key not after the one before starts the next.
  */
 export function lastPayload(lines: readonly string[]): Payload {
   let block = new Map<string, string>();
@@ -59,11 +57,8 @@ async function requirePaneWait(runtime: RuntimeContext): Promise<void> {
 }
 
 /**
- * Register a waiter for `event` on the pane and return once tmux has it: one
- * list signals a channel of its own, then waits, and tmux handles no other
- * event in between. `fired` settles with the event's payload, or undefined
- * once `stop` ends the waiter; it is wrapped, since awaiting a promise of a
- * promise would wait for the event itself.
+ * Register a waiter for `event` and return once tmux has it: one list signals a
+ * channel, then waits. `fired` is wrapped, since awaiting it would await the event.
  */
 async function arm(
   runtime: RuntimeContext,
@@ -220,8 +215,8 @@ export async function waitForPaneCommand(
     ["pane-command-finished"],
     options,
     (payload) => {
-      const status = payload.get("command_status");
-      return status === undefined ? undefined : Number(status);
+      const status = Number(payload.get("command_status") ?? Number.NaN);
+      return Number.isSafeInteger(status) ? status : undefined;
     },
     async () => {
       // Only a read that fails says anything here: a pane that is gone.

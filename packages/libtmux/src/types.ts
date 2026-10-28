@@ -553,7 +553,11 @@ export interface SpawnOptions {
    * entered ends the run with exit code 126 before the program starts.
    */
   readonly startDirectory?: string;
-  /** Variables added to the program's environment. */
+  /**
+   * Variables added to the program's environment. They reach tmux as command
+   * arguments, which `ps` on this machine shows while the command runs; pass a
+   * secret through `input` instead.
+   */
   readonly environment?: Readonly<Record<string, string>>;
   /** Terminal width in columns, for `"session"`. Defaults to tmux's `default-size`. */
   readonly width?: number;
@@ -573,7 +577,7 @@ export interface SpawnOptions {
   readonly stream?: boolean;
   /**
    * Stop the copy after this many bytes; {@link Program.stream} then yields
-   * them and throws {@link LibTmuxError}. The program runs on. No limit by
+   * them and throws {@link StreamLimitError}. The program runs on. No limit by
    * default, and the temporary directory may be memory-backed.
    */
   readonly maxStreamBytes?: number;
@@ -612,14 +616,18 @@ export interface CommandWaitOptions extends ProgramWaitOptions {
 }
 
 /**
- * How a program ended: an exit status or the signal that ended it. An exit
- * status above 128 is reported as the signal it encodes, as a shell reports
- * one, so `exit 130` reads as SIGINT.
+ * How a program ended: an exit status or the signal that ended it.
+ *
+ * For a program {@link Server.run} or {@link Server.spawn} started, the status
+ * is the one its `sh` saw, as `$?` reports it: a program a signal ended reads
+ * 128 plus the signal's number, and a program's own `exit 130` reads 130. A
+ * signal is named only when one ended that `sh` too, as {@link Program.kill}'s
+ * SIGKILL does. For any other pane, tmux reports the process's own end.
  */
 export interface ProgramExit {
-  /** The exit status, or null when a signal ended the program. */
+  /** The exit status, or null when a signal ended the process. */
   readonly exitCode: number | null;
-  /** The signal that ended the program, such as `"SIGTERM"`, or null. */
+  /** The signal that ended the process, such as `"SIGKILL"`, or null. */
   readonly signalCode: string | null;
 }
 

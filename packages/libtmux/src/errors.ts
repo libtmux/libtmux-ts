@@ -156,6 +156,8 @@ export type LibTmuxErrorCode =
   | "NoMatchError"
   | "ObjectNotFoundError"
   | "QueryValidationError"
+  | "OutputLostError"
+  | "ServerNotLocalError"
   | "StreamLimitError"
   | "TmuxCommandError"
   | "TmuxObjectNotFoundError"
@@ -434,6 +436,23 @@ export class WaitTimeoutError extends LibTmuxError {
  */
 export class StreamLimitError extends LibTmuxError {
   static override readonly code: LibTmuxErrorCode = "StreamLimitError";
+}
+
+/**
+ * A program's output ended without the run's end mark: tmux removed the pane
+ * before reading its last output, or something killed its process group.
+ * What arrived was yielded first.
+ */
+export class OutputLostError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "OutputLostError";
+}
+
+/**
+ * An option needs the tmux server on this machine, and a file its shell wrote
+ * never reached this process's temporary directory. Nothing was started.
+ */
+export class ServerNotLocalError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "ServerNotLocalError";
 }
 
 /** A selection that required exactly one match found none. */

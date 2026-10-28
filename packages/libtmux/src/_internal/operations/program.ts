@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   LibTmuxError,
+  OutputLostError,
   StreamLimitError,
   TmuxCommandError,
   TmuxObjectNotFoundError,
@@ -93,10 +94,8 @@ export interface ProgramState {
 const states = new WeakMap<object, ProgramState>();
 
 /**
- * tmux's side of a lease: in `seconds`, if the pane's lease still holds `token`,
- * SIGKILL a program still running and remove what it ran in, unless kept. The
- * files go a second later, once a stream's writer, ended with the pane, has
- * finished. A renewal moves the token on. `##` defers each read to that moment.
+ * tmux's side of a lease: in `seconds`, unless renewed past `token`, SIGKILL the
+ * program and remove its pane and files. `##` defers each read to that moment.
  */
 export function leaseTimer(
   paneId: string,
@@ -108,8 +107,9 @@ export function leaseTimer(
 ): string[][] {
   const kill = "##{?pane_dead,:,kill -s KILL -- -##{pane_pid} 2>/dev/null}";
   const clear = files ? "(sleep 1; rm -rf -- ##{q:@libtmux-files}) >/dev/null 2>&1 &" : ":";
-  const remove = keep ? "" : ` ; kill-${owned.kind} -t ${owned.target}`;
-  const expire = `if-shell -F -t ${paneId} "##{==:##{@libtmux-lease},${String(token)}}" "run-shell -t ${paneId} '${kill}; ${clear}'${remove}"`;
+  // Targets are single-quoted: a window's `$N:=name` would otherwise read as a variable.
+  const remove = keep ? "" : ` ; kill-${owned.kind} -t '${owned.target}'`;
+  const expire = `if-shell -F -t '${paneId}' "##{==:##{@libtmux-lease},${String(token)}}" "run-shell -t '${paneId}' '${kill}; ${clear}'${remove}"`;
   // The timer first: a renewal that stops between the two leaves the last token's timer standing.
   return [
     ["run-shell", "-b", "-d", seconds.toFixed(3), "-C", expire],
@@ -117,28 +117,31 @@ export function leaseTimer(
   ];
 }
 
+/** What a lease covers: the pane, and what its expiry removes. */
+export interface LeaseTarget {
+  readonly files: boolean;
+  readonly keep: boolean;
+  readonly owned: Owned;
+  readonly paneId: string;
+  readonly runtime: RuntimeContext;
+}
+
 /** Move the lease on; a renewal still in flight is not overtaken, so tokens arrive in order. */
-async function renew(state: ProgramState, lease: Lease): Promise<void> {
+async function renew(target: LeaseTarget, lease: Lease): Promise<void> {
   if (lease.renewing) return;
   lease.renewing = true;
   lease.token += 1;
+  const { files, keep, owned, paneId, runtime } = target;
   try {
     await runCommands(
-      state.runtime,
-      leaseTimer(
-        state.paneId,
-        state.owned,
-        state.keep,
-        state.files !== undefined,
-        lease.token,
-        lease.ms / 1000,
-      ),
+      runtime,
+      leaseTimer(paneId, owned, keep, files, lease.token, lease.ms / 1000),
     );
   } catch (error) {
     // A pane removed from outside has nothing left to lease; anything else is retried.
     const gone =
       error instanceof TmuxCommandError &&
-      (await readPane(state.runtime, state.paneId, []).then(
+      (await readPane(runtime, paneId, []).then(
         () => false,
         (failure: unknown) => failure instanceof TmuxObjectNotFoundError,
       ));
@@ -148,15 +151,18 @@ async function renew(state: ProgramState, lease: Lease): Promise<void> {
   }
 }
 
+/**
+ * Renew the lease every third of its length. Unreferenced: a process with
+ * nothing else to do exits, and tmux then ends the program.
+ */
+export function startRenewal(target: LeaseTarget, lease: Lease): void {
+  lease.timer = setInterval(() => void renew(target, lease), lease.ms / 3);
+  lease.timer.unref();
+}
+
 /** Attach a started program's state to its handle; `program_start.ts` calls it once. */
 export function registerProgram(program: Program, state: ProgramState): void {
   states.set(program, state);
-  const { lease } = state;
-  if (lease !== undefined) {
-    // Unreferenced: a process with nothing else to do exits, and tmux then ends the program.
-    lease.timer = setInterval(() => void renew(state, lease), lease.ms / 3);
-    lease.timer.unref();
-  }
   // One listener per program: one per wait would pile up on a long-lived exit.
   void state.exited.then(() => {
     state.settled = true;
@@ -325,24 +331,16 @@ export async function waitProgram(
 }
 
 /**
- * The pane's rendered text, scrollback included, and whether any of it was
- * dropped: its start past `historyLimit`, or once the program has ended, an end
- * tmux removed before reading, which leaves the pane without the run's mark.
- * A SIGKILL to the process group ends the wrapper before its mark, which says
- * nothing about the output, so it is not counted.
+ * The pane's rendered text, scrollback included, and whether any of it may be
+ * missing: its start past `historyLimit`, or, once the program has ended, an
+ * end without the run's mark.
  */
 export async function programOutput(
   program: Program,
 ): Promise<{ readonly text: string; readonly truncated: boolean }> {
   const { mark, paneId, runtime } = stateOf(program);
   const [read = "", ...lines] = await runCommands(runtime, [
-    [
-      "display-message",
-      "-p",
-      "-t",
-      paneId,
-      "#{history_collected}\t#{pane_dead}\t#{pane_dead_signal}\t#{pane_path}",
-    ],
+    ["display-message", "-p", "-t", paneId, "#{history_collected}\t#{pane_dead}\t#{pane_path}"],
     ["capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", paneId],
   ]).catch(async (error: unknown) => {
     // Only the capture fails for a pane that is gone; say so as a missing pane.
@@ -351,8 +349,8 @@ export async function programOutput(
   });
   let end = lines.length;
   while (end > 0 && lines[end - 1] === "") end -= 1;
-  const [collected = "", dead = "", signal = "", path = ""] = read.split("\t");
-  const cutAtEnd = dead === "1" && path !== mark && signalName(signal) !== "SIGKILL";
+  const [collected = "", dead = "", path = ""] = read.split("\t");
+  const cutAtEnd = dead === "1" && path !== mark;
   return { text: lines.slice(0, end).join("\n"), truncated: Number(collected) > 0 || cutAtEnd };
 }
 
@@ -489,7 +487,7 @@ export async function* streamProgram(program: Program): AsyncGenerator<string, v
       }
       if (complete) break;
       if (ended && drainUntil === Infinity) drainUntil = performance.now() + DRAIN_MS;
-      // A plain timer: racing the long-lived wait every poll would pile reactions on it.
+      // A plain timer: a race with the long-lived wait adds a reaction to it every poll.
       // eslint-disable-next-line no-await-in-loop -- wait for more output or the exit.
       await delay(ended ? 5 : STREAM_POLL_MS);
     }
@@ -497,10 +495,9 @@ export async function* streamProgram(program: Program): AsyncGenerator<string, v
     if (tail !== "") yield tail;
     // A pane removed from outside ends the copy too; say so after what arrived.
     if (lost !== undefined) throw lost;
-    const seen = marks.seen || past === markBytes.length;
-    if (!seen && state.exit !== undefined && state.exit.signalCode !== "SIGKILL") {
-      throw new LibTmuxError(
-        "tmux removed the pane before reading the program's last output; what arrived is all there is",
+    if (!marks.seen && past !== markBytes.length && state.exit !== undefined) {
+      throw new OutputLostError(
+        "the output ended without the run's end mark: tmux removed the pane before reading its end, or its process group was killed",
       );
     }
   } finally {

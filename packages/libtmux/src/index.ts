@@ -99,6 +99,8 @@ export {
   TmuxServerRestartedError,
   TmuxTransportError,
   type TmuxTransportErrorKind,
+  OutputLostError,
+  ServerNotLocalError,
   StreamLimitError,
   VersionTooLowError,
   WaitTimeoutError,
