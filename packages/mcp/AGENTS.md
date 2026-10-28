@@ -100,11 +100,12 @@ of entering or cancelling it.
 Paired cleanup, unclear ownership, or dependence on a key table, mouse,
 clipboard, attachment, or timing are signals to exclude a route from MCP. Core
 library APIs remain available to explicit programmatic clients.
-`run_program` qualifies because its pairing never leaves the call: the session
-it creates is removed before it returns, and after a crash of this server tmux
-kills the program a minute past its timeout and a `pane-died` hook removes the
-session, so no later call owns cleanup. The one gap is a crash in the moment
-between creating the session and starting the program.
+`run_program` qualifies because its pairing never leaves the call: the pane it
+creates is removed before it returns, and after a crash of this server tmux
+ends the program and removes the pane once the lease this server renews runs
+out, so no later call owns cleanup. The one gap is a crash in the moment
+between creating the pane and starting the program. `keep` hands the pane to a
+person on purpose; it is an explicit opt-in, never a default.
 
 Every public tool belongs to exactly one ADR toolset. The manifest owns its
 runtime registration, schemas, capability report, documentation, and tests.
