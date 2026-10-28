@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measured, not estimated. Every number here came from one of the four benchmark
+Every number here came from one of the four benchmark
 scripts below, run from the repository root against a real tmux, and each script
 prints the machine and tmux it ran on so a rerun can be compared with this one
 rather than guessed against it.
@@ -165,8 +165,8 @@ starts or stops the server.
 | next-3.9 | 71–74 ms                 | 492–641 ms                   |
 
 The wrapper's 50 ms linger, which keeps tmux from removing the pane before it
-has read the program's last output, is 50 of a run's 71 ms. Sixteen side by
-side take under half what they take in turn.
+has read the program's last output, is 50 of a run's 71 ms. On the idle
+machine, sixteen side by side take under half what they take in turn.
 
 A server with no session of its own exits when a run removes its last one, and
 the next run starts it again; the script's first loop times that. With the

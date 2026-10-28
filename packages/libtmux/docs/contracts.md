@@ -182,7 +182,7 @@ nothing into it.
 
 - One tmux command list starts the program and waits for its exit, so tmux
   cannot see the exit before the exit watch exists.
-- A small `sh` runs it and lingers 50 ms before exiting; in none of the 15000
+- A wrapper `sh` runs it and lingers 50 ms before exiting; in none of the 15000
   `seq 1 3000` runs measured below on each tmux did tmux then miss the last
   output.
 - `kill()` sends SIGTERM, then SIGKILL, to the process group, and returns once
@@ -263,8 +263,9 @@ What a run does not do:
   mark was read to the end. `lostEnd` and `stream()` report a missing mark, as
   `OutputLostError` for a stream. A SIGKILL to the process group ends the `sh`
   before its mark too, which leaves the end unproven, so it counts as missing.
-- The `sh` catches INT, QUIT and TERM, not ignoring them, so the program keeps
-  the default dispositions and the `sh` outlives it to report. It leaves HUP
+- The wrapper catches INT, QUIT and TERM with an empty handler, which `exec`
+  resets, so the program keeps the default dispositions and the wrapper
+  outlives it to report. It leaves HUP
   alone: a pane closed from outside hangs up the `sh`, and the kernel then
   hangs up the program, as it would a shell's. The run exits with the status
   the `sh` saw, as `$?` reports it: POSIX `sh` cannot tell a program's
@@ -294,8 +295,8 @@ so a program that exits right after writing can lose the end of its output: 8 to
 16 of 15000 runs did without the wrapper, as measured below.
 
 [`scripts/measure-program-end.ts`](../scripts/measure-program-end.ts) measures
-the loss and the mark with the shipped wrapper, three probes in parallel, over
-rounds. Run as
+the loss and the mark with the wrapper as it ships, three probes in parallel,
+over rounds. Run as
 `bun scripts/measure-program-end.ts 1000 5` on Linux 6.18 under WSL2, with
 3.8, with 3.8a (the `release_3.8a` branch at
 [089ad94](https://github.com/tmux/tmux/commit/089ad94e13c560db99fd4989b2774a5c6ad37a17))
@@ -316,6 +317,8 @@ order, so a shown mark cannot follow a lost end. `window_pane_destroy_ready`
 checks the same `FIONREAD` on all three
 ([3.8](https://github.com/tmux/tmux/blob/3.8/window.c#L501),
 [master](https://github.com/tmux/tmux/blob/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4/window.c#L504)).
+Only this kernel was measured; macOS and other Linux kernels count pending
+bytes their own way.
 
 ### Waiting for the exit
 
@@ -324,8 +327,8 @@ checks the same `FIONREAD` on all three
 - That list holds the respawn, the optional `pipe-pane`, a `wait-for -S` on a
   channel of the run's own, and the exit watch,
   `wait-for -E -F '#{==:#{pane},%N}' pane-died`.
-- Setup waits on that channel rather than polling: a channel signalled before
-  its waiter arrives stays woken.
+- Setup waits on that channel, and a channel signalled before its waiter
+  arrives stays woken, so the wait cannot miss the start.
 - A death counts only once tmux has the exit status: `pane_dead` turns 1 when
   the pty closes, which can come first.
 - The wait still reads the pane every second, because tmux fires no event for a
@@ -416,7 +419,7 @@ checks the same `FIONREAD` on all three
 ### Input
 
 - `input` is written to a file in the run's own 0700 temporary directory, and
-  the lingering `sh` redirects it into the program's stdin before running it, so
+  the wrapper redirects it into the program's stdin before running it, so
   the bytes pass through no shell parser and no tmux command.
 - stdout and stderr stay the pane's terminal, so `output()` and `stream()` read
   as before, and a program that checks `isatty(1)` still sees a terminal.
@@ -461,8 +464,8 @@ checks the same `FIONREAD` on all three
 - The reader polls the copy every 25 ms for as long as it is read, one small
   read a poll for each stream, which needs no file watching. A capped copy runs
   `head -c` under `stdbuf -o0` where there is one, since GNU `head` holds its
-  writes to a file until it exits. `stream({ signal })` ends the stream, not
-  the program.
+  writes to a file until it exits. `stream({ signal })` ends the stream, and
+  the program runs on.
 
 ## Pane waits
 
