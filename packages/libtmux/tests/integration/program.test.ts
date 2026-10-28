@@ -259,6 +259,23 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "an AbortSignal.timeout ends a run past setup",
+    async () => {
+      await withServer(async (server) => {
+        // Setup adds and removes its own listener first, which Bun 1.3 takes as the timer's end.
+        const started = performance.now();
+        const error = await server
+          .run(["sleep", "30"], { signal: AbortSignal.timeout(1500) })
+          .catch((caught: unknown) => caught);
+        expect(error).toMatchObject({ delivery: "written", kind: "cancelled" });
+        expect(performance.now() - started).toBeLessThan(10_000);
+        expect(await programSessions(server)).toBe(0);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "an instant program is never missed",
     async () => {
       await withServer(async (server) => {
