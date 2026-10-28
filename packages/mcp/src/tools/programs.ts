@@ -365,7 +365,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .describe(
             "The status as $? reports it once it completed on its own, or 127 or 126 when " +
               "not_started; otherwise null. Above 128 it is either a signal's 128 plus its " +
-              "number or the program's own exit.",
+              "number or the program's own exit, where wait_for_exit reports a signal as " +
+              "signal with exitStatus null.",
           ),
         lostEnd: z
           .boolean()

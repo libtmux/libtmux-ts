@@ -782,7 +782,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .describe(
             "The status as $? reports it: above 128 it is either a signal's 128 plus its " +
               "number or the program's own exit. Null when a signal ended its sh too (see " +
-              "signal) or the timeout ended it (outcome timed_out).",
+              "signal) or the timeout ended it (outcome timed_out). wait_for_exit reports a " +
+              "signal as signal with exitStatus null instead.",
           ),
         omittedBytes: z.number().int().describe("Output bytes omitted by the result ceiling."),
         outcome: z
