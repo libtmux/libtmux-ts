@@ -1358,7 +1358,7 @@ ends.
 Keys go to the terminal at once. A program that reads lines, like `cat`,
 reads them when it gets there; a full-screen one, like vim, can drop keys
 that arrive before it has set up its terminal, so wait for its first
-screen before typing.
+screen with [`Pane.waitForText`](#panewaitfortext) before typing.
 
 Requires tmux 3.8 or newer, and raises `VersionTooLowError`
 below it. Earlier releases have no exit event to wait on, and through
@@ -2423,7 +2423,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`waitForExit`](#panewaitforexit) · [`waitForCommand`](#panewaitforcommand) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`waitForExit`](#panewaitforexit) · [`waitForCommand`](#panewaitforcommand) · [`waitForText`](#panewaitfortext) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -2741,6 +2741,30 @@ Requires tmux 3.8 or newer.
 ```ts
 const status = await pane.waitForCommand({ send: "make test", timeoutMs: 600_000 });
 status; // 0 when the tests passed
+```
+
+#### `Pane.waitForText`
+
+```ts
+waitForText(pattern: string | RegExp, options?: ProgramWaitOptions): Promise<string>
+```
+
+Resolve with the first line of this pane's screen that `pattern` matches:
+a substring, or a regular expression tested against each line.
+
+The screen is read at once, then again each time tmux reports that the
+pane printed, at most every 50 ms, and once a second besides. Use it to
+wait for a prompt, or for a full-screen program's first screen before
+typing into it. Giving up leaves the pane as it was: a timeout throws
+`WaitTimeoutError` and an abort throws `TmuxTransportError`
+of kind `cancelled`. A pane whose program has exited without the text
+rejects with `LibTmuxError`.
+
+Requires tmux 3.8 or newer.
+
+```ts
+await using top = await server.spawn(["sh", "-c", "echo ready; exec cat"]);
+await top.pane.waitForText("ready", { timeoutMs: 10_000 }); // "ready"
 ```
 
 #### `Pane.clearHistory`

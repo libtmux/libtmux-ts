@@ -1,4 +1,4 @@
-// Waiting on any pane through tmux's own events: its program's exit, or a shell command's end.
+// Waiting on any pane through tmux's own events: its program's exit, a shell command's end, or text.
 import { randomUUID } from "node:crypto";
 
 import {
@@ -28,6 +28,8 @@ import {
 const ARM_MS = 10_000;
 /** How long a pane found gone may take to deliver the event its closing fired. */
 const DELIVERY_MS = 1000;
+/** The least time between two reads of a busy pane's screen. */
+const TEXT_ROUND_MS = 50;
 
 type Payload = ReadonlyMap<string, string>;
 
@@ -253,4 +255,82 @@ export async function waitForPaneCommand(
     },
     events: ["pane-command-finished"],
   });
+}
+
+/**
+ * Resolve with the first line of the pane's screen that `pattern` matches. tmux
+ * fires `pane-activity` on each server loop in which the pane printed, so a
+ * waiter armed before each read wakes for any output after it.
+ */
+export async function waitForPaneText(
+  runtime: RuntimeContext,
+  paneId: string,
+  pattern: string | RegExp,
+  options: ProgramWaitOptions = {},
+): Promise<string> {
+  const { signal, timeoutMs } = options;
+  requireCount("timeoutMs", timeoutMs, MAX_TIMER_MS);
+  if (isAborted(signal)) throw cancelled(signal);
+  await requirePaneWait(runtime);
+  const matches =
+    typeof pattern === "string"
+      ? (line: string): boolean => line.includes(pattern)
+      : (line: string): boolean => {
+          pattern.lastIndex = 0;
+          return pattern.test(line);
+        };
+  const deadline = timeoutMs === undefined ? Infinity : performance.now() + timeoutMs;
+  // The waiter armed for this round, and what wakes the sleep after its read.
+  let round: AbortController | undefined;
+  let fired: Promise<Payload | undefined> | undefined;
+  let wake = new AbortController();
+  const stop = new AbortController();
+  const onAbort = (): void => {
+    stop.abort();
+    wake.abort();
+  };
+  options.signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    for (;;) {
+      if (fired === undefined) {
+        round = new AbortController();
+        // eslint-disable-next-line no-await-in-loop -- armed before the read it follows.
+        ({ fired } = await arm(runtime, paneId, "pane-activity", round.signal));
+        const woken = new AbortController();
+        wake = woken;
+        void fired.then(() => woken.abort());
+      }
+      if (isAborted(signal)) throw cancelled(signal);
+      // eslint-disable-next-line no-await-in-loop -- each read follows the last wake.
+      const [dead = "", ...screen] = await runCommands(runtime, [
+        ["display-message", "-p", "-t", paneId, "#{pane_dead}"],
+        ["capture-pane", "-p", "-J", "-t", paneId],
+      ]).catch(async (error: unknown) => {
+        // A pane that is gone fails the list; say so as a missing pane.
+        await readPane(runtime, paneId, []);
+        throw error;
+      });
+      const found = screen.find(matches);
+      if (found !== undefined) return found;
+      if (dead === "1") throw new LibTmuxError(`${paneId} has exited; its screen will not change`);
+      if (performance.now() >= deadline) {
+        throw new WaitTimeoutError(
+          `${paneId}: after ${String(timeoutMs)}ms, no line matched ${String(pattern)}`,
+        );
+      }
+      // eslint-disable-next-line no-await-in-loop -- sleep until output, an abort, or the next read.
+      await sleep(Math.min(BACKSTOP_MS, Math.max(1, deadline - performance.now())), wake.signal);
+      if (isAborted(signal)) throw cancelled(signal);
+      if (wake.signal.aborted) {
+        // That waiter is spent; the next round arms another before reading.
+        fired = undefined;
+        // eslint-disable-next-line no-await-in-loop -- a busy pane is read at most this often.
+        await sleep(TEXT_ROUND_MS, stop.signal);
+      }
+    }
+  } finally {
+    options.signal?.removeEventListener("abort", onAbort);
+    stop.abort();
+    round?.abort();
+  }
 }

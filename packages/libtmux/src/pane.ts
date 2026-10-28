@@ -37,7 +37,11 @@ import {
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
-import { waitForPaneCommand, waitForPaneExit } from "./_internal/operations/pane_wait.js";
+import {
+  waitForPaneCommand,
+  waitForPaneExit,
+  waitForPaneText,
+} from "./_internal/operations/pane_wait.js";
 import {
   setOption,
   showOptions,
@@ -400,6 +404,29 @@ export class Pane {
    */
   waitForCommand(options?: CommandWaitOptions): Promise<number> {
     return waitForPaneCommand(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Resolve with the first line of this pane's screen that `pattern` matches:
+   * a substring, or a regular expression tested against each line.
+   *
+   * The screen is read at once, then again each time tmux reports that the
+   * pane printed, at most every 50 ms, and once a second besides. Use it to
+   * wait for a prompt, or for a full-screen program's first screen before
+   * typing into it. Giving up leaves the pane as it was: a timeout throws
+   * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError}
+   * of kind `cancelled`. A pane whose program has exited without the text
+   * rejects with {@link LibTmuxError}.
+   *
+   * Requires tmux 3.8 or newer.
+   *
+   * ```ts
+   * await using top = await server.spawn(["sh", "-c", "echo ready; exec cat"]);
+   * await top.pane.waitForText("ready", { timeoutMs: 10_000 }); // "ready"
+   * ```
+   */
+  waitForText(pattern: string | RegExp, options?: ProgramWaitOptions): Promise<string> {
+    return waitForPaneText(runtimeForHandle(this), this.id, pattern, options);
   }
 
   /**

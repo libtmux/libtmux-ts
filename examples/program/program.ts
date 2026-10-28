@@ -28,11 +28,7 @@ export async function prependLine(
   line: string,
 ): Promise<number | null> {
   await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", file]);
-  // eslint-disable-next-line no-await-in-loop -- read the screen until vim has drawn it.
-  while (!(await vim.pane.capture()).some((row) => row.trim() !== "")) {
-    // eslint-disable-next-line no-await-in-loop -- as above.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+  await vim.pane.waitForText(/\S/u, { timeoutMs: 10_000 });
   await vim.pane.sendKeys(`ggO${line}`, { enter: false });
   await vim.pane.sendKeys("Escape", { enter: false });
   await vim.pane.sendKeys(":wq");

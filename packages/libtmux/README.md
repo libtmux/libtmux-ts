@@ -990,9 +990,7 @@ result.output.startsWith("git version"); // true
 
 ```ts
 await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", file]);
-while (!(await vim.pane.capture()).some((row) => row.trim() !== "")) {
-  await new Promise((resolve) => setTimeout(resolve, 50));
-}
+await vim.pane.waitForText(/\S/u, { timeoutMs: 10_000 });
 await vim.pane.sendKeys(`ggO${line}`, { enter: false });
 await vim.pane.sendKeys("Escape", { enter: false });
 await vim.pane.sendKeys(":wq");
@@ -1001,8 +999,9 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 
 - `spawn` returns a [`Program`][ref-program] once the program has started. A
   full-screen program may still be setting up its terminal then, and can
-  discard what was typed before, so the keys wait for vim's first screen. No
-  tmux event says a program has drawn, so the example reads the screen.
+  discard what was typed before, so the keys wait for vim's first screen.
+  [`Pane.waitForText`][ref-pane-waitfortext] reads the screen each time tmux
+  says the pane printed, and resolves with the first line that matches.
 - Each running program holds one tmux client, its exit watch, until it ends.
 - `await using` ends the program and removes its pane however the scope
   leaves; without it, call [`kill()`][ref-program-kill] in a `finally`, which
@@ -2166,6 +2165,7 @@ MIT
 [ref-pane-sendkeys]: https://libtmux.org/en/ts/latest/reference/pane-pane-sendkeys/
 [ref-pane-waitforcommand]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitforcommand/
 [ref-pane-waitforexit]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitforexit/
+[ref-pane-waitfortext]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitfortext/
 [ref-pane-split]: https://libtmux.org/en/ts/latest/reference/pane-pane-split/
 [ref-pane-unzoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-unzoom/
 [ref-pane-zoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-zoom/

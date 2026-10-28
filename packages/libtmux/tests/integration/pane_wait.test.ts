@@ -89,6 +89,7 @@ describe("pane waits", () => {
       const pane = await paneRunning(server, "old", "sleep 30");
       await expect(pane.waitForExit()).rejects.toBeInstanceOf(VersionTooLowError);
       await expect(pane.waitForCommand()).rejects.toBeInstanceOf(VersionTooLowError);
+      await expect(pane.waitForText("x")).rejects.toBeInstanceOf(VersionTooLowError);
     });
   }, 40_000);
 
@@ -188,6 +189,61 @@ describe("pane waits", () => {
         await new Promise((resolve) => setTimeout(resolve, 300));
         await server.cmd("kill-pane", ["-t", pane.id]);
         await expect(waiting).rejects.toBeInstanceOf(ObjectNotFoundError);
+      });
+    },
+    40_000,
+  );
+  testWait(
+    "a text wait wakes on the pane's output, well before its once-a-second read",
+    async () => {
+      await withServer(async (server) => {
+        const pane = await paneRunning(server, "text", "sleep 0.4; echo 'first ready'; sleep 30");
+        const started = performance.now();
+        expect(await pane.waitForText("ready", { timeoutMs: 10_000 })).toBe("first ready");
+        // The output came at 0.4 s; a read woken by it lands long before the 1 s read would.
+        expect(performance.now() - started).toBeLessThan(900);
+        expect(await pane.waitForText(/^first/u)).toBe("first ready");
+        // Each later line wakes another read.
+        await server.cmd("send-keys", ["-t", pane.id, "-l", "x"]);
+        const counting = await paneRunning(
+          server,
+          "counting",
+          "for n in 1 2 3 4 5 6 7 8; do echo line$n; sleep 0.1; done; sleep 30",
+        );
+        expect(await counting.waitForText("line8", { timeoutMs: 10_000 })).toBe("line8");
+      });
+    },
+    40_000,
+  );
+
+  testWait(
+    "a text wait gives up, is cancelled, and stops at a dead pane",
+    async () => {
+      await withServer(async (server) => {
+        const pane = await paneRunning(server, "quiet", "sleep 30");
+        await expect(pane.waitForText("never", { timeoutMs: 300 })).rejects.toBeInstanceOf(
+          WaitTimeoutError,
+        );
+        const cancelled = await pane
+          .waitForText("never", { signal: AbortSignal.timeout(300) })
+          .catch((error: unknown) => error);
+        expect(cancelled).toBeInstanceOf(TmuxTransportError);
+        expect(cancelled).toMatchObject({ delivery: "replied", kind: "cancelled" });
+        const dying = await server.newSession({ name: "dying", shellCommand: "sleep 0.3" });
+        await server.cmd("set-option", ["-w", "-t", "=dying:", "remain-on-exit", "on"]);
+        const dead = dying.activePane;
+        if (dead === undefined) throw new Error("a new session has a pane");
+        await expect(dead.waitForText("never", { timeoutMs: 10_000 })).rejects.toBeInstanceOf(
+          LibTmuxError,
+        );
+        // No waiter outlives the waits that armed it.
+        const socket = server.socketPath ?? "";
+        expect(socket).not.toBe("");
+        const waiters = spawnSync("ps", ["-eo", "args="])
+          .stdout.toString()
+          .split("\n")
+          .filter((args) => args.includes(socket) && args.includes("pane-activity"));
+        expect(waiters).toEqual([]);
       });
     },
     40_000,

@@ -1466,7 +1466,7 @@ export class Server {
    * Keys go to the terminal at once. A program that reads lines, like `cat`,
    * reads them when it gets there; a full-screen one, like vim, can drop keys
    * that arrive before it has set up its terminal, so wait for its first
-   * screen before typing.
+   * screen with {@link Pane.waitForText} before typing.
    *
    * Requires tmux 3.8 or newer, and raises {@link VersionTooLowError}
    * below it. Earlier releases have no exit event to wait on, and through
