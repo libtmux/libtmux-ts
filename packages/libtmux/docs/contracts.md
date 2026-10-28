@@ -178,11 +178,12 @@ that leaves copy mode is followed by an Enter the pane itself receives.
 ## Program runs
 
 `Server.run` and `Server.spawn` start `argv` in a pane of its own, with nothing
-typed, so the output holds no command line or echo. In short:
+typed, so the output holds no command line or echo.
 
 - One tmux command list starts the program and waits for its exit, so no exit
   is missed.
-- A small `sh` runs it and lingers 50 ms, so tmux reads the last output first.
+- A small `sh` runs it and lingers 50 ms before exiting, which in the runs
+  measured below always let tmux read the last output.
 - `kill()` sends SIGTERM, then SIGKILL, to the process group, and returns once
   tmux has reaped it or two seconds after the SIGKILL.
 - Every run and spawn holds a lease that the caller renews, unless
@@ -248,7 +249,7 @@ What each outcome looks like to a caller:
   | 3.8a   | 1-5, 16    | 0-8, 10   | 0-0, 0          |
   | master | 0-4, 9     | 0-0, 0    | 0-0, 0          |
 
-  None of the 20 runs that lost their end showed the mark. A whole run that
+  None of the 20 runs the mark-only shape lost showed the mark. A whole run that
   lost only its mark would read as a lost end, and tmux reads a pane's bytes in
   order, so a shown mark cannot follow a lost end. `window_pane_destroy_ready`
   checks the same `FIONREAD` on all three

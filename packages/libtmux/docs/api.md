@@ -1344,9 +1344,9 @@ spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program>
 Start a program in a pane of its own and return it running.
 
 No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
-a pipe needs `["sh", "-c", …]`. The program gets a real terminal,
-which is what a full-screen program needs to be driven by keys; see
-`SpawnOptions` for what that implies for pagers and prompts.
+a pipe needs `["sh", "-c", …]`. The program gets a real terminal, so a
+full-screen program can be driven by keys; `SpawnOptions` says what
+that means for pagers and prompts.
 
 The [`Program`](#program) owns its pane, in a detached session of its own
 unless `from` places it beside another pane: `await using` or
@@ -1380,8 +1380,9 @@ before it. The pane, its session without `from`, is removed before this
 returns, whatever happened, unless `keep` leaves it for a person to read.
 `input` gives the program a stdin; otherwise it has only the terminal.
 A program still running at `timeoutMs` is ended, SIGTERM and then
-SIGKILL, and reported with `timedOut`; one aborted through `signal` is
-ended and the call rejects. Should this process die first, tmux itself
+SIGKILL, and reported with `timedOut` rather than thrown, since the run
+owns the program; one aborted through `signal` is ended and the call
+rejects. Should this process die first, tmux itself
 ends the program and removes its pane within `orphanAfterMs`, a minute
 by default.
 
@@ -3097,9 +3098,9 @@ pane.sameTmuxIdAs(await pane.refreshed()); // true
 
 A program started by [`Server.spawn`](#serverspawn), running in a pane of its own.
 
-Nothing was typed to start it, so its pane holds only what it printed. The
-pane is a real terminal: drive a full-screen program with
-[`Pane.sendKeys`](#panesendkeys) and read its screen with [`Pane.capture`](#panecapture).
+Nothing was typed to start it, so its pane holds only what it printed. Drive a
+full-screen program with [`Pane.sendKeys`](#panesendkeys) and read its screen with
+[`Pane.capture`](#panecapture).
 
 It owns its pane. [`Program.kill`](#programkill), or leaving an `await using` scope,
 ends the program and removes the pane, unless spawned with `keep`. Should

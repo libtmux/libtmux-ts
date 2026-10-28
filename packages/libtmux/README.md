@@ -170,7 +170,7 @@ server.
   - [`Server.pipeline`: raw arguments, one result each](#serverpipeline-raw-arguments-one-result-each)
   - [`Server.newSession`: build a workspace](#servernewsession-build-a-workspace)
 - [Run a program and read its output](#run-a-program-and-read-its-output)
-  - [`Server.run`: one call, nothing typed](#serverrun-one-call-nothing-typed)
+  - [`Server.run`: one call, only the output](#serverrun-one-call-only-the-output)
   - [`Server.spawn`: drive it, then wait](#serverspawn-drive-it-then-wait)
   - [`input`: give it a stdin](#input-give-it-a-stdin)
   - [`signal`: cancel a run](#signal-cancel-a-run)
@@ -941,7 +941,7 @@ shell.name; // "shell"
 Use `run` when the result is all you need, and `spawn` when the program needs
 keys, a live stream of its output, or a lifetime of your choosing.
 
-### [`Server.run`][ref-server-run]: one call, nothing typed
+### [`Server.run`][ref-server-run]: one call, only the output
 
 ```ts
 const result = await server.run(["git", "--version"]);
@@ -983,7 +983,7 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 ```
 
 - `spawn` returns a [`Program`][ref-program] once the program has started, so
-  keys sent at once reach it. Its pane is a real terminal.
+  keys sent at once reach it.
 - `await using` ends the program and removes its pane however the scope
   leaves. A `wait` that gives up throws `WaitTimeoutError` and leaves the
   program running, where `run` ends it and reports `timedOut`.

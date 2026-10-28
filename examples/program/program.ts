@@ -18,8 +18,8 @@ export async function listFiles(server: Server, directory: string): Promise<read
 /**
  * Drive a full-screen program with keys, then wait for it to quit.
  *
- * The program has a real terminal, which is what vim needs. Keys sent at once
- * reach it: `spawn` returns only after the program has started. `await using`
+ * Keys sent at once reach vim: `spawn` returns only after the program has
+ * started. `await using`
  * removes its pane however the function leaves.
  */
 export async function prependLine(

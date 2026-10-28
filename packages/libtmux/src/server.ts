@@ -1452,9 +1452,9 @@ export class Server {
    * Start a program in a pane of its own and return it running.
    *
    * No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
-   * a pipe needs `["sh", "-c", …]`. The program gets a real terminal,
-   * which is what a full-screen program needs to be driven by keys; see
-   * {@link SpawnOptions} for what that implies for pagers and prompts.
+   * a pipe needs `["sh", "-c", …]`. The program gets a real terminal, so a
+   * full-screen program can be driven by keys; {@link SpawnOptions} says what
+   * that means for pagers and prompts.
    *
    * The {@link Program} owns its pane, in a detached session of its own
    * unless `from` places it beside another pane: `await using` or
@@ -1487,8 +1487,9 @@ export class Server {
    * returns, whatever happened, unless `keep` leaves it for a person to read.
    * `input` gives the program a stdin; otherwise it has only the terminal.
    * A program still running at `timeoutMs` is ended, SIGTERM and then
-   * SIGKILL, and reported with `timedOut`; one aborted through `signal` is
-   * ended and the call rejects. Should this process die first, tmux itself
+   * SIGKILL, and reported with `timedOut` rather than thrown, since the run
+   * owns the program; one aborted through `signal` is ended and the call
+   * rejects. Should this process die first, tmux itself
    * ends the program and removes its pane within `orphanAfterMs`, a minute
    * by default.
    *

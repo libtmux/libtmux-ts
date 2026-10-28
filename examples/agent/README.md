@@ -27,9 +27,9 @@ One control observer carries notifications while commands use the server's
 engine. Keeping that observer open makes event-driven waits persistent without
 turning command output into a control-mode protocol.
 
-Waiting for a marker matters because a pane echoes what is typed into it, so
-waiting for text that also appears in the command you sent matches your own
-keystrokes rather than the output.
+A pane echoes what is typed into it, so a wait for text that also appears in
+the command you sent matches your own keystrokes; the marker the command prints
+appears in its output alone.
 
 `runMarked` needs no marker: a shell whose prompt writes an OSC 133 `D` mark
 tells tmux when each command ends and how. `waitForExit` waits for a pane's
