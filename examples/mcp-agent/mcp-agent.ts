@@ -149,6 +149,8 @@ export interface ProgramRun {
   readonly exitStatus: number | null;
   /** completed, expired or gone: only the first carries an exit status worth reading. */
   readonly outcome: string;
+  /** False when the copy hit its limit or tmux closed the pane before the end was read. */
+  readonly outputComplete: boolean;
   readonly text: string;
 }
 
@@ -167,6 +169,7 @@ export async function followProgram(client: Client, argv: readonly string[]): Pr
     readonly exitStatus: number | null;
     readonly ended: boolean;
     readonly outcome: string;
+    readonly outputComplete: boolean;
     readonly text: string;
   }
   const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
@@ -181,9 +184,15 @@ export async function followProgram(client: Client, argv: readonly string[]): Pr
       text += read.text;
     }
   } finally {
-    await callTool(client, "stop_program", { programId });
+    // A failed stop must not hide a failed read; the lifetime ends the program either way.
+    await callTool(client, "stop_program", { programId }).catch(() => undefined);
   }
-  return { exitStatus: read.exitStatus, outcome: read.outcome, text };
+  return {
+    exitStatus: read.exitStatus,
+    outcome: read.outcome,
+    outputComplete: read.outputComplete,
+    text,
+  };
 }
 
 /**

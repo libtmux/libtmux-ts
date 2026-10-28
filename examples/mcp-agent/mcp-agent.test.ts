@@ -72,6 +72,7 @@ describe("mcp-agent", () => {
             expect(followed).toEqual({
               exitStatus: 3,
               outcome: "completed",
+              outputComplete: true,
               text: "building\nbuilt\n",
             });
 

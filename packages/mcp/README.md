@@ -520,6 +520,7 @@ interface Read {
   readonly exitStatus: number | null;
   readonly ended: boolean;
   readonly outcome: string;
+  readonly outputComplete: boolean;
   readonly text: string;
 }
 const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
@@ -533,7 +534,8 @@ try {
     text += read.text;
   }
 } finally {
-  await callTool(client, "stop_program", { programId });
+  // A failed stop must not hide a failed read; the lifetime ends the program either way.
+  await callTool(client, "stop_program", { programId }).catch(() => undefined);
 }
 ```
 
