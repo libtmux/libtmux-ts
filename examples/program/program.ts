@@ -137,7 +137,8 @@ export async function startService(
       if (tail.includes(ready)) return service;
     }
   } catch (error) {
-    await service.kill();
+    // A failed kill must not hide why the stream ended; the lease ends the service either way.
+    await service.kill().catch(() => undefined);
     throw error;
   }
   await service.kill();
