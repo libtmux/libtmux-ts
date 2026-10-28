@@ -53,7 +53,7 @@ import {
  * Runs argv unparsed, writes ST and the run's OSC 7 mark, lingers, and exits
  * with its status. Only a pane whose path is the mark was read to the end.
  */
-const RUN =
+export const RUN: string =
   'trap : HUP INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
   "printf '\\033\\\\\\033]7;%s\\007' \"$m\"; " +
   'sleep 0.05 2>/dev/null || sleep 1; exit "$s"';
@@ -61,7 +61,7 @@ const RUN =
  * Steps before `RUN`, each shifting its argument off `$1`. tmux's `-c` falls
  * back to `$HOME` for a directory it cannot enter, where this exits 126.
  */
-const MARK = "m=$1; shift; ";
+export const MARK = "m=$1; shift; ";
 const ENTER = 'cd -- "$1" || exit 126; shift; ';
 const READ = 'exec <"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */

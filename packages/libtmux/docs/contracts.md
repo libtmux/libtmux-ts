@@ -219,19 +219,19 @@ typed, so the output holds no command line or echo. In short:
   mark was read to the end. `lostEnd` and `stream()` report a missing mark, as
   `OutputLostError` for a stream. A SIGKILL to the process group ends the `sh`
   before its mark too, which leaves the end unproven, so it counts as missing.
-- [`scripts/measure-program-end.sh`](../scripts/measure-program-end.sh) measures
-  both, three probes in parallel. Run with 300 runs a probe on 3.8, 3.8a and
-  master at
+- [`scripts/measure-program-end.ts`](../scripts/measure-program-end.ts) measures
+  both with the shipped wrapper, three probes in parallel. Run with 1000 runs a
+  probe on 3.8, 3.8a and master at
   [523ac69](https://github.com/tmux/tmux/commit/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4):
 
-  | tmux   | No wrapper, whole | Mark only: whole, marked, marked but cut | Linger and mark, whole |
-  | ------ | ----------------- | ---------------------------------------- | ---------------------- |
-  | 3.8    | 898 of 900        | 897, 896, 0                              | 900 of 900             |
-  | 3.8a   | 899 of 900        | 900, 900, 0                              | 900 of 900             |
-  | master | 894 of 900        | 898, 898, 0                              | 900 of 900             |
+  | tmux   | No wrapper, whole | Mark only: whole, marked, marked but cut | Linger and mark: whole, marked |
+  | ------ | ----------------- | ---------------------------------------- | ------------------------------ |
+  | 3.8    | 3000 of 3000      | 3000, 3000, 0                            | 3000, 3000                     |
+  | 3.8a   | 2996 of 3000      | 2998, 2998, 0                            | 3000, 3000                     |
+  | master | 3000 of 3000      | 2998, 2998, 0                            | 3000, 3000                     |
 
-  No run that lost its end showed the mark. One whole run on 3.8 lost only the
-  mark, which reads as a lost end: the check errs that way, never the other.
+  No run that lost its end showed the mark. A whole run that lost only its mark
+  would read as a lost end: the check errs that way, never the other.
 
 - Its own signals are caught, not ignored, so the program keeps the default
   dispositions. The run exits with the status the `sh` saw, as `$?` reports
