@@ -1,0 +1,212 @@
+/* eslint-disable no-await-in-loop -- tests poll and read sequentially */
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { fileURLToPath } from "node:url";
+
+import { expect, test } from "bun:test";
+
+import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
+import { tmuxReaches } from "../../libtmux/tests/support/tmux_release.js";
+
+interface Started {
+  readonly effectiveTimeoutMs: number;
+  readonly paneId: string;
+  readonly programId: string;
+}
+
+interface Read {
+  readonly cursor: number;
+  readonly outcome: string;
+  readonly outputCut: boolean;
+  readonly exited: boolean;
+  readonly exitStatus: number | null;
+  readonly signal: string | null;
+  readonly text: string;
+}
+
+const testProgram = tmuxReaches("3.8") ? test : test.skip;
+type Call = (request: { name: string; arguments: Record<string, unknown> }) => Promise<unknown>;
+
+async function programSessions(call: Call): Promise<string[]> {
+  const listed = structured<{ sessions: { name: string }[] }>(
+    await call({ arguments: {}, name: "list_sessions" }),
+  );
+  return listed.sessions
+    .map((session) => session.name)
+    .filter((name) => name.startsWith("libtmux-program-"));
+}
+
+async function until(check: () => Promise<boolean>, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (await check()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return check();
+}
+
+/** Read to the exit, returning every read in order. */
+async function readAll(call: Call, programId: string, timeoutMs: number): Promise<Read[]> {
+  const reads: Read[] = [];
+  let cursor = 0;
+  for (let i = 0; i < 100; i += 1) {
+    const read = structured<Read>(
+      await call({ arguments: { cursor, programId, timeoutMs }, name: "read_program" }),
+    );
+    reads.push(read);
+    cursor = read.cursor;
+    if (read.exited) return reads;
+  }
+  throw new Error("program never reported its exit");
+}
+
+const FIVE_LINES = ["sh", "-c", "for i in 1 2 3 4 5; do echo line$i; sleep 1; done; exit 0"];
+
+testProgram(
+  "read_program shows output before the exit, then the exit status",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        const started = structured<Started>(
+          await call({ arguments: { argv: FIVE_LINES, timeoutMs: 30_000 }, name: "start_program" }),
+        );
+        const reads = await readAll(call, started.programId, 5000);
+        const firstLine = reads.findIndex((read) => read.text.includes("line1"));
+        expect(firstLine).toBeGreaterThanOrEqual(0);
+        expect(reads[firstLine]?.exited).toBe(false);
+        const text = reads.map((read) => read.text).join("");
+        for (const n of [1, 2, 3, 4, 5]) expect(text).toContain(`line${String(n)}`);
+        const last = reads.at(-1);
+        expect(last).toMatchObject({
+          exitStatus: 0,
+          exited: true,
+          outcome: "exited",
+          signal: null,
+        });
+        // Output stays readable after the exit.
+        const again = structured<Read>(
+          await call({
+            arguments: { cursor: 0, programId: started.programId },
+            name: "read_program",
+          }),
+        );
+        expect(again.text).toContain("line5");
+        await call({ arguments: { programId: started.programId }, name: "stop_program" });
+        expect(await programSessions(call)).toEqual([]);
+      });
+    });
+  },
+  60_000,
+);
+
+testProgram(
+  "stop_program and the lifetime each remove the program's session",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        const stopped = structured<Started>(
+          await call({ arguments: { argv: ["sleep", "30"] }, name: "start_program" }),
+        );
+        expect(await programSessions(call)).toHaveLength(1);
+        await call({ arguments: { programId: stopped.programId }, name: "stop_program" });
+        expect(await programSessions(call)).toEqual([]);
+
+        // No later call: only the 2 s lifetime ends it.
+        const short = structured<Started>(
+          await call({
+            arguments: { argv: ["sleep", "30"], timeoutMs: 2000 },
+            name: "start_program",
+          }),
+        );
+        expect(await programSessions(call)).toHaveLength(1);
+        expect(await until(async () => (await programSessions(call)).length === 0, 8000)).toBe(
+          true,
+        );
+        const gone = await call({
+          arguments: { programId: short.programId },
+          name: "read_program",
+        });
+        expect((gone as { isError?: boolean }).isError).toBe(true);
+      });
+    });
+  },
+  60_000,
+);
+
+testProgram(
+  "a program longer than the wait ceiling is read whole across several calls",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(
+        fixture,
+        async (client) => {
+          const call: Call = (request) => client.callTool(request);
+          const started = structured<Started>(
+            await call({
+              arguments: {
+                argv: ["sh", "-c", "echo start; sleep 5; echo end; exit 4"],
+                timeoutMs: 30_000,
+              },
+              name: "start_program",
+            }),
+          );
+          const startedAt = Date.now();
+          // Ask for far more than the 2 s ceiling.
+          const reads = await readAll(call, started.programId, 60_000);
+          expect(Date.now() - startedAt).toBeGreaterThanOrEqual(4000);
+          // The ceiling forced more than one wait for the silent 5 s.
+          expect(reads.length).toBeGreaterThanOrEqual(3);
+          expect(reads.map((read) => read.text).join("")).toContain("end");
+          expect(reads.at(-1)).toMatchObject({ exitStatus: 4, exited: true });
+          await call({ arguments: { programId: started.programId }, name: "stop_program" });
+          expect(await programSessions(call)).toEqual([]);
+        },
+        { LIBTMUX_MCP_WAIT_MAX_MS: "2000" },
+      );
+    });
+  },
+  60_000,
+);
+
+testProgram(
+  "tmux removes a started program once a killed server stops renewing its lease",
+  async () => {
+    await withServer(async (fixture) => {
+      const client = new Client({ name: "probe", version: "0.0.0" });
+      const transport = new StdioClientTransport({
+        args: [fileURLToPath(new URL("../src/server.ts", import.meta.url))],
+        command: process.execPath,
+        env: {
+          ...(process.env as Record<string, string>),
+          ...fixture.controllerEnvironment,
+          LIBTMUX_SOCKET_PATH: fixture.socketPath,
+          LIBTMUX_TMUX_BIN: fixture.tmuxExecutable,
+          LIBTMUX_TOOLSETS: "inspect,manage,execute,teardown",
+        },
+      });
+      await client.connect(transport);
+      structured(
+        await client.callTool({
+          arguments: { argv: ["sleep", "300"], timeoutMs: 300_000 },
+          name: "start_program",
+        }),
+      );
+      const names = async (): Promise<string[]> =>
+        (await serverFor(fixture).sessions()).toArray().map((session) => session.name ?? "");
+      const live = async (): Promise<number> =>
+        (await names()).filter((name) => name.startsWith("libtmux-program-")).length;
+      expect(await live()).toBe(1);
+      process.kill(transport.pid as number, "SIGKILL");
+      // The lease is 30 s, renewed every 10 s, so tmux acts 20 to 30 s after the kill.
+      const deadline = Date.now() + 45_000;
+      while (Date.now() < deadline && (await live()) !== 0) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      expect(await live()).toBe(0);
+      await client.close().catch(() => undefined);
+    });
+  },
+  70_000,
+);

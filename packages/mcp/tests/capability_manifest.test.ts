@@ -28,6 +28,7 @@ const TOOLS_BY_TOOLSET = {
     "list_panes",
     "list_sessions",
     "list_windows",
+    "read_program",
     "search_panes",
     "show_option",
     "show_environment",
@@ -63,6 +64,8 @@ const TOOLS_BY_TOOLSET = {
     "send_keys_batch",
     "set_synchronize_panes",
     "split_window",
+    "start_program",
+    "stop_program",
   ],
   teardown: ["clear_pane_scrollback", "kill_pane", "kill_session", "kill_window"],
 } as const;
@@ -100,6 +103,9 @@ const SOURCE_CATALOG_ORDER = [
   "paste_text",
   "run_shell_command",
   "run_program",
+  "start_program",
+  "read_program",
+  "stop_program",
   "create_session",
   "create_window",
   "split_window",
@@ -353,7 +359,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
     async (client) => {
       const tools = (await client.listTools()).tools;
       expect(tools.map(({ name }) => name)).toEqual([...SOURCE_CATALOG_ORDER]);
-      expect(tools).toHaveLength(47);
+      expect(tools).toHaveLength(50);
 
       // An agent picks a tool from its schema alone, so a parameter with no
       // description is one it has to guess at. This runs against every
@@ -401,6 +407,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
             "call_read_tools_batch",
             "capture_pane",
             "capture_since",
+            "read_program",
             "search_panes",
             "snapshot_pane",
             "wait_for_text",
@@ -419,7 +426,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
             "Read configured tmux commands; accepts no client-supplied executable input. Returned values may contain executable configuration.",
         },
         {
-          names: [...TOOLS_BY_TOOLSET.manage, "set_synchronize_panes"],
+          names: [...TOOLS_BY_TOOLSET.manage, "set_synchronize_panes", "stop_program"],
           opener: "Change tmux state; no client-supplied executable input.",
         },
         {
@@ -436,7 +443,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
           opener: "Run a shell command in a pane with your user's permissions.",
         },
         {
-          names: ["run_program"],
+          names: ["run_program", "start_program"],
           opener: "Run a program in a new pane of its own with your user's permissions.",
         },
         {
@@ -444,7 +451,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
           opener: "Delete tmux state; accepts no command payload.",
         },
       ] as const;
-      expect(controlledOpeners.reduce((count, group) => count + group.names.length, 0)).toBe(47);
+      expect(controlledOpeners.reduce((count, group) => count + group.names.length, 0)).toBe(50);
       for (const { names, opener } of controlledOpeners) {
         for (const name of names) {
           expect(tools.find((tool) => tool.name === name)?.description, name).toStartWith(
@@ -553,7 +560,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
         hostCommandTools: 0,
         operatingSystemBoundary: "none",
         socket: { namespaceBoundary: "tmux-objects-only" },
-        toolCount: 47,
+        toolCount: 50,
         toolFilteringBoundary: "interface-shaping-not-authorization",
       });
       expect(report.tools.find(({ name }) => name === "snapshot_pane")?.nestedAuthority).toEqual(
@@ -1033,19 +1040,19 @@ test("startup provenance controls the implicit teardown surface", async () => {
       configurationProvenance: "minimal",
       hasTeardown: true,
       serverState: "created",
-      toolCount: 47,
+      toolCount: 50,
     },
     {
       configurationProvenance: "unknown",
       hasTeardown: false,
       serverState: "existing",
-      toolCount: 43,
+      toolCount: 46,
     },
     {
       configurationProvenance: "user-configured",
       hasTeardown: false,
       serverState: "absent",
-      toolCount: 43,
+      toolCount: 46,
     },
   ] as const;
 
