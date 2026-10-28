@@ -234,8 +234,9 @@ export async function waitForPaneCommand(
 ): Promise<number> {
   return waitOnPane(runtime, paneId, options, {
     act: async () => {
-      if (options.send !== undefined)
+      if (options.send !== undefined) {
         await sendKeys(runtime, paneId, options.send, { literal: true });
+      }
     },
     awaited: "no command had finished",
     check: async () => {

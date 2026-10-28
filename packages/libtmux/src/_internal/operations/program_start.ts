@@ -537,8 +537,9 @@ export async function spawnProgram(
     // Asked once the pane exists, since a cold socket has no server to ask before.
     if (files !== undefined) await requireShared(runtime, files.directory);
     // Renewed from the moment the pane exists, however long the rest of setup takes.
-    if (lease !== undefined)
+    if (lease !== undefined) {
       startRenewal({ files: files !== undefined, keep, owned, paneId, runtime, watcher }, lease);
+    }
     let failure: unknown;
     const mark = `libtmux-ran-${randomUUID()}`;
     const started = `libtmux-program-started-${randomUUID()}`;
@@ -558,8 +559,9 @@ export async function spawnProgram(
     await confirmStarted(runtime, paneId, () => failure, exited, signal, started, watcher);
     // Handles come from a whole-server snapshot, as `Pane.refreshed` reads them.
     const pane = (await server.panes()).toArray().find((candidate) => candidate.id === paneId);
-    if (pane === undefined)
+    if (pane === undefined) {
       throw new TmuxObjectNotFoundError({ obj_id: paneId, obj_key: "pane_id" });
+    }
     const program = Object.create(Program.prototype) as Program;
     Object.defineProperties(program, {
       pane: { enumerable: true, value: pane satisfies Pane },
