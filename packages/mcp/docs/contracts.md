@@ -310,6 +310,35 @@ and once renewals stop, a tmux timer SIGKILLs the program and removes its pane.
 It needs tmux 3.8 or newer: earlier releases have no `wait-for -E`, and
 through 3.7c a remain-on-exit pane keeps its pipe open after the program exits.
 
+## [`start_program`][tool-start_program], [`read_program`][tool-read_program] and [`stop_program`][tool-stop_program]
+
+`start_program` starts `argv` the way `run_program` does, through the library's
+`Server.spawn` with a stream copy, and returns at once. This server copies the
+output into memory as it is written, through the same escape-sequence filter as
+`capture_since`, and `read_program` hands out bytes after a cursor. A read waits
+for new output or the end, up to the wait ceiling, so a program of any length
+is read whole over several calls.
+
+`exited` is true only once the program has ended and every byte it wrote has
+been returned. The library's stream ends with the last write, which tmux holds
+the pane for (`window_pane_destroy_ready`), so nothing is lost at the end. The
+copy stops at 4 MiB and the program runs on; `outputCut` says so.
+
+No later call owns cleanup:
+
+- Each program has a lifetime, `timeoutMs` on `start_program`, ten minutes by
+  default and at most an hour. When it runs out this server ends the program,
+  SIGTERM and then SIGKILL, removes its pane and forgets the id, whatever the
+  caller did.
+- The program holds a 30-second lease that this server renews every ten
+  seconds. Should this server die, tmux ends the program and removes its pane
+  within half a minute.
+- Closing this server ends every program it started.
+- At most sixteen are live at once.
+
+`stop_program` ends one at once. The `paneId` it returns is an ordinary pane, so
+`send_keys` reaches the program with the usual pane-input checks.
+
 ## [`wait_for_exit`][tool-wait_for_exit]
 
 `wait_for_exit` waits on a pane this server did not start through the library's
@@ -615,5 +644,8 @@ creating a second scripting language beside tmux itself.
 [tool-snapshot_pane]: https://libtmux.org/en/ts/latest/mcp/tools/snapshot_pane/
 [tool-split_window]: https://libtmux.org/en/ts/latest/mcp/tools/split_window/
 [tool-swap_pane]: https://libtmux.org/en/ts/latest/mcp/tools/swap_pane/
+[tool-read_program]: https://libtmux.org/en/ts/latest/mcp/tools/read_program/
+[tool-start_program]: https://libtmux.org/en/ts/latest/mcp/tools/start_program/
+[tool-stop_program]: https://libtmux.org/en/ts/latest/mcp/tools/stop_program/
 [tool-wait_for_exit]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_exit/
 [tool-wait_for_text]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/

@@ -245,12 +245,12 @@ Tools belong to four unordered sets: `inspect`, `manage`, `execute`, and
 `teardown`. The sets decide what a client is offered, and every offered tool
 runs with the tmux user's authority.
 
-| Toolset    | Tools                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inspect`  | [`call_read_tools_batch`][tool-call_read_tools_batch], [`capture_pane`][tool-capture_pane], [`capture_since`][tool-capture_since], [`find_pane_by_position`][tool-find_pane_by_position], [`get_pane_info`][tool-get_pane_info], [`get_server_info`][tool-get_server_info], [`get_session_info`][tool-get_session_info], [`get_tmux_variables`][tool-get_tmux_variables], [`get_window_info`][tool-get_window_info], [`list_panes`][tool-list_panes], [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`search_panes`][tool-search_panes], [`show_environment`][tool-show_environment], [`show_hooks`][tool-show_hooks], [`show_option`][tool-show_option], [`snapshot_pane`][tool-snapshot_pane], [`wait_for_exit`][tool-wait_for_exit], [`wait_for_text`][tool-wait_for_text] |
-| `manage`   | [`move_window`][tool-move_window], [`rename_session`][tool-rename_session], [`rename_window`][tool-rename_window], [`resize_pane`][tool-resize_pane], [`resize_window`][tool-resize_window], [`select_layout`][tool-select_layout], [`select_pane`][tool-select_pane], [`select_window`][tool-select_window], [`set_history_limit`][tool-set_history_limit], [`set_mouse_enabled`][tool-set_mouse_enabled], [`set_pane_title`][tool-set_pane_title], [`signal_channel`][tool-signal_channel], [`swap_pane`][tool-swap_pane], [`wait_for_channel`][tool-wait_for_channel]                                                                                                                                                                                                                                    |
-| `execute`  | [`create_session`][tool-create_session], [`create_window`][tool-create_window], [`paste_text`][tool-paste_text], [`respawn_pane`][tool-respawn_pane], [`run_program`][tool-run_program], [`run_shell_command`][tool-run_shell_command], [`send_keys`][tool-send_keys], [`send_keys_batch`][tool-send_keys_batch], [`set_synchronize_panes`][tool-set_synchronize_panes], [`split_window`][tool-split_window]                                                                                                                                                                                                                                                                                                                                                                                                |
-| `teardown` | [`clear_pane_scrollback`][tool-clear_pane_scrollback], [`kill_pane`][tool-kill_pane], [`kill_session`][tool-kill_session], [`kill_window`][tool-kill_window]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Toolset    | Tools                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `inspect`  | [`call_read_tools_batch`][tool-call_read_tools_batch], [`capture_pane`][tool-capture_pane], [`capture_since`][tool-capture_since], [`find_pane_by_position`][tool-find_pane_by_position], [`get_pane_info`][tool-get_pane_info], [`get_server_info`][tool-get_server_info], [`get_session_info`][tool-get_session_info], [`get_tmux_variables`][tool-get_tmux_variables], [`get_window_info`][tool-get_window_info], [`list_panes`][tool-list_panes], [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`read_program`][tool-read_program], [`search_panes`][tool-search_panes], [`show_environment`][tool-show_environment], [`show_hooks`][tool-show_hooks], [`show_option`][tool-show_option], [`snapshot_pane`][tool-snapshot_pane], [`wait_for_exit`][tool-wait_for_exit], [`wait_for_text`][tool-wait_for_text] |
+| `manage`   | [`move_window`][tool-move_window], [`rename_session`][tool-rename_session], [`rename_window`][tool-rename_window], [`resize_pane`][tool-resize_pane], [`resize_window`][tool-resize_window], [`select_layout`][tool-select_layout], [`select_pane`][tool-select_pane], [`select_window`][tool-select_window], [`set_history_limit`][tool-set_history_limit], [`set_mouse_enabled`][tool-set_mouse_enabled], [`set_pane_title`][tool-set_pane_title], [`signal_channel`][tool-signal_channel], [`swap_pane`][tool-swap_pane], [`wait_for_channel`][tool-wait_for_channel]                                                                                                                                                                                                                                                                         |
+| `execute`  | [`create_session`][tool-create_session], [`create_window`][tool-create_window], [`paste_text`][tool-paste_text], [`respawn_pane`][tool-respawn_pane], [`run_program`][tool-run_program], [`run_shell_command`][tool-run_shell_command], [`send_keys`][tool-send_keys], [`send_keys_batch`][tool-send_keys_batch], [`set_synchronize_panes`][tool-set_synchronize_panes], [`split_window`][tool-split_window], [`start_program`][tool-start_program], [`stop_program`][tool-stop_program]                                                                                                                                                                                                                                                                                                                                                         |
+| `teardown` | [`clear_pane_scrollback`][tool-clear_pane_scrollback], [`kill_pane`][tool-kill_pane], [`kill_session`][tool-kill_session], [`kill_window`][tool-kill_window]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### [`LIBTMUX_TOOLSETS`][topic-toolsets-and-startup-provenance]: choose the toolsets
 
@@ -432,11 +432,14 @@ call_read_tools_batch  operations=[{tool: 'list_sessions'}, {tool: 'list_panes'}
 
 ## Run commands and wait
 
-Five tools run programs or put input into panes:
+Seven tools run programs or put input into panes:
 
 | Tool                                          | Does                                                          |
 | --------------------------------------------- | ------------------------------------------------------------- |
 | [`run_program`][tool-run_program]             | Runs a program in a detached session, returns only its output |
+| [`start_program`][tool-start_program]         | Starts a program that outlives one call; returns at once      |
+| [`read_program`][tool-read_program]           | Reads a started program's new output and reports its exit     |
+| [`stop_program`][tool-stop_program]           | Ends a started program and removes its pane                   |
 | [`run_shell_command`][tool-run_shell_command] | Runs a shell command, waits for it, reports exit status       |
 | [`send_keys`][tool-send_keys]                 | Sends keystrokes: TUIs, `C-c`, partial lines                  |
 | [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call                |
@@ -490,6 +493,53 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
 - Needs tmux 3.8 or newer; earlier servers answer with a refusal that points
   at `run_shell_command`.
 - [Program runs](docs/contracts.md#run_program-program-runs).
+
+### [`start_program`][tool-start_program], [`read_program`][tool-read_program] and [`stop_program`][tool-stop_program]: a program that outlives one call
+
+`run_program` holds one call open until the program ends, which a wait ceiling
+cuts short. A build or a server that runs longer is started, read as it
+writes, and stopped.
+
+This is a literal excerpt of
+[`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts),
+which the integration suite runs against a real tmux server; `callTool` there
+returns a result's `structuredContent`:
+
+<!-- runs: examples/mcp-agent/mcp-agent.ts -->
+
+```ts
+interface Read {
+  readonly cursor: number;
+  readonly exitStatus: number | null;
+  readonly exited: boolean;
+  readonly text: string;
+}
+const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
+let read = await callTool<Read>(client, "read_program", { programId });
+let text = read.text;
+while (!read.exited) {
+  read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
+  text += read.text;
+}
+await callTool(client, "stop_program", { programId });
+```
+
+- `start_program` returns a `programId` and the `paneId`, which `send_keys` and
+  `capture_pane` reach. It takes `fromPaneId`, `placement` and the other
+  placement inputs `run_program` does.
+- Each `read_program` waits up to its `timeoutMs` for new output or the exit
+  and returns a `cursor`. A read that times out returns no text; the next one
+  with the same cursor carries on, past any wait ceiling.
+- The text is the byte stream with escape sequences removed, as
+  `capture_since` gives it. `exited` turns true once the program ended and
+  every byte was read, with `exitStatus` or `signal`. After 4 MiB the copy
+  stops, `outputCut` turns true, and the program runs on.
+- A program's lifetime is `timeoutMs` on `start_program`, ten minutes by
+  default and at most an hour. When it runs out, this server ends the program
+  and removes its pane whatever else was called. Should this server die, tmux
+  does it within half a minute, through a lease only a live server renews.
+- Sixteen started programs can be live at once. `stop_program` ends one at
+  once and forgets its id.
 
 ### [`run_shell_command`][tool-run_shell_command]: run a command and get its exit status
 
@@ -952,6 +1002,9 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 [tool-split_window]: https://libtmux.org/en/ts/latest/mcp/tools/split_window/
 [tool-swap_pane]: https://libtmux.org/en/ts/latest/mcp/tools/swap_pane/
 [tool-wait_for_channel]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_channel/
+[tool-read_program]: https://libtmux.org/en/ts/latest/mcp/tools/read_program/
+[tool-start_program]: https://libtmux.org/en/ts/latest/mcp/tools/start_program/
+[tool-stop_program]: https://libtmux.org/en/ts/latest/mcp/tools/stop_program/
 [tool-wait_for_exit]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_exit/
 [tool-wait_for_text]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/
 [tools-index]: https://libtmux.org/en/ts/latest/mcp/tools/

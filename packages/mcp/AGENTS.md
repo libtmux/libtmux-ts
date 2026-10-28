@@ -106,6 +106,10 @@ ends the program and removes the pane once the lease this server renews runs
 out, so no later call owns cleanup. The one gap is a crash in the moment
 between creating the pane and starting the program. `keep` hands the pane to a
 person on purpose; it is an explicit opt-in, never a default.
+`start_program` pairs with `stop_program` and qualifies the same way: a
+lifetime this server enforces ends every program it starts whether or not the
+stop ever comes, and the lease ends it if this server dies, so the pairing is a
+shortcut, never an obligation.
 
 Every public tool belongs to exactly one ADR toolset. The manifest owns its
 runtime registration, schemas, capability report, documentation, and tests.
