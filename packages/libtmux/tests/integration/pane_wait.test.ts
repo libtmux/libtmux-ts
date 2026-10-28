@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -77,7 +78,8 @@ const MARKED_BASH =
 
 const supported = tmuxReaches("3.8");
 const testWait = supported ? test : test.skip;
-const testMarked = supported && Bun.which("bash") !== null ? test : test.skip;
+const testMarked =
+  supported && spawnSync("sh", ["-c", "command -v bash"]).status === 0 ? test : test.skip;
 
 describe("pane waits", () => {
   test("refuse below tmux 3.8", async () => {

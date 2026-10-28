@@ -25,21 +25,28 @@ describe("program signal names", () => {
   });
 });
 
+/** The check spawns a Bun child, which the Node lane cannot; the timer behaves alike on both. */
+const testOnBun = typeof Bun === "undefined" ? test.skip : test;
+
 describe("program sleeps", () => {
   // An armed timer keeps a script alive after wait() has returned.
-  test("leave no timer behind once woken", async () => {
-    const started = performance.now();
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        "-e",
-        `import { sleep } from ${JSON.stringify(PROGRAM)}; const wake = new AbortController(); queueMicrotask(() => wake.abort()); await sleep(60_000, wake.signal);`,
-      ],
-      { stderr: "inherit", stdout: "ignore" },
-    );
-    expect(await child.exited).toBe(0);
-    expect(performance.now() - started).toBeLessThan(30_000);
-  }, 40_000);
+  testOnBun(
+    "leave no timer behind once woken",
+    async () => {
+      const started = performance.now();
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `import { sleep } from ${JSON.stringify(PROGRAM)}; const wake = new AbortController(); queueMicrotask(() => wake.abort()); await sleep(60_000, wake.signal);`,
+        ],
+        { stderr: "inherit", stdout: "ignore" },
+      );
+      expect(await child.exited).toBe(0);
+      expect(performance.now() - started).toBeLessThan(30_000);
+    },
+    40_000,
+  );
 });
 
 describe("event payloads", () => {

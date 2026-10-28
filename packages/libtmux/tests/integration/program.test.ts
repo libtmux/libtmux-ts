@@ -1,3 +1,4 @@
+import { spawn, spawnSync } from "node:child_process";
 import { access, chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +75,37 @@ async function panePid(server: Server, paneId: string): Promise<number> {
 
 const SERVER_MODULE = fileURLToPath(new URL("../../src/server.ts", import.meta.url));
 
+function onPath(name: string): boolean {
+  return spawnSync("sh", ["-c", `command -v ${name}`]).status === 0;
+}
+
+/**
+ * A caller of its own, under Bun so it can import the sources, that prints one
+ * JSON line once it has started its program and lives until killed.
+ */
+async function startCaller(
+  script: string,
+  environment: Record<string, string>,
+): Promise<{ readonly first: unknown; readonly kill: () => Promise<void> }> {
+  const caller = spawn("bun", ["-e", script], {
+    env: { ...process.env, ...environment },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const exited = new Promise<void>((resolve) => caller.once("exit", () => resolve()));
+  let line = "";
+  for await (const chunk of caller.stdout) {
+    line += String(chunk);
+    if (line.includes("\n")) break;
+  }
+  return {
+    first: JSON.parse(line),
+    kill: async () => {
+      caller.kill("SIGKILL");
+      await exited;
+    },
+  };
+}
+
 async function gone(path: string): Promise<boolean> {
   return access(path).then(
     () => false,
@@ -106,7 +138,7 @@ async function programSessions(server: Server): Promise<number> {
 /** Program runs need tmux 3.8, candidates refused; below it the first test checks the refusal. */
 const supported = tmuxReaches("3.8");
 const testProgram = supported ? test : test.skip;
-const testWithVim = supported && Bun.which("vim") !== null ? test : test.skip;
+const testWithVim = supported && onPath("vim") ? test : test.skip;
 
 describe("program runs", () => {
   test("refuses below tmux 3.8 and creates nothing", async () => {
@@ -650,38 +682,21 @@ describe("program runs", () => {
     "tmux ends a spawned program, its session and its copy once its caller is killed",
     async () => {
       await withServer(async (server, _directory, fixture) => {
-        const caller = Bun.spawn(
-          [
-            process.execPath,
-            "-e",
-            `import { Server } from ${JSON.stringify(SERVER_MODULE)};
+        const caller = await startCaller(
+          `import { Server } from ${JSON.stringify(SERVER_MODULE)};
 const server = new Server(JSON.parse(process.env.LTX_PROGRAM_SERVER));
 const program = await server.spawn(["sh", "-c", "trap '' HUP TERM; sleep 300"], { orphanAfterMs: 1000, stream: true });
 console.log(JSON.stringify({ pane: program.pane.id, session: program.sessionName }));
 setInterval(() => undefined, 1000);`,
-          ],
           {
-            env: {
-              ...process.env,
-              LTX_PROGRAM_SERVER: JSON.stringify({
-                environment: fixture.controllerEnvironment,
-                socketPath: fixture.socketPath,
-                tmuxBin: fixture.tmuxExecutable,
-              }),
-            },
-            stderr: "inherit",
-            stdout: "pipe",
+            LTX_PROGRAM_SERVER: JSON.stringify({
+              environment: fixture.controllerEnvironment,
+              socketPath: fixture.socketPath,
+              tmuxBin: fixture.tmuxExecutable,
+            }),
           },
         );
-        const reader = caller.stdout.getReader();
-        let line = "";
-        while (!line.includes("\n")) {
-          // eslint-disable-next-line no-await-in-loop -- until the caller has started it.
-          const { done, value } = await reader.read();
-          if (done) break;
-          line += new TextDecoder().decode(value);
-        }
-        const { pane, session } = JSON.parse(line) as { pane: string; session: string };
+        const { pane, session } = caller.first as { pane: string; session: string };
         const pid = await panePid(server, pane);
         const [files = ""] = await server.cmd("show-options", [
           "-p",
@@ -693,8 +708,7 @@ setInterval(() => undefined, 1000);`,
         // Past two renewals, so a live caller is seen to keep the lease.
         await new Promise((resolve) => setTimeout(resolve, 1500));
         expect(await server.hasSession(session)).toBe(true);
-        caller.kill("SIGKILL");
-        await caller.exited;
+        await caller.kill();
         expect(
           await eventually(
             () => server.hasSession(session),
@@ -720,46 +734,28 @@ setInterval(() => undefined, 1000);`,
     async () => {
       await withServer(async (server, _directory, fixture) => {
         const session = await server.newSession({ name: "person" });
-        const caller = Bun.spawn(
-          [
-            process.execPath,
-            "-e",
-            `import { Server } from ${JSON.stringify(SERVER_MODULE)};
+        const caller = await startCaller(
+          `import { Server } from ${JSON.stringify(SERVER_MODULE)};
 const server = new Server(JSON.parse(process.env.LTX_PROGRAM_SERVER));
 const from = (await server.panes()).toArray().find((pane) => pane.id === process.env.LTX_FROM);
 const program = await server.spawn(["sh", "-c", "trap '' HUP TERM; sleep 300"], { from, orphanAfterMs: 1000 });
 console.log(JSON.stringify({ pane: program.pane.id }));
 setInterval(() => undefined, 1000);`,
-          ],
           {
-            env: {
-              ...process.env,
-              LTX_FROM: session.activePane?.id ?? "",
-              LTX_PROGRAM_SERVER: JSON.stringify({
-                environment: fixture.controllerEnvironment,
-                socketPath: fixture.socketPath,
-                tmuxBin: fixture.tmuxExecutable,
-              }),
-            },
-            stderr: "inherit",
-            stdout: "pipe",
+            LTX_FROM: session.activePane?.id ?? "",
+            LTX_PROGRAM_SERVER: JSON.stringify({
+              environment: fixture.controllerEnvironment,
+              socketPath: fixture.socketPath,
+              tmuxBin: fixture.tmuxExecutable,
+            }),
           },
         );
-        const reader = caller.stdout.getReader();
-        let line = "";
-        while (!line.includes("\n")) {
-          // eslint-disable-next-line no-await-in-loop -- until the caller has started it.
-          const { done, value } = await reader.read();
-          if (done) break;
-          line += new TextDecoder().decode(value);
-        }
-        const { pane } = JSON.parse(line) as { pane: string };
+        const { pane } = caller.first as { pane: string };
         const pid = await panePid(server, pane);
         const windows = async (): Promise<number> =>
           (await server.cmd("list-windows", ["-t", "=person", "-F", "#{window_id}"])).length;
         expect(await windows()).toBe(2);
-        caller.kill("SIGKILL");
-        await caller.exited;
+        await caller.kill();
         expect(await eventually(windows, (count) => count === 1, 5000)).toBe(1);
         expect(running(pid)).toBe(false);
         expect(await server.hasSession("person")).toBe(true);
