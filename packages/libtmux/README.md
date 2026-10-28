@@ -1083,6 +1083,8 @@ const service = await server.spawn(argv, {
 - Every `run` and `spawn` holds one, a minute long unless set.
   `orphanAfterMs: null` takes none, for a program meant to outlive this
   process.
+- A shorter lease ends an orphan sooner, but an event-loop stall longer than
+  the lease ends a live program too, as though this process had died.
 
 ## Type into a pane and wait
 
