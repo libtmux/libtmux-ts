@@ -326,7 +326,6 @@ function startList(
   spawn: SpawnOptions,
   files: RunFiles | undefined,
   mark: string,
-  input: string | undefined,
   armed: string[][],
   started: string,
 ): string[][] {
@@ -346,7 +345,7 @@ function startList(
         `${name}=${value}`,
       ]),
       "--",
-      ...wrapped(argv, spawn, mark, input, files?.stderr),
+      ...wrapped(argv, spawn, mark, files?.input, files?.stderr),
     ],
     ...armed,
     ...(stream === undefined
@@ -416,6 +415,58 @@ async function confirmStarted(
   if (timedOut) throw new LibTmuxError(`tmux did not start the program in ${paneId}`);
 }
 
+/** Refuse a tmux below 3.8; on a cold socket, the executable that will start the server answers. */
+async function requireProgramRun(runtime: RuntimeContext, mayStart: boolean): Promise<void> {
+  const tmuxVersion = await runtime.capabilities.bind().then(
+    ({ tmuxVersion: daemon }) => daemon,
+    async (error: unknown) => {
+      if (!mayStart || !isColdEndpoint(error)) throw error;
+      return executableTmuxVersion(runtime);
+    },
+  );
+  if (hasCapability("program-run", tmuxVersion)) return;
+  throw new VersionTooLowError({
+    criteriaName: "program run",
+    delivery: "not_started",
+    remedy: "Upgrade tmux to 3.8 or newer and restart the server",
+    serverVersion: tmuxVersion.raw,
+    since: capabilitySince("program-run").raw,
+  });
+}
+
+/** The run's private files, for an input, a stream or a separate stderr; none without them. */
+async function runFiles(
+  spawn: SpawnOptions & Pick<RunOptions, "separateStderr">,
+): Promise<RunFiles | undefined> {
+  if (spawn.stream !== true && spawn.input === undefined && spawn.separateStderr !== true) {
+    return undefined;
+  }
+  // mkdtemp makes the directory 0700 whatever the umask, which keeps its files private.
+  const directory = await mkdtemp(join(tmpdir(), "ltx-program-"));
+  const files: RunFiles = {
+    directory,
+    input: spawn.input === undefined ? undefined : join(directory, "in"),
+    stderr: spawn.separateStderr === true ? join(directory, "err") : undefined,
+    stream:
+      spawn.stream === true
+        ? {
+            done: join(directory, "done"),
+            limit: spawn.maxStreamBytes,
+            out: join(directory, "out"),
+          }
+        : undefined,
+  };
+  try {
+    if (files.stream !== undefined) await writeFile(files.stream.out, "", { mode: 0o600 });
+    if (files.stderr !== undefined) await writeFile(files.stderr, "", { mode: 0o600 });
+    if (files.input !== undefined) await writeFile(files.input, spawn.input ?? "", { mode: 0o600 });
+  } catch (error) {
+    await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+    throw error;
+  }
+  return files;
+}
+
 /** Start `argv` in a pane of its own, with no shell parsing it; `signal` also stops setup. */
 export async function spawnProgram(
   server: Server,
@@ -427,50 +478,14 @@ export async function spawnProgram(
   const placement = requireSpawn(argv, spawn);
   if (spawn.from !== undefined) requireOnServer(spawn.from, server, "from");
   if (isAborted(signal)) throw cancelled(signal, "the start was cancelled", "not_started");
-  // On a cold socket the session's own new-session starts the server, with this executable.
-  const tmuxVersion = await runtime.capabilities.bind().then(
-    ({ tmuxVersion: daemon }) => daemon,
-    async (error: unknown) => {
-      if (spawn.from !== undefined || !isColdEndpoint(error)) throw error;
-      return executableTmuxVersion(runtime);
-    },
-  );
-  if (!hasCapability("program-run", tmuxVersion)) {
-    throw new VersionTooLowError({
-      criteriaName: "program run",
-      delivery: "not_started",
-      remedy: "Upgrade tmux to 3.8 or newer and restart the server",
-      serverVersion: tmuxVersion.raw,
-      since: capabilitySince("program-run").raw,
-    });
-  }
+  await requireProgramRun(runtime, spawn.from === undefined);
   const watcher = new AbortController();
   let files: RunFiles | undefined;
   let lease: Lease | undefined;
   let owned: Owned | undefined;
   let paneId: string | undefined;
   try {
-    let input: string | undefined;
-    if (spawn.stream === true || spawn.input !== undefined || spawn.separateStderr === true) {
-      // mkdtemp makes the directory 0700 whatever the umask, which keeps its files private.
-      const directory = await mkdtemp(join(tmpdir(), "ltx-program-"));
-      const stream =
-        spawn.stream === true
-          ? {
-              done: join(directory, "done"),
-              limit: spawn.maxStreamBytes,
-              out: join(directory, "out"),
-            }
-          : undefined;
-      const stderr = spawn.separateStderr === true ? join(directory, "err") : undefined;
-      files = { directory, stderr, stream };
-      if (stream !== undefined) await writeFile(stream.out, "", { mode: 0o600 });
-      if (stderr !== undefined) await writeFile(stderr, "", { mode: 0o600 });
-      if (spawn.input !== undefined) {
-        input = join(directory, "in");
-        await writeFile(input, spawn.input, { mode: 0o600 });
-      }
-    }
+    files = await runFiles(spawn);
     const orphanAfterMs =
       spawn.orphanAfterMs === undefined ? DEFAULT_ORPHAN_MS : spawn.orphanAfterMs;
     lease =
@@ -506,7 +521,7 @@ export async function spawnProgram(
     const started = `libtmux-program-started-${randomUUID()}`;
     const exited = runCommands(
       runtime,
-      startList(paneId, argv, spawn, files, mark, input, armed, started),
+      startList(paneId, argv, spawn, files, mark, armed, started),
       {
         signal: watcher.signal,
         timeoutMs: null,

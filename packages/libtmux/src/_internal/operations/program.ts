@@ -37,9 +37,11 @@ export function drainChannel(runtime: RuntimeContext, channel: string): void {
   );
 }
 
-/** The run's private directory, holding its input and its stream copy. */
+/** The run's private directory, holding its input, its stream copy and its stderr. */
 export interface RunFiles {
   readonly directory: string;
+  /** The program's stdin, from `input`. */
+  readonly input: string | undefined;
   readonly stream: StreamFiles | undefined;
   /** Where the program's stderr goes, when kept apart from the terminal. */
   readonly stderr: string | undefined;
