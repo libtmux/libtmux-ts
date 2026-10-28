@@ -1376,15 +1376,16 @@ run(argv: readonly string[], options?: RunOptions): Promise<ProgramResult>
 Run a program to completion in a pane of its own and return what it printed.
 
 The output is the terminal's, scrollback included, with nothing typed
-before it. The pane, its session without `from`, is removed before this
-returns, whatever happened, unless `keep` leaves it for a person to read.
+before it. The pane is removed before this returns, whatever happened,
+unless `keep` leaves it for a person to read. Without `from` its session
+goes too, and a server with no other session then exits, unless its
+`exit-empty` option is off; the next run starts it again.
 `input` gives the program a stdin; otherwise it has only the terminal.
 A program still running at `timeoutMs` is ended, SIGTERM and then
-SIGKILL, and reported with `timedOut` rather than thrown, since the run
-owns the program; one aborted through `signal` is ended and the call
-rejects. Should this process die first, tmux itself
-ends the program and removes its pane within `orphanAfterMs`, a minute
-by default.
+SIGKILL, and the result has `timedOut` set, since the run owns the
+program; one aborted through `signal` is ended and the call rejects.
+Should this process die first, tmux itself ends the program and removes
+its pane within `orphanAfterMs`, a minute by default.
 
 Requires tmux 3.8 or newer, like [`Server.spawn`](#serverspawn).
 

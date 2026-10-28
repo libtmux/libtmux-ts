@@ -958,6 +958,9 @@ result.output.startsWith("git version"); // true
   the call returns, and tmux removes it should this process die first. Nothing
   is typed, so `output` holds no command line or echo, and `argv` reaches the
   program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
+- A server left with no session exits, unless its `exit-empty` option is off,
+  and the next run starts it again. A session of your own keeps it up;
+  [Benchmarks](docs/benchmarks.md#running-a-program) has what each costs.
 - `output` is the terminal's rendering, scrollback included: NUL and other
   control bytes are dropped and wrapped lines joined. `lostStart` says the
   start scrolled past `historyLimit`, and `lostEnd` that tmux closed the pane
