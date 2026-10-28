@@ -720,6 +720,14 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             'With fromPaneId: "window", the default, is a background window of its session; ' +
               '"split" splits that pane, so a person watching it sees the run. Focus stays put.',
           ),
+        separateStderr: z
+          .boolean()
+          .optional()
+          .describe(
+            "Return what the program writes to stderr apart, as stderr, so output holds " +
+              "stdout alone. Its stderr is then no terminal. Needs the tmux server on this " +
+              "machine, as input does.",
+          ),
         startDirectory: inlineRequestText("startDirectory")
           .optional()
           .describe(
@@ -790,7 +798,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .boolean()
           .describe(
             "False when lostStart or lostEnd is true, or maxLines or the result limit cut " +
-              "the output.",
+              "the output or stderr.",
           ),
         returnedBytes: z.number().int().describe("UTF-8 output bytes returned."),
         signal: z
@@ -799,6 +807,13 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .describe(
             'The signal that ended the program and its sh, such as "SIGKILL"; otherwise ' +
               "null. A program a signal ended alone exits 128 plus its number, as $? says.",
+          ),
+        stderr: z
+          .string()
+          .nullable()
+          .describe(
+            "The bounded tail of what the program wrote to stderr, with separateStderr; " +
+              "otherwise null, and stderr is in output.",
           ),
       },
       title: "Run a program and wait",
@@ -813,6 +828,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         keep,
         maxLines,
         placement,
+        separateStderr,
         startDirectory,
         timeoutMs,
         width,
@@ -863,6 +879,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           ...(input === undefined ? {} : { input }),
           ...(keep === undefined ? {} : { keep }),
           ...(placement === undefined ? {} : { placement }),
+          ...(separateStderr === undefined ? {} : { separateStderr }),
           ...(startDirectory === undefined ? {} : { startDirectory }),
           ...(width === undefined ? {} : { width }),
           signal: extra.signal,
@@ -877,7 +894,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         }
         if (error instanceof ServerNotLocalError) {
           return fail({
-            hint: 'Leave input out, or pipe it in with argv such as ["sh", "-c", "printf ... | program"].',
+            hint:
+              'Leave input and separateStderr out: pipe input in with argv such as ["sh", "-c", ' +
+              '"printf ... | program"], and send stderr to a file the same way.',
             reason: error.message,
           });
         }
@@ -890,11 +909,21 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         effectiveResultLines(context.policy, maxLines),
         MAX_RESULT_BYTES,
       );
+      // stderr shares the line limit and takes a quarter of the byte ceiling.
+      const stderr =
+        result.stderr === undefined
+          ? undefined
+          : boundText(
+              result.stderr === "" ? [] : result.stderr.replace(/\n$/u, "").split("\n"),
+              effectiveResultLines(context.policy, maxLines),
+              MAX_RESULT_BYTES / 4,
+            );
       const outputComplete =
         !result.lostStart &&
         !result.lostEnd &&
         bounded.droppedLines === 0 &&
-        bounded.omittedBytes === 0;
+        bounded.omittedBytes === 0 &&
+        (stderr === undefined || (stderr.droppedLines === 0 && stderr.omittedBytes === 0));
       let headline: string;
       if (result.timedOut) headline = `ended at the ${String(effectiveTimeoutMs)}ms timeout`;
       else if (result.signalCode !== null) headline = `ended by ${result.signalCode}`;
@@ -912,6 +941,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           outputComplete,
           returnedBytes: bounded.returnedBytes,
           signal: result.signalCode,
+          stderr: stderr?.text ?? null,
         },
         `${renderBoundedText(
           bounded,
@@ -920,7 +950,10 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           (result.lostStart ? "\n[its start scrolled past the scrollback limit and is gone]" : "") +
           (result.lostEnd
             ? "\n[its end may be missing: tmux closed the pane before reading it]"
-            : "")
+            : "") +
+          (stderr === undefined
+            ? ""
+            : `\n\n[stderr]\n${renderBoundedText(stderr, "raise maxLines within the server limit")}`)
         }`,
       );
     },

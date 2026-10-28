@@ -13,6 +13,7 @@ interface Ran {
   readonly output: string;
   readonly outputComplete: boolean;
   readonly signal: string | null;
+  readonly stderr: string | null;
 }
 
 /** Program runs need tmux 3.8, candidates refused; below it the tool answers with the refusal. */
@@ -70,6 +71,16 @@ testProgram(
           await call({ arguments: { argv: ["FOO=bar"] }, name: "run_program" }),
         );
         expect(assignment.exitStatus).toBe(127);
+        // stderr shares the terminal unless kept apart.
+        const talking = ["sh", "-c", "echo data; echo noise >&2"];
+        const merged = structured<Ran>(
+          await call({ arguments: { argv: talking }, name: "run_program" }),
+        );
+        expect(merged).toMatchObject({ output: "data\nnoise", stderr: null });
+        const apart = structured<Ran>(
+          await call({ arguments: { argv: talking, separateStderr: true }, name: "run_program" }),
+        );
+        expect(apart).toMatchObject({ output: "data", outputComplete: true, stderr: "noise" });
         expect(await programSessions(call)).toBe(0);
       });
     });

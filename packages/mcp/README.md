@@ -482,6 +482,9 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
 - `input` is the program's stdin, written to a private file rather than typed.
   Without it the program has only the terminal, and one that prompts waits
   until the timeout.
+- `separateStderr: true` returns what the program writes to stderr as
+  `stderr`, so `output` is stdout alone; stderr is then no terminal. It needs
+  the tmux server on this machine, as `input` does.
 - The program finds commands on the tmux server's `PATH` and gets `PAGER=cat`
   and `GIT_PAGER=cat`.
 - `timeoutMs` defaults to 30 seconds and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`.
@@ -535,7 +538,8 @@ try {
 - `start_program` returns a `programId` and the `paneId`, which `send_keys` and
   `capture_pane` reach while the program runs; its pane is removed once it
   exits. It takes `fromPaneId`, `placement`, `startDirectory`, `width` and
-  `height` as `run_program` does, but not `input`, `keep` or `inheritShell`;
+  `height` as `run_program` does, but not `input`, `keep`, `inheritShell` or
+  `separateStderr`;
   `PAGER` and `GIT_PAGER` are `cat`. This server reads each running program's
   copy as the library's `stream()` does, by polling a file.
 - Each `read_program` waits up to its `timeoutMs` for new output or the exit
