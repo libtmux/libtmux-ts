@@ -949,12 +949,13 @@ result.success; // true
 result.output.startsWith("git version"); // true
 ```
 
-- By default the program runs in a detached session of its own, removed before the call
-  returns, and tmux removes it should this process die first. Nothing is
-  typed, so `output` holds no command line or echo, and
-  `argv` reaches the program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
-- `output` is the terminal's rendering, scrollback included. `truncated` says
-  when the start scrolled past `historyLimit`.
+- By default the program runs in a detached session of its own, removed before
+  the call returns, and tmux removes it should this process die first. Nothing
+  is typed, so `output` holds no command line or echo, and `argv` reaches the
+  program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
+- `output` is the terminal's rendering, scrollback included. `lostStart` says
+  the start scrolled past `historyLimit`, and `lostEnd` that tmux closed the
+  pane before reading the end.
 - `timeoutMs` ends the program and reports `timedOut` with what it printed so
   far; `signal` ends it and rejects.
 - `{ from: pane }` runs it in a background window of that pane's session, in

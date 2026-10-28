@@ -432,7 +432,7 @@ call_read_tools_batch  operations=[{tool: 'list_sessions'}, {tool: 'list_panes'}
 
 ## Run commands and wait
 
-Eight tools run programs or put input into panes:
+These tools run programs or put input into panes:
 
 | Tool                                          | Does                                                         |
 | --------------------------------------------- | ------------------------------------------------------------ |
@@ -445,7 +445,7 @@ Eight tools run programs or put input into panes:
 | [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call               |
 | [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name                   |
 
-Four tools wait:
+These tools wait:
 
 | Tool                                        | Does                                            |
 | ------------------------------------------- | ----------------------------------------------- |
@@ -456,9 +456,9 @@ Four tools wait:
 
 ### [`run_program`][tool-run_program]: run a program and get only its output
 
-`run_program` starts `argv` in a pane of its own, a fresh detached session by default, waits for it, and returns
-`exitStatus`, `outcome`, and its output. Nothing is typed, so the output holds no
-command line and no echo.
+`run_program` starts `argv` in a pane of its own, a fresh detached session by
+default, waits for it, and returns `exitStatus`, `outcome`, and its output.
+Nothing is typed, so the output holds no command line and no echo.
 
 ```text
 run_program  argv=["git","status","--short"]  timeoutMs=20000
@@ -467,7 +467,8 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
 - `argv` runs as given: no shell parses it, so `$HOME` and `*` reach the program
   unexpanded. Pipes and redirections need `["sh", "-c", "…"]`; variables go
   first, `["env", "CI=1", "make"]`. Use `run_shell_command` when the command
-  needs an existing pane's shell, its directory, environment, or activated tools.
+  needs an existing pane's shell, its directory, environment, or activated
+  tools.
 - `fromPaneId` starts it in that pane's directory and session, with the
   session's tmux environment: in a background window, or with
   `placement: "split"` in a split beside the pane, where a person watching sees
@@ -532,8 +533,9 @@ try {
 ```
 
 - `start_program` returns a `programId` and the `paneId`, which `send_keys` and
-  `capture_pane` reach while the program runs; its pane is removed once it exits. It takes `fromPaneId`, `placement` and the other
-  placement inputs `run_program` does.
+  `capture_pane` reach while the program runs; its pane is removed once it
+  exits. It takes `fromPaneId`, `placement` and the other placement inputs
+  `run_program` does.
 - Each `read_program` waits up to its `timeoutMs` for new output or the exit
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
@@ -546,8 +548,11 @@ try {
   default and at most an hour. When it runs out, this server ends the program
   and removes its pane whatever else was called. Should this server die, tmux
   does it within half a minute, through a lease only a live server renews.
-- Sixteen started programs can run at once, and the sixteen that ended last
-  stay readable. `stop_program` ends one at once and forgets its id.
+- Sixteen started programs can run at once, and the sixteen that ended last,
+  by their exit or their lifetime, stay readable. `stop_program` ends one at
+  once and forgets its id.
+- The program's process group is what ends; a process that daemonizes out of
+  it is not followed.
 
 ### [`run_shell_command`][tool-run_shell_command]: run a command and get its exit status
 
@@ -601,7 +606,8 @@ paste_text  paneId=%1  text='C-c is not a key here'  enter=true
 ### [`wait_for_exit`][tool-wait_for_exit]: wait for a program you did not start
 
 `wait_for_exit` blocks until the program in a pane exits, listening for tmux's
-own exit events, and returns `exitStatus` or `signal`.
+own exit events, and returns `exitStatus` or `signal`. It reads the pane once a
+second only to notice a kill, which fires no event.
 
 ```text
 wait_for_exit  paneId=%3  timeoutMs=20000

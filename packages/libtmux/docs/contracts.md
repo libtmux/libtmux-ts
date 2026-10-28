@@ -189,7 +189,7 @@ typed, so the output holds no command line or echo. In short:
   `orphanAfterMs` is `null`. Should the caller die, tmux ends the program and
   removes its pane.
 - After the program, the `sh` writes a mark tmux reads only if it read
-  everything before it, so `truncated` reports a lost end.
+  everything before it, so `lostEnd` reports a lost end.
 
 | tmux          | Program runs         | Why                                                                |
 | ------------- | -------------------- | ------------------------------------------------------------------ |
@@ -218,7 +218,7 @@ typed, so the output holds no command line or echo. In short:
   nothing. tmux reads a pane's bytes in order, so a pane whose path is the run's
   mark was read to the end; without the linger, the runs whose end was lost were
   exactly the ones missing it (3, 2 and 1 of 900 on 3.8, 3.8a and master).
-  `truncated` and `stream()` report a missing mark, as `OutputLostError` for a
+  `lostEnd` and `stream()` report a missing mark, as `OutputLostError` for a
   stream. A SIGKILL to the process group ends the `sh` before its mark too,
   which leaves the end unproven, so it counts as missing.
 - Its own signals are caught, not ignored, so the program keeps the default
@@ -340,7 +340,7 @@ typed, so the output holds no command line or echo. In short:
   `stream()` has every byte.
 - The pane's history, up to its limit, is the run's memory in the tmux server,
   and tmux keeps that memory from the system after the session is removed.
-- `truncated` reads `#{history_collected}`, the lines tmux dropped past
+- `lostStart` reads `#{history_collected}`, the lines tmux dropped past
   `historyLimit`; `history_size` stays below the limit after tmux drops a chunk,
   so it cannot say.
 - `stream()` reads a file that `pipe-pane -O` writes in the program's own 0700
