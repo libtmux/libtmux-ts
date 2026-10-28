@@ -512,19 +512,20 @@ async function* readStream(
 }
 
 /**
- * Signal the pane's process group from the tmux server's own machine, where its pid means it.
- * `-s NAME` is the form every `/bin/sh` takes; dash refuses `-NAME -- -PID`.
+ * Signal a live pane's process group on the tmux server's machine. tmux reads
+ * `pane_dead` and `pane_pid` as it runs this, so a dead pane's reused pid is spared.
  */
 async function signalPane(
   runtime: RuntimeContext,
-  pid: string,
+  paneId: string,
   signal: "KILL" | "TERM",
 ): Promise<void> {
-  if (!/^[1-9][0-9]*$/u.test(pid)) return;
+  // `-s NAME` is the form every `/bin/sh` takes; dash refuses `-NAME -- -PID`.
   await runCommand(runtime, [
     "run-shell",
-    "--",
-    `kill -s ${signal} -- -${pid} 2>/dev/null; :`,
+    "-t",
+    paneId,
+    `#{?pane_dead,:,kill -s ${signal} -- -#{pane_pid} 2>/dev/null}; :`,
   ]).catch(() => undefined);
 }
 
@@ -548,12 +549,11 @@ async function reaped(runtime: RuntimeContext, paneId: string, ms: number): Prom
  * tmux has reaped it. A program ignoring SIGHUP outlives its pane's removal.
  */
 export async function stopPane(runtime: RuntimeContext, paneId: string): Promise<void> {
-  const [dead, pid = ""] =
-    (await readPane(runtime, paneId, ["#{pane_dead}", "#{pane_pid}"]).catch(() => undefined)) ?? [];
+  const [dead] = (await readPane(runtime, paneId, ["#{pane_dead}"]).catch(() => undefined)) ?? [];
   if (dead !== "0") return;
-  await signalPane(runtime, pid, "TERM");
+  await signalPane(runtime, paneId, "TERM");
   if (await reaped(runtime, paneId, KILL_GRACE_MS)) return;
-  await signalPane(runtime, pid, "KILL");
+  await signalPane(runtime, paneId, "KILL");
   await reaped(runtime, paneId, KILL_GRACE_MS);
 }
 
