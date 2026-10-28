@@ -43,22 +43,15 @@ describe("agent", () => {
           tmuxBin: fixture.tmuxExecutable,
         });
         if (!(await server.versionAtLeast("3.8"))) return;
-        // A prompt hook that marks each command's end with its status, as fish does unasked.
-        const mark = String.raw`printf ']133;D;%s' "$?"`;
+        // A prompt hook that marks each command's end with its status, from the second
+        // prompt on, so a command sent before bash is ready is still the first end.
+        const hook = String.raw`s=$?; [ -n "$r" ] && printf "\033]133;D;%s\007" "$s"; r=1`;
         const session = await server.newSession({
-          environment: { PROMPT_COMMAND: mark, PS1: "ready$ " },
           name: "marked",
-          shellCommand: "bash --norc --noprofile -i",
+          shellCommand: `env PROMPT_COMMAND='${hook}' bash --norc --noprofile -i`,
         });
         const pane = session.activePane;
         if (pane === undefined) throw new Error("a new session has a pane");
-        // The first prompt marks an end too; wait it out before listening.
-        for (let attempt = 0; attempt < 200; attempt += 1) {
-          // eslint-disable-next-line no-await-in-loop -- until bash has drawn its prompt.
-          if ((await pane.capture()).some((line) => line.startsWith("ready$"))) break;
-          // eslint-disable-next-line no-await-in-loop -- not yet.
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
         expect(await runMarked(pane, "(exit 4)")).toBe(4);
         expect(await runMarked(pane, "true")).toBe(0);
       });

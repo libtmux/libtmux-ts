@@ -60,6 +60,7 @@ export async function followOutput(
  */
 export async function sortLines(server: Server, input: string): Promise<readonly string[]> {
   const result = await server.run(["sort"], { input });
+  if (!result.success) throw new Error(`sort exited ${String(result.exitCode)}: ${result.output}`);
   return result.output.split("\n");
 }
 
@@ -90,10 +91,15 @@ export async function startService(
   ready: string,
 ): Promise<Program> {
   const service = await server.spawn(argv, { orphanAfterMs: 10_000, stream: true });
-  let printed = "";
-  for await (const chunk of service.stream()) {
-    printed += chunk;
-    if (printed.includes(ready)) return service;
+  try {
+    let printed = "";
+    for await (const chunk of service.stream()) {
+      printed += chunk;
+      if (printed.includes(ready)) return service;
+    }
+  } catch (error) {
+    await service.kill();
+    throw error;
   }
   await service.kill();
   throw new Error(`${argv.join(" ")} exited before printing ${ready}`);

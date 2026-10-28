@@ -58,23 +58,22 @@ async function paneRunning(server: Server, name: string, command: string): Promi
   return pane;
 }
 
-/** A bash whose prompt hook marks each command's end with OSC 133, waited on until it has drawn its prompt. */
+/**
+ * A bash whose prompt marks each command's end with OSC 133. The first prompt
+ * marks nothing, so a command sent before bash is ready is still the first end.
+ */
 async function markedShell(server: Server): Promise<Pane> {
-  const session = await server.newSession({
-    environment: { PROMPT_COMMAND: String.raw`printf '\033]133;D;%s\007' "$?"`, PS1: "ready$ " },
-    name: "marked",
-    shellCommand: "bash --norc --noprofile -i",
-  });
+  const session = await server.newSession({ name: "marked", shellCommand: MARKED_BASH });
   const pane = session.activePane;
   if (pane === undefined) throw new Error("a new session has a pane");
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    // eslint-disable-next-line no-await-in-loop -- until bash has drawn its first prompt.
-    if ((await pane.capture()).some((line) => line.startsWith("ready$"))) return pane;
-    // eslint-disable-next-line no-await-in-loop -- not yet.
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error("bash never drew its prompt");
+  return pane;
 }
+
+/** Variables given in the command, so they reach bash however tmux passes its own. */
+const MARKED_BASH =
+  "env PS1='ready$ ' " +
+  `PROMPT_COMMAND='s=$?; [ -n "$r" ] && printf "\\033]133;D;%s\\007" "$s"; r=1' ` +
+  "bash --norc --noprofile -i";
 
 const supported = tmuxReaches("3.8");
 const testWait = supported ? test : test.skip;
