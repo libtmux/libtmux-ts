@@ -6,7 +6,6 @@
 import { randomUUID } from "node:crypto";
 
 import {
-  OutputLostError,
   ServerNotLocalError,
   StreamLimitError,
   VersionTooLowError,
@@ -70,6 +69,7 @@ async function changed(entry: Entry, ms: number, signal: AbortSignal): Promise<v
     const timer = setTimeout(done, ms);
     entry.wakers.add(done);
     signal.addEventListener("abort", done, { once: true });
+    if (signal.aborted) done();
   });
 }
 
@@ -99,9 +99,10 @@ async function pump(entry: Entry): Promise<void> {
     }
   } catch (error) {
     if (error instanceof StreamLimitError) entry.missing = "cut";
-    else if (error instanceof OutputLostError) entry.missing = "lost";
     // A stop or the lifetime ends the copy with the program, so its last output may be unread.
     else if (entry.endedBy !== undefined) entry.missing = "stopped";
+    // tmux never read the end, or the pane was removed from outside before it was.
+    else entry.missing = "lost";
   }
   entry.streamed = true;
   wake(entry);

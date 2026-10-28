@@ -87,6 +87,31 @@ test("a read never splits a character, wherever the limit falls", () => {
 const FIVE_LINES = ["sh", "-c", "for i in 1 2 3 4 5; do echo line$i; sleep 1; done; exit 0"];
 
 testProgram(
+  "read_program calls a pane removed from outside gone, its end unread",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        const started = structured<Started>(
+          await call({
+            arguments: { argv: ["sh", "-c", "echo up; sleep 30"] },
+            name: "start_program",
+          }),
+        );
+        await serverFor(fixture).cmd("kill-pane", ["-t", started.paneId]);
+        expect((await readAll(call, started.programId, 5000)).at(-1)).toMatchObject({
+          ended: true,
+          lostEnd: true,
+          outcome: "gone",
+          outputComplete: false,
+        });
+      });
+    });
+  },
+  40_000,
+);
+
+testProgram(
   "read_program shows output before the exit, then the exit status",
   async () => {
     await withServer(async (fixture) => {
