@@ -98,7 +98,9 @@ async function pump(entry: Entry): Promise<void> {
   } catch (error) {
     // A stop, the lifetime or an outside removal ends the stream too, and is reported as such.
     if (error instanceof StreamLimitError) entry.missing = "cut";
-    if (error instanceof OutputLostError) entry.missing = "lost";
+    // A stop or the lifetime ends the copy with the program, so its last output may be unread.
+    else if (error instanceof OutputLostError || entry.endedBy !== undefined)
+      entry.missing = "lost";
   }
   try {
     entry.exit = await entry.program.wait();
@@ -107,7 +109,7 @@ async function pump(entry: Entry): Promise<void> {
     // Killed by this server, or its pane removed from outside: no status to report.
     entry.endedBy ??= "gone";
   }
-  entry.endedAt = performance.now();
+  entry.endedAt ||= performance.now();
   wake(entry);
   // Its text is held here, so the pane, its lease and its copy can go now.
   await entry.program.kill().catch(() => undefined);
@@ -156,6 +158,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
   /** End the program and remove its pane; a stop also forgets the id, a lifetime keeps it readable. */
   async function end(id: string, entry: Entry, by: EndedBy): Promise<void> {
     if (by === "stopped") entries.delete(id);
+    entry.endedAt ||= performance.now();
     clearTimeout(entry.timer);
     entry.endedBy ??= by;
     wake(entry);
