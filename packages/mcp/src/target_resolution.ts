@@ -39,7 +39,7 @@ function suggest(all: readonly string[], listing: string): string {
  * Named so the type system can withhold them. Resizing and retitling are not
  * here: they rearrange a pane without reaching the program inside it.
  */
-type PaneWrite = "kill" | "pasteBuffer" | "respawn" | "sendKeys";
+type PaneWrite = "kill" | "pasteBuffer" | "respawn" | "sendKeys" | "waitForCommand";
 
 /**
  * A pane resolved for reading and arranging, but not for writing into.
