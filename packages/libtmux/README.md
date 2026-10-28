@@ -1128,6 +1128,8 @@ const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
 - `send` types the command once the wait is listening, so one that ends at
   once is not missed. Without it, the wait is for whatever command finishes
   next, a person's included.
+- A shell's first prompt marks an end too, so wait for it before sending to a
+  shell that is still starting.
 - A shell without the marks never resolves the wait; give it a `timeoutMs`.
 - Requires tmux 3.8 or newer. [Details](docs/contracts.md#pane-waits).
 

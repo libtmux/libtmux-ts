@@ -197,6 +197,20 @@ typed, so the output holds no command line or echo. In short:
 | 3.7 to 3.7c   | `VersionTooLowError` | No `wait-for -E`; a remain-on-exit pane never closes its pipe      |
 | 3.3a to 3.6b  | `VersionTooLowError` | Also: `history-limit` does not reach an existing pane              |
 
+What each outcome looks like to a caller:
+
+| What happened                                    | What the caller sees                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| The program ended                                | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too |
+| Its output's start scrolled past `historyLimit`  | `lostStart`                                                                     |
+| tmux removed the pane before reading the end     | `lostEnd`; `stream()` ends with `OutputLostError`                               |
+| The stream copy reached `maxStreamBytes`         | `stream()` ends with `StreamLimitError`; the program runs on                    |
+| `run`'s `timeoutMs` passed                       | `timedOut`, with the output so far                                              |
+| `signal` fired                                   | `TmuxTransportError` of kind `cancelled`                                        |
+| The pane was killed from outside                 | `ObjectNotFoundError` from `wait()` and `output()`                              |
+| The caller died                                  | tmux ends the program within `orphanAfterMs`                                    |
+| `input` or `stream` with a tmux server elsewhere | `ServerNotLocalError`, before anything starts                                   |
+
 ### Starting the program
 
 - The session's one pane starts with a placeholder that exits at once and stays
@@ -258,7 +272,8 @@ typed, so the output holds no command line or echo. In short:
 - The list ends in that wait, so it holds no slot of `maxInFlight` for the
   program's life; each live program costs one waiting tmux client instead. With
   50 programs on 3.8a, each client held about 4 MiB, while the tmux server grew
-  by about 3 MiB for all of them.
+  by about 3 MiB for all of them
+  ([#117](https://github.com/libtmux/libtmux-ts/issues/117) has the run).
 
 ### Ending it
 
@@ -366,7 +381,7 @@ typed, so the output holds no command line or echo. In short:
   the pane's fd closes. A raw `tmux -C` client got the last write of a program
   that exited right after writing it in 66 to 76 of 100 runs to a dead
   placeholder, and 35 to 49 of 100 to a live pane, on 3.3a, 3.8, 3.8a and
-  master.
+  master ([#118](https://github.com/libtmux/libtmux-ts/issues/118) has the run).
 - The copy grows with the output until the program is killed or disposed.
   `maxStreamBytes` caps it: the pipe runs `head -c` for one byte past the cap,
   so a cut copy is told from one that fit, and `stream()` yields the cap's worth
@@ -390,8 +405,8 @@ is not public API.
 it, through tmux 3.8's events.
 
 - Each waiter is one tmux command list: `wait-for -S` on a channel of its own,
-  then `wait-for -E -v -F '#{==:#{pane},%N}'` on the event. tmux handles no other
-  event inside the list, so once the channel is signalled the waiter is
+  then `wait-for -E -v -F '#{==:#{pane},%N}'` on the event. tmux handles no
+  other event inside the list, so once the channel is signalled the waiter is
   registered, and only then is the pane read or the command sent.
 - An exit is two events, fired one or the other: `pane-exited` for a pane that
   closes ([`server_fire_pane_exit`](https://github.com/tmux/tmux/blob/3.8/server-fn.c#L35-L56)) and `pane-died` for one that
