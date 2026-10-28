@@ -1,0 +1,383 @@
+/**
+ * Programs that outlive one call: `start_program`, `read_program`, `stop_program`.
+ *
+ * `run_program` returns once the program ends, inside one blocking wait; these
+ * three serve a build or a server that runs longer, or needs keys between
+ * reads. This server owns every program it starts and ends it when its
+ * lifetime runs out, whatever the caller does next. Should this server die
+ * first, tmux ends it through the lease the library renews. Either way no
+ * later call owns cleanup.
+ */
+
+import { randomUUID } from "node:crypto";
+
+import { LibTmuxError, VersionTooLowError, type Program, type ProgramExit } from "libtmux";
+import { z } from "zod";
+
+import type { ToolContext } from "../context.js";
+import { effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
+import { type ToolRegistrar } from "../register.js";
+import { fail, ok } from "../results.js";
+import { inlineRequestText, paneIdSchema } from "../schemas.js";
+import { isFailure } from "../target_resolution.js";
+import { TextFilter } from "../text.js";
+import { besidePane, programArgv } from "./input.js";
+
+/** How long a started program runs unless told otherwise, and at most. */
+const DEFAULT_LIFETIME_MS = 600_000;
+const MAX_LIFETIME_MS = 3_600_000;
+const MAX_LIVE_PROGRAMS = 16;
+/** How soon tmux ends a program after this server stops renewing its lease: a renewal every 10 s. */
+const ORPHAN_AFTER_MS = 30_000;
+/** Each program's copy and readable text stop here; the program runs on. */
+const MAX_COPY_BYTES = 4 * 1024 * 1024;
+
+type EndedBy = "exited" | "gone" | "lifetime" | "stopped";
+
+interface Entry {
+  readonly program: Program;
+  /** The readable text so far, as UTF-8, in arrival order. */
+  readonly chunks: Buffer[];
+  size: number;
+  /** Whether the copy stopped at its cap before the program ended. */
+  cut: boolean;
+  exit: ProgramExit | undefined;
+  endedBy: EndedBy | undefined;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  readonly wakers: Set<() => void>;
+}
+
+function wake(entry: Entry): void {
+  for (const waker of entry.wakers) waker();
+}
+
+/** Resolve when the entry changes, `ms` pass, or `signal` aborts. */
+async function changed(entry: Entry, ms: number, signal: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      entry.wakers.delete(done);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    entry.wakers.add(done);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/** Bytes `[start, end)` of the entry's text. */
+function slice(entry: Entry, start: number, end: number): Buffer {
+  const parts: Buffer[] = [];
+  let offset = 0;
+  for (const chunk of entry.chunks) {
+    const next = offset + chunk.length;
+    if (next > start && offset < end) {
+      parts.push(chunk.subarray(Math.max(0, start - offset), Math.min(chunk.length, end - offset)));
+    }
+    offset = next;
+  }
+  return Buffer.concat(parts);
+}
+
+/** Copy the program's output in as it is written, then record how it ended. */
+async function pump(entry: Entry): Promise<void> {
+  const filter = new TextFilter();
+  try {
+    for await (const chunk of entry.program.stream()) {
+      const text = Buffer.from(filter.push(chunk), "utf8");
+      entry.chunks.push(text);
+      entry.size += text.length;
+      wake(entry);
+    }
+  } catch (error) {
+    // A stop or the lifetime ends the stream too; only the cap leaves the program running.
+    if (entry.endedBy === undefined && error instanceof LibTmuxError) entry.cut = true;
+  }
+  try {
+    entry.exit = await entry.program.wait();
+    entry.endedBy ??= "exited";
+  } catch {
+    // Killed by this server, or its pane removed from outside: no status to report.
+    entry.endedBy ??= "gone";
+  }
+  wake(entry);
+}
+
+/** The text a reader sees, ending on a whole character. */
+function readable(entry: Entry, start: number): { readonly end: number; readonly text: string } {
+  let end = Math.min(entry.size, start + MAX_RESULT_BYTES);
+  const bytes = slice(entry, start, end);
+  let kept = bytes.length;
+  if (end < entry.size) {
+    while (kept > 0 && ((bytes[kept] ?? 0) & 0xc0) === 0x80) kept -= 1;
+    end = start + kept;
+  }
+  return { end, text: bytes.subarray(0, kept).toString("utf8") };
+}
+
+/** Ends every live started program; the server calls it as it closes. */
+export interface StartedPrograms {
+  close(): Promise<void>;
+}
+
+export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): StartedPrograms {
+  const entries = new Map<string, Entry>();
+
+  /** End the program and remove its pane; the id is forgotten. */
+  async function end(id: string, entry: Entry, by: EndedBy): Promise<void> {
+    entries.delete(id);
+    clearTimeout(entry.timer);
+    entry.endedBy ??= by;
+    wake(entry);
+    await entry.program.kill().catch(() => undefined);
+  }
+
+  mcp.registerTool(
+    "start_program",
+    {
+      description:
+        "Start a program in a pane of its own and return at once with a programId. Use it " +
+        "for a program that runs longer than one wait, such as a build or a server, or one " +
+        "that needs keys between reads; run_program is the one-call form. read_program " +
+        "reads its output as it is written and reports its exit; send_keys reaches its " +
+        "paneId; stop_program ends it. This server ends it and removes its pane when " +
+        "timeoutMs runs out whatever else is called, and tmux does if this server dies. " +
+        "No shell parses argv and nothing is typed. Requires tmux 3.8 or newer.",
+      inputSchema: {
+        argv: programArgv,
+        fromPaneId: paneIdSchema
+          .optional()
+          .describe("Run beside this pane, in its directory and session, as run_program does."),
+        height: z
+          .number()
+          .int()
+          .positive()
+          .max(10_000)
+          .optional()
+          .describe("Rows of the program's terminal. Defaults to tmux's default-size."),
+        placement: z
+          .enum(["window", "split"])
+          .optional()
+          .describe(
+            'With fromPaneId: "window", the default, or "split" beside the pane, where a ' +
+              "person watching it sees the program. Focus stays put.",
+          ),
+        startDirectory: inlineRequestText("startDirectory")
+          .optional()
+          .describe(
+            "Directory the program starts in, taken literally; one that cannot be entered " +
+              "ends it with exit status 126.",
+          ),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "The program's lifetime: it is ended and its pane removed this long after the " +
+              `start. ${String(DEFAULT_LIFETIME_MS / 60_000)} minutes by default, at most ` +
+              `${String(MAX_LIFETIME_MS / 60_000)}.`,
+          ),
+        width: z
+          .number()
+          .int()
+          .positive()
+          .max(10_000)
+          .optional()
+          .describe("Columns of the program's terminal."),
+      },
+      outputSchema: {
+        effectiveTimeoutMs: z.number().int().describe("The lifetime actually enforced."),
+        paneId: paneIdSchema.describe("The program's pane, for send_keys or capture_pane."),
+        programId: z.string().describe("Pass to read_program and stop_program."),
+      },
+      title: "Start a program",
+    },
+    async ({ argv, fromPaneId, height, placement, startDirectory, timeoutMs, width }) => {
+      if (entries.size >= MAX_LIVE_PROGRAMS) {
+        return fail({
+          hint: "stop_program ends one you no longer need.",
+          reason: `${String(MAX_LIVE_PROGRAMS)} started programs are already live.`,
+        });
+      }
+      const from = await besidePane(context, { fromPaneId, height, placement, width });
+      if (isFailure(from)) return from;
+      const lifetimeMs = Math.min(timeoutMs ?? DEFAULT_LIFETIME_MS, MAX_LIFETIME_MS);
+      let program: Program;
+      try {
+        program = await context.tmux.spawn(argv, {
+          // A pager waits for keys nobody will press.
+          environment: { GIT_PAGER: "cat", PAGER: "cat" },
+          ...(from === undefined ? {} : { from }),
+          ...(height === undefined ? {} : { height }),
+          maxStreamBytes: MAX_COPY_BYTES,
+          orphanAfterMs: ORPHAN_AFTER_MS,
+          ...(placement === undefined ? {} : { placement }),
+          ...(startDirectory === undefined ? {} : { startDirectory }),
+          stream: true,
+          ...(width === undefined ? {} : { width }),
+        });
+      } catch (error) {
+        if (!(error instanceof VersionTooLowError)) throw error;
+        return fail({
+          hint: "On this server, run the command with run_shell_command in an existing shell pane.",
+          reason: error.message,
+        });
+      }
+      const id = `program-${randomUUID().slice(0, 8)}`;
+      const entry: Entry = {
+        chunks: [],
+        cut: false,
+        endedBy: undefined,
+        exit: undefined,
+        program,
+        size: 0,
+        timer: undefined,
+        wakers: new Set(),
+      };
+      entry.timer = setTimeout(() => void end(id, entry, "lifetime"), lifetimeMs);
+      entry.timer.unref();
+      entries.set(id, entry);
+      void pump(entry);
+      return ok(
+        { effectiveTimeoutMs: lifetimeMs, paneId: program.pane.id, programId: id },
+        `[started ${id} in ${program.pane.id}; it is ended after ${String(lifetimeMs)}ms]`,
+      );
+    },
+  );
+
+  mcp.registerTool(
+    "read_program",
+    {
+      description:
+        "Read what a started program printed after cursor, waiting up to timeoutMs for new " +
+        "output or its exit, and report whether it has exited and how. Omit cursor on the " +
+        "first read and pass back the one returned; a read that times out returns no text, " +
+        "and the next read with the same cursor carries on. The text is the byte stream " +
+        "with escape sequences removed, in write order; capture_pane on its paneId shows " +
+        "the screen. Output stays readable after the exit until stop_program or the lifetime.",
+      inputSchema: {
+        cursor: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe("The cursor the previous read_program returned. Omit to read from the start."),
+        programId: z.string().min(1).max(64).describe("The id start_program returned."),
+        timeoutMs: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe("How long to wait for something new. Clamped by the server ceiling."),
+      },
+      outputSchema: {
+        cursor: z.number().int().describe("Pass to the next read_program."),
+        effectiveTimeoutMs: z.number().int().describe("The wait actually allowed."),
+        exitStatus: z
+          .number()
+          .int()
+          .nullable()
+          .describe("The exit status once it exited on its own; otherwise null."),
+        exited: z
+          .boolean()
+          .describe("Whether it has ended and every byte it wrote has been returned."),
+        outcome: z
+          .enum(["running", "exited", "gone"])
+          .describe(
+            "running: call again with cursor. exited: it ended, as exitStatus or signal " +
+              "says. gone: its pane was removed from outside, with no status.",
+          ),
+        outputCut: z
+          .boolean()
+          .describe(
+            `True once the program wrote more than ${String(MAX_COPY_BYTES)} bytes; later output is not kept.`,
+          ),
+        signal: z
+          .string()
+          .nullable()
+          .describe('The signal that ended it, such as "SIGTERM"; otherwise null.'),
+        text: z.string().describe("What it printed after cursor."),
+      },
+      title: "Read a started program",
+    },
+    async ({ cursor, programId, timeoutMs }, extra) => {
+      const entry = entries.get(programId);
+      if (entry === undefined) {
+        return fail({
+          hint: "start_program starts one; a stop or the end of its lifetime forgets the id.",
+          reason: `No started program ${programId}.`,
+        });
+      }
+      const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
+      const from = Math.min(cursor ?? 0, entry.size);
+      const deadline = Date.now() + effectiveTimeoutMs;
+      while (entry.size <= from && entry.endedBy === undefined && !extra.signal.aborted) {
+        const left = deadline - Date.now();
+        if (left <= 0) break;
+        // eslint-disable-next-line no-await-in-loop -- each wait follows the last change.
+        await changed(entry, left, extra.signal);
+      }
+      const { end, text } = readable(entry, from);
+      // Ended only once every byte has been handed over.
+      const finished = entry.endedBy !== undefined && end === entry.size;
+      const exit = finished ? entry.exit : undefined;
+      let outcome: "exited" | "gone" | "running" = "running";
+      if (finished) outcome = exit === undefined ? "gone" : "exited";
+      let headline = `running; cursor ${String(end)}`;
+      if (exit !== undefined) {
+        headline =
+          exit.signalCode === null
+            ? `exit ${String(exit.exitCode)}`
+            : `ended by ${exit.signalCode}`;
+      } else if (finished) headline = "its pane is gone, with no exit status";
+      return ok(
+        {
+          cursor: end,
+          effectiveTimeoutMs,
+          exitStatus: exit?.exitCode ?? null,
+          exited: finished,
+          outcome,
+          outputCut: entry.cut,
+          signal: exit?.signalCode ?? null,
+          text,
+        },
+        `${text}\n\n[${headline}]${entry.cut ? "\n[output past the copy limit is not kept]" : ""}`,
+      );
+    },
+  );
+
+  mcp.registerTool(
+    "stop_program",
+    {
+      description:
+        "End a started program and remove its pane now: SIGTERM, then SIGKILL two seconds " +
+        "later. Its id is forgotten, so read what you need with read_program first.",
+      inputSchema: {
+        programId: z.string().min(1).max(64).describe("The id start_program returned."),
+      },
+      outputSchema: {
+        programId: z.string().describe("The program that was ended."),
+      },
+      title: "Stop a started program",
+    },
+    async ({ programId }) => {
+      const entry = entries.get(programId);
+      if (entry === undefined) {
+        return fail({
+          hint: "Its lifetime may have ended, which removed it already.",
+          reason: `No started program ${programId}.`,
+        });
+      }
+      await end(programId, entry, "stopped");
+      return ok({ programId }, `[stopped ${programId}; its pane is removed]`);
+    },
+  );
+
+  return {
+    async close() {
+      await Promise.all([...entries].map(([id, entry]) => end(id, entry, "stopped")));
+    },
+  };
+}

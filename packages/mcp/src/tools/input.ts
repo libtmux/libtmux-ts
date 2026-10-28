@@ -119,6 +119,57 @@ async function runInShell(
   return result;
 }
 
+/** A program and its arguments, as `run_program` and `start_program` take them. */
+export const programArgv = z
+  .array(inlineRequestText("argv item"))
+  .min(1)
+  .max(256)
+  .refine(
+    (values) =>
+      values[0] !== "" && values[0]?.startsWith("-") !== true && fitsInlineRequest(values),
+    { message: "argv must name a program, not starting with -, and fit one tmux command line." },
+  )
+  .describe(
+    'The program and its arguments, as given: ["git", "status", "--short"]. Put ' +
+      'variables first with env: ["env", "CI=1", "make", "test"].',
+  );
+
+/**
+ * The pane a program runs beside, or why the request cannot run there: size
+ * belongs to that pane's session, and `placement` needs a pane to be beside.
+ */
+export async function besidePane(
+  context: ToolContext,
+  request: {
+    readonly fromPaneId?: string | undefined;
+    readonly height?: number | undefined;
+    readonly inheritShell?: boolean | undefined;
+    readonly placement?: string | undefined;
+    readonly width?: number | undefined;
+  },
+): Promise<Pane | undefined | ReturnType<typeof fail>> {
+  const { fromPaneId } = request;
+  if (fromPaneId === undefined) {
+    if (request.placement === undefined && request.inheritShell !== true) return undefined;
+    return fail({
+      hint: "Name the pane to run beside with fromPaneId.",
+      reason: "placement and inheritShell run beside a pane, and none was given.",
+    });
+  }
+  if (request.width !== undefined || request.height !== undefined) {
+    return fail({
+      hint: "Leave width and height out; the pane takes that session's size.",
+      reason: "fromPaneId runs in that pane's session, whose size is its own.",
+    });
+  }
+  const from = (await context.tmux.panes()).toArray().find((pane) => pane.id === fromPaneId);
+  if (from !== undefined) return from;
+  return fail({
+    hint: "list_panes shows the panes that exist.",
+    reason: `No pane ${fromPaneId} to start from.`,
+  });
+}
+
 /** A variable name a POSIX shell can export; `env` also lists names such as `BASH_FUNC_f%%`. */
 const SHELL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
@@ -608,22 +659,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         "inheritShell adds the variables a fromPaneId shell exported; run_shell_command runs " +
         "shell builtins such as cd. Requires tmux 3.8 or newer.",
       inputSchema: {
-        argv: z
-          .array(inlineRequestText("argv item"))
-          .min(1)
-          .max(256)
-          .refine(
-            (values) =>
-              values[0] !== "" && values[0]?.startsWith("-") !== true && fitsInlineRequest(values),
-            {
-              message:
-                "argv must name a program, not starting with -, and fit one tmux command line.",
-            },
-          )
-          .describe(
-            'The program and its arguments, as given: ["git", "status", "--short"]. Put ' +
-              'variables first with env: ["env", "CI=1", "make", "test"].',
-          ),
+        argv: programArgv,
         fromPaneId: paneIdSchema
           .optional()
           .describe(
@@ -757,29 +793,14 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       extra,
     ) => {
       const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
-      let from: Pane | undefined;
-      if (fromPaneId === undefined) {
-        if (placement !== undefined || inheritShell === true) {
-          return fail({
-            hint: "Name the pane to run beside with fromPaneId.",
-            reason: "placement and inheritShell run beside a pane, and none was given.",
-          });
-        }
-      } else {
-        if (width !== undefined || height !== undefined) {
-          return fail({
-            hint: "Leave width and height out; the pane takes that session's size.",
-            reason: "fromPaneId runs in that pane's session, whose size is its own.",
-          });
-        }
-        from = (await context.tmux.panes()).toArray().find((pane) => pane.id === fromPaneId);
-        if (from === undefined) {
-          return fail({
-            hint: "list_panes shows the panes that exist.",
-            reason: `No pane ${fromPaneId} to start from.`,
-          });
-        }
-      }
+      const from = await besidePane(context, {
+        fromPaneId,
+        height,
+        inheritShell,
+        placement,
+        width,
+      });
+      if (isFailure(from)) return from;
       // mkdtemp makes it 0700 whatever the umask: the shell's variables can hold secrets.
       const directory =
         inheritShell === true ? await mkdtemp(join(tmpdir(), "ltx-mcp-inherit-")) : undefined;
