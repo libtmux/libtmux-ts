@@ -15,9 +15,9 @@ import type { ProgramExit, ProgramWaitOptions } from "./types.js";
  * {@link Pane.sendKeys} and read its screen with {@link Pane.capture}.
  *
  * It owns its pane. {@link Program.kill}, or leaving an `await using` scope,
- * ends the program and removes the pane, unless spawned with `keep`; a
- * program left running keeps both, also after this process exits, unless
- * spawned with `orphanAfterMs`. A kill ends a stream in progress
+ * ends the program and removes the pane, unless spawned with `keep`. Should
+ * this process exit or die first, tmux ends the program through its lease,
+ * unless spawned with `orphanAfterMs: null`. A kill ends a stream in progress
  * with {@link LibTmuxError}, and a pane removed from outside with
  * {@link ObjectNotFoundError}. After `kill`, `output` raises
  * {@link ObjectNotFoundError}, `stream` raises {@link LibTmuxError}, and

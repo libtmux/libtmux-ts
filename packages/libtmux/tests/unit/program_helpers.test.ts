@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 
 import { lastPayload } from "../../src/_internal/operations/pane_wait.js";
-import { signalName } from "../../src/_internal/operations/program.js";
+import { MarkFilter, signalName } from "../../src/_internal/operations/program.js";
 
 const PROGRAM = fileURLToPath(
   new URL("../../src/_internal/operations/program.ts", import.meta.url),
@@ -68,5 +68,27 @@ describe("event payloads", () => {
       "pane=%1",
     ];
     expect(lastPayload(commands).get("command_status")).toBe("4");
+  });
+});
+
+describe("end marks", () => {
+  const mark = "\x1b\\\x1b]7;libtmux-ran-x\x07";
+
+  test("drop the mark wherever the pieces split it", () => {
+    const whole = `done\r\n${mark}`;
+    for (let at = 0; at <= whole.length; at += 1) {
+      const filter = new MarkFilter(mark);
+      const text = filter.push(whole.slice(0, at)) + filter.push(whole.slice(at)) + filter.end();
+      expect(text).toBe("done\r\n");
+      expect(filter.seen).toBe(true);
+    }
+  });
+
+  test("hold back only what could start the mark", () => {
+    const filter = new MarkFilter(mark);
+    expect(filter.push("Password: ")).toBe("Password: ");
+    expect(filter.push("\x1b")).toBe("");
+    expect(filter.push("[0m")).toBe("\x1b[0m");
+    expect(filter.seen).toBe(false);
   });
 });

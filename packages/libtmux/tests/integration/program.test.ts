@@ -541,6 +541,7 @@ describe("program runs", () => {
         const program = await server.spawn(["sh", "-c", "trap '' HUP TERM; sleep 30"]);
         const pid = await panePid(server, program.pane.id);
         const owned = { kind: "session", target: `=${program.sessionName}` } as const;
+        // The token first: a timer queued with no delay fires before a later command.
         for (const [command = "", ...args] of leaseTimer(
           program.pane.id,
           owned,
@@ -548,7 +549,7 @@ describe("program runs", () => {
           false,
           7,
           0,
-        )) {
+        ).toReversed()) {
           // eslint-disable-next-line no-await-in-loop -- the timer reads the lease the first sets.
           await server.cmd(command, args);
         }
@@ -578,6 +579,7 @@ describe("program runs", () => {
       await withServer(async (server) => {
         await using program = await server.spawn(["sleep", "30"]);
         const owned = { kind: "session", target: `=${program.sessionName}` } as const;
+        // The token first: a timer queued with no delay fires before a later command.
         for (const [command = "", ...args] of leaseTimer(
           program.pane.id,
           owned,
@@ -585,7 +587,7 @@ describe("program runs", () => {
           false,
           1,
           0.3,
-        )) {
+        ).toReversed()) {
           // eslint-disable-next-line no-await-in-loop -- in order.
           await server.cmd(command, args);
         }
@@ -610,6 +612,7 @@ describe("program runs", () => {
         await using program = await server.spawn(["sh", "-c", script, gate], { keep: true });
         const owned = { kind: "session", target: `=${program.sessionName}` } as const;
         const queued = Date.now();
+        // The token first: a timer queued with no delay fires before a later command.
         for (const [command = "", ...args] of leaseTimer(
           program.pane.id,
           owned,
@@ -617,7 +620,7 @@ describe("program runs", () => {
           false,
           3,
           4,
-        )) {
+        ).toReversed()) {
           // eslint-disable-next-line no-await-in-loop -- in order.
           await server.cmd(command, args);
         }
@@ -703,6 +706,37 @@ setInterval(() => undefined, 1000);`,
             5000,
           ),
         ).toBe(true);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a run whose end tmux did not read says truncated, and a group SIGKILL does not",
+    async () => {
+      await withServer(async (server) => {
+        // USR1 ends the wrapper before its mark, as a pane tmux removed early would read.
+        const cut = await server.run(["sh", "-c", "echo hi; kill -USR1 $PPID; sleep 1"]);
+        expect(cut).toMatchObject({ output: "hi", signalCode: "SIGUSR1", truncated: true });
+        // A SIGKILL to the group stops the wrapper before its mark too, which says nothing.
+        const killed = await server.run(["sh", "-c", "echo hi; kill -KILL 0"]);
+        expect(killed).toMatchObject({ output: "hi", signalCode: "SIGKILL", truncated: false });
+        expect((await server.run(["echo", "whole"])).truncated).toBe(false);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a spawn holds a lease unless orphanAfterMs is null",
+    async () => {
+      await withServer(async (server) => {
+        await using leased = await server.spawn(["sleep", "30"]);
+        await using unleased = await server.spawn(["sleep", "30"], { orphanAfterMs: null });
+        const lease = async (paneId: string): Promise<readonly string[]> =>
+          server.cmd("show-options", ["-p", "-v", "-t", paneId, "@libtmux-lease"]).catch(() => []);
+        expect(await lease(leased.pane.id)).toEqual(["0"]);
+        expect(await lease(unleased.pane.id)).toEqual([]);
       });
     },
     40_000,

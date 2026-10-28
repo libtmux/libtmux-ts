@@ -99,6 +99,7 @@ export {
   TmuxServerRestartedError,
   TmuxTransportError,
   type TmuxTransportErrorKind,
+  StreamLimitError,
   VersionTooLowError,
   WaitTimeoutError,
 } from "./errors.js";

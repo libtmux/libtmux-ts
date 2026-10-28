@@ -199,6 +199,7 @@ describe("package contract", () => {
       "ResizeAdjustmentDirection",
       "Server",
       "Session",
+      "StreamLimitError",
       "TmuxCommandError",
       "TmuxServerRestarted",
       "TmuxServerRestartedError",

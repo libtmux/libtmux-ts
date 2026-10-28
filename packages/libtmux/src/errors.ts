@@ -156,6 +156,7 @@ export type LibTmuxErrorCode =
   | "NoMatchError"
   | "ObjectNotFoundError"
   | "QueryValidationError"
+  | "StreamLimitError"
   | "TmuxCommandError"
   | "TmuxObjectNotFoundError"
   | "TmuxServerRestartedError"
@@ -425,6 +426,14 @@ export class VersionTooLowError extends LibTmuxError {
  */
 export class WaitTimeoutError extends LibTmuxError {
   static override readonly code: LibTmuxErrorCode = "WaitTimeoutError";
+}
+
+/**
+ * A program's stream copy reached `maxStreamBytes` and stopped. Everything up
+ * to the limit was yielded first; the program runs on, uncopied.
+ */
+export class StreamLimitError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "StreamLimitError";
 }
 
 /** A selection that required exactly one match found none. */

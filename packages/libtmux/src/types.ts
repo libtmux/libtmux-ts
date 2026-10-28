@@ -543,11 +543,10 @@ export interface SpawnOptions {
    * Have tmux end the program, and remove its pane unless `keep` is set, this
    * many milliseconds after this process stops renewing a lease on it: after
    * it exits or dies without {@link Program.kill}. A live process renews the
-   * lease every third of this period. At least 1000. {@link Server.run}
-   * defaults to 60000; {@link Server.spawn} takes none, and a program it
-   * starts outlives this process.
+   * lease every third of this period. At least 1000; 60000 by default. `null`
+   * takes no lease, for a program meant to outlive this process.
    */
-  readonly orphanAfterMs?: number;
+  readonly orphanAfterMs?: number | null;
   /**
    * Directory the program starts in, taken as a literal path. Defaults to this
    * process's current directory, or the `from` pane's. One that cannot be
@@ -632,7 +631,10 @@ export interface ProgramResult extends ProgramExit {
   readonly success: boolean;
   /** Whether `timeoutMs` stopped the program; its exit fields are then null. */
   readonly timedOut: boolean;
-  /** Whether output scrolled past `historyLimit`, so `output` lacks its start. */
+  /**
+   * Whether `output` lacks part of what the program wrote: its start scrolled
+   * past `historyLimit`, or tmux removed the pane before reading its end.
+   */
   readonly truncated: boolean;
 }
 

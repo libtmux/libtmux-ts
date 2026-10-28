@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   LibTmuxError,
+  StreamLimitError,
   TmuxCommandError,
   TmuxObjectNotFoundError,
   TmuxTransportError,
@@ -79,6 +80,8 @@ export interface ProgramState {
   /** Whether the pane outlives the program, for a person to read. */
   readonly keep: boolean;
   readonly lease: Lease | undefined;
+  /** The OSC 7 path the wrapper writes after the program: tmux read to the end iff it shows. */
+  readonly mark: string;
   exit: ProgramExit | undefined;
   killing: Promise<void> | undefined;
   /** Whether `exited` has settled; then each wait in `wakes` was woken once. */
@@ -107,9 +110,10 @@ export function leaseTimer(
   const clear = files ? "(sleep 1; rm -rf -- ##{q:@libtmux-files}) >/dev/null 2>&1 &" : ":";
   const remove = keep ? "" : ` ; kill-${owned.kind} -t ${owned.target}`;
   const expire = `if-shell -F -t ${paneId} "##{==:##{@libtmux-lease},${String(token)}}" "run-shell -t ${paneId} '${kill}; ${clear}'${remove}"`;
+  // The timer first: a renewal that stops between the two leaves the last token's timer standing.
   return [
-    ["set-option", "-p", "-t", paneId, "@libtmux-lease", String(token)],
     ["run-shell", "-b", "-d", seconds.toFixed(3), "-C", expire],
+    ["set-option", "-p", "-t", paneId, "@libtmux-lease", String(token)],
   ];
 }
 
@@ -131,8 +135,14 @@ async function renew(state: ProgramState, lease: Lease): Promise<void> {
       ),
     );
   } catch (error) {
-    // tmux refusing it means the pane is gone from outside, with nothing left to lease.
-    if (error instanceof TmuxCommandError) clearInterval(lease.timer);
+    // A pane removed from outside has nothing left to lease; anything else is retried.
+    const gone =
+      error instanceof TmuxCommandError &&
+      (await readPane(state.runtime, state.paneId, []).then(
+        () => false,
+        (failure: unknown) => failure instanceof TmuxObjectNotFoundError,
+      ));
+    if (gone) clearInterval(lease.timer);
   } finally {
     lease.renewing = false;
   }
@@ -314,13 +324,25 @@ export async function waitProgram(
   }
 }
 
-/** The pane's rendered text, scrollback included, and whether any of it was dropped. */
+/**
+ * The pane's rendered text, scrollback included, and whether any of it was
+ * dropped: its start past `historyLimit`, or once the program has ended, an end
+ * tmux removed before reading, which leaves the pane without the run's mark.
+ * A SIGKILL to the process group ends the wrapper before its mark, which says
+ * nothing about the output, so it is not counted.
+ */
 export async function programOutput(
   program: Program,
 ): Promise<{ readonly text: string; readonly truncated: boolean }> {
-  const { paneId, runtime } = stateOf(program);
-  const [collected = "", ...lines] = await runCommands(runtime, [
-    ["display-message", "-p", "-t", paneId, "#{history_collected}"],
+  const { mark, paneId, runtime } = stateOf(program);
+  const [read = "", ...lines] = await runCommands(runtime, [
+    [
+      "display-message",
+      "-p",
+      "-t",
+      paneId,
+      "#{history_collected}\t#{pane_dead}\t#{pane_dead_signal}\t#{pane_path}",
+    ],
     ["capture-pane", "-p", "-J", "-S", "-", "-E", "-", "-t", paneId],
   ]).catch(async (error: unknown) => {
     // Only the capture fails for a pane that is gone; say so as a missing pane.
@@ -329,7 +351,65 @@ export async function programOutput(
   });
   let end = lines.length;
   while (end > 0 && lines[end - 1] === "") end -= 1;
-  return { text: lines.slice(0, end).join("\n"), truncated: Number(collected) > 0 };
+  const [collected = "", dead = "", signal = "", path = ""] = read.split("\t");
+  const cutAtEnd = dead === "1" && path !== mark && signalName(signal) !== "SIGKILL";
+  return { text: lines.slice(0, end).join("\n"), truncated: Number(collected) > 0 || cutAtEnd };
+}
+
+/** The bytes the wrapper's printf writes for `mark`: ST, then OSC 7 ending in BEL. */
+export function markSequence(mark: string): string {
+  return `\x1b\\\x1b]7;${mark}\x07`;
+}
+
+/**
+ * Drops one exact `mark` from text that arrives in pieces. Only a tail that
+ * could be the start of the mark is held back, so ordinary output, a prompt
+ * included, passes at once.
+ */
+export class MarkFilter {
+  #held = "";
+  #seen = false;
+  readonly #mark: string;
+
+  constructor(mark: string) {
+    this.#mark = mark;
+  }
+
+  /** Whether the mark has gone by. */
+  get seen(): boolean {
+    return this.#seen;
+  }
+
+  push(text: string): string {
+    let pending = this.#held + text;
+    this.#held = "";
+    if (!this.#seen) {
+      const at = pending.indexOf(this.#mark);
+      if (at !== -1) {
+        this.#seen = true;
+        pending = pending.slice(0, at) + pending.slice(at + this.#mark.length);
+      } else {
+        for (
+          let length = Math.min(this.#mark.length - 1, pending.length);
+          length > 0;
+          length -= 1
+        ) {
+          if (this.#mark.startsWith(pending.slice(-length))) {
+            this.#held = pending.slice(-length);
+            return pending.slice(0, -length);
+          }
+        }
+      }
+    }
+    return pending;
+  }
+
+  /** What is still held once nothing more will arrive. */
+  end(): string {
+    const held = this.#held;
+    this.#held = "";
+    return held;
+  }
 }
 
 /** The program's output as UTF-8 text, as it is written, until it exits. */
@@ -366,6 +446,11 @@ export async function* streamProgram(program: Program): AsyncGenerator<string, v
     },
   );
   const decoder = new TextDecoder();
+  const sequence = markSequence(state.mark);
+  const marks = new MarkFilter(sequence);
+  // Past the limit the copy may hold only the mark; any other byte there is the cut.
+  const markBytes = new TextEncoder().encode(sequence);
+  let past = 0;
   try {
     const buffer = new Uint8Array(64 * 1024);
     let offset = 0;
@@ -379,14 +464,22 @@ export async function* streamProgram(program: Program): AsyncGenerator<string, v
       do {
         // eslint-disable-next-line no-await-in-loop -- read what has arrived, in order.
         ({ bytesRead: read } = await handle.read(buffer, 0, buffer.length, offset));
-        const kept = files.limit === undefined ? read : Math.min(read, files.limit - offset);
+        const kept =
+          files.limit === undefined ? read : Math.max(0, Math.min(read, files.limit - offset));
         offset += read;
-        if (kept > 0) yield decoder.decode(buffer.subarray(0, kept), { stream: true });
-        // The copy holds one byte past the limit, which is how a cut copy is told apart.
-        if (files.limit !== undefined && offset > files.limit) {
-          const tail = decoder.decode();
+        if (kept > 0) {
+          const text = marks.push(decoder.decode(buffer.subarray(0, kept), { stream: true }));
+          if (text !== "") yield text;
+        }
+        const beyond = buffer.subarray(kept, read);
+        const onlyMark =
+          past + beyond.length <= markBytes.length &&
+          beyond.every((byte, index) => byte === markBytes[past + index]);
+        past += beyond.length;
+        if (!onlyMark) {
+          const tail = marks.push(decoder.decode()) + marks.end();
           if (tail !== "") yield tail;
-          throw new LibTmuxError(
+          throw new StreamLimitError(
             `the program wrote more than maxStreamBytes (${String(files.limit)}); the copy stopped there`,
           );
         }
@@ -400,10 +493,16 @@ export async function* streamProgram(program: Program): AsyncGenerator<string, v
       // eslint-disable-next-line no-await-in-loop -- wait for more output or the exit.
       await delay(ended ? 5 : STREAM_POLL_MS);
     }
-    const tail = decoder.decode();
+    const tail = marks.push(decoder.decode()) + marks.end();
     if (tail !== "") yield tail;
     // A pane removed from outside ends the copy too; say so after what arrived.
     if (lost !== undefined) throw lost;
+    const seen = marks.seen || past === markBytes.length;
+    if (!seen && state.exit !== undefined && state.exit.signalCode !== "SIGKILL") {
+      throw new LibTmuxError(
+        "tmux removed the pane before reading the program's last output; what arrived is all there is",
+      );
+    }
   } finally {
     stop.abort();
     await handle.close();
@@ -444,7 +543,7 @@ async function reaped(runtime: RuntimeContext, paneId: string, ms: number): Prom
 
 /**
  * End the program in a pane, if it runs: SIGTERM, SIGKILL after the grace
- * period, and back once tmux has reaped it. Removing the session only closes
+ * period, and back once tmux has reaped it. Removing the pane only closes
  * the pty, which a program ignoring SIGHUP outlives.
  */
 export async function stopPane(runtime: RuntimeContext, paneId: string): Promise<void> {

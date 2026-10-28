@@ -1457,10 +1457,10 @@ export class Server {
    * which is what a full-screen program needs to be driven by keys; see
    * {@link SpawnOptions} for what that implies for pagers and prompts.
    *
-   * The {@link Program} owns its pane, which is a detached session of its own
+   * The {@link Program} owns its pane, in a detached session of its own
    * unless `from` places it beside another pane: `await using` or
-   * {@link Program.kill} ends the program and removes it. Without
-   * `orphanAfterMs`, a program left running outlives this process.
+   * {@link Program.kill} ends the program and removes it, and tmux does once
+   * this process stops renewing its lease, unless `orphanAfterMs` is `null`.
    *
    * Requires tmux 3.8 or newer, and raises {@link VersionTooLowError}
    * below it. Earlier releases have no exit event to wait on, and through

@@ -32,6 +32,7 @@ import {
   isAborted,
   killProgram,
   leaseTimer,
+  markSequence,
   MAX_TIMER_MS,
   PLACEHOLDER,
   programOutput,
@@ -47,11 +48,14 @@ import {
 } from "./program.js";
 
 /**
- * Runs argv unparsed, as positional parameters, then lingers 50 ms and exits or dies
- * as the program did: tmux can remove a pane before reading its last output.
+ * Runs argv unparsed, as positional parameters, then writes the run's mark as
+ * an OSC 7 path, lingers 50 ms and exits or dies as the program did: tmux can
+ * remove a pane before reading its last output, and only a pane whose path is
+ * the mark was read to the end. The ST first closes any string left open.
  */
 const RUN =
   'trap : HUP INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
+  "printf '\\033\\\\\\033]7;%s\\007' \"$m\"; " +
   'sleep 0.05 2>/dev/null || sleep 1; if [ "$s" -gt 128 ] && n=$(kill -l "$s") && [ -n "$n" ]; then ' +
   'trap - "$n"; kill -s "$n" "$$"; fi; exit "$s"';
 /**
@@ -59,12 +63,13 @@ const RUN =
  * tmux's own `-c` falls back to `$HOME` for a directory it cannot enter, where
  * this ends the run with 126.
  */
+const MARK = "m=$1; shift; ";
 const ENTER = 'cd -- "$1" || exit 126; shift; ';
 const READ = 'exec <"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */
 const SETUP_MS = 10_000;
-/** How long `run` lets tmux wait, after this process is gone, before ending the program. */
-const RUN_ORPHAN_MS = 60_000;
+/** How long tmux waits, after this process is gone, before ending the program. */
+const DEFAULT_ORPHAN_MS = 60_000;
 const MIN_ORPHAN_MS = 1000;
 const DEFAULT_HISTORY_LIMIT = 100_000;
 /** tmux's own ceiling on a window's width and height. */
@@ -126,11 +131,32 @@ function requireSpawn(argv: readonly string[], spawn: SpawnOptions): ProgramPlac
   requireCount("height", spawn.height, MAX_SIZE);
   requireCount("historyLimit", spawn.historyLimit, MAX_HISTORY_LIMIT);
   requireCount("maxStreamBytes", spawn.maxStreamBytes, Number.MAX_SAFE_INTEGER - 1);
-  requireCount("orphanAfterMs", spawn.orphanAfterMs, MAX_TIMER_MS);
-  if (spawn.orphanAfterMs !== undefined && spawn.orphanAfterMs < MIN_ORPHAN_MS) {
+  requireCount("orphanAfterMs", spawn.orphanAfterMs ?? undefined, MAX_TIMER_MS);
+  if (typeof spawn.orphanAfterMs === "number" && spawn.orphanAfterMs < MIN_ORPHAN_MS) {
     throw new TypeError(`orphanAfterMs must be at least ${String(MIN_ORPHAN_MS)}`);
   }
   return placement;
+}
+
+/**
+ * The pane's files and its first lease, sent in the list that creates the pane,
+ * so a caller that dies before the program starts leaves nothing behind.
+ */
+function arming(
+  target: string,
+  owned: Owned,
+  keep: boolean,
+  files: RunFiles | undefined,
+  lease: Lease | undefined,
+): string[][] {
+  return [
+    ...(files === undefined
+      ? []
+      : [["set-option", "-p", "-t", target, "@libtmux-files", files.directory]]),
+    ...(lease === undefined
+      ? []
+      : leaseTimer(target, owned, keep, files !== undefined, 0, lease.ms / 1000)),
+  ];
 }
 
 /** Create the session whose dead placeholder pane the program will be respawned into. */
@@ -138,6 +164,7 @@ async function createSession(
   runtime: RuntimeContext,
   sessionName: string,
   spawn: SpawnOptions,
+  arm: (target: string, owned: Owned) => string[][],
 ): Promise<string> {
   const target = `=${sessionName}:`;
   const [paneId = ""] = await runCommands(runtime, [
@@ -165,6 +192,7 @@ async function createSession(
       "history-limit",
       String(spawn.historyLimit ?? DEFAULT_HISTORY_LIMIT),
     ],
+    ...arm(target, { kind: "session", target: `=${sessionName}` }),
   ]);
   return paneId;
 }
@@ -242,10 +270,11 @@ async function createBeside(
 function wrapped(
   argv: readonly string[],
   spawn: SpawnOptions,
+  mark: string,
   input: string | undefined,
 ): string[] {
   const [program = "", ...rest] = argv;
-  const steps: [string, string][] = [];
+  const steps: [string, string][] = [[MARK, mark]];
   if (spawn.startDirectory !== undefined) steps.push([ENTER, spawn.startDirectory]);
   if (input !== undefined) steps.push([READ, input]);
   return [
@@ -278,21 +307,23 @@ async function requireShared(runtime: RuntimeContext, directory: string): Promis
 
 /**
  * Starts the program and waits for its exit in one list, inside which tmux
- * handles no other event; a `lease` arms tmux's cleanup for a caller that dies.
+ * handles no other event. `armed` is what the creating list could not send.
  */
 function startList(
   paneId: string,
-  owned: Owned,
   argv: readonly string[],
   spawn: SpawnOptions,
   files: RunFiles | undefined,
+  mark: string,
   input: string | undefined,
-  lease: Lease | undefined,
+  armed: string[][],
   started: string,
 ): string[][] {
   const stream = files?.stream;
-  // One byte past the limit, so a cut copy can be told from one that fit.
-  const copy = stream?.limit === undefined ? "cat" : `head -c ${String(stream.limit + 1)}`;
+  // One byte past the limit and the mark, so a cut copy can be told from one that fit.
+  const room =
+    stream?.limit === undefined ? undefined : stream.limit + markSequence(mark).length + 1;
+  const copy = room === undefined ? "cat" : `head -c ${String(room)}`;
   return [
     [
       "respawn-pane",
@@ -304,14 +335,9 @@ function startList(
         `${name}=${value}`,
       ]),
       "--",
-      ...wrapped(argv, spawn, input),
+      ...wrapped(argv, spawn, mark, input),
     ],
-    ...(files === undefined
-      ? []
-      : [["set-option", "-p", "-t", paneId, "@libtmux-files", files.directory]]),
-    ...(lease === undefined
-      ? []
-      : leaseTimer(paneId, owned, spawn.keep === true, files !== undefined, 0, lease.ms / 1000)),
+    ...armed,
     ...(stream === undefined
       ? []
       : [
@@ -417,27 +443,37 @@ export async function spawnProgram(
         await writeFile(input, spawn.input, { mode: 0o600 });
       }
     }
+    const orphanAfterMs =
+      spawn.orphanAfterMs === undefined ? DEFAULT_ORPHAN_MS : spawn.orphanAfterMs;
+    const lease: Lease | undefined =
+      orphanAfterMs === null
+        ? undefined
+        : { ms: orphanAfterMs, renewing: false, timer: undefined, token: 0 };
+    const keep = spawn.keep === true;
+    const arm = (target: string, armed: Owned): string[][] =>
+      arming(target, armed, keep, files, lease);
     let sessionName: string;
+    // Beside a pane, the creating list can name the new pane only as `$N:=name`,
+    // and tmux reads `$N` as a variable when the timer's commands are parsed.
+    let armed: string[][] = [];
     if (spawn.from === undefined) {
       sessionName = `libtmux-program-${randomUUID().slice(0, 12)}`;
       owned = { kind: "session", target: `=${sessionName}` };
-      paneId = await createSession(runtime, sessionName, spawn);
+      paneId = await createSession(runtime, sessionName, spawn, arm);
     } else {
       ({ owned, paneId, sessionName } = await createBeside(
         runtime,
         spawn.from,
         placement === "split" ? "split" : "window",
       ));
+      armed = arm(paneId, owned);
     }
-    const lease: Lease | undefined =
-      spawn.orphanAfterMs === undefined
-        ? undefined
-        : { ms: spawn.orphanAfterMs, renewing: false, timer: undefined, token: 0 };
     let failure: unknown;
+    const mark = `libtmux-ran-${randomUUID()}`;
     const started = `libtmux-program-started-${randomUUID()}`;
     const exited = runCommands(
       runtime,
-      startList(paneId, owned, argv, spawn, files, input, lease, started),
+      startList(paneId, argv, spawn, files, mark, input, armed, started),
       {
         signal: watcher.signal,
         timeoutMs: null,
@@ -462,9 +498,10 @@ export async function spawnProgram(
       exit: undefined,
       exited,
       files,
-      keep: spawn.keep === true,
+      keep,
       killing: undefined,
       lease,
+      mark,
       owned,
       paneId,
       runtime,
@@ -494,13 +531,7 @@ export async function runProgram(
 ): Promise<ProgramResult> {
   requireCount("timeoutMs", options.timeoutMs, MAX_TIMER_MS);
   if (isAborted(options.signal)) throw cancelled(options.signal);
-  const program = await spawnProgram(
-    server,
-    runtime,
-    argv,
-    { ...options, orphanAfterMs: options.orphanAfterMs ?? RUN_ORPHAN_MS },
-    options.signal,
-  );
+  const program = await spawnProgram(server, runtime, argv, options, options.signal);
   let failed = true;
   try {
     let exit: ProgramExit = { exitCode: null, signalCode: null };
