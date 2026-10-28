@@ -66,11 +66,17 @@ testProgram(
           await call({ arguments: { argv: ["echo", "$HOME", "#{pane_id}"] }, name: "run_program" }),
         );
         expect(literal.output).toBe("$HOME #{pane_id}");
-        // A leading NAME=VALUE is a program name here, which env would have run as an assignment.
-        const assignment = structured<Ran>(
-          await call({ arguments: { argv: ["FOO=bar"] }, name: "run_program" }),
+        // A leading NAME=VALUE is a program name here, which env would have run as an
+        // assignment; none is found, so the call fails and names why.
+        const assignment = await call({ arguments: { argv: ["FOO=bar"] }, name: "run_program" });
+        expect(assignment.isError).toBe(true);
+        expect(JSON.stringify(assignment.content)).toContain("FOO=bar was not found");
+        expect(assignment.structuredContent).toBeUndefined();
+        // A program's own 127 is its exit status.
+        const own = structured<Ran>(
+          await call({ arguments: { argv: ["sh", "-c", "exit 127"] }, name: "run_program" }),
         );
-        expect(assignment.exitStatus).toBe(127);
+        expect(own).toMatchObject({ exitStatus: 127, outcome: "completed" });
         // stderr shares the terminal unless kept apart.
         const talking = ["sh", "-c", "echo data; echo noise >&2"];
         const merged = structured<Ran>(

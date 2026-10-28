@@ -145,6 +145,16 @@ testProgram(
         );
         expect(again.text).toContain("line5");
         await call({ arguments: { programId: started.programId }, name: "stop_program" });
+        // A program that never ran starts, then reads as not_started with the shell's status.
+        const missing = structured<Started>(
+          await call({ arguments: { argv: ["ltx-no-such-program"] }, name: "start_program" }),
+        );
+        expect((await readAll(call, missing.programId, 5000)).at(-1)).toMatchObject({
+          ended: true,
+          exitStatus: 127,
+          outcome: "not_started",
+        });
+        await call({ arguments: { programId: missing.programId }, name: "stop_program" });
         expect(await programSessions(call)).toEqual([]);
       });
     });

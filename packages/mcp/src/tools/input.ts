@@ -11,7 +11,13 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ServerNotLocalError, TmuxTransportError, VersionTooLowError, type Pane } from "libtmux";
+import {
+  ProgramStartError,
+  ServerNotLocalError,
+  TmuxTransportError,
+  VersionTooLowError,
+  type Pane,
+} from "libtmux";
 import { z } from "zod";
 
 import {
@@ -670,8 +676,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         "holds no command line or echo. Check outcome and outputComplete before trusting " +
         "output. The pane is removed before this returns unless keep is set. A program " +
         "still running at the timeout, capped by the server's wait ceiling, is ended: run " +
-        "longer ones with start_program. Commands come from the tmux server's PATH; exit 127 " +
-        "means not found. stdin is input when given, else the terminal. PAGER and GIT_PAGER " +
+        "longer ones with start_program. Commands come from the tmux server's PATH, and one " +
+        "not found or not executable fails the call before anything runs. stdin is input " +
+        "when given, else the terminal. PAGER and GIT_PAGER " +
         'are cat. Use ["sh", "-c", ...] for pipes, and run_shell_command for shell builtins ' +
         "such as cd. Requires tmux 3.8 or newer.",
       inputSchema: {
@@ -689,7 +696,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             "With fromPaneId, first read the variables that pane's idle shell exported, by " +
               "typing one env command into it, and run the program with them: true for " +
               'all, or a list of names, such as ["PATH", "VIRTUAL_ENV"], for only those. ' +
-              "The shell must be a POSIX one at its prompt, as run_shell_command requires.",
+              "The shell must be a POSIX one at its prompt, as run_shell_command requires. " +
+              "argv[0] is then found on the shell's PATH, and one missing exits 127.",
           ),
         input: z
           .string()
@@ -900,6 +908,16 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           return fail({
             hint: "On this server, run the command with run_shell_command in an existing shell pane.",
             reason: error.message,
+          });
+        }
+        if (error instanceof ProgramStartError) {
+          return fail({
+            hint:
+              error.reason === "start-directory"
+                ? "Pass a startDirectory that exists on the tmux server's machine."
+                : "Name a program on the tmux server's PATH or an executable file's path; " +
+                  "shell builtins such as cd need run_shell_command.",
+            reason: `${error.message}, so nothing ran (exit status ${String(error.exitCode)}).`,
           });
         }
         if (error instanceof ServerNotLocalError) {

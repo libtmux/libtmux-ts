@@ -486,7 +486,9 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
   `stderr`, so `output` is stdout alone; stderr is then no terminal. It needs
   the tmux server on this machine, as `input` does.
 - The program finds commands on the tmux server's `PATH` and gets `PAGER=cat`
-  and `GIT_PAGER=cat`.
+  and `GIT_PAGER=cat`. One not found or not executable, or a `startDirectory`
+  it cannot enter, fails the call before anything runs, with the reason; a
+  program's own exit 127 is its `exitStatus`.
 - `timeoutMs` defaults to 30 seconds and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`.
   Unlike `run_shell_command`'s, it ends the program: one still running gets
   SIGTERM, then SIGKILL, and is reported `timed_out`.
@@ -552,7 +554,8 @@ try {
 - The text is the byte stream with escape sequences removed, as
   `capture_since` gives it. `ended` turns true once the program ended and
   every byte was read, and `outcome` says how: `completed` with `exitStatus`
-  or `signal`, `expired` at its lifetime, `stopped` by `stop_program`, or
+  or `signal`, `not_started` when it never ran, with the shell's 127 or 126,
+  `expired` at its lifetime, `stopped` by `stop_program`, or
   `gone`. As in `run_program`, a status above 128
   may be a signal's, and `signal` is set only when the signal ended the
   program's `sh` too.

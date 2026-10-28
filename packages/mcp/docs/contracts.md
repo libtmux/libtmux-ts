@@ -284,8 +284,9 @@ writes; it is never typed. `keep` leaves the dead pane for a person and hands
 it to them: nothing removes it later.
 
 `startDirectory` is taken literally: the program's own `sh` enters it, so no `#`
-is expanded, and one it cannot enter ends the run with exit status 126 before
-the program starts. The tool has no environment parameter:
+is expanded. One it cannot enter, or an `argv[0]` not found or not executable,
+fails the call with the reason before the program starts; `read_program`
+reports the same as `not_started`, with the shell's 127 or 126. The tool has no environment parameter:
 variables go in `argv` through `env`, where whatever inspects `argv` sees them,
 `ps` and the pane's start command included, so a secret does not belong there.
 It sets `PAGER` and `GIT_PAGER` to `cat` itself, because a pager waits for keys
@@ -368,11 +369,11 @@ closing pane fires to arrive. It needs tmux 3.8 or newer.
 
 ### How each tool reports an end
 
-| Tool            | `outcome`                                            | `exitStatus`                                            | `signal`                                         |
-| --------------- | ---------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------ |
-| `run_program`   | `completed`, `timed_out`                             | As `$?` reports it, 128 plus a signal's number too      | Set when the signal ended the program's `sh` too |
-| `read_program`  | `running`, `completed`, `expired`, `stopped`, `gone` | As in `run_program`, once `completed`                   | As in `run_program`                              |
-| `wait_for_exit` | `completed`, `timed_out`, `gone`, `cancelled`        | tmux's reading of the pane's process, null for a signal | The signal that ended the pane's process         |
+| Tool            | `outcome`                                                           | `exitStatus`                                            | `signal`                                         |
+| --------------- | ------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------ |
+| `run_program`   | `completed`, `timed_out`                                            | As `$?` reports it, 128 plus a signal's number too      | Set when the signal ended the program's `sh` too |
+| `read_program`  | `running`, `completed`, `not_started`, `expired`, `stopped`, `gone` | As in `run_program`, once `completed`                   | As in `run_program`                              |
+| `wait_for_exit` | `completed`, `timed_out`, `gone`, `cancelled`                       | tmux's reading of the pane's process, null for a signal | The signal that ended the pane's process         |
 
 A cancelled `run_program` or `read_program` request ends with the request;
 `wait_for_exit` answers `cancelled`. `run_program` and `read_program` wrap the

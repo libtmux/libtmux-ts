@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  ProgramStartError,
   ServerNotLocalError,
   StreamLimitError,
   VersionTooLowError,
@@ -46,6 +47,8 @@ interface Entry {
   /** Whether the copy has ended, so `chunks` and `missing` are final. */
   streamed: boolean;
   exit: ProgramExit | undefined;
+  /** Why the program never ran, which its copy ended with. */
+  startError: ProgramStartError | undefined;
   endedBy: EndedBy | undefined;
   /** When it ended, which orders the ended programs kept readable. */
   endedAt: number;
@@ -98,7 +101,9 @@ async function pump(entry: Entry): Promise<void> {
       wake(entry);
     }
   } catch (error) {
-    if (error instanceof StreamLimitError) entry.missing = "cut";
+    // A program that never ran ends its copy with the reason, after the shell's complaint.
+    if (error instanceof ProgramStartError) entry.startError = error;
+    else if (error instanceof StreamLimitError) entry.missing = "cut";
     // A stop or the lifetime ends the copy with the program, so its last output may be unread.
     else if (entry.endedBy !== undefined) entry.missing = "stopped";
     // tmux never read the end, or the pane was removed from outside before it was.
@@ -109,9 +114,10 @@ async function pump(entry: Entry): Promise<void> {
   try {
     entry.exit = await entry.program.wait();
     entry.endedBy ??= "exited";
-  } catch {
-    // Killed by this server, or its pane removed from outside: no status to report.
-    entry.endedBy ??= "gone";
+  } catch (error) {
+    // Killed by this server, or its pane removed from outside: no status to report. One
+    // that never ran exited, with the reason its copy ended with.
+    entry.endedBy ??= error instanceof ProgramStartError ? "exited" : "gone";
   }
   entry.endedAt ||= performance.now();
   clearTimeout(entry.timer);
@@ -302,6 +308,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         exit: undefined,
         program,
         size: 0,
+        startError: undefined,
         timer: undefined,
         wakers: new Set(),
       };
@@ -356,19 +363,22 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .int()
           .nullable()
           .describe(
-            "The status as $? reports it once it completed on its own, otherwise null; " +
-              "above 128 it is either a signal's 128 plus its number or the program's own exit.",
+            "The status as $? reports it once it completed on its own, or 127 or 126 when " +
+              "not_started; otherwise null. Above 128 it is either a signal's 128 plus its " +
+              "number or the program's own exit.",
           ),
         lostEnd: z
           .boolean()
           .describe("True when tmux closed the pane before reading the end of the output."),
         outcome: z
-          .enum(["running", "completed", "expired", "stopped", "gone"])
+          .enum(["running", "completed", "not_started", "expired", "stopped", "gone"])
           .describe(
             "running: call again with cursor. completed: it ended on its own, as exitStatus " +
-              "or signal says. expired: its lifetime ended it; start it again with a longer " +
-              "lifetimeMs. stopped: stop_program ended it while this read waited. gone: its " +
-              "pane was removed from outside, with no status.",
+              "or signal says. not_started: it never ran, because argv[0] was not found or " +
+              "is not executable, or startDirectory could not be entered; text says which. " +
+              "expired: its lifetime ended it; start it again with a longer lifetimeMs. " +
+              "stopped: stop_program ended it while this read waited. gone: its pane was " +
+              "removed from outside, with no status.",
           ),
         outputComplete: z
           .boolean()
@@ -419,11 +429,16 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       // How it ended decides first: a stop's SIGTERM can also leave an exit status behind.
       const stopped = entry.endedBy === "stopped" || entry.endedBy === "lifetime";
       const exit = finished && !stopped ? entry.exit : undefined;
-      let outcome: "completed" | "expired" | "gone" | "running" | "stopped" = "running";
+      const unstarted = finished ? entry.startError : undefined;
+      let outcome: "completed" | "expired" | "gone" | "not_started" | "running" | "stopped" =
+        "running";
       let headline = `running; cursor ${String(end)}`;
       if (finished && stopped) {
         outcome = entry.endedBy === "lifetime" ? "expired" : "stopped";
         headline = entry.endedBy === "lifetime" ? "ended at its lifetime" : "stopped";
+      } else if (unstarted !== undefined) {
+        outcome = "not_started";
+        headline = `never ran: ${unstarted.message}`;
       } else if (exit !== undefined) {
         outcome = "completed";
         headline =
@@ -443,7 +458,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           cursor: end,
           effectiveTimeoutMs,
           ended: finished,
-          exitStatus: exit?.exitCode ?? null,
+          exitStatus: exit?.exitCode ?? unstarted?.exitCode ?? null,
           lostEnd: entry.missing === "lost",
           outcome,
           outputComplete: finished && entry.missing === undefined,
