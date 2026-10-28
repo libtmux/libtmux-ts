@@ -940,7 +940,10 @@ shell.name; // "shell"
 ## Run a program and read its output
 
 Use `run` when the result is all you need, and `spawn` when the program needs
-keys, a live stream of its output, or a lifetime of your choosing.
+keys, a live stream of its output, or a lifetime of your choosing. The recipes
+after the first are literal excerpts of
+[`examples/program/program.ts`](../../examples/program/program.ts), which the
+integration suite runs against a real tmux server.
 
 ### [`Server.run`][ref-server-run]: one call, only the output
 
@@ -970,9 +973,6 @@ result.output.startsWith("git version"); // true
 - Needs tmux 3.8 or newer. [Details](docs/contracts.md#program-runs).
 
 ### [`Server.spawn`][ref-server-spawn]: drive it, then wait
-
-This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
-which the integration suite runs against a real tmux server:
 
 <!-- runs: examples/program/program.ts -->
 
@@ -1004,9 +1004,6 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 
 ### [`input`][ref-spawnoptions]: give it a stdin
 
-This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
-which the integration suite runs against a real tmux server:
-
 <!-- runs: examples/program/program.ts -->
 
 ```ts
@@ -1021,9 +1018,6 @@ const result = await server.run(["sort"], { input });
 
 ### [`separateStderr`][ref-runoptions]: keep stderr apart
 
-This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
-which the integration suite runs against a real tmux server:
-
 <!-- runs: examples/program/program.ts -->
 
 ```ts
@@ -1036,9 +1030,6 @@ const result = await server.run(argv, { separateStderr: true });
 - Like `input`, it needs the tmux server on this machine.
 
 ### [`signal`][ref-runoptions]: cancel a run
-
-This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
-which the integration suite runs against a real tmux server:
 
 <!-- runs: examples/program/program.ts -->
 
@@ -1060,9 +1051,6 @@ const outcome = await server.run(argv, { signal }).catch((error: unknown) => {
 
 ### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
 
-This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
-which the integration suite runs against a real tmux server:
-
 <!-- runs: examples/program/program.ts -->
 
 ```ts
@@ -1078,9 +1066,6 @@ const result = await server.run(argv, { from: pane, keep: true, placement: "spli
   environment; the pane's own shell is not involved.
 
 ### [`orphanAfterMs`][ref-spawnoptions]: end it with this process
-
-This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
-which the integration suite runs against a real tmux server:
 
 <!-- runs: examples/program/program.ts -->
 
@@ -1100,6 +1085,10 @@ const service = await server.spawn(argv, {
   process.
 
 ## Type into a pane and wait
+
+The last three recipes are literal excerpts of
+[`examples/agent/agent.ts`](../../examples/agent/agent.ts), which the
+integration suite runs against a real tmux server.
 
 ### [`Pane.sendKeys`][ref-pane-sendkeys]: type, then read what it said
 
@@ -1150,9 +1139,6 @@ The loop an agent runs. `connect()` pairs commands through the server engine
 with notifications from a persistent observer. Subscribe before sending so a
 marker printed in between is still seen.
 
-This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
-which the integration suite runs against a real tmux server:
-
 <!-- runs: examples/agent/agent.ts -->
 
 ```ts
@@ -1179,9 +1165,6 @@ const event = await printed;
 A shell whose prompt writes an OSC 133 `D` mark with the last status tells tmux
 when a command ends and how, with no marker printed for the wait to read back.
 
-This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
-which the integration suite runs against a real tmux server:
-
 <!-- runs: examples/agent/agent.ts -->
 
 ```ts
@@ -1199,9 +1182,6 @@ const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
 - Requires tmux 3.8 or newer. [Details](docs/contracts.md#pane-waits).
 
 ### [`Pane.waitForExit`][ref-pane-waitforexit]: wait for a pane you did not start
-
-This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
-which the integration suite runs against a real tmux server:
 
 <!-- runs: examples/agent/agent.ts -->
 
