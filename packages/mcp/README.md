@@ -548,17 +548,20 @@ try {
 - The text is the byte stream with escape sequences removed, as
   `capture_since` gives it. `ended` turns true once the program ended and
   every byte was read, and `outcome` says how: `completed` with `exitStatus`
-  or `signal`, `stopped`, or `gone`.
+  or `signal`, `stopped`, or `gone`. As in `run_program`, a status above 128
+  may be a signal's, and `signal` is set only when the signal ended the
+  program's `sh` too.
 - `outputCut` turns true once the copy reaches its limit, while the program
   runs on, and `lostEnd` when tmux closed the pane before reading the end.
 - A program's lifetime is `lifetimeMs` on `start_program`, capped by the server
   and reported as `effectiveLifetimeMs`. When it runs out, this server ends the
-  program and removes its pane, regardless of other calls; should this server
-  die or restart, tmux does within 30 seconds, through a lease only a live
-  server renews.
+  program and removes its pane, even if no later call arrives; should this
+  server die or restart, tmux does within 30 seconds, through a lease only a
+  live server renews.
 - The number of programs running at once is capped, and a start past it is
   refused. Ended programs stay readable, the most recently ended kept, until
-  `stop_program` forgets one.
+  `stop_program` forgets one. With each copy capped too, the output this
+  server holds for programs is bounded.
 - The program's process group is what ends; a process that daemonizes out of
   it is not followed.
 

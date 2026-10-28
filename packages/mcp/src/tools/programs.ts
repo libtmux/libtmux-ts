@@ -179,7 +179,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         "that needs keys between reads; run_program is the one-call form. read_program " +
         "reads its output as it is written and reports its exit; send_keys reaches its " +
         "paneId; stop_program ends it. This server ends it and removes its pane when " +
-        "lifetimeMs runs out, regardless of other calls, and tmux does if this server dies. " +
+        "lifetimeMs runs out, even if no later call arrives, and tmux does if this server dies. " +
         "No shell parses argv, and PAGER and GIT_PAGER are cat. Requires tmux 3.8 or newer.",
       inputSchema: {
         argv: programArgv,
@@ -347,7 +347,10 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .number()
           .int()
           .nullable()
-          .describe("The exit status once it completed on its own; otherwise null."),
+          .describe(
+            "The status as $? reports it once it completed on its own, otherwise null; " +
+              "above 128 it is either a signal's 128 plus its number or the program's own exit.",
+          ),
         lostEnd: z
           .boolean()
           .describe("True when tmux closed the pane before reading the end of the output."),
@@ -370,7 +373,10 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         signal: z
           .string()
           .nullable()
-          .describe('The signal that ended it, such as "SIGTERM"; otherwise null.'),
+          .describe(
+            'The signal that ended the program and its sh, such as "SIGKILL"; otherwise null. ' +
+              "A program a signal ended alone reports 128 plus its number in exitStatus.",
+          ),
         text: z.string().describe("What it printed after cursor."),
       },
       title: "Read a started program",
