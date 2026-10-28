@@ -173,6 +173,7 @@ server.
   - [`Server.run`: one call, only the output](#serverrun-one-call-only-the-output)
   - [`Server.spawn`: drive it, then wait](#serverspawn-drive-it-then-wait)
   - [`input`: give it a stdin](#input-give-it-a-stdin)
+  - [`separateStderr`: keep stderr apart](#separatestderr-keep-stderr-apart)
   - [`signal`: cancel a run](#signal-cancel-a-run)
   - [`placement` and `keep`: run it where a person sees it](#placement-and-keep-run-it-where-a-person-sees-it)
   - [`orphanAfterMs`: end it with this process](#orphanafterms-end-it-with-this-process)
@@ -1009,7 +1010,20 @@ const result = await server.run(["sort"], { input });
   so it passes through no shell quoting and no tmux command.
 - The terminal stays the program's output, so `output` reads as before.
 - It needs the tmux server on this machine; one elsewhere is refused with
-  `ServerNotLocalError` before anything starts.
+  `ServerNotLocalError` before the program starts.
+
+### [`separateStderr`][ref-runoptions]: keep stderr apart
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const result = await server.run(argv, { separateStderr: true });
+```
+
+- stderr goes to a private file rather than the terminal and comes back as
+  `stderr`, as written, so `output` holds stdout alone.
+- stderr is then no terminal, which a program that colors its errors notices.
+- Like `input`, it needs the tmux server on this machine.
 
 ### [`signal`][ref-runoptions]: cancel a run
 

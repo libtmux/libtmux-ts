@@ -28,14 +28,17 @@ the library refuses.
 session of its own, gone when the call returns. Its `output` is the terminal's
 rendering, so colors are applied rather than returned and a progress bar that
 redrew itself shows only its last frame. `timedOut` is part of the result, with
-the output printed so far. `sortLines` gives the program a stdin with `input`.
+the output printed so far. `sortLines` gives the program a stdin with `input`,
+and `readJson` keeps its stderr apart with `separateStderr`, so `output` is
+stdout alone. `runUnlessCancelled` ends a run when a signal fires, and reports
+from the cancel's `delivery` whether the program had started.
 
 `runBeside` runs a program in a split beside a pane, where a person sees it,
 and leaves the pane showing the output with `keep`.
 
-`server.spawn` keeps the program running and hands it back. Its pane is a real
-terminal, which is what lets `prependLine` drive vim with keys; keys sent at
-once reach the program, because `spawn` returns only after it has started.
+`server.spawn` keeps the program running and hands it back. `prependLine`
+drives vim with keys; keys sent at once reach the program, because `spawn`
+returns only after it has started.
 
 `stream: true` copies everything the program writes, and `stream()` yields it as
 UTF-8 text until the program exits. It is the terminal's text, `\r\n` line ends

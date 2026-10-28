@@ -4,9 +4,8 @@ import type { DeliveryStatus, Pane, Program, ProgramResult, Server } from "libtm
 /**
  * Run a program and keep only what it printed.
  *
- * `argv` reaches the program unexpanded. `timedOut` is a
- * result rather than an error: the program is ended and what it printed so far
- * still comes back.
+ * `argv` reaches the program unexpanded. `timedOut` is a result rather than an
+ * error: the program is ended and what it printed so far still comes back.
  */
 export async function listFiles(server: Server, directory: string): Promise<readonly string[]> {
   const result = await server.run(["ls", "-1A", directory], { timeoutMs: 10_000 });
@@ -19,8 +18,7 @@ export async function listFiles(server: Server, directory: string): Promise<read
  * Drive a full-screen program with keys, then wait for it to quit.
  *
  * Keys sent at once reach vim: `spawn` returns only after the program has
- * started. `await using`
- * removes its pane however the function leaves.
+ * started. `await using` removes its pane however the function leaves.
  */
 export async function prependLine(
   server: Server,
@@ -62,6 +60,18 @@ export async function sortLines(server: Server, input: string): Promise<readonly
   const result = await server.run(["sort"], { input });
   if (!result.success) throw new Error(`sort exited ${String(result.exitCode)}: ${result.output}`);
   return result.output === "" ? [] : result.output.split("\n");
+}
+
+/**
+ * Run a program whose stdout is data, and keep what it says on stderr apart.
+ *
+ * stderr goes to a private file rather than the terminal, so `output` holds
+ * stdout alone, ready to parse.
+ */
+export async function readJson(server: Server, argv: readonly string[]): Promise<unknown> {
+  const result = await server.run(argv, { separateStderr: true });
+  if (!result.success) throw new Error(`exit ${String(result.exitCode)}: ${result.stderr ?? ""}`);
+  return JSON.parse(result.output);
 }
 
 /**

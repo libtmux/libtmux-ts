@@ -11,6 +11,7 @@ import {
   followOutput,
   listFiles,
   prependLine,
+  readJson,
   runBeside,
   runUnlessCancelled,
   sortLines,
@@ -116,6 +117,22 @@ describe("program", () => {
       const beside = (await server.panes()).toArray().find((each) => each.id !== pane.id);
       expect((await beside?.capture())?.filter((line) => line !== "")).toEqual(["built"]);
       expect((await server.cmd("display-message", ["-p", "#{pane_id}"]))[0]).toBe(pane.id);
+    });
+  }, 60_000);
+
+  test("parses stdout while stderr stays apart", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      if (!(await supported(server))) return;
+      const talking = ["sh", "-c", `echo warming up >&2; echo '{"ok":true}'`];
+      expect(await readJson(server, talking)).toEqual({ ok: true });
+      await expect(readJson(server, ["sh", "-c", "echo no config >&2; exit 2"])).rejects.toThrow(
+        "exit 2: no config",
+      );
     });
   }, 60_000);
 
