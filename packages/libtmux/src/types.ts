@@ -615,13 +615,13 @@ export interface RunOptions extends Omit<SpawnOptions, "maxStreamBytes" | "strea
 
 /** Options for {@link Program.stream}. */
 export interface ProgramStreamOptions {
-  /** Ends the stream, not the program. */
+  /** Ends the stream; the program runs on. */
   readonly signal?: AbortLike;
 }
 
 /** Options for {@link Program.wait}. */
 export interface ProgramWaitOptions {
-  /** Stops the wait, not the program. */
+  /** Stops the wait; the program runs on. */
   readonly signal?: AbortLike;
   /** Maximum time to wait. A positive timer-safe integer; no limit by default. */
   readonly timeoutMs?: number;
@@ -631,8 +631,8 @@ export interface ProgramWaitOptions {
 export interface CommandWaitOptions extends ProgramWaitOptions {
   /**
    * A command line to type into the shell, with Enter, once the wait is
-   * listening, so its end cannot be missed. Without it, the wait is for the
-   * next command to finish, whoever typed it.
+   * listening, so even a command that ends at once is seen. Without it, the
+   * wait is for the next command to finish, whoever typed it.
    */
   readonly send?: string;
 }
