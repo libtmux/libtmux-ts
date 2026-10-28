@@ -911,7 +911,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         }
         throw error;
       } finally {
-        if (directory !== undefined) await rm(directory, { force: true, recursive: true });
+        if (directory !== undefined) {
+          await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+        }
       }
       const bounded = boundText(
         result.output === "" ? [] : result.output.split("\n"),
