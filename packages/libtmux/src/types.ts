@@ -565,7 +565,8 @@ export interface SpawnOptions {
   /**
    * Lines of scrollback kept for {@link Program.output}, for `"session"`, up to
    * tmux's 2147483647. Defaults to 100000; older lines are dropped, and
-   * {@link ProgramResult.lostStart} says so.
+   * {@link ProgramResult.lostStart} says so. It bounds the output too: at most
+   * this many rows plus the screen's, each `width` columns, the newest kept.
    */
   readonly historyLimit?: number;
   /**

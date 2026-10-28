@@ -965,6 +965,10 @@ result.output.startsWith("git version"); // true
   control bytes are dropped and wrapped lines joined. `lostStart` says the
   start scrolled past `historyLimit`, and `lostEnd` that tmux closed the pane
   before reading the end; the exit status is exact either way.
+- `historyLimit` bounds `output`: at most that many rows of scrollback plus the
+  screen, each as wide as the pane, the newest kept. The default, 100000 rows
+  of 80 columns, holds at most about 8 MB of ASCII; pass a lower one to bound a
+  run's output.
 - `timeoutMs` ends the program and reports `timedOut` with what it printed so
   far; `signal` ends it and rejects.
 - `{ from: pane }` runs it in a background window of that pane's session, in
