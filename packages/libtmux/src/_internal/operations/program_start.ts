@@ -333,7 +333,13 @@ function startList(
   // One byte past the limit and the mark, so a cut copy can be told from one that fit.
   const room =
     stream?.limit === undefined ? undefined : stream.limit + markSequence(mark).length + 1;
-  const copy = room === undefined ? "cat" : `head -c ${String(room)}`;
+  // GNU head holds its writes to a file until it exits; stdbuf, where there is one, lets
+  // them through as they come.
+  const copy =
+    room === undefined
+      ? "cat"
+      : `if command -v stdbuf >/dev/null 2>&1; then stdbuf -o0 head -c ${String(room)}; ` +
+        `else head -c ${String(room)}; fi`;
   return [
     [
       "respawn-pane",
