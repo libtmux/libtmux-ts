@@ -1,6 +1,6 @@
 /**
- * Programs that outlive one call. No later call owns cleanup: this server ends
- * each at its lifetime, and the library's lease has tmux do it should this die.
+ * Programs that outlive one call: this server ends each at its lifetime, and
+ * the library's lease has tmux do it should this server die.
  */
 
 import { randomUUID } from "node:crypto";
@@ -231,7 +231,10 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       },
       title: "Start a program",
     },
-    async ({ argv, fromPaneId, height, lifetimeMs: asked, placement, startDirectory, width }) => {
+    async (
+      { argv, fromPaneId, height, lifetimeMs: asked, placement, startDirectory, width },
+      extra,
+    ) => {
       if (closing) return fail({ reason: "This server is closing; no program was started." });
       if (live() >= MAX_LIVE_PROGRAMS) {
         return fail({
@@ -254,6 +257,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           maxStreamBytes: MAX_COPY_BYTES,
           orphanAfterMs: ORPHAN_AFTER_MS,
           ...(placement === undefined ? {} : { placement }),
+          // A cancelled request stops setup; once started, the lifetime ends the program.
+          signal: extra.signal,
           ...(startDirectory === undefined ? {} : { startDirectory }),
           stream: true,
           ...(width === undefined ? {} : { width }),
@@ -385,7 +390,9 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       const entry = entries.get(programId);
       if (entry === undefined) {
         return fail({
-          hint: "start_program starts one; stop_program forgets its id, as does trimming old ones.",
+          hint:
+            "start_program starts one. stop_program forgets an id, and an ended program is " +
+            "forgotten once enough newer ones end; its last read reported how it ended.",
           reason: `No started program ${programId}.`,
         });
       }
