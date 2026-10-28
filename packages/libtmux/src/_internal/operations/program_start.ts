@@ -606,7 +606,8 @@ export async function runProgram(
   options: RunOptions = {},
 ): Promise<ProgramResult> {
   requireCount("timeoutMs", options.timeoutMs, MAX_TIMER_MS);
-  // Bun 1.3 stops an AbortSignal.timeout once its last listener goes, and setup removes its own.
+  // Bun before 1.4 stops an AbortSignal.timeout once its last listener goes, and setup removes
+  // its own: https://github.com/oven-sh/bun/pull/37666
   const hold = (): void => undefined;
   options.signal?.addEventListener("abort", hold);
   try {

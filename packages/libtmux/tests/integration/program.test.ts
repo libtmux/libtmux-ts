@@ -263,7 +263,8 @@ describe("program runs", () => {
     "an AbortSignal.timeout ends a run past setup",
     async () => {
       await withServer(async (server) => {
-        // Setup adds and removes its own listener first, which Bun 1.3 takes as the timer's end.
+        // Setup adds and removes its own listener first, which Bun before 1.4 takes as the
+        // timer's end: https://github.com/oven-sh/bun/pull/37666
         const started = performance.now();
         const error = await server
           .run(["sleep", "30"], { signal: AbortSignal.timeout(1500) })
