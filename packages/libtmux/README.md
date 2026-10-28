@@ -949,7 +949,7 @@ result.success; // true
 result.output.startsWith("git version"); // true
 ```
 
-- The program runs in a detached session of its own, removed before the call
+- By default the program runs in a detached session of its own, removed before the call
   returns, and tmux removes it should this process die first. Nothing is
   typed, so `output` holds no command line or echo, and
   `argv` reaches the program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
@@ -980,11 +980,14 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 
 - `spawn` returns a [`Program`][ref-program] once the program has started, so
   keys sent at once reach it. Its pane is a real terminal.
-- `await using` ends the program and removes its session however the scope
-  leaves. A `wait` that gives up leaves the program running.
+- `await using` ends the program and removes its pane however the scope
+  leaves. A `wait` that gives up throws `WaitTimeoutError` and leaves the
+  program running, where `run` ends it and reports `timedOut`.
 - With `{ stream: true }`, [`program.stream()`][ref-program-stream] yields what
   the program writes, as UTF-8 text, until it exits, the last write included.
-  `maxStreamBytes` caps the copy; the stream then throws after what it kept.
+  `maxStreamBytes` caps the copy; the stream then throws
+  [`StreamLimitError`][ref-streamlimiterror] after what it kept, and the
+  program runs on.
 
 ### [`input`][ref-spawnoptions]: give it a stdin
 
@@ -1024,14 +1027,15 @@ const result = await server.run(argv, { from: pane, keep: true, placement: "spli
 <!-- runs: examples/program/program.ts -->
 
 ```ts
-const worker = await server.spawn(argv, { orphanAfterMs: 10_000 });
+const service = await server.spawn(argv, { orphanAfterMs: 10_000, stream: true });
 ```
 
 - This process renews a lease on the program every third of `orphanAfterMs`.
   Should it exit or die without `kill()`, tmux ends the program and removes
   its pane within that time.
-- `run` always holds one, a minute long. A `spawn` without it outlives this
-  process, which is what a program meant to keep running wants.
+- Every `run` and `spawn` holds one, a minute long unless set.
+  `orphanAfterMs: null` takes none, for a program meant to outlive this
+  process.
 
 ## Type into a pane and wait
 
@@ -1110,9 +1114,8 @@ const event = await printed;
 
 ### [`Pane.waitForCommand`][ref-pane-waitforcommand]: a command's status from the shell's marks
 
-A shell that marks each command's end with OSC 133, as fish does and bash or zsh
-do from a prompt hook, tells tmux when a command ends and how. No marker is
-printed or read back.
+A shell whose prompt writes an OSC 133 `D` mark with the last status tells tmux
+when a command ends and how. No marker is printed or read back.
 
 <!-- runs: examples/agent/agent.ts -->
 
@@ -1137,7 +1140,7 @@ const { exitCode } = await pane.waitForExit({ timeoutMs: 30_000 });
 - It resolves when tmux reports the pane's program exiting, with the status a
   closing pane takes with it, or at once for a pane `remain-on-exit` kept.
 - A pane killed from outside fires no event, and the wait raises
-  `ObjectNotFoundError` in about a second.
+  `ObjectNotFoundError` within about two seconds.
 - Requires tmux 3.8 or newer.
 
 ## Watch tmux change
@@ -2165,6 +2168,7 @@ MIT
 [ref-tmuxserverrestartederror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxserverrestartederror/
 [ref-tmuxtransporterror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxtransporterror/
 [ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
+[ref-streamlimiterror]: https://libtmux.org/en/ts/latest/reference/errors-streamlimiterror/
 [ref-waittimeouterror]: https://libtmux.org/en/ts/latest/reference/errors-waittimeouterror/
 [ref-watchoptions]: https://libtmux.org/en/ts/latest/reference/types-watchoptions/
 [ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/

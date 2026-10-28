@@ -54,20 +54,6 @@ const blocks = perReadme.flatMap(({ blocks: found }) => found);
 if (blocks.length === 0) throw new Error("no ```ts blocks found");
 
 /**
- * One program per README, compiled where that README lives.
- *
- * Module resolution is the reason. A README documents the package it sits in,
- * so its imports are the ones a reader of that package has — and
- * `@modelcontextprotocol/sdk` is a dependency of `packages/mcp` alone. Compiled
- * from the workspace root, the MCP README could only typecheck on a machine
- * whose node_modules happened to have that package hoisted; on a clean install
- * it did not, which is what took CI red.
- *
- * Compiling each in place also keeps a gate this repository cares about: the
- * library's README cannot import something only a sibling depends on, because
- * from `packages/libtmux` it does not resolve.
- */
-/**
  * Names a README's excerpts may use besides the shared ones, for the README
  * whose examples take them as parameters. Kept per README because a client
  * type resolves only where its package is a dependency.
@@ -82,6 +68,20 @@ const PARAMETERS: Readonly<Record<string, readonly string[]>> = {
   ],
 };
 
+/**
+ * One program per README, compiled where that README lives.
+ *
+ * Module resolution is the reason. A README documents the package it sits in,
+ * so its imports are the ones a reader of that package has — and
+ * `@modelcontextprotocol/sdk` is a dependency of `packages/mcp` alone. Compiled
+ * from the workspace root, the MCP README could only typecheck on a machine
+ * whose node_modules happened to have that package hoisted; on a clean install
+ * it did not, which is what took CI red.
+ *
+ * Compiling each in place also keeps a gate this repository cares about: the
+ * library's README cannot import something only a sibling depends on, because
+ * from `packages/libtmux` it does not resolve.
+ */
 function programFor(found: readonly Block[], file: string): string {
   // Imports hoist: a block is wrapped in a function, and an import cannot be.
   // Merged by module rather than deduplicated by line, because two blocks may

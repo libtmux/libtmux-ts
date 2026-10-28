@@ -1349,10 +1349,10 @@ program's output holds no command line. The program gets a real terminal,
 which is what a full-screen program needs to be driven by keys; see
 `SpawnOptions` for what that implies for pagers and prompts.
 
-The [`Program`](#program) owns its pane, which is a detached session of its own
+The [`Program`](#program) owns its pane, in a detached session of its own
 unless `from` places it beside another pane: `await using` or
-[`Program.kill`](#programkill) ends the program and removes it. Without
-`orphanAfterMs`, a program left running outlives this process.
+[`Program.kill`](#programkill) ends the program and removes it, and tmux does once
+this process stops renewing its lease, unless `orphanAfterMs` is `null`.
 
 Requires tmux 3.8 or newer, and raises `VersionTooLowError`
 below it. Earlier releases have no exit event to wait on, and through
@@ -2691,7 +2691,7 @@ tmux reports the exit, with the status a closing pane takes with it.
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError` of
 kind `cancelled`. A pane killed from outside, which fires no event, raises
-`ObjectNotFoundError` in about a second.
+`ObjectNotFoundError` within about two seconds.
 
 Requires tmux 3.8 or newer.
 
@@ -2711,7 +2711,7 @@ Resolve with the exit status of the next command this pane's shell
 finishes.
 
 Needs a shell that marks each command's end with OSC 133 (`ESC ] 133 ; D ;
-status`), as fish and many prompt themes do; tmux turns the mark into a
+status`) from its prompt; tmux turns the mark into a
 `pane-command-finished` event. `send` types a command line once the wait
 is listening, so a command that ends at once is not missed. A shell
 without the marks never resolves this: give it a `timeoutMs`.
@@ -3098,9 +3098,9 @@ pane is a real terminal: drive a full-screen program with
 [`Pane.sendKeys`](#panesendkeys) and read its screen with [`Pane.capture`](#panecapture).
 
 It owns its pane. [`Program.kill`](#programkill), or leaving an `await using` scope,
-ends the program and removes the pane, unless spawned with `keep`; a
-program left running keeps both, also after this process exits, unless
-spawned with `orphanAfterMs`. A kill ends a stream in progress
+ends the program and removes the pane, unless spawned with `keep`. Should
+this process exit or die first, tmux ends the program through its lease,
+unless spawned with `orphanAfterMs: null`. A kill ends a stream in progress
 with `LibTmuxError`, and a pane removed from outside with
 `ObjectNotFoundError`. After `kill`, `output` raises
 `ObjectNotFoundError`, `stream` raises `LibTmuxError`, and

@@ -185,11 +185,11 @@ typed, so the output holds no command line or echo. In short:
 - A small `sh` runs it and lingers 50 ms, so tmux reads the last output first.
 - `kill()` sends SIGTERM, then SIGKILL, to the process group, and returns once
   tmux has reaped it or two seconds after the SIGKILL.
-- A run, and a spawn with `orphanAfterMs`, hold a lease that the caller renews.
-  Should the caller die, tmux ends the program and removes its pane.
-
-Each step below is the one that held when measured; the version table says
-where.
+- Every run and spawn holds a lease that the caller renews, unless
+  `orphanAfterMs` is `null`. Should the caller die, tmux ends the program and
+  removes its pane.
+- After the program, the `sh` writes a mark tmux reads only if it read
+  everything before it, so `truncated` reports a lost end.
 
 | tmux          | Program runs         | Why                                                                |
 | ------------- | -------------------- | ------------------------------------------------------------------ |
@@ -207,11 +207,20 @@ where.
   `sh` does not parse them and `argv[0]` is always a program name, never shell
   text or an assignment the way `env` would read `A=b`.
 - That `sh` runs the program in a subshell and lingers 50 ms after it, then
-  exits or dies the way it did. tmux removes a pane on its child's exit once
-  `FIONREAD` reads 0, which on Linux misses output still in the pty's flip
-  buffer, so a program that exits right after writing could lose the end of
-  its output under load. `pane_pid` is that `sh`, and
-  `pane_current_command` names it.
+  exits or dies the way it did. tmux removes a pane on its child's exit
+  ([`server_child_exited`](https://github.com/tmux/tmux/blob/3.8/server.c#L491-L511)) once `FIONREAD` reads 0
+  ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)), which on Linux misses
+  output still in the pty's flip buffer, so a program that exits right after
+  writing could lose the end of its output under load. `pane_pid` is that
+  `sh`, and `pane_current_command` names it.
+- Before the linger, the `sh` writes ST and then an OSC 7 path naming the run,
+  which tmux applies to `#{pane_path}` with no option gating it and renders as
+  nothing. tmux reads a pane's bytes in order, so a pane whose path is the run's
+  mark was read to the end; without the linger, the runs whose end was lost were
+  exactly the ones missing it (3, 2 and 1 of 900 on 3.8, 3.8a and master).
+  `truncated` and `stream()` report a missing mark. A SIGKILL to the process
+  group ends the `sh` before its mark, which says nothing about the output, so
+  it is not counted.
 - Its own signals are caught, not ignored, so the program keeps the default
   dispositions, and a status above 128 is re-raised as that signal, as a shell
   reports one.
@@ -240,7 +249,7 @@ where.
 
 - `kill()`, and the end of a run's timeout, send the program's process group
   SIGTERM and, two seconds later, SIGKILL, then return once tmux has reaped it, or two seconds after the SIGKILL.
-  Removing the session only closes the pty, which a program ignoring SIGHUP
+  Removing the pane only closes the pty, which a program ignoring SIGHUP
   outlives.
 - The signal goes through `run-shell` on the tmux server's own machine, where
   the pane's pid names that process. `kill -s NAME -- -PID` is the form every
@@ -249,13 +258,19 @@ where.
 
 ### When the caller dies
 
-- A run, and a spawn given `orphanAfterMs`, lease the program from tmux. The
-  start list sets the pane option `@libtmux-lease` to a token and queues
-  `run-shell -b -d`, a timer the tmux server keeps after its client is gone.
-  A run's lease is a minute long.
-- The caller renews the lease every third of its length: it moves the token on
-  and queues a new timer. A renewal still in flight is not overtaken, so the
-  tokens reach tmux in order.
+- Every run and spawn leases its program from tmux, a minute long unless
+  `orphanAfterMs` says otherwise. The pane option `@libtmux-lease` holds a
+  token, and `run-shell -b -d` queues a timer the tmux server keeps after its
+  client is gone.
+- For a session of its own, the lease is armed in the list that creates the
+  pane, so a caller that dies before the program starts leaves nothing. Beside
+  a pane, that list can name the new pane only as `$N:=name`, which tmux reads
+  as a variable when the timer's commands are parsed, so the lease arrives with
+  the program instead.
+- The caller renews the lease every third of its length: it queues a new timer,
+  then moves the token on, so a renewal that stops between the two leaves the
+  last token's timer standing. A renewal still in flight is not overtaken, so
+  the tokens reach tmux in order. A renewal stops only once the pane is gone.
 - A timer whose token still stands when it fires SIGKILLs the program's process
   group if the pane is alive and removes its pane unless `keep` is set. A
   renewed timer does nothing.
@@ -268,11 +283,11 @@ where.
   temporary directory can hold any character.
 - The renewal timer is unreferenced: a process with nothing else to do exits,
   and tmux then ends what it left running within the lease.
-- A spawn without `orphanAfterMs` outlives its caller, and keeps its pane, its
-  files and its waiting tmux client until something removes them.
-- The lease arrives with the program. A caller killed in the moment between
-  creating the pane and starting the program leaves the dead placeholder's
-  pane, which nothing removes.
+- `orphanAfterMs: null` takes no lease: the program outlives its caller, and
+  keeps its pane, its files and its waiting tmux client until something
+  removes them.
+- A caller killed between creating a window or split and starting the program
+  leaves the dead placeholder; a split one closes at the next key pressed in it.
 - Each renewal leaves a timer in the tmux server until it fires. A timer that
   fires on a pane already removed fails to find it and does nothing; tmux never
   reuses a pane id within a server's run.
@@ -321,11 +336,14 @@ where.
   so it cannot say.
 - `stream()` reads a file that `pipe-pane -O` writes in the program's own 0700
   temporary directory. tmux keeps a dying pane until its pipe has drained
-  (`window_pane_destroy_ready`), so the last write arrives.
-- A control client cannot promise that: `control_write_pending` discards output
-  still queued once the pane's fd closes, and a raw `tmux -C` client often
-  missed the last write, on every release measured from 3.3a to tmux master, when the
-  program exited right after writing it.
+  ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)), so the last write
+  arrives, and the wrapper's mark is taken out of what it yields.
+- A control client cannot promise that:
+  [`control_write_pending`](https://github.com/tmux/tmux/blob/3.8/control.c#L861) discards output still queued once
+  the pane's fd closes. A raw `tmux -C` client got the last write of a program
+  that exited right after writing it in 66 to 76 of 100 runs to a dead
+  placeholder, and 35 to 49 of 100 to a live pane, on 3.3a, 3.8, 3.8a and
+  master.
 - The copy grows with the output until the program is killed or disposed.
   `maxStreamBytes` caps it: the pipe runs `head -c` for one byte past the cap,
   so a cut copy is told from one that fit, and `stream()` yields the cap's worth
@@ -353,7 +371,7 @@ it, through tmux 3.8's events.
   event inside the list, so once the channel is signalled the waiter is
   registered, and only then is the pane read or the command sent.
 - An exit is two events, fired one or the other: `pane-exited` for a pane that
-  closes (`server-fn.c`, `server_fire_pane_exit`) and `pane-died` for one that
+  closes ([`server_fire_pane_exit`](https://github.com/tmux/tmux/blob/3.8/server-fn.c#L35-L56)) and `pane-died` for one that
   `remain-on-exit` keeps. A wait listens for both, and reads a pane already
   dead from `pane_dead_status` and `pane_dead_signal`.
 - A pane that closes takes its status with it; the event's payload carries it,
@@ -365,7 +383,7 @@ it, through tmux 3.8's events.
   raises `ObjectNotFoundError` once it is gone.
 - A command's end is `pane-command-finished`, which tmux fires on an OSC 133 `D`
   mark with the status in `command_status`; a mark without a status reports 0
-  (`input.c`, `input_osc_133_exit_status`). A shell's first prompt marks an end
+  ([`input_osc_133_exit_status`](https://github.com/tmux/tmux/blob/3.8/input.c#L3197-L3222)). A shell's first prompt marks an end
   too, before any command ran.
 - Events are not replayed to a waiter that arrives late, which is why the pane
   is read only after the waiter is registered.
