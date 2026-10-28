@@ -2,10 +2,10 @@
  * Measure how often tmux reaps a pane before reading a program's last output,
  * and whether the run's end mark catches every such run.
  *
- *     bun scripts/measure-program-end.ts <runs per probe> <tmux>...
+ *     bun scripts/measure-program-end.ts <runs per probe> <rounds> <tmux>...
  *
- * Each tmux runs three probes at once, on sockets in a temporary directory, so the
- * host is loaded.
+ * Each round runs every shape as three probes at once, on sockets in a temporary
+ * directory, so the host is loaded; the last lines give each shape's range over rounds.
  * The wrapper is the one program runs start, imported rather than copied.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -134,28 +134,52 @@ async function probe(binary: string, shape: string, runs: number, socket: string
   return tally;
 }
 
-const [runsArgument, ...binaries] = process.argv.slice(2);
+const [runsArgument, roundsArgument, ...binaries] = process.argv.slice(2);
 const runs = Number(runsArgument);
-if (!Number.isSafeInteger(runs) || runs < 1 || binaries.length === 0) {
-  throw new TypeError("usage: bun scripts/measure-program-end.ts <runs per probe> <tmux>...");
+const rounds = Number(roundsArgument);
+if (!Number.isSafeInteger(runs) || runs < 1 || !Number.isSafeInteger(rounds) || rounds < 1) {
+  throw new TypeError(
+    "usage: bun scripts/measure-program-end.ts <runs per probe> <rounds> <tmux>...",
+  );
 }
+if (binaries.length === 0) throw new TypeError("name at least one tmux binary");
 const sockets = mkdtempSync(join(tmpdir(), "ltx-measure-"));
+const range = (values: readonly number[]): string =>
+  `${String(Math.min(...values))}-${String(Math.max(...values))}`;
 try {
   for (const binary of binaries) {
     // eslint-disable-next-line no-await-in-loop -- one tmux at a time.
     const version = (await new Response(Bun.spawn([binary, "-V"]).stdout).text()).trim();
-    for (const shape of Object.keys(SHAPES)) {
-      // eslint-disable-next-line no-await-in-loop -- one shape at a time, three probes at once.
-      const tallies = await Promise.all(
-        [1, 2, 3].map((probeNumber) =>
-          probe(binary, shape, runs, join(sockets, String(probeNumber))),
-        ),
-      );
-      const sum = (key: keyof Tally): number =>
-        tallies.reduce((total, tally) => total + tally[key], 0);
+    const seen = new Map<string, Tally[]>(Object.keys(SHAPES).map((shape) => [shape, []]));
+    for (let round = 1; round <= rounds; round += 1) {
+      for (const shape of Object.keys(SHAPES)) {
+        // eslint-disable-next-line no-await-in-loop -- one shape at a time, three probes at once.
+        const tallies = await Promise.all(
+          [1, 2, 3].map((probeNumber) =>
+            probe(binary, shape, runs, join(sockets, String(probeNumber))),
+          ),
+        );
+        const tally: Tally = { marked: 0, markedButCut: 0, whole: 0 };
+        for (const one of tallies) {
+          tally.whole += one.whole;
+          tally.marked += one.marked;
+          tally.markedButCut += one.markedButCut;
+        }
+        seen.get(shape)?.push(tally);
+        console.log(
+          `${version} round ${String(round)} ${shape}: whole ${String(tally.whole)} of ` +
+            `${String(runs * 3)}, mark shown ${String(tally.marked)}, ` +
+            `mark on a cut run ${String(tally.markedButCut)}`,
+        );
+      }
+    }
+    for (const [shape, tallies] of seen) {
+      const lost = tallies.map((tally) => runs * 3 - tally.whole);
+      const markedButCut = tallies.reduce((total, tally) => total + tally.markedButCut, 0);
       console.log(
-        `${version} ${shape}: whole ${String(sum("whole"))} of ${String(runs * 3)}, ` +
-          `mark shown ${String(sum("marked"))}, mark on a cut run ${String(sum("markedButCut"))}`,
+        `${version} ${shape} over ${String(rounds)} rounds: lost ${range(lost)} of ` +
+          `${String(runs * 3)} a round, ${String(lost.reduce((a, b) => a + b, 0))} in all; ` +
+          `mark on a cut run ${String(markedButCut)}`,
       );
     }
   }

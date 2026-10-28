@@ -234,18 +234,26 @@ What each outcome looks like to a caller:
   `OutputLostError` for a stream. A SIGKILL to the process group ends the `sh`
   before its mark too, which leaves the end unproven, so it counts as missing.
 - [`scripts/measure-program-end.ts`](../scripts/measure-program-end.ts) measures
-  both with the shipped wrapper, three probes in parallel. Run with 1000 runs a
-  probe on 3.8, 3.8a and master at
-  [523ac69](https://github.com/tmux/tmux/commit/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4):
+  both with the shipped wrapper, three probes in parallel, over rounds. Run as
+  `bun scripts/measure-program-end.ts 1000 5` on 3.8, on 3.8a (the untagged
+  [`release_3.8a`](https://github.com/tmux/tmux/commit/089ad94e13c560db99fd4989b2774a5c6ad37a17)
+  branch) and on master at
+  [523ac69](https://github.com/tmux/tmux/commit/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4),
+  15000 runs a cell, each cell giving its runs that lost the end per round of
+  3000 and in all:
 
-  | tmux   | No wrapper, whole | Mark only: whole, marked, marked but cut | Linger and mark: whole, marked |
-  | ------ | ----------------- | ---------------------------------------- | ------------------------------ |
-  | 3.8    | 3000 of 3000      | 3000, 3000, 0                            | 3000, 3000                     |
-  | 3.8a   | 2996 of 3000      | 2998, 2998, 0                            | 3000, 3000                     |
-  | master | 3000 of 3000      | 2998, 2998, 0                            | 3000, 3000                     |
+  | tmux   | No wrapper | Mark only | Linger and mark |
+  | ------ | ---------- | --------- | --------------- |
+  | 3.8    | 0-4, 8     | 0-7, 10   | 0-0, 0          |
+  | 3.8a   | 1-5, 16    | 0-8, 10   | 0-0, 0          |
+  | master | 0-4, 9     | 0-0, 0    | 0-0, 0          |
 
-  No run that lost its end showed the mark. A whole run that lost only its mark
-  would read as a lost end: the check errs that way, never the other.
+  None of the 20 runs that lost their end showed the mark. A whole run that
+  lost only its mark would read as a lost end, and tmux reads a pane's bytes in
+  order, so a shown mark cannot follow a lost end. `window_pane_destroy_ready`
+  checks the same `FIONREAD` on all three
+  ([3.8](https://github.com/tmux/tmux/blob/3.8/window.c#L501),
+  [master](https://github.com/tmux/tmux/blob/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4/window.c#L504)).
 
 - Its own signals are caught, not ignored, so the program keeps the default
   dispositions. The run exits with the status the `sh` saw, as `$?` reports
