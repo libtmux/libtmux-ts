@@ -577,8 +577,10 @@ export interface SpawnOptions {
   readonly stream?: boolean;
   /**
    * Stops setup: an abort before the program has started removes its pane and
-   * rejects with {@link TmuxTransportError} of kind `cancelled`. Once
-   * {@link Server.spawn} has returned, the program is the caller's to end.
+   * rejects with {@link TmuxTransportError} of kind `cancelled`, whose
+   * `delivery` is `not_started` if nothing was made and `indeterminate` if the
+   * program may have begun. Once {@link Server.spawn} has returned, the
+   * program is the caller's to end.
    */
   readonly signal?: AbortLike;
   /**
@@ -598,7 +600,9 @@ export interface RunOptions extends Omit<SpawnOptions, "maxStreamBytes" | "strea
   readonly timeoutMs?: number;
   /**
    * Stop the program when this fires; the call rejects with
-   * {@link TmuxTransportError} of kind `cancelled`, the signal's reason as its `cause`.
+   * {@link TmuxTransportError} of kind `cancelled`, the signal's reason as its
+   * `cause`. Its `delivery` is `written` once the program had started, which
+   * may have done part of its work, and as for {@link SpawnOptions.signal} before.
    */
   readonly signal?: AbortLike;
 }

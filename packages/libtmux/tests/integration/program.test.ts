@@ -250,7 +250,7 @@ describe("program runs", () => {
         setTimeout(() => controller.abort(new Error("stop")), 200);
         const error = await running.catch((caught: unknown) => caught);
         expect(error).toBeInstanceOf(TmuxTransportError);
-        expect((error as TmuxTransportError).kind).toBe("cancelled");
+        expect(error).toMatchObject({ delivery: "written", kind: "cancelled" });
         expect(await programSessions(server)).toBe(0);
       });
     },
@@ -489,13 +489,20 @@ describe("program runs", () => {
     "a spawn aborted before it starts removes what it made",
     async () => {
       await withServer(async (server) => {
-        const aborted = new AbortController();
-        aborted.abort(new Error("enough"));
+        const early = new AbortController();
+        early.abort(new Error("enough"));
         const refused = await server
-          .spawn(["sleep", "30"], { signal: aborted.signal })
+          .spawn(["sleep", "30"], { signal: early.signal })
           .catch((error: unknown) => error);
         expect(refused).toBeInstanceOf(TmuxTransportError);
-        expect((refused as TmuxTransportError).kind).toBe("cancelled");
+        expect(refused).toMatchObject({ delivery: "not_started", kind: "cancelled" });
+
+        // Aborted while the pane is made: setup notices before it waits for the start.
+        const late = new AbortController();
+        const starting = server.spawn(["sleep", "30"], { signal: late.signal });
+        late.abort(new Error("enough"));
+        const cut = await starting.catch((error: unknown) => error);
+        expect(cut).toMatchObject({ delivery: "indeterminate", kind: "cancelled" });
         expect(await programSessions(server)).toBe(0);
       });
     },

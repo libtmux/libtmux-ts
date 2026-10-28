@@ -12,7 +12,7 @@ import {
   TmuxTransportError,
   WaitTimeoutError,
 } from "../../errors.js";
-import type { CommandOptions } from "../../common.js";
+import type { CommandOptions, DeliveryStatus } from "../../common.js";
 import type { Program } from "../../program.js";
 import type { AbortLike, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
@@ -209,12 +209,13 @@ export function isAborted(signal: AbortLike | undefined): signal is AbortLike {
   return signal?.aborted === true;
 }
 
-export function cancelled(signal: AbortLike): TmuxTransportError {
-  return new TmuxTransportError("the wait for the program was cancelled", {
-    cause: signal.reason,
-    delivery: "replied",
-    kind: "cancelled",
-  });
+/** `delivery` says how far the program got: a wait leaves it as it was. */
+export function cancelled(
+  signal: AbortLike,
+  message = "the wait for the program was cancelled",
+  delivery: DeliveryStatus = "replied",
+): TmuxTransportError {
+  return new TmuxTransportError(message, { cause: signal.reason, delivery, kind: "cancelled" });
 }
 
 /** Resolve when `signal` fires; the returned function stops listening. */

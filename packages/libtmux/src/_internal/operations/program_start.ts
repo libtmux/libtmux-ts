@@ -29,6 +29,7 @@ import { capabilitySince, hasCapability } from "../support/capabilities.js";
 import { runCommand, runCommands } from "./command.js";
 import {
   cancelled,
+  drainChannel,
   exists,
   isAborted,
   killProgram,
@@ -66,8 +67,6 @@ const ENTER = 'cd -- "$1" || exit 126; shift; ';
 const READ = 'exec <"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */
 const SETUP_MS = 10_000;
-/** How long a cancelled start waits to consume a channel the list may have left woken. */
-const DRAIN_MS = 1000;
 /** How long tmux waits, after this process is gone, before ending the program. */
 const DEFAULT_ORPHAN_MS = 60_000;
 const MIN_ORPHAN_MS = 1000;
@@ -399,9 +398,11 @@ async function confirmStarted(
   }
   if (isAborted(signal) || timedOut) {
     // A signal that reached tmux after this waiter stopped left the channel woken.
-    void runCommand(runtime, ["wait-for", started], { timeoutMs: DRAIN_MS }).catch(() => undefined);
+    drainChannel(runtime, started);
   }
-  if (isAborted(signal)) throw cancelled(signal);
+  if (isAborted(signal)) {
+    throw cancelled(signal, "the start was cancelled and its pane removed", "indeterminate");
+  }
   if (timedOut) throw new LibTmuxError(`tmux did not start the program in ${paneId}`);
 }
 
@@ -415,6 +416,7 @@ export async function spawnProgram(
 ): Promise<Program> {
   const placement = requireSpawn(argv, spawn);
   if (spawn.from !== undefined) requireOnServer(spawn.from, server, "from");
+  if (isAborted(signal)) throw cancelled(signal, "the start was cancelled", "not_started");
   const { tmuxVersion } = await runtime.capabilities.bind();
   if (!hasCapability("program-run", tmuxVersion)) {
     throw new VersionTooLowError({
@@ -544,7 +546,6 @@ export async function runProgram(
   options: RunOptions = {},
 ): Promise<ProgramResult> {
   requireCount("timeoutMs", options.timeoutMs, MAX_TIMER_MS);
-  if (isAborted(options.signal)) throw cancelled(options.signal);
   const program = await spawnProgram(server, runtime, argv, options, options.signal);
   let failed = true;
   try {
@@ -556,6 +557,9 @@ export async function runProgram(
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       });
     } catch (error) {
+      if (isAborted(options.signal)) {
+        throw cancelled(options.signal, "the run was cancelled and its program ended", "written");
+      }
       if (!(error instanceof WaitTimeoutError)) throw error;
       timedOut = true;
     }
