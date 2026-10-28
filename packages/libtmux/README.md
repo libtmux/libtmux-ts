@@ -1170,6 +1170,8 @@ const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
 - A shell's first prompt marks an end too, so wait for it before sending to a
   shell that is still starting.
 - A shell without the marks never resolves the wait; give it a `timeoutMs`.
+- The mark carries a status alone. What the command printed is on the pane,
+  for [`Pane.capture`][ref-pane-capture].
 - Requires tmux 3.8 or newer. [Details](docs/contracts.md#pane-waits).
 
 ### [`Pane.waitForExit`][ref-pane-waitforexit]: wait for a pane you did not start

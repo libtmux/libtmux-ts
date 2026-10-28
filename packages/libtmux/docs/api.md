@@ -2692,15 +2692,17 @@ At once for a pane already dead under `remain-on-exit`; otherwise when
 tmux reports the exit, with the status a closing pane takes with it.
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError` of
-kind `cancelled`. A pane killed from outside, which fires no event, raises
-`ObjectNotFoundError` within about two seconds.
+kind `cancelled`; with neither it waits as long as the program runs. A
+pane killed from outside, which fires no event, raises
+`ObjectNotFoundError` within about two seconds: one to notice, and
+one for the event a closing pane fires to arrive.
 
 Requires tmux 3.8 or newer.
 
 ```ts
-const build = await session.newWindow({ shellCommand: "sleep 1; exit 3" });
-const exit = await build.activePane?.waitForExit({ timeoutMs: 10_000 });
-exit?.exitCode; // 3
+const build = await window.split({ shellCommand: "sleep 1; exit 3" });
+const exit = await build.waitForExit({ timeoutMs: 10_000 });
+exit.exitCode; // 3
 ```
 
 #### `Pane.waitForCommand`
@@ -2719,13 +2721,14 @@ is listening, so a command that ends at once is not missed. A shell's
 first prompt marks an end too, before any command ran, so a wait armed
 while the shell starts can resolve with 0. A shell without the marks never
 resolves this: give it a `timeoutMs`. A pane whose program has exited
-rejects with `LibTmuxError`.
+rejects with `LibTmuxError`. The mark carries a status alone; what
+the command printed is on the pane, for [`Pane.capture`](#panecapture).
 
 Requires tmux 3.8 or newer.
 
 ```ts
 const status = await pane.waitForCommand({ send: "make test", timeoutMs: 600_000 });
-status === 0;
+status; // 0 when the tests passed
 ```
 
 #### `Pane.clearHistory`
@@ -3157,8 +3160,10 @@ Resolve with how the program ended, once it has.
 
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError`
-of kind `cancelled`. A program whose pane is killed from outside raises
-`ObjectNotFoundError` within about a second.
+of kind `cancelled`; with neither it waits as long as the program runs. A
+program whose pane is killed from outside raises
+`ObjectNotFoundError` at the next read of its pane, within about a
+second.
 
 ```ts
 await using program = await server.spawn(["sh", "-c", "exit 3"]);

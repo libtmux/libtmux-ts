@@ -182,8 +182,9 @@ typed, so the output holds no command line or echo.
 
 - One tmux command list starts the program and waits for its exit, so no exit
   is missed.
-- A small `sh` runs it and lingers 50 ms before exiting, which in the runs
-  measured below always let tmux read the last output.
+- A small `sh` runs it and lingers 50 ms before exiting; in none of the 15000
+  `seq 1 3000` runs measured below on each tmux did tmux then miss the last
+  output.
 - `kill()` sends SIGTERM, then SIGKILL, to the process group, and returns once
   tmux has reaped it or two seconds after the SIGKILL.
 - Every run and spawn holds a lease that the caller renews, unless
@@ -200,17 +201,17 @@ typed, so the output holds no command line or echo.
 
 What each outcome looks like to a caller:
 
-| What happened                                    | What the caller sees                                                                   |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| The program ended                                | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too        |
-| Its output's start scrolled past `historyLimit`  | `lostStart`                                                                            |
-| tmux removed the pane before reading the end     | `lostEnd`; `stream()` ends with `OutputLostError`                                      |
-| The stream copy reached `maxStreamBytes`         | `stream()` ends with `StreamLimitError`; the program runs on                           |
-| `run`'s `timeoutMs` passed                       | `timedOut`, with the output so far                                                     |
-| `signal` fired                                   | `TmuxTransportError` of kind `cancelled`, whose `delivery` says whether it had started |
-| The pane was killed from outside                 | `ObjectNotFoundError` from `wait()` and `output()`                                     |
-| The caller died                                  | tmux ends the program within `orphanAfterMs`                                           |
-| `input` or `stream` with a tmux server elsewhere | `ServerNotLocalError`, before anything starts                                          |
+| What happened                                                      | What the caller sees                                                                   |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| The program ended                                                  | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too        |
+| Its output's start scrolled past `historyLimit`                    | `lostStart`                                                                            |
+| tmux removed the pane before reading the end                       | `lostEnd`; `stream()` ends with `OutputLostError`                                      |
+| The stream copy reached `maxStreamBytes`                           | `stream()` ends with `StreamLimitError`; the program runs on                           |
+| `run`'s `timeoutMs` passed                                         | `timedOut`, with the output so far                                                     |
+| `signal` fired                                                     | `TmuxTransportError` of kind `cancelled`, whose `delivery` says whether it had started |
+| The pane was killed from outside, its server with it or not        | `ObjectNotFoundError` from `wait()`, `output()` and `run`                              |
+| The caller died                                                    | tmux ends the program within `orphanAfterMs`                                           |
+| `input`, `stream` or `separateStderr` with a tmux server elsewhere | `ServerNotLocalError`, before the program starts                                       |
 
 ### Starting the program
 
@@ -219,10 +220,10 @@ What each outcome looks like to a caller:
 - `remain-on-exit` is set in the list that creates the session: set by a second
   invocation, it arrives after an instant program's pane is already gone.
 - The pane is respawned with `sh` and `argv` as its positional parameters, so
-  `sh` does not parse them and `argv[0]` is always a program name, never shell
-  text or an assignment the way `env` would read `A=b`.
+  `sh` does not parse them and runs `argv[0]` as a program name, `A=b`
+  included, which `env` would read as an assignment.
 - That `sh` runs the program in a subshell and lingers 50 ms after it, then
-  exits or dies the way it did. tmux removes a pane on its child's exit
+  exits with the status it saw. tmux removes a pane on its child's exit
   ([`server_child_exited`](https://github.com/tmux/tmux/blob/3.8/server.c#L491-L511)) once `FIONREAD` reads 0
   ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)), which on Linux misses
   output still in the pty's flip buffer, so a program that exits right after
@@ -243,11 +244,11 @@ What each outcome looks like to a caller:
   15000 runs a cell, each cell giving its runs that lost the end per round of
   3000 and in all:
 
-  | tmux   | No wrapper | Mark only | Linger and mark |
-  | ------ | ---------- | --------- | --------------- |
-  | 3.8    | 0-4, 8     | 0-7, 10   | 0-0, 0          |
-  | 3.8a   | 1-5, 16    | 0-8, 10   | 0-0, 0          |
-  | master | 0-4, 9     | 0-0, 0    | 0-0, 0          |
+  | Lost: range a round, total | No wrapper | Mark only | Linger and mark |
+  | -------------------------- | ---------- | --------- | --------------- |
+  | 3.8                        | 0-4, 8     | 0-7, 10   | 0-0, 0          |
+  | 3.8a                       | 1-5, 16    | 0-8, 10   | 0-0, 0          |
+  | master                     | 0-4, 9     | 0-0, 0    | 0-0, 0          |
 
   None of the 20 runs the mark-only shape lost showed the mark. A whole run that
   lost only its mark would read as a lost end, and tmux reads a pane's bytes in

@@ -504,11 +504,11 @@ export type ProgramPlacement = "session" | "split" | "window";
 /**
  * Where a program started by {@link Server.spawn} runs, and what it gets.
  *
- * The program gets a pane of its own and a real terminal. It runs on
- * the machine the tmux server is on, with the tmux server's environment and
- * `PATH` rather than the caller's. stderr shares the screen with stdout, and
- * without `input` the terminal is its stdin, so a program that pages or
- * prompts (`git log`, `sudo`) waits for keys as it would in a terminal.
+ * The program gets a pane of its own and a real terminal. It runs on the
+ * machine the tmux server is on, with the tmux server's environment and `PATH`
+ * rather than the caller's. stderr shares the screen with stdout, and without
+ * `input` the terminal is its stdin, so a program that pages or prompts
+ * (`git log`, `sudo`) waits for keys as it would in a terminal.
  */
 export interface SpawnOptions {
   /**
