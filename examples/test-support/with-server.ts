@@ -1,12 +1,15 @@
 // The library's real-tmux fixture harness, which is internal and unpublished.
 // In-repo consumers use it directly; external ones have no need for it.
 
+import { spawnSync } from "node:child_process";
+
 import {
   runWithCleanup,
   withOwnedRunRoot,
   TestServer,
   assertOwnedSocketPath,
 } from "../../packages/libtmux/src/_internal/test/testkit.js";
+import { releaseAtLeast } from "../../packages/libtmux/src/_internal/runtime/tmux_version.js";
 
 /**
  * Hand a test an isolated, real tmux server and reap it afterwards.
@@ -27,3 +30,10 @@ export async function withServer(body: (fixture: TestServer) => Promise<void>): 
     );
   });
 }
+
+/** Whether the tmux on PATH, the one the fixture starts, runs programs: 3.8 or newer. */
+export const runsPrograms: boolean = ((): boolean => {
+  const answered = spawnSync("tmux", ["-V"]);
+  const release = new TextDecoder().decode(answered.stdout).trim().split(" ").at(-1);
+  return answered.status === 0 && release !== undefined && releaseAtLeast(release, "3.8");
+})();

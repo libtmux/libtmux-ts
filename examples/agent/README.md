@@ -19,7 +19,7 @@ $ bun test examples/agent
 
 The test drives each function against a real tmux server the suite starts on a
 socket of its own. Requires tmux 3.3a or newer; `runMarked` and `waitForExit`
-need 3.8, and their tests return early below it.
+need 3.8, and their tests are skipped below it.
 
 ## What it shows
 

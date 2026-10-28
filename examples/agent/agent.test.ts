@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../packages/libtmux/src/server.js";
-import { withServer } from "../test-support/with-server.js";
+import { runsPrograms, withServer } from "../test-support/with-server.js";
 import { buildAndSettle, runAndWait, runMarked, waitForExit } from "./agent.js";
 
 describe("agent", () => {
@@ -33,7 +33,7 @@ describe("agent", () => {
     });
   }, 60_000);
 
-  test.skipIf(Bun.which("bash") === null)(
+  test.skipIf(!runsPrograms || Bun.which("bash") === null)(
     "reads a command's status from a shell's OSC 133 marks",
     async () => {
       await withServer(async (fixture) => {
@@ -42,7 +42,6 @@ describe("agent", () => {
           socketPath: fixture.socketPath,
           tmuxBin: fixture.tmuxExecutable,
         });
-        if (!(await server.versionAtLeast("3.8"))) return;
         // A prompt hook that marks each command's end with its status, from the second
         // prompt on, so a command sent before bash is ready is still the first end.
         const hook = String.raw`s=$?; [ -n "$r" ] && printf "\033]133;D;%s\007" "$s"; r=1`;
@@ -59,18 +58,21 @@ describe("agent", () => {
     60_000,
   );
 
-  test("waits for a pane's program to exit and keeps the status", async () => {
-    await withServer(async (fixture) => {
-      const server = new Server({
-        environment: fixture.controllerEnvironment,
-        socketPath: fixture.socketPath,
-        tmuxBin: fixture.tmuxExecutable,
+  test.skipIf(!runsPrograms)(
+    "waits for a pane's program to exit and keeps the status",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = new Server({
+          environment: fixture.controllerEnvironment,
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        const session = await server.newSession({ name: "build", shellCommand: "sleep 1; exit 7" });
+        const pane = session.activePane;
+        if (pane === undefined) throw new Error("a new session has a pane");
+        expect(await waitForExit(pane)).toBe(7);
       });
-      if (!(await server.versionAtLeast("3.8"))) return;
-      const session = await server.newSession({ name: "build", shellCommand: "sleep 1; exit 7" });
-      const pane = session.activePane;
-      if (pane === undefined) throw new Error("a new session has a pane");
-      expect(await waitForExit(pane)).toBe(7);
-    });
-  }, 60_000);
+    },
+    60_000,
+  );
 });
