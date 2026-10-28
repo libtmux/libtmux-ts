@@ -26,6 +26,8 @@ import {
 const BACKSTOP_MS = 1000;
 /** How long arming waits for tmux to register the waiter. */
 const ARM_MS = 10_000;
+/** How long a cancelled wait waits to consume a channel the list may have left woken. */
+const DRAIN_MS = 1000;
 /** How long a pane found gone may take to deliver the event its closing fired. */
 const DELIVERY_MS = 1000;
 
@@ -96,7 +98,7 @@ async function arm(
     if (failure !== undefined && !stop.aborted) throw failure;
     if (!stop.aborted) throw error;
     // Cancelled: a list that signalled left the channel woken, which one more wait consumes.
-    void runCommand(runtime, ["wait-for", armed], { timeoutMs: ARM_MS }).catch(() => undefined);
+    void runCommand(runtime, ["wait-for", armed], { timeoutMs: DRAIN_MS }).catch(() => undefined);
   }
   return { fired };
 }

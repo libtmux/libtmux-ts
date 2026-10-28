@@ -576,6 +576,12 @@ export interface SpawnOptions {
    */
   readonly stream?: boolean;
   /**
+   * Stops setup: an abort before the program has started removes its pane and
+   * rejects with {@link TmuxTransportError} of kind `cancelled`. Once
+   * {@link Server.spawn} has returned, the program is the caller's to end.
+   */
+  readonly signal?: AbortLike;
+  /**
    * Stop the copy after this many bytes; {@link Program.stream} then yields
    * them and throws {@link StreamLimitError}. The program runs on. No limit by
    * default, and the temporary directory may be memory-backed.

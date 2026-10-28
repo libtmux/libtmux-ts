@@ -486,6 +486,23 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "a spawn aborted before it starts removes what it made",
+    async () => {
+      await withServer(async (server) => {
+        const aborted = new AbortController();
+        aborted.abort(new Error("enough"));
+        const refused = await server
+          .spawn(["sleep", "30"], { signal: aborted.signal })
+          .catch((error: unknown) => error);
+        expect(refused).toBeInstanceOf(TmuxTransportError);
+        expect((refused as TmuxTransportError).kind).toBe("cancelled");
+        expect(await programSessions(server)).toBe(0);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "stream() without stream: true throws at the call",
     async () => {
       await withServer(async (server) => {

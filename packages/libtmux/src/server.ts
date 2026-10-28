@@ -1475,7 +1475,7 @@ export class Server {
    * ```
    */
   spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program> {
-    return spawnProgram(this, runtimeForServer(this), argv, options);
+    return spawnProgram(this, runtimeForServer(this), argv, options, options?.signal);
   }
 
   /**

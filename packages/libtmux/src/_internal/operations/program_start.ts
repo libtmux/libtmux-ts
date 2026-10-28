@@ -66,6 +66,8 @@ const ENTER = 'cd -- "$1" || exit 126; shift; ';
 const READ = 'exec <"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */
 const SETUP_MS = 10_000;
+/** How long a cancelled start waits to consume a channel the list may have left woken. */
+const DRAIN_MS = 1000;
 /** How long tmux waits, after this process is gone, before ending the program. */
 const DEFAULT_ORPHAN_MS = 60_000;
 const MIN_ORPHAN_MS = 1000;
@@ -380,6 +382,8 @@ async function confirmStarted(
     giveUp();
   }, SETUP_MS);
   signal?.addEventListener("abort", giveUp, { once: true });
+  // An abort during the creating list came before the listener.
+  if (isAborted(signal)) giveUp();
   void exited.then(() => {
     if (failure() !== undefined) stop.abort();
   });
@@ -392,6 +396,10 @@ async function confirmStarted(
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", giveUp);
+  }
+  if (isAborted(signal) || timedOut) {
+    // A signal that reached tmux after this waiter stopped left the channel woken.
+    void runCommand(runtime, ["wait-for", started], { timeoutMs: DRAIN_MS }).catch(() => undefined);
   }
   if (isAborted(signal)) throw cancelled(signal);
   if (timedOut) throw new LibTmuxError(`tmux did not start the program in ${paneId}`);
