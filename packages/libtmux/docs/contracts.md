@@ -213,6 +213,19 @@ What each outcome looks like to a caller:
 | The caller died                                                    | tmux ends the program within `orphanAfterMs`                                           |
 | `input`, `stream` or `separateStderr` with a tmux server elsewhere | `ServerNotLocalError`, before the program starts                                       |
 
+What a run does not do:
+
+- `output` is the terminal's rendering: escapes are applied, NUL and other
+  control bytes are dropped, and wrapped lines are joined. `spawn` with
+  `stream: true` yields what the program wrote, escapes included.
+- stderr shares the terminal unless `separateStderr` keeps it apart, which needs
+  the tmux server on this machine and leaves stderr no terminal.
+- `lostEnd` leaves the exit status exact; only the output's tail is unproven.
+  Run again a program that can be repeated, or have it write its output to a
+  file through `sh -c`.
+- A status above 128 is a signal's 128 plus its number or the program's own
+  exit, which `$?` cannot tell apart.
+
 ### Starting the program
 
 - The session's one pane starts with a placeholder that exits at once and stays
@@ -225,10 +238,14 @@ What each outcome looks like to a caller:
 - That `sh` runs the program in a subshell and lingers 50 ms after it, then
   exits with the status it saw. tmux removes a pane on its child's exit
   ([`server_child_exited`](https://github.com/tmux/tmux/blob/3.8/server.c#L491-L511)) once `FIONREAD` reads 0
-  ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)), which on Linux misses
-  output still in the pty's flip buffer, so a program that exits right after
-  writing could lose the end of its output under load. `pane_pid` is that
-  `sh`, and `pane_current_command` names it.
+  ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)). On Linux `FIONREAD`
+  counts only what the line discipline holds
+  ([`n_tty_ioctl`](https://github.com/microsoft/WSL2-Linux-Kernel/blob/d504d40ab83839cb61942a812a99d183c42227b9/drivers/tty/n_tty.c#L2500-L2507)),
+  not bytes still queued for
+  [`flush_to_ldisc`](https://github.com/microsoft/WSL2-Linux-Kernel/blob/d504d40ab83839cb61942a812a99d183c42227b9/drivers/tty/tty_buffer.c#L462),
+  so a program that exits right after writing can lose the end of its output:
+  8 to 16 of 15000 runs did without the wrapper, as measured below.
+  `pane_pid` is that `sh`, and `pane_current_command` names it.
 - Before the linger, the `sh` writes ST and then an OSC 7 path naming the run,
   which tmux applies to `#{pane_path}` with no option gating it and renders as
   nothing. tmux reads a pane's bytes in order, so a pane whose path is the run's

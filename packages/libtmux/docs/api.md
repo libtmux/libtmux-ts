@@ -3101,9 +3101,8 @@ pane.sameTmuxIdAs(await pane.refreshed()); // true
 
 A program started by [`Server.spawn`](#serverspawn), running in a pane of its own.
 
-Nothing was typed to start it, so its pane holds only what it printed. Drive a
-full-screen program with [`Pane.sendKeys`](#panesendkeys) and read its screen with
-[`Pane.capture`](#panecapture).
+Drive a full-screen program with [`Pane.sendKeys`](#panesendkeys) and read its screen
+with [`Pane.capture`](#panecapture).
 
 It owns its pane. [`Program.kill`](#programkill), or leaving an `await using` scope,
 ends the program and removes the pane, unless spawned with `keep`. Should

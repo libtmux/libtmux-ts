@@ -10,9 +10,8 @@ import type { ProgramExit, ProgramWaitOptions } from "./types.js";
 /**
  * A program started by {@link Server.spawn}, running in a pane of its own.
  *
- * Nothing was typed to start it, so its pane holds only what it printed. Drive a
- * full-screen program with {@link Pane.sendKeys} and read its screen with
- * {@link Pane.capture}.
+ * Drive a full-screen program with {@link Pane.sendKeys} and read its screen
+ * with {@link Pane.capture}.
  *
  * It owns its pane. {@link Program.kill}, or leaving an `await using` scope,
  * ends the program and removes the pane, unless spawned with `keep`. Should

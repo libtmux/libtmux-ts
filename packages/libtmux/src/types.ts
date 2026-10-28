@@ -649,7 +649,11 @@ export interface ProgramExit {
 
 /** What {@link Server.run} reports once the program has ended or been stopped. */
 export interface ProgramResult extends ProgramExit {
-  /** What the program printed, as its terminal shows it, scrollback included. */
+  /**
+   * What the program printed, as its terminal shows it, scrollback included:
+   * NUL and other control bytes are dropped and wrapped lines joined. For the
+   * bytes as written, use {@link Server.spawn} with `stream: true`.
+   */
   readonly output: string;
   /** What the program wrote to stderr, as written, when `separateStderr` was set. */
   readonly stderr?: string;

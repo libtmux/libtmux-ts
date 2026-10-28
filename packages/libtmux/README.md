@@ -955,9 +955,10 @@ result.output.startsWith("git version"); // true
   the call returns, and tmux removes it should this process die first. Nothing
   is typed, so `output` holds no command line or echo, and `argv` reaches the
   program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
-- `output` is the terminal's rendering, scrollback included. `lostStart` says
-  the start scrolled past `historyLimit`, and `lostEnd` that tmux closed the
-  pane before reading the end.
+- `output` is the terminal's rendering, scrollback included: NUL and other
+  control bytes are dropped and wrapped lines joined. `lostStart` says the
+  start scrolled past `historyLimit`, and `lostEnd` that tmux closed the pane
+  before reading the end; the exit status is exact either way.
 - `timeoutMs` ends the program and reports `timedOut` with what it printed so
   far; `signal` ends it and rejects.
 - `{ from: pane }` runs it in a background window of that pane's session, in
@@ -965,7 +966,7 @@ result.output.startsWith("git version"); // true
   shell exported stays in that shell: [`Pane.sendKeys`][ref-pane-sendkeys] is
   the way into it.
 - The program runs on the tmux server's machine, which need not be this one;
-  only `input` and `stream: true` need it here.
+  only `input`, `separateStderr` and `stream: true` need it here.
 - Needs tmux 3.8 or newer. [Details](docs/contracts.md#program-runs).
 
 ### [`Server.spawn`][ref-server-spawn]: drive it, then wait
