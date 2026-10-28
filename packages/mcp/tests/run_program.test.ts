@@ -282,6 +282,19 @@ testProgram(
           }),
         );
         expect(inherited.output.startsWith("[a b'c] %")).toBe(true);
+        // What the shell sets about itself stays behind: PWD is the program's directory.
+        const placed = structured<Ran>(
+          await client.callTool({
+            arguments: {
+              argv: ["printenv", "PWD"],
+              fromPaneId: created.paneId,
+              inheritShell: true,
+              startDirectory: "/",
+            },
+            name: "run_program",
+          }),
+        );
+        expect(placed.output).toBe("/");
         // A list carries only the names it gives.
         const listed = structured<Ran>(
           await client.callTool({

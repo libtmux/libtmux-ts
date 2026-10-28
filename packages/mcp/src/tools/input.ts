@@ -178,10 +178,12 @@ function inherits(inheritShell: boolean | readonly string[] | undefined): boolea
   return inheritShell === true || (Array.isArray(inheritShell) && inheritShell.length > 0);
 }
 
+/** What a shell sets about itself: its pane, its directories, its depth, its last command. */
+const SHELL_OWN: ReadonlySet<string> = new Set(["OLDPWD", "PWD", "SHLVL", "TMUX_PANE", "_"]);
+
 /**
  * Variables a shell exported, from `env -0` output, as a file `sh` can source:
- * every one, or only those `names` lists. TMUX_PANE names the shell's own pane,
- * which the program's pane is not.
+ * every one, or only those `names` lists, less what the shell sets about itself.
  */
 export function sourceableEnvironment(dump: string, names?: readonly string[]): string {
   const wanted = names === undefined ? undefined : new Set(names);
@@ -190,7 +192,7 @@ export function sourceableEnvironment(dump: string, names?: readonly string[]): 
     .filter((entry) => entry.indexOf("=") > 0)
     .map((entry) => [entry.slice(0, entry.indexOf("=")), entry.slice(entry.indexOf("=") + 1)])
     .filter(
-      ([name = ""]) => SHELL_NAME.test(name) && name !== "TMUX_PANE" && (wanted?.has(name) ?? true),
+      ([name = ""]) => SHELL_NAME.test(name) && !SHELL_OWN.has(name) && (wanted?.has(name) ?? true),
     )
     .map(([name = "", value = ""]) => `export ${name}=${shellQuote(value)}\n`)
     .join("");
@@ -661,8 +663,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         "Run a program in a pane of its own and wait for it; returns its output and exit " +
         "status. No shell parses argv and nothing is typed into its pane, so the output " +
         "holds no command line or echo. The pane is removed before this returns unless keep " +
-        "is set. A program " +
-        "still running at the timeout, capped by the server's wait ceiling, is ended: run " +
+        "is set. A program still running at the timeout, capped by the server's wait " +
+        "ceiling, is ended: run " +
         "longer ones with start_program. Commands come from the tmux server's PATH; exit 127 " +
         "means not found. stdin is input when given, else the terminal. PAGER and GIT_PAGER " +
         'are cat. Use ["sh", "-c", ...] for pipes, and run_shell_command for shell builtins ' +
