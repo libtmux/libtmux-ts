@@ -534,6 +534,30 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "back-to-back runs each start the server the last one took down",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        const lone = new Server({
+          configFile: "/dev/null",
+          environment: fixture.controllerEnvironment,
+          socketPath: join(directory, "lone"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          // A larger output keeps the server exiting longer, which is when the next run meets it.
+          for (let run = 0; run < 30; run += 1) {
+            // eslint-disable-next-line no-await-in-loop -- each run follows the last one's exit.
+            expect((await lone.run(["seq", "1", "200000"])).exitCode).toBe(0);
+          }
+        } finally {
+          if (await lone.isAlive()) await lone.kill();
+        }
+      });
+    },
+    120_000,
+  );
+
+  testProgram(
     "a run whose pane takes its server with it rejects as not found",
     async () => {
       await withServer(async (_server, directory, fixture) => {

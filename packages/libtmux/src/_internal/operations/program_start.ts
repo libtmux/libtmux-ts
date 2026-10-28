@@ -415,6 +415,14 @@ async function confirmStarted(
   if (timedOut) throw new LibTmuxError(`tmux did not start the program in ${paneId}`);
 }
 
+/** Whether a command failed because the server exited under it, or had already. */
+function serverWentAway(error: unknown): boolean {
+  return (
+    isColdEndpoint(error) ||
+    (error instanceof TmuxTransportError && error.message.endsWith("server exited unexpectedly"))
+  );
+}
+
 /** Refuse a tmux below 3.8; on a cold socket, the executable that will start the server answers. */
 async function requireProgramRun(runtime: RuntimeContext, mayStart: boolean): Promise<void> {
   const tmuxVersion = await runtime.capabilities.bind().then(
@@ -501,7 +509,14 @@ export async function spawnProgram(
     if (spawn.from === undefined) {
       sessionName = `libtmux-program-${randomUUID().slice(0, 12)}`;
       owned = { kind: "session", target: `=${sessionName}` };
-      paneId = await createSession(runtime, sessionName, spawn, arm);
+      // A run that removed its server's last session leaves the server exiting, and this
+      // new-session can meet it on the way out; nothing it made survives that, so try again.
+      paneId = await createSession(runtime, sessionName, spawn, arm).catch(
+        async (error: unknown) => {
+          if (!serverWentAway(error)) throw error;
+          return createSession(runtime, sessionName, spawn, arm);
+        },
+      );
     } else {
       ({ owned, paneId, sessionName } = await createBeside(
         runtime,
