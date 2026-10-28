@@ -1352,6 +1352,37 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a limit that lands inside the end mark still fits output below it",
+    async () => {
+      await withServer(async (server) => {
+        // The mark is ST, OSC 7, the run's mark and BEL: 55 bytes, and 70 with a reason.
+        const limits = Array.from({ length: 80 }, (_, index) => index + 3);
+        const streamed = async (limit: number): Promise<string> => {
+          await using program = await server.spawn(["printf", "12345"], {
+            maxStreamBytes: limit,
+            stream: true,
+          });
+          let text = "";
+          try {
+            for await (const chunk of program.stream()) text += chunk;
+          } catch (error) {
+            return `${text} ${(error as Error).name}`;
+          }
+          return text;
+        };
+        const results: string[] = [];
+        for (let at = 0; at < limits.length; at += 16) {
+          // eslint-disable-next-line no-await-in-loop -- sixteen at a time.
+          results.push(...(await Promise.all(limits.slice(at, at + 16).map(streamed))));
+        }
+        expect(results.slice(0, 2)).toEqual(["123 StreamLimitError", "1234 StreamLimitError"]);
+        expect(new Set(results.slice(2))).toEqual(new Set(["12345"]));
+      });
+    },
+    60_000,
+  );
+
+  testProgram(
     "refuses input, stream and separateStderr, leaving nothing, when tmux cannot see its files",
     async () => {
       await withServer(async (_server, directory, fixture) => {

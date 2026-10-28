@@ -31,6 +31,30 @@ export function markSequences(mark: string): readonly string[] {
   );
 }
 
+/** The UTF-8 length of `text`. */
+function utf8Length(text: string): number {
+  let length = 0;
+  for (const character of text) {
+    const point = character.codePointAt(0) ?? 0;
+    length += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+  }
+  return length;
+}
+
+/** The longest start of `text`, in whole characters, that fits `room` bytes of UTF-8. */
+function within(text: string, room: number): string {
+  if (room === Infinity) return text;
+  let used = 0;
+  let end = 0;
+  for (const character of text) {
+    const size = utf8Length(character);
+    if (used + size > room) break;
+    used += size;
+    end += character.length;
+  }
+  return text.slice(0, end);
+}
+
 /**
  * Drops the first of `marks` from text that arrives in pieces, holding back
  * only a tail that could start one, so a prompt passes at once.
@@ -129,11 +153,13 @@ async function* readStream(
     },
   );
   const decoder = new TextDecoder();
-  const sequences = markSequences(state.mark);
-  const marks = new MarkFilter(sequences);
-  // Past the limit the copy may hold only a mark; any other byte there is the cut.
-  const markBytes = sequences.map((sequence) => new TextEncoder().encode(sequence));
-  let past = 0;
+  const marks = new MarkFilter(markSequences(state.mark));
+  // The limit counts the program's bytes, with the mark already taken out.
+  let allowance = files.limit ?? Infinity;
+  const limited = (): StreamLimitError =>
+    new StreamLimitError(
+      `the program wrote more than maxStreamBytes (${String(files.limit)}); the copy stopped there`,
+    );
   try {
     const buffer = new Uint8Array(64 * 1024);
     let offset = 0;
@@ -150,26 +176,13 @@ async function* readStream(
       do {
         // eslint-disable-next-line no-await-in-loop -- read what has arrived, in order.
         ({ bytesRead: read } = await handle.read(buffer, 0, buffer.length, offset));
-        const kept =
-          files.limit === undefined ? read : Math.max(0, Math.min(read, files.limit - offset));
         offset += read;
-        if (kept > 0) {
-          const text = marks.push(decoder.decode(buffer.subarray(0, kept), { stream: true }));
-          if (text !== "") yield text;
-        }
-        const beyond = buffer.subarray(kept, read);
-        const onlyMark = markBytes.some(
-          (bytes) =>
-            past + beyond.length <= bytes.length &&
-            beyond.every((byte, index) => byte === bytes[past + index]),
-        );
-        past += beyond.length;
-        if (!onlyMark) {
-          const tail = marks.push(decoder.decode()) + marks.end();
-          if (tail !== "") yield tail;
-          throw new StreamLimitError(
-            `the program wrote more than maxStreamBytes (${String(files.limit)}); the copy stopped there`,
-          );
+        if (read > 0) {
+          const text = marks.push(decoder.decode(buffer.subarray(0, read), { stream: true }));
+          const kept = within(text, allowance);
+          allowance -= utf8Length(kept);
+          if (kept !== "") yield kept;
+          if (kept.length < text.length) throw limited();
         }
       } while (read > 0);
       if (state.killing !== undefined) {
@@ -182,14 +195,12 @@ async function* readStream(
       await sleep(ended ? 5 : STREAM_POLL_MS, stop.signal);
     }
     const tail = marks.push(decoder.decode()) + marks.end();
-    if (tail !== "") yield tail;
+    const kept = within(tail, allowance);
+    if (kept !== "") yield kept;
+    if (kept.length < tail.length) throw limited();
     // A pane removed from outside ends the copy too; say so after what arrived.
     if (lost !== undefined) throw lost;
-    if (
-      !marks.seen &&
-      !markBytes.some((bytes) => bytes.length === past) &&
-      state.exit !== undefined
-    ) {
+    if (!marks.seen && state.exit !== undefined) {
       throw new OutputLostError(
         "the output ended without the run's end mark: tmux removed the pane before reading its end, or its process group was killed",
       );
