@@ -101,7 +101,7 @@ import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_sp
 // From the package root, not the internal module: a caller deciding whether a
 // timed-out mutation is safe to retry has to be able to name this type, so the
 // emitted lane proves it is reachable the way a consumer reaches it.
-import { TmuxTransportError } from ${moduleUrl("dist/index.js")};
+import { Server, TmuxTransportError } from ${moduleUrl("dist/index.js")};
 import { FORMAT_SEPARATOR } from ${moduleUrl("dist/formats.js")};
 import { ParsedFormatRow } from ${moduleUrl("dist/_internal/codec/format_types.js")};
 
@@ -538,6 +538,21 @@ try {
     (await task4Server.executeText(["display-message", "-p", "#{socket_path}"])).stdout[0],
     task4Server.socketPath,
   );
+  // A program's exit watch, lease timer and signal listeners run on Node's event loop here.
+  const programs = new Server({
+    environment: task4Server.controllerEnvironment,
+    socketPath: task4Server.socketPath,
+    tmuxBin: task4Server.tmuxExecutable,
+  });
+  const ran = await programs.run(["sh", "-c", "echo out; exit 3"], { timeoutMs: 10_000 });
+  assert.deepEqual([ran.output, ran.exitCode, ran.lostEnd], ["out", 3, false]);
+  assert.equal((await programs.run(["sleep", "30"], { timeoutMs: 300 })).timedOut, true);
+  const sleeper = await programs.spawn(["sleep", "30"]);
+  await assert.rejects(
+    sleeper.wait({ signal: AbortSignal.timeout(200) }),
+    (error) => error instanceof TmuxTransportError && error.delivery === "replied",
+  );
+  await sleeper.kill();
 } finally {
   await task4Server?.dispose();
   assert.equal((await reapOwnedRunRoot(task4Root)).rootRemoved, true);
@@ -851,6 +866,7 @@ console.log(JSON.stringify({
     "supervisor-sigterm",
     "utf8-holdback",
     "invocation-ceiling",
+    "program-run",
   ],
   status: "passed",
 }));
@@ -944,7 +960,7 @@ try {
   if (
     report.protocol !== "libtmux-node-scenarios-v1" ||
     report.status !== "passed" ||
-    report.scenarios.length !== 25
+    report.scenarios.length !== 26
   ) {
     throw new Error(`invalid Node scenario report: ${stdoutText.trim()}`);
   }
