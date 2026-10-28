@@ -1,3 +1,5 @@
+import { basename } from "node:path";
+
 import { TmuxTransportError } from "libtmux";
 import type { DeliveryStatus, Pane, Program, ProgramResult, Server } from "libtmux";
 
@@ -14,11 +16,24 @@ export async function listFiles(server: Server, directory: string): Promise<read
   return result.output === "" ? [] : result.output.split("\n");
 }
 
+/** Read the pane until its screen shows `text`, as a full-screen program draws itself. */
+async function untilShown(pane: Pane, text: string): Promise<void> {
+  for (let reads = 0; reads < 200; reads += 1) {
+    // eslint-disable-next-line no-await-in-loop -- one read, then a pause, until it shows.
+    if ((await pane.capture()).some((row) => row.includes(text))) return;
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`the pane never showed ${text}`);
+}
+
 /**
  * Drive a full-screen program with keys, then wait for it to quit.
  *
- * Keys sent at once reach vim: `spawn` returns only after the program has
- * started. `await using` removes its pane however the function leaves.
+ * `spawn` returns once vim has started, which may be before it has set up its
+ * terminal, and a program can discard what was typed before then; so the keys
+ * wait for its first screen. `await using` removes its pane however the
+ * function leaves.
  */
 export async function prependLine(
   server: Server,
@@ -26,6 +41,7 @@ export async function prependLine(
   line: string,
 ): Promise<number | null> {
   await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", file]);
+  await untilShown(vim.pane, basename(file));
   await vim.pane.sendKeys(`ggO${line}`, { enter: false });
   await vim.pane.sendKeys("Escape", { enter: false });
   await vim.pane.sendKeys(":wq");

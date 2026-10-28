@@ -36,9 +36,9 @@ from the cancel's `delivery` whether the program had started.
 `runBeside` runs a program in a split beside a pane, where a person sees it,
 and leaves the pane showing the output with `keep`.
 
-`server.spawn` keeps the program running and hands it back. `prependLine`
-drives vim with keys; keys sent at once reach the program, because `spawn`
-returns only after it has started.
+`server.spawn` keeps the program running and hands it back once it has
+started. `prependLine` drives vim with keys, after its first screen: a program
+still setting up its terminal can discard what was typed before.
 
 `stream: true` copies everything the program writes, and `stream()` yields it as
 UTF-8 text until the program exits. It is the terminal's text, `\r\n` line ends

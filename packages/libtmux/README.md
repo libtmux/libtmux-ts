@@ -984,8 +984,9 @@ await vim.pane.sendKeys(":wq");
 const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 ```
 
-- `spawn` returns a [`Program`][ref-program] once the program has started, so
-  keys sent at once reach it.
+- `spawn` returns a [`Program`][ref-program] once the program has started. A
+  full-screen program may still be setting up its terminal then, and can
+  discard what was typed before, so the example waits for vim's first screen.
 - `await using` ends the program and removes its pane however the scope
   leaves. A `wait` that gives up throws `WaitTimeoutError` and leaves the
   program running, where `run` ends it and reports `timedOut`.
