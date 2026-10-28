@@ -209,6 +209,9 @@ jobs:
         # build that has not shipped the release it names — the one branch of
         # that logic no tagged binary can exercise. It tracks someone else's
         # branch, so it reports without blocking; see `continue-on-error`.
+        #
+        # 3.8a has no tag upstream: it is released from the `release_3.8a`
+        # branch, which the resolve step below reads as a branch.
         tmux-version:
           [
             "3.3a",
@@ -223,6 +226,7 @@ jobs:
             "3.7b",
             "3.7c",
             "3.8",
+            "release_3.8a",
             "master",
           ]
     steps:

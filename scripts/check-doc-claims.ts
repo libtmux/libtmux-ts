@@ -393,9 +393,16 @@ const matrix = /tmux-version:\s*\[([^\]]+)\]/u.exec(workflow)?.[1];
 if (matrix === undefined) throw new Error("could not read the tmux matrix from typescript.yml");
 // The formatter adds a trailing comma once the list wraps, which splits into
 // a final empty entry and would otherwise read as a version named "".
+// A release with no tag upstream, such as 3.8a, is built from its
+// `release_` branch and named by the release.
 const tested = matrix
   .split(",")
-  .map((entry) => entry.trim().replaceAll('"', ""))
+  .map((entry) =>
+    entry
+      .trim()
+      .replaceAll('"', "")
+      .replace(/^release_/u, ""),
+  )
   .filter((entry) => entry !== "");
 
 // The badge names the range's ends rather than every release in it: eight
