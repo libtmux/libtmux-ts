@@ -43,7 +43,9 @@ interface Entry {
   readonly chunks: Buffer[];
   size: number;
   /** Why the text lacks part of the output: the copy hit its cap, or the end was lost. */
-  missing: "cut" | "lost" | undefined;
+  missing: "cut" | "lost" | "stopped" | undefined;
+  /** Whether the copy has ended, so `chunks` and `missing` are final. */
+  streamed: boolean;
   exit: ProgramExit | undefined;
   endedBy: EndedBy | undefined;
   /** When it ended, which orders the ended programs kept readable. */
@@ -97,10 +99,12 @@ async function pump(entry: Entry): Promise<void> {
     }
   } catch (error) {
     if (error instanceof StreamLimitError) entry.missing = "cut";
+    else if (error instanceof OutputLostError) entry.missing = "lost";
     // A stop or the lifetime ends the copy with the program, so its last output may be unread.
-    else if (error instanceof OutputLostError || entry.endedBy !== undefined)
-      entry.missing = "lost";
+    else if (entry.endedBy !== undefined) entry.missing = "stopped";
   }
+  entry.streamed = true;
+  wake(entry);
   try {
     entry.exit = await entry.program.wait();
     entry.endedBy ??= "exited";
@@ -284,6 +288,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         endedAt: 0,
         endedBy: undefined,
         missing: undefined,
+        streamed: false,
         exit: undefined,
         program,
         size: 0,
@@ -348,7 +353,12 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
               "or signal says. stopped: stop_program or its lifetime ended it. gone: its " +
               "pane was removed from outside, with no status.",
           ),
-        outputComplete: z.boolean().describe("False when outputCut or lostEnd is true."),
+        outputComplete: z
+          .boolean()
+          .describe(
+            "False when outputCut or lostEnd is true, or when a stop or the lifetime ended " +
+              "the program before its output was read to the end.",
+          ),
         outputCut: z
           .boolean()
           .describe("True once the copy stopped at its limit; later output is not kept."),
@@ -371,7 +381,9 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
       const after = cursor ?? 0;
       const deadline = Date.now() + effectiveTimeoutMs;
-      while (entry.size <= after && entry.endedBy === undefined && !extra.signal.aborted) {
+      // A stop marks the end at once; the copy it cuts ends a moment later.
+      const settled = (): boolean => entry.streamed && entry.endedBy !== undefined;
+      while (entry.size <= after && !settled() && !extra.signal.aborted) {
         const left = deadline - Date.now();
         if (left <= 0) break;
         // eslint-disable-next-line no-await-in-loop -- each wait follows the last change.
@@ -380,7 +392,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       // A cursor past the text read so far stays put rather than starting over.
       const { end, text } = readable(entry.chunks, entry.size, Math.min(after, entry.size));
       // Ended only once every byte has been handed over.
-      const finished = entry.endedBy !== undefined && end === entry.size;
+      const finished = settled() && end === entry.size;
       // How it ended decides first: a stop's SIGTERM can also leave an exit status behind.
       const stopped = entry.endedBy === "stopped" || entry.endedBy === "lifetime";
       const exit = finished && !stopped ? entry.exit : undefined;
@@ -402,6 +414,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       let note = "";
       if (entry.missing === "cut") note = "\n[output past the copy limit is not kept]";
       if (entry.missing === "lost") note = "\n[tmux closed the pane before reading the end]";
+      if (entry.missing === "stopped") note = "\n[output written as it was ended may be missing]";
       return ok(
         {
           cursor: end,

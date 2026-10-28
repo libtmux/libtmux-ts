@@ -17,6 +17,7 @@ interface Started {
 
 interface Read {
   readonly cursor: number;
+  readonly lostEnd: boolean;
   readonly outcome: string;
   readonly outputComplete: boolean;
   readonly ended: boolean;
@@ -141,7 +142,13 @@ testProgram(
         });
         await new Promise((resolve) => setTimeout(resolve, 300));
         await call({ arguments: { programId: sleeper.programId }, name: "stop_program" });
-        expect(structured<Read>(await reading)).toMatchObject({ ended: true, outcome: "stopped" });
+        // The stop cut the copy, which is no loss of tmux's.
+        expect(structured<Read>(await reading)).toMatchObject({
+          ended: true,
+          lostEnd: false,
+          outcome: "stopped",
+          outputComplete: false,
+        });
 
         // Past the 4 MiB copy limit, the text is cut and the exit still arrives.
         const flood = structured<Started>(
@@ -237,7 +244,12 @@ testProgram(
         const ended = structured<Read>(
           await call({ arguments: { programId: short.programId }, name: "read_program" }),
         );
-        expect(ended).toMatchObject({ ended: true, outcome: "stopped" });
+        expect(ended).toMatchObject({
+          ended: true,
+          lostEnd: false,
+          outcome: "stopped",
+          outputComplete: false,
+        });
       });
     });
   },
