@@ -406,8 +406,7 @@ checks the same `FIONREAD` on all three
   since the pane's unused rows read as blank too. What a program draws on the
   alternate screen, as `less` and `vim` do, is gone once it leaves that screen;
   `stream()` has every byte.
-- The pane's history, up to its limit, is the run's memory in the tmux server,
-  and tmux keeps that memory from the system after the session is removed.
+- The pane's history, up to its limit, is the run's memory in the tmux server.
 - `lostStart` reads `#{history_collected}`, the lines tmux dropped past
   `historyLimit`; `history_size` stays below the limit after tmux drops a chunk,
   so it cannot say.
@@ -434,8 +433,10 @@ checks the same `FIONREAD` on all three
 - A kill ends a stream in progress with `LibTmuxError`, and a pane removed from
   outside ends it with the wait's `ObjectNotFoundError`, after what arrived.
 - The reader polls the copy every 25 ms for as long as it is read, one small
-  read a poll for each stream, which behaves the same on every platform and
-  filesystem.
+  read a poll for each stream, which needs no file watching. A capped copy runs
+  `head -c` under `stdbuf -o0` where there is one, since GNU `head` holds its
+  writes to a file until it exits. `stream({ signal })` ends the stream, not
+  the program.
 
 A `Program` is made from its prototype rather than by `new`, so its constructor
 is not public API.
@@ -461,7 +462,8 @@ it, through tmux 3.8's events.
 - `kill-pane` fires neither event, so the wait reads the pane every second and
   raises `ObjectNotFoundError` once it is gone.
 - A command's end is `pane-command-finished`, which tmux fires on an OSC 133 `D`
-  mark with the status in `command_status`; a mark without a status reports 0
+  mark with the status in `command_status`; a mark without a status reports 0,
+  and one tmux cannot read as 0 to 255 reports 255
   ([`input_osc_133_exit_status`](https://github.com/tmux/tmux/blob/3.8/input.c#L3197-L3222)). A shell's first prompt marks an end
   too, before any command ran.
 - Events are not replayed to a waiter that arrives late, which is why the pane

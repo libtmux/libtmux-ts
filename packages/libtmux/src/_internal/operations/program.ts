@@ -304,7 +304,7 @@ async function signalPane(
   paneId: string,
   signal: "KILL" | "TERM",
 ): Promise<void> {
-  // `-s NAME` is the form every `/bin/sh` takes; dash refuses `-NAME -- -PID`.
+  // `-s NAME` is POSIX's form, and dash takes no other: it refuses `-NAME -- -PID`.
   await runCommand(runtime, [
     "run-shell",
     "-t",
