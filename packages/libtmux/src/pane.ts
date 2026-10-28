@@ -3,9 +3,12 @@ import type {
   CaptureOptions,
   ChooseTreeOptions,
   CmdOptions,
+  CommandWaitOptions,
   JoinOptions,
   MenuItem,
   PopupOptions,
+  ProgramExit,
+  ProgramWaitOptions,
   ResizeOptions,
   RespawnOptions,
   SendKeysOptions,
@@ -34,6 +37,7 @@ import {
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import { waitForPaneCommand, waitForPaneExit } from "./_internal/operations/pane_wait.js";
 import {
   setOption,
   showOptions,
@@ -343,6 +347,49 @@ export class Pane {
    */
   capture(options?: CaptureOptions): Promise<readonly string[]> {
     return capturePane(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Resolve with how this pane's program ended, whoever started it.
+   *
+   * At once for a pane already dead under `remain-on-exit`; otherwise when
+   * tmux reports the exit, with the status a closing pane takes with it.
+   * Giving up leaves the program running: a timeout throws
+   * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError} of
+   * kind `cancelled`. A pane killed from outside, which fires no event, raises
+   * {@link ObjectNotFoundError} in about a second.
+   *
+   * Requires tmux 3.8 or newer.
+   *
+   * ```ts
+   * const build = await session.newWindow({ shellCommand: "sleep 1; exit 3" });
+   * const exit = await build.activePane?.waitForExit({ timeoutMs: 10_000 });
+   * exit?.exitCode; // 3
+   * ```
+   */
+  waitForExit(options?: ProgramWaitOptions): Promise<ProgramExit> {
+    return waitForPaneExit(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Resolve with the exit status of the next command this pane's shell
+   * finishes.
+   *
+   * Needs a shell that marks each command's end with OSC 133 (`ESC ] 133 ; D ;
+   * status`), as fish and many prompt themes do; tmux turns the mark into a
+   * `pane-command-finished` event. `send` types a command line once the wait
+   * is listening, so a command that ends at once is not missed. A shell
+   * without the marks never resolves this: give it a `timeoutMs`.
+   *
+   * Requires tmux 3.8 or newer.
+   *
+   * ```ts
+   * const status = await pane.waitForCommand({ send: "make test", timeoutMs: 600_000 });
+   * status === 0;
+   * ```
+   */
+  waitForCommand(options?: CommandWaitOptions): Promise<number> {
+    return waitForPaneCommand(runtimeForHandle(this), this.id, options);
   }
 
   /**

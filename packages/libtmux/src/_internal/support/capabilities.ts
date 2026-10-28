@@ -23,6 +23,7 @@ export type CapabilityId =
   | "layout-json"
   | "layout-mirrored-main"
   | "layout-without-checksum"
+  | "pane-wait"
   | "program-run";
 
 export type WorkaroundId =
@@ -165,6 +166,17 @@ export const CAPABILITIES: readonly CapabilityRecord[] = [
       { command: "respawn-pane", flags: ["-k"] },
       { command: "pipe-pane", flags: ["-O"] },
     ],
+  },
+  {
+    id: "pane-wait",
+    name: "Pane waits",
+    summary:
+      "Wait for any pane's program to exit, or its shell's command to finish, through tmux's own events.",
+    since: "3.8",
+    handling: "refuse",
+    error: "errors.VersionTooLowError",
+    apis: ["pane.Pane.waitForExit", "pane.Pane.waitForCommand"],
+    commands: [{ command: "wait-for", flags: ["-E", "-F", "-v"] }],
   },
   {
     id: "clipboard-query",

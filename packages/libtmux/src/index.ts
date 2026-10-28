@@ -27,6 +27,7 @@ export type {
   CmdOptions,
   ConnectedServer,
   ChooseTreeOptions,
+  CommandWaitOptions,
   EnvironmentScope,
   EnvironmentValue,
   HookScope,

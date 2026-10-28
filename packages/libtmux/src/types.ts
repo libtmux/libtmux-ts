@@ -602,6 +602,16 @@ export interface ProgramWaitOptions {
   readonly timeoutMs?: number;
 }
 
+/** Options for {@link Pane.waitForCommand}. */
+export interface CommandWaitOptions extends ProgramWaitOptions {
+  /**
+   * A command line to type into the shell, with Enter, once the wait is
+   * listening, so its end cannot be missed. Without it, the wait is for the
+   * next command to finish, whoever typed it.
+   */
+  readonly send?: string;
+}
+
 /**
  * How a program ended: an exit status or the signal that ended it. An exit
  * status above 128 is reported as the signal it encodes, as a shell reports
