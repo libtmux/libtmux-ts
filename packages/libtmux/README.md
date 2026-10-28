@@ -948,7 +948,7 @@ integration suite runs against a real tmux server.
 ### [`Server.run`][ref-server-run]: one call, only the output
 
 ```ts
-const result = await server.run(["git", "--version"]);
+const result = await server.run(["git", "--version"], { timeoutMs: 10_000 });
 
 result.success; // true
 result.output.startsWith("git version"); // true
@@ -996,8 +996,10 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
   tmux event says a program has drawn, so the example reads the screen.
 - Each running program holds one tmux client, its exit watch, until it ends.
 - `await using` ends the program and removes its pane however the scope
-  leaves. A `wait` that gives up throws `WaitTimeoutError` and leaves the
-  program running, where `run` ends it and reports `timedOut`.
+  leaves; without it, call [`kill()`][ref-program-kill] in a `finally`, which
+  is safe after the program has ended. A `wait` that gives up throws
+  `WaitTimeoutError` and leaves the program running, where `run` ends it and
+  reports `timedOut`.
 - With `{ stream: true }`, [`program.stream()`][ref-program-stream] yields what
   the program writes, as UTF-8 text, until it exits, and ends with
   `OutputLostError` if tmux closed the pane before reading the end.
@@ -2187,6 +2189,7 @@ MIT
 [ref-server-run]: https://libtmux.org/en/ts/latest/reference/server-server-run/
 [ref-server-spawn]: https://libtmux.org/en/ts/latest/reference/server-server-spawn/
 [ref-program]: https://libtmux.org/en/ts/latest/reference/program-program/
+[ref-program-kill]: https://libtmux.org/en/ts/latest/reference/program-program-kill/
 [ref-program-stream]: https://libtmux.org/en/ts/latest/reference/program-program-stream/
 [ref-runoptions]: https://libtmux.org/en/ts/latest/reference/types-runoptions/
 [ref-spawnoptions]: https://libtmux.org/en/ts/latest/reference/types-spawnoptions/
