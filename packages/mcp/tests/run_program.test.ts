@@ -177,3 +177,140 @@ testProgram(
   },
   40_000,
 );
+
+testProgram(
+  "run_program splits beside a pane, keeps it on request, and takes stdin",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const created = structured<{ paneId: string }>(
+          await client.callTool({ arguments: { name: "work" }, name: "create_session" }),
+        );
+        const sorted = structured<Ran>(
+          await client.callTool({
+            arguments: { argv: ["sort"], input: "pear\napple\n" },
+            name: "run_program",
+          }),
+        );
+        expect(sorted.output).toBe("apple\npear");
+        const kept = structured<Ran>(
+          await client.callTool({
+            arguments: {
+              argv: ["echo", "for you"],
+              fromPaneId: created.paneId,
+              keep: true,
+              placement: "split",
+            },
+            name: "run_program",
+          }),
+        );
+        expect(kept.exitStatus).toBe(0);
+        const panes = await fixture.executeText([
+          "list-panes",
+          "-t",
+          "=work:",
+          "-F",
+          "#{pane_dead} #{pane_id}",
+        ]);
+        expect(panes.stdout.filter((line) => line.startsWith("1 "))).toHaveLength(1);
+        const refused = await client.callTool({
+          arguments: { argv: ["true"], placement: "split" },
+          name: "run_program",
+        });
+        expect(refused.isError).toBe(true);
+      });
+    });
+  },
+  40_000,
+);
+
+testProgram(
+  "run_program inheritShell carries what the pane's shell exported",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const created = structured<{ paneId: string }>(
+          await client.callTool({ arguments: { name: "shell" }, name: "create_session" }),
+        );
+        // run_shell_command runs in a subshell, so the export is typed into the shell itself.
+        await client.callTool({
+          arguments: { keys: "export LTX_SECRET='a b'\"'\"'c'", paneId: created.paneId },
+          name: "send_keys",
+        });
+        const exported = structured<Ran>(
+          await client.callTool({
+            arguments: { command: "printenv LTX_SECRET", paneId: created.paneId },
+            name: "run_shell_command",
+          }),
+        );
+        expect(exported.output).toBe("a b'c");
+        const plain = structured<Ran>(
+          await client.callTool({
+            arguments: { argv: ["sh", "-c", 'echo "[$LTX_SECRET]"'], fromPaneId: created.paneId },
+            name: "run_program",
+          }),
+        );
+        expect(plain.output).toBe("[]");
+        const inherited = structured<Ran>(
+          await client.callTool({
+            arguments: {
+              argv: ["sh", "-c", 'echo "[$LTX_SECRET] $TMUX_PANE"'],
+              fromPaneId: created.paneId,
+              inheritShell: true,
+            },
+            name: "run_program",
+          }),
+        );
+        expect(inherited.output.startsWith("[a b'c] %")).toBe(true);
+        expect(inherited.output).not.toContain(created.paneId);
+        expect(await programSessions((request) => client.callTool(request))).toBe(0);
+      });
+    });
+  },
+  40_000,
+);
+
+testProgram(
+  "wait_for_exit reports a pane's exit and a pane that was killed",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        // Panes someone else started: the MCP's own create_session takes no command.
+        const started = async (name: string, command: string): Promise<string> =>
+          (
+            await fixture.executeText([
+              "new-session",
+              "-d",
+              "-P",
+              "-F",
+              "#{pane_id}",
+              "-s",
+              name,
+              command,
+            ])
+          ).stdout[0] ?? "";
+        const created = { paneId: await started("build", "sleep 1; exit 5") };
+        const exited = structured<{ exitStatus: number | null; outcome: string }>(
+          await client.callTool({ arguments: { paneId: created.paneId }, name: "wait_for_exit" }),
+        );
+        expect(exited).toMatchObject({ exitStatus: 5, outcome: "exited" });
+        const slow = { paneId: await started("slow", "sleep 30") };
+        const timedOut = structured<{ outcome: string }>(
+          await client.callTool({
+            arguments: { paneId: slow.paneId, timeoutMs: 500 },
+            name: "wait_for_exit",
+          }),
+        );
+        expect(timedOut.outcome).toBe("timed_out");
+        const waiting = client.callTool({
+          arguments: { paneId: slow.paneId },
+          name: "wait_for_exit",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await fixture.executeText(["kill-pane", "-t", slow.paneId]);
+        expect(structured<{ outcome: string }>(await waiting).outcome).toBe("pane_gone");
+      });
+    });
+  },
+  40_000,
+);
