@@ -2413,7 +2413,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`waitForExit`](#panewaitforexit) · [`waitForCommand`](#panewaitforcommand) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -2676,6 +2676,51 @@ try {
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
+```
+
+#### `Pane.waitForExit`
+
+```ts
+waitForExit(options?: ProgramWaitOptions): Promise<ProgramExit>
+```
+
+Resolve with how this pane's program ended, whoever started it.
+
+At once for a pane already dead under `remain-on-exit`; otherwise when
+tmux reports the exit, with the status a closing pane takes with it.
+Giving up leaves the program running: a timeout throws
+`WaitTimeoutError` and an abort throws `TmuxTransportError` of
+kind `cancelled`. A pane killed from outside, which fires no event, raises
+`ObjectNotFoundError` in about a second.
+
+Requires tmux 3.8 or newer.
+
+```ts
+const build = await session.newWindow({ shellCommand: "sleep 1; exit 3" });
+const exit = await build.activePane?.waitForExit({ timeoutMs: 10_000 });
+exit?.exitCode; // 3
+```
+
+#### `Pane.waitForCommand`
+
+```ts
+waitForCommand(options?: CommandWaitOptions): Promise<number>
+```
+
+Resolve with the exit status of the next command this pane's shell
+finishes.
+
+Needs a shell that marks each command's end with OSC 133 (`ESC ] 133 ; D ;
+status`), as fish and many prompt themes do; tmux turns the mark into a
+`pane-command-finished` event. `send` types a command line once the wait
+is listening, so a command that ends at once is not missed. A shell
+without the marks never resolves this: give it a `timeoutMs`.
+
+Requires tmux 3.8 or newer.
+
+```ts
+const status = await pane.waitForCommand({ send: "make test", timeoutMs: 600_000 });
+status === 0;
 ```
 
 #### `Pane.clearHistory`

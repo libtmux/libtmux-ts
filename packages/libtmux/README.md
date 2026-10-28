@@ -179,6 +179,8 @@ server.
   - [`Pane.sendKeys`: type, then read what it said](#panesendkeys-type-then-read-what-it-said)
   - [`Server.watch`: wait for a pane to print something](#serverwatch-wait-for-a-pane-to-print-something)
   - [`Server.connect`: act, then wait, with an observer](#serverconnect-act-then-wait-with-an-observer)
+  - [`Pane.waitForCommand`: a command's status from the shell's marks](#panewaitforcommand-a-commands-status-from-the-shells-marks)
+  - [`Pane.waitForExit`: wait for a pane you did not start](#panewaitforexit-wait-for-a-pane-you-did-not-start)
 - [Watch tmux change](#watch-tmux-change)
   - [`Server.watch`: hear changes as they happen](#serverwatch-hear-changes-as-they-happen)
   - [`pauseAfterSeconds`: pace a busy pane](#pauseafterseconds-pace-a-busy-pane)
@@ -1105,6 +1107,38 @@ await pane.sendKeys(command);
 
 const event = await printed;
 ```
+
+### [`Pane.waitForCommand`][ref-pane-waitforcommand]: a command's status from the shell's marks
+
+A shell that marks each command's end with OSC 133, as fish does and bash or zsh
+do from a prompt hook, tells tmux when a command ends and how. No marker is
+printed or read back.
+
+<!-- runs: examples/agent/agent.ts -->
+
+```ts
+const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
+```
+
+- `send` types the command once the wait is listening, so one that ends at
+  once is not missed. Without it, the wait is for whatever command finishes
+  next, a person's included.
+- A shell without the marks never resolves the wait; give it a `timeoutMs`.
+- Requires tmux 3.8 or newer. [Details](docs/contracts.md#pane-waits).
+
+### [`Pane.waitForExit`][ref-pane-waitforexit]: wait for a pane you did not start
+
+<!-- runs: examples/agent/agent.ts -->
+
+```ts
+const { exitCode } = await pane.waitForExit({ timeoutMs: 30_000 });
+```
+
+- It resolves when tmux reports the pane's program exiting, with the status a
+  closing pane takes with it, or at once for a pane `remain-on-exit` kept.
+- A pane killed from outside fires no event, and the wait raises
+  `ObjectNotFoundError` in about a second.
+- Requires tmux 3.8 or newer.
 
 ## Watch tmux change
 
@@ -2059,6 +2093,8 @@ MIT
 [ref-pane-pipeto]: https://libtmux.org/en/ts/latest/reference/pane-pane-pipeto/
 [ref-pane-resize]: https://libtmux.org/en/ts/latest/reference/pane-pane-resize/
 [ref-pane-sendkeys]: https://libtmux.org/en/ts/latest/reference/pane-pane-sendkeys/
+[ref-pane-waitforcommand]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitforcommand/
+[ref-pane-waitforexit]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitforexit/
 [ref-pane-split]: https://libtmux.org/en/ts/latest/reference/pane-pane-split/
 [ref-pane-unzoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-unzoom/
 [ref-pane-zoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-zoom/

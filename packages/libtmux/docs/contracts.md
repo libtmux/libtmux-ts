@@ -343,6 +343,33 @@ where.
 A `Program` is made from its prototype rather than by `new`, so its constructor
 is not public API.
 
+## Pane waits
+
+`Pane.waitForExit` and `Pane.waitForCommand` wait on any pane, whoever started
+it, through tmux 3.8's events.
+
+- Each waiter is one tmux command list: `wait-for -S` on a channel of its own,
+  then `wait-for -E -v -F '#{==:#{pane},%N}'` on the event. tmux handles no other
+  event inside the list, so once the channel is signalled the waiter is
+  registered, and only then is the pane read or the command sent.
+- An exit is two events, fired one or the other: `pane-exited` for a pane that
+  closes (`server-fn.c`, `server_fire_pane_exit`) and `pane-died` for one that
+  `remain-on-exit` keeps. A wait listens for both, and reads a pane already
+  dead from `pane_dead_status` and `pane_dead_signal`.
+- A pane that closes takes its status with it; the event's payload carries it,
+  so the wait reads it from there.
+- `-v` prints the payload of every event the waiter checked, matching or not,
+  each as its keys in sorted order, so a key that does not sort after the one
+  before it starts the next event, and the match is the last.
+- `kill-pane` fires neither event, so the wait reads the pane every second and
+  raises `ObjectNotFoundError` once it is gone.
+- A command's end is `pane-command-finished`, which tmux fires on an OSC 133 `D`
+  mark with the status in `command_status`; a mark without a status reports 0
+  (`input.c`, `input_osc_133_exit_status`). A shell's first prompt marks an end
+  too, before any command ran.
+- Events are not replayed to a waiter that arrives late, which is why the pane
+  is read only after the waiter is registered.
+
 ## Watching
 
 Each `watch()` or `connect()` owns a real attached tmux client until it closes.
