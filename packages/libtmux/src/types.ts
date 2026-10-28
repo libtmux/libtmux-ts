@@ -566,7 +566,7 @@ export interface SpawnOptions {
   /**
    * Lines of scrollback kept for {@link Program.output}, for `"session"`, up to
    * tmux's 2147483647. Defaults to 100000; older lines are dropped, and
-   * {@link ProgramResult.truncated} says so.
+   * {@link ProgramResult.lostStart} says so.
    */
   readonly historyLimit?: number;
   /**
@@ -639,11 +639,13 @@ export interface ProgramResult extends ProgramExit {
   readonly success: boolean;
   /** Whether `timeoutMs` stopped the program; its exit fields are then null. */
   readonly timedOut: boolean;
+  /** Whether `output` lacks its start, which scrolled past `historyLimit`. */
+  readonly lostStart: boolean;
   /**
-   * Whether `output` lacks part of what the program wrote: its start scrolled
-   * past `historyLimit`, or tmux removed the pane before reading its end.
+   * Whether `output` may lack its end: tmux removed the pane before reading it,
+   * or a SIGKILL to the process group left the end unproven.
    */
-  readonly truncated: boolean;
+  readonly lostEnd: boolean;
 }
 
 /**

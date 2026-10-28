@@ -19,6 +19,7 @@ import {
 import {
   LibTmuxError,
   ObjectNotFoundError,
+  OutputLostError,
   TmuxTransportError,
   VersionTooLowError,
   WaitTimeoutError,
@@ -157,11 +158,12 @@ describe("program runs", () => {
         const result = await server.run(["sh", "-c", "printf 'one\\ntwo\\n'; exit 3"]);
         expect(result).toEqual({
           exitCode: 3,
+          lostEnd: false,
+          lostStart: false,
           output: "one\ntwo",
           signalCode: null,
           success: false,
           timedOut: false,
-          truncated: false,
         });
         // argv reaches the program untouched: no shell expands it, even as one word.
         expect((await server.run(["echo", "a;b", "$HOME", "*"])).output).toBe("a;b $HOME *");
@@ -216,7 +218,7 @@ describe("program runs", () => {
     async () => {
       await withServer(async (server) => {
         const result = await server.run(["seq", "1", "3000"], { historyLimit: 1000 });
-        expect(result.truncated).toBe(true);
+        expect(result).toMatchObject({ lostEnd: false, lostStart: true });
         expect(result.output.endsWith("2999\n3000")).toBe(true);
       });
     },
@@ -765,16 +767,26 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
-    "a run that ends without its mark says truncated",
+    "a run or stream that ends without its mark says its end may be lost",
     async () => {
       await withServer(async (server) => {
         // USR1 ends the wrapper before its mark, as a pane tmux removed early would read.
         const cut = await server.run(["sh", "-c", "echo hi; kill -USR1 $PPID; sleep 1"]);
-        expect(cut).toMatchObject({ output: "hi", signalCode: "SIGUSR1", truncated: true });
+        expect(cut).toMatchObject({ lostEnd: true, output: "hi", signalCode: "SIGUSR1" });
         // A SIGKILL to the group stops the wrapper before its mark too: the end is unproven.
         const killed = await server.run(["sh", "-c", "echo hi; kill -KILL 0"]);
-        expect(killed).toMatchObject({ output: "hi", signalCode: "SIGKILL", truncated: true });
-        expect((await server.run(["echo", "whole"])).truncated).toBe(false);
+        expect(killed).toMatchObject({ lostEnd: true, output: "hi", signalCode: "SIGKILL" });
+        expect((await server.run(["echo", "whole"])).lostEnd).toBe(false);
+        await using streamed = await server.spawn(
+          ["sh", "-c", "echo hi; kill -USR1 $PPID; sleep 1"],
+          { stream: true },
+        );
+        let text = "";
+        const reading = (async () => {
+          for await (const chunk of streamed.stream()) text += chunk;
+        })();
+        await expect(reading).rejects.toBeInstanceOf(OutputLostError);
+        expect(text).toBe("hi\r\n");
       });
     },
     40_000,

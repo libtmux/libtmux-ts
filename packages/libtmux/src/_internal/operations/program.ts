@@ -234,9 +234,8 @@ export async function sleep(ms: number, wake?: AbortSignal): Promise<void> {
 }
 
 /**
- * Read `formats` from a pane that must still exist: `display-message` expands
- * against nothing, and still succeeds, when its target is gone. The last value
- * keeps any tab of its own.
+ * Read `formats` from a pane that must exist: `display-message` on a gone
+ * target expands against nothing and succeeds. The last value keeps its tabs.
  */
 export async function readPane(
   runtime: RuntimeContext,
@@ -330,14 +329,10 @@ export async function waitProgram(
   }
 }
 
-/**
- * The pane's rendered text, scrollback included, and whether any of it may be
- * missing: its start past `historyLimit`, or, once the program has ended, an
- * end without the run's mark.
- */
+/** The pane's rendered text, and whether its start or, once ended, its end may be missing. */
 export async function programOutput(
   program: Program,
-): Promise<{ readonly text: string; readonly truncated: boolean }> {
+): Promise<{ readonly lostEnd: boolean; readonly lostStart: boolean; readonly text: string }> {
   const { mark, paneId, runtime } = stateOf(program);
   const [read = "", ...lines] = await runCommands(runtime, [
     ["display-message", "-p", "-t", paneId, "#{history_collected}\t#{pane_dead}\t#{pane_path}"],
@@ -350,8 +345,11 @@ export async function programOutput(
   let end = lines.length;
   while (end > 0 && lines[end - 1] === "") end -= 1;
   const [collected = "", dead = "", path = ""] = read.split("\t");
-  const cutAtEnd = dead === "1" && path !== mark;
-  return { text: lines.slice(0, end).join("\n"), truncated: Number(collected) > 0 || cutAtEnd };
+  return {
+    lostEnd: dead === "1" && path !== mark,
+    lostStart: Number(collected) > 0,
+    text: lines.slice(0, end).join("\n"),
+  };
 }
 
 /** The bytes the wrapper's printf writes for `mark`: ST, then OSC 7 ending in BEL. */
@@ -360,9 +358,8 @@ export function markSequence(mark: string): string {
 }
 
 /**
- * Drops one exact `mark` from text that arrives in pieces. Only a tail that
- * could be the start of the mark is held back, so ordinary output, a prompt
- * included, passes at once.
+ * Drops one exact `mark` from text that arrives in pieces, holding back only a
+ * tail that could start it, so a prompt passes at once.
  */
 export class MarkFilter {
   #held = "";
@@ -539,9 +536,8 @@ async function reaped(runtime: RuntimeContext, paneId: string, ms: number): Prom
 }
 
 /**
- * End the program in a pane, if it runs: SIGTERM, SIGKILL after the grace
- * period, and back once tmux has reaped it. Removing the pane only closes
- * the pty, which a program ignoring SIGHUP outlives.
+ * End the program in a pane: SIGTERM, then SIGKILL after the grace, back once
+ * tmux has reaped it. A program ignoring SIGHUP outlives its pane's removal.
  */
 export async function stopPane(runtime: RuntimeContext, paneId: string): Promise<void> {
   const [dead, pid = ""] =
@@ -560,6 +556,17 @@ async function endProgram(state: ProgramState): Promise<void> {
     await state.exited;
     await stopPane(state.runtime, state.paneId);
     if (!state.keep) await removeOwned(state.runtime, state.owned);
+    // A kept pane outlives its lease: retire the token, so no queued timer acts on it.
+    else if (state.lease !== undefined) {
+      await runCommand(state.runtime, [
+        "set-option",
+        "-p",
+        "-t",
+        state.paneId,
+        "@libtmux-lease",
+        "ended",
+      ]).catch(() => undefined);
+    }
   } finally {
     if (state.files !== undefined)
       await rm(state.files.directory, { force: true, recursive: true });

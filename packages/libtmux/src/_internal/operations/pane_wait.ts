@@ -90,6 +90,8 @@ async function arm(
   } catch (error) {
     if (failure !== undefined && !stop.aborted) throw failure;
     if (!stop.aborted) throw error;
+    // Cancelled: a list that signalled left the channel woken, which one more wait consumes.
+    void runCommand(runtime, ["wait-for", armed], { timeoutMs: ARM_MS }).catch(() => undefined);
   }
   return { fired };
 }
@@ -118,8 +120,7 @@ async function deadExit(runtime: RuntimeContext, paneId: string): Promise<Progra
 
 /**
  * Arm waiters for `events`, run `act`, then resolve with the first payload
- * `decide` accepts, or the value `check` reads from the pane itself. A pane
- * that disappears without an event fails the read, as a missing pane.
+ * `decide` accepts, or what `check` reads from the pane.
  */
 async function waitOnPane<T>(
   runtime: RuntimeContext,
@@ -166,8 +167,12 @@ async function waitOnPane<T>(
       } catch (error) {
         if (!(error instanceof TmuxObjectNotFoundError)) throw error;
         // A pane that closed fired its event as it went; the payload may still be on its way.
+        const delivered = new AbortController();
         // eslint-disable-next-line no-await-in-loop -- once, on the way out.
-        await Promise.race([Promise.all(waiters.map(({ fired }) => fired)), sleep(DELIVERY_MS)]);
+        await Promise.race([
+          Promise.all(waiters.map(({ fired }) => fired)).finally(() => delivered.abort()),
+          sleep(DELIVERY_MS, delivered.signal),
+        ]);
         if (found !== undefined) return found;
         throw error;
       }

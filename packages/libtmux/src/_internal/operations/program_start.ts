@@ -51,17 +51,15 @@ import {
 
 /**
  * Runs argv unparsed, writes ST and the run's OSC 7 mark, lingers, and exits
- * with the program's status: tmux can remove a pane before reading its last
- * output, and only a pane whose path is the mark was read to the end.
+ * with its status. Only a pane whose path is the mark was read to the end.
  */
 const RUN =
   'trap : HUP INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
   "printf '\\033\\\\\\033]7;%s\\007' \"$m\"; " +
   'sleep 0.05 2>/dev/null || sleep 1; exit "$s"';
 /**
- * Steps before `RUN`, each taking its argument from `$1` and shifting it off:
- * tmux's own `-c` falls back to `$HOME` for a directory it cannot enter, where
- * this ends the run with 126.
+ * Steps before `RUN`, each shifting its argument off `$1`. tmux's `-c` falls
+ * back to `$HOME` for a directory it cannot enter, where this exits 126.
  */
 const MARK = "m=$1; shift; ";
 const ENTER = 'cd -- "$1" || exit 126; shift; ';
@@ -206,8 +204,7 @@ interface Beside {
 
 /**
  * A split of `from`, or a window in its session, holding the placeholder. A
- * window's id is unknown inside the creating list, so remain-on-exit is set by
- * its unique name; a split takes it with `-m`, on its own pane alone.
+ * window is named by its unique name; a split takes remain-on-exit with `-m`.
  */
 async function createBeside(
   runtime: RuntimeContext,
@@ -358,9 +355,8 @@ function startList(
 }
 
 /**
- * Wait until tmux has run the start list up to its `started` signal. A channel
- * signalled before its waiter arrives stays woken, so the order of the two
- * clients does not matter.
+ * Wait until tmux has run the start list up to its `started` signal; a channel
+ * signalled before its waiter arrives stays woken, so the order does not matter.
  */
 async function confirmStarted(
   runtime: RuntimeContext,
@@ -555,9 +551,9 @@ export async function runProgram(
       if (!(error instanceof WaitTimeoutError)) throw error;
       timedOut = true;
     }
-    const { text, truncated } = await programOutput(program);
+    const { lostEnd, lostStart, text } = await programOutput(program);
     failed = false;
-    return { ...exit, output: text, success: exit.exitCode === 0, timedOut, truncated };
+    return { ...exit, lostEnd, lostStart, output: text, success: exit.exitCode === 0, timedOut };
   } finally {
     // Ending it must not hide the error the run failed with, as `await using` would.
     await killProgram(program).catch((error: unknown) => {
