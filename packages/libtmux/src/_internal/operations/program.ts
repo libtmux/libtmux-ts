@@ -223,7 +223,6 @@ export async function waitProgram(
   if (state.exit !== undefined) return state.exit;
   const { signal, timeoutMs } = options;
   requireCount("timeoutMs", timeoutMs, MAX_TIMER_MS);
-  if (isAborted(signal)) throw cancelled(signal);
   const deadline = timeoutMs === undefined ? Infinity : performance.now() + timeoutMs;
   const [aborted, stopListening] = onAbort(signal);
   // An abort also stops a read already in flight.
@@ -234,8 +233,12 @@ export async function waitProgram(
   void aborted.then(() => wake.abort());
   try {
     for (;;) {
+      // An abort wakes the loop; a read sent after it would be refused as unsent.
+      if (isAborted(signal)) throw cancelled(signal);
       // eslint-disable-next-line no-await-in-loop -- each read follows the last wake.
       const exit = await readExit(state.runtime, state.paneId, read).catch((error: unknown) => {
+        // A read the abort cut short leaves the program running, as any cancelled wait does.
+        if (isAborted(signal)) throw cancelled(signal);
         // tmux fires no event for a pane removed from outside, so its exit watch would wait on.
         if (error instanceof TmuxObjectNotFoundError) state.watcher.abort();
         throw error;
@@ -244,7 +247,6 @@ export async function waitProgram(
         state.exit = exit;
         return exit;
       }
-      if (isAborted(signal)) throw cancelled(signal);
       if (performance.now() >= deadline) {
         throw new WaitTimeoutError(
           `the program in ${state.paneId} was still running after ${String(timeoutMs)}ms`,

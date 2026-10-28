@@ -313,6 +313,12 @@ describe("program runs", () => {
       await withServer(async (server) => {
         const program = await server.spawn(["sleep", "30"]);
         await expect(program.wait({ timeoutMs: 200 })).rejects.toBeInstanceOf(WaitTimeoutError);
+        // An abort mid-wait wakes the loop; its next read must not report the abort as unsent.
+        const cancelled = await program
+          .wait({ signal: AbortSignal.timeout(300) })
+          .catch((error: unknown) => error);
+        expect(cancelled).toBeInstanceOf(TmuxTransportError);
+        expect(cancelled).toMatchObject({ delivery: "replied", kind: "cancelled" });
         expect((await program.pane.refreshed()).dead).toBe(false);
         await program.kill();
         await program.kill();
