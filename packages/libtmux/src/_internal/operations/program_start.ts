@@ -561,6 +561,22 @@ export async function runProgram(
   options: RunOptions = {},
 ): Promise<ProgramResult> {
   requireCount("timeoutMs", options.timeoutMs, MAX_TIMER_MS);
+  // Bun 1.3 stops an AbortSignal.timeout once its last listener goes, as setup's does.
+  const hold = (): void => undefined;
+  options.signal?.addEventListener("abort", hold);
+  try {
+    return await runSpawned(server, runtime, argv, options);
+  } finally {
+    options.signal?.removeEventListener("abort", hold);
+  }
+}
+
+async function runSpawned(
+  server: Server,
+  runtime: RuntimeContext,
+  argv: readonly string[],
+  options: RunOptions,
+): Promise<ProgramResult> {
   const program = await spawnProgram(server, runtime, argv, options, options.signal);
   let failed = true;
   try {
