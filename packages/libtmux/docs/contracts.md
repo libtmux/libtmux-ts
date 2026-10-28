@@ -469,8 +469,8 @@ bytes their own way.
 
 ## Pane waits
 
-`Pane.waitForExit` and `Pane.waitForCommand` wait on any pane, whoever started
-it, through tmux 3.8's events.
+`Pane.waitForExit`, `Pane.waitForCommand` and `Pane.waitForText` wait on any
+pane, whoever started it, through tmux 3.8's events.
 
 - Each waiter is one tmux command list: `wait-for -S` on a channel of its own,
   then `wait-for -E -v -F '#{==:#{pane},%N}'` on the event. tmux handles no
@@ -494,6 +494,15 @@ it, through tmux 3.8's events.
   too, before any command ran.
 - Events are not replayed to a waiter that arrives late, which is why the pane
   is read only after the waiter is registered.
+- Text is `pane-activity`, which tmux fires the first time a pane prints in a
+  pass of its event loop
+  ([`input_parse_buffer`](https://github.com/tmux/tmux/blob/3.8/input.c#L1052-L1057))
+  and re-arms at the end of each pass
+  ([`server_client_loop`](https://github.com/tmux/tmux/blob/3.8/server-client.c#L1933-L1941)).
+  `waitForText` arms a waiter, reads the visible screen with `capture-pane -J`,
+  and arms the next only once that one fires, so output after a read always
+  wakes another. A busy pane is read at most every 50 ms, and a quiet one once
+  a second, which also notices a pane that died.
 
 ## Watching
 
