@@ -218,12 +218,14 @@ typed, so the output holds no command line or echo. In short:
   nothing. tmux reads a pane's bytes in order, so a pane whose path is the run's
   mark was read to the end; without the linger, the runs whose end was lost were
   exactly the ones missing it (3, 2 and 1 of 900 on 3.8, 3.8a and master).
-  `truncated` and `stream()` report a missing mark. A SIGKILL to the process
-  group ends the `sh` before its mark, which says nothing about the output, so
-  it is not counted.
+  `truncated` and `stream()` report a missing mark, as `OutputLostError` for a
+  stream. A SIGKILL to the process group ends the `sh` before its mark too,
+  which leaves the end unproven, so it counts as missing.
 - Its own signals are caught, not ignored, so the program keeps the default
-  dispositions, and a status above 128 is re-raised as that signal, as a shell
-  reports one.
+  dispositions. The run exits with the status the `sh` saw, as `$?` reports
+  it: POSIX `sh` cannot tell a program's `exit 130` from a SIGINT death, so the
+  library does not guess. `signalCode` is set only when a signal ended the
+  `sh` itself.
 - A start directory is entered by that `sh`, not by tmux's `-c`, which falls
   back to `$HOME` for one it cannot enter: a missing one ends the run with exit
   code 126 and the shell's message, and its `#` is never expanded.
@@ -262,11 +264,12 @@ typed, so the output holds no command line or echo. In short:
   `orphanAfterMs` says otherwise. The pane option `@libtmux-lease` holds a
   token, and `run-shell -b -d` queues a timer the tmux server keeps after its
   client is gone.
-- For a session of its own, the lease is armed in the list that creates the
-  pane, so a caller that dies before the program starts leaves nothing. Beside
-  a pane, that list can name the new pane only as `$N:=name`, which tmux reads
-  as a variable when the timer's commands are parsed, so the lease arrives with
-  the program instead.
+- The lease is armed in the list that creates a session or window, so a caller
+  that dies before the program starts leaves nothing, and is renewed from then
+  on, however long the rest of setup takes. A window's target there is
+  `$N:=name`, so every target in the timer's commands is single-quoted: tmux
+  reads `$N` as a variable in an unquoted or double-quoted word. A split is
+  made by one command, so its lease arrives with the program.
 - The caller renews the lease every third of its length: it queues a new timer,
   then moves the token on, so a renewal that stops between the two leaves the
   last token's timer standing. A renewal still in flight is not overtaken, so
@@ -283,11 +286,17 @@ typed, so the output holds no command line or echo. In short:
   temporary directory can hold any character.
 - The renewal timer is unreferenced: a process with nothing else to do exits,
   and tmux then ends what it left running within the lease.
+- Renewals run on this process's event loop. One that stalls for two thirds of
+  the lease misses two renewals, and tmux ends the program as though the
+  process had died; an `orphanAfterMs` above the longest stall expected keeps it.
 - `orphanAfterMs: null` takes no lease: the program outlives its caller, and
   keeps its pane, its files and its waiting tmux client until something
   removes them.
-- A caller killed between creating a window or split and starting the program
-  leaves the dead placeholder; a split one closes at the next key pressed in it.
+- A caller killed between creating a split and starting the program leaves its
+  dead placeholder, which closes at the next key pressed in it.
+- The kill and the lease signal the pane's process group. A process that
+  leaves it, through `setsid` or by daemonizing, is not followed; contain such
+  a program with a cgroup or a container.
 - Each renewal leaves a timer in the tmux server until it fires. A timer that
   fires on a pane already removed fails to find it and does nothing; tmux never
   reuses a pane id within a server's run.
@@ -336,8 +345,9 @@ typed, so the output holds no command line or echo. In short:
   so it cannot say.
 - `stream()` reads a file that `pipe-pane -O` writes in the program's own 0700
   temporary directory. tmux keeps a dying pane until its pipe has drained
-  ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)), so the last write
-  arrives, and the wrapper's mark is taken out of what it yields.
+  ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)), so whatever tmux read
+  reaches the copy, and the wrapper's mark is taken out of what it yields. An
+  end tmux never read ends the stream with `OutputLostError`.
 - A control client cannot promise that:
   [`control_write_pending`](https://github.com/tmux/tmux/blob/3.8/control.c#L861) discards output still queued once
   the pane's fd closes. A raw `tmux -C` client got the last write of a program
@@ -347,7 +357,7 @@ typed, so the output holds no command line or echo. In short:
 - The copy grows with the output until the program is killed or disposed.
   `maxStreamBytes` caps it: the pipe runs `head -c` for one byte past the cap,
   so a cut copy is told from one that fit, and `stream()` yields the cap's worth
-  and throws `LibTmuxError`. The program runs on; tmux drops what the closed
+  and throws `StreamLimitError`. The program runs on; tmux drops what the closed
   pipe no longer takes.
 - The file is written on the tmux server's machine, so `stream: true` refuses a
   server that cannot write to this process's temporary directory. Its path has

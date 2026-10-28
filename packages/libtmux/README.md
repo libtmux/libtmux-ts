@@ -984,7 +984,8 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
   leaves. A `wait` that gives up throws `WaitTimeoutError` and leaves the
   program running, where `run` ends it and reports `timedOut`.
 - With `{ stream: true }`, [`program.stream()`][ref-program-stream] yields what
-  the program writes, as UTF-8 text, until it exits, the last write included.
+  the program writes, as UTF-8 text, until it exits, and ends with
+  `OutputLostError` if tmux closed the pane before reading the end.
   `maxStreamBytes` caps the copy; the stream then throws
   [`StreamLimitError`][ref-streamlimiterror] after what it kept, and the
   program runs on.
@@ -1003,7 +1004,8 @@ const result = await server.run(["sort"], { input });
 - `input` is a string or bytes, written to a private file the program reads,
   so it passes through no shell quoting and no tmux command.
 - The terminal stays the program's output, so `output` reads as before.
-- It needs the tmux server on this machine; one elsewhere is refused before
+- It needs the tmux server on this machine; one elsewhere is refused with
+  `ServerNotLocalError` before
   anything starts.
 
 ### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
@@ -1987,7 +1989,7 @@ The root export carries the everyday handle, query, operation, error, and
 constant surface. Each model is also its own subpath:
 
 - `libtmux/server`, `libtmux/session`, `libtmux/window`, `libtmux/pane`,
-  `libtmux/client` and `libtmux/selection`.
+  `libtmux/program`, `libtmux/client` and `libtmux/selection`.
 - `libtmux/formats`, `libtmux/constants`, `libtmux/common` and
   `libtmux/errors`, as supporting subpaths.
 - `libtmux/testing`, to [record and replay](#test-your-own-code) a server's
