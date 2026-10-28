@@ -21,7 +21,12 @@ import {
   TMUX_FORMAT_VALIDATED_VARIABLE,
 } from "./schemas.js";
 
-export type ProcessReach = "none" | "configured-process" | "pane-input" | "pane-command";
+export type ProcessReach =
+  | "none"
+  | "configured-process"
+  | "pane-input"
+  | "pane-command"
+  | "pane-program";
 export type TmuxEffect = "observe" | "change" | "delete";
 export type OutputClass =
   | "tmux-metadata"
@@ -148,6 +153,7 @@ const CAPABILITY_SEEDS = Object.freeze({
   resize_pane: c("manage", "none", ["observe", "change"], META),
   resize_window: c("manage", "none", ["observe", "change"], META),
   respawn_pane: c("execute", "configured-process", ["observe", "change", "delete"], META),
+  run_program: c("execute", "pane-program", ["observe", "change"], CONTENT),
   run_shell_command: c("execute", "pane-command", ["observe", "change"], CONTENT),
   search_panes: c("inspect", "none", ["observe"], CONTENT),
   select_layout: c("manage", "none", ["observe", "change"], META),
@@ -205,6 +211,7 @@ const INPUT_KEYS = Object.freeze({
   resize_pane: ["amount", "direction", "height", "paneId", "width", "zoom"],
   resize_window: ["height", "width", "windowId"],
   respawn_pane: ["force", "killFirst", "paneId", "startDirectory"],
+  run_program: ["argv", "fromPaneId", "height", "maxLines", "startDirectory", "timeoutMs", "width"],
   run_shell_command: ["command", "force", "maxLines", "paneId", "timeoutMs"],
   search_panes: ["maxMatchesPerPane", "pattern", "regex", "scrollbackLines", "session"],
   select_layout: ["layout", "windowId"],
@@ -290,6 +297,15 @@ const INPUT_SINKS = Object.freeze({
     killFirst: NONE,
     paneId: LOOKUP,
     startDirectory: LITERAL_STATE,
+  },
+  run_program: {
+    argv: sink("process-argv"),
+    fromPaneId: LOOKUP,
+    height: STATE,
+    maxLines: NONE,
+    startDirectory: STATE,
+    timeoutMs: NONE,
+    width: STATE,
   },
   run_shell_command: {
     command: PANE_COMMAND,
@@ -388,6 +404,8 @@ function controlledDescription(seed: CapabilitySeed, body: string): string {
       "Send input to a pane's program; a shell that receives it runs it with your user's permissions.";
   } else if (seed.processReach === "pane-command") {
     opener = "Run a shell command in a pane with your user's permissions.";
+  } else if (seed.processReach === "pane-program") {
+    opener = "Run a program in a new pane of its own with your user's permissions.";
   } else if (seed.toolset !== "inspect") {
     opener = "Change tmux state; no client-supplied executable input.";
   } else if (seed.outputClasses.includes("terminal-content")) {
@@ -456,6 +474,9 @@ function validateDefinition(definition: ToolDefinition): void {
   }
   if (definition.processReach === "pane-command" && !allSinks.includes("shell-command")) {
     throw new TypeError(`${definition.name} pane-command reach has no pane-command sink`);
+  }
+  if (definition.processReach === "pane-program" && !allSinks.includes("process-argv")) {
+    throw new TypeError(`${definition.name} pane-program reach has no process-argv sink`);
   }
   if (definition.processReach === "pane-input" && !allSinks.includes("pane-input")) {
     throw new TypeError(`${definition.name} pane-input reach has no pane-input sink`);

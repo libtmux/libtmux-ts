@@ -56,6 +56,7 @@ const TOOLS_BY_TOOLSET = {
     "create_window",
     "paste_text",
     "respawn_pane",
+    "run_program",
     "run_shell_command",
     "send_keys",
     "send_keys_batch",
@@ -97,6 +98,7 @@ const SOURCE_CATALOG_ORDER = [
   "send_keys",
   "paste_text",
   "run_shell_command",
+  "run_program",
   "create_session",
   "create_window",
   "split_window",
@@ -349,7 +351,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
     async (client) => {
       const tools = (await client.listTools()).tools;
       expect(tools.map(({ name }) => name)).toEqual([...SOURCE_CATALOG_ORDER]);
-      expect(tools).toHaveLength(45);
+      expect(tools).toHaveLength(46);
 
       // An agent picks a tool from its schema alone, so a parameter with no
       // description is one it has to guess at. This runs against every
@@ -431,11 +433,15 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
           opener: "Run a shell command in a pane with your user's permissions.",
         },
         {
+          names: ["run_program"],
+          opener: "Run a program in a new pane of its own with your user's permissions.",
+        },
+        {
           names: TOOLS_BY_TOOLSET.teardown,
           opener: "Delete tmux state; accepts no command payload.",
         },
       ] as const;
-      expect(controlledOpeners.reduce((count, group) => count + group.names.length, 0)).toBe(45);
+      expect(controlledOpeners.reduce((count, group) => count + group.names.length, 0)).toBe(46);
       for (const { names, opener } of controlledOpeners) {
         for (const name of names) {
           expect(tools.find((tool) => tool.name === name)?.description, name).toStartWith(
@@ -544,7 +550,7 @@ test("target inventory pins a dedicated socket and commandless spawn schemas", a
         hostCommandTools: 0,
         operatingSystemBoundary: "none",
         socket: { namespaceBoundary: "tmux-objects-only" },
-        toolCount: 45,
+        toolCount: 46,
         toolFilteringBoundary: "interface-shaping-not-authorization",
       });
       expect(report.tools.find(({ name }) => name === "snapshot_pane")?.nestedAuthority).toEqual(
@@ -1024,19 +1030,19 @@ test("startup provenance controls the implicit teardown surface", async () => {
       configurationProvenance: "minimal",
       hasTeardown: true,
       serverState: "created",
-      toolCount: 45,
+      toolCount: 46,
     },
     {
       configurationProvenance: "unknown",
       hasTeardown: false,
       serverState: "existing",
-      toolCount: 41,
+      toolCount: 42,
     },
     {
       configurationProvenance: "user-configured",
       hasTeardown: false,
       serverState: "absent",
-      toolCount: 41,
+      toolCount: 42,
     },
   ] as const;
 

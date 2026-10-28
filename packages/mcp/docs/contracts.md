@@ -244,6 +244,58 @@ not observed recipients or a delivery receipt.
 State can change after any snapshot; each `send_keys_batch` row takes its own
 check so an earlier row cannot authorize a later one.
 
+## [`run_program`][tool-run_program] program runs
+
+**Nothing is typed, so nothing is echoed.** `run_program` creates a detached
+session whose only pane starts with a placeholder, then respawns that pane with
+an `sh` given `argv` as positional parameters, which it does not parse, so
+`argv[0]` is always a program name: never shell text, and never an assignment
+the way `env` would read `A=b`. That `sh` runs the program and lingers 50 ms
+after it, because tmux can remove a pane before reading its last output, then
+exits the same way; an exit status above 128 is reported as the signal it
+encodes, as a shell reports one. The library's
+[program runs contract](../../libtmux/docs/contracts.md#program-runs) has the
+detail.
+
+The session is an ordinary one named `libtmux-program-…`. `list_sessions` shows
+it, and another client can type into it or kill it; a kill fails the call. It
+is detached, not hidden.
+
+`fromPaneId` puts the program in a new background window of that pane's session
+instead, started in the pane's current directory with the session's tmux
+environment, and removes only that window. It types nothing into the pane, so
+the caller and attended-pane protections that guard pane input do not apply;
+variables the pane's shell exported are reached only through
+`run_shell_command`.
+
+`startDirectory` is taken literally: the program's own `sh` enters it, so no `#`
+is expanded, and one it cannot enter ends the run with exit status 126 before
+the program starts. The tool has no environment parameter:
+variables go in `argv` through `env`, where whatever inspects `argv` sees them,
+`ps` and the pane's start command included, so a secret does not belong there.
+It sets `PAGER` and `GIT_PAGER` to `cat` itself, because a pager waits for keys
+nobody presses.
+
+The respawn and a `wait-for -E pane-died` waiter go to tmux as one command list,
+which tmux runs without handling any other event in between, so the exit cannot
+be missed. The pane state is still read every second, because tmux fires no
+event for a pane killed from outside.
+
+The output is `capture-pane` of the program's own pane, scrollback included and
+wrapped lines joined; stderr shares the terminal with stdout. Scrollback past
+the session's history limit is dropped, and `outputComplete` reports it.
+
+The session is removed before the call returns, on every path. A program still
+running at the effective timeout gets SIGTERM and, two seconds later, SIGKILL,
+sent to its process group on the tmux server's machine, so one that ignores
+SIGHUP still ends; it is reported `timed_out`, and a retry starts a new run.
+Should this server die mid-run, tmux finishes the job: it SIGKILLs a program
+still running a minute past the effective timeout, and a `pane-died` hook on
+its pane removes the session a minute after the program ends.
+
+It needs tmux 3.8 or newer: earlier releases have no `wait-for -E`, and
+through 3.7c a remain-on-exit pane keeps its pipe open after the program exits.
+
 ## [`run_shell_command`][tool-run_shell_command] framing and checks
 
 **A command's output is never its echo.** A pane repeats what is typed into it,
@@ -386,7 +438,9 @@ effective tool names, and a socket record with selector, selection provenance,
 server state, configuration provenance, and namespace boundary.
 
 Its boundary record states that socket selection is process-wide, resources are
-static, and host-command execution is absent.
+static, and host-command execution is absent: this server starts no process
+itself. `run_shell_command` and `run_program` still run arbitrary programs in
+tmux panes, with the tmux user's authority.
 
 A client can read this once to explain the surface it received without probing
 tmux or reconstructing launch arguments.
@@ -431,9 +485,11 @@ and whether it can amplify future pane input.
 Every tool also uses the same conservative MCP annotations: non-read-only,
 potentially destructive, non-idempotent, and open-world.
 
-Process reach is one of `none`, `configured-process`, `pane-input`, or
-`pane-command`; no public tool has `host-command` reach. Effects are drawn from
-`observe`, `change`, and `delete`.
+Process reach is one of `none`, `configured-process`, `pane-input`,
+`pane-command`, or `pane-program`; no public tool has `host-command` reach.
+`pane-program` runs a client-supplied program with the tmux user's full
+authority, the same authority `run_shell_command` has; what differs is that it
+takes argv rather than shell text, and creates the pane it runs in.
 
 Output classes distinguish tmux metadata, terminal content, process environment,
 and configured commands.
@@ -484,7 +540,8 @@ when that matters.
 
 There are no dynamic topology resources, subscriptions, prompts, background
 jobs, generic option or environment mutation, public buffer management, or
-host-command tools.
+host-command tools: programs run only inside tmux panes, through
+`run_shell_command` and `run_program`.
 
 The typed surface covers the bounded tmux operations an agent needs without
 creating a second scripting language beside tmux itself.
@@ -516,6 +573,7 @@ creating a second scripting language beside tmux itself.
 [tool-resize_pane]: https://libtmux.org/en/ts/latest/mcp/tools/resize_pane/
 [tool-resize_window]: https://libtmux.org/en/ts/latest/mcp/tools/resize_window/
 [tool-respawn_pane]: https://libtmux.org/en/ts/latest/mcp/tools/respawn_pane/
+[tool-run_program]: https://libtmux.org/en/ts/latest/mcp/tools/run_program/
 [tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/
 [tool-search_panes]: https://libtmux.org/en/ts/latest/mcp/tools/search_panes/
 [tool-select_layout]: https://libtmux.org/en/ts/latest/mcp/tools/select_layout/

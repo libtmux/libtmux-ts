@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import { TmuxTransportError, type Pane } from "libtmux";
+import { TmuxTransportError, VersionTooLowError, type Pane } from "libtmux";
 import { z } from "zod";
 
 import {
@@ -27,10 +27,15 @@ import {
   type PaneInputPlan,
 } from "../pane_input.js";
 import type { Policy } from "../policy.js";
-import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
+import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
-import { framedCommandText, inlineRequestText, paneIdSchema } from "../schemas.js";
+import {
+  fitsInlineRequest,
+  framedCommandText,
+  inlineRequestText,
+  paneIdSchema,
+} from "../schemas.js";
 import { isFailure } from "../target_resolution.js";
 
 /**
@@ -119,7 +124,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       description:
         "Send keystrokes to a pane. Use for TUIs, control keys (C-c), and partial " +
         "lines. For a shell command whose result you want, use run_shell_command — it " +
-        "waits for completion and reports exit status, which this does not.",
+        "waits for completion and reports exit status, which this does not. For only a " +
+        "program's own output, use run_program.",
       inputSchema: {
         enter: z.boolean().optional().describe("Press Enter afterwards. Default true."),
         force: z
@@ -320,7 +326,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         "rather than guessing from the screen. The command runs in a subshell, so " +
         "cd and export do not persist to a later call. A pane is effectively " +
         "single-writer: this server reserves it until the command settles, but " +
-        "another process with the same tmux socket can still write into it.",
+        "another process with the same tmux socket can still write into it. When the " +
+        "pane's shell does not matter, run_program returns only the program's output.",
       inputSchema: {
         command: framedCommandText("command").describe("The shell command to run."),
         force: z
@@ -507,6 +514,193 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             ? "\n[another writer printed into this pane while the command ran; " +
               "output attributable to them was removed, what remains may still be theirs]"
             : ""
+        }`,
+      );
+    },
+  );
+  mcp.registerTool(
+    "run_program",
+    {
+      description:
+        "Run a program in a pane of its own and return its output and exit status. " +
+        "It runs in a fresh detached session with the tmux server's environment, or with " +
+        "fromPaneId in a background window of that pane's session and directory. " +
+        "No shell parses argv and nothing is typed, so the output holds no command line or echo. " +
+        "The session or window is removed before this returns. " +
+        "A program still running at the timeout is ended. " +
+        "Commands are found on the tmux server's PATH; exit 127 means not found. " +
+        "The program has a terminal but no input, so one that prompts waits until the timeout. " +
+        "PAGER and GIT_PAGER are cat unless argv sets them with the env command. " +
+        'Use ["sh", "-c", ...] for pipes and redirections. ' +
+        "Use run_shell_command for shell builtins such as cd, or for variables a pane's shell " +
+        "exported. Requires tmux 3.8 or newer.",
+      inputSchema: {
+        argv: z
+          .array(inlineRequestText("argv item"))
+          .min(1)
+          .max(256)
+          .refine(
+            (values) =>
+              values[0] !== "" && values[0]?.startsWith("-") !== true && fitsInlineRequest(values),
+            {
+              message:
+                "argv must name a program, not starting with -, and fit one tmux command line.",
+            },
+          )
+          .describe(
+            'The program and its arguments, as given: ["git", "status", "--short"]. Put ' +
+              'variables first with env: ["env", "CI=1", "make", "test"].',
+          ),
+        fromPaneId: paneIdSchema
+          .optional()
+          .describe(
+            "Start in this pane's directory, in a background window of its session with that " +
+              "session's tmux environment; the window is removed afterwards. Variables the " +
+              "pane's shell exported are not inherited: run_shell_command reaches those.",
+          ),
+        height: z
+          .number()
+          .int()
+          .positive()
+          .max(10_000)
+          .optional()
+          .describe("Rows of the program's terminal. Defaults to tmux's default-size."),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
+        startDirectory: inlineRequestText("startDirectory")
+          .optional()
+          .describe(
+            "Directory the program starts in, taken literally. Defaults to the directory this " +
+              "MCP server was started in, or the fromPaneId pane's. One that cannot be entered " +
+              "ends the run with exitStatus 126 before the program starts.",
+          ),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "How long to let it run; 30 s by default and clamped by the server ceiling. " +
+              "The result says what was used.",
+          ),
+        width: z
+          .number()
+          .int()
+          .positive()
+          .max(10_000)
+          .optional()
+          .describe(
+            "Columns of the program's terminal. A program that formats to its width — ls, " +
+              "ps, git log --graph — lays out to this at the source.",
+          ),
+      },
+      outputSchema: {
+        droppedLines: z.number().int().describe("Lines of output withheld by maxLines."),
+        effectiveTimeoutMs: z.number().int().describe("The timeout actually enforced."),
+        exitStatus: z
+          .number()
+          .int()
+          .nullable()
+          .describe(
+            "The exit status. Null in two cases: a signal ended the program (see signal), or " +
+              "the timeout did (outcome timed_out, signal null).",
+          ),
+        omittedBytes: z.number().int().describe("Output bytes omitted by the result ceiling."),
+        outcome: z
+          .enum(["completed", "timed_out"])
+          .describe(
+            "completed: it ended on its own, or by the signal reported. timed_out: it was " +
+              "ended at the timeout, so a retry starts a new run.",
+          ),
+        output: z
+          .string()
+          .describe(
+            "The bounded tail of what the program printed, as its terminal shows it; stderr " +
+              "and stdout share it.",
+          ),
+        outputComplete: z
+          .boolean()
+          .describe("False when scrollback or result limits omitted any of the output."),
+        returnedBytes: z.number().int().describe("UTF-8 output bytes returned."),
+        signal: z
+          .string()
+          .nullable()
+          .describe(
+            'The signal that ended the program, such as "SIGTERM"; otherwise null. An exit ' +
+              "status above 128 reads as the signal it encodes, as a shell reports one.",
+          ),
+      },
+      title: "Run a program and wait",
+    },
+    async ({ argv, fromPaneId, height, maxLines, startDirectory, timeoutMs, width }, extra) => {
+      const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
+      let from: Pane | undefined;
+      if (fromPaneId !== undefined) {
+        if (width !== undefined || height !== undefined) {
+          return fail({
+            hint: "Leave width and height out; the window takes that session's size.",
+            reason: "fromPaneId runs in that pane's session, whose size is its own.",
+          });
+        }
+        from = (await context.tmux.panes()).toArray().find((pane) => pane.id === fromPaneId);
+        if (from === undefined) {
+          return fail({
+            hint: "list_panes shows the panes that exist.",
+            reason: `No pane ${fromPaneId} to start from.`,
+          });
+        }
+      }
+      let result: Awaited<ReturnType<typeof context.tmux.run>>;
+      try {
+        result = await context.tmux.run(argv, {
+          // A pager waits for keys nobody will press.
+          environment: { GIT_PAGER: "cat", PAGER: "cat" },
+          ...(from === undefined ? {} : { from }),
+          ...(height === undefined ? {} : { height }),
+          ...(startDirectory === undefined ? {} : { startDirectory }),
+          ...(width === undefined ? {} : { width }),
+          signal: extra.signal,
+          timeoutMs: effectiveTimeoutMs,
+        });
+      } catch (error) {
+        if (!(error instanceof VersionTooLowError)) throw error;
+        return fail({
+          hint: "On this server, run the command with run_shell_command in an existing shell pane.",
+          reason: error.message,
+        });
+      }
+      const bounded = boundText(
+        result.output === "" ? [] : result.output.split("\n"),
+        effectiveResultLines(context.policy, maxLines),
+        MAX_RESULT_BYTES,
+      );
+      const outputComplete =
+        !result.truncated && bounded.droppedLines === 0 && bounded.omittedBytes === 0;
+      let headline: string;
+      if (result.timedOut) headline = `ended at the ${String(effectiveTimeoutMs)}ms timeout`;
+      else if (result.signalCode !== null) headline = `ended by ${result.signalCode}`;
+      else headline = `exit ${String(result.exitCode)}`;
+      return ok(
+        {
+          droppedLines: bounded.droppedLines,
+          effectiveTimeoutMs,
+          exitStatus: result.exitCode,
+          omittedBytes: bounded.omittedBytes,
+          outcome: result.timedOut ? "timed_out" : "completed",
+          output: bounded.text,
+          outputComplete,
+          returnedBytes: bounded.returnedBytes,
+          signal: result.signalCode,
+        },
+        `${renderBoundedText(
+          bounded,
+          "raise maxLines within the server limit or pipe large output before running",
+        )}\n\n[${headline}]${
+          result.truncated ? "\n[output scrolled past the scrollback limit; its start is gone]" : ""
         }`,
       );
     },

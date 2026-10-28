@@ -249,7 +249,7 @@ runs with the tmux user's authority.
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `inspect`  | [`call_read_tools_batch`][tool-call_read_tools_batch], [`capture_pane`][tool-capture_pane], [`capture_since`][tool-capture_since], [`find_pane_by_position`][tool-find_pane_by_position], [`get_pane_info`][tool-get_pane_info], [`get_server_info`][tool-get_server_info], [`get_session_info`][tool-get_session_info], [`get_tmux_variables`][tool-get_tmux_variables], [`get_window_info`][tool-get_window_info], [`list_panes`][tool-list_panes], [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`search_panes`][tool-search_panes], [`show_environment`][tool-show_environment], [`show_hooks`][tool-show_hooks], [`show_option`][tool-show_option], [`snapshot_pane`][tool-snapshot_pane], [`wait_for_text`][tool-wait_for_text] |
 | `manage`   | [`move_window`][tool-move_window], [`rename_session`][tool-rename_session], [`rename_window`][tool-rename_window], [`resize_pane`][tool-resize_pane], [`resize_window`][tool-resize_window], [`select_layout`][tool-select_layout], [`select_pane`][tool-select_pane], [`select_window`][tool-select_window], [`set_history_limit`][tool-set_history_limit], [`set_mouse_enabled`][tool-set_mouse_enabled], [`set_pane_title`][tool-set_pane_title], [`signal_channel`][tool-signal_channel], [`swap_pane`][tool-swap_pane], [`wait_for_channel`][tool-wait_for_channel]                                                                                                                                                                                             |
-| `execute`  | [`create_session`][tool-create_session], [`create_window`][tool-create_window], [`paste_text`][tool-paste_text], [`respawn_pane`][tool-respawn_pane], [`run_shell_command`][tool-run_shell_command], [`send_keys`][tool-send_keys], [`send_keys_batch`][tool-send_keys_batch], [`set_synchronize_panes`][tool-set_synchronize_panes], [`split_window`][tool-split_window]                                                                                                                                                                                                                                                                                                                                                                                            |
+| `execute`  | [`create_session`][tool-create_session], [`create_window`][tool-create_window], [`paste_text`][tool-paste_text], [`respawn_pane`][tool-respawn_pane], [`run_program`][tool-run_program], [`run_shell_command`][tool-run_shell_command], [`send_keys`][tool-send_keys], [`send_keys_batch`][tool-send_keys_batch], [`set_synchronize_panes`][tool-set_synchronize_panes], [`split_window`][tool-split_window]                                                                                                                                                                                                                                                                                                                                                         |
 | `teardown` | [`clear_pane_scrollback`][tool-clear_pane_scrollback], [`kill_pane`][tool-kill_pane], [`kill_session`][tool-kill_session], [`kill_window`][tool-kill_window]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ### [`LIBTMUX_TOOLSETS`][topic-toolsets-and-startup-provenance]: choose the toolsets
@@ -432,14 +432,15 @@ call_read_tools_batch  operations=[{tool: 'list_sessions'}, {tool: 'list_panes'}
 
 ## Run commands and wait
 
-Four tools put input into panes:
+Five tools run programs or put input into panes:
 
-| Tool                                          | Does                                                    |
-| --------------------------------------------- | ------------------------------------------------------- |
-| [`run_shell_command`][tool-run_shell_command] | Runs a shell command, waits for it, reports exit status |
-| [`send_keys`][tool-send_keys]                 | Sends keystrokes: TUIs, `C-c`, partial lines            |
-| [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call          |
-| [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name              |
+| Tool                                          | Does                                                          |
+| --------------------------------------------- | ------------------------------------------------------------- |
+| [`run_program`][tool-run_program]             | Runs a program in a detached session, returns only its output |
+| [`run_shell_command`][tool-run_shell_command] | Runs a shell command, waits for it, reports exit status       |
+| [`send_keys`][tool-send_keys]                 | Sends keystrokes: TUIs, `C-c`, partial lines                  |
+| [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call                |
+| [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name                    |
 
 Three tools wait:
 
@@ -448,6 +449,39 @@ Three tools wait:
 | [`wait_for_text`][tool-wait_for_text]       | Blocks until a pane prints something            |
 | [`wait_for_channel`][tool-wait_for_channel] | Blocks until a tmux channel is signalled        |
 | [`signal_channel`][tool-signal_channel]     | Signals a tmux channel for another waiting task |
+
+### [`run_program`][tool-run_program]: run a program and get only its output
+
+`run_program` starts `argv` in a fresh detached session, waits for it, and returns
+`exitStatus`, `outcome`, and its output. Nothing is typed, so the output holds no
+command line and no echo.
+
+```text
+run_program  argv=["git","status","--short"]  timeoutMs=20000
+```
+
+- `argv` runs as given: no shell parses it, so `$HOME` and `*` reach the program
+  unexpanded. Pipes and redirections need `["sh", "-c", "…"]`; variables go
+  first, `["env", "CI=1", "make"]`. Use `run_shell_command` when the command
+  needs an existing pane's shell, its directory, environment, or activated tools.
+- `fromPaneId` starts it in that pane's directory, in a background window of
+  the pane's session with the session's tmux environment; the window is removed
+  afterwards. What the pane's shell exported is reached only by
+  `run_shell_command`.
+- The program finds commands on the tmux server's `PATH`, has a terminal but no
+  input, and gets `PAGER=cat` and `GIT_PAGER=cat`. One that prompts for input
+  waits until the timeout.
+- `timeoutMs` defaults to 30 seconds and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`.
+  Unlike `run_shell_command`'s, it ends the program: one still running gets
+  SIGTERM, then SIGKILL, and is reported `timed_out`.
+- The session is removed before the call returns. Should this server die
+  mid-run, tmux kills the program a minute past the timeout and removes the
+  session a minute after it ends.
+- The output is the terminal's rendering, stderr included, scrollback too.
+  `outputComplete` is false when scrollback or `maxLines` cut it.
+- Needs tmux 3.8 or newer; earlier servers answer with a refusal that points
+  at `run_shell_command`.
+- [Program runs](docs/contracts.md#run_program-program-runs).
 
 ### [`run_shell_command`][tool-run_shell_command]: run a command and get its exit status
 
@@ -656,7 +690,7 @@ $ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1
 
 ## Choosing the right tool
 
-The four mistakes that cost an agent a turn, and what to do instead.
+The mistakes that cost an agent a turn, and what to do instead.
 
 **Do not poll.** A [`send_keys`][tool-send_keys] then
 [`capture_pane`][tool-capture_pane] loop spends a call per read and still cannot
@@ -668,6 +702,17 @@ run_shell_command  paneId=%1  command='cargo build'
 
 That waits through tmux's notifications and comes back with `exitStatus`,
 `outcome`, and the output — one call.
+
+**Do not type a command when only its output matters.** A typed command shares
+its pane with the prompt, the echo, and anyone else typing there.
+[`run_program`][tool-run_program] starts it in a pane of its own and returns only
+what it printed; keep `run_shell_command` for a command that needs that pane's
+shell. Its timeout ends the program and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`,
+30 seconds unless raised, so a long build belongs in `run_shell_command`.
+
+```text
+run_program  argv=["git","diff","--stat"]
+```
 
 **Do not wait for text you sent.** The pane echoes it.
 [`wait_for_text`][tool-wait_for_text] discounts your own typing only briefly, so
@@ -721,8 +766,11 @@ Each advertised tool carries `_meta["com.git-pull.libtmux-mcp/capability"]`. The
 row declares its process reach, effects, possible outputs, input literalization,
 and whether it can amplify future pane input.
 
-- Process reach is one of `none`, `configured-process`, `pane-input`, or
-  `pane-command`. No public tool has `host-command` reach.
+- Process reach is one of `none`, `configured-process`, `pane-input`,
+  `pane-command`, or `pane-program`. No public tool has `host-command` reach,
+  meaning this server starts no process itself; `pane-command` and
+  `pane-program` still run arbitrary programs on the tmux server's machine, with
+  your user's authority.
 - Effects are `observe`, `change`, and `delete`. Output classes distinguish tmux
   metadata, terminal content, process environment, and configured commands.
 - [Capability disclosure](docs/contracts.md#capability-disclosure).
@@ -773,8 +821,9 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   [`set_synchronize_panes`][tool-set_synchronize_panes] are the bounded changes.
 - **Buffer management.** There is no public buffer CRUD; use
   [`paste_text`][tool-paste_text] for literal input.
-- **Host-command tools.** No public tool has `host-command` reach; see `_meta`
-  under [Resources](#resources).
+- **Host-command tools.** No public tool starts a process from this server;
+  `run_shell_command` and `run_program` run programs inside tmux panes, with the
+  tmux user's authority. See `_meta` under [Resources](#resources).
 - **A sandbox.** Selecting tools shapes the interface; every tool runs with the
   tmux user's authority. See the [security boundary](../../SECURITY.md).
 
@@ -784,9 +833,10 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   newer.
 - **Older tmux.** A server older than 3.3a is refused with a result that names
   the fix: upgrade tmux and restart the server, or pin the previous release.
-- **Features above the floor.** Live streaming (`LIBTMUX_MCP_LIVE`) needs tmux
-  3.7 and `paste_text` needs 3.4. On an older tmux, `paste_text` refuses with
-  the version it needs, `wait_for_text` and captures read the pane, and
+- **Features above the floor.** `run_program` needs tmux 3.8, live streaming
+  (`LIBTMUX_MCP_LIVE`) 3.7, and `paste_text` 3.4. On an older tmux,
+  `run_program` refuses and points at `run_shell_command`, `paste_text` refuses
+  with the version it needs, `wait_for_text` and captures read the pane, and
   `run_shell_command` reads the pane and types its script instead of staging it.
 - **Version check.** [`get_server_info`][tool-get_server_info] reports the
   running `version` and the `minimumVersion`.
@@ -858,6 +908,7 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 [tool-resize_pane]: https://libtmux.org/en/ts/latest/mcp/tools/resize_pane/
 [tool-resize_window]: https://libtmux.org/en/ts/latest/mcp/tools/resize_window/
 [tool-respawn_pane]: https://libtmux.org/en/ts/latest/mcp/tools/respawn_pane/
+[tool-run_program]: https://libtmux.org/en/ts/latest/mcp/tools/run_program/
 [tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/
 [tool-search_panes]: https://libtmux.org/en/ts/latest/mcp/tools/search_panes/
 [tool-select_layout]: https://libtmux.org/en/ts/latest/mcp/tools/select_layout/
